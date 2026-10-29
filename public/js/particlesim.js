@@ -94,6 +94,19 @@ class Batch {
 }
 
 const _v = [0, 0, 0];
+
+export function basisOf(e) {
+  const b = [];
+  for (let c = 0; c < 3; c++) {
+    const x = e[c * 4],
+      y = e[c * 4 + 1],
+      z = e[c * 4 + 2],
+      l = Math.hypot(x, y, z) || 1;
+    b.push(x / l, y / l, z / l);
+  }
+  return b.every((v, i) => Math.abs(v - (i % 4 === 0 ? 1 : 0)) < 1e-4) ? null : b;
+}
+
 const turn = (B, v) => {
   const x = v[0],
     y = v[1],

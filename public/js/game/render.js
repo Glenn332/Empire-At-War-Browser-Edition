@@ -3,6 +3,7 @@ import { setPlanetEnvironment, lighting, getModelData, buildModel, updateBillboa
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { diag } from '../diag.js';
 import { ParticleManager } from '../particles.js';
+import { basisOf } from '../particlesim.js';
 import { PostFX } from './post.js';
 import { db } from '../gamedata.js';
 import { SHIELD_FLASH, SHIELD_FADE } from './sim.js';
@@ -1372,6 +1373,7 @@ export class Renderer {
             scale = c.holder.scale.x,
             pos = new THREE.Vector3();
           if (this.fxParticles.state(p.name) === 'ready') {
+            bone.updateWorldMatrix(true, false);
             p.sys = this.fxParticles.spawn(
               p.name,
               f => {
@@ -1383,7 +1385,7 @@ export class Renderer {
                 f.scale = 1;
                 f.vx = f.vy = 0;
               },
-              { scale }
+              { scale, basis: basisOf(bone.matrixWorld.elements) }
             );
           } else {
             bone.getWorldPosition(pos);

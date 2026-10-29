@@ -101,6 +101,7 @@ async function landCamera() {
   return { steps, start: Math.min(steps[steps.length - 1][0], Math.max(steps[0][0], num('Distance_Default', 460))) };
 }
 import { ParticleManager, loadParticles } from '../particles.js';
+import { basisOf } from '../particlesim.js';
 import { LandInstances, viewTest, shaderScene } from './landinstances.js';
 import { MirrorRenderer, mirrorSupported } from '../mirror.js';
 import { loadBlackMarket } from './blackmarket.js';
@@ -3581,6 +3582,7 @@ export class LandGame {
       if (on && !p.on) {
         const bone = p.bone,
           at = new THREE.Vector3();
+        bone.updateWorldMatrix(true, false);
         p.sys = this.fx.spawn(
           p.name,
           f => {
@@ -3592,7 +3594,7 @@ export class LandGame {
             f.scale = 1;
             f.vx = f.vy = 0;
           },
-          { scale: e.grp.scale.x }
+          { scale: e.grp.scale.x, basis: basisOf(bone.matrixWorld.elements) }
         );
         if (!p.sys && this.fx.state(p.name) === 'loading') continue;
       } else if (!on && p.on && p.sys) {

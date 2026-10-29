@@ -23,6 +23,7 @@ import {
 } from './projflight.js';
 import { fireNum, startingWeapon, fireSound, fixedMuzzle } from './weaponswap.js';
 import { leadPoint } from './orders.js';
+import { basisOf } from '../particlesim.js';
 export const spacePop = t =>
   t.has('Space_Override_Population_Value') ? t.num('Space_Override_Population_Value', 0) : t.num('Population_Value', 0);
 
@@ -877,17 +878,8 @@ export class Unit {
   }
 
   proxyBasis(proxy) {
-    if (proxy.basis !== undefined) return proxy.basis;
-    const e = this.modelMatrix(proxy.bone, _m1).elements,
-      b = [];
-    for (let c = 0; c < 3; c++) {
-      const x = e[c * 4],
-        y = e[c * 4 + 1],
-        z = e[c * 4 + 2],
-        l = Math.hypot(x, y, z) || 1;
-      b.push(x / l, y / l, z / l);
-    }
-    return (proxy.basis = b.every((v, i) => Math.abs(v - (i % 4 === 0 ? 1 : 0)) < 1e-4) ? null : b);
+    if (proxy.basis === undefined) proxy.basis = basisOf(this.modelMatrix(proxy.bone, _m1).elements);
+    return proxy.basis;
   }
 
   proxyPoints(proxy) {
