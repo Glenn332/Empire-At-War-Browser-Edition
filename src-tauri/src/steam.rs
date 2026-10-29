@@ -5,8 +5,8 @@ const FOLDER: &str = "Star Wars Empire at War";
 
 #[cfg(windows)]
 fn steam_folders() -> Vec<PathBuf> {
-    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     let mut out = vec![];
     if let Ok(k) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Software\\Valve\\Steam") {
         if let Ok(p) = k.get_value::<String, _>("SteamPath") {

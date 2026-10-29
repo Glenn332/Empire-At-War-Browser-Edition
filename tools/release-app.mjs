@@ -49,7 +49,10 @@ function bump() {
   const text = readFileSync(confFile, 'utf8');
   writeFileSync(confFile, text.replace(/("version":\s*)"[^"]*"/, `$1"${version}"`));
   writeFileSync(cargoFile, readFileSync(cargoFile, 'utf8').replace(/^version = "[^"]*"/m, `version = "${version}"`));
-  writeFileSync(lockFile, readFileSync(lockFile, 'utf8').replace(/(name = "sw-revival"\r?\nversion = )"[^"]*"/, `$1"${version}"`));
+  writeFileSync(
+    lockFile,
+    readFileSync(lockFile, 'utf8').replace(/(name = "empire-at-war-browser-edition"\r?\nversion = )"[^"]*"/, `$1"${version}"`)
+  );
   git('commit', '-m', `Release ${version}`, '-m', notes, '--', confFile, cargoFile, lockFile);
   console.log(`app ${version} is ready: npm run deploy:prod builds and publishes it`);
 }

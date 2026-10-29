@@ -85,7 +85,7 @@ fn ranged(file: &Path, range: Option<&str>) -> Response<Vec<u8>> {
                 vec![],
                 "text/plain; charset=utf-8",
                 &[("Content-Range", &format!("bytes */{len}"))],
-            )
+            );
         }
         Some(Ok(r)) => Some(r),
         None => None,
@@ -418,7 +418,7 @@ impl Server {
                                 bytes,
                                 "application/json",
                                 &[("Cache-Control", "max-age=86400")],
-                            )
+                            );
                         }
                         Ok(None) => {}
                         Err(e) => eprintln!("font raster: {e}"),
