@@ -10,6 +10,10 @@
   <a href="https://github.com/Glenn332/Empire-At-War-Browser-Edition/blob/main/progression.md">Progress</a>
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/Z4S429CUIG"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
+</p>
+
 # Empire at War: Browser Edition
 
 *Star Wars: Empire at War* came out in 2006, and *Forces of Corruption* followed it. Nearly twenty years on, people
