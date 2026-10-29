@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+import * as THREE from 'three';
+import {openGame} from './megfs.mjs';
+const archive=openGame(fileURLToPath(new URL('../../Star Wars Empire at War',import.meta.url)));
+globalThis.fetch=async input=>{
+  const path=String(input);
+  if(path.startsWith('api/find?q='))return new Response(JSON.stringify([...archive.index.keys()].filter(n=>new RegExp(decodeURIComponent(path.slice(11)),'i').test(n))));
+  const key=archive.resolve(decodeURIComponent(path.replace(/^asset\//,'').split('?')[0]));
+  return new Response(key?archive.read(key):null,{status:key?200:404});
+};
+const {db,loadGameData}=await import('../public/js/gamedata.js');await loadGameData();
+const {CinematicTransports,cinematicTransportRequest}=await import('../public/js/game/cinematictransport.js');
+const {LandSquad,landUnit,FACING}=await import('../public/js/game/land.js');
+const {loadALA,animName}=await import('../public/js/ala.js');
+const type=db.type('Shuttle_Tyderium_Landing_Cinematic'),at={x:30,y:40,z:4};assert(type);
+const land=await loadALA(animName(type.str('Land_Model_Name'),'LAND')),takeoff=await loadALA(animName(type.str('Land_Model_Name'),'TAKEOFF'));
+assert(land&&takeoff,'Read the original landing and takeoff assets');
+assert.equal(cinematicTransportRequest('Absent',0,at,0,1,0,2,0),null);
+assert.equal(cinematicTransportRequest('Imperial_Landing_Craft',0,at,0,1,0,2,0),null,'Reject the space evaluator transport type');
+assert.equal(cinematicTransportRequest(type.name,0,at,0,1,0,2,true).persist,false,'Native persistence requires a numeric argument');
+const scene=new THREE.Scene(),world={time:0,n:10,terrain:{water:{mode:1,level:20}},scene,units:[],squads:[],groundZ:()=>10,unstamp(){},
+  spawn(name,x,y,heading,side){
+    const q=new LandSquad(this,db.type(name),side,{forming:true});this.spawning=[q];
+    return Promise.resolve().then(()=>{const holder=new THREE.Group();scene.add(holder);const u=landUnit({type:q.type,squad:q,holder,inst:{boneByName:new Map(),bones:[],syncFromBones(){}},x,y,z:0,heading,health:100,path:[],dead:false,gone:false});q.members.push(u);q.forming=false;this.units.push(u);this.squads.push(q);return q;});
+  }};
+const controller=new CinematicTransports({world},{loadAnimation:async(t,k)=>k==='LAND'?land:takeoff,onError:error=>{throw error;}});
+let q=controller.create(type.name,0,at,90,1,.25,1,0,'arrival');assert(q.forming);assert.deepEqual({x:q.x,y:q.y,z:q.z},{x:30,y:40,z:20});
+assert.equal(world.dynamicHints[0].object,q);assert.equal(controller.create(type.name,0,at,0,1,0,2),undefined);
+let e=controller.entries[0];await e.loading;assert.equal(q.members[0].heading,Math.PI/2);assert.equal(q.members[0].holder.rotation.z,Math.PI/2+FACING);
+assert.equal(e.anim.time,Math.trunc((land.frames-1)*.25)/land.fps);
+const before=e.anim.time;controller.update();assert.equal(e.anim.time,before,'No tactical clock advance while paused');
+world.time+=land.duration;controller.update();assert.equal(e.mode,2);assert.equal(e.anim.time,(land.frames-1)/land.fps,'Hold the authored final landing frame');
+world.time+=.9;controller.update();assert.equal(e.mode,2);world.time+=.1;controller.update();assert.equal(e.mode,3);assert.equal(e.anim.speed,1.15,'Native landing to takeoff transition speed');
+world.time+=takeoff.duration;controller.update();assert(q.dead);assert.equal(scene.children.length,0);controller.update();assert.equal(world.dynamicHints.length,0);
+q=controller.create(type.name,0,at,0,2,0,0,1,'persistent');e=controller.entries[0];await e.loading;world.time+=100;controller.update();assert.equal(e.mode,2);assert(!q.dead,'Persistent transport stays landed');controller.remove(e);controller.update();
+q=controller.create(type.name,0,{...at,z:50},0,3,.5,2,0);e=controller.entries[0];await e.loading;assert.equal(q.z,20);assert.equal(e.mode,3);assert.equal(e.anim.time,Math.trunc((takeoff.frames-1)*.5)/takeoff.fps);controller.remove(e);
+controller.update();world.terrain.water={mode:0,level:25};q=controller.create(type.name,0,at,0,2,0,1,1);e=controller.entries[0];await e.loading;assert.equal(q.z,25,'Native uses the stored water height even when no water is rendered');controller.remove(e);
+const short={frames:2,fps:30,duration:2/30,tracks:[]};
+const shortController=new CinematicTransports({world},{loadAnimation:async()=>short});
+q=shortController.create(type.name,0,at,0,1,0,0,0);e=shortController.entries[0];await e.loading;
+world.time+=2/30;shortController.update();assert.equal(e.mode,2,'Short landing clip completes');
+shortController.update();assert.equal(e.mode,3);world.time+=2/30;shortController.update();assert(q.dead,'Short takeoff clip completes and removes the craft');
+console.log('PASS: original transport assets, native type validation, height and heading, synchronous object, hints, landing hold, paused clock, persistence and takeoff cleanup');

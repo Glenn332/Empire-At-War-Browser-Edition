@@ -1,0 +1,24 @@
+{
+  "name": "empire-at-war-browser-edition",
+  "version": "1.0.0",
+  "description": "Empire at War: Browser Edition - Star Wars: Empire at War and Forces of Corruption in the browser, running on your own copy of the game",
+  "scripts": {
+    "start": "node server.mjs",
+    "vendor": "node tools/vendor.mjs",
+    "build:prod": "node tools/build.mjs",
+    "deploy:prod": "node tools/build.mjs && cd lobby && npx wrangler deploy --env production && npx wrangler pages deploy ../dist --project-name empire-at-war-browser-edition --branch main --commit-dirty=true",
+    "wasm": "asc wasm/pathsearch.ts -o public/js/game/pathsearch.wasm -O3 --runtime stub --noAssert --initialMemory 32 && asc wasm/landpose.ts -o public/js/game/landpose.wasm -O3 --runtime stub --noAssert --initialMemory 2 --enable simd",
+    "app": "node tools/build-app.mjs",
+    "app:release": "node tools/release-app.mjs"
+  },
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@tauri-apps/cli": "^2.12.4",
+    "assemblyscript": "0.28.20",
+    "fengari-web": "^0.1.4",
+    "three": "^0.169.0"
+  }
+}

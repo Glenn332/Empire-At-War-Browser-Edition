@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {GalacticBudget} from '../public/js/game/galacticbudget.js';
+const near=(a,b)=>assert(Math.abs(a-b)<0.002,`${a} != ${b}`);
+const budget=new GalacticBudget();budget.weights([['Offensive',3],['Infrastructure',1]],1000);
+near(budget.category('Offensive').cash,750);near(budget.category('Infrastructure').cash,250);
+const goal=budget.reserve('Offensive',600,20);assert(goal);near(goal.immediate,600);near(budget.category('Offensive').cash,150);
+assert.equal(budget.reserve('Offensive',151,20),null,'Reservations are exclusive cash commitments');
+budget.allocate(goal,600);near(budget.spendable(goal),600);near(budget.pay(goal,30),30);near(goal.allocated,570);near(goal.immediate,570);near(goal.category.total,720);
+budget.fiscal(400,1370,20);near(goal.category.totalIncome,15);near(goal.category.total,1020);near(goal.category.cash,450);near(goal.immediate,570);
+const future=budget.reserve('Offensive',600,20);assert(future,'Future fiscal income can back admission');near(future.immediate,450);near(future.rate,7.5);budget.allocate(future,600);
+near(budget.wait(future,600),20);assert.equal(budget.pay(future,451),false,'A missing installment stalls instead of borrowing cash');near(budget.pay(future,10),10);
+budget.fiscal(400,1760,20);assert(budget.spendable(future)>=590);assert.equal(budget.wait(future,590),0);near(budget.pay(future,590),590);
+const cash=future.category.cash;budget.release(future);near(future.category.cash,cash+future.saved+future.immediate);assert(!budget.rows.has(future));assert.equal(budget.pay(future,1),false);
+budget.release(goal);assert.equal(budget.rows.size,0);
+const zero=new GalacticBudget();zero.weights([['A',0],['B',0]],100);near(zero.category('A').cash,50);near(zero.category('B').cash,50);
+console.log('Native category allocation, exclusive reservations, fiscal funding, installment stalls, payment and release passed');

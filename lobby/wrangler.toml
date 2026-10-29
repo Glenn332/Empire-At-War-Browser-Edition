@@ -1,0 +1,46 @@
+name = "sw-revival-lobby"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://nightly.playeaw.com,https://glenn332.github.io"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[durable_objects.bindings]]
+name = "HALL"
+class_name = "Hall"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Registry", "Lobby"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Hall"]
+
+[env.production]
+name = "empire-at-war-browser-edition-lobby"
+routes = [{ pattern = "lobby.playeaw.com", custom_domain = true }]
+workers_dev = true
+
+[env.production.vars]
+ALLOWED_ORIGINS = "https://playeaw.com,https://www.playeaw.com,https://empire-at-war-browser-edition.pages.dev,https://*.empire-at-war-browser-edition.pages.dev"
+
+[[env.production.durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+[[env.production.durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[env.production.durable_objects.bindings]]
+name = "HALL"
+class_name = "Hall"

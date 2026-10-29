@@ -1,0 +1,50 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        env:
+          LOBBY_URL: ${{ vars.LOBBY_URL }}
+        run: |
+          test -f public/index.html && test -f public/play.html
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "export const BUILD = '$SHORT_SHA';" > public/js/build.js
+          echo "{\"build\":\"$SHORT_SHA\"}" > public/build.json
+          if [ -n "$LOBBY_URL" ]; then sed -i "s#^export const LOBBY = .*#export const LOBBY = '$LOBBY_URL';#" public/js/deploy.js; fi
+          npx --yes esbuild@0.25.10 $(find public/js -name '*.js') --minify --format=esm --outdir=public/js --outbase=public/js --allow-overwrite --log-level=error
+          npx --yes esbuild@0.25.10 public/sw.js --minify --format=iife --outfile=public/sw.js --allow-overwrite --log-level=error
+          npx --yes esbuild@0.25.10 public/style.css --minify --outfile=public/style.css --allow-overwrite --log-level=error
+          node tools/minify-html.mjs public/*.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

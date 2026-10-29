@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Model viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070c; color: #cde; font: 12px/1.4 Consolas, monospace; overflow: hidden; }
+  #ui { position: fixed; left: 8px; top: 8px; width: 300px; max-height: 96vh; overflow: auto; background: #000a; padding: 6px; }
+  #list div { cursor: pointer; white-space: nowrap; } #list div:hover { color: #fff; background: #235; }
+  input { width: 96%; background: #123; color: #cde; border: 1px solid #345; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }</script>
+</head>
+<body>
+<div id="ui"><input id="q" placeholder="filter models (regex)"><div id="info"></div><div id="list"></div></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { loadModel, updateBillboards } from './js/model.js';
+import { findFiles } from './js/vfs.js';
+import { startServiceWorker } from './js/pack.js';
+await startServiceWorker();
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 200000);
+camera.up.set(0, 0, 1);
+const controls = new OrbitControls(camera, renderer.domElement);
+let current = null;
+window.viewer = { scene, camera, get current() { return current; } };
+
+async function show(name) {
+  if (current) scene.remove(current.root);
+  const inst = await loadModel(name, { teamColor: new THREE.Color(0.8, 0.1, 0.1), showHidden: params.has('hidden') });
+  if (!inst) { info.textContent = 'missing ' + name; return; }
+  current = inst;
+  scene.add(inst.root);
+  const c = inst.box.getCenter(new THREE.Vector3()), r = Math.max(inst.radius, 5);
+  controls.target.copy(c);
+  camera.position.set(c.x - r * 1.6, c.y - r * 1.6, c.z + r * 1.2);
+  info.textContent = `${name}  bones=${inst.bones.length} meshes=${inst.meshByName.size} proxies=${inst.proxies.length} r=${r.toFixed(0)}`;
+  history.replaceState(null, '', '?model=' + name + (params.has('hidden') ? '&hidden' : ''));
+}
+const params = new URLSearchParams(location.search);
+const info = document.getElementById('info'), list = document.getElementById('list'), q = document.getElementById('q');
+const all = (await findFiles('MODELS\\\\[^\\\\]*\\.ALO$')).map(n => n.split('\\').pop());
+function refresh() {
+  let rx; try { rx = new RegExp(q.value, 'i'); } catch { return; }
+  list.replaceChildren(...all.filter(n => rx.test(n)).slice(0, 400).map(n => {
+    const d = document.createElement('div'); d.textContent = n; d.onclick = () => show(n); return d;
+  }));
+}
+q.oninput = refresh; refresh();
+show(params.get('model') || 'EV_STARDESTROYER.ALO');
+
+function frame() {
+  const w = innerWidth, h = innerHeight;
+  if (renderer.domElement.width !== w || renderer.domElement.height !== h) {
+    renderer.setSize(w, h, false); renderer.domElement.style.cssText = 'width:100%;height:100%;display:block';
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  controls.update();
+  if (current) updateBillboards(current, camera);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

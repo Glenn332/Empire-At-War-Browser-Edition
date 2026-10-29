@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Land battle</title>
+<script>
+  const map = new URLSearchParams(location.search).get('map') || 'TATOOINE';
+  location.replace('play.html?autostart&mode=land&map=' + encodeURIComponent(map));
+</script>

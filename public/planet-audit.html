@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><title>Planet native rendering audit</title>
+<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js"}}</script>
+<style>body{background:#17191d;color:#ddd;font:16px monospace}canvas,img{image-rendering:pixelated;width:192px;height:192px}section{display:inline-grid;margin:12px;gap:8px}pre{white-space:pre-wrap}button{font:inherit;margin:8px}</style>
+<h1>Planet rendering: original D3D9 versus browser</h1><p>Procedural inputs run through the original Planet.fxo on native HAL. Saved graphics settings are never written.</p>
+<button id="run">Compare all techniques</button><button id="varied">Compare transformed lighting fixture</button><button id="boundaries">Compare viewport, interior and clipped boundaries</button><button id="portraits">Render installed ALT1 portraits at every detail</button><pre id="result">Ready</pre><div id="images"></div>
+<script type="module" src="test/planet-audit.js"></script>

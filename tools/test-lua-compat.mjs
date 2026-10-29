@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+const { LuaVM, loadFengari } = await import('../public/js/lua.js');
+const F = await loadFengari(), vm = new LuaVM(F, { source: () => null });
+vm.pairsLua50();
+const run = (code) => { vm.exec(`__result = (function() ${code} end)()`, 'test'); return vm.get_global ? vm.get_global('__result') : (() => { F.lua.lua_getglobal(vm.L, vm.str('__result')); const v = vm.get(-1); F.lua.lua_pop(vm.L, 1); return v; })(); };
+
+assert.deepEqual(run(`local out = {} for k, v in pairs({10, 20, 30}) do out[#out + 1] = k .. "=" .. v end return table.concat(out, ",")`), '1=10,2=20,3=30'.split(',').join(','));
+assert.equal(run(`local out = {} for k, v in pairs({10, 20, 30, x = 1}) do out[#out + 1] = tostring(k) end return table.concat(out, ",")`), '1,2,3,x');
+assert.equal(run(`local n, s = 0, 0 for k, v in pairs({a = 1, b = 2, c = 3}) do n = n + 1 s = s + v end return n * 100 + s`), 306);
+assert.equal(run(`local n = 0 for k, v in pairs({}) do n = n + 1 end return n`), 0);
+assert.equal(run(`local t = {} t[3] = "c" t[1] = "a" t[2] = "b" local out = {} for k, v in pairs(t) do out[#out + 1] = v end return table.concat(out)`), 'abc');
+assert.equal(run(`local out = {} for k, v in pairs({ {ID = "a"}, {ID = "b"}, default = function() end }) do out[#out + 1] = tostring(k) end return table.concat(out, ",")`), '1,2,default');
+assert.equal(run(`local out = {} for k, v in __iter({ {ID = "a"}, {ID = "b"}, default = 1 }) do out[#out + 1] = tostring(k) end return table.concat(out, ",")`), '1,2,default');
+assert.equal(run(`local out = {} for k, v in pairs({1, 2, [10] = 3}) do out[#out + 1] = k end return table.concat(out, ",")`), '1,2,10');
+assert.equal(run(`return string.format("%d items %s %5.1f %d", 2.7, "x", 3.14159, -2.7)`), '2 items x   3.1 -2');
+assert.equal(run(`return string.format("%d", 5) .. string.format("%d", 5.9) .. string.format("%x", 255.5)`), '55ff');
+assert.equal(run(`return string.format("100%% of %s", "all")`), '100% of all');
+assert.equal(run(`local a = string.format("%d-%d", 1.5, 2.5) return a .. string.format("%d-%d", 3.5, 4.5)`), '1-23-4');
+assert.equal(run(`local t = {1, 2, 3} table.remove(t, 9) return #t`), 2);
+console.log('ok');

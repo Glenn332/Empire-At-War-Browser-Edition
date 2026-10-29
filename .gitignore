@@ -1,0 +1,9 @@
+node_modules/
+*.meg
+.DS_Store
+.wrangler/
+dist/
+src-tauri/target/
+src-tauri/gen/
+dist-app/
+dist-release/

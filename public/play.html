@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Empire at War: Browser Edition</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="EaW BE">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#010307">
+<meta name="description" content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Empire at War: Browser Edition">
+<meta property="og:title" content="Empire at War: Browser Edition">
+<meta property="og:description" content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install.">
+<meta property="og:url" content="https://playeaw.com/">
+<meta property="og:image" content="https://playeaw.com/icons/share.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Empire at War: Browser Edition, the Imperial and Rebel emblems side by side">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }</script>
+<script>
+addEventListener('error', e => {
+  if (!(e.error instanceof SyntaxError)) return;
+  try { if (sessionStorage.getItem('swr-relinked')) return; sessionStorage.setItem('swr-relinked', '1'); } catch { return; }
+  const urls = performance.getEntriesByType('resource').map(r => r.name).filter(u => u.startsWith(location.origin) && /\.(js|css)$/.test(new URL(u).pathname));
+  Promise.all([location.href, ...urls].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))).then(() => location.reload());
+});
+</script>
+</head>
+<body>
+<div id="view"></div>
+
+<div id="splash"><span>Loading...</span></div>
+
+<div id="loading" class="screen">
+  <div class="panel">
+    <h1>Empire at War</h1>
+    <div id="loadText">Starting…</div>
+    <div class="bar"><div id="loadBar"></div></div>
+    <a id="needData" class="hidden" href="./" style="display:block;margin-top:16px;color:#4fb3ff">Import your game data →</a>
+  </div>
+</div>
+
+<div id="lobby" class="screen hidden">
+  <div class="panel">
+    <h1>Space Skirmish</h1>
+    <div class="row"><label>Team 1</label><div id="pickTeam1" class="choices"></div></div>
+    <div class="row"><label>Team 2</label><div id="pickTeam2" class="choices"></div></div>
+    <div class="row top"><label>Players</label>
+      <div class="plist"><div id="players"></div><button id="addBot">+ Add bot</button> <span id="lobbyError"></span></div>
+    </div>
+    <div class="row"><label>Starting credits</label><div id="pickCredits" class="choices"></div></div>
+    <div class="row"><label>Population cap</label><div id="pickPop" class="choices"></div></div>
+    <div class="row"><label>Fog of war</label><div id="pickFog" class="choices"></div></div>
+    <div class="row"><label>Map</label><select id="pickMap"></select></div>
+    <button id="startBtn" class="primary">Start battle</button>
+    <details class="saves">
+      <summary>Saved games</summary>
+      <div class="savelist"></div>
+      <label class="filebtn">Import a save file…<input class="saveimport" type="file" accept=".swrsave,.json,application/json" hidden></label>
+      <p class="savestatus hint"></p>
+    </details>
+    <p class="hint" style="float:right;margin:0"><a href="./" style="color:#7f95ab">Game data</a></p>
+    <p class="hint">Left click / drag: select · Right click: move or attack · M: move · T: attack · F: attack-move · G: guard · X: stop · R: special ability · WASD / screen edge: pan ·
+      Wheel: zoom · Q/E: rotate · Home/End: tilt · C: cinematic camera · Ctrl+1-9: groups · Space: station · P: pause · +/-: speed</p>
+  </div>
+</div>
+
+<div id="letterTop" class="letterbox"></div><div id="letterBottom" class="letterbox"></div>
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <span id="factionIcon"></span>
+    <span class="stat" title="Credits"><b>¢</b> <span id="credits">0</span> <small id="income"></small></span>
+    <span class="stat" title="Population"><b>Pop</b> <span id="pop">0/0</span></span>
+    <span class="stat" id="clock">0:00</span>
+    <span class="stat" id="speed"></span>
+    <button id="menuBtn">Menu</button>
+  </div>
+  <div id="messages"></div>
+  <canvas id="minimap" width="220" height="220"></canvas>
+  <div id="selection"></div>
+  <div id="rightcol">
+    <div id="reinforce"></div>
+    <div id="queue"></div>
+    <div id="build"></div>
+  </div>
+  <div id="cmdbar"></div>
+  <div id="reinforceWin" class="hidden"></div>
+  <div id="sidebar"></div>
+  <div id="encyc" class="hidden"></div>
+  <div id="tooltip" class="hidden"></div>
+</div>
+
+<div id="menu" class="screen hidden">
+  <div class="panel small">
+    <h1 id="menuTitle">Paused</h1>
+    <div id="menuBody"></div>
+    <button id="resumeBtn" class="primary">Resume</button>
+    <div class="row"><label>Music</label><input id="musicVol" type="range" min="0" max="1" step="any"></div>
+    <div class="row"><label>Effects</label><input id="sfxVol" type="range" min="0" max="1" step="any"></div>
+    <div class="row"><label>Voices</label><input id="voiceVol" type="range" min="0" max="1" step="any"></div>
+    <div class="row"><label for="optAutofire" id="optAutofireLabel">Abilities default to autofire</label><input id="optAutofire" type="checkbox"></div>
+    <div class="row"><label for="optCaptureBars">Show capture progress bars</label><input id="optCaptureBars" type="checkbox"></div>
+    <div class="row"><label for="optAllUnitIcons">Show unit icon on all units</label><input id="optAllUnitIcons" type="checkbox"></div>
+    <div class="row"><label for="optMultiPlace">Call in several reinforcements at once</label><input id="optMultiPlace" type="checkbox"></div>
+    <div class="row"><label for="optReinforceTurn">Turn reinforcements with the wheel and by dragging</label><input id="optReinforceTurn" type="checkbox"></div>
+    <div class="row"><label for="optLineMove">Send selected units to a line with a right-drag</label><input id="optLineMove" type="checkbox"></div>
+    <div class="row"><label for="optDirectControl">Direct control of a unit (V)</label><input id="optDirectControl" type="checkbox"></div>
+    <details class="saves">
+      <summary>Save / load</summary>
+      <button id="saveNow">Save game</button>
+      <div class="savelist"></div>
+      <label class="filebtn">Import a save file…<input class="saveimport" type="file" accept=".swrsave,.json,application/json" hidden></label>
+      <p class="savestatus hint"></p>
+    </details>
+    <details id="gfx">
+      <summary>Graphics</summary>
+      <p class="hint">Extra effects, all off to begin with. Shadows cost the most.</p>
+      <div class="row"><label for="gfxShadows">Shadows</label><input id="gfxShadows" type="checkbox"></div>
+      <div class="row"><label for="gfxBloom">Bloom</label><input id="gfxBloom" type="checkbox"></div>
+      <div class="row"><label for="gfxHeat">Heat haze</label><input id="gfxHeat" type="checkbox"></div>
+      <div class="row"><label for="gfxFlare">Lens flare</label><input id="gfxFlare" type="checkbox"></div>
+    </details>
+    <button id="quitBtn">Quit to setup</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
