@@ -189,6 +189,7 @@ export class CameraRig {
     this.camera = camera;
     this.x = 0;
     this.y = 0;
+    this.z = 0;
     this.dist = 2100;
     this.yaw = -90 * DEG;
     this.pitch = 52 * DEG;
@@ -245,7 +246,7 @@ export class CameraRig {
   }
   viewPitch() {
     const s = this.spec;
-    if (!s || !(s.pitchZoomBegin > 0)) return this.pitch;
+    if (this.free || !s || !(s.pitchZoomBegin > 0)) return this.pitch;
     const f = s.distPerUnit > 0 ? (this.dist - s.distMin) / (s.distMax - s.distMin) : (this.fovH - s.fovMin) / (s.fovMax - s.fovMin);
     const t = Math.min(1, Math.max(0, f || 0));
     return t < s.pitchZoomBegin
@@ -286,9 +287,9 @@ export class CameraRig {
       sy = (Math.random() - 0.5) * this.shake;
       this.shake *= Math.exp(-dt * 5);
     }
-    c.position.set(this.x + Math.cos(this.yaw) * cp * this.dist + sx, this.y + Math.sin(this.yaw) * cp * this.dist + sy, sp * this.dist);
+    c.position.set(this.x + Math.cos(this.yaw) * cp * this.dist + sx, this.y + Math.sin(this.yaw) * cp * this.dist + sy, this.z + sp * this.dist);
     c.up.set(0, 0, 1);
-    c.lookAt(this.x + sx, this.y + sy, 0);
+    c.lookAt(this.x + sx, this.y + sy, this.z);
   }
 }
 

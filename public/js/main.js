@@ -131,7 +131,7 @@ function resetPage() {
   });
   $('view').replaceChildren();
   for (const id of ['menu', 'lobby']) $(id).classList.add('hidden');
-  document.body.classList.remove('attract', 'cinematic', 'commandbar-hidden', 'hud-hidden', 'letterboxed', 'original-hud');
+  document.body.classList.remove('attract', 'cinematic', 'commandbar-hidden', 'hud-hidden', 'letterboxed', 'original-hud', 'track-cam');
   document.documentElement.style.removeProperty('--letterbox');
 }
 function endGame(next) {

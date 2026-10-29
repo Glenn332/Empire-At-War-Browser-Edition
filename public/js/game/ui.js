@@ -20,6 +20,7 @@ import { Radar } from './radar.js';
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
+import { TrackCam, TRACK_LOOK } from './trackcam.js';
 
 const $ = id => document.getElementById(id);
 const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -243,6 +244,8 @@ export class UI {
 
   destroy() {
     for (const off of this.handlers) off();
+    this.endTrack();
+    this.track?.destroy();
     this.r.chase?.destroy();
     this.r.chase = null;
     if (this.bar) this.bar.destroy();
@@ -256,6 +259,10 @@ export class UI {
     }
     if (this.r.chase?.on) {
       this.r.chase.wheel(e.deltaY / 100);
+      return;
+    }
+    if (this.track?.on) {
+      this.r.rig.wheel(e.deltaY / 100);
       return;
     }
     const d = Math.sign(e.deltaY),
@@ -310,6 +317,10 @@ export class UI {
       if (e.button === 0) this.fireHeld = true;
       return;
     }
+    if (this.track?.on) {
+      this.track.relock();
+      return;
+    }
     const m = this.mouse;
     m.x = e.clientX;
     m.y = e.clientY;
@@ -357,6 +368,12 @@ export class UI {
     const m = this.mouse;
     if (this.r.chase?.on) {
       this.r.chase.look(e.movementX || 0, e.movementY || 0);
+      return;
+    }
+    if (this.track?.on) {
+      const rig = this.r.rig;
+      rig.yaw -= (e.movementX || 0) * TRACK_LOOK;
+      rig.pitch = Math.min(1.5, Math.max(-1.5, rig.pitch + (e.movementY || 0) * TRACK_LOOK));
       return;
     }
     if (this.panDrag) {
@@ -481,18 +498,25 @@ export class UI {
       game.toggleBenchmark();
       return;
     }
-    if (pressed(e, 'BATTLE_CAM')) {
+    const squadCam = pressed(e, 'SQUAD_CAM');
+    if (squadCam || pressed(e, 'BATTLE_CAM')) {
+      e.preventDefault();
       const pick = this.selection.find(s => !s.dead);
-      if (!game.cine.on && (this.following || pick)) {
-        this.following = this.following ? null : pick;
-        return;
-      }
-      game.cine.toggle();
+      if (this.track?.on && this.track.whole !== squadCam) this.track.start(squadCam);
+      else if (!game.cine.on && (this.following || pick)) {
+        if (this.following) this.endTrack();
+        else this.startTrack(pick, squadCam);
+      } else if (!squadCam) game.cine.toggle();
+      return;
       return;
     }
     if (game.cine.on) {
       if (e.code === 'Escape' && !game.cine.sequence) game.cine.stop();
       else if (pressed(e, 'PAUSE')) game.togglePause();
+      return;
+    }
+    if (e.code === 'Escape' && this.track?.on) {
+      this.endTrack();
       return;
     }
     if (e.code === 'Escape' && this.placing) {
@@ -655,6 +679,25 @@ export class UI {
     this.say(this.voiceOf(mine.filter(s => s.isSquad || s.isMobile)), 'SFXEvent_Stop');
   }
 
+  startTrack(e, whole) {
+    this.following = e;
+    (this.track ||= new TrackCam(this.r.dom, () => this.endTrack())).start(whole);
+    if (!this.r.rig.free) this.trackPitch = this.r.rig.pitch;
+    this.r.rig.free = true;
+  }
+
+  endTrack() {
+    if (!this.direct) this.following = null;
+    this.track?.stop();
+    const rig = this.r?.rig;
+    if (!rig?.free) return;
+    rig.free = false;
+    rig.z = 0;
+    rig.pitch = this.trackPitch ?? rig.pitch;
+    rig.tilt(0);
+    rig.clamp();
+  }
+
   toggleDirect() {
     if (this.direct) return this.releaseDirect();
     if (!globalThis.directControl) return;
@@ -689,6 +732,7 @@ export class UI {
         type: { name: '', categories: () => [] }
       }
     };
+    this.endTrack();
     this.direct = e;
     this.following = e;
     this.select([e]);
@@ -1475,7 +1519,7 @@ export class UI {
     if (held(k, 'SCROLL_UP')) py += 1;
     if (held(k, 'SCROLL_DOWN')) py -= 1;
     const m = this.mouse;
-    if (m.inside && m.moved && !this.drag && document.hasFocus()) {
+    if (m.inside && m.moved && !this.drag && !this.track?.on && document.hasFocus()) {
       const edge = 6;
       if (m.x < edge) px -= 1;
       else if (m.x > this.r.width - edge) px += 1;
@@ -1489,9 +1533,12 @@ export class UI {
     (this.arcView ||= new ArcView(this.r.scene)).update(this.direct ? this.world.directArcs(this.direct, (this.arcs ||= [])) : NO_ARCS);
     const f = this.following;
     if (f && (f.dead || (f.isSquad && !f.fighters.length) || px || py || this.panDrag)) this.following = null;
-    else if (f) {
-      rig.x = f.x;
-      rig.y = f.y;
+    if (this.track?.on && this.following !== f) this.endTrack();
+    else if (f && this.following) {
+      const c = this.track?.on ? this.track.focus(f) : f;
+      rig.x = c.x;
+      rig.y = c.y;
+      if (this.track?.on) rig.z = c.z;
     }
     if (px || py) rig.pan(px * pan, py * pan);
     if (held(k, 'ROTATE_LEFT')) rig.yaw -= dt * 1.2;
@@ -1543,7 +1590,7 @@ export class UI {
     }
     if (this.placing) this.updatePlacing();
     if (this.moveDrag) this.updateMoveDrag();
-    this.r.updateSelection(this.game.endScreen ? [] : this.selection, this.player);
+    this.r.updateSelection(this.game.endScreen || this.track?.on ? [] : this.selection, this.player);
     this.r.fogPlacing = !!this.placing;
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {

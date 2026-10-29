@@ -1552,6 +1552,18 @@ body:not(.original-hud) .heroframe {
 .hud-hidden .objective-panel {
   display: none !important;
 }
+.track-cam #hud > *,
+.track-cam #buildTag,
+.track-cam .objective-panel {
+  display: none !important;
+}
+.track-cam #view canvas.overlay {
+  display: none;
+}
+.track-cam,
+.track-cam * {
+  cursor: none !important;
+}
 .cinematic .objective-panel,
 .letterboxed .objective-panel {
   display: none !important;

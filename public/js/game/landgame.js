@@ -14,6 +14,7 @@ import { LandWorld, costOf, timeOf, isUpgrade, buildsFor, FACING, placeRotation,
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
+import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { Menus } from './menus.js';
 import { loadHudAssets } from './hud.js';
 import { LandUI } from './landhud.js';
@@ -301,6 +302,8 @@ export class LandGame {
     }
     this.gpu?.dispose();
     this.flash?.remove();
+    this.endTrack();
+    this.track?.destroy();
     this.chase?.destroy();
     if (window.game === this) window.game = null;
   }
@@ -1598,6 +1601,19 @@ export class LandGame {
     v.yaw += turn;
   }
 
+  startTrack(q, whole) {
+    this.following = q;
+    (this.track ||= new TrackCam(this.renderer.domElement, () => this.endTrack())).start(whole);
+  }
+
+  endTrack() {
+    if (!this.direct) this.following = null;
+    if (!this.track?.on) return;
+    this.track.stop();
+    if (this.viewDist) this.view.dist = this.viewDist(this.view.dist);
+    if (this.viewTilt) this.view.pitch = this.viewTilt(this.view.dist);
+  }
+
   toggleDirect() {
     if (this.direct) return this.releaseDirect();
     if (!globalThis.directControl) return;
@@ -1629,6 +1645,7 @@ export class LandGame {
     D.slots = new Map();
     q.direct = D;
     for (const m of q.members) m.direct = D;
+    this.endTrack();
     this.direct = q;
     this.following = q;
     this.ui.select([q]);
@@ -2032,17 +2049,23 @@ export class LandGame {
         document.body.classList.toggle('hud-hidden');
         return;
       }
+      if (e.code === 'Escape' && this.track?.on) {
+        this.endTrack();
+        return;
+      }
       if (e.code === 'Escape' && this.direct) {
         this.releaseDirect();
         return;
       }
-      if (pressed(e, 'BATTLE_CAM') && !this.menus.open) {
+      const squadCam = pressed(e, 'SQUAD_CAM');
+      if ((squadCam || pressed(e, 'BATTLE_CAM')) && !this.menus.open) {
+        e.preventDefault();
         const pick = ui.selection.find(s => !s.dead && s.members?.length);
-        if (!this.cine.on && (this.following || pick)) {
-          this.following = this.following ? null : pick;
-          return;
-        }
-        this.cine.toggle();
+        if (this.track?.on && this.track.whole !== squadCam) this.track.start(squadCam);
+        else if (!this.cine.on && (this.following || pick)) {
+          if (this.following) this.endTrack();
+          else this.startTrack(pick, squadCam);
+        } else if (!squadCam) this.cine.toggle();
         return;
       }
       if (this.cine.on) {
@@ -2088,6 +2111,8 @@ export class LandGame {
     };
     v.dist = Math.min(far[0], Math.max(k[0][0], v.dist));
     v.pitch = tilt(v.dist);
+    this.viewTilt = tilt;
+    this.viewDist = d => Math.min(far[0], Math.max(k[0][0], d));
     el.addEventListener(
       'wheel',
       e => {
@@ -2104,6 +2129,10 @@ export class LandGame {
         }
         if (this.chase?.on) {
           this.chase.wheel(e.deltaY / 100);
+          return;
+        }
+        if (this.track?.on) {
+          v.dist = Math.min(far[0], Math.max(k[0][0] * 0.25, v.dist * Math.exp(e.deltaY * 0.0011)));
           return;
         }
         if (ui.placing && globalThis.reinforceTurn !== false) {
@@ -2126,6 +2155,12 @@ export class LandGame {
       }
       if (this.chase?.on) {
         if (!this.controlsLocked) this.chase.look(e.movementX || 0, e.movementY || 0);
+        return;
+      }
+      if (this.track?.on) {
+        if (this.controlsLocked) return;
+        v.yaw -= (e.movementX || 0) * TRACK_LOOK;
+        v.pitch = Math.min(1.5, Math.max(0.02, v.pitch + (e.movementY || 0) * TRACK_LOOK));
         return;
       }
       if (
@@ -2204,6 +2239,11 @@ export class LandGame {
       }
       if (this.direct) {
         if (e.button === 0) this.fireHeld = true;
+        this.down = null;
+        return;
+      }
+      if (this.track?.on) {
+        this.track.relock();
         this.down = null;
         return;
       }
@@ -2703,19 +2743,23 @@ export class LandGame {
       const fq = this.following,
         lo = this.map.playMin || [0, 0],
         hi = this.map.playMax || [(this.terrain.size - 1) * 20, (this.terrain.size - 1) * 20];
+      if (this.track?.on && (!fq || fq.dead || !fq.members?.length)) this.endTrack();
       if (fq && !fq.dead && fq.members?.length) {
-        v.x = Math.min(hi[0], Math.max(lo[0], fq.x));
-        v.y = Math.min(hi[1], Math.max(lo[1], fq.y));
+        const c = this.track?.on ? this.track.focus(fq) : fq;
+        v.x = Math.min(hi[0], Math.max(lo[0], c.x));
+        v.y = Math.min(hi[1], Math.max(lo[1], c.y));
       }
       const lead = this.direct?.direct?.lead;
       if (lead && this.chase?.on) this.chase.setPivot(lead.x, lead.y, lead.z);
     }
-    const z = heightAt(this.terrain, v.x, v.y),
+    const z = this.track?.on && this.following ? Math.max(heightAt(this.terrain, v.x, v.y), this.track.focus(this.following).z) : heightAt(this.terrain, v.x, v.y),
       cp = Math.cos(v.pitch),
       cam = this.camera;
     if (this.cine && this.cine.on) this.cine.frame(real);
     else {
-      cam.position.set(v.x + Math.cos(v.yaw) * cp * v.dist, v.y + Math.sin(v.yaw) * cp * v.dist, z + Math.sin(v.pitch) * v.dist);
+      const cx = v.x + Math.cos(v.yaw) * cp * v.dist,
+        cy = v.y + Math.sin(v.yaw) * cp * v.dist;
+      cam.position.set(cx, cy, Math.max(z + Math.sin(v.pitch) * v.dist, heightAt(this.terrain, cx, cy) + 8));
       cam.lookAt(v.x, v.y, z);
       if (this.chase && this.chase.active) this.chase.frame(cam, v.x, v.y, z, (x, y) => heightAt(this.terrain, x, y) + 3);
     }
@@ -3680,7 +3724,7 @@ export class LandGame {
     if (R) {
       R.begin();
       const teams = new Set();
-      for (const u of this.endScreen ? [] : w.units) {
+      for (const u of this.endScreen || this.track?.on ? [] : w.units) {
         if (!u.squad.selected || u.dead || u.inside) continue;
         const own = u.side === me;
         const tm = this.teamMark(u.squad);

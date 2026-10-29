@@ -145,7 +145,7 @@ function handle(e) {
       move(trap.x + e.movementX, trap.y + e.movementY, e.movementX, e.movementY, e);
       return;
     case 'mousemove':
-      send('mousemove', e);
+      send('mousemove', e, { mx: e.movementX, my: e.movementY });
       return;
     case 'pointerdown':
       trap.buttons = e.buttons;

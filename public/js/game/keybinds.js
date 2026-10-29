@@ -42,7 +42,8 @@ export const ACTIONS = [
   { id: 'TILT_DOWN', page: 5, extra: { col: 1, y: 140 }, label: 'Tilt Camera Down', keys: ['End'] },
   { id: 'DIRECT_CONTROL', page: 5, extra: { col: 1, y: 165 }, label: 'Direct Control', keys: ['KeyV'] },
   { id: 'TOGGLE_HUD', page: 5, extra: { col: 1, y: 190 }, label: 'Hide / Show HUD', keys: ['KeyH'] },
-  { id: 'DIRECT_VIEW', page: 5, extra: { col: 1, y: 215 }, label: 'Direct Control View', keys: ['KeyB'] }
+  { id: 'DIRECT_VIEW', page: 5, extra: { col: 1, y: 215 }, label: 'Direct Control View', keys: ['KeyB'] },
+  { id: 'SQUAD_CAM', page: 5, extra: { col: 1, y: 240 }, label: 'Follow Whole Squad', keys: ['Alt+KeyC'] }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 
