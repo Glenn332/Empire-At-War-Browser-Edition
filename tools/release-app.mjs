@@ -65,8 +65,10 @@ function tag() {
     fail(
       `app ${version} not released: commit or stash the changes in public/, src-tauri/ or tools/ first, so the release matches a commit`
     );
-  if (!git('tag', '-l', name)) git('tag', '-a', name, '-m', `Release ${version}\n\n${release.notes}`);
-  git('push', 'origin', 'refs/tags/' + name);
+  if (git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main')
+    fail(`app ${version} not released: switch to main first, releases are tagged on main`);
+  git('tag', '-f', '-a', name, '-m', `Release ${version}\n\n${release.notes}`);
+  git('push', '--atomic', 'origin', 'refs/heads/main', 'refs/tags/' + name);
   console.log(`app ${version} is building: https://github.com/${REPO}/actions/workflows/release.yml`);
 }
 

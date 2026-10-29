@@ -14,7 +14,7 @@ pub fn data_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    base.join("com.swrevival.app")
+    base.join("com.playeaw.browseredition")
 }
 
 impl Settings {
