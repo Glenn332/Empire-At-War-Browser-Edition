@@ -5,7 +5,7 @@
 <p align="center">
   <b><a href="https://playeaw.com">Play now at playeaw.com</a></b>
   &nbsp;·&nbsp;
-  <a href="https://downloads.playeaw.com/EmpireAtWarBrowserEdition-setup.exe">Windows app</a>
+  <a href="https://github.com/Glenn332/Empire-At-War-Browser-Edition/releases/latest/download/EmpireAtWarBrowserEdition-setup.exe">Windows app</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/Glenn332/Empire-At-War-Browser-Edition/blob/main/progression.md">Progress</a>
 </p>
@@ -27,7 +27,7 @@ you get the same units, maps, models, sounds, scripts and AI, and it is built to
 ## Where to play
 
 - **In the browser:** go to [playeaw.com](https://playeaw.com). Use Chrome, Edge, Brave or Firefox on a computer.
-- **As a Windows app:** [download the installer](https://downloads.playeaw.com/EmpireAtWarBrowserEdition-setup.exe).
+- **As a Windows app:** [download the installer](https://github.com/Glenn332/Empire-At-War-Browser-Edition/releases/latest/download/EmpireAtWarBrowserEdition-setup.exe).
   The app finds your Steam install and your Workshop mods by itself, and it updates itself.
 
 You need your own copy of *Star Wars: Empire at War - Gold Pack* (the base game and *Forces of Corruption*), for

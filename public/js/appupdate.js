@@ -1,8 +1,10 @@
 import { inApp } from './platform.js';
 import { BUILD } from './build.js';
 
-export const FEED = 'https://downloads.playeaw.com/latest.json';
-export const DOWNLOAD = 'https://downloads.playeaw.com/EmpireAtWarBrowserEdition-setup.exe';
+const REPO = 'Glenn332/Empire-At-War-Browser-Edition';
+const ASSET = 'EmpireAtWarBrowserEdition-setup.exe';
+export const FEED = `https://api.github.com/repos/${REPO}/releases/latest`;
+export const DOWNLOAD = `https://github.com/${REPO}/releases/latest/download/${ASSET}`;
 const SKIP = 'swr-update-skip';
 
 const $ = id => document.getElementById(id);
@@ -51,10 +53,11 @@ async function onTheSite() {
     });
   say('Windows 10 and 11');
   try {
-    const r = await fetch(FEED, { cache: 'no-store' });
+    const r = await fetch(FEED, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) return;
-    const f = await r.json();
-    say(`Version ${f.version}${f.size ? ' · ' + mb(f.size) : ''} · Windows 10 and 11`);
+    const f = await r.json(),
+      exe = f.assets?.find(a => a.name === ASSET);
+    say(`Version ${f.tag_name.replace(/^v/, '')}${exe?.size ? ' · ' + mb(exe.size) : ''} · Windows 10 and 11`);
   } catch {}
 }
 
@@ -73,7 +76,7 @@ async function inTheApp() {
 }
 
 async function look(asked) {
-  if (asked) strip({ badge: 'Update', what: 'Checking for updates', state: 'Asking downloads.playeaw.com…' });
+  if (asked) strip({ badge: 'Update', what: 'Checking for updates', state: 'Asking GitHub…' });
   const u = await fetch('api/update/check')
     .then(r => r.json())
     .catch(e => ({ error: e.message }));

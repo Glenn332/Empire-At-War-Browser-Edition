@@ -12,7 +12,7 @@ disclose it publicly.
 ## Scope
 
 - The site at [playeaw.com](https://playeaw.com) and the code in this repository
-- The Windows app and its updater (downloads.playeaw.com)
+- The Windows app and its updater (the releases of this repository)
 - The multiplayer lobby (lobby.playeaw.com, `lobby/`)
 
 Only the latest release is supported. Problems in the original game or in third-party mods are out of scope.

@@ -1,90 +1,142 @@
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import os from 'node:os';
 import path from 'node:path';
 
-const BUCKET = 'playeaw-downloads';
-const HOST = 'https://downloads.playeaw.com';
-const KEY = path.join(os.homedir(), '.tauri', 'swr-updater.key');
+const REPO = process.env.GITHUB_REPOSITORY || 'Glenn332/Empire-At-War-Browser-Edition';
+const ASSET = 'EmpireAtWarBrowserEdition-setup.exe';
 
 const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const [version] = process.argv.slice(2).filter(a => !a.startsWith('--'));
-const arg = name => {
-  const i = process.argv.indexOf(name);
-  return i > 0 ? process.argv[i + 1] : null;
-};
-const notes = arg('--notes') || '',
-  upload = process.argv.includes('--upload');
-if (!/^\d+\.\d+\.\d+$/.test(version || '')) {
-  console.error('usage: node tools/release-app.mjs <major.minor.patch> [--notes "..."] [--upload]');
-  process.exit(1);
-}
-try {
-  statSync(KEY);
-} catch {
-  console.error('no release key at ' + KEY + ' (tauri signer generate)');
-  process.exit(1);
-}
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: web, stdio: 'inherit', shell: process.platform === 'win32', ...opts });
-
+const out = path.join(web, 'dist-release');
 const confFile = path.join(web, 'src-tauri', 'tauri.conf.json'),
-  conf = JSON.parse(readFileSync(confFile, 'utf8'));
-conf.version = version;
-writeFileSync(confFile, JSON.stringify(conf, null, 2) + '\n');
-const cargoFile = path.join(web, 'src-tauri', 'Cargo.toml');
-writeFileSync(cargoFile, readFileSync(cargoFile, 'utf8').replace(/^version = "[^"]*"/m, `version = "${version}"`));
+  cargoFile = path.join(web, 'src-tauri', 'Cargo.toml'),
+  lockFile = path.join(web, 'src-tauri', 'Cargo.lock');
 
-const name = `EmpireAtWarBrowserEdition_${version}_x64-setup.exe`;
-const out = path.join(web, 'dist-release'),
-  dir = path.join(out, 'v' + version);
-if (!process.argv.includes('--no-build')) {
-  run('node', ['tools/build-app.mjs'], { env: { ...process.env, TAURI_SIGNING_PRIVATE_KEY: KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' } });
-  const built = path.join(web, 'src-tauri', 'target', 'release', 'bundle', 'nsis', `${conf.productName}_${version}_x64-setup.exe`);
+const [command, ...rest] = process.argv.slice(2);
+const arg = name => {
+  const i = rest.indexOf(name);
+  return i >= 0 ? rest[i + 1] : null;
+};
+const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: web, encoding: 'utf8', ...opts });
+const git = (...args) => run('git', args).trim();
+const fail = message => {
+  console.error(message);
+  process.exit(1);
+};
+
+const conf = () => JSON.parse(readFileSync(confFile, 'utf8'));
+const tagOf = version => 'v' + version;
+const newer = (a, b) => {
+  const x = a.split('.').map(Number),
+    y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+};
+const notesOf = version => {
+  const hit = git('log', '-1', '--format=%H', `--grep=^Release ${version.replace(/\./g, '\\.')}$`);
+  return hit ? { commit: hit, notes: git('log', '-1', '--format=%b', hit) } : null;
+};
+const onGitHub = tag => !!git('ls-remote', '--tags', 'origin', 'refs/tags/' + tag);
+
+function bump() {
+  const version = rest.find(a => /^\d+\.\d+\.\d+$/.test(a)),
+    notes = arg('--notes');
+  if (!version || !notes) fail('usage: npm run app:bump -- <major.minor.patch> --notes "what changed"');
+  const current = conf().version;
+  if (!newer(version, current)) fail(`${version} is not newer than the current app version ${current}`);
+  if (onGitHub(tagOf(version))) fail(`${tagOf(version)} is already on GitHub`);
+
+  const text = readFileSync(confFile, 'utf8');
+  writeFileSync(confFile, text.replace(/("version":\s*)"[^"]*"/, `$1"${version}"`));
+  writeFileSync(cargoFile, readFileSync(cargoFile, 'utf8').replace(/^version = "[^"]*"/m, `version = "${version}"`));
+  writeFileSync(lockFile, readFileSync(lockFile, 'utf8').replace(/(name = "sw-revival"\r?\nversion = )"[^"]*"/, `$1"${version}"`));
+  git('commit', '-m', `Release ${version}`, '-m', notes, '--', confFile, cargoFile, lockFile);
+  console.log(`app ${version} is ready: npm run deploy:prod builds and publishes it`);
+}
+
+function tag() {
+  const { version } = conf(),
+    name = tagOf(version);
+  if (onGitHub(name)) return console.log(`app ${version} is already released; npm run app:bump -- <version> --notes "..." ships a new one`);
+  const release = notesOf(version);
+  if (!release)
+    return console.log(`app ${version} has no Release ${version} commit; npm run app:bump -- <version> --notes "..." ships a new one`);
+  if (git('status', '--porcelain', '--', 'public', 'src-tauri', 'tools', 'package.json', 'package-lock.json'))
+    fail(
+      `app ${version} not released: commit or stash the changes in public/, src-tauri/ or tools/ first, so the release matches a commit`
+    );
+  if (!git('tag', '-l', name)) git('tag', '-a', name, '-m', `Release ${version}\n\n${release.notes}`);
+  git('push', 'origin', 'refs/tags/' + name);
+  console.log(`app ${version} is building: https://github.com/${REPO}/actions/workflows/release.yml`);
+}
+
+function build() {
+  const { version, productName } = conf();
+  if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== tagOf(version))
+    fail(`tag ${process.env.GITHUB_REF_NAME} does not match the app version ${version}`);
+  if (!process.env.TAURI_SIGNING_PRIVATE_KEY) fail('TAURI_SIGNING_PRIVATE_KEY is not set: add it as a repository secret');
+  run('node', ['tools/build-app.mjs'], {
+    stdio: 'inherit',
+    encoding: undefined,
+    env: { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '', ...process.env }
+  });
+
+  const built = path.join(web, 'src-tauri', 'target', 'release', 'bundle', 'nsis', `${productName}_${version}_x64-setup.exe`);
+  const release = notesOf(version);
   rmSync(out, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
-  copyFileSync(built, path.join(dir, name));
-  copyFileSync(built, path.join(out, 'EmpireAtWarBrowserEdition-setup.exe'));
-  const signature = readFileSync(built + '.sig', 'utf8').trim();
+  mkdirSync(out, { recursive: true });
+  copyFileSync(built, path.join(out, ASSET));
   const feed = {
     version,
-    notes,
+    notes: release ? release.notes : '',
     pub_date: new Date().toISOString(),
-    size: statSync(built).size,
-    download: `${HOST}/EmpireAtWarBrowserEdition-setup.exe`,
-    platforms: { 'windows-x86_64': { signature, url: `${HOST}/v${version}/${name}` } }
+    platforms: {
+      'windows-x86_64': {
+        signature: readFileSync(built + '.sig', 'utf8').trim(),
+        url: `https://github.com/${REPO}/releases/download/${tagOf(version)}/${ASSET}`
+      }
+    }
   };
   writeFileSync(path.join(out, 'latest.json'), JSON.stringify(feed, null, 2) + '\n');
-  console.log(`release ${version} in dist-release/ (${(feed.size / 1048576).toFixed(1)} MB)`);
-} else if (JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8')).version !== version) {
-  console.error(`dist-release/ holds no release ${version}`);
-  process.exit(1);
+  console.log(`release ${version} in dist-release/`);
 }
 
-if (upload) {
-  const put = (key, file, type, cache) =>
-    run('npx', [
-      '--yes',
-      'wrangler@4.151.2',
-      'r2',
-      'object',
-      'put',
-      `${BUCKET}/${key}`,
-      '--file',
-      file,
-      '--content-type',
-      type,
-      '--cache-control',
-      cache,
-      '--remote'
-    ]);
-  put(`v${version}/${name}`, path.join(dir, name), 'application/vnd.microsoft.portable-executable', 'public,max-age=31536000,immutable');
-  put(
-    'EmpireAtWarBrowserEdition-setup.exe',
-    path.join(out, 'EmpireAtWarBrowserEdition-setup.exe'),
-    'application/vnd.microsoft.portable-executable',
-    'public,max-age=300'
-  );
-  put('latest.json', path.join(out, 'latest.json'), 'application/json', 'no-cache');
-  console.log(`uploaded: ${HOST}/latest.json`);
+function publish() {
+  const { version } = conf(),
+    name = tagOf(version);
+  const feed = JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8'));
+  if (feed.version !== version) fail(`dist-release/ holds no release ${version}`);
+  const gh = (...args) => run('gh', [...args, '--repo', REPO], { stdio: 'inherit', encoding: undefined });
+  const files = [path.join(out, ASSET), path.join(out, 'latest.json')];
+
+  let existing = null;
+  try {
+    existing = JSON.parse(
+      run('gh', ['release', 'view', name, '--json', 'isDraft', '--repo', REPO], { stdio: ['ignore', 'pipe', 'ignore'] })
+    );
+  } catch {}
+  if (existing && !existing.isDraft) fail(`${name} is already published`);
+  if (existing) gh('release', 'upload', name, ...files, '--clobber');
+  else {
+    const notesFile = path.join(out, 'notes.md');
+    writeFileSync(notesFile, feed.notes || `Version ${version}.`);
+    gh(
+      'release',
+      'create',
+      name,
+      ...files,
+      '--draft',
+      '--verify-tag',
+      '--title',
+      `Empire at War Browser Edition ${version}`,
+      '--notes-file',
+      notesFile
+    );
+  }
+  gh('release', 'edit', name, '--draft=false', '--latest');
+  console.log(`published https://github.com/${REPO}/releases/tag/${name}`);
 }
+
+const commands = { bump, tag, build, publish };
+if (!commands[command]) fail('usage: node tools/release-app.mjs bump|tag|build|publish');
+commands[command]();
