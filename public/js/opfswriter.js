@@ -8,16 +8,24 @@ onmessage = async ({ data }) => {
       handle.truncate(0);
     } else if (data.chunk) {
       const bytes = new Uint8Array(data.chunk);
-      for (let n = 0; n < bytes.length;) {
+      for (let n = 0; n < bytes.length; ) {
         const k = handle.write(bytes.subarray(n), { at: data.at + n });
-        if (!(k > 0 && k <= bytes.length - n)) throw new Error(`Could not write to the browser's storage at ${data.at + n} bytes (is the disk full?)`);
+        if (!(k > 0 && k <= bytes.length - n))
+          throw new Error(`Could not write to the browser's storage at ${data.at + n} bytes (is the disk full?)`);
         n += k;
       }
     } else if (data.close) {
-      if (handle) { handle.flush(); handle.close(); handle = null; }
+      if (handle) {
+        handle.flush();
+        handle.close();
+        handle = null;
+      }
     }
     postMessage({ id: data.id });
   } catch (e) {
-    postMessage({ id: data.id, error: (e && e.name === 'QuotaExceededError' ? 'QuotaExceededError: ' : '') + (e && e.message || String(e)) });
+    postMessage({
+      id: data.id,
+      error: (e && e.name === 'QuotaExceededError' ? 'QuotaExceededError: ' : '') + ((e && e.message) || String(e))
+    });
   }
 };

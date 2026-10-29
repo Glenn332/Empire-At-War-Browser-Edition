@@ -1,18 +1,30 @@
 import { db } from '../gamedata.js';
 import { strategicStealth } from './galacticfog.js';
 
-const key = s => String(s || '').trim().toUpperCase();
+const key = s =>
+  String(s || '')
+    .trim()
+    .toUpperCase();
 
-const relations = new Map(), UNSET = -1;
+const relations = new Map(),
+  UNSET = -1;
 export function relation(a, b) {
-  let row = relations.get(a); if (!row) { row = new Map(); relations.set(a, row); }
+  let row = relations.get(a);
+  if (!row) {
+    row = new Map();
+    relations.set(a, row);
+  }
   let r = row.get(b);
-  if (r === undefined) { r = relationOf(a, b) ?? UNSET; row.set(b, r); }
+  if (r === undefined) {
+    r = relationOf(a, b) ?? UNSET;
+    row.set(b, r);
+  }
   return r === UNSET ? undefined : r;
 }
 function relationOf(a, b) {
   if (!a || !b || key(a) === key(b)) return 0;
-  const fa = db.faction(a), fb = db.faction(b);
+  const fa = db.faction(a),
+    fb = db.faction(b);
   if (fa?.bool('Is_Neutral') || fb?.bool('Is_Neutral')) return 2;
   if (fa?.list('Enemies').some(n => key(n) === key(b))) return 1;
   if (fa?.list('Allies').some(n => key(n) === key(b))) return 0;

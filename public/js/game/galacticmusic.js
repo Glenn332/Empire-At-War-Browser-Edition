@@ -1,7 +1,11 @@
 import { db } from '../gamedata.js';
 
-const key = s => String(s || '').trim().toUpperCase();
-export const MUSIC_STRATEGIC = 1, MUSIC_SCRIPT = 12;
+const key = s =>
+  String(s || '')
+    .trim()
+    .toUpperCase();
+export const MUSIC_STRATEGIC = 1,
+  MUSIC_SCRIPT = 12;
 const KEEP = (1 << 1) | (1 << 8) | (1 << 11) | (1 << 12);
 
 export function strategicMusicEvent(game) {
@@ -11,7 +15,7 @@ export function strategicMusicEvent(game) {
 export function startStrategicMusic(game, force = false) {
   const audio = game.audio;
   if (!audio?.playMusicEvent || game.modeSuspended || game.over) return false;
-  if (!force && (audio.musicMode >= 0 && (KEEP >> audio.musicMode) & 1)) return false;
+  if (!force && audio.musicMode >= 0 && (KEEP >> audio.musicMode) & 1) return false;
   const event = strategicMusicEvent(game);
   return event ? audio.playMusicEvent(event, MUSIC_STRATEGIC) : false;
 }

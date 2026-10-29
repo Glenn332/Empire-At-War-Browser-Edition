@@ -28,7 +28,9 @@ impl Updates {
     }
 
     pub fn install(&'static self, app: &AppHandle) -> Result<(), String> {
-        let Some(u) = self.found.lock().unwrap().take() else { return Err("No update found to install: check again.".into()) };
+        let Some(u) = self.found.lock().unwrap().take() else {
+            return Err("No update found to install: check again.".into());
+        };
         *self.state.lock().unwrap() = "downloading".into();
         let app = app.clone();
         std::thread::spawn(move || {

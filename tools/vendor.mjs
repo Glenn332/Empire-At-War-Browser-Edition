@@ -12,14 +12,16 @@ for (const f of ['build/three.module.js', 'examples/jsm/controls/OrbitControls.j
 }
 
 {
-  const from=path.join(here,'..','node_modules','@ffmpeg','core','dist','esm'),to=path.join(here,'..','public','vendor','ffmpeg');
-  fs.mkdirSync(to,{recursive:true});
-  for(const name of ['ffmpeg-core.js','ffmpeg-core.wasm'])fs.copyFileSync(path.join(from,name),path.join(to,name));
+  const from = path.join(here, '..', 'node_modules', '@ffmpeg', 'core', 'dist', 'esm'),
+    to = path.join(here, '..', 'public', 'vendor', 'ffmpeg');
+  fs.mkdirSync(to, { recursive: true });
+  for (const name of ['ffmpeg-core.js', 'ffmpeg-core.wasm']) fs.copyFileSync(path.join(from, name), path.join(to, name));
   console.log('vendored @ffmpeg/core 0.12.10');
 }
 
 {
-  const from = path.join(here, '..', 'node_modules', 'fengari-web'), to = path.join(here, '..', 'public', 'vendor', 'fengari');
+  const from = path.join(here, '..', 'node_modules', 'fengari-web'),
+    to = path.join(here, '..', 'public', 'vendor', 'fengari');
   fs.mkdirSync(to, { recursive: true });
   fs.copyFileSync(path.join(from, 'dist', 'fengari-web.js'), path.join(to, 'fengari-web.js'));
   fs.copyFileSync(path.join(from, 'LICENSE'), path.join(to, 'LICENSE'));

@@ -4,25 +4,76 @@ import { openGame } from './megfs.mjs';
 import { routeStyle, routeSettings, routeAxes, routeSparkFraction, ROUTE_SPARK_SEEDS } from '../public/js/game/galacticroutes.js';
 const mod = process.argv.indexOf('--mod');
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), mod < 0 ? [] : [process.argv[mod + 1]]);
-globalThis.fetch = async input => { const path = String(input); if (path.startsWith('api/find?q=')) { const re = new RegExp(decodeURIComponent(path.slice(11)), 'i'); return new Response(JSON.stringify([...archive.index.keys()].filter(n => re.test(n)))); } const key = archive.resolve(decodeURIComponent(path.replace(/^asset\//, ''))), b = key && archive.read(key); return new Response(b ? new Uint8Array(b) : null, { status: b ? 200 : 404 }); };
-const { db, loadGameData } = await import('../public/js/gamedata.js'); await loadGameData();
-const { loadCampaignData } = await import('../public/js/game/galaxy.js'); const data = await loadCampaignData();
-const line = data.lines.get('DEFAULT'); assert(line);
+globalThis.fetch = async input => {
+  const path = String(input);
+  if (path.startsWith('api/find?q=')) {
+    const re = new RegExp(decodeURIComponent(path.slice(11)), 'i');
+    return new Response(JSON.stringify([...archive.index.keys()].filter(n => re.test(n))));
+  }
+  const key = archive.resolve(decodeURIComponent(path.replace(/^asset\//, ''))),
+    b = key && archive.read(key);
+  return new Response(b ? new Uint8Array(b) : null, { status: b ? 200 : 404 });
+};
+const { db, loadGameData } = await import('../public/js/gamedata.js');
+await loadGameData();
+const { loadCampaignData } = await import('../public/js/game/galaxy.js');
+const data = await loadCampaignData();
+const line = data.lines.get('DEFAULT');
+assert(line);
 assert.equal(routeStyle('Empire', 'Empire', db.faction('Empire'), db.constants, 'Empire'), 'Evil');
 assert.equal(routeStyle('Rebel', 'Rebel', db.faction('Rebel'), db.constants, 'Empire'), 'Good');
 assert.equal(routeStyle('Empire', 'Rebel', db.faction('Empire'), db.constants, 'Empire', true), 'Neutral');
 assert.equal(routeStyle('Empire', 'Empire', db.faction('Empire'), db.constants, 'Empire', true), 'Ally');
 assert.equal(routeStyle('Empire', 'Empire', db.faction('Empire'), db.constants, 'Rebel', true), 'Enemy');
-assert.equal(routeStyle('Empire', 'Empire', db.faction('Empire'), db.constants, 'Rebel', true, () => true), 'Ally');
+assert.equal(
+  routeStyle('Empire', 'Empire', db.faction('Empire'), db.constants, 'Rebel', true, () => true),
+  'Ally'
+);
 const neutral = [...db.factions.values()].find(f => f.bool('Is_Neutral'));
 assert.equal(routeStyle(neutral.name, neutral.name, neutral, db.constants, 'Empire', true), 'Neutral');
-const style = routeSettings(line, 'Ally'); assert.equal(style.texture.toUpperCase(), 'W_GALAXY_LINE_ALPHA.TGA'); assert.equal(style.spark.toUpperCase(), 'W_GALAXY_DOT.TGA'); assert.equal(style.mode, 'ADDITIVE');
-assert(archive.resolve('Data/Art/Textures/' + style.texture)); assert(archive.resolve('Data/Art/Textures/' + style.spark));
-assert.deepEqual(routeSettings(null, 'Good').out, [.5, .5, .5, 1]);
-const fake = { sub: () => [{ attrs: { Name: 'Ally' }, val: key => ({ Color_Zoomed_Out: '1, 2 3, 128', Color_Zoomed_In: '4 5 6 64', Texture_Name: 'custom.tga', Spark_Texture_Name: 'spark.tga', Render_Mode: 'ALPHA' })[key], num: () => 7 }] };
-assert.deepEqual(routeSettings(fake, 'Ally'), { style: 'Ally', neutral: false, out: [1 / 255, 2 / 255, 3 / 255, 128 / 255], in: [4 / 255, 5 / 255, 6 / 255, 64 / 255], texture: 'custom.tga', spark: 'spark.tga', mode: 'ALPHA', width: 7 });
-for (const seed of ROUTE_SPARK_SEEDS) { assert(Math.abs(routeSparkFraction(seed, 0) - Math.abs(seed)) < 1e-8); assert(Math.abs(routeSparkFraction(seed, 50) - Math.abs(seed)) < 1e-8); }
-assert(routeSparkFraction(.15, 1) > .15); assert(routeSparkFraction(-.45, 1) < .45);
+const style = routeSettings(line, 'Ally');
+assert.equal(style.texture.toUpperCase(), 'W_GALAXY_LINE_ALPHA.TGA');
+assert.equal(style.spark.toUpperCase(), 'W_GALAXY_DOT.TGA');
+assert.equal(style.mode, 'ADDITIVE');
+assert(archive.resolve('Data/Art/Textures/' + style.texture));
+assert(archive.resolve('Data/Art/Textures/' + style.spark));
+assert.deepEqual(routeSettings(null, 'Good').out, [0.5, 0.5, 0.5, 1]);
+const fake = {
+  sub: () => [
+    {
+      attrs: { Name: 'Ally' },
+      val: key =>
+        ({
+          Color_Zoomed_Out: '1, 2 3, 128',
+          Color_Zoomed_In: '4 5 6 64',
+          Texture_Name: 'custom.tga',
+          Spark_Texture_Name: 'spark.tga',
+          Render_Mode: 'ALPHA'
+        })[key],
+      num: () => 7
+    }
+  ]
+};
+assert.deepEqual(routeSettings(fake, 'Ally'), {
+  style: 'Ally',
+  neutral: false,
+  out: [1 / 255, 2 / 255, 3 / 255, 128 / 255],
+  in: [4 / 255, 5 / 255, 6 / 255, 64 / 255],
+  texture: 'custom.tga',
+  spark: 'spark.tga',
+  mode: 'ALPHA',
+  width: 7
+});
+for (const seed of ROUTE_SPARK_SEEDS) {
+  assert(Math.abs(routeSparkFraction(seed, 0) - Math.abs(seed)) < 1e-8);
+  assert(Math.abs(routeSparkFraction(seed, 50) - Math.abs(seed)) < 1e-8);
+}
+assert(routeSparkFraction(0.15, 1) > 0.15);
+assert(routeSparkFraction(-0.45, 1) < 0.45);
 assert.deepEqual(routeAxes([0, 0, 0], [0, 100, 0]), { across: [1, -0, 0], along: [0, 1, 0], length: 100 });
-const axes = routeAxes([1, 2, 3], [11, 22, 33]); assert(Math.abs(axes.across.reduce((s, n, i) => s + n * axes.along[i], 0)) < 1e-8); assert.equal(axes.across[2], 0);
-console.log(`Galactic routes passed (${mod < 0 ? 'base' : 'mod'}): XML styles, simplified relationships, native plane and bidirectional traversal.`);
+const axes = routeAxes([1, 2, 3], [11, 22, 33]);
+assert(Math.abs(axes.across.reduce((s, n, i) => s + n * axes.along[i], 0)) < 1e-8);
+assert.equal(axes.across[2], 0);
+console.log(
+  `Galactic routes passed (${mod < 0 ? 'base' : 'mod'}): XML styles, simplified relationships, native plane and bidirectional traversal.`
+);

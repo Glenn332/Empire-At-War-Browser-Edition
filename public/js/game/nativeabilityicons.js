@@ -1,15 +1,88 @@
-const icons={
-  DEFEND:'defend_mode',DEPLOY:'deploy',INTERDICT:'interdict',HARASS:'',BARRAGE:'barrage_area',HUNT:'hunt',SPREAD_OUT:'spread_out',AFTERBURNER:'',TURBO:'power_to_engines',LURE:'lure',ROCKET_ATTACK:'rocket_attack',AVOID_DANGER:'',
-  FORCE_TELEKINESIS:'force_crush',FORCE_WHIRLWIND:'force_push',FORCE_LIGHTNING:'force_lighting',FLAME_THROWER:'flame_thrower',JET_PACK:'jetpack_jump',CAPTURE_VEHICLE:'capture_vehicles',TARGETED_INVULNERABILITY:'force_protect',TARGETED_HACK:'hack_turret',TARGETED_REPAIR:'repair_vehicle',STICKY_BOMB:'sticky_bomb',AREA_EFFECT_STUN:'electronic_scramble',AREA_EFFECT_HEAL:'area_heal',AREA_EFFECT_CONVERT:'join_me',DISTRACT:'',CABLE_ATTACK:'tow_cable_attack',
-  FOW_REVEAL_PING:'sensor_ping',POWER_TO_WEAPONS:'power_to_weapons',TRACTOR_BEAM:'tractor_beam',ENERGY_WEAPON:'fire_energy_weapon',MISSILE_SHIELD:'missile_jammer',INVULNERABILITY:'evasive_maneuvers',LUCKY_SHOT:'lucky_shot',HARMONIC_BOMB:'Harmonic_bomb',UNTARGETED_STICKY_BOMB:'drop_bomb',CONCENTRATE_FIRE:'all_ships_concentrate_fire',DEPLOY_TROOPERS:'deploy_stormtroopers',SELF_DESTRUCT:'self_destruct',SPRINT:'sprint',ION_CANNON_SHOT:'ion_cannon_shot',WEAKEN_ENEMY:'weaken_enemy',SPOILER_LOCK:'s_foil_mode',REPLENISH_WINGMEN:'cover_me',MAXIMUM_FIREPOWER:'maximum_firepower',EJECT_VEHICLE_THIEF:'capture_vehicles',FIRE_LOBBING_SUPERWEAPON:'weaken_enemy',
-  STEALTH:'force_cloak',STUN:'stun',RADIOACTIVE_CONTAMINATE:'contaminate',BERSERKER:'berserker',FORCE_SIGHT:'force_sight',SABER_THROW:'saber_throw',FORCE_CLOAK:'force_cloak',SUPER_LASER:'fire_energy_weapon',LASER_DEFENSE:'laser_defense',FORCE_CONFUSE:'force_confuse',LEECH_SHIELDS:'leech_shields',TACTICAL_BRIBE:'tactical_bribe',SWAP_WEAPONS:'swap_weapons',CLUSTER_BOMB:'cluster_bomb',FULL_SALVO:'full_salvo',SENSOR_JAMMING:'sensor_jamming',PLACE_REMOTE_BOMB:'place_remote_bomb',DETONATE_REMOTE_BOMB:'detonate_remote_bomb',INFECTION:'infection',PROXIMITY_MINES:'proximity_mines',STIM_PACK:'stim_pack',DRAIN_LIFE:'drain_life',BLAST:'blast',BUZZ_DROIDS:'buzz_droids',SHIELD_FLARE:'shield_flare',SUMMON:'summon',CORRUPT_SYSTEMS:'corrupt_systems',DEPLOY_SQUAD:'deploy_squad',
+const icons = {
+  DEFEND: 'defend_mode',
+  DEPLOY: 'deploy',
+  INTERDICT: 'interdict',
+  HARASS: '',
+  BARRAGE: 'barrage_area',
+  HUNT: 'hunt',
+  SPREAD_OUT: 'spread_out',
+  AFTERBURNER: '',
+  TURBO: 'power_to_engines',
+  LURE: 'lure',
+  ROCKET_ATTACK: 'rocket_attack',
+  AVOID_DANGER: '',
+  FORCE_TELEKINESIS: 'force_crush',
+  FORCE_WHIRLWIND: 'force_push',
+  FORCE_LIGHTNING: 'force_lighting',
+  FLAME_THROWER: 'flame_thrower',
+  JET_PACK: 'jetpack_jump',
+  CAPTURE_VEHICLE: 'capture_vehicles',
+  TARGETED_INVULNERABILITY: 'force_protect',
+  TARGETED_HACK: 'hack_turret',
+  TARGETED_REPAIR: 'repair_vehicle',
+  STICKY_BOMB: 'sticky_bomb',
+  AREA_EFFECT_STUN: 'electronic_scramble',
+  AREA_EFFECT_HEAL: 'area_heal',
+  AREA_EFFECT_CONVERT: 'join_me',
+  DISTRACT: '',
+  CABLE_ATTACK: 'tow_cable_attack',
+  FOW_REVEAL_PING: 'sensor_ping',
+  POWER_TO_WEAPONS: 'power_to_weapons',
+  TRACTOR_BEAM: 'tractor_beam',
+  ENERGY_WEAPON: 'fire_energy_weapon',
+  MISSILE_SHIELD: 'missile_jammer',
+  INVULNERABILITY: 'evasive_maneuvers',
+  LUCKY_SHOT: 'lucky_shot',
+  HARMONIC_BOMB: 'Harmonic_bomb',
+  UNTARGETED_STICKY_BOMB: 'drop_bomb',
+  CONCENTRATE_FIRE: 'all_ships_concentrate_fire',
+  DEPLOY_TROOPERS: 'deploy_stormtroopers',
+  SELF_DESTRUCT: 'self_destruct',
+  SPRINT: 'sprint',
+  ION_CANNON_SHOT: 'ion_cannon_shot',
+  WEAKEN_ENEMY: 'weaken_enemy',
+  SPOILER_LOCK: 's_foil_mode',
+  REPLENISH_WINGMEN: 'cover_me',
+  MAXIMUM_FIREPOWER: 'maximum_firepower',
+  EJECT_VEHICLE_THIEF: 'capture_vehicles',
+  FIRE_LOBBING_SUPERWEAPON: 'weaken_enemy',
+  STEALTH: 'force_cloak',
+  STUN: 'stun',
+  RADIOACTIVE_CONTAMINATE: 'contaminate',
+  BERSERKER: 'berserker',
+  FORCE_SIGHT: 'force_sight',
+  SABER_THROW: 'saber_throw',
+  FORCE_CLOAK: 'force_cloak',
+  SUPER_LASER: 'fire_energy_weapon',
+  LASER_DEFENSE: 'laser_defense',
+  FORCE_CONFUSE: 'force_confuse',
+  LEECH_SHIELDS: 'leech_shields',
+  TACTICAL_BRIBE: 'tactical_bribe',
+  SWAP_WEAPONS: 'swap_weapons',
+  CLUSTER_BOMB: 'cluster_bomb',
+  FULL_SALVO: 'full_salvo',
+  SENSOR_JAMMING: 'sensor_jamming',
+  PLACE_REMOTE_BOMB: 'place_remote_bomb',
+  DETONATE_REMOTE_BOMB: 'detonate_remote_bomb',
+  INFECTION: 'infection',
+  PROXIMITY_MINES: 'proximity_mines',
+  STIM_PACK: 'stim_pack',
+  DRAIN_LIFE: 'drain_life',
+  BLAST: 'blast',
+  BUZZ_DROIDS: 'buzz_droids',
+  SHIELD_FLARE: 'shield_flare',
+  SUMMON: 'summon',
+  CORRUPT_SYSTEMS: 'corrupt_systems',
+  DEPLOY_SQUAD: 'deploy_squad'
 };
 
 export function encyclopediaAbilityIcons(type) {
-  const out=[];
-  for(const block of type.sub('Unit_Abilities_Data'))for(const a of block.all('Unit_Ability')){
-    const kind=a.val('Type').toUpperCase();if(!Object.hasOwn(icons,kind))continue;
-    out.push(a.val('Alternate_Icon_Name')||(icons[kind]?'i_sa_'+icons[kind]+'.tga':''));
-  }
+  const out = [];
+  for (const block of type.sub('Unit_Abilities_Data'))
+    for (const a of block.all('Unit_Ability')) {
+      const kind = a.val('Type').toUpperCase();
+      if (!Object.hasOwn(icons, kind)) continue;
+      out.push(a.val('Alternate_Icon_Name') || (icons[kind] ? 'i_sa_' + icons[kind] + '.tga' : ''));
+    }
   return out;
 }

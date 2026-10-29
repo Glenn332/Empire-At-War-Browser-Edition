@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-app/
+dist-release/
+src-tauri/
+public/vendor/
+lobby/node_modules/
+lobby/.wrangler/
+*.md
+*.json
+*.yml
+*.webmanifest
+*.svg
+wasm/

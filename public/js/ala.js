@@ -2,9 +2,13 @@ import * as THREE from '../vendor/three/build/three.module.js';
 import { ChunkReader, fetchBinary } from './vfs.js';
 
 export function parseALA(buffer) {
-  const r = new ChunkReader(buffer), dv = r.dv;
+  const r = new ChunkReader(buffer),
+    dv = r.dv;
   const anim = { frames: 1, fps: 30, tracks: [], duration: 0 };
-  let rotBlock = 0, transBlock = 0, sharedRot = null, sharedTrans = null;
+  let rotBlock = 0,
+    transBlock = 0,
+    sharedRot = null,
+    sharedTrans = null;
   for (const top of r.chunks()) {
     if (top.type !== 0x1000) continue;
     for (const c of r.chunks(top.start, top.end)) {
@@ -16,7 +20,18 @@ export function parseALA(buffer) {
           else if (m.type === 12) transBlock = r.u32(m.start);
         }
       } else if (c.type === 0x1002) {
-        const t = { name: '', index: -1, offset: [0, 0, 0], scale: [0, 0, 0], trans: null, transAt: -1, rot: null, rotAt: -1, defRot: null, vis: null };
+        const t = {
+          name: '',
+          index: -1,
+          offset: [0, 0, 0],
+          scale: [0, 0, 0],
+          trans: null,
+          transAt: -1,
+          rot: null,
+          rotAt: -1,
+          defRot: null,
+          vis: null
+        };
         for (const k of r.chunks(c.start, c.end)) {
           if (k.type === 0x1003) {
             for (const m of r.minis(k)) {
@@ -38,12 +53,23 @@ export function parseALA(buffer) {
     }
   }
   for (const t of anim.tracks) {
-    if (t.trans) { t.transStride = 3; t.transAt = 0; }
-    else if (sharedTrans && t.transAt >= 0 && transBlock) { t.trans = sharedTrans; t.transStride = transBlock; }
-    else t.trans = null;
-    if (t.rot && t.rot.length >= anim.frames * 4) { t.rotStride = 4; t.rotAt = 0; }
-    else if (t.rot) { t.defRot = Array.from(t.rot.subarray(0, 4)); t.rot = null; }
-    else if (sharedRot && t.rotAt >= 0 && rotBlock) { t.rot = sharedRot; t.rotStride = rotBlock; }
+    if (t.trans) {
+      t.transStride = 3;
+      t.transAt = 0;
+    } else if (sharedTrans && t.transAt >= 0 && transBlock) {
+      t.trans = sharedTrans;
+      t.transStride = transBlock;
+    } else t.trans = null;
+    if (t.rot && t.rot.length >= anim.frames * 4) {
+      t.rotStride = 4;
+      t.rotAt = 0;
+    } else if (t.rot) {
+      t.defRot = Array.from(t.rot.subarray(0, 4));
+      t.rot = null;
+    } else if (sharedRot && t.rotAt >= 0 && rotBlock) {
+      t.rot = sharedRot;
+      t.rotStride = rotBlock;
+    }
   }
   anim.duration = anim.frames / anim.fps;
   return anim;
@@ -52,16 +78,25 @@ export function parseALA(buffer) {
 const anims = new Map();
 let known = null;
 
-export function knownAnimations(names) { known = names ? new Set(names) : null; }
+export function knownAnimations(names) {
+  known = names ? new Set(names) : null;
+}
 
 export function loadALA(name) {
   const key = name.toUpperCase();
   let a = anims.get(key);
-  if (a === undefined && known && !known.has(key)) { anims.set(key, null); return null; }
+  if (a === undefined && known && !known.has(key)) {
+    anims.set(key, null);
+    return null;
+  }
   if (a === undefined) {
     a = fetchBinary('Data/Art/Models/' + key, { keep: false }).then(buf => {
       let anim = null;
-      try { anim = buf ? parseALA(buf) : null; } catch (e) { console.warn('animation', key, e.message); }
+      try {
+        anim = buf ? parseALA(buf) : null;
+      } catch (e) {
+        console.warn('animation', key, e.message);
+      }
       if (anim) anim.name = key.replace(/\.ALA$/, '');
       anims.set(key, anim);
       return anim;
@@ -78,11 +113,17 @@ export function getALA(name) {
 
 export const animName = (model, kind, n = 0) => model.replace(/\.alo$/i, '').toUpperCase() + `_${kind}_${String(n).padStart(2, '0')}.ALA`;
 
-const _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion();
+const _q0 = new THREE.Quaternion(),
+  _q1 = new THREE.Quaternion();
 
 export function frameKeys(a, f, loop) {
-  if (loop) { const n = Math.max(1, a.frames - 1), f0 = Math.floor(f % n); return [f0, (f0 + 1) % n]; }
-  const end = Math.max(0, a.frames - 2), f0 = Math.min(end, Math.floor(f));
+  if (loop) {
+    const n = Math.max(1, a.frames - 1),
+      f0 = Math.floor(f % n);
+    return [f0, (f0 + 1) % n];
+  }
+  const end = Math.max(0, a.frames - 2),
+    f0 = Math.min(end, Math.floor(f));
   return [f0, Math.min(end, f0 + 1)];
 }
 
@@ -97,8 +138,13 @@ export class AnimState {
     this.time = time;
     this.done = false;
     this.onFrame = onFrame;
-    const own = t => { const b = inst.bones[t.index]; return b && b.name === t.name ? b : null; };
-    this.bound = anim.tracks.map(t => ({ t, bone: own(t) || inst.boneByName.get(t.name.toUpperCase()) || (!t.name && inst.bones[t.index]) || null })).filter(b => b.bone);
+    const own = t => {
+      const b = inst.bones[t.index];
+      return b && b.name === t.name ? b : null;
+    };
+    this.bound = anim.tracks
+      .map(t => ({ t, bone: own(t) || inst.boneByName.get(t.name.toUpperCase()) || (!t.name && inst.bones[t.index]) || null }))
+      .filter(b => b.bone);
   }
 
   seek(fraction) {
@@ -121,7 +167,10 @@ export class AnimState {
     const end = this.loop ? loopTime(a) : a.duration;
     if (this.time >= end) {
       if (this.loop) this.time %= end;
-      else { this.time = a.duration - 1e-4; this.done = true; }
+      else {
+        this.time = a.duration - 1e-4;
+        this.done = true;
+      }
     }
     return !this.done;
   }
@@ -129,23 +178,34 @@ export class AnimState {
   pose() {
     const a = this.anim;
     this.inst.animated = true;
-    const f = Math.max(0, this.time * a.fps), [f0, f1] = frameKeys(a, f, this.loop), k = f - Math.floor(f);
+    const f = Math.max(0, this.time * a.fps),
+      [f0, f1] = frameKeys(a, f, this.loop),
+      k = f - Math.floor(f);
     for (const { t, bone } of this.bound) {
-      const o = t.offset, s = t.scale;
+      const o = t.offset,
+        s = t.scale;
       if (t.trans) {
-        const a0 = f0 * t.transStride + t.transAt, a1 = f1 * t.transStride + t.transAt, d = t.trans;
+        const a0 = f0 * t.transStride + t.transAt,
+          a1 = f1 * t.transStride + t.transAt,
+          d = t.trans;
         bone.position.set(
           o[0] + s[0] * (d[a0] + (d[a1] - d[a0]) * k),
           o[1] + s[1] * (d[a0 + 1] + (d[a1 + 1] - d[a0 + 1]) * k),
-          o[2] + s[2] * (d[a0 + 2] + (d[a1 + 2] - d[a0 + 2]) * k));
+          o[2] + s[2] * (d[a0 + 2] + (d[a1 + 2] - d[a0 + 2]) * k)
+        );
       } else bone.position.set(o[0], o[1], o[2]);
       if (t.rot) {
-        const a0 = f0 * t.rotStride + t.rotAt, a1 = f1 * t.rotStride + t.rotAt, d = t.rot;
+        const a0 = f0 * t.rotStride + t.rotAt,
+          a1 = f1 * t.rotStride + t.rotAt,
+          d = t.rot;
         _q0.set(d[a0], d[a0 + 1], d[a0 + 2], d[a0 + 3]).normalize();
         _q1.set(d[a1], d[a1 + 1], d[a1 + 2], d[a1 + 3]).normalize();
         bone.quaternion.copy(_q0).slerp(_q1, k);
       } else if (t.defRot) bone.quaternion.set(t.defRot[0], t.defRot[1], t.defRot[2], t.defRot[3]).normalize();
-      if (t.vis) { bone.visible = ((t.vis[f0 >> 3] >> (f0 & 7)) & 1) === 1; bone.userData.animHid = !bone.visible; }
+      if (t.vis) {
+        bone.visible = ((t.vis[f0 >> 3] >> (f0 & 7)) & 1) === 1;
+        bone.userData.animHid = !bone.visible;
+      }
     }
     this.inst.syncFromBones();
     if (this.onFrame) this.onFrame(this);

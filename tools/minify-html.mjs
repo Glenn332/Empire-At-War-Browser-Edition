@@ -1,8 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
-const esbuild = (code, args) => execFileSync('npx', ['--yes', 'esbuild@0.25.10', '--minify', '--log-level=error', ...args],
-  { input: code, encoding: 'utf8', shell: process.platform === 'win32' }).trim();
+const esbuild = (code, args) =>
+  execFileSync('npx', ['--yes', 'esbuild@0.25.10', '--minify', '--log-level=error', ...args], {
+    input: code,
+    encoding: 'utf8',
+    shell: process.platform === 'win32'
+  }).trim();
 
 function minifyBlock(tag, attrs, body) {
   if (!body.trim()) return body;
@@ -16,10 +20,11 @@ function minifyBlock(tag, attrs, body) {
 
 for (const file of process.argv.slice(2)) {
   const src = readFileSync(file, 'utf8');
-  let out = '', at = 0;
+  let out = '',
+    at = 0;
   const blocks = /<(script|style)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi;
   const stripComments = html => html.replace(/<!--[\s\S]*?-->/g, '');
-  for (let m; (m = blocks.exec(src));) {
+  for (let m; (m = blocks.exec(src)); ) {
     out += stripComments(src.slice(at, m.index));
     out += `<${m[1]}${m[2]}>${minifyBlock(m[1].toLowerCase(), m[2], m[3])}</${m[1]}>`;
     at = blocks.lastIndex;

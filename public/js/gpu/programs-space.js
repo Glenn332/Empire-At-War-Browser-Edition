@@ -1,14 +1,25 @@
 import { families, simple } from './programs.js';
 import './programs-galactic.js';
 
-const f32 = (...xs) => { let v = Math.fround(xs[0]); for (let i = 1; i < xs.length; i++) v = Math.fround(v * Math.fround(xs[i])); return v.toPrecision(9); };
+const f32 = (...xs) => {
+  let v = Math.fround(xs[0]);
+  for (let i = 1; i < xs.length; i++) v = Math.fround(v * Math.fround(xs[i]));
+  return v.toPrecision(9);
+};
 const only = (m, ...names) => !!m.uniforms && Object.keys(m.uniforms).length === names.length && names.every(n => n in m.uniforms);
 
 const sprites = simple({
-  name: 'sprites', textures: ['map'],
-  match: m => m.isShaderMaterial && only(m, 'map') && m.vertexShader.startsWith('attribute vec4 center; attribute vec4 tint; varying vec2 vUv; varying vec4 vTint;'),
+  name: 'sprites',
+  textures: ['map'],
+  match: m =>
+    m.isShaderMaterial &&
+    only(m, 'map') &&
+    m.vertexShader.startsWith('attribute vec4 center; attribute vec4 tint; varying vec2 vUv; varying vec4 vTint;'),
   vertex: () => [['position', 3, 0]],
-  perInstance: [['center', 4, 1], ['tint', 4, 2]],
+  perInstance: [
+    ['center', 4, 1],
+    ['tint', 4, 2]
+  ],
   code: () => `
 struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) tint: vec4f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f }
@@ -22,14 +33,20 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let t = textureSample(mapT, mapS, v.vUv);
   return vec4f(t.rgb * v.vTint.rgb * v.vTint.a * t.a, 1.0);
-}`,
+}`
 });
 
 const beams = simple({
-  name: 'beams', textures: ['map'],
-  match: m => m.isShaderMaterial && only(m, 'map') && m.vertexShader.startsWith('attribute vec4 tail; attribute vec4 head; attribute vec3 tint;'),
+  name: 'beams',
+  textures: ['map'],
+  match: m =>
+    m.isShaderMaterial && only(m, 'map') && m.vertexShader.startsWith('attribute vec4 tail; attribute vec4 head; attribute vec3 tint;'),
   vertex: () => [['position', 3, 0]],
-  perInstance: [['tail', 4, 1], ['head', 4, 2], ['tint', 3, 3]],
+  perInstance: [
+    ['tail', 4, 1],
+    ['head', 4, 2],
+    ['tint', 3, 3]
+  ],
   code: () => `
 struct VIn { @location(0) position: vec3f, @location(1) tail: vec4f, @location(2) head: vec4f, @location(3) tint: vec3f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec3f }
@@ -45,13 +62,22 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let t = textureSample(mapT, mapS, v.vUv);
   return vec4f(v.vTint * t.r * 2.2 + vec3f(t.a) * 0.55, 1.0);
-}`,
+}`
 });
 
 const ringCut = simple({
-  name: 'ringCut', textures: ['map'],
-  match: m => m.isShaderMaterial && only(m, 'map') && m.vertexShader.startsWith('varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix'),
-  vertex: () => [['position', 3, 0], ['uv', 2, 1]],
+  name: 'ringCut',
+  textures: ['map'],
+  match: m =>
+    m.isShaderMaterial &&
+    only(m, 'map') &&
+    m.vertexShader.startsWith(
+      'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix'
+    ),
+  vertex: () => [
+    ['position', 3, 0],
+    ['uv', 2, 1]
+  ],
   code: (m, instanced) => `
 struct VIn { @location(0) position: vec3f, @location(1) uv: vec2f, ${instanced ? '@location(8) im0: vec4f, @location(9) im1: vec4f, @location(10) im2: vec4f, @location(11) im3: vec4f,' : ''} }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
@@ -66,14 +92,25 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
   let t = textureSample(mapT, mapS, v.vUv);
   if (max(t.r, max(t.g, t.b)) * t.a < 0.5) { discard; }
   return vec4f(0.0);
-}`,
+}`
 });
 
 const spaceFog = simple({
-  name: 'spaceFog', textures: ['state', 'grid', 'gridRed'],
-  params: [['cells', 'v2'], ['tint', 'c3'], ['tintRed', 'c3'], ['haveGrid', 'f'], ['placing', 'f'], ['redLit', 'f']],
+  name: 'spaceFog',
+  textures: ['state', 'grid', 'gridRed'],
+  params: [
+    ['cells', 'v2'],
+    ['tint', 'c3'],
+    ['tintRed', 'c3'],
+    ['haveGrid', 'f'],
+    ['placing', 'f'],
+    ['redLit', 'f']
+  ],
   match: m => m.isShaderMaterial && !!m.uniforms && !!m.uniforms.state && !!m.uniforms.gridRed && !!m.uniforms.tintRed,
-  vertex: () => [['position', 3, 0], ['uv', 2, 1]],
+  vertex: () => [
+    ['position', 3, 0],
+    ['uv', 2, 1]
+  ],
   code: () => `
 struct VIn { @location(0) position: vec3f, @location(1) uv: vec2f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
@@ -95,7 +132,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
   col = mix(vec3f(0.008, 0.02, 0.04), col, D.haveGrid);
   a = mix(0.72, a, D.haveGrid);
   return vec4f(col, a * fog);
-}`,
+}`
 });
 
 const POST_VERT = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
@@ -103,30 +140,51 @@ const screenVS = `
 struct VIn { @location(0) position: vec3f, @location(1) uv: vec2f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
 @vertex fn vs(i: VIn) -> VOut { var o: VOut; o.vUv = i.uv; o.pos = glDepth(vec4f(i.position.xy, 0.0, 1.0)); return o; }`;
-const screen = (name, test, spec) => simple({ name, vertex: () => [['position', 3, 0], ['uv', 2, 1]],
-  match: m => m.isShaderMaterial && m.vertexShader === POST_VERT && test(m.fragmentShader), ...spec });
+const screen = (name, test, spec) =>
+  simple({
+    name,
+    vertex: () => [
+      ['position', 3, 0],
+      ['uv', 2, 1]
+    ],
+    match: m => m.isShaderMaterial && m.vertexShader === POST_VERT && test(m.fragmentShader),
+    ...spec
+  });
 
 const bright = screen('bright', f => f.includes('uniform float cutoff;'), {
-  textures: ['map'], params: [['cutoff', 'f']],
-  code: () => screenVS + `
+  textures: ['map'],
+  params: [['cutoff', 'f']],
+  code: () =>
+    screenVS +
+    `
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let c = clamp(textureSample(mapT, mapS, v.vUv).rgb, vec3f(0.0), vec3f(1.0)); let c2 = c * c;
   return vec4f(select(c * c2 * c2, c, dot(c, vec3f(0.299, 0.587, 0.114)) > D.cutoff), 1.0);
-}`,
+}`
 });
 
 const blur = screen('blur', f => f.includes('uniform vec2 offset;'), {
-  textures: ['map'], params: [['offset', 'v2']],
-  code: () => screenVS + `
+  textures: ['map'],
+  params: [['offset', 'v2']],
+  code: () =>
+    screenVS +
+    `
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let o = D.offset; let p = vec2f(D.offset.x, -D.offset.y);
   return vec4f((textureSample(mapT, mapS, v.vUv + o).rgb + textureSample(mapT, mapS, v.vUv - o).rgb + textureSample(mapT, mapS, v.vUv + p).rgb + textureSample(mapT, mapS, v.vUv - p).rgb) * 0.25, 1.0);
-}`,
+}`
 });
 
 const combine = screen('combine', f => f.includes('vec3 smoothEdges(vec2 uv)'), {
-  textures: ['scene', 'glow', 'heat'], params: [['texel', 'v2'], ['bloom', 'f'], ['haze', 'f']],
-  code: () => screenVS + `
+  textures: ['scene', 'glow', 'heat'],
+  params: [
+    ['texel', 'v2'],
+    ['bloom', 'f'],
+    ['haze', 'f']
+  ],
+  code: () =>
+    screenVS +
+    `
 const L = vec3f(0.299, 0.587, 0.114);
 fn smoothEdges(uv: vec2f) -> vec3f {
   let tx = D.texel;
@@ -151,13 +209,23 @@ fn smoothEdges(uv: vec2f) -> vec3f {
   let gl = textureSample(glowT, glowS, v.vUv).rgb;
   if (D.bloom > 0.0) { let g = clamp(gl * D.bloom, vec3f(0.0), vec3f(1.0)); c = clamp(c, vec3f(0.0), vec3f(1.0)); c += g * (1.0 - c); }
   return vec4f(c, 1.0);
-}`,
+}`
 });
 
 const flare = simple({
-  name: 'flare', textures: ['map'], params: [['cell', 'c3'], ['tint', 'c3'], ['level', 'f']],
-  match: m => m.isShaderMaterial && only(m, 'map', 'cell', 'tint', 'level') && m.vertexShader.startsWith('uniform vec3 cell; varying vec2 vUv;'),
-  vertex: () => [['position', 3, 0], ['uv', 2, 1]],
+  name: 'flare',
+  textures: ['map'],
+  params: [
+    ['cell', 'c3'],
+    ['tint', 'c3'],
+    ['level', 'f']
+  ],
+  match: m =>
+    m.isShaderMaterial && only(m, 'map', 'cell', 'tint', 'level') && m.vertexShader.startsWith('uniform vec3 cell; varying vec2 vUv;'),
+  vertex: () => [
+    ['position', 3, 0],
+    ['uv', 2, 1]
+  ],
   code: () => `
 struct VIn { @location(0) position: vec3f, @location(1) uv: vec2f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
@@ -165,7 +233,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f }
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let t = textureSample(mapT, mapS, v.vUv);
   return vec4f(t.rgb * D.tint * t.a * D.level, 1.0);
-}`,
+}`
 });
 
 const ROCK_COMMON = `
@@ -208,7 +276,10 @@ fn height(uv: vec2f) -> f32 {
 const isRock = (f, normal) => f.includes('float pfbm(vec2 uv, float per)') && f.includes('uniform float texel;') === normal;
 const rockAlbedo = screen('rockAlbedo', f => isRock(f, false), {
   textures: ['src', 'srcNormal'],
-  code: () => screenVS + ROCK_COMMON + `
+  code: () =>
+    screenVS +
+    ROCK_COMMON +
+    `
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let o = textureSample(srcT, srcS, v.vUv);
   let h = height(v.vUv);
@@ -216,18 +287,22 @@ const rockAlbedo = screen('rockAlbedo', f => isRock(f, false), {
   var col = o.rgb * (0.5 + 0.62 * h) * (0.9 + 0.2 * fine);
   col *= mix(vec3f(1.05, 0.98, 0.9), vec3f(0.9, 0.97, 1.06), pfbm(v.vUv + 0.5, 4.0));
   return vec4f(col, o.a);
-}`,
+}`
 });
 const rockNormal = screen('rockNormal', f => isRock(f, true), {
-  textures: ['src', 'srcNormal'], params: [['texel', 'f']],
-  code: () => screenVS + ROCK_COMMON + `
+  textures: ['src', 'srcNormal'],
+  params: [['texel', 'f']],
+  code: () =>
+    screenVS +
+    ROCK_COMMON +
+    `
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let n0 = textureSample(srcNormalT, srcNormalS, v.vUv);
   let h = height(v.vUv); let hu = height(v.vUv + vec2f(D.texel, 0.0)); let hv = height(v.vUv + vec2f(0.0, D.texel));
   let g = vec2f(h - hu, h - hv) / D.texel * 0.0016;
   let n = normalize(vec3f((n0.xy * 2.0 - 1.0) * 0.7 + g, max(n0.z * 2.0 - 1.0, 0.35)));
   return vec4f(n * 0.5 + 0.5, n0.a);
-}`,
+}`
 });
 
 families.push(sprites, beams, ringCut, spaceFog, bright, blur, combine, flare, rockAlbedo, rockNormal);

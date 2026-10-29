@@ -1,18 +1,37 @@
 export class XNode {
-  constructor(tag, attrs) { this.tag = tag; this.attrs = attrs; this.children = []; this.text = ''; }
-  child(tag) { const t = tag.toLowerCase(); return this.children.find(c => c.tag.toLowerCase() === t); }
-  all(tag) { const t = tag.toLowerCase(); return this.children.filter(c => c.tag.toLowerCase() === t); }
-  val(tag, def = '') { const c = this.child(tag); return c ? c.text.trim() : def; }
-  num(tag, def = 0) { const v = parseFloat(this.val(tag)); return Number.isFinite(v) ? v : def; }
+  constructor(tag, attrs) {
+    this.tag = tag;
+    this.attrs = attrs;
+    this.children = [];
+    this.text = '';
+  }
+  child(tag) {
+    const t = tag.toLowerCase();
+    return this.children.find(c => c.tag.toLowerCase() === t);
+  }
+  all(tag) {
+    const t = tag.toLowerCase();
+    return this.children.filter(c => c.tag.toLowerCase() === t);
+  }
+  val(tag, def = '') {
+    const c = this.child(tag);
+    return c ? c.text.trim() : def;
+  }
+  num(tag, def = 0) {
+    const v = parseFloat(this.val(tag));
+    return Number.isFinite(v) ? v : def;
+  }
 }
 
-const TOKEN = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<\/\s*([^\s>]+)\s*>|<([^\s>\/!?]+)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g;
+const TOKEN =
+  /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<\/\s*([^\s>]+)\s*>|<([^\s>\/!?]+)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g;
 const ATTR = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 export function parseXML(src) {
   const root = new XNode('#root', {});
   const stack = [root];
-  let last = 0, m;
+  let last = 0,
+    m;
   TOKEN.lastIndex = 0;
   while ((m = TOKEN.exec(src))) {
     const top = stack[stack.length - 1];

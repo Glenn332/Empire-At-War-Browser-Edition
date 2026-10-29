@@ -3,24 +3,62 @@ import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
 
-const sound = (world, u, name) => { const a = world.audio, e = u && u.isSquad ? u.fighters[0] || u : u; if (a.playAt && e && e.player) a.playAt(e.player, name, u.x, u.y); else a.play(name, u.x, u.y); };
+const sound = (world, u, name) => {
+  const a = world.audio,
+    e = u && u.isSquad ? u.fighters[0] || u : u;
+  if (a.playAt && e && e.player) a.playAt(e.player, name, u.x, u.y);
+  else a.play(name, u.x, u.y);
+};
 
 const rand = (a, b) => a + simRandom() * (b - a);
 const TAU = Math.PI * 2;
 
 const LABELS = {
-  HUNT: 'Hunt for enemies', SPOILER_LOCK: 'Lock S-foils', TURBO: 'Boost engines', DEFEND: 'Boost shields',
-  FOW_REVEAL_PING: 'Sensor ping', ENERGY_WEAPON: 'Proton beam', BLAST: 'Blast cannon', INTERDICT: 'Gravity well generator',
-  LURE: 'Lure', BARRAGE: 'Barrage area', LUCKY_SHOT: 'Lucky shot', SUPER_LASER: 'Superlaser', DEPLOY_SQUAD: 'Deploy squadron',
+  HUNT: 'Hunt for enemies',
+  SPOILER_LOCK: 'Lock S-foils',
+  TURBO: 'Boost engines',
+  DEFEND: 'Boost shields',
+  FOW_REVEAL_PING: 'Sensor ping',
+  ENERGY_WEAPON: 'Proton beam',
+  BLAST: 'Blast cannon',
+  INTERDICT: 'Gravity well generator',
+  LURE: 'Lure',
+  BARRAGE: 'Barrage area',
+  LUCKY_SHOT: 'Lucky shot',
+  SUPER_LASER: 'Superlaser',
+  DEPLOY_SQUAD: 'Deploy squadron'
 };
 
 const TARGET = {
-  BARRAGE: 'point', CLUSTER_BOMB: 'point', FOW_REVEAL_PING: 'point', WEAKEN_ENEMY: 'point',
-  BUZZ_DROIDS: 'unit', CONCENTRATE_FIRE: 'unit', CORRUPT_SYSTEMS: 'unit', ENERGY_WEAPON: 'unit', ION_CANNON_SHOT: 'unit',
-  LEECH_SHIELDS: 'unit', TRACTOR_BEAM: 'unit', LUCKY_SHOT: 'unit', SUPER_LASER: 'unit',
+  BARRAGE: 'point',
+  CLUSTER_BOMB: 'point',
+  FOW_REVEAL_PING: 'point',
+  WEAKEN_ENEMY: 'point',
+  BUZZ_DROIDS: 'unit',
+  CONCENTRATE_FIRE: 'unit',
+  CORRUPT_SYSTEMS: 'unit',
+  ENERGY_WEAPON: 'unit',
+  ION_CANNON_SHOT: 'unit',
+  LEECH_SHIELDS: 'unit',
+  TRACTOR_BEAM: 'unit',
+  LUCKY_SHOT: 'unit',
+  SUPER_LASER: 'unit'
 };
-const SELF = new Set(['SWAP_WEAPONS', 'HUNT', 'BLAST', 'HARMONIC_BOMB', 'INTERDICT', 'LASER_DEFENSE', 'LURE', 'MISSILE_SHIELD', 'SELF_DESTRUCT',
-  'SENSOR_JAMMING', 'STEALTH', 'FULL_SALVO', 'DEPLOY_SQUAD']);
+const SELF = new Set([
+  'SWAP_WEAPONS',
+  'HUNT',
+  'BLAST',
+  'HARMONIC_BOMB',
+  'INTERDICT',
+  'LASER_DEFENSE',
+  'LURE',
+  'MISSILE_SHIELD',
+  'SELF_DESTRUCT',
+  'SENSOR_JAMMING',
+  'STEALTH',
+  'FULL_SALVO',
+  'DEPLOY_SQUAD'
+]);
 const TOGGLE = new Set(['HUNT', 'SPOILER_LOCK', 'INTERDICT', 'LURE', 'MISSILE_SHIELD', 'SWAP_WEAPONS']);
 
 function namedSpec(type, name) {
@@ -60,17 +98,31 @@ export function parseAbilities(type) {
       const shot = kind === 'LUCKY_SHOT' ? db.type(ab.val('Projectile_Types_Override')) : null;
       const label = LABELS[kind] || kind.toLowerCase().replace(/_/g, ' ');
       out.push({
-        kind, mods, node: ab, spec, target, duration,
-        mustBuy: /^(yes|true|1)$/i.test(ab.val('Must_Be_Bought_On_Black_Market')) || !!spec && /^(yes|true|1)$/i.test(spec.val('Must_Be_Bought_On_Black_Market')), gui: ab.val('GUI_Activated_Ability_Name').trim(),
+        kind,
+        mods,
+        node: ab,
+        spec,
+        target,
+        duration,
+        mustBuy:
+          /^(yes|true|1)$/i.test(ab.val('Must_Be_Bought_On_Black_Market')) ||
+          (!!spec && /^(yes|true|1)$/i.test(spec.val('Must_Be_Bought_On_Black_Market'))),
+        gui: ab.val('GUI_Activated_Ability_Name').trim(),
         recharge: ab.num('Recharge_Seconds', 0),
         byDefault: /^(yes|true|1)$/i.test(ab.val('Active_By_Default').trim()),
         toggle: TOGGLE.has(kind) || (mods.size > 0 && duration === 0 && target === 'none' && !SELF.has(kind)),
-        range: sn('Activation_Max_Range', 0) || ab.num('Effective_Radius', 0) || (kind === 'ION_CANNON_SHOT' || kind === 'BUZZ_DROIDS' ? 700 : 0) || (shot ? shot.num('Projectile_Max_Flight_Distance', 1800) * 0.9 : 0),
+        range:
+          sn('Activation_Max_Range', 0) ||
+          ab.num('Effective_Radius', 0) ||
+          (kind === 'ION_CANNON_SHOT' || kind === 'BUZZ_DROIDS' ? 700 : 0) ||
+          (shot ? shot.num('Projectile_Max_Flight_Distance', 1800) * 0.9 : 0),
         immobile: /^(yes|true)$/i.test(ab.val('Disable_Movement')),
         icon: ab.val('Alternate_Icon_Name'),
-        sfxOn: ab.val('SFXEvent_GUI_Unit_Ability_Activated'), sfxOff: ab.val('SFXEvent_GUI_Unit_Ability_Deactivated'), sfxTarget: ab.val('SFXEvent_Target_Ability').trim(),
+        sfxOn: ab.val('SFXEvent_GUI_Unit_Ability_Activated'),
+        sfxOff: ab.val('SFXEvent_GUI_Unit_Ability_Deactivated'),
+        sfxTarget: ab.val('SFXEvent_Target_Ability').trim(),
         autofire: /^(yes|true)$/i.test(ab.val('Supports_Autofire')),
-        label: label.charAt(0).toUpperCase() + label.slice(1),
+        label: label.charAt(0).toUpperCase() + label.slice(1)
       });
     }
   }
@@ -79,12 +131,26 @@ export function parseAbilities(type) {
 
 export function attachAbilities(unit, defs) {
   const auto = !!(unit.player && unit.player.human && (unit.player.autofire ?? (unit.world && unit.world.autofire)));
-  unit.abilities = defs.map(def => ({ def, active: false, timer: 0, cooldown: 0, data: null, acc: 0, auto: auto && def.autofire, pend: !!def.byDefault }));
+  unit.abilities = defs.map(def => ({
+    def,
+    active: false,
+    timer: 0,
+    cooldown: 0,
+    data: null,
+    acc: 0,
+    auto: auto && def.autofire,
+    pend: !!def.byDefault
+  }));
 }
 
 export function refreshMods(u) {
   const m = u.mods;
-  m.weaponDelay = 1; m.shieldRegen = 1; m.shieldInterval = 1; m.speed = 1; m.damageTaken = 1; m.damageDealt = 1;
+  m.weaponDelay = 1;
+  m.shieldRegen = 1;
+  m.shieldInterval = 1;
+  m.speed = 1;
+  m.damageTaken = 1;
+  m.damageDealt = 1;
   for (const st of u.abilities) {
     if (!st.active) continue;
     const g = st.def.mods;
@@ -99,7 +165,10 @@ export function refreshMods(u) {
     if (st.def.kind === 'BLAST' && st.data && st.data.fired) m.damageDealt *= st.def.spec ? st.def.spec.num('Damage_Multiplier', 5) : 5;
   }
   for (const s of u.statuses) {
-    m.speed *= s.speed ?? 1; m.damageTaken *= s.damageTaken ?? 1; m.damageDealt *= s.damageDealt ?? 1; m.weaponDelay *= s.weaponDelay ?? 1;
+    m.speed *= s.speed ?? 1;
+    m.damageTaken *= s.damageTaken ?? 1;
+    m.damageDealt *= s.damageDealt ?? 1;
+    m.weaponDelay *= s.weaponDelay ?? 1;
   }
   u.cloaked = u.abilities.some(st => st.active && st.def.kind === 'STEALTH');
 }
@@ -115,14 +184,26 @@ export function addStatus(world, u, s) {
 
 const hostile = (a, b) => b.player.id >= 0 && a.player.team !== b.player.team;
 const members = e => (e.isSquad ? e.fighters : [e]);
-const posOf = e => (e.isSquad ? (e.fighters[0] || e) : e);
+const posOf = e => (e.isSquad ? e.fighters[0] || e : e);
 
 function validTarget(def, target) {
   const spec = def.spec;
   if (!spec) return true;
-  const cats = spec.val('Applicable_Unit_Categories').toUpperCase().split(/[\s|,]+/).filter(Boolean);
-  const types = spec.val('Applicable_Unit_Types').toUpperCase().split(/[\s,]+/).filter(Boolean);
-  const excluded = spec.val('Excluded_Unit_Types').toUpperCase().split(/[\s,]+/).filter(Boolean);
+  const cats = spec
+    .val('Applicable_Unit_Categories')
+    .toUpperCase()
+    .split(/[\s|,]+/)
+    .filter(Boolean);
+  const types = spec
+    .val('Applicable_Unit_Types')
+    .toUpperCase()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+  const excluded = spec
+    .val('Excluded_Unit_Types')
+    .toUpperCase()
+    .split(/[\s,]+/)
+    .filter(Boolean);
   const name = target.type.name.toUpperCase();
   if (excluded.includes(name)) return false;
   if (!cats.length || cats.includes('ALL') || types.includes(name)) return true;
@@ -138,7 +219,8 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   const def = st0.def;
   if (on && abilityLocked(world.campaign, def, world.marketOf(lead))) return 'Must be bought on the Black Market';
   if (on) {
-    if ((lead.abilityLock || 0) > world.time) return lead.inNebula ? 'Abilities do not work inside a nebula' : 'Abilities are still recovering from the nebula';
+    if ((lead.abilityLock || 0) > world.time)
+      return lead.inNebula ? 'Abilities do not work inside a nebula' : 'Abilities are still recovering from the nebula';
     if (st0.active && (def.toggle || def.duration > 0)) return null;
     if (kind === 'DEFEND' && lead.ionUntil > world.time) return 'Disabled by an ion stun';
     if (st0.cooldown > 0) return `Recharging (${Math.ceil(st0.cooldown)}s)`;
@@ -164,9 +246,11 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   let any = false;
   for (const u of members(e)) {
     const st = u.abilities.find(s => s.def.kind === kind);
-    if (!st || st.active === on && (def.toggle || def.duration > 0)) continue;
-    if (on) { if (st.cooldown > 0) continue; start(world, u, st, target); }
-    else if (st.active) stop(world, u, st);
+    if (!st || (st.active === on && (def.toggle || def.duration > 0))) continue;
+    if (on) {
+      if (st.cooldown > 0) continue;
+      start(world, u, st, target);
+    } else if (st.active) stop(world, u, st);
     any = true;
   }
   return any ? null : 'Not ready';
@@ -179,13 +263,19 @@ function swapWeapon(u) {
 }
 
 function start(world, u, st, target) {
-  const def = st.def, kind = def.kind;
+  const def = st.def,
+    kind = def.kind;
   st.data = { target, t: 0 };
   st.acc = 0;
   const timed = def.toggle || def.duration > 0;
-  if (timed) { st.active = true; st.timer = def.duration; }
-  else st.cooldown = def.recharge;
-  if (kind !== 'STEALTH' && def.target !== 'none') { const c = u.abilities.find(s => s.active && s.def.kind === 'STEALTH'); if (c) stop(world, u, c); }
+  if (timed) {
+    st.active = true;
+    st.timer = def.duration;
+  } else st.cooldown = def.recharge;
+  if (kind !== 'STEALTH' && def.target !== 'none') {
+    const c = u.abilities.find(s => s.active && s.def.kind === 'STEALTH');
+    if (c) stop(world, u, c);
+  }
 
   if (kind === 'SWAP_WEAPONS') swapWeapon(u);
   switch (kind) {
@@ -193,14 +283,16 @@ function start(world, u, st, target) {
       const proj = db.type(def.spec ? def.spec.val('Bomb_Type') : '') || db.type('Proj_Cluster_Bomb');
       const n = def.spec ? def.spec.num('Number_Of_Bombs', 12) : 12;
       for (let i = 0; i < n && proj; i++) {
-        const a = simRandom() * TAU, r = Math.sqrt(simRandom()) * 170;
+        const a = simRandom() * TAU,
+          r = Math.sqrt(simRandom()) * 170;
         world.launchPoint(proj, u, u.x, u.y, u.z + 10, target.x + Math.cos(a) * r, target.y + Math.sin(a) * r, 0, { delay: i * 0.08 });
       }
       break;
     }
     case 'HARMONIC_BOMB': {
       const proj = db.type(def.node.val('Spawned_Object_Type'));
-      if (proj) world.delayed(def.node.num('Bomb_Countdown_Seconds', 1.5), u.x, u.y, u.z, () => world.detonate(proj, u.player, u.x, u.y, u.z, 1));
+      if (proj)
+        world.delayed(def.node.num('Bomb_Countdown_Seconds', 1.5), u.x, u.y, u.z, () => world.detonate(proj, u.player, u.x, u.y, u.z, 1));
       world.fx.flash(u.x, u.y, u.z, 30, 0xffcc66);
       break;
     }
@@ -225,13 +317,24 @@ function start(world, u, st, target) {
       break;
     }
     case 'CONCENTRATE_FIRE':
-      addStatus(world, target, { kind: 'CONCENTRATE', source: u.player.team, dur: def.node.num('Expiration_Seconds', 15),
-        damageTaken: 1 + (def.spec ? def.spec.num('Target_Damage_Increase_Percent', 0.5) : 0.5), mark: true });
-      st.active = false; st.cooldown = def.recharge;
+      addStatus(world, target, {
+        kind: 'CONCENTRATE',
+        source: u.player.team,
+        dur: def.node.num('Expiration_Seconds', 15),
+        damageTaken: 1 + (def.spec ? def.spec.num('Target_Damage_Increase_Percent', 0.5) : 0.5),
+        mark: true
+      });
+      st.active = false;
+      st.cooldown = def.recharge;
       break;
     case 'CORRUPT_SYSTEMS':
-      addStatus(world, target, { kind: 'CORRUPT', source: u, dur: def.spec.num('Duration_In_Seconds', 12),
-        shieldDps: def.spec.num('Shield_Drain_Per_Second', 60), damageDealt: 0.6 });
+      addStatus(world, target, {
+        kind: 'CORRUPT',
+        source: u,
+        dur: def.spec.num('Duration_In_Seconds', 12),
+        shieldDps: def.spec.num('Shield_Drain_Per_Second', 60),
+        damageDealt: 0.6
+      });
       world.beams.push({ a: u, b: target, color: [0.4, 1, 0.5], until: world.time + 0.8, width: 6 });
       break;
     case 'BUZZ_DROIDS':
@@ -249,7 +352,10 @@ function start(world, u, st, target) {
     case 'LUCKY_SHOT': {
       if (u.squad && u.squad.fighters[0] !== u) break;
       const proj = db.type(def.node.val('Projectile_Types_Override'));
-      if (proj) world.launch(proj, u, target, null, u.x, u.y, u.z, proj.str('Damage_Type'), new Map(), { mult: def.mods.get('CAUSE_DAMAGE_MULTIPLIER') ?? 1 });
+      if (proj)
+        world.launch(proj, u, target, null, u.x, u.y, u.z, proj.str('Damage_Type'), new Map(), {
+          mult: def.mods.get('CAUSE_DAMAGE_MULTIPLIER') ?? 1
+        });
       sound(world, u, def.sfxTarget);
       break;
     }
@@ -260,7 +366,9 @@ function start(world, u, st, target) {
     case 'DEPLOY_SQUAD':
       if (!world.deploySquad(u)) st.cooldown = 0;
       break;
-    case 'TRACTOR_BEAM': case 'ENERGY_WEAPON': case 'LEECH_SHIELDS':
+    case 'TRACTOR_BEAM':
+    case 'ENERGY_WEAPON':
+    case 'LEECH_SHIELDS':
       if (!u.squad) u.target = target;
       break;
   }
@@ -292,18 +400,30 @@ export function tickAbilities(world, u, dt) {
     let changed = false;
     for (let i = u.statuses.length - 1; i >= 0; i--) {
       const s = u.statuses[i];
-      if (world.time >= s.until || (s.source && s.source.dead)) { u.statuses.splice(i, 1); changed = true; continue; }
+      if (world.time >= s.until || (s.source && s.source.dead)) {
+        u.statuses.splice(i, 1);
+        changed = true;
+        continue;
+      }
       if (s.shieldDps && u.shield > 0) u.shield = Math.max(0, u.shield - s.shieldDps * dt);
       if (s.dps) world.damage(u, s.dps * dt, { damageType: 'Damage_Default', attacker: s.owner || null, shields: false, quiet: true });
       if (u.dead) return;
-      if (s.sparks && simRandom() < dt * 6) world.fx.hit(u.x + rand(-1, 1) * u.hitRadius * 0.6, u.y + rand(-1, 1) * u.hitRadius * 0.6, u.z + u.height * 0.3, 8);
+      if (s.sparks && simRandom() < dt * 6)
+        world.fx.hit(u.x + rand(-1, 1) * u.hitRadius * 0.6, u.y + rand(-1, 1) * u.hitRadius * 0.6, u.z + u.height * 0.3, 8);
     }
     if (changed) refreshMods(u);
   }
   for (const st of u.abilities) {
-    if (st.pend && !u.hyper) { st.pend = false; useAbility(world, u, st.def.kind, true); }
-    if (!st.active) { if (st.cooldown > 0) st.cooldown -= dt; continue; }
-    const def = st.def, d = st.data || (st.data = {});
+    if (st.pend && !u.hyper) {
+      st.pend = false;
+      useAbility(world, u, st.def.kind, true);
+    }
+    if (!st.active) {
+      if (st.cooldown > 0) st.cooldown -= dt;
+      continue;
+    }
+    const def = st.def,
+      d = st.data || (st.data = {});
     d.t = (d.t || 0) + dt;
     const tgt = d.target && d.target.type ? d.target : null;
     switch (def.kind) {
@@ -314,8 +434,10 @@ export function tickAbilities(world, u, dt) {
         st.acc += dt * Math.max(2, guns.length * 1.5);
         while (st.acc >= 1 && guns.length) {
           st.acc -= 1;
-          const h = guns[(simRandom() * guns.length) | 0], p = h.worldPos({});
-          const a = simRandom() * TAU, r = Math.sqrt(simRandom()) * radius;
+          const h = guns[(simRandom() * guns.length) | 0],
+            p = h.worldPos({});
+          const a = simRandom() * TAU,
+            r = Math.sqrt(simRandom()) * radius;
           world.launchPoint(proj || h.proj, u, p.x, p.y, p.z, d.target.x + Math.cos(a) * r, d.target.y + Math.sin(a) * r, 0, {});
           if (h.fireSfx && simRandom() < 0.3) world.audio.play(h.fireSfx, p.x, p.y);
         }
@@ -323,35 +445,82 @@ export function tickAbilities(world, u, dt) {
       }
       case 'BLAST':
         if (!d.fired && d.t >= (def.spec ? def.spec.num('Charge_Up_Seconds', 5) : 5)) {
-          d.fired = true; refreshMods(u);
+          d.fired = true;
+          refreshMods(u);
           world.fx.flash(u.x, u.y, u.z, u.visualRadius * 1.5, 0xfff0a0);
           for (const h of u.hardpoints) if (h.isWeapon) h.cooldown = 0;
         }
         break;
       case 'TRACTOR_BEAM':
-        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.15)) { stop(world, u, st); continue; }
+        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.15)) {
+          stop(world, u, st);
+          continue;
+        }
         if (!tgt.statuses.some(s => s.kind === 'TRACTOR' && s.source === u)) {
-          addStatus(world, tgt, { kind: 'TRACTOR', source: u, dur: 999, speed: 1 - (def.spec ? def.spec.num('Target_Speed_Decrease_Percent', 0.75) : 0.75) });
+          addStatus(world, tgt, {
+            kind: 'TRACTOR',
+            source: u,
+            dur: 999,
+            speed: 1 - (def.spec ? def.spec.num('Target_Speed_Decrease_Percent', 0.75) : 0.75)
+          });
         }
         world.beam(u, tgt, [0.45, 0.6, 1], 10);
         break;
       case 'ENERGY_WEAPON':
-        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.2)) { stop(world, u, st); continue; }
-        world.damage(tgt, (def.spec ? def.spec.num('Damage_Per_Frame', 50) : 50) * 30 * dt, { damageType: 'Damage_Default', attacker: u.player, x: tgt.x, y: tgt.y, z: tgt.z, quiet: simRandom() > dt * 12 });
+        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.2)) {
+          stop(world, u, st);
+          continue;
+        }
+        world.damage(tgt, (def.spec ? def.spec.num('Damage_Per_Frame', 50) : 50) * 30 * dt, {
+          damageType: 'Damage_Default',
+          attacker: u.player,
+          x: tgt.x,
+          y: tgt.y,
+          z: tgt.z,
+          quiet: simRandom() > dt * 12
+        });
         world.beam(u, tgt, [0.4, 1, 0.5], 14);
         break;
       case 'SUPER_LASER': {
-        const sp = def.spec, fireAt = (sp ? sp.num('Fire_Frame', 60) : 60) / 30;
-        if (!tgt || tgt.dead) { stop(world, u, st); continue; }
+        const sp = def.spec,
+          fireAt = (sp ? sp.num('Fire_Frame', 60) : 60) / 30;
+        if (!tgt || tgt.dead) {
+          stop(world, u, st);
+          continue;
+        }
         if (d.t < fireAt) break;
-        if (!d.fired) { d.fired = true; world.audio.play(def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y); }
-        const c = sp ? sp.val('Line_Color').trim().split(/[\s,]+/).map(Number) : [];
-        world.damage(tgt, (sp ? sp.num('Damage_Per_Frame', 500) : 500) * 30 * dt, { damageType: 'Damage_Default', attacker: u.player, x: tgt.x, y: tgt.y, z: tgt.z, quiet: simRandom() > dt * 12 });
-        world.beam(u, tgt, c.length >= 3 && c.every(Number.isFinite) ? [c[0] / 255, c[1] / 255, c[2] / 255] : [0, 0.93, 0.47], sp ? sp.num('Line_Width', 35) : 35);
+        if (!d.fired) {
+          d.fired = true;
+          world.audio.play(def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
+        }
+        const c = sp
+          ? sp
+              .val('Line_Color')
+              .trim()
+              .split(/[\s,]+/)
+              .map(Number)
+          : [];
+        world.damage(tgt, (sp ? sp.num('Damage_Per_Frame', 500) : 500) * 30 * dt, {
+          damageType: 'Damage_Default',
+          attacker: u.player,
+          x: tgt.x,
+          y: tgt.y,
+          z: tgt.z,
+          quiet: simRandom() > dt * 12
+        });
+        world.beam(
+          u,
+          tgt,
+          c.length >= 3 && c.every(Number.isFinite) ? [c[0] / 255, c[1] / 255, c[2] / 255] : [0, 0.93, 0.47],
+          sp ? sp.num('Line_Width', 35) : 35
+        );
         break;
       }
       case 'LEECH_SHIELDS': {
-        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.1)) { stop(world, u, st); continue; }
+        if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.1)) {
+          stop(world, u, st);
+          continue;
+        }
         const take = Math.min(tgt.shield, (def.spec ? def.spec.num('Shield_Damage_Per_Second', 100) : 100) * dt);
         tgt.shield -= take;
         u.shield = Math.min(u.maxShield, u.shield + take);
@@ -368,7 +537,10 @@ export function tickAbilities(world, u, dt) {
           if ((p.x - u.x) ** 2 + (p.y - u.y) ** 2 > r * r) continue;
           p.dead = true;
           world.fx.hit(p.x, p.y, p.z, 10);
-          if (def.kind === 'LASER_DEFENSE') { world.beams.push({ a: u, b: { x: p.x, y: p.y, z: p.z }, color: [0.3, 0.3, 1], until: world.time + 0.12, width: 4 }); break; }
+          if (def.kind === 'LASER_DEFENSE') {
+            world.beams.push({ a: u, b: { x: p.x, y: p.y, z: p.z }, color: [0.3, 0.3, 1], until: world.time + 0.12, width: 4 });
+            break;
+          }
         }
         break;
       }
@@ -405,14 +577,15 @@ export function tickAbilities(world, u, dt) {
 export function aiUseAbilities(world, e, onlyAuto = false) {
   const lead = posOf(e);
   if (!lead || !lead.abilities || !lead.abilities.length) return;
-  const victim = e.isSquad ? (e.target && !e.target.dead ? posOf(e.target) : null) : (lead.target && !lead.target.dead ? lead.target : null);
+  const victim = e.isSquad ? (e.target && !e.target.dead ? posOf(e.target) : null) : lead.target && !lead.target.dead ? lead.target : null;
   if (!victim || victim.x === undefined || !victim.type) return;
   const ready = [];
   for (const st of lead.abilities) {
     const def = st.def;
     if ((onlyAuto && !st.auto) || st.active || st.cooldown > 0 || !def.spec) continue;
     if (def.target === 'unit' && (!hostile(lead, victim) || !validTarget(def, victim))) continue;
-    if (def.target !== 'none' && def.range && Math.hypot(victim.x - lead.x, victim.y - lead.y) > def.range + (victim.hitRadius || 0)) continue;
+    if (def.target !== 'none' && def.range && Math.hypot(victim.x - lead.x, victim.y - lead.y) > def.range + (victim.hitRadius || 0))
+      continue;
     const chance = def.spec.val('Activation_Chance').trim() === '' ? 1 : def.spec.num('Activation_Chance', 1);
     if (!(chance > 0) || simRandom() > chance) continue;
     ready.push(st);

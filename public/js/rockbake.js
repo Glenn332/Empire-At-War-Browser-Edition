@@ -42,7 +42,9 @@ float height(vec2 uv) {
     + craters(uv, 7.0, 3.0) * 0.22 + craters(uv, 19.0, 11.0) * 0.1 + craters(uv, 53.0, 29.0) * 0.045;
 }`;
 
-const ALBEDO = COMMON + `
+const ALBEDO =
+  COMMON +
+  `
 void main() {
   vec4 o = texture2D(src, vUv);
   float h = height(vUv);
@@ -52,7 +54,9 @@ void main() {
   gl_FragColor = vec4(col, o.a);
 }`;
 
-const NORMAL = COMMON + `
+const NORMAL =
+  COMMON +
+  `
 uniform float texel;
 void main() {
   vec4 n0 = texture2D(srcNormal, vUv);
@@ -65,36 +69,58 @@ void main() {
 let baked = null;
 
 export const rockTextures = () => baked;
-let bakedOn = null, bakes = 0;
+let bakedOn = null,
+  bakes = 0;
 export const rockBake = () => bakes;
 
 export async function bakeRockTextures(renderer, base = 'w_asteroid00.tga', normal = 'w_asteroid00_bc.tga') {
   if (baked && bakedOn === renderer) return baked;
-  baked = null; bakedOn = renderer; bakes++;
+  baked = null;
+  bakedOn = renderer;
+  bakes++;
   try {
     const size = Math.min(4096, renderer.capabilities.maxTextureSize);
-    const src = loadTexture(base), srcN = loadTexture(normal);
+    const src = loadTexture(base),
+      srcN = loadTexture(normal);
     await Promise.all([src.userData.ready, srcN.userData.ready]);
     const target = () => {
-      const rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: false, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+      const rt = new THREE.WebGLRenderTarget(size, size, {
+        depthBuffer: false,
+        generateMipmaps: true,
+        minFilter: THREE.LinearMipmapLinearFilter,
+        magFilter: THREE.LinearFilter
+      });
       rt.texture.wrapS = rt.texture.wrapT = THREE.RepeatWrapping;
       rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
       rt.texture.colorSpace = THREE.NoColorSpace;
       return rt;
     };
-    const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const scene = new THREE.Scene(),
+      cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
     quad.frustumCulled = false;
     scene.add(quad);
     const pass = (frag, rt) => {
-      quad.material = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag, uniforms: { src: { value: src }, srcNormal: { value: srcN }, texel: { value: 1 / size } }, depthTest: false });
+      quad.material = new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader: frag,
+        uniforms: { src: { value: src }, srcNormal: { value: srcN }, texel: { value: 1 / size } },
+        depthTest: false
+      });
       renderer.setRenderTarget(rt);
       renderer.render(scene, cam);
       quad.material.dispose();
     };
-    const a = target(), n = target(), sync = renderer.syncPipelines;
+    const a = target(),
+      n = target(),
+      sync = renderer.syncPipelines;
     renderer.syncPipelines = true;
-    try { pass(ALBEDO, a); pass(NORMAL, n); } finally { renderer.syncPipelines = sync; }
+    try {
+      pass(ALBEDO, a);
+      pass(NORMAL, n);
+    } finally {
+      renderer.syncPipelines = sync;
+    }
     renderer.setRenderTarget(null);
     quad.geometry.dispose();
     baked = { map: a.texture, normalMap: n.texture, size };

@@ -10,7 +10,11 @@ function machine() {
   vm.global('Double', x => x * 2);
   vm.global('Engine', { __wrap: true, __name: 'Engine', Answer: () => 42 });
   const persist = new LuaPersist(vm);
-  const make = id => { let o = engineObjects.get(id); if (!o) engineObjects.set(id, o = { __wrap: true, __name: 'Thing', id, Get_Id: () => id, Twice: () => id * 2 }); return o; };
+  const make = id => {
+    let o = engineObjects.get(id);
+    if (!o) engineObjects.set(id, (o = { __wrap: true, __name: 'Thing', id, Get_Id: () => id, Twice: () => id * 2 }));
+    return o;
+  };
   persist.hooks.describe = o => (o.__name === 'Thing' ? { thing: o.id } : undefined);
   persist.hooks.resolve = d => (d.thing !== undefined ? make(d.thing) : undefined);
   persist.freezePerms();
@@ -50,12 +54,20 @@ function Shared() local n = 0; Bump = function() n = n + 1; return n end; while 
 function Sorted() local keys = {} for k in pairs(Order) do keys[#keys + 1] = k end return table.concat(keys, ',') end
 `;
 assert.equal(A.vm.run(script, 'test', env), null);
-const call = (m, e, name, ...a) => { const r = m.vm.call(e, name, ...a); assert(r.ok, name + ': ' + r.error); return r.value; };
+const call = (m, e, name, ...a) => {
+  const r = m.vm.call(e, name, ...a);
+  assert(r.ok, name + ': ' + r.error);
+  return r.value;
+};
 call(A, env, 'Bind', A.make(7));
 const t1 = A.vm.thread(env, 'Worker');
 for (let i = 0; i < 3; i++) A.vm.resume(t1);
-assert.equal(call(A, env, 'Gen'), 3); assert.equal(call(A, env, 'Words'), 'one');
-const t3 = A.vm.thread(env, 'Shared'); A.vm.resume(t3); A.vm.resume(t3); call(A, env, 'Bump');
+assert.equal(call(A, env, 'Gen'), 3);
+assert.equal(call(A, env, 'Words'), 'one');
+const t3 = A.vm.thread(env, 'Shared');
+A.vm.resume(t3);
+A.vm.resume(t3);
+call(A, env, 'Bump');
 const sortedBefore = call(A, env, 'Sorted');
 assert.equal(sortedBefore, 'zeta,alpha,mid,beta', 'insertion order is what pairs gives');
 

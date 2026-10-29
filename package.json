@@ -9,7 +9,9 @@
     "deploy:prod": "node tools/build.mjs && cd lobby && npx wrangler deploy --env production && npx wrangler pages deploy ../dist --project-name empire-at-war-browser-edition --branch main --commit-dirty=true",
     "wasm": "asc wasm/pathsearch.ts -o public/js/game/pathsearch.wasm -O3 --runtime stub --noAssert --initialMemory 32 && asc wasm/landpose.ts -o public/js/game/landpose.wasm -O3 --runtime stub --noAssert --initialMemory 2 --enable simd",
     "app": "node tools/build-app.mjs",
-    "app:release": "node tools/release-app.mjs"
+    "app:release": "node tools/release-app.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -19,6 +21,7 @@
     "@tauri-apps/cli": "^2.12.4",
     "assemblyscript": "0.28.20",
     "fengari-web": "^0.1.4",
+    "prettier": "3.3.3",
     "three": "^0.169.0"
   }
 }

@@ -29,10 +29,18 @@ export const lighting = {
   shadowTexel: { value: 1 / 2048 },
   fogTint: { value: new THREE.Color(0.8, 0.8, 0.8) },
   fogRange: { value: new THREE.Vector2(0, 0) },
-  fowMap: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat); t.needsUpdate = true; return t; })() },
-  fowSide: { value: 0 },
+  fowMap: {
+    value: (() => {
+      const t = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
+      t.needsUpdate = true;
+      return t;
+    })()
+  },
+  fowSide: { value: 0 }
 };
-const lightingAtStart = Object.fromEntries(Object.entries(lighting).map(([k, u]) => [k, u.value?.isTexture || typeof u.value !== 'object' ? u.value : u.value.clone()]));
+const lightingAtStart = Object.fromEntries(
+  Object.entries(lighting).map(([k, u]) => [k, u.value?.isTexture || typeof u.value !== 'object' ? u.value : u.value.clone()])
+);
 export function resetLighting() {
   for (const [k, v] of Object.entries(lightingAtStart)) {
     const u = lighting[k];
@@ -43,11 +51,18 @@ export function resetLighting() {
 }
 
 export const planetLighting = {
-  sunDir:{value:new THREE.Vector3(0,0,1)},sunColor:{value:new THREE.Color(.5,.5,.5)},sunSpecular:{value:new THREE.Color(1,1,1)},
-  fillDir:{value:new THREE.Vector3(0,0,1)},fillColor:{value:new THREE.Color(0,0,0)},fillDir2:{value:new THREE.Vector3(0,0,1)},fillColor2:{value:new THREE.Color(0,0,0)},ambient:{value:new THREE.Color(.05,.05,.05)},
+  sunDir: { value: new THREE.Vector3(0, 0, 1) },
+  sunColor: { value: new THREE.Color(0.5, 0.5, 0.5) },
+  sunSpecular: { value: new THREE.Color(1, 1, 1) },
+  fillDir: { value: new THREE.Vector3(0, 0, 1) },
+  fillColor: { value: new THREE.Color(0, 0, 0) },
+  fillDir2: { value: new THREE.Vector3(0, 0, 1) },
+  fillColor2: { value: new THREE.Color(0, 0, 0) },
+  ambient: { value: new THREE.Color(0.05, 0.05, 0.05) }
 };
 export function setPlanetEnvironment(env) {
-  if(!env)return;for(const [key,value]of Object.entries(planetEnvironment(env)))planetLighting[key].value.fromArray(value);
+  if (!env) return;
+  for (const [key, value] of Object.entries(planetEnvironment(env))) planetLighting[key].value.fromArray(value);
 }
 
 const SKIP = /collision|shadowvolume|lightvisualize|meshheat/;
@@ -289,63 +304,104 @@ void main() {
 export const planetClock = { value: 0 };
 let planetEffect = null;
 function planetEffectInfo() {
-  return planetEffect ||= Promise.all(['Data/Art/Shaders/Planet.fxo','Data/Art/Shaders/Engine/Global.fxo'].map(fetchBinary)).then(([bytes,global])=>{
-    const effect=bytes?effectInfo(bytes):{samplers:new Map(),techniques:[]};
-    const defaults=global?effectInfo(global):null;
-    effect.globalSampler=defaults?.samplers.get('DefaultSampler')||new Map();
-    effect.globalStates=defaults?.techniques.find(t=>t.name==='t0')?.passes.flatMap(p=>p.states)||[];
-    return effect;
-  });
+  return (planetEffect ||= Promise.all(['Data/Art/Shaders/Planet.fxo', 'Data/Art/Shaders/Engine/Global.fxo'].map(fetchBinary)).then(
+    ([bytes, global]) => {
+      const effect = bytes ? effectInfo(bytes) : { samplers: new Map(), techniques: [] };
+      const defaults = global ? effectInfo(global) : null;
+      effect.globalSampler = defaults?.samplers.get('DefaultSampler') || new Map();
+      effect.globalStates = defaults?.techniques.find(t => t.name === 't0')?.passes.flatMap(p => p.states) || [];
+      return effect;
+    }
+  ));
 }
 
 function makePlanetMaterial(p) {
   const c3 = (v, d) => (v ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
-  const detail=gfx.shader|0, requests=[];
-  const definesFor=lod=>lod===0?{PLANET_FIXED:1}:lod===2?{PLANET_DX8:1}:{};
-  const selected=planetEffectInfo().then(effect=>{
-    const technique=selectEffectTechnique(effect,detail,{validate:t=>[0,2,3].includes(effectLOD(t.annotations.LOD))});
-    const lod=technique?effectLOD(technique.annotations.LOD):detail>=3?3:detail>=2?2:0;
-    m.defines=definesFor(lod);m.userData.planetTechnique=technique?.name||'';m.needsUpdate=true;
-    return {effect,technique,lod};
+  const detail = gfx.shader | 0,
+    requests = [];
+  const definesFor = lod => (lod === 0 ? { PLANET_FIXED: 1 } : lod === 2 ? { PLANET_DX8: 1 } : {});
+  const selected = planetEffectInfo().then(effect => {
+    const technique = selectEffectTechnique(effect, detail, { validate: t => [0, 2, 3].includes(effectLOD(t.annotations.LOD)) });
+    const lod = technique ? effectLOD(technique.annotations.LOD) : detail >= 3 ? 3 : detail >= 2 ? 2 : 0;
+    m.defines = definesFor(lod);
+    m.userData.planetTechnique = technique?.name || '';
+    m.needsUpdate = true;
+    return { effect, technique, lod };
   });
   const tex = (name, sampler, stage) => {
-    const source = name ? loadTexture(name) : whiteTexture(), texture = source.clone();
+    const source = name ? loadTexture(name) : whiteTexture(),
+      texture = source.clone();
     texture.userData = { ...source.userData };
-    const ready=Promise.all([source.userData.ready,selected]).then(([, {effect,technique,lod}])=>{
+    const ready = Promise.all([source.userData.ready, selected]).then(([, { effect, technique, lod }]) => {
       texture.copy(source);
       texture.isCompressedTexture = source.isCompressedTexture === true;
       texture.isDataTexture = source.isDataTexture === true;
-      const fixedStates=[...effect.globalStates,...(technique?.passes.filter(p=>!p.annotations.AlamoCleanup).flatMap(p=>p.states)||[])];
-      const states=lod===0?new Map([...effect.globalSampler,...fixedStates
-        .filter(s=>s.index===stage&&s.value!==undefined).map(s=>[s.id,s.value])]):effect.samplers.get(sampler);
-      const min=states?.get(0xaa)??2, mag=states?.get(0xa9)??2, mip=states?.get(0xab)??2;
-      texture.anisotropy = min===3||mag===3 ? states?.get(0xae)??1 : 1;
-      texture.magFilter = mag===1?THREE.NearestFilter:THREE.LinearFilter;
-      texture.minFilter = mip===0||!texture.mipmaps?.length ? (min===1?THREE.NearestFilter:THREE.LinearFilter)
-        : min===1 ? (mip===1?THREE.NearestMipmapNearestFilter:THREE.NearestMipmapLinearFilter)
-        : mip===1?THREE.LinearMipmapNearestFilter:THREE.LinearMipmapLinearFilter;
-      const wrap = value=>value===2?THREE.MirroredRepeatWrapping:value===3?THREE.ClampToEdgeWrapping:THREE.RepeatWrapping;
-      texture.wrapS=wrap(states?.get(0xa5));texture.wrapT=wrap(states?.get(0xa6));texture.needsUpdate=true;
-      texture.userData.ready=ready;
+      const fixedStates = [
+        ...effect.globalStates,
+        ...(technique?.passes.filter(p => !p.annotations.AlamoCleanup).flatMap(p => p.states) || [])
+      ];
+      const states =
+        lod === 0
+          ? new Map([
+              ...effect.globalSampler,
+              ...fixedStates.filter(s => s.index === stage && s.value !== undefined).map(s => [s.id, s.value])
+            ])
+          : effect.samplers.get(sampler);
+      const min = states?.get(0xaa) ?? 2,
+        mag = states?.get(0xa9) ?? 2,
+        mip = states?.get(0xab) ?? 2;
+      texture.anisotropy = min === 3 || mag === 3 ? (states?.get(0xae) ?? 1) : 1;
+      texture.magFilter = mag === 1 ? THREE.NearestFilter : THREE.LinearFilter;
+      texture.minFilter =
+        mip === 0 || !texture.mipmaps?.length
+          ? min === 1
+            ? THREE.NearestFilter
+            : THREE.LinearFilter
+          : min === 1
+            ? mip === 1
+              ? THREE.NearestMipmapNearestFilter
+              : THREE.NearestMipmapLinearFilter
+            : mip === 1
+              ? THREE.LinearMipmapNearestFilter
+              : THREE.LinearMipmapLinearFilter;
+      const wrap = value => (value === 2 ? THREE.MirroredRepeatWrapping : value === 3 ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping);
+      texture.wrapS = wrap(states?.get(0xa5));
+      texture.wrapT = wrap(states?.get(0xa6));
+      texture.needsUpdate = true;
+      texture.userData.ready = ready;
     });
-    texture.userData.ready=ready;requests.push(ready);return texture;
+    texture.userData.ready = ready;
+    requests.push(ready);
+    return texture;
   };
-  const m=new THREE.ShaderMaterial({
-    vertexShader: planetVertex, fragmentShader: planetFragment, defines:definesFor(detail>=3?3:detail>=2?2:0),
+  const m = new THREE.ShaderMaterial({
+    vertexShader: planetVertex,
+    fragmentShader: planetFragment,
+    defines: definesFor(detail >= 3 ? 3 : detail >= 2 ? 2 : 0),
     uniforms: {
       ...planetLighting,
-      map: { value: tex(p.BaseTexture, 'BaseSampler',0) }, normalMap: { value: tex(p.NormalTexture, 'NormalSampler') },
-      cloudMap: { value: tex(p.CloudTexture, 'CloudSampler',1) }, cloudNormalMap: { value: tex(p.CloudNormalTexture, 'CloudNormalSampler') },
-      emissive: { value: c3(p.Emissive, 0) }, diffuse: { value: c3(p.Diffuse, 1) }, specular: { value: c3(p.Specular, 1) },
-      atmosphere: { value: new THREE.Vector4(...(p.Atmosphere || [0,0,0,1])) }, cityColor: { value: c3(p.CityColor, 1) },
-      atmospherePower: { value: p.AtmospherePower ?? 4.5 }, cloudScroll: { value: p.CloudScrollRate ?? .0025 },
-      lightScale: { value: new THREE.Vector4(...(p.LightScale || [1,1,1,1])) },
-      time: planetClock, opacity: { value: 1 },
+      map: { value: tex(p.BaseTexture, 'BaseSampler', 0) },
+      normalMap: { value: tex(p.NormalTexture, 'NormalSampler') },
+      cloudMap: { value: tex(p.CloudTexture, 'CloudSampler', 1) },
+      cloudNormalMap: { value: tex(p.CloudNormalTexture, 'CloudNormalSampler') },
+      emissive: { value: c3(p.Emissive, 0) },
+      diffuse: { value: c3(p.Diffuse, 1) },
+      specular: { value: c3(p.Specular, 1) },
+      atmosphere: { value: new THREE.Vector4(...(p.Atmosphere || [0, 0, 0, 1])) },
+      cityColor: { value: c3(p.CityColor, 1) },
+      atmospherePower: { value: p.AtmospherePower ?? 4.5 },
+      cloudScroll: { value: p.CloudScrollRate ?? 0.0025 },
+      lightScale: { value: new THREE.Vector4(...(p.LightScale || [1, 1, 1, 1])) },
+      time: planetClock,
+      opacity: { value: 1 }
     },
-    blending:(p.LightScale?.[3]??1)<1?THREE.CustomBlending:THREE.NormalBlending,
-    blendSrc:THREE.SrcAlphaFactor,blendDst:THREE.OneMinusSrcAlphaFactor,
+    blending: (p.LightScale?.[3] ?? 1) < 1 ? THREE.CustomBlending : THREE.NormalBlending,
+    blendSrc: THREE.SrcAlphaFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor
   });
-  m.userData.planet=true;m.userData.ready=Promise.all(requests);return m;
+  m.userData.planet = true;
+  m.userData.ready = Promise.all(requests);
+  return m;
 }
 
 const SHIELD_VERT = `
@@ -410,18 +466,38 @@ function makeShieldMaterial(p, format) {
   if (format.endsWith('C')) defines.USE_VCOLOR = 1;
   const c = p.Color || [1, 1, 1];
   const m = new THREE.ShaderMaterial({
-    vertexShader: SHIELD_VERT, fragmentShader: SHIELD_FRAG, defines,
+    vertexShader: SHIELD_VERT,
+    fragmentShader: SHIELD_FRAG,
+    defines,
     uniforms: {
-      map: { value: tex(p.BaseTexture, 'BaseSampler') }, waveMap: { value: tex(p.WaveTexture) }, distortMap: { value: tex(p.DistortionTexture) },
-      tint: { value: new THREE.Color(c[0], c[1], c[2]) }, edgeBrightness: { value: p.EdgeBrightness ?? 0.3 },
-      baseScale: { value: p.BaseUVScale ?? 8 }, waveScale: { value: p.WaveUVScale ?? 1 }, distortScale: { value: p.DistortUVScale ?? 1 },
-      baseScroll: { value: p.BaseUVScrollRate ?? -0.15 }, waveScroll: { value: p.WaveUVScrollRate ?? -0.15 }, distortScroll: { value: p.DistortUVScrollRate ?? -0.25 },
-      time: planetClock, flash: { value: 0 }, hitPos: { value: new THREE.Vector3() }, hitRadius: { value: 100 }, opacity: { value: 1 }, steady: { value: 0 },
+      map: { value: tex(p.BaseTexture, 'BaseSampler') },
+      waveMap: { value: tex(p.WaveTexture) },
+      distortMap: { value: tex(p.DistortionTexture) },
+      tint: { value: new THREE.Color(c[0], c[1], c[2]) },
+      edgeBrightness: { value: p.EdgeBrightness ?? 0.3 },
+      baseScale: { value: p.BaseUVScale ?? 8 },
+      waveScale: { value: p.WaveUVScale ?? 1 },
+      distortScale: { value: p.DistortUVScale ?? 1 },
+      baseScroll: { value: p.BaseUVScrollRate ?? -0.15 },
+      waveScroll: { value: p.WaveUVScrollRate ?? -0.15 },
+      distortScroll: { value: p.DistortUVScrollRate ?? -0.25 },
+      time: planetClock,
+      flash: { value: 0 },
+      hitPos: { value: new THREE.Vector3() },
+      hitRadius: { value: 100 },
+      opacity: { value: 1 },
+      steady: { value: 0 }
     },
-    side: THREE.DoubleSide, transparent: true, depthWrite: false,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor
   });
-  m.userData.additive = true; m.userData.alpha = false; m.userData.shield = true;
+  m.userData.additive = true;
+  m.userData.alpha = false;
+  m.userData.shield = true;
   return m;
 }
 
@@ -452,9 +528,17 @@ export function depthMaterial(m) {
     d.uniforms = m.uniforms;
     depthTwins.set(m, d);
   }
-  d.side = m.side; d.depthTest = m.depthTest; d.depthWrite = true; d.depthFunc = m.depthFunc; d.colorWrite = false;
-  d.polygonOffset = m.polygonOffset; d.polygonOffsetFactor = m.polygonOffsetFactor; d.polygonOffsetUnits = m.polygonOffsetUnits;
-  d.clipping = m.clipping; d.clippingPlanes = m.clippingPlanes; d.wireframe = m.wireframe;
+  d.side = m.side;
+  d.depthTest = m.depthTest;
+  d.depthWrite = true;
+  d.depthFunc = m.depthFunc;
+  d.colorWrite = false;
+  d.polygonOffset = m.polygonOffset;
+  d.polygonOffsetFactor = m.polygonOffsetFactor;
+  d.polygonOffsetUnits = m.polygonOffsetUnits;
+  d.clipping = m.clipping;
+  d.clippingPlanes = m.clippingPlanes;
+  d.wireframe = m.wireframe;
   return d;
 }
 
@@ -468,8 +552,35 @@ function makeMaterial(mat, format, teamColor) {
   const nativeAdditive = /^(mesh|rskin)additive(vcolor)?\.fx$/.test(shader) || nebula;
   const uvScrollRate = nativeAdditive ? (p.UVScrollRate || [0, 0]).map(v => v * (nebula ? 3 : 1)) : null;
   const skinned = /RSkin|B4I4/.test(format);
-  const key = shader === 'planet.fx' ? shader+'|'+(gfx.shader|0)+'|'+JSON.stringify(Object.keys(p).sort().map(k=>[k,p[k]])) : [shader, p.BaseTexture, p.NormalTexture, p.GlossTexture, format.replace(/RSkin|B4I4/, 'S').endsWith('C'), skinned, teamColor ? teamColor.getHexString() : '-',
-    (p.Emissive || []).join(), (p.Diffuse || []).join(), (p.Specular || []).join(), p.Shininess ?? '', (p.Color || []).join(), p.FowDimAllowed ?? '', uvScrollRate?.slice(0, 2).join() || '', gfx.shader | 0, /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockBake() : ''].join('|');
+  const key =
+    shader === 'planet.fx'
+      ? shader +
+        '|' +
+        (gfx.shader | 0) +
+        '|' +
+        JSON.stringify(
+          Object.keys(p)
+            .sort()
+            .map(k => [k, p[k]])
+        )
+      : [
+          shader,
+          p.BaseTexture,
+          p.NormalTexture,
+          p.GlossTexture,
+          format.replace(/RSkin|B4I4/, 'S').endsWith('C'),
+          skinned,
+          teamColor ? teamColor.getHexString() : '-',
+          (p.Emissive || []).join(),
+          (p.Diffuse || []).join(),
+          (p.Specular || []).join(),
+          p.Shininess ?? '',
+          (p.Color || []).join(),
+          p.FowDimAllowed ?? '',
+          uvScrollRate?.slice(0, 2).join() || '',
+          gfx.shader | 0,
+          /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockBake() : ''
+        ].join('|');
   let m = materialCache.get(key);
   if (m) return m;
   if (shader === 'meshshield.fx') {
@@ -479,11 +590,13 @@ function makeMaterial(mat, format, teamColor) {
   }
   if (shader === 'planet.fx') {
     m = makePlanetMaterial(p);
-    m.userData.additive = false; m.userData.alpha = false;
+    m.userData.additive = false;
+    m.userData.alpha = false;
     materialCache.set(key, m);
     return m;
   }
-  const additive = ADDITIVE.test(shader), alpha = !additive && ALPHA.test(shader);
+  const additive = ADDITIVE.test(shader),
+    alpha = !additive && ALPHA.test(shader);
   const unlit = additive || UNLIT.test(shader) || shader === 'batchmeshalpha.fx';
   const defines = {};
   if (additive) defines.ADDITIVE = 1;
@@ -496,8 +609,8 @@ function makeMaterial(mat, format, teamColor) {
   if (shader.includes('colorize') && teamColor) defines.COLORIZE = 1;
   const detail = gfx.shader | 0;
   if (shader.includes('bump') && p.NormalTexture && detail >= 2) defines.BUMP = 1;
-  if (detail < 1) { }
-  else if (p.GlossTexture && !unlit) defines.GLOSSMAP = 1;
+  if (detail < 1) {
+  } else if (p.GlossTexture && !unlit) defines.GLOSSMAP = 1;
   else if (shader.includes('gloss')) defines.GLOSS = 1;
   if (format.endsWith('C')) defines.USE_VCOLOR = 1;
   if (FOW_DIMMED.test(shader) && p.FowDimAllowed !== 0 && p.FowDimAllowed !== false) defines.FOW_DIM = 1;
@@ -509,7 +622,9 @@ function makeMaterial(mat, format, teamColor) {
   const c3 = (v, d) => (v ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
   const diffuse = c3(nativeAdditive ? p.Color : p.Diffuse || p.Color, 1);
   m = new THREE.ShaderMaterial({
-    vertexShader: VERT, fragmentShader: FRAG, defines,
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    defines,
     uniforms: {
       ...lighting,
       map: { value: rock4k ? rock4k.map : p.BaseTexture ? loadTexture(p.BaseTexture) : whiteTexture() },
@@ -527,17 +642,23 @@ function makeMaterial(mat, format, teamColor) {
       ghost: { value: 0 },
       dissolve: { value: 0 },
       uvScroll: { value: new THREE.Vector2() },
-      ...(nativeAdditive ? { uvScrollRate: { value: new THREE.Vector2(uvScrollRate[0] || 0, uvScrollRate[1] || 0) }, time: planetClock } : {}),
+      ...(nativeAdditive
+        ? { uvScrollRate: { value: new THREE.Vector2(uvScrollRate[0] || 0, uvScrollRate[1] || 0) }, time: planetClock }
+        : {}),
       ...(nebula ? { nebulaWave: { value: new THREE.Vector3(p.DistortionScale ?? 0, p.SFreq ?? 0, p.TFreq ?? 0) } } : {}),
       ...(rocky ? { detailScale: { value: 0.09 } } : {}),
-      ...(skinned ? { boneMatrices: { value: IDENTITY_BONES } } : {}),
+      ...(skinned ? { boneMatrices: { value: IDENTITY_BONES } } : {})
     },
     side: (additive || alpha) && !/nebula/.test(shader) ? THREE.FrontSide : THREE.DoubleSide,
     transparent: additive || alpha,
     depthWrite: !(additive || alpha),
-    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending
   });
-  if (additive) { m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneFactor; m.blending = THREE.CustomBlending; }
+  if (additive) {
+    m.blendSrc = THREE.OneFactor;
+    m.blendDst = THREE.OneFactor;
+    m.blending = THREE.CustomBlending;
+  }
   m.userData.additive = additive;
   m.userData.alpha = alpha;
   if (alpha) shaderStates(shader, m);
@@ -553,15 +674,30 @@ function shaderStates(shader, m) {
   let e = effectStates.get(shader);
   if (!e) {
     effectStates.set(shader, (e = { st: undefined, mats: new Set() }));
-    fetchBinary('Data/Art/Shaders/' + shader.replace(/\.fx$/i, '.fxo')).then(bytes => {
-      const info = bytes ? effectInfo(bytes) : null;
-      const tech = info && (selectEffectTechnique(info, Math.max(1, gfx.shader | 0)) || info.techniques.find(t => t.name !== 'max_viewport'));
-      const s = new Map();
-      for (const x of tech?.passes[0]?.states || []) if (x.value !== undefined) s.set(x.id, x.value);
-      e.st = tech ? { zwrite: s.has(3) ? !!s.get(3) : null, ref: s.get(4) === 1 && (s.get(11) === 5 || s.get(11) === 7) ? (s.get(10) ?? 0) / 255 - (s.get(11) === 7 ? 1 / 512 : 0) : -1 } : null;
-    }).catch(() => { e.st = null; }).finally(() => { for (const x of e.mats) applyStates(x, e.st); e.mats.clear(); });
+    fetchBinary('Data/Art/Shaders/' + shader.replace(/\.fx$/i, '.fxo'))
+      .then(bytes => {
+        const info = bytes ? effectInfo(bytes) : null;
+        const tech =
+          info && (selectEffectTechnique(info, Math.max(1, gfx.shader | 0)) || info.techniques.find(t => t.name !== 'max_viewport'));
+        const s = new Map();
+        for (const x of tech?.passes[0]?.states || []) if (x.value !== undefined) s.set(x.id, x.value);
+        e.st = tech
+          ? {
+              zwrite: s.has(3) ? !!s.get(3) : null,
+              ref: s.get(4) === 1 && (s.get(11) === 5 || s.get(11) === 7) ? (s.get(10) ?? 0) / 255 - (s.get(11) === 7 ? 1 / 512 : 0) : -1
+            }
+          : null;
+      })
+      .catch(() => {
+        e.st = null;
+      })
+      .finally(() => {
+        for (const x of e.mats) applyStates(x, e.st);
+        e.mats.clear();
+      });
   }
-  if (e.st !== undefined) applyStates(m, e.st); else e.mats.add(m);
+  if (e.st !== undefined) applyStates(m, e.st);
+  else e.mats.add(m);
 }
 function applyStates(m, st) {
   if (!st) return;
@@ -578,7 +714,9 @@ const sameBytes = (a, b) => {
   if (a.byteLength !== b.byteLength) return false;
   let i = 0;
   if (((a.byteOffset | b.byteOffset) & 3) === 0) {
-    const n4 = a.byteLength >> 2, a4 = new Uint32Array(a.buffer, a.byteOffset, n4), b4 = new Uint32Array(b.buffer, b.byteOffset, n4);
+    const n4 = a.byteLength >> 2,
+      a4 = new Uint32Array(a.buffer, a.byteOffset, n4),
+      b4 = new Uint32Array(b.buffer, b.byteOffset, n4);
     for (; i < n4; i++) if (a4[i] !== b4[i]) return false;
     i <<= 2;
   }
@@ -596,7 +734,11 @@ function makeGeometry(model, g) {
   const idx = new Uint8Array(g.indices.buffer, g.indices.byteOffset, g.indices.byteLength);
   let alike = geometryByContent.get(shape);
   if (!alike) geometryByContent.set(shape, (alike = []));
-  for (const c of alike) if (sameVertices(c.verts, verts) && sameBytes(c.idx, idx)) { perModel.set(g, c.geo); return c.geo; }
+  for (const c of alike)
+    if (sameVertices(c.verts, verts) && sameBytes(c.idx, idx)) {
+      perModel.set(g, c.geo);
+      return c.geo;
+    }
   geo = buildGeometry(model, g);
   alike.push({ verts, idx, geo });
   perModel.set(g, geo);
@@ -609,11 +751,13 @@ function buildGeometry(model, g) {
   let { pos, nrm, uv, tan, bin, col, skinIndex, skinWeight } = g.vertices;
   const skinned = !!skinIndex;
   if (skinned) for (let i = 0; i < skinIndex.length; i++) if (skinIndex[i] > MAX_BONES - 1) skinIndex[i] = MAX_BONES - 1;
-  let indices = g.indices, bad = null;
+  let indices = g.indices,
+    bad = null;
   for (let i = 0; i < n * 3; i++) if (!Number.isFinite(pos[i])) (bad ??= new Uint8Array(n))[(i / 3) | 0] = 1;
   if (bad) {
     const keep = [];
-    for (let i = 0; i + 2 < indices.length; i += 3) if (!bad[indices[i]] && !bad[indices[i + 1]] && !bad[indices[i + 2]]) keep.push(indices[i], indices[i + 1], indices[i + 2]);
+    for (let i = 0; i + 2 < indices.length; i += 3)
+      if (!bad[indices[i]] && !bad[indices[i + 1]] && !bad[indices[i + 2]]) keep.push(indices[i], indices[i + 1], indices[i + 2]);
     indices = new Uint16Array(keep);
     const at = bad.indexOf(0) * 3;
     pos = pos.slice();
@@ -653,11 +797,16 @@ export class ModelInstance {
     this.lazy = false;
     this.dirty = false;
   }
-  bone(name) { return name ? this.boneByName.get(name.toUpperCase()) : undefined; }
+  bone(name) {
+    return name ? this.boneByName.get(name.toUpperCase()) : undefined;
+  }
 
   syncFromBones() {
     this.poseVersion++;
-    if (this.lazy) { this.dirty = true; return; }
+    if (this.lazy) {
+      this.dirty = true;
+      return;
+    }
     this.root.updateMatrixWorld(true);
     this.syncSkins();
   }
@@ -682,8 +831,13 @@ export class ModelInstance {
         g.matrixWorldNeedsUpdate = true;
         let on = b.visible;
         for (let p = b.parent; on && p && p !== root; p = p.parent) if (!p.visible && p.userData.animHid) on = false;
-        if (!on && g.visible) { g.visible = false; g.userData.hidByBone = true; }
-        else if (on && g.userData.hidByBone) { g.visible = true; g.userData.hidByBone = false; }
+        if (!on && g.visible) {
+          g.visible = false;
+          g.userData.hidByBone = true;
+        } else if (on && g.userData.hidByBone) {
+          g.visible = true;
+          g.userData.hidByBone = false;
+        }
       }
     }
     let off = null;
@@ -694,14 +848,20 @@ export class ModelInstance {
       for (let i = 0; i < n; i++) {
         const bone = this.bones[s.boneMap[i]];
         if (!bone) continue;
-        if (off && off.has(bone)) { s.mats.fill(0, i * 16, i * 16 + 16); s.mats[i * 16 + 15] = 1; continue; }
+        if (off && off.has(bone)) {
+          s.mats.fill(0, i * 16, i * 16 + 16);
+          s.mats[i * 16 + 15] = 1;
+          continue;
+        }
         if (rel) _m.multiplyMatrices(rel, bone.matrixWorld).multiply(bone.userData.restInv);
         else _m.multiplyMatrices(bone.matrixWorld, bone.userData.restInv);
         _m.toArray(s.mats, i * 16);
       }
     }
   }
-  mesh(name) { return name ? this.meshByName.get(name.toUpperCase()) : undefined; }
+  mesh(name) {
+    return name ? this.meshByName.get(name.toUpperCase()) : undefined;
+  }
 }
 
 const NO_EULER = () => {};
@@ -711,14 +871,17 @@ export function prebuildModel(model, teamColor, n) {
   if (!list) prebuilt.set(model, (list = []));
   for (let i = 0; i < n; i++) list.push({ teamColor, inst: buildModel(model, { teamColor, fresh: true }) });
 }
-export function dropPrebuilt() { prebuilt.clear(); }
+export function dropPrebuilt() {
+  prebuilt.clear();
+}
 
 const HEADLESS = new THREE.MeshBasicMaterial();
 const seeThrough = shader => shader === 'meshshield.fx' || (shader !== 'planet.fx' && (ADDITIVE.test(shader) || ALPHA.test(shader)));
 
 export function buildModel(model, { teamColor = null, showHidden = false, alt = 0, alts = false, fresh = false, headless = false } = {}) {
   if (!fresh && !headless && !showHidden && !alt && !alts) {
-    const list = prebuilt.get(model), i = list ? list.findIndex(e => e.teamColor === teamColor) : -1;
+    const list = prebuilt.get(model),
+      i = list ? list.findIndex(e => e.teamColor === teamColor) : -1;
     if (i >= 0) return list.splice(i, 1)[0].inst;
   }
   diag.note('model');
@@ -740,7 +903,10 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
   });
   model.bones.forEach((b, i) => (b.parent >= 0 ? inst.bones[b.parent] : inst.root).add(inst.bones[i]));
   inst.root.updateMatrixWorld(true);
-  for (const b of inst.bones) { b.userData.restInv = new THREE.Matrix4().copy(b.matrixWorld).invert(); b.userData.restAt = new THREE.Vector3().setFromMatrixPosition(b.matrixWorld); }
+  for (const b of inst.bones) {
+    b.userData.restInv = new THREE.Matrix4().copy(b.matrixWorld).invert();
+    b.userData.restAt = new THREE.Vector3().setFromMatrixPosition(b.matrixWorld);
+  }
 
   const chainOf = name => (/_LOD\d$/i.test(name) ? name.replace(/_LOD\d?/gi, '').toUpperCase() : null);
   const tris = mesh => mesh.subs.reduce((n, sub) => n + (sub.geometry.indices ? sub.geometry.indices.length : 0), 0);
@@ -750,32 +916,59 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
     if (chain !== null && (!lodBest.has(chain) || tris(mesh) > tris(lodBest.get(chain)))) lodBest.set(chain, mesh);
   }
   const tmpBox = new THREE.Box3();
-  const hasAlt = new Set(alt ? model.meshes.filter(m => new RegExp('_ALT' + alt + '(?![0-9])', 'i').test(m.name)).map(m => m.name.replace(/_ALT\d+/gi, '').replace(/_LOD\d/gi, '').toUpperCase()) : []);
+  const hasAlt = new Set(
+    alt
+      ? model.meshes
+          .filter(m => new RegExp('_ALT' + alt + '(?![0-9])', 'i').test(m.name))
+          .map(m =>
+            m.name
+              .replace(/_ALT\d+/gi, '')
+              .replace(/_LOD\d/gi, '')
+              .toUpperCase()
+          )
+      : []
+  );
   for (const mesh of model.meshes) {
     const chain = chainOf(mesh.name);
     if (chain !== null && lodBest.get(chain) !== mesh) continue;
     const altOf = /_ALT(\d+)/i.exec(mesh.name);
     if (altOf && Array.isArray(alts) && !alts.includes(+altOf[1])) continue;
-    if (alt) { if (altOf ? +altOf[1] !== alt : hasAlt.has(mesh.name.replace(/_LOD\d/gi, '').toUpperCase())) continue; }
-    else if (altOf && altOf[1] !== '0' && !showHidden && !alts) continue;
+    if (alt) {
+      if (altOf ? +altOf[1] !== alt : hasAlt.has(mesh.name.replace(/_LOD\d/gi, '').toUpperCase())) continue;
+    } else if (altOf && altOf[1] !== '0' && !showHidden && !alts) continue;
     const group = new THREE.Group();
     group.name = mesh.name;
     group.visible = !mesh.hidden || showHidden;
-    if (alts && altOf && !alt) { ((inst.alts ||= [])[+altOf[1]] ||= []).push(group); if (altOf[1] !== '0') group.visible = false; }
+    if (alts && altOf && !alt) {
+      ((inst.alts ||= [])[+altOf[1]] ||= []).push(group);
+      if (altOf[1] !== '0') group.visible = false;
+    }
     group.userData.hiddenByDefault = mesh.hidden;
     const skinnedMesh = mesh.subs.some(sub => sub.geometry && sub.geometry.boneMap && /RSkin|B4I4/.test(sub.geometry.format || ''));
-    const parent = skinnedMesh ? inst.root : (inst.bones[mesh.bone] || inst.root);
+    const parent = skinnedMesh ? inst.root : inst.bones[mesh.bone] || inst.root;
     let any = false;
     for (const sub of mesh.subs) {
       if (!sub.material || !sub.geometry.indices || !sub.geometry.stride) continue;
       if (SKIP.test(sub.material.shader)) continue;
       const geo = makeGeometry(model, sub.geometry);
-      if (headless) { const obj = new THREE.Mesh(geo, HEADLESS); group.add(obj); any = true; if (!mesh.hidden && !seeThrough(sub.material.shader)) { tmpBox.copy(geo.boundingBox).applyMatrix4(parent.matrixWorld); inst.box.union(tmpBox); } continue; }
+      if (headless) {
+        const obj = new THREE.Mesh(geo, HEADLESS);
+        group.add(obj);
+        any = true;
+        if (!mesh.hidden && !seeThrough(sub.material.shader)) {
+          tmpBox.copy(geo.boundingBox).applyMatrix4(parent.matrixWorld);
+          inst.box.union(tmpBox);
+        }
+        continue;
+      }
       const obj = new THREE.Mesh(geo, makeMaterial(sub.material, sub.geometry.format, teamColor));
       if (obj.material.defines.SKINNED && sub.geometry.boneMap) {
         const skin = { mesh: obj, boneMap: sub.geometry.boneMap, mats: null };
         inst.skins.push(skin);
-        obj.onBeforeRender = () => { obj.material.uniforms.boneMatrices.value = skin.mats || IDENTITY_BONES; obj.material.uniformsNeedUpdate = true; };
+        obj.onBeforeRender = () => {
+          obj.material.uniforms.boneMatrices.value = skin.mats || IDENTITY_BONES;
+          obj.material.uniformsNeedUpdate = true;
+        };
       }
       if (obj.material.userData.additive) obj.renderOrder = 2;
       else if (obj.material.userData.alpha) obj.renderOrder = 1;
@@ -812,11 +1005,13 @@ const ready = new Map();
 export async function preloadModels(names, onProgress = () => {}) {
   const list = [...new Set([...names].filter(Boolean).map(n => n.toUpperCase()))].filter(n => !ready.has(n));
   let done = 0;
-  await Promise.all(list.map(async n => {
-    const data = await loadALO(n).catch(() => null);
-    ready.set(n, data && !data.isParticle ? data : null);
-    onProgress(++done, list.length);
-  }));
+  await Promise.all(
+    list.map(async n => {
+      const data = await loadALO(n).catch(() => null);
+      ready.set(n, data && !data.isParticle ? data : null);
+      onProgress(++done, list.length);
+    })
+  );
 }
 
 export function getModelData(name) {
@@ -846,9 +1041,13 @@ export function flattenModel(inst) {
   return container;
 }
 
-const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion();
-const _rel = new THREE.Matrix4(), _m = new THREE.Matrix4();
-const _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3();
+const _q = new THREE.Quaternion(),
+  _pq = new THREE.Quaternion();
+const _rel = new THREE.Matrix4(),
+  _m = new THREE.Matrix4();
+const _bx = new THREE.Vector3(),
+  _by = new THREE.Vector3(),
+  _bz = new THREE.Vector3();
 export function updateBillboards(inst, camera) {
   if (inst.billboards.length) inst.poseVersion++;
   for (const { bone, mode } of inst.billboards) {

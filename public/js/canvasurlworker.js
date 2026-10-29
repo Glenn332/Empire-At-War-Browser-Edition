@@ -5,5 +5,7 @@ self.onmessage = async e => {
     cv.getContext('2d').drawImage(bitmap, 0, 0);
     bitmap.close();
     self.postMessage({ id, blob: await cv.convertToBlob({ type: 'image/png' }) });
-  } catch { self.postMessage({ id, blob: null }); }
+  } catch {
+    self.postMessage({ id, blob: null });
+  }
 };

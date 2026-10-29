@@ -9,7 +9,7 @@ const TICK = 1 / 30;
 export class SpaceMirror {
   constructor(game, loaded = null) {
     this.game = game;
-    const w = this.world = game.world;
+    const w = (this.world = game.world);
     this.byW = new Map();
     this.toW = new WeakMap();
     this.shots = new Map();
@@ -21,48 +21,96 @@ export class SpaceMirror {
     this.saves = new Map();
     this.pace = '';
     const page = new Map();
-    for (const q of w.squads) { page.set(q.id, q); for (const f of q.fighters) page.set(f.id, f); }
+    for (const q of w.squads) {
+      page.set(q.id, q);
+      for (const f of q.fighters) page.set(f.id, f);
+    }
     for (const u of w.units) page.set(u.id, u);
     this.worker = new Worker(new URL('./spacebattleworker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = e => {
       const m = e.data;
-      if (m.k === 'ready') { for (const [wid, pid] of m.ids) { const x = page.get(pid); if (x) this.match(wid, x); } this.ready = true; this.setupMs = m.ms; this.scriptsFrom = m.scriptsFrom; this.onReady(); }
-      else if (m.k === 'step') { this.queue.push(m); if (game.lock) this.lockStepped(m); }
-      else if (m.k === 'saved') { const s = this.saves.get(m.id); this.saves.delete(m.id); if (s) { if (m.save) s.res(m.save); else s.rej(new Error(m.error)); } }
-      else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
+      if (m.k === 'ready') {
+        for (const [wid, pid] of m.ids) {
+          const x = page.get(pid);
+          if (x) this.match(wid, x);
+        }
+        this.ready = true;
+        this.setupMs = m.ms;
+        this.scriptsFrom = m.scriptsFrom;
+        this.onReady();
+      } else if (m.k === 'step') {
+        this.queue.push(m);
+        if (game.lock) this.lockStepped(m);
+      } else if (m.k === 'saved') {
+        const s = this.saves.get(m.id);
+        this.saves.delete(m.id);
+        if (s) {
+          if (m.save) s.res(m.save);
+          else s.rej(new Error(m.error));
+        }
+      } else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
       else if (m.ok === false) console.error('space worker:', m.error);
     };
     this.worker.onerror = e => console.error('space worker', e.message);
     this.worker.postMessage({ ...start, k: 'run', base: new URL('.', location.href).href });
     this.held = new Set();
-    this.whenReady = new Promise(res => { this.onReady = res; });
+    this.whenReady = new Promise(res => {
+      this.onReady = res;
+    });
     this.pending = [];
     this.inFlight = false;
-    game.execute = (pid, cmd) => { this.pending.push([pid, this.ours(cmd)]); return {}; };
-    game.hashState = () => { this.wantHash = true; return undefined; };
-    game.takeOver = p => { p.human = false; return true; };
+    game.execute = (pid, cmd) => {
+      this.pending.push([pid, this.ours(cmd)]);
+      return {};
+    };
+    game.hashState = () => {
+      this.wantHash = true;
+      return undefined;
+    };
+    game.takeOver = p => {
+      p.human = false;
+      return true;
+    };
   }
 
   save(name = '') {
-    const g = this.game, rig = g.renderer.rig, wid = e => this.toW.get(e);
+    const g = this.game,
+      rig = g.renderer.rig,
+      wid = e => this.toW.get(e);
     const view = {
-      speed: g.speed, camera: { x: rig.x, y: rig.y, dist: rig.dist, yaw: rig.yaw, pitch: rig.pitch },
+      speed: g.speed,
+      camera: { x: rig.x, y: rig.y, dist: rig.dist, yaw: rig.yaw, pitch: rig.pitch },
       groups: [...(g.ui?.groups || [])].map(([n, list]) => [n, list.map(wid).filter(x => x !== undefined)]),
-      selection: (g.ui?.selection || []).map(wid).filter(x => x !== undefined),
+      selection: (g.ui?.selection || []).map(wid).filter(x => x !== undefined)
     };
     const id = (this.saveIds = (this.saveIds || 0) + 1);
-    return new Promise((res, rej) => { this.saves.set(id, { res, rej }); this.worker.postMessage({ k: 'save', id, name, view }); });
+    return new Promise((res, rej) => {
+      this.saves.set(id, { res, rej });
+      this.worker.postMessage({ k: 'save', id, name, view });
+    });
   }
 
-  match(wid, x) { this.byW.set(wid, x); this.toW.set(x, wid); }
+  match(wid, x) {
+    this.byW.set(wid, x);
+    this.toW.set(x, wid);
+  }
 
-  command(cmd) { this.worker.postMessage({ k: 'cmd', cmd: this.ours(cmd) }); }
+  command(cmd) {
+    this.worker.postMessage({ k: 'cmd', cmd: this.ours(cmd) });
+  }
 
   ours(cmd) {
     const page = new Map();
     for (const u of this.world.units) page.set(u.id, u);
-    for (const q of this.world.squads) { page.set(q.id, q); for (const f of q.fighters) page.set(f.id, f); }
-    const wid = id => { const x = id ? page.get(id) : null, w = x && this.toW.get(x); return w === undefined ? 0 : w; };
+    for (const q of this.world.squads) {
+      page.set(q.id, q);
+      for (const f of q.fighters) page.set(f.id, f);
+    }
+    const wid = id => {
+      const x = id ? page.get(id) : null,
+        w = x && this.toW.get(x);
+      return w === undefined ? 0 : w;
+    };
     const out = { ...cmd };
     if (Array.isArray(cmd.u)) out.u = cmd.u.map(wid).filter(Boolean);
     if (cmd.t) out.t = wid(cmd.t);
@@ -71,8 +119,13 @@ export class SpaceMirror {
   }
 
   hardpointLost(unit, hp) {
-    hp.alive = false; hp.health = 0;
-    for (const px of unit.proxies) if (px.hp === hp && !px.on) { px.on = true; unit.pendingProxies.push(px); }
+    hp.alive = false;
+    hp.health = 0;
+    for (const px of unit.proxies)
+      if (px.hp === hp && !px.on) {
+        px.on = true;
+        unit.pendingProxies.push(px);
+      }
     if (hp.part) hp.part.visible = false;
     if (hp.decal) hp.decal.visible = true;
     hp.smoke = !unit.proxies.some(px => px.hp === hp);
@@ -84,7 +137,10 @@ export class SpaceMirror {
     if (g.lock) this.lockFrame(real);
     else {
       const pace = (g.paused || g.tacticalMovies?.pausesMode ? 'p' : '') + g.speed;
-      if (pace !== this.pace) { this.pace = pace; this.worker.postMessage({ k: 'pace', speed: g.speed, paused: pace[0] === 'p' }); }
+      if (pace !== this.pace) {
+        this.pace = pace;
+        this.worker.postMessage({ k: 'pace', speed: g.speed, paused: pace[0] === 'p' });
+      }
     }
     if (this.queue.length) {
       const t = performance.now();
@@ -100,19 +156,29 @@ export class SpaceMirror {
   }
 
   lockFrame(real) {
-    const g = this.game, lock = g.lock, behind = lock.behind();
+    const g = this.game,
+      lock = g.lock,
+      behind = lock.behind();
     if (g.paused) g.owed = 0;
     g.owed = Math.min((g.owed || 0) + (g.paused ? 0 : real * g.speed), (4 + behind * TURN) * TICK);
     if (behind > 1) g.owed = Math.max(g.owed, Math.min(behind, 3) * TICK);
     this.pump();
     lock.frame(g.owed / TICK, 1, this.inFlight ? 'the battle thread' : null, 0);
     if (lock.started && !g.paused && g.owed >= 2 * TICK) {
-      if ((g.stalled = (g.stalled || 0) + real) > 2 && !g.stallSaid) { g.stallSaid = true; const who = lock.waitingFor(); g.message(who.length ? `Waiting for ${who.join(', ')}…` : 'Waiting…', 'bad'); }
-    } else { g.stalled = 0; g.stallSaid = false; }
+      if ((g.stalled = (g.stalled || 0) + real) > 2 && !g.stallSaid) {
+        g.stallSaid = true;
+        const who = lock.waitingFor();
+        g.message(who.length ? `Waiting for ${who.join(', ')}…` : 'Waiting…', 'bad');
+      }
+    } else {
+      g.stalled = 0;
+      g.stallSaid = false;
+    }
   }
 
   pump() {
-    const g = this.game, lock = g.lock;
+    const g = this.game,
+      lock = g.lock;
     if (this.inFlight || g.owed < TICK || g.paused) return;
     if (!lock.step() || g.paused) return;
     this.inFlight = true;
@@ -134,37 +200,72 @@ export class SpaceMirror {
   }
 
   apply(m) {
-    const w = this.world, st = this.stats;
+    const w = this.world,
+      st = this.stats;
     st.records++;
     if (m.stepMs !== undefined) st.stepMs = m.stepMs;
     w.time = m.time;
     for (const s of m.spawns) {
-      const ty = db.type(s.type), owner = s.player < 0 ? w.neutral : w.players.find(p => p.id === s.player);
+      const ty = db.type(s.type),
+        owner = s.player < 0 ? w.neutral : w.players.find(p => p.id === s.player);
       if (!ty || !owner || this.byW.has(s.wid)) continue;
       const en = w.spawn(ty, owner, s.x, s.y, s.heading);
       if (!en) continue;
       this.match(s.wid, en);
-      if (en.isSquad && s.fighters) en.fighters.forEach((f, i) => { if (s.fighters[i] !== undefined) this.match(s.fighters[i], f); });
+      if (en.isSquad && s.fighters)
+        en.fighters.forEach((f, i) => {
+          if (s.fighters[i] !== undefined) this.match(s.fighters[i], f);
+        });
     }
-    const fx = w.fx, audio = w.audio;
+    const fx = w.fx,
+      audio = w.audio;
     for (const [to, name, args] of m.events) {
-      const a = args.map(x => this.back(x)), target = to === 'fx' ? fx : to === 'audio' ? audio : to === 'game' ? this.game : to === 'world' ? w : a.shift(), f = target && target[name];
+      const a = args.map(x => this.back(x)),
+        target = to === 'fx' ? fx : to === 'audio' ? audio : to === 'game' ? this.game : to === 'world' ? w : a.shift(),
+        f = target && target[name];
       if (typeof f !== 'function') continue;
-      try { f.apply(target, a); st.events++; } catch { st.failed++; }
+      try {
+        f.apply(target, a);
+        st.events++;
+      } catch {
+        st.failed++;
+      }
     }
-    const U = m.units, seen = new Set();
+    const U = m.units,
+      seen = new Set();
     for (let o = 0; o < U.length; o += UNIT) {
       const e = this.byW.get(U[o]);
       if (!e) continue;
       seen.add(U[o]);
       const flags = U[o + 1];
-      if (flags & 16) { e.x = U[o + 2]; e.y = U[o + 3]; e.heading = U[o + 5]; if (flags & 1) e.dead = true; continue; }
-      if (flags & 1) { if (!e.dead) w.removeUnit(e); continue; }
-      e.x = U[o + 2]; e.y = U[o + 3]; e.z = U[o + 4]; e.heading = U[o + 5]; e.roll = U[o + 6]; e.pitch = U[o + 7];
+      if (flags & 16) {
+        e.x = U[o + 2];
+        e.y = U[o + 3];
+        e.heading = U[o + 5];
+        if (flags & 1) e.dead = true;
+        continue;
+      }
+      if (flags & 1) {
+        if (!e.dead) w.removeUnit(e);
+        continue;
+      }
+      e.x = U[o + 2];
+      e.y = U[o + 3];
+      e.z = U[o + 4];
+      e.heading = U[o + 5];
+      e.roll = U[o + 6];
+      e.pitch = U[o + 7];
       if (e.maxHealth) e.health = U[o + 8] * e.maxHealth;
       if (e.maxShield) e.shield = U[o + 9] * e.maxShield;
-      e.speed = U[o + 10]; e.shieldFlash = U[o + 11];
-      if (flags & 4) { e.hyper ||= { f: 0, tx: e.x, ty: e.y, h: e.heading, shown: true }; e.hyper.dark = U[o + 12]; } else if (e.hyper) { e.hyper = null; e.obj.scale.setScalar(e.scale || 1); }
+      e.speed = U[o + 10];
+      e.shieldFlash = U[o + 11];
+      if (flags & 4) {
+        e.hyper ||= { f: 0, tx: e.x, ty: e.y, h: e.heading, shown: true };
+        e.hyper.dark = U[o + 12];
+      } else if (e.hyper) {
+        e.hyper = null;
+        e.obj.scale.setScalar(e.scale || 1);
+      }
       e.cloaked = !!(flags & 8);
       e.seenBy = U[o + 13];
       e.target = U[o + 14] >= 0 ? this.byW.get(U[o + 14]) || null : null;
@@ -174,11 +275,13 @@ export class SpaceMirror {
       if (seen.has(wid)) continue;
       this.byW.delete(wid);
       if (e.dead) continue;
-      if (e.isSquad) e.dead = true; else w.removeUnit(e);
+      if (e.isSquad) e.dead = true;
+      else w.removeUnit(e);
     }
     const H = m.points;
     for (let o = 0; o < H.length; o += POINT) {
-      const u = this.byW.get(H[o]), hp = u && !u.dead && u.hardpoints && u.hardpoints[H[o + 1]];
+      const u = this.byW.get(H[o]),
+        hp = u && !u.dead && u.hardpoints && u.hardpoints[H[o + 1]];
       if (!hp) continue;
       if (!H[o + 2] && hp.alive) this.hardpointLost(u, hp);
       hp.target = H[o + 3] >= 0 ? this.byW.get(H[o + 3]) || null : null;
@@ -186,15 +289,29 @@ export class SpaceMirror {
     }
     const A = m.abilities;
     for (let o = 0; o < A.length; o += ABILITY) {
-      const u = this.byW.get(A[o]), st = u && u.abilities && u.abilities[A[o + 1]];
+      const u = this.byW.get(A[o]),
+        st = u && u.abilities && u.abilities[A[o + 1]];
       if (!st) continue;
-      st.active = !!A[o + 2]; st.timer = A[o + 3]; st.cooldown = A[o + 4];
+      st.active = !!A[o + 2];
+      st.timer = A[o + 3];
+      st.cooldown = A[o + 4];
     }
     for (const [id, credits, pop, popCap, popExtra, called] of m.players) {
       const p = w.players.find(x => x.id === id);
       if (!p) continue;
-      p.credits = credits; p.pop = pop; p.popCap = popCap; p.popExtra = popExtra;
-      if (p.mirrorCalled !== called) { p.mirrorCalled = called; p.reinforcements = called ? called.split('|').map(n => db.type(n)).filter(Boolean) : []; }
+      p.credits = credits;
+      p.pop = pop;
+      p.popCap = popCap;
+      p.popExtra = popExtra;
+      if (p.mirrorCalled !== called) {
+        p.mirrorCalled = called;
+        p.reinforcements = called
+          ? called
+              .split('|')
+              .map(n => db.type(n))
+              .filter(Boolean)
+          : [];
+      }
     }
     const held = new Set();
     for (const [wid, qs] of m.queues) {
@@ -209,8 +326,14 @@ export class SpaceMirror {
         q.length = Math.min(q.length, items.length);
         items.forEach(([type, total, left, pid], i) => {
           let it = q[i];
-          if (!it || it.type.name !== type) { const ty = db.type(type); if (!ty) return; it = q[i] = { type: ty }; }
-          it.total = total; it.left = left; it.player = w.players.find(p => p.id === pid) || null;
+          if (!it || it.type.name !== type) {
+            const ty = db.type(type);
+            if (!ty) return;
+            it = q[i] = { type: ty };
+          }
+          it.total = total;
+          it.left = left;
+          it.player = w.players.find(p => p.id === pid) || null;
         });
       }
       for (const k of [...u.buildQueues.keys()]) if (!names.has(k)) u.buildQueues.delete(k);
@@ -218,19 +341,54 @@ export class SpaceMirror {
     }
     for (const u of this.held) if (!held.has(u) && u.buildQueues) u.buildQueues.clear();
     this.held = held;
-    if (st.records % 30 === 0) { w.units = w.units.filter(u => !u.dead); w.squads = w.squads.filter(q => !q.dead); }
+    if (st.records % 30 === 0) {
+      w.units = w.units.filter(u => !u.dead);
+      w.squads = w.squads.filter(q => !q.dead);
+    }
     for (const f of m.fresh) {
       const def = db.type(f.def);
-      if (def) this.shots.set(f.id, { id: f.id, def, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 1, speed: f.speed || 1, width: f.width, length: f.length, r: f.r, g: f.g, b: f.b, missile: f.missile, age: 0, hidden: false, fxs: null, fxSeen: 0 });
+      if (def)
+        this.shots.set(f.id, {
+          id: f.id,
+          def,
+          x: 0,
+          y: 0,
+          z: 0,
+          vx: 0,
+          vy: 0,
+          vz: 1,
+          speed: f.speed || 1,
+          width: f.width,
+          length: f.length,
+          r: f.r,
+          g: f.g,
+          b: f.b,
+          missile: f.missile,
+          age: 0,
+          hidden: false,
+          fxs: null,
+          fxSeen: 0
+        });
     }
-    const S = m.shots, now = [];
+    const S = m.shots,
+      now = [];
     for (let o = 0; o < S.length; o += SHOT) {
       const p = this.shots.get(S[o]);
       if (!p) continue;
-      p.x = S[o + 1]; p.y = S[o + 2]; p.z = S[o + 3]; p.vx = S[o + 4]; p.vy = S[o + 5]; p.vz = S[o + 6]; p.age = S[o + 7]; p.hidden = S[o + 8] > 0;
+      p.x = S[o + 1];
+      p.y = S[o + 2];
+      p.z = S[o + 3];
+      p.vx = S[o + 4];
+      p.vy = S[o + 5];
+      p.vz = S[o + 6];
+      p.age = S[o + 7];
+      p.hidden = S[o + 8] > 0;
       now.push(p);
     }
-    if (this.shots.size > now.length * 2 + 1024) { const live = new Set(now.map(p => p.id)); for (const id of this.shots.keys()) if (!live.has(id)) this.shots.delete(id); }
+    if (this.shots.size > now.length * 2 + 1024) {
+      const live = new Set(now.map(p => p.id));
+      for (const id of this.shots.keys()) if (!live.has(id)) this.shots.delete(id);
+    }
     w.projectiles = now;
   }
 
@@ -249,5 +407,7 @@ export class SpaceMirror {
     return o;
   }
 
-  stop() { this.worker.terminate(); }
+  stop() {
+    this.worker.terminate();
+  }
 }

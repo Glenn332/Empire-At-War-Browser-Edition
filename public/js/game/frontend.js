@@ -7,21 +7,38 @@ const PANEL = { cls: 'front', stretch: true };
 
 export class FrontEnd {
   constructor(game, { skirmish, leave, start, multiplayer }) {
-    this.game = game; this.menus = game.menus; this.skirmish = skirmish; this.leave = leave; this.start = start; this.openLobbies = multiplayer;
+    this.game = game;
+    this.menus = game.menus;
+    this.skirmish = skirmish;
+    this.leave = leave;
+    this.start = start;
+    this.openLobbies = multiplayer;
     this.depth = 0;
-    this.onKey = e => { const top = this.menus.stack[this.menus.stack.length - 1]; if (e.code === 'Escape' && !this.menus.listening && this.menus.stack.length > 1 && top.veil.style.display !== 'none') { e.stopPropagation(); this.menus.pop(); } };
+    this.onKey = e => {
+      const top = this.menus.stack[this.menus.stack.length - 1];
+      if (e.code === 'Escape' && !this.menus.listening && this.menus.stack.length > 1 && top.veil.style.display !== 'none') {
+        e.stopPropagation();
+        this.menus.pop();
+      }
+    };
   }
 
   async open() {
     const m = this.menus;
     if (!(await m.ready)) return false;
-    const o = this.overlay = document.createElement('div'); o.id = 'frontOverlay';
+    const o = (this.overlay = document.createElement('div'));
+    o.id = 'frontOverlay';
     document.body.appendChild(o);
-    this.artwork=new MenuArtwork(o);await this.artwork.refresh();
+    this.artwork = new MenuArtwork(o);
+    await this.artwork.refresh();
     addEventListener('keydown', this.onKey, true);
     return this.main();
   }
-  dispose() {this.artwork?.dispose();this.overlay?.remove();removeEventListener('keydown',this.onKey,true);}
+  dispose() {
+    this.artwork?.dispose();
+    this.overlay?.remove();
+    removeEventListener('keydown', this.onKey, true);
+  }
 
   async screen(id, hide = []) {
     const dlg = await this.menus.push(id, PANEL);
@@ -48,7 +65,11 @@ export class FrontEnd {
     dlg.on('IDC_NEW_CAMPAIGN_BUTTON', () => this.newCampaign(dlg));
     dlg.on('IDC_CUSTOM_CAMPAIGN_BUTTON', () => this.campaign(dlg));
     dlg.on('IDC_SKIRMISH_GAMES_BUTTON', async () => {
-      const show = on => { dlg.veil.style.display = on ? '' : 'none'; const o = document.getElementById('frontOverlay'); if (o) o.style.display = on ? '' : 'none'; };
+      const show = on => {
+        dlg.veil.style.display = on ? '' : 'none';
+        const o = document.getElementById('frontOverlay');
+        if (o) o.style.display = on ? '' : 'none';
+      };
       show(false);
       const ok = await this.skirmish(() => show(true)).catch(() => false);
       if (!ok) show(true);
@@ -59,7 +80,10 @@ export class FrontEnd {
   async multiplayer() {
     const dlg = await this.screen('IDD_MULTIPLAYER_DIALOG');
     if (!dlg) return;
-    const go = kind => { this.game.audio.unlock(); this.openLobbies(kind); };
+    const go = kind => {
+      this.game.audio.unlock();
+      this.openLobbies(kind);
+    };
     dlg.on('IDC_MULTIPLAYER_INTERNET_BUTTON', () => go('internet'));
     dlg.on('IDC_MULTIPLAYER_LAN_BUTTON', () => go('lan'));
     dlg.enable('IDC_MAIN_OPTIONS_NETWORK', false);
@@ -85,17 +109,44 @@ export class FrontEnd {
       if (answer !== 'no' && answer !== null) return;
     }
     const overlay = document.getElementById('frontOverlay');
-    const show = on => { parent.veil.style.display = on ? '' : 'none'; if (overlay) overlay.style.display = on ? '' : 'none'; };
+    const show = on => {
+      parent.veil.style.display = on ? '' : 'none';
+      if (overlay) overlay.style.display = on ? '' : 'none';
+    };
     show(false);
-    const ok = await openMainCampaignMenu({ audio: this.game.audio, cancel: () => show(true), start: setup => { this.game.audio.unlock(); this.start(setup); } }).catch(e => { console.warn('Campaign menu', e); return false; });
+    const ok = await openMainCampaignMenu({
+      audio: this.game.audio,
+      cancel: () => show(true),
+      start: setup => {
+        this.game.audio.unlock();
+        this.start(setup);
+      }
+    }).catch(e => {
+      console.warn('Campaign menu', e);
+      return false;
+    });
     if (!ok) show(true);
   }
 
   async campaign(parent, tutorial = false) {
     const overlay = document.getElementById('frontOverlay');
-    const show = on => { parent.veil.style.display = on ? '' : 'none'; if (overlay) overlay.style.display = on || tutorial ? '' : 'none'; };
+    const show = on => {
+      parent.veil.style.display = on ? '' : 'none';
+      if (overlay) overlay.style.display = on || tutorial ? '' : 'none';
+    };
     show(false);
-    const ok = await openCampaignMenu({ tutorial, audio:this.game.audio, cancel:() => show(true), start:setup => { this.game.audio.unlock(); this.start(setup); } }).catch(e => { console.warn('Campaign menu',e); return false; });
+    const ok = await openCampaignMenu({
+      tutorial,
+      audio: this.game.audio,
+      cancel: () => show(true),
+      start: setup => {
+        this.game.audio.unlock();
+        this.start(setup);
+      }
+    }).catch(e => {
+      console.warn('Campaign menu', e);
+      return false;
+    });
     if (!ok) show(true);
   }
 }

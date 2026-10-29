@@ -8,7 +8,7 @@ export async function installTacticalSpeech(game, host) {
   if (!game.showScreenText && typeof document !== 'undefined') {
     const comps = game.hudAssets?.comps || (await loadHudAssets().catch(() => null))?.comps;
     if (comps?.get('TUTORIAL_TEXT')) {
-      const text = game.screenText = new GalacticScreenText(game, comps);
+      const text = (game.screenText = new GalacticScreenText(game, comps));
       text.root.style.zIndex = '10';
       game.showScreenText = request => text.show(request);
       addEventListener('resize', () => text.resize());

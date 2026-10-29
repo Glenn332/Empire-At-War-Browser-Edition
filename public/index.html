@@ -1,472 +1,1427 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Empire at War: Browser Edition</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="icon" href="favicon.ico" sizes="48x48">
-<link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest">
-<meta name="apple-mobile-web-app-title" content="EaW BE">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#010307">
-<meta name="description" content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install.">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Empire at War: Browser Edition">
-<meta property="og:title" content="Empire at War: Browser Edition">
-<meta property="og:description" content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install.">
-<meta property="og:url" content="https://playeaw.com/">
-<meta property="og:image" content="https://playeaw.com/icons/share.jpg">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Empire at War: Browser Edition, the Imperial and Rebel emblems side by side">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="color-scheme" content="dark">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap">
-<style>
-  :root {
-    --bg: #010307; --imp: #e8333a; --bone: #e6dfcc; --alert: #ff9a3c;
-    --bone-2: rgba(230, 223, 204, 0.66); --bone-3: rgba(230, 223, 204, 0.4); --line: rgba(230, 223, 204, 0.14); --line-hi: rgba(230, 223, 204, 0.3);
-    --imp-2: rgba(232, 51, 58, 0.55); --imp-3: rgba(232, 51, 58, 0.11); --well: rgba(230, 223, 204, 0.035);
-    --disp: "Chakra Petch", "Bahnschrift SemiCondensed", "Bahnschrift", "Arial Narrow", sans-serif;
-    --mono: "IBM Plex Mono", "Cascadia Mono", Consolas, Menlo, monospace;
-    --rail: 136px;
-  }
-  * { box-sizing: border-box; }
-  html { background: var(--bg); }
-  body { margin: 0; min-height: 100vh; color: var(--bone); font: 13.5px/1.6 var(--mono); overflow-x: hidden; padding-top: env(safe-area-inset-top); box-sizing: border-box; }
-  .hidden { display: none !important; }
-  ::selection { background: var(--imp); color: var(--bone); }
+  <head>
+    <meta charset="utf-8" />
+    <title>Empire at War: Browser Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <link rel="icon" href="favicon.ico" sizes="48x48" />
+    <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="EaW BE" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#010307" />
+    <meta
+      name="description"
+      content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Empire at War: Browser Edition" />
+    <meta property="og:title" content="Empire at War: Browser Edition" />
+    <meta
+      property="og:description"
+      content="Play Star Wars: Empire at War and Forces of Corruption in your browser: space and land skirmish, galactic conquest and online multiplayer, running on your own copy of the game. Nothing to install."
+    />
+    <meta property="og:url" content="https://playeaw.com/" />
+    <meta property="og:image" content="https://playeaw.com/icons/share.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Empire at War: Browser Edition, the Imperial and Rebel emblems side by side" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      crossorigin
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #010307;
+        --imp: #e8333a;
+        --bone: #e6dfcc;
+        --alert: #ff9a3c;
+        --bone-2: rgba(230, 223, 204, 0.66);
+        --bone-3: rgba(230, 223, 204, 0.4);
+        --line: rgba(230, 223, 204, 0.14);
+        --line-hi: rgba(230, 223, 204, 0.3);
+        --imp-2: rgba(232, 51, 58, 0.55);
+        --imp-3: rgba(232, 51, 58, 0.11);
+        --well: rgba(230, 223, 204, 0.035);
+        --disp: 'Chakra Petch', 'Bahnschrift SemiCondensed', 'Bahnschrift', 'Arial Narrow', sans-serif;
+        --mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, Menlo, monospace;
+        --rail: 136px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: var(--bg);
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--bone);
+        font: 13.5px/1.6 var(--mono);
+        overflow-x: hidden;
+        padding-top: env(safe-area-inset-top);
+        box-sizing: border-box;
+      }
+      .hidden {
+        display: none !important;
+      }
+      ::selection {
+        background: var(--imp);
+        color: var(--bone);
+      }
 
-  #stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -3; }
-  .planet { position: fixed; z-index: -2; pointer-events: none; width: 160vmax; height: 160vmax; left: 50%; top: calc(100vh - 13vmax);
-    transform: translateX(-36%); border-radius: 50%; box-shadow: 0 0 90px rgba(98, 198, 255, 0.16), 0 0 18px rgba(98, 198, 255, 0.22);
-    background: radial-gradient(circle closest-side at 50% 50%, #03070c 95.5%, #0a1b2a 98.4%, #1d5379 99.5%, #7fd2ff 100%); }
-  #fleet { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -2; pointer-events: none; }
-  .scan { position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px); }
+      #stars {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -3;
+      }
+      .planet {
+        position: fixed;
+        z-index: -2;
+        pointer-events: none;
+        width: 160vmax;
+        height: 160vmax;
+        left: 50%;
+        top: calc(100vh - 13vmax);
+        transform: translateX(-36%);
+        border-radius: 50%;
+        box-shadow:
+          0 0 90px rgba(98, 198, 255, 0.16),
+          0 0 18px rgba(98, 198, 255, 0.22);
+        background: radial-gradient(circle closest-side at 50% 50%, #03070c 95.5%, #0a1b2a 98.4%, #1d5379 99.5%, #7fd2ff 100%);
+      }
+      #fleet {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -2;
+        pointer-events: none;
+      }
+      .scan {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px);
+      }
 
-  main { width: min(1080px, 100%); margin: 0 auto; padding: 64px 32px 80px; counter-reset: mod; background: rgba(1, 3, 7, 0.74); box-shadow: 0 0 60px 30px rgba(1, 3, 7, 0.74); }
+      main {
+        width: min(1080px, 100%);
+        margin: 0 auto;
+        padding: 64px 32px 80px;
+        counter-reset: mod;
+        background: rgba(1, 3, 7, 0.74);
+        box-shadow: 0 0 60px 30px rgba(1, 3, 7, 0.74);
+      }
 
-  header { display: grid; grid-template-columns: var(--rail) 1fr; margin-bottom: 44px; }
-  .kicker { grid-column: 2; font: 700 clamp(20px, 3vw, 34px)/1 var(--disp); letter-spacing: 0.3em; text-transform: uppercase; color: var(--imp); }
-  .kicker::before { content: "[ "; } .kicker::after { content: " ]"; }
-  h1 { grid-column: 1 / -1; margin: 14px 0 0 -0.05em; font: 700 clamp(46px, 10.4vw, 124px)/0.84 var(--disp); letter-spacing: -0.015em; text-transform: uppercase; color: var(--bone); }
-  .sub { grid-column: 2; display: flex; align-items: center; gap: 14px; margin-top: 20px; font: 600 13px/1.2 var(--disp); letter-spacing: 0.28em; text-transform: uppercase; color: var(--imp); }
-  .sub::after { content: ""; flex: 1; min-width: 24px; height: 1px; background: var(--imp-2); }
-  .credit { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 12px; font: 500 11px/1 var(--mono); letter-spacing: 0.24em; text-transform: uppercase; color: var(--bone-3); }
-  #kofi { min-height: 36px; display: flex; align-items: center; letter-spacing: 0; text-transform: none; }
-  #kofi a.kofi-button { box-shadow: 0 0 0 1px var(--line-hi); }
+      header {
+        display: grid;
+        grid-template-columns: var(--rail) 1fr;
+        margin-bottom: 44px;
+      }
+      .kicker {
+        grid-column: 2;
+        font: 700 clamp(20px, 3vw, 34px) / 1 var(--disp);
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--imp);
+      }
+      .kicker::before {
+        content: '[ ';
+      }
+      .kicker::after {
+        content: ' ]';
+      }
+      h1 {
+        grid-column: 1 / -1;
+        margin: 14px 0 0 -0.05em;
+        font: 700 clamp(46px, 10.4vw, 124px) / 0.84 var(--disp);
+        letter-spacing: -0.015em;
+        text-transform: uppercase;
+        color: var(--bone);
+      }
+      .sub {
+        grid-column: 2;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 20px;
+        font: 600 13px/1.2 var(--disp);
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--imp);
+      }
+      .sub::after {
+        content: '';
+        flex: 1;
+        min-width: 24px;
+        height: 1px;
+        background: var(--imp-2);
+      }
+      .credit {
+        grid-column: 2;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+        margin-top: 12px;
+        font: 500 11px/1 var(--mono);
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--bone-3);
+      }
+      #kofi {
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      #kofi a.kofi-button {
+        box-shadow: 0 0 0 1px var(--line-hi);
+      }
 
-  .link { display: grid; grid-template-columns: var(--rail) 1fr auto; align-items: center; gap: 0 20px; margin: 0 calc(50% - 50vw) 0 0;
-    padding: 20px calc(50vw - 50%) 20px 0; border-top: 2px solid var(--alert); border-bottom: 1px solid var(--line-hi); }
-  .link.ok { border-top-color: var(--imp); }
-  .lamp { width: 14px; height: 14px; margin-left: 2px; border: 2px solid var(--alert); animation: blink 1.1s steps(2, jump-none) infinite; }
-  .link.ok .lamp { background: var(--imp); border-color: var(--imp); animation: none; }
-  @keyframes blink { 50% { opacity: 0.2; } }
-  .link .what { font: 600 11px/1 var(--disp); letter-spacing: 0.32em; text-transform: uppercase; color: var(--bone-3); }
-  .link .state { margin-top: 6px; font-size: 15px; line-height: 1.45; color: var(--bone); }
-  .link .store { margin-top: 3px; font-size: 11.5px; color: var(--bone-3); }
-  a.launch { display: inline-block; padding: 17px 40px 17px 28px; font: 700 18px/1 var(--disp); letter-spacing: 0.26em; text-transform: uppercase;
-    text-decoration: none; color: var(--bone); background: var(--imp); clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%); }
-  a.launch:hover { color: var(--bg); background: var(--bone); }
-  a.launch:focus-visible { outline: 2px solid var(--bone); outline-offset: 4px; }
+      .link {
+        display: grid;
+        grid-template-columns: var(--rail) 1fr auto;
+        align-items: center;
+        gap: 0 20px;
+        margin: 0 calc(50% - 50vw) 0 0;
+        padding: 20px calc(50vw - 50%) 20px 0;
+        border-top: 2px solid var(--alert);
+        border-bottom: 1px solid var(--line-hi);
+      }
+      .link.ok {
+        border-top-color: var(--imp);
+      }
+      .lamp {
+        width: 14px;
+        height: 14px;
+        margin-left: 2px;
+        border: 2px solid var(--alert);
+        animation: blink 1.1s steps(2, jump-none) infinite;
+      }
+      .link.ok .lamp {
+        background: var(--imp);
+        border-color: var(--imp);
+        animation: none;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.2;
+        }
+      }
+      .link .what {
+        font: 600 11px/1 var(--disp);
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--bone-3);
+      }
+      .link .state {
+        margin-top: 6px;
+        font-size: 15px;
+        line-height: 1.45;
+        color: var(--bone);
+      }
+      .link .store {
+        margin-top: 3px;
+        font-size: 11.5px;
+        color: var(--bone-3);
+      }
+      a.launch {
+        display: inline-block;
+        padding: 17px 40px 17px 28px;
+        font: 700 18px/1 var(--disp);
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        text-decoration: none;
+        color: var(--bone);
+        background: var(--imp);
+        clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%);
+      }
+      a.launch:hover {
+        color: var(--bg);
+        background: var(--bone);
+      }
+      a.launch:focus-visible {
+        outline: 2px solid var(--bone);
+        outline-offset: 4px;
+      }
 
-  .desk { display: grid; grid-template-columns: var(--rail) 1fr auto; align-items: center; gap: 0 20px; margin: 0 calc(50% - 50vw) 26px 0;
-    padding: 18px calc(50vw - 50%) 18px 0; border-top: 1px solid var(--line-hi); border-bottom: 1px solid var(--line-hi); background: rgba(255, 255, 255, 0.015); }
-  .desk .badge { font: 700 11px/1.3 var(--disp); letter-spacing: 0.3em; text-transform: uppercase; color: var(--imp); }
-  .desk .what { font: 600 11px/1 var(--disp); letter-spacing: 0.32em; text-transform: uppercase; color: var(--bone-3); }
-  .desk .state { margin-top: 6px; font-size: 15px; line-height: 1.45; color: var(--bone); }
-  .desk .store { margin-top: 3px; font-size: 11.5px; color: var(--bone-3); }
-  .desk .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-  .desk pre { max-height: 9em; overflow: auto; margin: 8px 0 0; white-space: pre-wrap; font: 11.5px/1.45 var(--mono); color: var(--bone-2); }
-  #appVersion { margin: 22px 0 0; }
+      .desk {
+        display: grid;
+        grid-template-columns: var(--rail) 1fr auto;
+        align-items: center;
+        gap: 0 20px;
+        margin: 0 calc(50% - 50vw) 26px 0;
+        padding: 18px calc(50vw - 50%) 18px 0;
+        border-top: 1px solid var(--line-hi);
+        border-bottom: 1px solid var(--line-hi);
+        background: rgba(255, 255, 255, 0.015);
+      }
+      .desk .badge {
+        font: 700 11px/1.3 var(--disp);
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--imp);
+      }
+      .desk .what {
+        font: 600 11px/1 var(--disp);
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--bone-3);
+      }
+      .desk .state {
+        margin-top: 6px;
+        font-size: 15px;
+        line-height: 1.45;
+        color: var(--bone);
+      }
+      .desk .store {
+        margin-top: 3px;
+        font-size: 11.5px;
+        color: var(--bone-3);
+      }
+      .desk .acts {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .desk pre {
+        max-height: 9em;
+        overflow: auto;
+        margin: 8px 0 0;
+        white-space: pre-wrap;
+        font: 11.5px/1.45 var(--mono);
+        color: var(--bone-2);
+      }
+      #appVersion {
+        margin: 22px 0 0;
+      }
 
-  .mod-box { counter-increment: mod; position: relative; margin: 0; padding: 32px 0 38px var(--rail); border-top: 1px solid var(--line-hi); }
-  .link + .mod-box { border-top: 0; margin-top: 18px; }
-  .mod-box::before { content: ""; position: absolute; left: 0; top: -1px; width: 48px; height: 3px; background: var(--imp); }
-  .rail { position: absolute; left: 0; top: 32px; width: calc(var(--rail) - 28px); margin: 0; font: 600 11px/1.3 var(--disp); letter-spacing: 0.28em; text-transform: uppercase; color: var(--bone-2); }
-  .rail::before { content: counter(mod, decimal-leading-zero); display: block; margin-bottom: 10px; font: 700 46px/0.8 var(--disp); letter-spacing: -0.02em; color: var(--imp); }
-  .rail .tag { display: block; margin-top: 6px; font: 400 11px/1 var(--mono); letter-spacing: 0; text-transform: lowercase; color: var(--bone-3); }
-  .rail .tag::before { content: "// "; }
-  .mod-box p { margin: 10px 0; }
-  .note { max-width: 72ch; font-size: 12.5px; color: var(--bone-2); }
-  em { font-style: italic; color: var(--bone); }
-  code { font: 12px var(--mono); color: var(--imp); background: var(--well); padding: 1px 5px; border: 1px solid var(--line); }
+      .mod-box {
+        counter-increment: mod;
+        position: relative;
+        margin: 0;
+        padding: 32px 0 38px var(--rail);
+        border-top: 1px solid var(--line-hi);
+      }
+      .link + .mod-box {
+        border-top: 0;
+        margin-top: 18px;
+      }
+      .mod-box::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: -1px;
+        width: 48px;
+        height: 3px;
+        background: var(--imp);
+      }
+      .rail {
+        position: absolute;
+        left: 0;
+        top: 32px;
+        width: calc(var(--rail) - 28px);
+        margin: 0;
+        font: 600 11px/1.3 var(--disp);
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--bone-2);
+      }
+      .rail::before {
+        content: counter(mod, decimal-leading-zero);
+        display: block;
+        margin-bottom: 10px;
+        font: 700 46px/0.8 var(--disp);
+        letter-spacing: -0.02em;
+        color: var(--imp);
+      }
+      .rail .tag {
+        display: block;
+        margin-top: 6px;
+        font: 400 11px/1 var(--mono);
+        letter-spacing: 0;
+        text-transform: lowercase;
+        color: var(--bone-3);
+      }
+      .rail .tag::before {
+        content: '// ';
+      }
+      .mod-box p {
+        margin: 10px 0;
+      }
+      .note {
+        max-width: 72ch;
+        font-size: 12.5px;
+        color: var(--bone-2);
+      }
+      em {
+        font-style: italic;
+        color: var(--bone);
+      }
+      code {
+        font: 12px var(--mono);
+        color: var(--imp);
+        background: var(--well);
+        padding: 1px 5px;
+        border: 1px solid var(--line);
+      }
 
-  button { font: 600 12px/1 var(--disp); letter-spacing: 0.18em; text-transform: uppercase; color: var(--bone); cursor: pointer; border-radius: 0;
-    padding: 10px 15px 10px 17px; background: transparent; border: 1px solid var(--line-hi); box-shadow: inset 3px 0 0 var(--imp); }
-  button:hover { color: var(--bone); background: var(--imp); border-color: var(--imp); }
-  button:focus-visible { outline: 2px solid var(--imp); outline-offset: 2px; }
-  button:disabled, button:disabled:hover { opacity: 0.3; cursor: default; color: var(--bone); background: transparent; border-color: var(--line-hi); }
-  button.go { display: flex; justify-content: space-between; width: 100%; padding: 16px 18px; font-size: 13px; color: var(--imp); border-color: var(--imp-2); box-shadow: none; text-align: left; }
-  button.go::after { content: "→"; margin-left: 14px; letter-spacing: 0; }
-  button.go:hover { color: var(--bone); }
-  button.small { padding: 6px 10px 6px 12px; font-size: 11px; }
-  .ask { display: inline; padding: 0; font: inherit; letter-spacing: 0; text-transform: none; color: var(--imp); background: none; border: 0; box-shadow: none;
-    text-decoration: underline dotted var(--imp-2); text-underline-offset: 3px; }
-  .ask:hover { color: var(--bone); background: none; }
+      button {
+        font: 600 12px/1 var(--disp);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--bone);
+        cursor: pointer;
+        border-radius: 0;
+        padding: 10px 15px 10px 17px;
+        background: transparent;
+        border: 1px solid var(--line-hi);
+        box-shadow: inset 3px 0 0 var(--imp);
+      }
+      button:hover {
+        color: var(--bone);
+        background: var(--imp);
+        border-color: var(--imp);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--imp);
+        outline-offset: 2px;
+      }
+      button:disabled,
+      button:disabled:hover {
+        opacity: 0.3;
+        cursor: default;
+        color: var(--bone);
+        background: transparent;
+        border-color: var(--line-hi);
+      }
+      button.go {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        padding: 16px 18px;
+        font-size: 13px;
+        color: var(--imp);
+        border-color: var(--imp-2);
+        box-shadow: none;
+        text-align: left;
+      }
+      button.go::after {
+        content: '→';
+        margin-left: 14px;
+        letter-spacing: 0;
+      }
+      button.go:hover {
+        color: var(--bone);
+      }
+      button.small {
+        padding: 6px 10px 6px 12px;
+        font-size: 11px;
+      }
+      .ask {
+        display: inline;
+        padding: 0;
+        font: inherit;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--imp);
+        background: none;
+        border: 0;
+        box-shadow: none;
+        text-decoration: underline dotted var(--imp-2);
+        text-underline-offset: 3px;
+      }
+      .ask:hover {
+        color: var(--bone);
+        background: none;
+      }
 
-  .status { min-height: 1.5em; margin: 12px 0 0; font: 12px/1.5 var(--mono); color: var(--bone-3); }
-  .status:empty { min-height: 0; margin: 0; }
-  .status.ok, .status.bad { padding-left: 10px; border-left: 2px solid; }
-  .status.ok { color: var(--bone); border-left-color: var(--imp); } .status.bad { color: var(--alert); }
-  .bar { height: 5px; margin-top: 12px; background: repeating-linear-gradient(90deg, var(--line-hi) 0 1px, transparent 1px 10%), var(--well); }
-  .bar > div { height: 100%; width: 0; background: var(--imp); transition: width 0.15s; }
+      .status {
+        min-height: 1.5em;
+        margin: 12px 0 0;
+        font: 12px/1.5 var(--mono);
+        color: var(--bone-3);
+      }
+      .status:empty {
+        min-height: 0;
+        margin: 0;
+      }
+      .status.ok,
+      .status.bad {
+        padding-left: 10px;
+        border-left: 2px solid;
+      }
+      .status.ok {
+        color: var(--bone);
+        border-left-color: var(--imp);
+      }
+      .status.bad {
+        color: var(--alert);
+      }
+      .bar {
+        height: 5px;
+        margin-top: 12px;
+        background: repeating-linear-gradient(90deg, var(--line-hi) 0 1px, transparent 1px 10%), var(--well);
+      }
+      .bar > div {
+        height: 100%;
+        width: 0;
+        background: var(--imp);
+        transition: width 0.15s;
+      }
 
-  .rowline { display: flex; align-items: center; gap: 12px; padding: 10px 0; margin: 0; border-bottom: 1px solid var(--line); }
-  #install, #stored { margin-top: 12px; }
-  #install .rowline, #stored .rowline, #mods .rowline:first-child { border-top: 1px solid var(--line); }
-  .rowline .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rowline .name::before { content: "▸ "; color: var(--imp); }
-  .rowline .meta { font-size: 11.5px; color: var(--bone-3); white-space: nowrap; }
-  #mods .rowline .meta { display: grid; grid-template-columns: 15ch 10ch; column-gap: 1ch; row-gap: 2px; font-size: 10.5px; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  #mods .meta span { overflow: hidden; text-overflow: ellipsis; }
-  .actions { position: relative; flex: none; }
-  .actions .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; display: flex; flex-direction: column; min-width: 15ch; background: var(--bg); border: 1px solid var(--line-hi); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); }
-  .actions .menu.hidden { display: none; }
-  .actions .menu button { padding: 9px 12px; font-size: 11px; text-align: left; border: 0; box-shadow: none; white-space: nowrap; }
-  .actions .menu button + button { border-top: 1px solid var(--line); }
-  #mods .meta .src { grid-column: 1 / -1; } #mods .meta .count { text-align: left; } #mods .meta .when { text-align: right; }
-  .rowline.off .name { color: var(--bone-3); } .rowline.off .name::before { content: "· "; color: var(--bone-3); }
-  .rowline label { display: flex; align-items: center; gap: 6px; cursor: pointer; font: 600 11px/1 var(--disp); letter-spacing: 0.16em; text-transform: uppercase; color: var(--bone-2); }
-  .rowline input { accent-color: var(--imp); }
-  .rowline input.rename { flex: 1; min-width: 0; padding: 4px 6px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--imp); outline: none; }
-  .rowline .order { display: flex; gap: 2px; }
-  .rowline .order button { padding: 4px 6px; font-size: 9px; box-shadow: none; }
-  #appGame .rowline, #appSources .rowline:first-of-type { border-top: 1px solid var(--line); }
-  #appSources h3 { margin: 26px 0 8px; }
-  .rowline .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px/1.4 var(--mono); }
+      .rowline {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 0;
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      #install,
+      #stored {
+        margin-top: 12px;
+      }
+      #install .rowline,
+      #stored .rowline,
+      #mods .rowline:first-child {
+        border-top: 1px solid var(--line);
+      }
+      .rowline .name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .rowline .name::before {
+        content: '▸ ';
+        color: var(--imp);
+      }
+      .rowline .meta {
+        font-size: 11.5px;
+        color: var(--bone-3);
+        white-space: nowrap;
+      }
+      #mods .rowline .meta {
+        display: grid;
+        grid-template-columns: 15ch 10ch;
+        column-gap: 1ch;
+        row-gap: 2px;
+        font-size: 10.5px;
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+      }
+      #mods .meta span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .actions {
+        position: relative;
+        flex: none;
+      }
+      .actions .menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 4px);
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        min-width: 15ch;
+        background: var(--bg);
+        border: 1px solid var(--line-hi);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      }
+      .actions .menu.hidden {
+        display: none;
+      }
+      .actions .menu button {
+        padding: 9px 12px;
+        font-size: 11px;
+        text-align: left;
+        border: 0;
+        box-shadow: none;
+        white-space: nowrap;
+      }
+      .actions .menu button + button {
+        border-top: 1px solid var(--line);
+      }
+      #mods .meta .src {
+        grid-column: 1 / -1;
+      }
+      #mods .meta .count {
+        text-align: left;
+      }
+      #mods .meta .when {
+        text-align: right;
+      }
+      .rowline.off .name {
+        color: var(--bone-3);
+      }
+      .rowline.off .name::before {
+        content: '· ';
+        color: var(--bone-3);
+      }
+      .rowline label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font: 600 11px/1 var(--disp);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--bone-2);
+      }
+      .rowline input {
+        accent-color: var(--imp);
+      }
+      .rowline input.rename {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 6px;
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--imp);
+        outline: none;
+      }
+      .rowline .order {
+        display: flex;
+        gap: 2px;
+      }
+      .rowline .order button {
+        padding: 4px 6px;
+        font-size: 9px;
+        box-shadow: none;
+      }
+      #appGame .rowline,
+      #appSources .rowline:first-of-type {
+        border-top: 1px solid var(--line);
+      }
+      #appSources h3 {
+        margin: 26px 0 8px;
+      }
+      .rowline .path {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font: 12.5px/1.4 var(--mono);
+      }
 
-  .edition { display: grid; grid-template-columns: 1fr 1fr; }
-  .edition button { padding: 18px 24px 4px 0; text-align: left; font: 600 clamp(19px, 2.4vw, 27px)/1.05 var(--disp); letter-spacing: 0.01em; text-transform: uppercase;
-    color: var(--bone-3); background: none; border: 0; border-top: 1px solid var(--line-hi); box-shadow: none; }
-  .edition button + button { padding-left: 24px; border-left: 1px solid var(--line); }
-  .edition button:hover { color: var(--bone); background: none; }
-  .edition button[aria-checked="true"] { color: var(--bone); border-top: 3px solid var(--imp); padding-top: 16px; }
-  .edition button[aria-checked="true"]::before { content: "▸ "; color: var(--imp); }
-  .edition small { display: block; margin-top: 8px; font: 12px/1.4 var(--mono); letter-spacing: 0; text-transform: none; color: var(--bone-3); }
+      .edition {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .edition button {
+        padding: 18px 24px 4px 0;
+        text-align: left;
+        font: 600 clamp(19px, 2.4vw, 27px) / 1.05 var(--disp);
+        letter-spacing: 0.01em;
+        text-transform: uppercase;
+        color: var(--bone-3);
+        background: none;
+        border: 0;
+        border-top: 1px solid var(--line-hi);
+        box-shadow: none;
+      }
+      .edition button + button {
+        padding-left: 24px;
+        border-left: 1px solid var(--line);
+      }
+      .edition button:hover {
+        color: var(--bone);
+        background: none;
+      }
+      .edition button[aria-checked='true'] {
+        color: var(--bone);
+        border-top: 3px solid var(--imp);
+        padding-top: 16px;
+      }
+      .edition button[aria-checked='true']::before {
+        content: '▸ ';
+        color: var(--imp);
+      }
+      .edition small {
+        display: block;
+        margin-top: 8px;
+        font: 12px/1.4 var(--mono);
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--bone-3);
+      }
 
-  .mod-box:has(#playerName) { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 32px; padding-top: 30px; padding-bottom: 28px; }
-  .mod-box:has(#playerName) .note { flex: 1 1 220px; margin: 0 0 8px; }
-  #playerName { width: 100%; max-width: 320px; margin-top: 2px; padding: 8px 2px; font: 600 22px var(--disp); letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone);
-    background: transparent; border: 0; border-bottom: 2px solid var(--imp-2); border-radius: 0; outline: none; }
-  #playerName:focus { border-bottom-color: var(--imp); }
-  #playerName::placeholder { color: var(--bone-3); }
+      .mod-box:has(#playerName) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 8px 32px;
+        padding-top: 30px;
+        padding-bottom: 28px;
+      }
+      .mod-box:has(#playerName) .note {
+        flex: 1 1 220px;
+        margin: 0 0 8px;
+      }
+      #playerName {
+        width: 100%;
+        max-width: 320px;
+        margin-top: 2px;
+        padding: 8px 2px;
+        font: 600 22px var(--disp);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--bone);
+        background: transparent;
+        border: 0;
+        border-bottom: 2px solid var(--imp-2);
+        border-radius: 0;
+        outline: none;
+      }
+      #playerName:focus {
+        border-bottom-color: var(--imp);
+      }
+      #playerName::placeholder {
+        color: var(--bone-3);
+      }
 
-  .mod-box:has(.ways) { padding-top: 40px; padding-bottom: 52px; }
-  .mod-box:has(.ways) .rail { top: 40px; }
-  .ways { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); margin-top: 22px; }
-  .way { min-width: 0; padding: 0 32px 0 0; }
-  .way + .way { padding: 0 0 0 32px; border-left: 1px solid var(--line-hi); }
-  .way h3 { margin: 0 0 6px; font: 700 19px/1.15 var(--disp); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone); }
-  .way .when { margin: 0 0 16px; font: 500 11px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--imp); }
-  .way .when::before { content: "▸ "; }
-  .way .when.alt { color: var(--bone-3); }
-  .drop { display: block; width: 100%; margin: 0; padding: 20px 14px; text-align: left; cursor: pointer; color: var(--bone-2); font: 12.5px/1.55 var(--mono); letter-spacing: 0; text-transform: none; box-shadow: none;
-    background: repeating-linear-gradient(135deg, var(--imp-3) 0 1px, transparent 1px 9px); border: 1px dashed var(--imp-2); }
-  .drop:hover, .drop.over, .drop:focus-visible { color: var(--bone); background-color: var(--imp-3); border: 1px solid var(--imp); outline: none; }
-  .drop b { display: block; margin-bottom: 4px; font: 700 14px/1.3 var(--disp); letter-spacing: 0.16em; text-transform: uppercase; color: var(--imp); }
+      .mod-box:has(.ways) {
+        padding-top: 40px;
+        padding-bottom: 52px;
+      }
+      .mod-box:has(.ways) .rail {
+        top: 40px;
+      }
+      .ways {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+        margin-top: 22px;
+      }
+      .way {
+        min-width: 0;
+        padding: 0 32px 0 0;
+      }
+      .way + .way {
+        padding: 0 0 0 32px;
+        border-left: 1px solid var(--line-hi);
+      }
+      .way h3 {
+        margin: 0 0 6px;
+        font: 700 19px/1.15 var(--disp);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--bone);
+      }
+      .way .when {
+        margin: 0 0 16px;
+        font: 500 11px/1.3 var(--mono);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--imp);
+      }
+      .way .when::before {
+        content: '▸ ';
+      }
+      .way .when.alt {
+        color: var(--bone-3);
+      }
+      .drop {
+        display: block;
+        width: 100%;
+        margin: 0;
+        padding: 20px 14px;
+        text-align: left;
+        cursor: pointer;
+        color: var(--bone-2);
+        font: 12.5px/1.55 var(--mono);
+        letter-spacing: 0;
+        text-transform: none;
+        box-shadow: none;
+        background: repeating-linear-gradient(135deg, var(--imp-3) 0 1px, transparent 1px 9px);
+        border: 1px dashed var(--imp-2);
+      }
+      .drop:hover,
+      .drop.over,
+      .drop:focus-visible {
+        color: var(--bone);
+        background-color: var(--imp-3);
+        border: 1px solid var(--imp);
+        outline: none;
+      }
+      .drop b {
+        display: block;
+        margin-bottom: 4px;
+        font: 700 14px/1.3 var(--disp);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--imp);
+      }
 
-  .modadd { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
-  .profiles { margin-top: 28px; }
-  .profiles h3 { margin: 0 0 10px; font: 700 14px/1.2 var(--disp); letter-spacing: 0.16em; text-transform: uppercase; color: var(--bone); }
-  #profileList .rowline:first-child { border-top: 1px solid var(--line); }
-  #profileList .rowline.cur .name::after { content: "  in use"; font-size: 11px; color: var(--imp); }
-  .saveas { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; }
-  .saveas input { flex: 1; min-width: 0; max-width: 320px; padding: 7px 2px; font: 600 14px var(--disp); letter-spacing: 0.06em; color: var(--bone);
-    background: transparent; border: 0; border-bottom: 2px solid var(--imp-2); border-radius: 0; outline: none; }
-  .saveas input:focus { border-bottom-color: var(--imp); }
-  .saveas input::placeholder { color: var(--bone-3); }
+      .modadd {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 0;
+      }
+      .profiles {
+        margin-top: 28px;
+      }
+      .profiles h3 {
+        margin: 0 0 10px;
+        font: 700 14px/1.2 var(--disp);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--bone);
+      }
+      #profileList .rowline:first-child {
+        border-top: 1px solid var(--line);
+      }
+      #profileList .rowline.cur .name::after {
+        content: '  in use';
+        font-size: 11px;
+        color: var(--imp);
+      }
+      .saveas {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        margin-top: 12px;
+      }
+      .saveas input {
+        flex: 1;
+        min-width: 0;
+        max-width: 320px;
+        padding: 7px 2px;
+        font: 600 14px var(--disp);
+        letter-spacing: 0.06em;
+        color: var(--bone);
+        background: transparent;
+        border: 0;
+        border-bottom: 2px solid var(--imp-2);
+        border-radius: 0;
+        outline: none;
+      }
+      .saveas input:focus {
+        border-bottom-color: var(--imp);
+      }
+      .saveas input::placeholder {
+        color: var(--bone-3);
+      }
 
-  footer { margin: 0 0 0 var(--rail); padding-top: 18px; max-width: 62ch; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.6; color: var(--bone-3); }
+      footer {
+        margin: 0 0 0 var(--rail);
+        padding-top: 18px;
+        max-width: 62ch;
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--bone-3);
+      }
 
-  dialog { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; color: var(--bone); background: var(--bg); border: 1px solid var(--line-hi); border-top: 3px solid var(--imp); border-radius: 0; }
-  dialog::backdrop { background: rgba(1, 3, 7, 0.86); }
-  dialog .head { padding: 16px 22px 14px; font: 700 14px/1.2 var(--disp); letter-spacing: 0.24em; text-transform: uppercase; color: var(--imp); border-bottom: 1px solid var(--line); }
-  dialog .body { padding: 8px 22px 4px; }
-  dialog .foot { display: flex; justify-content: flex-end; padding: 12px 22px 18px; }
-  dialog ol { margin: 12px 0; padding: 0; list-style: none; counter-reset: step; }
-  dialog ol > li { position: relative; padding: 0 0 16px 46px; counter-increment: step; }
-  dialog ol > li::before { content: "[" counter(step, decimal-leading-zero) "]"; position: absolute; left: 0; top: 1px; font: 500 12.5px/1.4 var(--mono); color: var(--imp); }
-  dialog h4 { margin: 0 0 4px; font: 700 14px/1.3 var(--disp); letter-spacing: 0.12em; text-transform: uppercase; }
-  dialog p { margin: 6px 0; }
-  .copy { display: flex; gap: 8px; align-items: stretch; margin: 8px 0; }
-  .copy code { flex: 1; min-width: 0; padding: 7px 9px; overflow-x: auto; white-space: nowrap; }
-  .copy button { flex: none; padding: 7px 11px 7px 13px; font-size: 11px; }
-  .os { display: flex; flex-wrap: wrap; gap: 0; margin: 8px 0 6px; }
-  .os button { padding: 7px 12px; font-size: 11px; box-shadow: none; }
-  .os button + button { border-left: 0; }
-  .os button[aria-pressed="true"] { color: var(--bone); background: var(--imp); border-color: var(--imp); }
+      dialog {
+        width: min(620px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        padding: 0;
+        color: var(--bone);
+        background: var(--bg);
+        border: 1px solid var(--line-hi);
+        border-top: 3px solid var(--imp);
+        border-radius: 0;
+      }
+      dialog::backdrop {
+        background: rgba(1, 3, 7, 0.86);
+      }
+      dialog .head {
+        padding: 16px 22px 14px;
+        font: 700 14px/1.2 var(--disp);
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--imp);
+        border-bottom: 1px solid var(--line);
+      }
+      dialog .body {
+        padding: 8px 22px 4px;
+      }
+      dialog .foot {
+        display: flex;
+        justify-content: flex-end;
+        padding: 12px 22px 18px;
+      }
+      dialog ol {
+        margin: 12px 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      dialog ol > li {
+        position: relative;
+        padding: 0 0 16px 46px;
+        counter-increment: step;
+      }
+      dialog ol > li::before {
+        content: '[' counter(step, decimal-leading-zero) ']';
+        position: absolute;
+        left: 0;
+        top: 1px;
+        font: 500 12.5px/1.4 var(--mono);
+        color: var(--imp);
+      }
+      dialog h4 {
+        margin: 0 0 4px;
+        font: 700 14px/1.3 var(--disp);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      dialog p {
+        margin: 6px 0;
+      }
+      .copy {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+        margin: 8px 0;
+      }
+      .copy code {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 9px;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .copy button {
+        flex: none;
+        padding: 7px 11px 7px 13px;
+        font-size: 11px;
+      }
+      .os {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        margin: 8px 0 6px;
+      }
+      .os button {
+        padding: 7px 12px;
+        font-size: 11px;
+        box-shadow: none;
+      }
+      .os button + button {
+        border-left: 0;
+      }
+      .os button[aria-pressed='true'] {
+        color: var(--bone);
+        background: var(--imp);
+        border-color: var(--imp);
+      }
 
-  @media (max-width: 900px) { :root { --rail: 104px; } .rail::before { font-size: 38px; } }
-  @media (max-width: 640px) {
-    main { padding: 36px 16px 56px; }
-    header { grid-template-columns: 1fr; margin-bottom: 32px; }
-    .kicker, .sub, .credit { grid-column: 1; }
-    .sub { display: block; line-height: 1.5; }
-    .sub::after { display: block; margin-top: 12px; }
-    .link { grid-template-columns: auto 1fr; gap: 14px 14px; padding-top: 16px; padding-bottom: 16px; }
-    .link a.launch { grid-column: 1 / -1; text-align: center; }
-    .mod-box, .mod-box:has(.ways), .mod-box:has(#playerName) { padding: 26px 0 30px; }
-    .rail, .mod-box:has(.ways) .rail { position: static; display: flex; align-items: baseline; gap: 12px; width: auto; margin: 0 0 18px; }
-    .rail::before { font-size: 30px; margin: 0; }
-    .rail .tag { display: inline; margin: 0; }
-    .ways { grid-template-columns: 1fr; margin-top: 18px; }
-    .way { padding: 0; }
-    .way + .way { padding: 26px 0 0; margin-top: 26px; border-left: 0; border-top: 1px solid var(--line-hi); }
-    .edition button { padding-right: 12px; }
-    .edition button + button { padding-left: 12px; }
-    .rowline { flex-wrap: wrap; }
-    .rowline .name { flex-basis: 60%; }
-    footer { margin-left: 0; }
-  }
-  @media (max-width: 720px) { .desk { grid-template-columns: 1fr; gap: 10px; } .desk .acts { justify-content: flex-start; } }
-  @media (prefers-reduced-motion: reduce) { .lamp { animation: none; } }
-</style>
-<script>
-addEventListener('error', e => {
-  if (!(e.error instanceof SyntaxError)) return;
-  try { if (sessionStorage.getItem('swr-relinked')) return; sessionStorage.setItem('swr-relinked', '1'); } catch { return; }
-  const urls = performance.getEntriesByType('resource').map(r => r.name).filter(u => u.startsWith(location.origin) && /\.(js|css)$/.test(new URL(u).pathname));
-  Promise.all([location.href, ...urls].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))).then(() => location.reload());
-});
-</script>
-</head>
-<body>
-<canvas id="stars" aria-hidden="true"></canvas>
-<div class="planet" aria-hidden="true"></div>
-<canvas id="fleet" aria-hidden="true"></canvas>
-<div class="scan" aria-hidden="true"></div>
+      @media (max-width: 900px) {
+        :root {
+          --rail: 104px;
+        }
+        .rail::before {
+          font-size: 38px;
+        }
+      }
+      @media (max-width: 640px) {
+        main {
+          padding: 36px 16px 56px;
+        }
+        header {
+          grid-template-columns: 1fr;
+          margin-bottom: 32px;
+        }
+        .kicker,
+        .sub,
+        .credit {
+          grid-column: 1;
+        }
+        .sub {
+          display: block;
+          line-height: 1.5;
+        }
+        .sub::after {
+          display: block;
+          margin-top: 12px;
+        }
+        .link {
+          grid-template-columns: auto 1fr;
+          gap: 14px 14px;
+          padding-top: 16px;
+          padding-bottom: 16px;
+        }
+        .link a.launch {
+          grid-column: 1 / -1;
+          text-align: center;
+        }
+        .mod-box,
+        .mod-box:has(.ways),
+        .mod-box:has(#playerName) {
+          padding: 26px 0 30px;
+        }
+        .rail,
+        .mod-box:has(.ways) .rail {
+          position: static;
+          display: flex;
+          align-items: baseline;
+          gap: 12px;
+          width: auto;
+          margin: 0 0 18px;
+        }
+        .rail::before {
+          font-size: 30px;
+          margin: 0;
+        }
+        .rail .tag {
+          display: inline;
+          margin: 0;
+        }
+        .ways {
+          grid-template-columns: 1fr;
+          margin-top: 18px;
+        }
+        .way {
+          padding: 0;
+        }
+        .way + .way {
+          padding: 26px 0 0;
+          margin-top: 26px;
+          border-left: 0;
+          border-top: 1px solid var(--line-hi);
+        }
+        .edition button {
+          padding-right: 12px;
+        }
+        .edition button + button {
+          padding-left: 12px;
+        }
+        .rowline {
+          flex-wrap: wrap;
+        }
+        .rowline .name {
+          flex-basis: 60%;
+        }
+        footer {
+          margin-left: 0;
+        }
+      }
+      @media (max-width: 720px) {
+        .desk {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        .desk .acts {
+          justify-content: flex-start;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .lamp {
+          animation: none;
+        }
+      }
+    </style>
+    <script>
+      addEventListener('error', e => {
+        if (!(e.error instanceof SyntaxError)) return;
+        try {
+          if (sessionStorage.getItem('swr-relinked')) return;
+          sessionStorage.setItem('swr-relinked', '1');
+        } catch {
+          return;
+        }
+        const urls = performance
+          .getEntriesByType('resource')
+          .map(r => r.name)
+          .filter(u => u.startsWith(location.origin) && /\.(js|css)$/.test(new URL(u).pathname));
+        Promise.all([location.href, ...urls].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))).then(() => location.reload());
+      });
+    </script>
+  </head>
+  <body>
+    <canvas id="stars" aria-hidden="true"></canvas>
+    <div class="planet" aria-hidden="true"></div>
+    <canvas id="fleet" aria-hidden="true"></canvas>
+    <div class="scan" aria-hidden="true"></div>
 
-<main>
-  <header>
-    <div class="kicker">Star Wars</div>
-    <h1>Empire at War</h1>
-    <div class="sub"><span id="subName">Forces of Corruption</span> · in the browser</div>
-    <div class="credit">Created by RIRA <div id="kofi"><a class="ask" href="https://ko-fi.com/Z4S429CUIG" target="_blank" rel="noopener">Support me on Ko-fi</a></div></div>
-  </header>
-
-  <section id="desktop" class="desk hidden" aria-live="polite">
-    <div class="badge" id="deskBadge">Desktop</div>
-    <div>
-      <div class="what" id="deskWhat"></div>
-      <div class="state" id="deskState"></div>
-      <div class="store" id="deskNote"></div>
-      <pre id="deskNotes" class="hidden"></pre>
-    </div>
-    <div class="acts" id="deskActs"></div>
-  </section>
-
-  <section id="link" class="link" aria-live="polite">
-    <div class="lamp" aria-hidden="true"></div>
-    <div>
-      <div class="what">Game data</div>
-      <div id="current" class="state">Checking…</div>
-      <div id="storeNote" class="store"></div>
-    </div>
-    <a id="play" class="launch hidden" href="play.html">Launch</a>
-  </section>
-
-  <section class="mod-box">
-    <h2 class="rail">Game</h2>
-    <div class="edition" role="radiogroup" aria-label="Which game to play" id="edition">
-      <button type="button" role="radio" data-edition="foc">Forces of Corruption<small>The expansion, over the base game</small></button>
-      <button type="button" role="radio" data-edition="eaw">Empire at War<small>The original game alone</small></button>
-    </div>
-    <p id="editionStatus" class="status"></p>
-    <p class="note">Both are played from the same copy of the game: the folder or archive below holds them both. Each keeps its own saves.
-      Mods are almost always made for Forces of Corruption, so running the original usually does not work with mods: turn them off below when you play it.</p>
-  </section>
-
-  <section class="mod-box">
-    <h2 class="rail">Commander</h2>
-    <input id="playerName" type="text" maxlength="24" spellcheck="false" autocomplete="nickname" placeholder="Player" aria-label="Your name">
-    <p class="note">The name other players see in multiplayer. Kept in this browser.</p>
-  </section>
-
-  <section class="mod-box">
-    <h2 class="rail">Your game</h2>
-    <div id="appGame" class="hidden"></div>
-    <p id="appGameStatus" class="status"></p>
-    <p class="note" id="waysNote" style="margin-top:0">This needs your own copy of <em>Empire at War</em> with <em>Forces of Corruption</em> (Steam or Gold Pack). Pick one way:</p>
-    <div class="ways">
-      <div class="way" id="installBox">
-        <h3>Installed game folder</h3>
-        <div class="when">Any browser on a computer</div>
-        <button id="chooseGame" class="go">Choose your game folder…</button>
-        <div id="install"></div>
-        <p id="installOff" class="status bad hidden">Folder access is off or missing in this browser. <button class="ask" data-help>How to turn it on</button></p>
-        <p id="installStatus" class="status"></p>
-        <p class="note">The folder that holds <code>GameData</code> and <code>corruption</code>. It is read where it is each time
-          you play; nothing is copied. <button class="ask" data-help>Button not working?</button></p>
-        <p class="note" id="protectedTip">Tip: keep the game out of a <button class="ask" id="howProtected">protected folder</button>.</p>
-      </div>
-      <div class="way">
-        <h3>Game archive</h3>
-        <div class="when alt">Any browser</div>
-        <button id="drop" class="drop" type="button"><b>Import an archive</b>Drop the <code>.tar</code> of your game folder here, or click to choose it</button>
-        <input id="file" type="file" accept=".tar,.gz,.tgz,application/x-tar,application/gzip" hidden>
-        <div class="bar"><div id="bar"></div></div>
-        <p id="status" class="status"></p>
-        <div id="stored"></div>
-        <p class="note">A copy of the game folder in one file, kept in this browser's own storage. <button class="ask" id="howArchive">How to make one</button></p>
-      </div>
-    </div>
-  </section>
-
-  <section class="mod-box">
-    <h2 class="rail">Mods <span class="tag">optional</span></h2>
-    <div id="mods"></div>
-    <div id="appSources" class="hidden"></div>
-    <p class="modadd"><button id="addMod">Add a mod folder…</button><button id="addModArchive">Import a mod archive…</button></p>
-    <input id="modFile" type="file" accept=".tar,.gz,.tgz,application/x-tar,application/gzip" hidden>
-    <p id="modStatus" class="status"></p>
-    <div id="profiles" class="profiles hidden">
-      <h3>Mod profiles</h3>
-      <div id="profileList"></div>
-      <form id="saveProfile" class="saveas">
-        <input id="profileName" type="text" maxlength="40" spellcheck="false" autocomplete="off" placeholder="Profile name" aria-label="Profile name">
-        <button type="submit">Save current mods</button>
-      </form>
-      <p class="note">A profile keeps which mods are turned on and their order, so you can switch back to it after playing with others. Kept in this browser.</p>
-    </div>
-    <p class="note" id="modHint">A mod's own folder, the one with <code>Data</code> in it. It is read from your disk each time you play;
-      nothing is copied or changed, and removing it here leaves the folder as it was. Or import a <code>.tar</code> of that
-      folder, made the same way as the game archive: it is copied into this browser's storage once (a large mod takes a few
-      minutes and needs its full size free) and removing it here deletes that copy. Mods are laid over the game in the
-      order shown, the last on top. A total conversion needs the whole game under it: the installed folder, or an archive of it.</p>
-  </section>
-
-  <p id="appVersion" class="note hidden"></p>
-  <footer>Star Wars: Empire at War: Forces of Corruption © Lucasfilm Ltd. / Petroglyph. A fan project, not affiliated with either; it ships none of the game and runs only on your own copy.</footer>
-</main>
-
-<dialog id="folderHelp" aria-labelledby="folderHelpHead">
-  <div class="head" id="folderHelpHead">Opening a folder from this page</div>
-  <div class="body" id="folderHelpBody"></div>
-  <div class="foot"><button data-close>Close</button></div>
-</dialog>
-
-<dialog id="protectedHelp" aria-labelledby="protectedHelpHead">
-  <div class="head" id="protectedHelpHead">Protected folders</div>
-  <div class="body">
-    <p class="note">Browsers will not let a page keep a folder that lies in one of these. Steam installs the game in the first two by default.
-      Out of one the browser remembers the folder; in one it opens in compatibility mode, and you choose it again each time you launch.</p>
-    <ul>
-      <li><code>C:\Program Files\</code></li>
-      <li><code>C:\Program Files (x86)\</code></li>
-      <li><code>C:\Windows\</code></li>
-      <li><code>C:\Users\&lt;name&gt;\AppData\</code></li>
-      <li><code>C:\Users\&lt;name&gt;\</code> itself, or a whole drive such as <code>C:\</code> or <code>D:\</code> (a folder inside them is fine)</li>
-    </ul>
-    <p>Folders such as <code>D:\SteamLibrary\</code>, <code>C:\Games\</code> or <code>Documents</code> are fine.</p>
-    <ol>
-      <li><h4>Steam</h4>
-        Open <em>Settings</em> → <em>Storage</em>, add a new library folder, for example <code>C:\SteamLibrary</code> or <code>D:\SteamLibrary</code>.
-        Then pick the game in the list, click <em>⋯</em> and choose <em>Move</em>. Steam keeps working with it in the new place.</li>
-      <li><h4>Another copy (Gold Pack, GOG)</h4>
-        Move or copy the <em>Star Wars Empire at War</em> folder to a place such as <code>C:\Games\</code>.</li>
-      <li><h4>Choose it again</h4>
-        Click <em>Choose your game folder…</em> and pick the folder in its new place.</li>
-    </ol>
-  </div>
-  <div class="foot"><button data-close>Close</button></div>
-</dialog>
-
-<dialog id="archiveHelp" aria-labelledby="archiveHelpHead">
-  <div class="head" id="archiveHelpHead">Making a game archive</div>
-  <div class="body">
-    <p class="note">An archive is your game folder packed into one <code>.tar</code> file, which any browser can import, also on a
-      phone or tablet once you copy the file there. Expect about 4 GB.</p>
-    <ol>
-      <li><h4>Find the game folder</h4>
-        Steam: right-click <em>Star Wars Empire at War: Gold Pack</em> → <em>Manage</em> → <em>Browse local files</em>.
-        It is the folder with <code>GameData</code> and <code>corruption</code> in it, usually
-        <div class="copy"><code>C:\Program Files (x86)\Steam\steamapps\common\Star Wars Empire at War</code><button data-copy="C:\Program Files (x86)\Steam\steamapps\common\Star Wars Empire at War">Copy</button></div></li>
-      <li><h4>Pack it into a .tar</h4>
-        <div class="os" role="group" aria-label="Your system">
-          <button data-os="win11" aria-pressed="true">Windows 11</button><button data-os="cmd" aria-pressed="false">Windows 10</button><button data-os="unix" aria-pressed="false">macOS / Linux</button>
+    <main>
+      <header>
+        <div class="kicker">Star Wars</div>
+        <h1>Empire at War</h1>
+        <div class="sub"><span id="subName">Forces of Corruption</span> · in the browser</div>
+        <div class="credit">
+          Created by RIRA
+          <div id="kofi"><a class="ask" href="https://ko-fi.com/Z4S429CUIG" target="_blank" rel="noopener">Support me on Ko-fi</a></div>
         </div>
-        <div data-for="win11"><p>Go up one level so you see the <em>Star Wars Empire at War</em> folder itself, right-click it and choose
-          <em>Compress to</em> → <em>TAR File</em>. Windows puts the <code>.tar</code> next to it (if it asks for permission there, copy the folder to your Desktop first and compress that).</p></div>
-        <div data-for="cmd" class="hidden"><p>In the game folder, click the address bar, type <code>cmd</code> and press Enter. In the window that opens, run:</p>
-          <div class="copy"><code>tar -cf "%USERPROFILE%\Desktop\empire-at-war.tar" GameData corruption</code><button data-copy='tar -cf "%USERPROFILE%\Desktop\empire-at-war.tar" GameData corruption'>Copy</button></div>
-          <p class="note">This works on Windows 11 too. The file lands on your Desktop.</p></div>
-        <div data-for="unix" class="hidden"><p>Open a terminal in the game folder and run:</p>
-          <div class="copy"><code>tar -cf ~/empire-at-war.tar GameData corruption</code><button data-copy="tar -cf ~/empire-at-war.tar GameData corruption">Copy</button></div></div></li>
-      <li><h4>Import it</h4>
-        Drop the <code>.tar</code> on <em>Import an archive</em>. It is copied into this browser's storage once; afterwards you can delete
-        the file. A gzipped <code>.tar.gz</code> works too, but not <code>.zip</code> or <code>.7z</code>.</li>
-    </ol>
-  </div>
-  <div class="foot"><button data-close>Close</button></div>
-</dialog>
+      </header>
 
-<script>
-addEventListener('error', e => {
-  if (window.swrStarted || !(e instanceof ErrorEvent)) return;
-  for (const id of ['current', 'status', 'modStatus']) { const el = document.getElementById(id); if (el) { el.textContent = 'This page did not load completely. Reload it.'; el.className = id === 'current' ? 'state' : 'status bad'; } }
-});
-</script>
-<script type="module">
-window.swrStarted = true;
-import { startServiceWorker, packInfo, importPack, fileStream, removePack, assetsAvailable, ensureOriginal } from './js/pack.js';
-import { EDITIONS, edition, setEdition } from './js/edition.js';
-import { supported as modsSupported, archivesSupported, addModArchive, listMods, nameMods, setModLabel, addMod, removeMod, rescanMod, setModOn, moveMod, getGame, chooseGame, removeGame,
-  compatSupported, foldersSupported, chooseGameCompat, addModCompat, pickFolder, listProfiles, saveProfile, loadProfile, deleteProfile, profileInUse,
-  syncLocalMods, dismissedLocal, restoreLocal } from './js/mods.js';
-import { inApp, appSetup, appPickFolder } from './js/localfolder.js';
-import { desktopStrip } from './js/appupdate.js';
+      <section id="desktop" class="desk hidden" aria-live="polite">
+        <div class="badge" id="deskBadge">Desktop</div>
+        <div>
+          <div class="what" id="deskWhat"></div>
+          <div class="state" id="deskState"></div>
+          <div class="store" id="deskNote"></div>
+          <pre id="deskNotes" class="hidden"></pre>
+        </div>
+        <div class="acts" id="deskActs"></div>
+      </section>
 
-const $ = id => document.getElementById(id);
+      <section id="link" class="link" aria-live="polite">
+        <div class="lamp" aria-hidden="true"></div>
+        <div>
+          <div class="what">Game data</div>
+          <div id="current" class="state">Checking…</div>
+          <div id="storeNote" class="store"></div>
+        </div>
+        <a id="play" class="launch hidden" href="play.html">Launch</a>
+      </section>
 
-function stars() {
-  const c = $('stars'), dpr = Math.min(2, devicePixelRatio || 1), w = innerWidth, h = innerHeight;
-  c.width = w * dpr; c.height = h * dpr;
-  const g = c.getContext('2d');
-  g.scale(dpr, dpr);
-  let seed = 7;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0, n = Math.round(w * h / 2600); i < n; i++) {
-    const r = rnd() < 0.94 ? 0.5 + rnd() * 0.6 : 1 + rnd() * 0.9, a = 0.25 + rnd() * 0.7, tint = rnd();
-    g.fillStyle = tint < 0.12 ? `rgba(255,214,170,${a})` : tint < 0.3 ? `rgba(170,210,255,${a})` : `rgba(235,240,248,${a})`;
-    g.beginPath(); g.arc(rnd() * w, rnd() * h, r, 0, Math.PI * 2); g.fill();
-  }
-}
-stars();
-let starsAt = 0;
-addEventListener('resize', () => { clearTimeout(starsAt); starsAt = setTimeout(stars, 150); });
+      <section class="mod-box">
+        <h2 class="rail">Game</h2>
+        <div class="edition" role="radiogroup" aria-label="Which game to play" id="edition">
+          <button type="button" role="radio" data-edition="foc">
+            Forces of Corruption<small>The expansion, over the base game</small>
+          </button>
+          <button type="button" role="radio" data-edition="eaw">Empire at War<small>The original game alone</small></button>
+        </div>
+        <p id="editionStatus" class="status"></p>
+        <p class="note">
+          Both are played from the same copy of the game: the folder or archive below holds them both. Each keeps its own saves. Mods are
+          almost always made for Forces of Corruption, so running the original usually does not work with mods: turn them off below when you
+          play it.
+        </p>
+      </section>
 
-const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true });
-if (gl) {
-  const R = (a, b) => a + Math.random() * (b - a);
-  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
-  const len = a => Math.hypot(a[0], a[1], a[2]);
-  const UP = [0, 1, 0];
+      <section class="mod-box">
+        <h2 class="rail">Commander</h2>
+        <input
+          id="playerName"
+          type="text"
+          maxlength="24"
+          spellcheck="false"
+          autocomplete="nickname"
+          placeholder="Player"
+          aria-label="Your name"
+        />
+        <p class="note">The name other players see in multiplayer. Kept in this browser.</p>
+      </section>
 
-  const program = (vs, fs) => {
-    const p = gl.createProgram();
-    for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
-      const s = gl.createShader(type);
-      gl.shaderSource(s, '#version 300 es\nprecision highp float;\n' + src); gl.compileShader(s); gl.attachShader(p, s);
-    }
-    gl.linkProgram(p);
-    const u = {};
-    for (let i = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i--;) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
-    return { p, u };
-  };
-  const SHIP = program(`
+      <section class="mod-box">
+        <h2 class="rail">Your game</h2>
+        <div id="appGame" class="hidden"></div>
+        <p id="appGameStatus" class="status"></p>
+        <p class="note" id="waysNote" style="margin-top: 0">
+          This needs your own copy of <em>Empire at War</em> with <em>Forces of Corruption</em> (Steam or Gold Pack). Pick one way:
+        </p>
+        <div class="ways">
+          <div class="way" id="installBox">
+            <h3>Installed game folder</h3>
+            <div class="when">Any browser on a computer</div>
+            <button id="chooseGame" class="go">Choose your game folder…</button>
+            <div id="install"></div>
+            <p id="installOff" class="status bad hidden">
+              Folder access is off or missing in this browser. <button class="ask" data-help>How to turn it on</button>
+            </p>
+            <p id="installStatus" class="status"></p>
+            <p class="note">
+              The folder that holds <code>GameData</code> and <code>corruption</code>. It is read where it is each time you play; nothing is
+              copied. <button class="ask" data-help>Button not working?</button>
+            </p>
+            <p class="note" id="protectedTip">
+              Tip: keep the game out of a <button class="ask" id="howProtected">protected folder</button>.
+            </p>
+          </div>
+          <div class="way">
+            <h3>Game archive</h3>
+            <div class="when alt">Any browser</div>
+            <button id="drop" class="drop" type="button">
+              <b>Import an archive</b>Drop the <code>.tar</code> of your game folder here, or click to choose it
+            </button>
+            <input id="file" type="file" accept=".tar,.gz,.tgz,application/x-tar,application/gzip" hidden />
+            <div class="bar"><div id="bar"></div></div>
+            <p id="status" class="status"></p>
+            <div id="stored"></div>
+            <p class="note">
+              A copy of the game folder in one file, kept in this browser's own storage.
+              <button class="ask" id="howArchive">How to make one</button>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="mod-box">
+        <h2 class="rail">Mods <span class="tag">optional</span></h2>
+        <div id="mods"></div>
+        <div id="appSources" class="hidden"></div>
+        <p class="modadd"><button id="addMod">Add a mod folder…</button><button id="addModArchive">Import a mod archive…</button></p>
+        <input id="modFile" type="file" accept=".tar,.gz,.tgz,application/x-tar,application/gzip" hidden />
+        <p id="modStatus" class="status"></p>
+        <div id="profiles" class="profiles hidden">
+          <h3>Mod profiles</h3>
+          <div id="profileList"></div>
+          <form id="saveProfile" class="saveas">
+            <input
+              id="profileName"
+              type="text"
+              maxlength="40"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="Profile name"
+              aria-label="Profile name"
+            />
+            <button type="submit">Save current mods</button>
+          </form>
+          <p class="note">
+            A profile keeps which mods are turned on and their order, so you can switch back to it after playing with others. Kept in this
+            browser.
+          </p>
+        </div>
+        <p class="note" id="modHint">
+          A mod's own folder, the one with <code>Data</code> in it. It is read from your disk each time you play; nothing is copied or
+          changed, and removing it here leaves the folder as it was. Or import a <code>.tar</code> of that folder, made the same way as the
+          game archive: it is copied into this browser's storage once (a large mod takes a few minutes and needs its full size free) and
+          removing it here deletes that copy. Mods are laid over the game in the order shown, the last on top. A total conversion needs the
+          whole game under it: the installed folder, or an archive of it.
+        </p>
+      </section>
+
+      <p id="appVersion" class="note hidden"></p>
+      <footer>
+        Star Wars: Empire at War: Forces of Corruption © Lucasfilm Ltd. / Petroglyph. A fan project, not affiliated with either; it ships
+        none of the game and runs only on your own copy.
+      </footer>
+    </main>
+
+    <dialog id="folderHelp" aria-labelledby="folderHelpHead">
+      <div class="head" id="folderHelpHead">Opening a folder from this page</div>
+      <div class="body" id="folderHelpBody"></div>
+      <div class="foot"><button data-close>Close</button></div>
+    </dialog>
+
+    <dialog id="protectedHelp" aria-labelledby="protectedHelpHead">
+      <div class="head" id="protectedHelpHead">Protected folders</div>
+      <div class="body">
+        <p class="note">
+          Browsers will not let a page keep a folder that lies in one of these. Steam installs the game in the first two by default. Out of
+          one the browser remembers the folder; in one it opens in compatibility mode, and you choose it again each time you launch.
+        </p>
+        <ul>
+          <li><code>C:\Program Files\</code></li>
+          <li><code>C:\Program Files (x86)\</code></li>
+          <li><code>C:\Windows\</code></li>
+          <li><code>C:\Users\&lt;name&gt;\AppData\</code></li>
+          <li>
+            <code>C:\Users\&lt;name&gt;\</code> itself, or a whole drive such as <code>C:\</code> or <code>D:\</code> (a folder inside them
+            is fine)
+          </li>
+        </ul>
+        <p>Folders such as <code>D:\SteamLibrary\</code>, <code>C:\Games\</code> or <code>Documents</code> are fine.</p>
+        <ol>
+          <li>
+            <h4>Steam</h4>
+            Open <em>Settings</em> → <em>Storage</em>, add a new library folder, for example <code>C:\SteamLibrary</code> or
+            <code>D:\SteamLibrary</code>. Then pick the game in the list, click <em>⋯</em> and choose <em>Move</em>. Steam keeps working
+            with it in the new place.
+          </li>
+          <li>
+            <h4>Another copy (Gold Pack, GOG)</h4>
+            Move or copy the <em>Star Wars Empire at War</em> folder to a place such as <code>C:\Games\</code>.
+          </li>
+          <li>
+            <h4>Choose it again</h4>
+            Click <em>Choose your game folder…</em> and pick the folder in its new place.
+          </li>
+        </ol>
+      </div>
+      <div class="foot"><button data-close>Close</button></div>
+    </dialog>
+
+    <dialog id="archiveHelp" aria-labelledby="archiveHelpHead">
+      <div class="head" id="archiveHelpHead">Making a game archive</div>
+      <div class="body">
+        <p class="note">
+          An archive is your game folder packed into one <code>.tar</code> file, which any browser can import, also on a phone or tablet
+          once you copy the file there. Expect about 4 GB.
+        </p>
+        <ol>
+          <li>
+            <h4>Find the game folder</h4>
+            Steam: right-click <em>Star Wars Empire at War: Gold Pack</em> → <em>Manage</em> → <em>Browse local files</em>. It is the folder
+            with <code>GameData</code> and <code>corruption</code> in it, usually
+            <div class="copy">
+              <code>C:\Program Files (x86)\Steam\steamapps\common\Star Wars Empire at War</code
+              ><button data-copy="C:\Program Files (x86)\Steam\steamapps\common\Star Wars Empire at War">Copy</button>
+            </div>
+          </li>
+          <li>
+            <h4>Pack it into a .tar</h4>
+            <div class="os" role="group" aria-label="Your system">
+              <button data-os="win11" aria-pressed="true">Windows 11</button><button data-os="cmd" aria-pressed="false">Windows 10</button
+              ><button data-os="unix" aria-pressed="false">macOS / Linux</button>
+            </div>
+            <div data-for="win11">
+              <p>
+                Go up one level so you see the <em>Star Wars Empire at War</em> folder itself, right-click it and choose
+                <em>Compress to</em> → <em>TAR File</em>. Windows puts the <code>.tar</code> next to it (if it asks for permission there,
+                copy the folder to your Desktop first and compress that).
+              </p>
+            </div>
+            <div data-for="cmd" class="hidden">
+              <p>In the game folder, click the address bar, type <code>cmd</code> and press Enter. In the window that opens, run:</p>
+              <div class="copy">
+                <code>tar -cf "%USERPROFILE%\Desktop\empire-at-war.tar" GameData corruption</code
+                ><button data-copy='tar -cf "%USERPROFILE%\Desktop\empire-at-war.tar" GameData corruption'>Copy</button>
+              </div>
+              <p class="note">This works on Windows 11 too. The file lands on your Desktop.</p>
+            </div>
+            <div data-for="unix" class="hidden">
+              <p>Open a terminal in the game folder and run:</p>
+              <div class="copy">
+                <code>tar -cf ~/empire-at-war.tar GameData corruption</code
+                ><button data-copy="tar -cf ~/empire-at-war.tar GameData corruption">Copy</button>
+              </div>
+            </div>
+          </li>
+          <li>
+            <h4>Import it</h4>
+            Drop the <code>.tar</code> on <em>Import an archive</em>. It is copied into this browser's storage once; afterwards you can
+            delete the file. A gzipped <code>.tar.gz</code> works too, but not <code>.zip</code> or <code>.7z</code>.
+          </li>
+        </ol>
+      </div>
+      <div class="foot"><button data-close>Close</button></div>
+    </dialog>
+
+    <script>
+      addEventListener('error', e => {
+        if (window.swrStarted || !(e instanceof ErrorEvent)) return;
+        for (const id of ['current', 'status', 'modStatus']) {
+          const el = document.getElementById(id);
+          if (el) {
+            el.textContent = 'This page did not load completely. Reload it.';
+            el.className = id === 'current' ? 'state' : 'status bad';
+          }
+        }
+      });
+    </script>
+    <script type="module">
+      window.swrStarted = true;
+      import { startServiceWorker, packInfo, importPack, fileStream, removePack, assetsAvailable, ensureOriginal } from './js/pack.js';
+      import { EDITIONS, edition, setEdition } from './js/edition.js';
+      import {
+        supported as modsSupported,
+        archivesSupported,
+        addModArchive,
+        listMods,
+        nameMods,
+        setModLabel,
+        addMod,
+        removeMod,
+        rescanMod,
+        setModOn,
+        moveMod,
+        getGame,
+        chooseGame,
+        removeGame,
+        compatSupported,
+        foldersSupported,
+        chooseGameCompat,
+        addModCompat,
+        pickFolder,
+        listProfiles,
+        saveProfile,
+        loadProfile,
+        deleteProfile,
+        profileInUse,
+        syncLocalMods,
+        dismissedLocal,
+        restoreLocal
+      } from './js/mods.js';
+      import { inApp, appSetup, appPickFolder } from './js/localfolder.js';
+      import { desktopStrip } from './js/appupdate.js';
+
+      const $ = id => document.getElementById(id);
+
+      function stars() {
+        const c = $('stars'),
+          dpr = Math.min(2, devicePixelRatio || 1),
+          w = innerWidth,
+          h = innerHeight;
+        c.width = w * dpr;
+        c.height = h * dpr;
+        const g = c.getContext('2d');
+        g.scale(dpr, dpr);
+        let seed = 7;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        for (let i = 0, n = Math.round((w * h) / 2600); i < n; i++) {
+          const r = rnd() < 0.94 ? 0.5 + rnd() * 0.6 : 1 + rnd() * 0.9,
+            a = 0.25 + rnd() * 0.7,
+            tint = rnd();
+          g.fillStyle = tint < 0.12 ? `rgba(255,214,170,${a})` : tint < 0.3 ? `rgba(170,210,255,${a})` : `rgba(235,240,248,${a})`;
+          g.beginPath();
+          g.arc(rnd() * w, rnd() * h, r, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      stars();
+      let starsAt = 0;
+      addEventListener('resize', () => {
+        clearTimeout(starsAt);
+        starsAt = setTimeout(stars, 150);
+      });
+
+      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true });
+      if (gl) {
+        const R = (a, b) => a + Math.random() * (b - a);
+        const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+          sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+          dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const norm = a => {
+          const l = Math.hypot(a[0], a[1], a[2]) || 1;
+          return [a[0] / l, a[1] / l, a[2] / l];
+        };
+        const len = a => Math.hypot(a[0], a[1], a[2]);
+        const UP = [0, 1, 0];
+
+        const program = (vs, fs) => {
+          const p = gl.createProgram();
+          for (const [type, src] of [
+            [gl.VERTEX_SHADER, vs],
+            [gl.FRAGMENT_SHADER, fs]
+          ]) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, '#version 300 es\nprecision highp float;\n' + src);
+            gl.compileShader(s);
+            gl.attachShader(p, s);
+          }
+          gl.linkProgram(p);
+          const u = {};
+          for (let i = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i--; ) {
+            const n = gl.getActiveUniform(p, i).name;
+            u[n] = gl.getUniformLocation(p, n);
+          }
+          return { p, u };
+        };
+        const SHIP = program(
+          `
     layout(location = 0) in vec3 p; layout(location = 1) in vec3 n; layout(location = 2) in vec3 c;
     uniform mat4 vp, m; out vec3 wn, wc, wp;
-    void main() { vec4 q = m * vec4(p, 1.0); wp = q.xyz; wn = mat3(m) * n; wc = c; gl_Position = vp * q; }`, `
+    void main() { vec4 q = m * vec4(p, 1.0); wp = q.xyz; wn = mat3(m) * n; wc = c; gl_Position = vp * q; }`,
+          `
     in vec3 wn, wc, wp; uniform vec3 eye, sun; uniform float scorch; out vec4 o;
     void main() {
       vec3 v = normalize(eye - wp), n = normalize(wn);
@@ -475,774 +1430,1482 @@ if (gl) {
       vec3 col = wc * (1.0 - 0.55 * scorch) * (0.14 + 0.86 * lit) + vec3(0.12, 0.3, 0.5) * (0.35 * under + 0.4 * rim);
       float fog = clamp((length(eye - wp) - 1300.0) / 1600.0, 0.0, 0.45);
       o = vec4(mix(col * 0.9, vec3(0.004, 0.012, 0.028), fog), 1.0);
-    }`);
-  const GLOW = program(`
+    }`
+        );
+        const GLOW = program(
+          `
     layout(location = 0) in vec3 p; layout(location = 1) in vec2 q; layout(location = 2) in vec4 c;
     uniform mat4 vp; out vec2 uv; out vec4 col;
-    void main() { uv = q; col = c; gl_Position = vp * vec4(p, 1.0); }`, `
+    void main() { uv = q; col = c; gl_Position = vp * vec4(p, 1.0); }`,
+          `
     in vec2 uv; in vec4 col; out vec4 o;
-    void main() { float f = 1.0 - length(uv); if (f <= 0.0) discard; f *= f; o = vec4(col.rgb * f + col.a * pow(f, 3.0) * 0.9, 0.0); }`);
-  const vao = (data, sizes) => {
-    const a = gl.createVertexArray(), b = gl.createBuffer(), stride = sizes.reduce((s, n) => s + n, 0) * 4;
-    gl.bindVertexArray(a); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data || new Float32Array(0), data ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
-    let off = 0;
-    sizes.forEach((n, i) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, gl.FLOAT, false, stride, off); off += n * 4; });
-    return { a, b, n: data ? data.length / (stride / 4) : 0 };
-  };
+    void main() { float f = 1.0 - length(uv); if (f <= 0.0) discard; f *= f; o = vec4(col.rgb * f + col.a * pow(f, 3.0) * 0.9, 0.0); }`
+        );
+        const vao = (data, sizes) => {
+          const a = gl.createVertexArray(),
+            b = gl.createBuffer(),
+            stride = sizes.reduce((s, n) => s + n, 0) * 4;
+          gl.bindVertexArray(a);
+          gl.bindBuffer(gl.ARRAY_BUFFER, b);
+          gl.bufferData(gl.ARRAY_BUFFER, data || new Float32Array(0), data ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+          let off = 0;
+          sizes.forEach((n, i) => {
+            gl.enableVertexAttribArray(i);
+            gl.vertexAttribPointer(i, n, gl.FLOAT, false, stride, off);
+            off += n * 4;
+          });
+          return { a, b, n: data ? data.length / (stride / 4) : 0 };
+        };
 
-  function Mesh() {
-    const v = [];
-    const tri = (a, b, c, col) => {
-      const n = cross(sub(b, a), sub(c, a));
-      if (len(n) < 1e-9) return;
-      for (const p of [a, b, c]) v.push(...p, ...norm(n), ...col);
-    };
-    const quad = (a, b, c, d, col) => { tri(a, b, c, col); tri(a, c, d, col); };
-    const box = (x0, x1, y0, y1, z0, z1, col) => {
-      const P = (i, j, k) => [[x0, x1][i], [y0, y1][j], [z0, z1][k]];
-      for (const k of [0, 1]) { quad(P(0, 0, k), P(1, 0, k), P(1, 1, k), P(0, 1, k), col); quad(P(k, 0, 0), P(k, 1, 0), P(k, 1, 1), P(k, 0, 1), col); quad(P(0, k, 0), P(1, k, 0), P(1, k, 1), P(0, k, 1), col); }
-    };
-    const loft = (secs, n, col) => {
-      const rings = secs.map(s => Array.from({ length: n }, (_, j) => {
-        const a = 2 * Math.PI * j / n, sn = Math.sin(a);
-        return [s.x, (s.yc || 0) + sn * (sn > 0 ? s.ht : s.hb), (s.zc || 0) + Math.cos(a) * s.hw];
-      }));
-      for (let i = 0; i + 1 < rings.length; i++) for (let j = 0; j < n; j++) quad(rings[i][j], rings[i + 1][j], rings[i + 1][(j + 1) % n], rings[i][(j + 1) % n], col);
-      for (const i of [0, rings.length - 1]) { const s = secs[i]; for (let j = 0; j < n; j++) tri([s.x, s.yc || 0, s.zc || 0], rings[i][j], rings[i][(j + 1) % n], col); }
-    };
-    const ball = (x, y, z, r, col) => loft(Array.from({ length: 7 }, (_, i) => { const a = Math.PI * i / 6, k = r * Math.sin(a); return { x: x + r * Math.cos(a), yc: y, zc: z, hw: k, ht: k, hb: k }; }), 10, col);
-    return { v, tri, quad, box, loft, ball };
-  }
-  function xwing() {
-    const m = Mesh(), HULL = [0.86, 0.85, 0.81];
-    m.loft([{ x: 0.5, hw: 0.004, ht: 0.004, hb: 0.004 }, { x: 0.2, hw: 0.035, ht: 0.04, hb: 0.035 }, { x: -0.1, hw: 0.05, ht: 0.06, hb: 0.05 }, { x: -0.5, hw: 0.05, ht: 0.055, hb: 0.05 }], 6, HULL);
-    m.box(0.02, 0.16, 0.03, 0.065, -0.025, 0.025, [0.12, 0.13, 0.16]);
-    for (const s of [1, -1]) for (const u of [1, -1]) {
-      const at = (t, x) => [x, 0.02 * u + 0.11 * u * t, (0.04 + 0.42 * t) * s], front = t => -0.12 - 0.18 * t;
-      for (const [t0, t1, col] of [[0, 0.1, HULL], [0.1, 0.2, [0.7, 0.24, 0.2]], [0.2, 1, HULL]]) m.quad(at(t0, front(t0)), at(t0, -0.42), at(t1, -0.42), at(t1, front(t1)), col);
-      m.box(-0.36, 0.3, 0.13 * u - 0.012, 0.13 * u + 0.012, 0.46 * s - 0.012, 0.46 * s + 0.012, [0.7, 0.7, 0.72]);
-      m.box(-0.5, -0.18, 0.04 * u - 0.028, 0.04 * u + 0.028, 0.1 * s - 0.028, 0.1 * s + 0.028, [0.62, 0.62, 0.64]);
-    }
-    return m.v;
-  }
-  function tie() {
-    const m = Mesh(), WING = [0.24, 0.25, 0.29];
-    m.ball(0, 0, 0, 0.16, [0.55, 0.56, 0.6]);
-    m.box(0.13, 0.17, -0.06, 0.06, -0.06, 0.06, [0.1, 0.11, 0.14]);
-    for (const s of [1, -1]) {
-      m.box(-0.04, 0.04, -0.03, 0.03, Math.min(0.12 * s, 0.44 * s), Math.max(0.12 * s, 0.44 * s), [0.5, 0.51, 0.55]);
-      const hex = (r, z, col) => { for (let k = 0; k < 6; k++) { const a = Math.PI / 2 + k * Math.PI / 3, b = a + Math.PI / 3; m.tri([0, 0, z], [Math.cos(a) * r * 0.9, Math.sin(a) * r, z], [Math.cos(b) * r * 0.9, Math.sin(b) * r, z], col); } };
-      hex(0.47, 0.45 * s, WING); hex(0.1, 0.455 * s, [0.5, 0.51, 0.55]);
-    }
-    return m.v;
-  }
-  const KIND = {
-    x: { mesh: vao(new Float32Array(xwing()), [3, 3, 3]), len: 30, turn: 1.8, hp: 3, bolt: [1, 0.27, 0.23],
-      guns: [[[0.3, 0.13, 0.46], [0.3, -0.13, -0.46]], [[0.3, -0.13, 0.46], [0.3, 0.13, -0.46]]],
-      glows: [[-0.52, 0.04, 0.1], [-0.52, -0.04, 0.1], [-0.52, 0.04, -0.1], [-0.52, -0.04, -0.1]], glow: [1, 0.47, 0.35], gr: 0.07 },
-    t: { mesh: vao(new Float32Array(tie()), [3, 3, 3]), len: 22, turn: 2.1, hp: 2, bolt: [0.35, 1, 0.43],
-      guns: [[[0.16, -0.06, 0.05], [0.16, -0.06, -0.05]]], glows: [[-0.17, 0, 0]], glow: [0.67, 0.78, 1], gr: 0.1 },
-  };
-  const GLOWS = vao(null, [3, 2, 4]);
+        function Mesh() {
+          const v = [];
+          const tri = (a, b, c, col) => {
+            const n = cross(sub(b, a), sub(c, a));
+            if (len(n) < 1e-9) return;
+            for (const p of [a, b, c]) v.push(...p, ...norm(n), ...col);
+          };
+          const quad = (a, b, c, d, col) => {
+            tri(a, b, c, col);
+            tri(a, c, d, col);
+          };
+          const box = (x0, x1, y0, y1, z0, z1, col) => {
+            const P = (i, j, k) => [[x0, x1][i], [y0, y1][j], [z0, z1][k]];
+            for (const k of [0, 1]) {
+              quad(P(0, 0, k), P(1, 0, k), P(1, 1, k), P(0, 1, k), col);
+              quad(P(k, 0, 0), P(k, 1, 0), P(k, 1, 1), P(k, 0, 1), col);
+              quad(P(0, k, 0), P(1, k, 0), P(1, k, 1), P(0, k, 1), col);
+            }
+          };
+          const loft = (secs, n, col) => {
+            const rings = secs.map(s =>
+              Array.from({ length: n }, (_, j) => {
+                const a = (2 * Math.PI * j) / n,
+                  sn = Math.sin(a);
+                return [s.x, (s.yc || 0) + sn * (sn > 0 ? s.ht : s.hb), (s.zc || 0) + Math.cos(a) * s.hw];
+              })
+            );
+            for (let i = 0; i + 1 < rings.length; i++)
+              for (let j = 0; j < n; j++) quad(rings[i][j], rings[i + 1][j], rings[i + 1][(j + 1) % n], rings[i][(j + 1) % n], col);
+            for (const i of [0, rings.length - 1]) {
+              const s = secs[i];
+              for (let j = 0; j < n; j++) tri([s.x, s.yc || 0, s.zc || 0], rings[i][j], rings[i][(j + 1) % n], col);
+            }
+          };
+          const ball = (x, y, z, r, col) =>
+            loft(
+              Array.from({ length: 7 }, (_, i) => {
+                const a = (Math.PI * i) / 6,
+                  k = r * Math.sin(a);
+                return { x: x + r * Math.cos(a), yc: y, zc: z, hw: k, ht: k, hb: k };
+              }),
+              10,
+              col
+            );
+          return { v, tri, quad, box, loft, ball };
+        }
+        function xwing() {
+          const m = Mesh(),
+            HULL = [0.86, 0.85, 0.81];
+          m.loft(
+            [
+              { x: 0.5, hw: 0.004, ht: 0.004, hb: 0.004 },
+              { x: 0.2, hw: 0.035, ht: 0.04, hb: 0.035 },
+              { x: -0.1, hw: 0.05, ht: 0.06, hb: 0.05 },
+              { x: -0.5, hw: 0.05, ht: 0.055, hb: 0.05 }
+            ],
+            6,
+            HULL
+          );
+          m.box(0.02, 0.16, 0.03, 0.065, -0.025, 0.025, [0.12, 0.13, 0.16]);
+          for (const s of [1, -1])
+            for (const u of [1, -1]) {
+              const at = (t, x) => [x, 0.02 * u + 0.11 * u * t, (0.04 + 0.42 * t) * s],
+                front = t => -0.12 - 0.18 * t;
+              for (const [t0, t1, col] of [
+                [0, 0.1, HULL],
+                [0.1, 0.2, [0.7, 0.24, 0.2]],
+                [0.2, 1, HULL]
+              ])
+                m.quad(at(t0, front(t0)), at(t0, -0.42), at(t1, -0.42), at(t1, front(t1)), col);
+              m.box(-0.36, 0.3, 0.13 * u - 0.012, 0.13 * u + 0.012, 0.46 * s - 0.012, 0.46 * s + 0.012, [0.7, 0.7, 0.72]);
+              m.box(-0.5, -0.18, 0.04 * u - 0.028, 0.04 * u + 0.028, 0.1 * s - 0.028, 0.1 * s + 0.028, [0.62, 0.62, 0.64]);
+            }
+          return m.v;
+        }
+        function tie() {
+          const m = Mesh(),
+            WING = [0.24, 0.25, 0.29];
+          m.ball(0, 0, 0, 0.16, [0.55, 0.56, 0.6]);
+          m.box(0.13, 0.17, -0.06, 0.06, -0.06, 0.06, [0.1, 0.11, 0.14]);
+          for (const s of [1, -1]) {
+            m.box(-0.04, 0.04, -0.03, 0.03, Math.min(0.12 * s, 0.44 * s), Math.max(0.12 * s, 0.44 * s), [0.5, 0.51, 0.55]);
+            const hex = (r, z, col) => {
+              for (let k = 0; k < 6; k++) {
+                const a = Math.PI / 2 + (k * Math.PI) / 3,
+                  b = a + Math.PI / 3;
+                m.tri([0, 0, z], [Math.cos(a) * r * 0.9, Math.sin(a) * r, z], [Math.cos(b) * r * 0.9, Math.sin(b) * r, z], col);
+              }
+            };
+            hex(0.47, 0.45 * s, WING);
+            hex(0.1, 0.455 * s, [0.5, 0.51, 0.55]);
+          }
+          return m.v;
+        }
+        const KIND = {
+          x: {
+            mesh: vao(new Float32Array(xwing()), [3, 3, 3]),
+            len: 30,
+            turn: 1.8,
+            hp: 3,
+            bolt: [1, 0.27, 0.23],
+            guns: [
+              [
+                [0.3, 0.13, 0.46],
+                [0.3, -0.13, -0.46]
+              ],
+              [
+                [0.3, -0.13, 0.46],
+                [0.3, 0.13, -0.46]
+              ]
+            ],
+            glows: [
+              [-0.52, 0.04, 0.1],
+              [-0.52, -0.04, 0.1],
+              [-0.52, 0.04, -0.1],
+              [-0.52, -0.04, -0.1]
+            ],
+            glow: [1, 0.47, 0.35],
+            gr: 0.07
+          },
+          t: {
+            mesh: vao(new Float32Array(tie()), [3, 3, 3]),
+            len: 22,
+            turn: 2.1,
+            hp: 2,
+            bolt: [0.35, 1, 0.43],
+            guns: [
+              [
+                [0.16, -0.06, 0.05],
+                [0.16, -0.06, -0.05]
+              ]
+            ],
+            glows: [[-0.17, 0, 0]],
+            glow: [0.67, 0.78, 1],
+            gr: 0.1
+          }
+        };
+        const GLOWS = vao(null, [3, 2, 4]);
 
-  const cam = { eye: [0, 190, 700] };
-  let w = 0, h = 0, dpr = 1, VP = null;
-  function view() {
-    dpr = Math.min(2, devicePixelRatio || 1);
-    if (w !== innerWidth || h !== innerHeight) { w = innerWidth; h = innerHeight; gl.canvas.width = w * dpr; gl.canvas.height = h * dpr; }
-    const f = norm(sub([0, -30, -200], cam.eye)), r = norm(cross(f, UP)), u = cross(r, f), ty = Math.tan(0.3), tx = ty * w / h, n = 10, far = 5000;
-    Object.assign(cam, { f, r, u, tx, ty });
-    const V = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, cam.eye), -dot(u, cam.eye), dot(f, cam.eye), 1];
-    const P = [1 / tx, 0, 0, 0, 0, 1 / ty, 0, 0, 0, 0, (far + n) / (n - far), -1, 0, 0, 2 * far * n / (n - far), 0];
-    VP = Array.from({ length: 16 }, (_, i) => { const c = i >> 2, rr = i & 3; let s = 0; for (let k = 0; k < 4; k++) s += P[k * 4 + rr] * V[c * 4 + k]; return s; });
-  }
-  const onScreen = (p, m) => {
-    const x = VP[0] * p[0] + VP[4] * p[1] + VP[8] * p[2] + VP[12], y = VP[1] * p[0] + VP[5] * p[1] + VP[9] * p[2] + VP[13], q = VP[3] * p[0] + VP[7] * p[1] + VP[11] * p[2] + VP[15];
-    return q > 0 && Math.abs(x / q) < 1 + m && Math.abs(y / q) < 1 + m;
-  };
-  const seen = (nx, ny, z) => { const d = add(add(cam.f, mul(cam.r, nx * cam.tx)), mul(cam.u, ny * cam.ty)); return add(cam.eye, mul(d, (z - cam.eye[2]) / d[2])); };
-  function axes(s) {
-    let side = norm(cross(s.dir, UP)), up = cross(side, s.dir);
-    if (s.roll) { const c = Math.cos(s.roll), k = Math.sin(s.roll); [up, side] = [add(mul(up, c), mul(side, k)), sub(mul(side, c), mul(up, k))]; }
-    s.up = up; s.side = side;
-  }
-  const toWorld = (s, [x, y, z]) => add(s.pos, mul(add(add(mul(s.dir, x), mul(s.up, y)), mul(s.side, z)), s.L));
-  const model = s => [...mul(s.dir, s.L), 0, ...mul(s.up, s.L), 0, ...mul(s.side, s.L), 0, ...s.pos, 1];
+        const cam = { eye: [0, 190, 700] };
+        let w = 0,
+          h = 0,
+          dpr = 1,
+          VP = null;
+        function view() {
+          dpr = Math.min(2, devicePixelRatio || 1);
+          if (w !== innerWidth || h !== innerHeight) {
+            w = innerWidth;
+            h = innerHeight;
+            gl.canvas.width = w * dpr;
+            gl.canvas.height = h * dpr;
+          }
+          const f = norm(sub([0, -30, -200], cam.eye)),
+            r = norm(cross(f, UP)),
+            u = cross(r, f),
+            ty = Math.tan(0.3),
+            tx = (ty * w) / h,
+            n = 10,
+            far = 5000;
+          Object.assign(cam, { f, r, u, tx, ty });
+          const V = [
+            r[0],
+            u[0],
+            -f[0],
+            0,
+            r[1],
+            u[1],
+            -f[1],
+            0,
+            r[2],
+            u[2],
+            -f[2],
+            0,
+            -dot(r, cam.eye),
+            -dot(u, cam.eye),
+            dot(f, cam.eye),
+            1
+          ];
+          const P = [1 / tx, 0, 0, 0, 0, 1 / ty, 0, 0, 0, 0, (far + n) / (n - far), -1, 0, 0, (2 * far * n) / (n - far), 0];
+          VP = Array.from({ length: 16 }, (_, i) => {
+            const c = i >> 2,
+              rr = i & 3;
+            let s = 0;
+            for (let k = 0; k < 4; k++) s += P[k * 4 + rr] * V[c * 4 + k];
+            return s;
+          });
+        }
+        const onScreen = (p, m) => {
+          const x = VP[0] * p[0] + VP[4] * p[1] + VP[8] * p[2] + VP[12],
+            y = VP[1] * p[0] + VP[5] * p[1] + VP[9] * p[2] + VP[13],
+            q = VP[3] * p[0] + VP[7] * p[1] + VP[11] * p[2] + VP[15];
+          return q > 0 && Math.abs(x / q) < 1 + m && Math.abs(y / q) < 1 + m;
+        };
+        const seen = (nx, ny, z) => {
+          const d = add(add(cam.f, mul(cam.r, nx * cam.tx)), mul(cam.u, ny * cam.ty));
+          return add(cam.eye, mul(d, (z - cam.eye[2]) / d[2]));
+        };
+        function axes(s) {
+          let side = norm(cross(s.dir, UP)),
+            up = cross(side, s.dir);
+          if (s.roll) {
+            const c = Math.cos(s.roll),
+              k = Math.sin(s.roll);
+            [up, side] = [add(mul(up, c), mul(side, k)), sub(mul(side, c), mul(up, k))];
+          }
+          s.up = up;
+          s.side = side;
+        }
+        const toWorld = (s, [x, y, z]) => add(s.pos, mul(add(add(mul(s.dir, x), mul(s.up, y)), mul(s.side, z)), s.L));
+        const model = s => [...mul(s.dir, s.L), 0, ...mul(s.up, s.L), 0, ...mul(s.side, s.L), 0, ...s.pos, 1];
 
-  const fighters = [], bolts = [], sparks = [];
-  function scramble(k, early) {
-    const z = R(-420, 120), n = 2 + (Math.random() * 3 | 0), from = Math.random() < 0.5 ? -1 : 1;
-    const P = early ? seen(R(-0.7, 0.7), R(-0.6, 0.6), z) : seen(from * 1.15, R(-0.6, 0.6), z), Q = seen(R(-0.4, 0.4), R(-0.5, 0.5), z + R(-150, 150));
-    const dir = norm(sub(Q, P)), side = norm(cross(dir, UP));
-    for (let i = 0; i < n; i++) fighters.push({ k, kind: KIND[k], L: KIND[k].len, hp: KIND[k].hp, hurt: 0, dir: [...dir], roll: 0, speed: R(110, 145), life: 0, bored: R(12, 22),
-      pos: add(add(P, mul(dir, -50 * i)), add(mul(side, (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 40), [0, R(-10, 10), 0])), fire: R(0.5, 1.5), look: 0, target: null, inside: false, pair: 0, smoke: 0 });
-  }
-  const spark = (p, v, life, size, rgb, core) => sparks.push({ pos: p, v, life, age: 0, size, rgb, core });
-  function explode(f) {
-    spark(f.pos, mul(f.dir, f.speed * 0.3), 0.25, f.L * 2.2, [1, 0.95, 0.8], 1);
-    spark(f.pos, mul(f.dir, f.speed * 0.3), 0.9, f.L * 1.6, [1, 0.45, 0.12], 0.4);
-    for (let i = 0; i < 16; i++) {
-      const out = norm([R(-1, 1), R(-1, 1), R(-1, 1)]);
-      spark(add(f.pos, mul(out, f.L * 0.2)), add(mul(out, R(30, 110)), mul(f.dir, f.speed * 0.5)), R(0.4, 1.1), f.L * R(0.12, 0.3), [1, R(0.5, 0.8), 0.25], 0.3);
-    }
-  }
-  const avoid = (f, o) => 0.75 * (f.L + o.L);
-  function fly(f, dt) {
-    const kd = f.kind;
-    f.life += dt;
-    if ((f.look -= dt) <= 0) {
-      f.look = 0.4; f.target = null;
-      let near = 700 ** 2;
-      if (f.life < f.bored) for (const o of fighters) if (o.k !== f.k && o.inside) { const r = sub(o.pos, f.pos), d = dot(r, r); if (d < near) { near = d; f.target = o; } }
-    }
-    if (f.target && !fighters.includes(f.target)) f.target = null;
-    let want = f.target ? norm(sub(f.target.pos, f.pos)) : [...f.dir];
-    for (const o of fighters) if (o !== f) {
-      const r = sub(f.pos, o.pos), d = len(r), clear = avoid(f, o) * (o.k === f.k ? 2.5 : 2);
-      if (d > 0 && d < clear) want = add(want, mul(r, 2.5 * (clear - d) / clear / d));
-    }
-    if (f.life < f.bored) {
-      if (f.pos[2] > 180) want[2] -= 0.8; if (f.pos[2] < -600) want[2] += 0.8;
-      if (f.pos[1] > 260) want[1] -= 0.8; if (f.pos[1] < -220) want[1] += 0.8;
-    }
-    want = norm(want);
-    const was = f.dir, c = Math.max(-1, Math.min(1, dot(was, want))), turn = Math.min(Math.acos(c), kd.turn * dt);
-    if (turn > 1e-4) f.dir = norm(add(mul(was, Math.cos(turn)), mul(norm(sub(want, mul(was, c))), Math.sin(turn))));
-    const yaw = dt > 0 ? dot(cross(was, f.dir), UP) / dt : 0;
-    f.roll += (Math.max(-1.1, Math.min(1.1, -0.6 * yaw)) - f.roll) * Math.min(1, dt * 3);
-    let speed = f.speed;
-    if (f.target) { const r = sub(f.target.pos, f.pos), d = len(r); if (d < avoid(f, f.target) * 3 && dot(r, f.dir) > 0) speed = Math.min(speed, f.target.speed * 0.9); }
-    f.pos = add(f.pos, mul(f.dir, speed * dt));
-    axes(f);
-    if (onScreen(f.pos, -0.02)) f.inside = true;
-    f.hurt = Math.max(0, f.hurt - dt);
-    if (f.hp === 1 && (f.smoke -= dt) <= 0) { f.smoke = 0.04; spark(toWorld(f, [-0.5, 0, 0]), mul(f.dir, f.speed * 0.2), 0.5, f.L * 0.35, [1, 0.5, 0.15], 0.2); }
-    if ((f.fire -= dt) <= 0 && f.target && f.inside) {
-      const r = sub(f.target.pos, f.pos), d = len(r);
-      const blocked = () => fighters.some(o => {
-        if (o === f || o.k !== f.k) return false;
-        const q = sub(o.pos, f.pos), along = dot(q, f.dir);
-        return along > 0 && along < d && len(sub(q, mul(f.dir, along))) < 0.5 * (o.L + f.L);
-      });
-      if (d < 420 && dot(r, f.dir) / d > 0.985 && !blocked()) {
-        f.fire = R(0.35, 1); f.pair = (f.pair + 1) % kd.guns.length;
-        for (const g of kd.guns[f.pair]) {
-          const from = toWorld(f, g), v = f.speed * 3.5;
-          if (Math.random() < 0.5) bolts.push({ pos: from, v: mul(norm(sub(f.target.pos, from)), v), life: 1.2, c: kd.bolt, run: 0, target: f.target });
-          else {
-            const t = f.target, wide = norm(cross(sub(t.pos, from), [R(-1, 1), R(-1, 1), R(-1, 1)]));
-            bolts.push({ pos: from, v: mul(norm(sub(add(t.pos, mul(wide, t.L * R(1.3, 2.5))), from)), v), life: 0.9, c: kd.bolt, run: 0 });
+        const fighters = [],
+          bolts = [],
+          sparks = [];
+        function scramble(k, early) {
+          const z = R(-420, 120),
+            n = 2 + ((Math.random() * 3) | 0),
+            from = Math.random() < 0.5 ? -1 : 1;
+          const P = early ? seen(R(-0.7, 0.7), R(-0.6, 0.6), z) : seen(from * 1.15, R(-0.6, 0.6), z),
+            Q = seen(R(-0.4, 0.4), R(-0.5, 0.5), z + R(-150, 150));
+          const dir = norm(sub(Q, P)),
+            side = norm(cross(dir, UP));
+          for (let i = 0; i < n; i++)
+            fighters.push({
+              k,
+              kind: KIND[k],
+              L: KIND[k].len,
+              hp: KIND[k].hp,
+              hurt: 0,
+              dir: [...dir],
+              roll: 0,
+              speed: R(110, 145),
+              life: 0,
+              bored: R(12, 22),
+              pos: add(add(P, mul(dir, -50 * i)), add(mul(side, (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 40), [0, R(-10, 10), 0])),
+              fire: R(0.5, 1.5),
+              look: 0,
+              target: null,
+              inside: false,
+              pair: 0,
+              smoke: 0
+            });
+        }
+        const spark = (p, v, life, size, rgb, core) => sparks.push({ pos: p, v, life, age: 0, size, rgb, core });
+        function explode(f) {
+          spark(f.pos, mul(f.dir, f.speed * 0.3), 0.25, f.L * 2.2, [1, 0.95, 0.8], 1);
+          spark(f.pos, mul(f.dir, f.speed * 0.3), 0.9, f.L * 1.6, [1, 0.45, 0.12], 0.4);
+          for (let i = 0; i < 16; i++) {
+            const out = norm([R(-1, 1), R(-1, 1), R(-1, 1)]);
+            spark(
+              add(f.pos, mul(out, f.L * 0.2)),
+              add(mul(out, R(30, 110)), mul(f.dir, f.speed * 0.5)),
+              R(0.4, 1.1),
+              f.L * R(0.12, 0.3),
+              [1, R(0.5, 0.8), 0.25],
+              0.3
+            );
           }
         }
-      }
-    }
-    return (f.inside && !onScreen(f.pos, 0.12)) || (!f.inside && f.life > 10) || f.life > 45;
-  }
-  function separate() {
-    for (let i = 0; i < fighters.length; i++) for (let j = i + 1; j < fighters.length; j++) {
-      const a = fighters[i], b = fighters[j], r = sub(a.pos, b.pos), d = len(r), min = avoid(a, b);
-      if (d < min) { const push = mul(d > 1e-6 ? mul(r, 1 / d) : [0, 1, 0], (min - d) / 2); a.pos = add(a.pos, push); b.pos = sub(b.pos, push); }
-    }
-  }
-
-  view();
-  scramble('x', true); scramble('t', true);
-  let nextSquadron = R(2, 4), last = performance.now();
-  const sun = norm([-0.45, 0.75, 0.5]);
-
-  function frame(now) {
-    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
-    view();
-    const flying = k => fighters.filter(f => f.k === k).length;
-    if ((nextSquadron -= dt) <= 0) {
-      nextSquadron = fighters.length < 8 ? R(1, 3) : R(2.5, 6);
-      if (fighters.length < 17) scramble(flying('x') < flying('t') ? 'x' : flying('t') < flying('x') ? 't' : Math.random() < 0.5 ? 'x' : 't');
-    }
-    for (let i = fighters.length; i--;) if (fly(fighters[i], dt)) fighters.splice(i, 1);
-    separate();
-    for (let i = bolts.length; i--;) {
-      const b = bolts[i], t = b.target;
-      if (t && fighters.includes(t)) {
-        const r = sub(t.pos, b.pos), d = len(r);
-        if (d < t.L * 0.5) {
-          spark(b.pos, mul(t.dir, t.speed * 0.8), 0.2, t.L * 0.6, [1, 0.85, 0.6], 0.8);
-          t.hurt = 0.15;
-          if (--t.hp <= 0) { explode(t); fighters.splice(fighters.indexOf(t), 1); }
-          bolts.splice(i, 1); continue;
+        const avoid = (f, o) => 0.75 * (f.L + o.L);
+        function fly(f, dt) {
+          const kd = f.kind;
+          f.life += dt;
+          if ((f.look -= dt) <= 0) {
+            f.look = 0.4;
+            f.target = null;
+            let near = 700 ** 2;
+            if (f.life < f.bored)
+              for (const o of fighters)
+                if (o.k !== f.k && o.inside) {
+                  const r = sub(o.pos, f.pos),
+                    d = dot(r, r);
+                  if (d < near) {
+                    near = d;
+                    f.target = o;
+                  }
+                }
+          }
+          if (f.target && !fighters.includes(f.target)) f.target = null;
+          let want = f.target ? norm(sub(f.target.pos, f.pos)) : [...f.dir];
+          for (const o of fighters)
+            if (o !== f) {
+              const r = sub(f.pos, o.pos),
+                d = len(r),
+                clear = avoid(f, o) * (o.k === f.k ? 2.5 : 2);
+              if (d > 0 && d < clear) want = add(want, mul(r, (2.5 * (clear - d)) / clear / d));
+            }
+          if (f.life < f.bored) {
+            if (f.pos[2] > 180) want[2] -= 0.8;
+            if (f.pos[2] < -600) want[2] += 0.8;
+            if (f.pos[1] > 260) want[1] -= 0.8;
+            if (f.pos[1] < -220) want[1] += 0.8;
+          }
+          want = norm(want);
+          const was = f.dir,
+            c = Math.max(-1, Math.min(1, dot(was, want))),
+            turn = Math.min(Math.acos(c), kd.turn * dt);
+          if (turn > 1e-4) f.dir = norm(add(mul(was, Math.cos(turn)), mul(norm(sub(want, mul(was, c))), Math.sin(turn))));
+          const yaw = dt > 0 ? dot(cross(was, f.dir), UP) / dt : 0;
+          f.roll += (Math.max(-1.1, Math.min(1.1, -0.6 * yaw)) - f.roll) * Math.min(1, dt * 3);
+          let speed = f.speed;
+          if (f.target) {
+            const r = sub(f.target.pos, f.pos),
+              d = len(r);
+            if (d < avoid(f, f.target) * 3 && dot(r, f.dir) > 0) speed = Math.min(speed, f.target.speed * 0.9);
+          }
+          f.pos = add(f.pos, mul(f.dir, speed * dt));
+          axes(f);
+          if (onScreen(f.pos, -0.02)) f.inside = true;
+          f.hurt = Math.max(0, f.hurt - dt);
+          if (f.hp === 1 && (f.smoke -= dt) <= 0) {
+            f.smoke = 0.04;
+            spark(toWorld(f, [-0.5, 0, 0]), mul(f.dir, f.speed * 0.2), 0.5, f.L * 0.35, [1, 0.5, 0.15], 0.2);
+          }
+          if ((f.fire -= dt) <= 0 && f.target && f.inside) {
+            const r = sub(f.target.pos, f.pos),
+              d = len(r);
+            const blocked = () =>
+              fighters.some(o => {
+                if (o === f || o.k !== f.k) return false;
+                const q = sub(o.pos, f.pos),
+                  along = dot(q, f.dir);
+                return along > 0 && along < d && len(sub(q, mul(f.dir, along))) < 0.5 * (o.L + f.L);
+              });
+            if (d < 420 && dot(r, f.dir) / d > 0.985 && !blocked()) {
+              f.fire = R(0.35, 1);
+              f.pair = (f.pair + 1) % kd.guns.length;
+              for (const g of kd.guns[f.pair]) {
+                const from = toWorld(f, g),
+                  v = f.speed * 3.5;
+                if (Math.random() < 0.5)
+                  bolts.push({ pos: from, v: mul(norm(sub(f.target.pos, from)), v), life: 1.2, c: kd.bolt, run: 0, target: f.target });
+                else {
+                  const t = f.target,
+                    wide = norm(cross(sub(t.pos, from), [R(-1, 1), R(-1, 1), R(-1, 1)]));
+                  bolts.push({
+                    pos: from,
+                    v: mul(norm(sub(add(t.pos, mul(wide, t.L * R(1.3, 2.5))), from)), v),
+                    life: 0.9,
+                    c: kd.bolt,
+                    run: 0
+                  });
+                }
+              }
+            }
+          }
+          return (f.inside && !onScreen(f.pos, 0.12)) || (!f.inside && f.life > 10) || f.life > 45;
         }
-        b.v = mul(r, len(b.v) / d);
+        function separate() {
+          for (let i = 0; i < fighters.length; i++)
+            for (let j = i + 1; j < fighters.length; j++) {
+              const a = fighters[i],
+                b = fighters[j],
+                r = sub(a.pos, b.pos),
+                d = len(r),
+                min = avoid(a, b);
+              if (d < min) {
+                const push = mul(d > 1e-6 ? mul(r, 1 / d) : [0, 1, 0], (min - d) / 2);
+                a.pos = add(a.pos, push);
+                b.pos = sub(b.pos, push);
+              }
+            }
+        }
+
+        view();
+        scramble('x', true);
+        scramble('t', true);
+        let nextSquadron = R(2, 4),
+          last = performance.now();
+        const sun = norm([-0.45, 0.75, 0.5]);
+
+        function frame(now) {
+          const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
+          last = now;
+          view();
+          const flying = k => fighters.filter(f => f.k === k).length;
+          if ((nextSquadron -= dt) <= 0) {
+            nextSquadron = fighters.length < 8 ? R(1, 3) : R(2.5, 6);
+            if (fighters.length < 17)
+              scramble(flying('x') < flying('t') ? 'x' : flying('t') < flying('x') ? 't' : Math.random() < 0.5 ? 'x' : 't');
+          }
+          for (let i = fighters.length; i--; ) if (fly(fighters[i], dt)) fighters.splice(i, 1);
+          separate();
+          for (let i = bolts.length; i--; ) {
+            const b = bolts[i],
+              t = b.target;
+            if (t && fighters.includes(t)) {
+              const r = sub(t.pos, b.pos),
+                d = len(r);
+              if (d < t.L * 0.5) {
+                spark(b.pos, mul(t.dir, t.speed * 0.8), 0.2, t.L * 0.6, [1, 0.85, 0.6], 0.8);
+                t.hurt = 0.15;
+                if (--t.hp <= 0) {
+                  explode(t);
+                  fighters.splice(fighters.indexOf(t), 1);
+                }
+                bolts.splice(i, 1);
+                continue;
+              }
+              b.v = mul(r, len(b.v) / d);
+            }
+            if ((b.life -= dt) <= 0) {
+              bolts.splice(i, 1);
+              continue;
+            }
+            b.pos = add(b.pos, mul(b.v, dt));
+            b.run += len(b.v) * dt;
+          }
+          for (let i = sparks.length; i--; ) {
+            const s = sparks[i];
+            if ((s.age += dt) >= s.life) {
+              sparks.splice(i, 1);
+              continue;
+            }
+            s.pos = add(s.pos, mul(s.v, dt));
+            s.v = mul(s.v, Math.max(0, 1 - dt * 1.5));
+          }
+
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+          gl.useProgram(SHIP.p);
+          gl.uniformMatrix4fv(SHIP.u.vp, false, VP);
+          gl.uniform3fv(SHIP.u.eye, cam.eye);
+          gl.uniform3fv(SHIP.u.sun, sun);
+          for (const f of fighters) {
+            gl.uniformMatrix4fv(SHIP.u.m, false, model(f));
+            gl.uniform1f(SHIP.u.scorch, 1 - (f.hp - 1) / Math.max(1, f.kind.hp - 1));
+            gl.bindVertexArray(f.kind.mesh.a);
+            gl.drawArrays(gl.TRIANGLES, 0, f.kind.mesh.n);
+          }
+
+          gl.enable(gl.BLEND);
+          gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
+          gl.depthMask(false);
+          const quads = [];
+          const sprite = (p, size, rgb, a, core) => {
+            const r = mul(cam.r, size),
+              u = mul(cam.u, size),
+              c = [...mul(rgb, a), core * a];
+            const v = (x, y) => quads.push(...add(add(p, mul(r, x)), mul(u, y)), x, y, ...c);
+            v(-1, -1);
+            v(1, -1);
+            v(1, 1);
+            v(-1, -1);
+            v(1, 1);
+            v(-1, 1);
+          };
+          for (const f of fighters) {
+            for (const g of f.kind.glows) sprite(toWorld(f, g), f.kind.gr * f.L, f.kind.glow, 0.8, 0.3);
+            if (f.hurt) sprite(f.pos, f.L * 0.7, [1, 0.6, 0.3], (f.hurt / 0.15) * 0.6, 0.3);
+          }
+          for (const s of sparks) {
+            const t = s.age / s.life;
+            sprite(s.pos, s.size * (0.6 + 0.8 * t), s.rgb, (1 - t) * (1 - t), s.core);
+          }
+          for (const b of bolts) {
+            const dir = norm(b.v),
+              tail = sub(b.pos, mul(dir, Math.min(22, b.run))),
+              mid = mul(add(b.pos, tail), 0.5),
+              half = sub(b.pos, mid);
+            const across = mul(norm(cross(dir, sub(cam.eye, mid))), 2.6),
+              c = [...mul(b.c, Math.min(1, b.life * 4) * 0.8), 0.7];
+            const v = (x, y) => quads.push(...add(add(mid, mul(half, x * 1.3)), mul(across, y)), x, y, ...c);
+            v(-1, -1);
+            v(1, -1);
+            v(1, 1);
+            v(-1, -1);
+            v(1, 1);
+            v(-1, 1);
+          }
+          gl.useProgram(GLOW.p);
+          gl.uniformMatrix4fv(GLOW.u.vp, false, VP);
+          gl.bindVertexArray(GLOWS.a);
+          gl.bindBuffer(gl.ARRAY_BUFFER, GLOWS.b);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(quads), gl.DYNAMIC_DRAW);
+          gl.drawArrays(gl.TRIANGLES, 0, quads.length / 9);
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
       }
-      if ((b.life -= dt) <= 0) { bolts.splice(i, 1); continue; }
-      b.pos = add(b.pos, mul(b.v, dt)); b.run += len(b.v) * dt;
-    }
-    for (let i = sparks.length; i--;) {
-      const s = sparks[i];
-      if ((s.age += dt) >= s.life) { sparks.splice(i, 1); continue; }
-      s.pos = add(s.pos, mul(s.v, dt)); s.v = mul(s.v, Math.max(0, 1 - dt * 1.5));
-    }
 
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
-    gl.useProgram(SHIP.p);
-    gl.uniformMatrix4fv(SHIP.u.vp, false, VP); gl.uniform3fv(SHIP.u.eye, cam.eye); gl.uniform3fv(SHIP.u.sun, sun);
-    for (const f of fighters) {
-      gl.uniformMatrix4fv(SHIP.u.m, false, model(f)); gl.uniform1f(SHIP.u.scorch, 1 - (f.hp - 1) / Math.max(1, f.kind.hp - 1));
-      gl.bindVertexArray(f.kind.mesh.a); gl.drawArrays(gl.TRIANGLES, 0, f.kind.mesh.n);
-    }
+      {
+        const box = $('playerName'),
+          KEY = 'swr.mpname';
+        try {
+          box.value = localStorage.getItem(KEY) || '';
+        } catch {}
+        const save = () => {
+          const v = box.value.trim().slice(0, 24);
+          try {
+            if (v) localStorage.setItem(KEY, v);
+            else localStorage.removeItem(KEY);
+          } catch {}
+        };
+        box.addEventListener('change', save);
+        box.addEventListener('input', save);
+      }
+      async function showEdition() {
+        const now = edition();
+        for (const b of $('edition').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.edition === now));
+        $('subName').textContent = EDITIONS.find(e => e.id === now).name;
+        const on = foldersSupported() || archivesSupported() ? (await listMods().catch(() => [])).filter(m => m.on) : [];
+        $('editionStatus').textContent =
+          now === 'eaw' && on.length
+            ? `${on.length === 1 ? 'A mod is' : on.length + ' mods are'} turned on below: with the original game ${on.length === 1 ? 'it' : 'they'} will most likely not work.`
+            : '';
+        $('editionStatus').className = 'status bad';
+      }
+      $('edition').addEventListener('click', async e => {
+        const b = e.target.closest('button[data-edition]');
+        if (!b || busy || b.dataset.edition === edition()) return;
+        if (b.dataset.edition === 'eaw') {
+          const info = await packInfo(),
+            own = foldersSupported() ? await getGame().catch(() => null) : null;
+          if (!own && info && !info.eaw) {
+            busy = true;
+            $('editionStatus').className = 'status';
+            try {
+              const say = t => {
+                $('editionStatus').textContent = t;
+              };
+              if (!(await ensureOriginal(say))) {
+                $('editionStatus').className = 'status bad';
+                say(
+                  'This archive has no GameData folder, so it holds Forces of Corruption only. Import an archive of the whole game folder to play the original.'
+                );
+                return;
+              }
+            } catch (err) {
+              $('editionStatus').className = 'status bad';
+              $('editionStatus').textContent = 'Could not read the archive: ' + err.message;
+              return;
+            } finally {
+              busy = false;
+            }
+          }
+        }
+        setEdition(b.dataset.edition);
+        showEdition();
+      });
+      showEdition();
 
-    gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE); gl.depthMask(false);
-    const quads = [];
-    const sprite = (p, size, rgb, a, core) => {
-      const r = mul(cam.r, size), u = mul(cam.u, size), c = [...mul(rgb, a), core * a];
-      const v = (x, y) => quads.push(...add(add(p, mul(r, x)), mul(u, y)), x, y, ...c);
-      v(-1, -1); v(1, -1); v(1, 1); v(-1, -1); v(1, 1); v(-1, 1);
-    };
-    for (const f of fighters) {
-      for (const g of f.kind.glows) sprite(toWorld(f, g), f.kind.gr * f.L, f.kind.glow, 0.8, 0.3);
-      if (f.hurt) sprite(f.pos, f.L * 0.7, [1, 0.6, 0.3], f.hurt / 0.15 * 0.6, 0.3);
-    }
-    for (const s of sparks) { const t = s.age / s.life; sprite(s.pos, s.size * (0.6 + 0.8 * t), s.rgb, (1 - t) * (1 - t), s.core); }
-    for (const b of bolts) {
-      const dir = norm(b.v), tail = sub(b.pos, mul(dir, Math.min(22, b.run))), mid = mul(add(b.pos, tail), 0.5), half = sub(b.pos, mid);
-      const across = mul(norm(cross(dir, sub(cam.eye, mid))), 2.6), c = [...mul(b.c, Math.min(1, b.life * 4) * 0.8), 0.7];
-      const v = (x, y) => quads.push(...add(add(mid, mul(half, x * 1.3)), mul(across, y)), x, y, ...c);
-      v(-1, -1); v(1, -1); v(1, 1); v(-1, -1); v(1, 1); v(-1, 1);
-    }
-    gl.useProgram(GLOW.p); gl.uniformMatrix4fv(GLOW.u.vp, false, VP);
-    gl.bindVertexArray(GLOWS.a); gl.bindBuffer(gl.ARRAY_BUFFER, GLOWS.b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(quads), gl.DYNAMIC_DRAW);
-    gl.drawArrays(gl.TRIANGLES, 0, quads.length / 9);
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
+      const mb = n => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : (n / 1048576).toFixed(0) + ' MB');
+      const status = (text, cls = '') => {
+        $('status').textContent = text;
+        $('status').className = 'status ' + cls;
+      };
+      let busy = false;
+      const app = inApp();
 
-{
-  const box = $('playerName'), KEY = 'swr.mpname';
-  try { box.value = localStorage.getItem(KEY) || ''; } catch {}
-  const save = () => { const v = box.value.trim().slice(0, 24); try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch {} };
-  box.addEventListener('change', save);
-  box.addEventListener('input', save);
-}
-async function showEdition() {
-  const now = edition();
-  for (const b of $('edition').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.edition === now));
-  $('subName').textContent = EDITIONS.find(e => e.id === now).name;
-  const on = foldersSupported() || archivesSupported() ? (await listMods().catch(() => [])).filter(m => m.on) : [];
-  $('editionStatus').textContent = now === 'eaw' && on.length ? `${on.length === 1 ? 'A mod is' : on.length + ' mods are'} turned on below: with the original game ${on.length === 1 ? 'it' : 'they'} will most likely not work.` : '';
-  $('editionStatus').className = 'status bad';
-}
-$('edition').addEventListener('click', async e => {
-  const b = e.target.closest('button[data-edition]');
-  if (!b || busy || b.dataset.edition === edition()) return;
-  if (b.dataset.edition === 'eaw') {
-    const info = await packInfo(), own = foldersSupported() ? await getGame().catch(() => null) : null;
-    if (!own && info && !info.eaw) {
-      busy = true;
-      $('editionStatus').className = 'status';
-      try {
-        const say = t => { $('editionStatus').textContent = t; };
-        if (!await ensureOriginal(say)) { $('editionStatus').className = 'status bad'; say('This archive has no GameData folder, so it holds Forces of Corruption only. Import an archive of the whole game folder to play the original.'); return; }
-      } catch (err) { $('editionStatus').className = 'status bad'; $('editionStatus').textContent = 'Could not read the archive: ' + err.message; return; }
-      finally { busy = false; }
-    }
-  }
-  setEdition(b.dataset.edition);
-  showEdition();
-});
-showEdition();
+      async function refresh() {
+        const info = await packInfo();
+        const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
+        const own = foldersSupported() ? await getGame().catch(() => null) : null;
+        const live = !own && !info && (await assetsAvailable());
+        const ok = !!(own || info || live);
+        $('link').classList.toggle('ok', ok);
+        $('current').textContent = own
+          ? `Reading your installed game, “${own.name}” (${own.count.toLocaleString()} files)${own.compat ? ', in compatibility mode' : ''}.`
+          : info
+            ? `Using the game archive stored in this browser (${info.files.toLocaleString()} files).`
+            : live
+              ? 'This server reads the game straight from an install.'
+              : 'None yet. Choose your game folder or import an archive of it below.';
+        $('storeNote').textContent =
+          own && info
+            ? 'A stored archive is kept but not used while the folder is set.'
+            : est && est.quota
+              ? `Browser storage ${mb(est.usage || 0)} used of ${mb(est.quota)}`
+              : '';
+        $('play').classList.toggle('hidden', !ok);
+        showInstall(own);
+        showStored(info);
+      }
 
-const mb = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : (n / 1048576).toFixed(0) + ' MB';
-const status = (text, cls = '') => { $('status').textContent = text; $('status').className = 'status ' + cls; };
-let busy = false;
-const app = inApp();
+      function showStored(info) {
+        const el = $('stored');
+        el.replaceChildren();
+        if (!info) return;
+        const row = document.createElement('div'),
+          name = document.createElement('span'),
+          meta = document.createElement('span'),
+          gone = document.createElement('button');
+        row.className = 'rowline';
+        name.className = 'name';
+        name.textContent = `${mb(info.tarSize)} stored`;
+        meta.className = 'meta';
+        meta.textContent = new Date(info.imported).toLocaleDateString();
+        gone.className = 'small';
+        gone.textContent = 'Remove';
+        gone.onclick = async () => {
+          if (busy) return;
+          await removePack();
+          status('Stored archive removed.');
+          $('bar').style.width = '0';
+          refresh();
+        };
+        row.append(name, meta, gone);
+        el.append(row);
+      }
 
-async function refresh() {
-  const info = await packInfo();
-  const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
-  const own = foldersSupported() ? await getGame().catch(() => null) : null;
-  const live = !own && !info && await assetsAvailable();
-  const ok = !!(own || info || live);
-  $('link').classList.toggle('ok', ok);
-  $('current').textContent = own ? `Reading your installed game, “${own.name}” (${own.count.toLocaleString()} files)${own.compat ? ', in compatibility mode' : ''}.`
-    : info ? `Using the game archive stored in this browser (${info.files.toLocaleString()} files).`
-    : live ? 'This server reads the game straight from an install.'
-    : 'None yet. Choose your game folder or import an archive of it below.';
-  $('storeNote').textContent = own && info ? 'A stored archive is kept but not used while the folder is set.'
-    : est && est.quota ? `Browser storage ${mb(est.usage || 0)} used of ${mb(est.quota)}` : '';
-  $('play').classList.toggle('hidden', !ok);
-  showInstall(own);
-  showStored(info);
-}
+      const TRACE = 'swr-import-trace';
+      const trace = v => {
+        try {
+          if (v) localStorage.setItem(TRACE, JSON.stringify(v));
+          else localStorage.removeItem(TRACE);
+        } catch {}
+      };
+      {
+        let t = null;
+        try {
+          t = JSON.parse(localStorage.getItem(TRACE) || 'null');
+        } catch {}
+        if (t) {
+          status(
+            `The last import of “${t.name}” stopped without finishing: at ${mb(t.read)} of ${mb(t.size)}, ${t.files.toLocaleString()} files in${t.last ? `, last “${t.last}”` : ''}${t.stage ? ` (${t.stage})` : ''}. The page was most likely closed by the browser or the phone.`,
+            'bad'
+          );
+          trace(null);
+        }
+      }
 
-function showStored(info) {
-  const el = $('stored');
-  el.replaceChildren();
-  if (!info) return;
-  const row = document.createElement('div'), name = document.createElement('span'), meta = document.createElement('span'), gone = document.createElement('button');
-  row.className = 'rowline';
-  name.className = 'name'; name.textContent = `${mb(info.tarSize)} stored`;
-  meta.className = 'meta'; meta.textContent = new Date(info.imported).toLocaleDateString();
-  gone.className = 'small'; gone.textContent = 'Remove';
-  gone.onclick = async () => { if (busy) return; await removePack(); status('Stored archive removed.'); $('bar').style.width = '0'; refresh(); };
-  row.append(name, meta, gone);
-  el.append(row);
-}
+      async function run(file, size, plain) {
+        if (busy) return;
+        const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
+        const held = (await packInfo())?.tarSize || 0;
+        if (plain && est && est.quota && size > est.quota - (est.usage || 0) + held) {
+          status(
+            `Not enough room: the archive needs ${mb(size)}, this browser lets the page keep ${mb(est.quota - (est.usage || 0) + held)}. Free up disk space and try again.`,
+            'bad'
+          );
+          return;
+        }
+        busy = true;
+        status('Importing…');
+        const t = { name: file.name, size, read: 0, files: 0, last: '', stage: '' };
+        let kept = 0;
+        trace(t);
+        try {
+          const t0 = performance.now();
+          const r = await importPack(
+            fileStream(file),
+            size,
+            (f, n, last) => {
+              $('bar').style.width = Math.round(f * 100) + '%';
+              status(`Importing… ${n.toLocaleString()} files`);
+              Object.assign(t, { read: f * size, files: n, last: last || t.last });
+              if (performance.now() - kept > 500) {
+                kept = performance.now();
+                trace(t);
+              }
+            },
+            text => {
+              status(text + '…');
+              t.stage = text;
+              trace(t);
+            }
+          );
+          status(
+            `Imported ${r.files.toLocaleString()} files (${mb(r.tarSize)}) in ${((performance.now() - t0) / 1000).toFixed(0)} s. Ready to launch, also offline.`,
+            'ok'
+          );
+        } catch (e) {
+          console.error(e);
+          status(
+            e.name === 'QuotaExceededError'
+              ? 'Import failed: the browser ran out of storage space for this site. Free up disk space, or use the installed game folder instead.'
+              : 'Import failed: ' + e.message,
+            'bad'
+          );
+          $('bar').style.width = '0';
+        }
+        trace(null);
+        busy = false;
+        refresh();
+      }
 
-const TRACE = 'swr-import-trace';
-const trace = v => { try { if (v) localStorage.setItem(TRACE, JSON.stringify(v)); else localStorage.removeItem(TRACE); } catch {} };
-{
-  let t = null; try { t = JSON.parse(localStorage.getItem(TRACE) || 'null'); } catch {}
-  if (t) {
-    status(`The last import of “${t.name}” stopped without finishing: at ${mb(t.read)} of ${mb(t.size)}, ${t.files.toLocaleString()} files in${t.last ? `, last “${t.last}”` : ''}${t.stage ? ` (${t.stage})` : ''}. The page was most likely closed by the browser or the phone.`, 'bad');
-    trace(null);
-  }
-}
+      const drop = $('drop'),
+        file = $('file');
+      const take = f => {
+        if (!f) return;
+        if (/\.(zip|7z|rar)$/i.test(f.name)) {
+          status(`“${f.name}” is not a .tar. See “How to make one” below.`, 'bad');
+          return;
+        }
+        run(f, f.size, !/\.t?gz$/i.test(f.name));
+      };
+      drop.onclick = () => file.click();
+      file.onchange = () => {
+        take(file.files[0]);
+        file.value = '';
+      };
+      drop.ondragover = e => {
+        e.preventDefault();
+        drop.classList.add('over');
+      };
+      drop.ondragleave = () => drop.classList.remove('over');
+      drop.ondrop = e => {
+        e.preventDefault();
+        drop.classList.remove('over');
+        take(e.dataTransfer.files[0]);
+      };
 
-async function run(file, size, plain) {
-  if (busy) return;
-  const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
-  const held = (await packInfo())?.tarSize || 0;
-  if (plain && est && est.quota && size > est.quota - (est.usage || 0) + held) {
-    status(`Not enough room: the archive needs ${mb(size)}, this browser lets the page keep ${mb(est.quota - (est.usage || 0) + held)}. Free up disk space and try again.`, 'bad');
-    return;
-  }
-  busy = true;
-  status('Importing…');
-  const t = { name: file.name, size, read: 0, files: 0, last: '', stage: '' };
-  let kept = 0;
-  trace(t);
-  try {
-    const t0 = performance.now();
-    const r = await importPack(fileStream(file), size,
-      (f, n, last) => {
-        $('bar').style.width = Math.round(f * 100) + '%'; status(`Importing… ${n.toLocaleString()} files`);
-        Object.assign(t, { read: f * size, files: n, last: last || t.last });
-        if (performance.now() - kept > 500) { kept = performance.now(); trace(t); }
-      },
-      text => { status(text + '…'); t.stage = text; trace(t); });
-    status(`Imported ${r.files.toLocaleString()} files (${mb(r.tarSize)}) in ${((performance.now() - t0) / 1000).toFixed(0)} s. Ready to launch, also offline.`, 'ok');
-  } catch (e) {
-    console.error(e);
-    status(e.name === 'QuotaExceededError' ? 'Import failed: the browser ran out of storage space for this site. Free up disk space, or use the installed game folder instead.' : 'Import failed: ' + e.message, 'bad');
-    $('bar').style.width = '0';
-  }
-  trace(null);
-  busy = false;
-  refresh();
-}
+      {
+        const d = $('archiveHelp');
+        const pick = os => {
+          for (const b of d.querySelectorAll('[data-os]')) b.setAttribute('aria-pressed', b.dataset.os === os);
+          for (const p of d.querySelectorAll('[data-for]')) p.classList.toggle('hidden', p.dataset.for !== os);
+        };
+        const ua = navigator.userAgent;
+        pick(/Mac|Linux|X11/.test(ua) && !/Windows/.test(ua) ? 'unix' : 'win11');
+        d.addEventListener('click', e => {
+          const b = e.target.closest('[data-os]');
+          if (b) pick(b.dataset.os);
+        });
+        $('howArchive').onclick = () => d.showModal();
+        $('howProtected').onclick = () => $('protectedHelp').showModal();
+      }
 
-const drop = $('drop'), file = $('file');
-const take = f => {
-  if (!f) return;
-  if (/\.(zip|7z|rar)$/i.test(f.name)) { status(`“${f.name}” is not a .tar. See “How to make one” below.`, 'bad'); return; }
-  run(f, f.size, !/\.t?gz$/i.test(f.name));
-};
-drop.onclick = () => file.click();
-file.onchange = () => { take(file.files[0]); file.value = ''; };
-drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
-drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files[0]); };
+      {
+        const s = document.createElement('script');
+        s.src = 'https://storage.ko-fi.com/cdn/widget/Widget_2.js';
+        s.crossOrigin = 'anonymous';
+        s.onload = () => {
+          const w = window.kofiwidget2;
+          w.init('Support me on Ko-fi', '#000000', 'Z4S429CUIG');
+          $('kofi').innerHTML = w
+            .getHTML()
+            .replace(/<img /g, '<img crossorigin="anonymous" ')
+            .replace(/content:url\([^)]*\)/g, '');
+        };
+        document.head.append(s);
+      }
 
-{
-  const d = $('archiveHelp');
-  const pick = os => { for (const b of d.querySelectorAll('[data-os]')) b.setAttribute('aria-pressed', b.dataset.os === os); for (const p of d.querySelectorAll('[data-for]')) p.classList.toggle('hidden', p.dataset.for !== os); };
-  const ua = navigator.userAgent;
-  pick(/Mac|Linux|X11/.test(ua) && !/Windows/.test(ua) ? 'unix' : 'win11');
-  d.addEventListener('click', e => { const b = e.target.closest('[data-os]'); if (b) pick(b.dataset.os); });
-  $('howArchive').onclick = () => d.showModal();
-  $('howProtected').onclick = () => $('protectedHelp').showModal();
-}
-
-{
-  const s = document.createElement('script');
-  s.src = 'https://storage.ko-fi.com/cdn/widget/Widget_2.js'; s.crossOrigin = 'anonymous';
-  s.onload = () => {
-    const w = window.kofiwidget2;
-    w.init('Support me on Ko-fi', '#000000', 'Z4S429CUIG');
-    $('kofi').innerHTML = w.getHTML().replace(/<img /g, '<img crossorigin="anonymous" ').replace(/content:url\([^)]*\)/g, '');
-  };
-  document.head.append(s);
-}
-
-function folderHelp() {
-  const ua = navigator.userAgent, has = modsSupported();
-  const brave = !!navigator.brave, firefox = /Firefox\//.test(ua), mobile = /Android|iPhone|iPad|Mobile/.test(ua);
-  const safari = /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua);
-  const flag = (brave ? 'brave' : /Edg\//.test(ua) ? 'edge' : 'chrome') + '://flags/#file-system-access-api';
-  const copy = text => `<div class="copy"><code>${text}</code><button data-copy="${text}">Copy</button></div>`;
-  const instead = '<button class="ask" data-archive>a game archive</button>';
-  const compat = compatSupported() ? '<p>The button still works here, in compatibility mode: the browser does not remember the folder, so you choose it again each time you launch.</p>' : '';
-  let html;
-  if (has) html = `<p>Folder access is available in this browser. If the button still does nothing:</p>
+      function folderHelp() {
+        const ua = navigator.userAgent,
+          has = modsSupported();
+        const brave = !!navigator.brave,
+          firefox = /Firefox\//.test(ua),
+          mobile = /Android|iPhone|iPad|Mobile/.test(ua);
+        const safari = /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua);
+        const flag = (brave ? 'brave' : /Edg\//.test(ua) ? 'edge' : 'chrome') + '://flags/#file-system-access-api';
+        const copy = text => `<div class="copy"><code>${text}</code><button data-copy="${text}">Copy</button></div>`;
+        const instead = '<button class="ask" data-archive>a game archive</button>';
+        const compat = compatSupported()
+          ? '<p>The button still works here, in compatibility mode: the browser does not remember the folder, so you choose it again each time you launch.</p>'
+          : '';
+        let html;
+        if (has)
+          html = `<p>Folder access is available in this browser. If the button still does nothing:</p>
     <ol><li>Allow the prompt the browser shows after you pick the folder ("View files" / "Edit files").</li>
     <li>Pick the game's own folder, not a system folder such as Program Files itself, your user folder or a whole drive: browsers refuse those.</li>
-    ${compatSupported() ? `<li>If the browser says it “can't open this folder because it contains system files”, the game is installed in a protected place (Steam puts it under Program Files).
-      Use <button class="ask" data-compat>compatibility mode</button> instead: it works there, but the browser does not remember the folder, so you choose it again each time you launch.</li>` : ''}
+    ${
+      compatSupported()
+        ? `<li>If the browser says it “can't open this folder because it contains system files”, the game is installed in a protected place (Steam puts it under Program Files).
+      Use <button class="ask" data-compat>compatibility mode</button> instead: it works there, but the browser does not remember the folder, so you choose it again each time you launch.</li>`
+        : ''
+    }
     <li>If you blocked it before: click the icon left of the address, open the site settings and reset the file permissions.</li></ol>`;
-  else if (!window.isSecureContext) html = `<p>Browsers only open folders for pages loaded securely. This page was opened over plain <code>http://</code> from another machine.</p>
+        else if (!window.isSecureContext)
+          html = `<p>Browsers only open folders for pages loaded securely. This page was opened over plain <code>http://</code> from another machine.</p>
     <p>Open it as <code>http://localhost…</code> on the computer that runs it, or over <code>https://</code>, to have the folder remembered.</p>${compat}`;
-  else if (mobile) html = `<p>Phones and tablets cannot open a folder from a web page. Use ${instead} instead, or play on a computer.</p>`;
-  else if ((firefox || safari) && compat) html = `<p>${firefox ? 'Firefox' : 'Safari'} cannot keep access to a folder, so the folder is opened in compatibility mode: the browser does not remember it, and you choose it again each time you launch.</p>
+        else if (mobile)
+          html = `<p>Phones and tablets cannot open a folder from a web page. Use ${instead} instead, or play on a computer.</p>`;
+        else if ((firefox || safari) && compat)
+          html = `<p>${firefox ? 'Firefox' : 'Safari'} cannot keep access to a folder, so the folder is opened in compatibility mode: the browser does not remember it, and you choose it again each time you launch.</p>
     <p>If the button does nothing, choose the folder that holds <code>GameData</code> and <code>corruption</code> and allow what the browser asks.
     Chrome, Edge or Brave on a computer remember the folder, and ${instead} works in every browser.</p>`;
-  else if (firefox || safari) html = `<p>${firefox ? 'Firefox' : 'Safari'} has no way to open a folder from a web page.</p>
+        else if (firefox || safari)
+          html = `<p>${firefox ? 'Firefox' : 'Safari'} has no way to open a folder from a web page.</p>
     <p>Use Chrome, Edge or Brave on a computer for this, or stay here and use ${instead}, which works in every browser.</p>`;
-  else html = `${compat}<p>${brave ? 'Brave ships with folder access switched off.' : 'Folder access is switched off in this browser.'} To have the folder remembered, turn it on:</p>
+        else
+          html = `${compat}<p>${brave ? 'Brave ships with folder access switched off.' : 'Folder access is switched off in this browser.'} To have the folder remembered, turn it on:</p>
     <ol><li>Copy this address and open it in a new tab (a page cannot link to it):${copy(flag)}</li>
     <li>Set <b>File System Access API</b> to <b>Enabled</b>.</li>
     <li>Press <b>Relaunch</b> at the bottom of that page, then come back here.</li></ol>
     <p class="note">Nothing else changes: a page can still only read a folder you pick yourself, and asks each time.
     If you would rather not, ${instead} needs no folder access.</p>`;
-  $('folderHelpBody').innerHTML = html;
-  $('folderHelp').showModal();
-}
-document.addEventListener('click', e => {
-  if (e.target.closest('[data-help]')) { e.preventDefault(); folderHelp(); }
-  if (e.target.closest('[data-archive]')) { $('folderHelp').close(); $('archiveHelp').showModal(); }
-  if (e.target.closest('[data-compat]')) { $('folderHelp').close(); useCompatGame(); }
-  const shut = e.target.closest('[data-close]');
-  if (shut) shut.closest('dialog').close();
-  const c = e.target.closest('[data-copy]');
-  if (c) navigator.clipboard.writeText(c.dataset.copy).then(() => { c.textContent = 'Copied'; }, () => { c.textContent = 'Select and copy it by hand'; });
-});
-for (const d of document.querySelectorAll('dialog')) d.addEventListener('click', e => { if (e.target === d) d.close(); });
+        $('folderHelpBody').innerHTML = html;
+        $('folderHelp').showModal();
+      }
+      document.addEventListener('click', e => {
+        if (e.target.closest('[data-help]')) {
+          e.preventDefault();
+          folderHelp();
+        }
+        if (e.target.closest('[data-archive]')) {
+          $('folderHelp').close();
+          $('archiveHelp').showModal();
+        }
+        if (e.target.closest('[data-compat]')) {
+          $('folderHelp').close();
+          useCompatGame();
+        }
+        const shut = e.target.closest('[data-close]');
+        if (shut) shut.closest('dialog').close();
+        const c = e.target.closest('[data-copy]');
+        if (c)
+          navigator.clipboard.writeText(c.dataset.copy).then(
+            () => {
+              c.textContent = 'Copied';
+            },
+            () => {
+              c.textContent = 'Select and copy it by hand';
+            }
+          );
+      });
+      for (const d of document.querySelectorAll('dialog'))
+        d.addEventListener('click', e => {
+          if (e.target === d) d.close();
+        });
 
-const installStatus = (text, cls = '') => { $('installStatus').textContent = text; $('installStatus').className = 'status ' + cls; };
-function showInstall(own) {
-  $('protectedTip').classList.toggle('hidden', !modsSupported());
-  if (!foldersSupported()) { $('chooseGame').classList.add('hidden'); $('installOff').classList.remove('hidden'); return; }
-  const el = $('install');
-  el.replaceChildren();
-  $('chooseGame').textContent = own ? 'Choose a different folder…' : 'Choose your game folder…';
-  if (!own) return;
-  const row = document.createElement('div'), name = document.createElement('span'), meta = document.createElement('span'), gone = document.createElement('button');
-  row.className = 'rowline';
-  name.className = 'name'; name.textContent = own.name; name.title = own.name;
-  meta.className = 'meta'; meta.textContent = `${own.count.toLocaleString()} files${own.compat ? ' · compatibility mode' : ''}`;
-  if (own.compat) meta.title = COMPAT_NOTE;
-  gone.className = 'small'; gone.textContent = 'Stop using';
-  gone.onclick = async () => { await removeGame(); installStatus('The game folder is no longer used. The folder itself is untouched.'); refresh(); };
-  row.append(name, meta, gone);
-  el.append(row);
-}
-$('chooseGame').onclick = async () => {
-  if (!modsSupported()) return useCompatGame();
-  if (busy) return;
-  busy = true;
-  installStatus('Choose the game\'s folder…');
-  try {
-    const g = await chooseGame(t => installStatus('Reading the game: ' + t));
-    if (g) installStatus(`Ready: ${g.count.toLocaleString()} files found in “${g.name}”.`, 'ok');
-    else offerCompat($('installStatus'), 'your game', useCompatGame);
-  } catch (e) { console.error(e); installStatus(e.message, 'bad'); }
-  busy = false;
-  refresh();
-};
+      const installStatus = (text, cls = '') => {
+        $('installStatus').textContent = text;
+        $('installStatus').className = 'status ' + cls;
+      };
+      function showInstall(own) {
+        $('protectedTip').classList.toggle('hidden', !modsSupported());
+        if (!foldersSupported()) {
+          $('chooseGame').classList.add('hidden');
+          $('installOff').classList.remove('hidden');
+          return;
+        }
+        const el = $('install');
+        el.replaceChildren();
+        $('chooseGame').textContent = own ? 'Choose a different folder…' : 'Choose your game folder…';
+        if (!own) return;
+        const row = document.createElement('div'),
+          name = document.createElement('span'),
+          meta = document.createElement('span'),
+          gone = document.createElement('button');
+        row.className = 'rowline';
+        name.className = 'name';
+        name.textContent = own.name;
+        name.title = own.name;
+        meta.className = 'meta';
+        meta.textContent = `${own.count.toLocaleString()} files${own.compat ? ' · compatibility mode' : ''}`;
+        if (own.compat) meta.title = COMPAT_NOTE;
+        gone.className = 'small';
+        gone.textContent = 'Stop using';
+        gone.onclick = async () => {
+          await removeGame();
+          installStatus('The game folder is no longer used. The folder itself is untouched.');
+          refresh();
+        };
+        row.append(name, meta, gone);
+        el.append(row);
+      }
+      $('chooseGame').onclick = async () => {
+        if (!modsSupported()) return useCompatGame();
+        if (busy) return;
+        busy = true;
+        installStatus("Choose the game's folder…");
+        try {
+          const g = await chooseGame(t => installStatus('Reading the game: ' + t));
+          if (g) installStatus(`Ready: ${g.count.toLocaleString()} files found in “${g.name}”.`, 'ok');
+          else offerCompat($('installStatus'), 'your game', useCompatGame);
+        } catch (e) {
+          console.error(e);
+          installStatus(e.message, 'bad');
+        }
+        busy = false;
+        refresh();
+      };
 
-const COMPAT_NOTE = (modsSupported() ? 'Your browser protects the place this folder is installed in (such as Program Files), so it was opened in compatibility mode.'
-  : 'This browser cannot keep access to a folder, so it was opened in compatibility mode.') + ' The browser will not remember the folder after the page reloads: you choose it again each time you launch.';
-const UPLOAD_NOTE = ' If the browser asks whether to “upload” the files: nothing leaves your computer, this page only reads them.';
-function offerCompat(el, what, use) {
-  el.className = 'status';
-  if (!compatSupported()) { el.textContent = ''; return; }
-  const b = document.createElement('button');
-  b.className = 'ask'; b.textContent = 'Choose it in compatibility mode';
-  b.onclick = use;
-  el.replaceChildren(`Did the browser say it “can't open this folder because it contains system files”? Then ${what} is installed in a place it protects, such as Program Files. `, b);
-}
-async function useCompatGame() {
-  if (busy) return;
-  busy = true;
-  installStatus('Choose the game\'s folder…' + UPLOAD_NOTE);
-  try {
-    const g = await chooseGameCompat(t => installStatus('Reading the game: ' + t));
-    installStatus(g ? `Ready: ${g.count.toLocaleString()} files found in “${g.name}”.` : '', g ? 'ok' : '');
-  } catch (e) { console.error(e); installStatus(e.message, 'bad'); }
-  busy = false;
-  refresh();
-}
-async function useCompatMod() {
-  if (busy) return;
-  busy = true;
-  modStatus('Choose the mod\'s folder…' + UPLOAD_NOTE);
-  try {
-    const m = await addModCompat(t => modStatus('Reading the mod: ' + t));
-    modStatus(m ? `${m.name} added: ${m.count.toLocaleString()} files. It loads the next time a battle starts.` : '', m ? 'ok' : '');
-  } catch (e) { console.error(e); modStatus(e.message, 'bad'); }
-  busy = false;
-  showMods();
-}
+      const COMPAT_NOTE =
+        (modsSupported()
+          ? 'Your browser protects the place this folder is installed in (such as Program Files), so it was opened in compatibility mode.'
+          : 'This browser cannot keep access to a folder, so it was opened in compatibility mode.') +
+        ' The browser will not remember the folder after the page reloads: you choose it again each time you launch.';
+      const UPLOAD_NOTE = ' If the browser asks whether to “upload” the files: nothing leaves your computer, this page only reads them.';
+      function offerCompat(el, what, use) {
+        el.className = 'status';
+        if (!compatSupported()) {
+          el.textContent = '';
+          return;
+        }
+        const b = document.createElement('button');
+        b.className = 'ask';
+        b.textContent = 'Choose it in compatibility mode';
+        b.onclick = use;
+        el.replaceChildren(
+          `Did the browser say it “can't open this folder because it contains system files”? Then ${what} is installed in a place it protects, such as Program Files. `,
+          b
+        );
+      }
+      async function useCompatGame() {
+        if (busy) return;
+        busy = true;
+        installStatus("Choose the game's folder…" + UPLOAD_NOTE);
+        try {
+          const g = await chooseGameCompat(t => installStatus('Reading the game: ' + t));
+          installStatus(g ? `Ready: ${g.count.toLocaleString()} files found in “${g.name}”.` : '', g ? 'ok' : '');
+        } catch (e) {
+          console.error(e);
+          installStatus(e.message, 'bad');
+        }
+        busy = false;
+        refresh();
+      }
+      async function useCompatMod() {
+        if (busy) return;
+        busy = true;
+        modStatus("Choose the mod's folder…" + UPLOAD_NOTE);
+        try {
+          const m = await addModCompat(t => modStatus('Reading the mod: ' + t));
+          modStatus(m ? `${m.name} added: ${m.count.toLocaleString()} files. It loads the next time a battle starts.` : '', m ? 'ok' : '');
+        } catch (e) {
+          console.error(e);
+          modStatus(e.message, 'bad');
+        }
+        busy = false;
+        showMods();
+      }
 
-function actionMenu(items) {
-  const wrap = document.createElement('span'), button = document.createElement('button'), list = document.createElement('div');
-  wrap.className = 'actions'; button.className = 'small'; button.textContent = 'Manage ▾'; button.setAttribute('aria-haspopup', 'menu');
-  list.className = 'menu hidden'; list.setAttribute('role', 'menu');
-  for (const it of items) { it.className = ''; it.setAttribute('role', 'menuitem'); it.addEventListener('click', () => close()); list.append(it); }
-  const away = e => { if (!wrap.contains(e.target)) close(); }, key = e => { if (e.key === 'Escape') { close(); button.focus(); } };
-  const close = () => { list.classList.add('hidden'); button.setAttribute('aria-expanded', 'false'); document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); };
-  button.onclick = () => {
-    if (!list.classList.contains('hidden')) return close();
-    for (const other of document.querySelectorAll('.actions .menu:not(.hidden)')) other.closest('.actions').close();
-    list.classList.remove('hidden'); button.setAttribute('aria-expanded', 'true');
-    document.addEventListener('pointerdown', away); document.addEventListener('keydown', key);
-    list.firstElementChild?.focus();
-  };
-  wrap.close = close; wrap.button = button;
-  wrap.append(button, list);
-  return wrap;
-}
+      function actionMenu(items) {
+        const wrap = document.createElement('span'),
+          button = document.createElement('button'),
+          list = document.createElement('div');
+        wrap.className = 'actions';
+        button.className = 'small';
+        button.textContent = 'Manage ▾';
+        button.setAttribute('aria-haspopup', 'menu');
+        list.className = 'menu hidden';
+        list.setAttribute('role', 'menu');
+        for (const it of items) {
+          it.className = '';
+          it.setAttribute('role', 'menuitem');
+          it.addEventListener('click', () => close());
+          list.append(it);
+        }
+        const away = e => {
+            if (!wrap.contains(e.target)) close();
+          },
+          key = e => {
+            if (e.key === 'Escape') {
+              close();
+              button.focus();
+            }
+          };
+        const close = () => {
+          list.classList.add('hidden');
+          button.setAttribute('aria-expanded', 'false');
+          document.removeEventListener('pointerdown', away);
+          document.removeEventListener('keydown', key);
+        };
+        button.onclick = () => {
+          if (!list.classList.contains('hidden')) return close();
+          for (const other of document.querySelectorAll('.actions .menu:not(.hidden)')) other.closest('.actions').close();
+          list.classList.remove('hidden');
+          button.setAttribute('aria-expanded', 'true');
+          document.addEventListener('pointerdown', away);
+          document.addEventListener('keydown', key);
+          list.firstElementChild?.focus();
+        };
+        wrap.close = close;
+        wrap.button = button;
+        wrap.append(button, list);
+        return wrap;
+      }
 
-const modStatus = (text, cls = '') => { $('modStatus').textContent = text; $('modStatus').className = 'status ' + cls; };
-async function showMods() {
-  showEdition();
-  const el = $('mods');
-  el.replaceChildren();
-  $('addMod').classList.toggle('hidden', !foldersSupported());
-  $('addModArchive').classList.toggle('hidden', !archivesSupported());
-  if (!foldersSupported() && !archivesSupported()) {
-    $('modStatus').className = 'status bad';
-    $('modStatus').innerHTML = 'Mods need folder access or the site storage, which this browser has switched off or missing. <button class="ask" data-help>How to turn it on</button>';
-    return;
-  }
-  const all = await listMods();
-  if (!all.length) { const p = document.createElement('p'); p.className = 'note'; p.style.margin = '0'; p.textContent = 'None added. The game plays as it shipped.'; el.append(p); }
-  for (const [at, m] of all.entries()) {
-    const row = document.createElement('div');
-    row.className = 'rowline' + (m.on ? '' : ' off');
-    const use = document.createElement('label'), box = document.createElement('input');
-    box.type = 'checkbox'; box.checked = !!m.on;
-    box.onchange = async () => { await setModOn(m.id, box.checked); showMods(); };
-    use.append(box, 'Use');
-    const name = document.createElement('span'), meta = document.createElement('span');
-    const shown = m.label || m.name;
-    name.className = 'name'; name.textContent = shown; name.title = m.label ? `${m.label} (${m.name})` : m.name;
-    const edit = document.createElement('button');
-    edit.className = 'small'; edit.textContent = 'Rename'; edit.title = 'Give the mod your own name in this list (leave it empty for its own name)';
-    edit.onclick = () => {
-      const field = document.createElement('input');
-      field.className = 'rename'; field.value = shown; field.placeholder = m.name;
-      let done = false;
-      const finish = async keep => { if (done) return; done = true; if (keep && field.value.trim() !== shown) await setModLabel(m.id, field.value); showMods(); };
-      field.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
-      field.onblur = () => finish(true);
-      name.replaceWith(field); edit.disabled = true;
-      field.focus(); field.select();
-    };
-    meta.className = 'meta';
-    const cell = (cls, text) => { const c = document.createElement('span'); c.className = cls; c.textContent = text; c.title = text; return c; };
-    meta.append(cell('src', [m.workshop ? 'Steam Workshop' : m.local ? 'mod folder' : '', m.archive ? mb(m.archive.size) + ' archive' : '', m.compat ? 'compatibility mode' : ''].filter(Boolean).join(' · ')),
-      cell('count', `${(m.count || 0).toLocaleString()} files`), cell('when', new Date(m.scanned).toLocaleDateString()));
-    if (m.compat) meta.title = COMPAT_NOTE;
-    const again = document.createElement('button'), gone = document.createElement('button');
-    again.className = gone.className = 'small';
-    again.textContent = 'Read again'; again.title = 'Read the folder again after the mod was updated on disk';
-    again.onclick = async () => {
-      if (busy) return;
-      busy = true;
-      const tree = m.compat ? await pickFolder() : null;
-      if (m.compat && !tree) { busy = false; return; }
-      try { await rescanMod(m.id, t => modStatus(`${m.name}: ${t}`), tree); modStatus(`${m.name} read again.`, 'ok'); }
-      catch (e) { console.error(e); modStatus(e.message, 'bad'); }
-      busy = false;
+      const modStatus = (text, cls = '') => {
+        $('modStatus').textContent = text;
+        $('modStatus').className = 'status ' + cls;
+      };
+      async function showMods() {
+        showEdition();
+        const el = $('mods');
+        el.replaceChildren();
+        $('addMod').classList.toggle('hidden', !foldersSupported());
+        $('addModArchive').classList.toggle('hidden', !archivesSupported());
+        if (!foldersSupported() && !archivesSupported()) {
+          $('modStatus').className = 'status bad';
+          $('modStatus').innerHTML =
+            'Mods need folder access or the site storage, which this browser has switched off or missing. <button class="ask" data-help>How to turn it on</button>';
+          return;
+        }
+        const all = await listMods();
+        if (!all.length) {
+          const p = document.createElement('p');
+          p.className = 'note';
+          p.style.margin = '0';
+          p.textContent = 'None added. The game plays as it shipped.';
+          el.append(p);
+        }
+        for (const [at, m] of all.entries()) {
+          const row = document.createElement('div');
+          row.className = 'rowline' + (m.on ? '' : ' off');
+          const use = document.createElement('label'),
+            box = document.createElement('input');
+          box.type = 'checkbox';
+          box.checked = !!m.on;
+          box.onchange = async () => {
+            await setModOn(m.id, box.checked);
+            showMods();
+          };
+          use.append(box, 'Use');
+          const name = document.createElement('span'),
+            meta = document.createElement('span');
+          const shown = m.label || m.name;
+          name.className = 'name';
+          name.textContent = shown;
+          name.title = m.label ? `${m.label} (${m.name})` : m.name;
+          const edit = document.createElement('button');
+          edit.className = 'small';
+          edit.textContent = 'Rename';
+          edit.title = 'Give the mod your own name in this list (leave it empty for its own name)';
+          edit.onclick = () => {
+            const field = document.createElement('input');
+            field.className = 'rename';
+            field.value = shown;
+            field.placeholder = m.name;
+            let done = false;
+            const finish = async keep => {
+              if (done) return;
+              done = true;
+              if (keep && field.value.trim() !== shown) await setModLabel(m.id, field.value);
+              showMods();
+            };
+            field.onkeydown = e => {
+              if (e.key === 'Enter') finish(true);
+              else if (e.key === 'Escape') finish(false);
+            };
+            field.onblur = () => finish(true);
+            name.replaceWith(field);
+            edit.disabled = true;
+            field.focus();
+            field.select();
+          };
+          meta.className = 'meta';
+          const cell = (cls, text) => {
+            const c = document.createElement('span');
+            c.className = cls;
+            c.textContent = text;
+            c.title = text;
+            return c;
+          };
+          meta.append(
+            cell(
+              'src',
+              [
+                m.workshop ? 'Steam Workshop' : m.local ? 'mod folder' : '',
+                m.archive ? mb(m.archive.size) + ' archive' : '',
+                m.compat ? 'compatibility mode' : ''
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            ),
+            cell('count', `${(m.count || 0).toLocaleString()} files`),
+            cell('when', new Date(m.scanned).toLocaleDateString())
+          );
+          if (m.compat) meta.title = COMPAT_NOTE;
+          const again = document.createElement('button'),
+            gone = document.createElement('button');
+          again.className = gone.className = 'small';
+          again.textContent = 'Read again';
+          again.title = 'Read the folder again after the mod was updated on disk';
+          again.onclick = async () => {
+            if (busy) return;
+            busy = true;
+            const tree = m.compat ? await pickFolder() : null;
+            if (m.compat && !tree) {
+              busy = false;
+              return;
+            }
+            try {
+              await rescanMod(m.id, t => modStatus(`${m.name}: ${t}`), tree);
+              modStatus(`${m.name} read again.`, 'ok');
+            } catch (e) {
+              console.error(e);
+              modStatus(e.message, 'bad');
+            }
+            busy = false;
+            showMods();
+          };
+          gone.textContent = 'Remove';
+          gone.onclick = async () => {
+            await removeMod(m.id);
+            modStatus(
+              m.archive
+                ? `${m.name} removed, and its archive deleted from this browser's storage.`
+                : m.workshop
+                  ? `${m.name} removed from the list. It stays installed in Steam.`
+                  : `${m.name} removed from the list. The folder itself is untouched.`
+            );
+            showMods();
+          };
+          if (m.local) meta.title = m.local;
+          const order = document.createElement('span');
+          order.className = 'order';
+          if (all.length > 1)
+            for (const [by, sign, tip] of [
+              [-1, '▲', 'Move up: under the mods below it'],
+              [1, '▼', 'Move down: over the mods above it']
+            ]) {
+              const b = document.createElement('button');
+              b.textContent = sign;
+              b.title = tip;
+              b.disabled = at + by < 0 || at + by >= all.length;
+              b.onclick = async () => {
+                await moveMod(m.id, by);
+                showMods();
+              };
+              order.append(b);
+            }
+          const more = actionMenu([edit, ...(m.archive ? [] : [again]), gone]);
+          edit.addEventListener('click', () => {
+            more.button.disabled = true;
+          });
+          row.append(order, use, name, meta, more);
+          el.append(row);
+        }
+        const off = app ? dismissedLocal().length : 0;
+        if (off) {
+          const p = document.createElement('p'),
+            back = document.createElement('button');
+          p.className = 'note';
+          p.textContent = `${off === 1 ? 'A mod from your mod folders was' : off + ' mods from your mod folders were'} removed from this list. `;
+          back.className = 'small';
+          back.textContent = 'Put back';
+          back.onclick = async () => {
+            if (busy) return;
+            restoreLocal();
+            await findLocal();
+          };
+          p.append(back);
+          el.append(p);
+        }
+        showProfiles(all);
+      }
+
+      function showProfiles(all) {
+        const kept = listProfiles(),
+          el = $('profileList');
+        $('profiles').classList.toggle('hidden', !all.length && !kept.length);
+        el.replaceChildren();
+        const label = n => all.find(m => m.name === n)?.label || n;
+        for (const p of kept) {
+          const row = document.createElement('div'),
+            name = document.createElement('span'),
+            meta = document.createElement('span');
+          const on = p.mods.filter(e => e.on),
+            cur = profileInUse(p, all);
+          row.className = 'rowline' + (cur ? ' cur' : '');
+          name.className = 'name';
+          name.textContent = p.name;
+          name.title = on.length ? on.map(e => label(e.name)).join(' → ') : 'No mods: the game as it shipped';
+          meta.className = 'meta';
+          meta.textContent = `${on.length ? on.length + (on.length === 1 ? ' mod' : ' mods') : 'no mods'} · ${new Date(p.saved).toLocaleDateString()}`;
+          const load = document.createElement('button'),
+            over = document.createElement('button'),
+            gone = document.createElement('button');
+          load.className = over.className = gone.className = 'small';
+          load.textContent = 'Load';
+          load.disabled = cur;
+          load.onclick = async () => {
+            if (busy) return;
+            const r = await loadProfile(p.name);
+            modStatus(
+              !r
+                ? `Profile “${p.name}” is gone.`
+                : r.missing.length
+                  ? `Profile “${p.name}” loaded, but ${r.missing.length === 1 ? 'this mod is' : 'these mods are'} no longer in the list: ${r.missing.join(', ')}.`
+                  : `Profile “${p.name}” loaded.`,
+              r && !r.missing.length ? 'ok' : 'bad'
+            );
+            showMods();
+          };
+          over.textContent = 'Overwrite';
+          over.title = 'Keep the mods as they are now under this name';
+          over.onclick = async () => {
+            if (await saveProfile(p.name)) modStatus(`Profile “${p.name}” now holds the mods as they are.`, 'ok');
+            showMods();
+          };
+          gone.textContent = 'Delete';
+          gone.onclick = () => {
+            deleteProfile(p.name);
+            modStatus(`Profile “${p.name}” deleted. The mods themselves are untouched.`);
+            showMods();
+          };
+          row.append(name, meta, load, over, gone);
+          el.append(row);
+        }
+      }
+      $('saveProfile').onsubmit = async e => {
+        e.preventDefault();
+        const name = $('profileName').value.trim();
+        if (!name) {
+          $('profileName').focus();
+          return;
+        }
+        const had = listProfiles().some(p => p.name === name);
+        if (await saveProfile(name)) {
+          modStatus(`Profile “${name}” ${had ? 'overwritten' : 'saved'}.`, 'ok');
+          $('profileName').value = '';
+        } else modStatus('The profile could not be kept: this browser refused the storage.', 'bad');
+        showMods();
+      };
+      $('addMod').onclick = async () => {
+        if (app) return addAppSource();
+        if (!modsSupported()) return useCompatMod();
+        if (busy) return;
+        busy = true;
+        modStatus("Choose the mod's folder…");
+        try {
+          const m = await addMod(t => modStatus('Reading the mod: ' + t));
+          if (m) modStatus(`${m.name} added: ${m.count.toLocaleString()} files. It loads the next time a battle starts.`, 'ok');
+          else offerCompat($('modStatus'), 'the mod', useCompatMod);
+        } catch (e) {
+          console.error(e);
+          modStatus(e.message, 'bad');
+        }
+        busy = false;
+        showMods();
+      };
+      $('addModArchive').onclick = () => {
+        if (!busy) $('modFile').click();
+      };
+      $('modFile').onchange = async () => {
+        const f = $('modFile').files[0];
+        $('modFile').value = '';
+        if (!f || busy) return;
+        if (/\.(zip|7z|rar)$/i.test(f.name)) {
+          modStatus(`“${f.name}” is not a .tar. Make a .tar of the mod's folder, as for the game.`, 'bad');
+          return;
+        }
+        const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
+        if (!/\.t?gz$/i.test(f.name) && est && est.quota && f.size > est.quota - (est.usage || 0)) {
+          modStatus(
+            `Not enough room: the archive needs ${mb(f.size)}, this browser lets the page keep ${mb(est.quota - (est.usage || 0))} more. Free up disk space and try again.`,
+            'bad'
+          );
+          return;
+        }
+        busy = true;
+        const t0 = performance.now();
+        modStatus(`Importing ${f.name}…`);
+        try {
+          const m = await addModArchive(f, t => modStatus(`Importing ${f.name}: ${t}`));
+          modStatus(
+            `${m.name} imported in ${((performance.now() - t0) / 1000).toFixed(0)} s: ${m.count.toLocaleString()} files. It loads the next time a battle starts.`,
+            'ok'
+          );
+        } catch (e) {
+          console.error(e);
+          modStatus(
+            e.name === 'QuotaExceededError'
+              ? 'Import failed: the browser ran out of storage space for this site. Free up disk space, or add the mod folder instead.'
+              : 'Import failed: ' + e.message,
+            'bad'
+          );
+        }
+        busy = false;
+        showMods();
+        refresh();
+      };
+
+      await startServiceWorker({ mayReload: () => !busy });
+      let setup = null;
+      const HOW = {
+        steam: 'found through Steam',
+        chosen: 'chosen by you',
+        env: 'set by SWR_GAME',
+        dev: 'the copy next to the app (development)'
+      };
+      const KIND = {
+        workshop: 'Steam Workshop: found through Steam',
+        game: "the game's own Mods folder: found with the game",
+        added: 'added by you'
+      };
+      const row = (...parts) => {
+        const r = document.createElement('div');
+        r.className = 'rowline';
+        r.append(...parts);
+        return r;
+      };
+      const span = (cls, text, title) => {
+        const s = document.createElement('span');
+        s.className = cls;
+        s.textContent = text;
+        if (title) s.title = title;
+        return s;
+      };
+      const gameStatus = (text, cls = '') => {
+        $('appGameStatus').textContent = text;
+        $('appGameStatus').className = 'status ' + cls;
+      };
+      const button = (text, onclick, title) => {
+        const b = document.createElement('button');
+        b.className = 'small';
+        b.textContent = text;
+        if (title) b.title = title;
+        b.onclick = onclick;
+        return b;
+      };
+      async function changeSetup(what, params, status) {
+        if (busy) return false;
+        busy = true;
+        try {
+          setup = await appSetup(what, params);
+          return true;
+        } catch (e) {
+          status(e.message, 'bad');
+          return false;
+        } finally {
+          busy = false;
+        }
+      }
+      function showAppGame() {
+        const el = $('appGame'),
+          g = setup.game;
+        el.replaceChildren();
+        const h = document.createElement('p');
+        h.className = 'note';
+        h.style.marginTop = '0';
+        h.textContent = g.path
+          ? 'The game is played from this folder. Choose another to play a different copy:'
+          : 'No game folder was found. Choose the folder the game is installed in (the one with GameData and corruption):';
+        const choose = button(g.path ? 'Choose another folder…' : 'Choose your game folder…', async () => {
+          const path = await appPickFolder('The folder the game is installed in', g.path || g.steam);
+          if (!path) return;
+          gameStatus('Opening the game…');
+          if (await changeSetup('game', { path }, gameStatus)) location.reload();
+        });
+        const parts = g.path ? [span('path', g.path, g.path), span('meta', HOW[g.how] || g.how)] : [];
+        if (g.how === 'chosen' && g.steam)
+          parts.push(
+            button(
+              "Use Steam's",
+              async () => {
+                if (await changeSetup('game', { path: '' }, gameStatus)) location.reload();
+              },
+              'Play from the folder Steam has the game in: ' + g.steam
+            )
+          );
+        el.append(h, ...(g.path ? [row(...parts)] : []));
+        const p = document.createElement('p');
+        p.className = 'modadd';
+        p.append(choose);
+        el.append(p);
+      }
+      function showAppSources() {
+        const el = $('appSources');
+        el.replaceChildren();
+        const h = document.createElement('h3');
+        h.textContent = 'Mod folders';
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.textContent =
+          "Every mod in these folders is on the list above, turned off until you use it. Add a mod's own folder (the one with Data in it) or a folder that holds several mods.";
+        el.append(h, note);
+        for (const s of setup.sources) {
+          el.append(
+            row(
+              span('path', s.path, s.path),
+              span('meta', `${KIND[s.kind] || s.kind} · ${s.mods} mod${s.mods === 1 ? '' : 's'}`),
+              button(
+                'Remove',
+                async () => {
+                  if (await changeSetup('source', { remove: s.path }, modStatus)) {
+                    modStatus(`${s.path} is no longer read for mods. The folder itself is untouched.`, 'ok');
+                    await findLocal();
+                  }
+                },
+                'Stop reading this folder for mods: its mods come off the list'
+              )
+            )
+          );
+        }
+        if (!setup.sources.length) {
+          const p = document.createElement('p');
+          p.className = 'note';
+          p.textContent = 'None.';
+          el.append(p);
+        }
+        for (const path of setup.hidden) {
+          const p = document.createElement('p');
+          p.className = 'note';
+          p.append(
+            `Found but removed by you: ${path} `,
+            button('Put back', async () => {
+              if (await changeSetup('source', { restore: path }, modStatus)) {
+                restoreLocal(path);
+                await findLocal();
+              }
+            })
+          );
+          el.append(p);
+        }
+      }
+      async function addAppSource() {
+        if (busy) return;
+        const path = await appPickFolder("A mod's folder, or a folder of mods");
+        if (!path) return;
+        if (await changeSetup('source', { add: path }, modStatus)) {
+          restoreLocal(path);
+          const s = setup.sources.find(x => x.path.toLowerCase() === path.toLowerCase());
+          if (s && !s.mods) modStatus(`No mod found in ${path}: a mod's folder has a Data folder in it.`, 'bad');
+          await findLocal();
+        }
+      }
+      async function findLocal() {
+        if (!app) return;
+        if (!setup) setup = await appSetup().catch(() => null);
+        if (!setup) return;
+        showAppGame();
+        showAppSources();
+        busy = true;
+        try {
+          const r = await syncLocalMods(t => modStatus('Reading the mods: ' + t));
+          const said =
+            r &&
+            [
+              [r.added, 'added (turned off)'],
+              [r.updated, 'read again: changed'],
+              [r.removed, 'removed: no longer in your mod folders']
+            ]
+              .filter(([names]) => names.length)
+              .map(([names, what]) => `${names.join(', ')} ${what}`);
+          if (said && said.length) modStatus(said.join('; ') + '.', 'ok');
+          else if (/^Reading the mods/.test($('modStatus').textContent)) modStatus('');
+        } catch (e) {
+          console.error(e);
+          modStatus('Mods: ' + e.message, 'bad');
+        }
+        busy = false;
+        setup = await appSetup().catch(() => setup);
+        showAppSources();
+        showMods();
+      }
+      if (app) {
+        for (const id of ['appGame', 'appSources']) $(id).classList.remove('hidden');
+        for (const el of document.querySelectorAll('.ways, #waysNote')) el.classList.add('hidden');
+        $('modHint').textContent =
+          'Mods are read where they are, through the app; nothing is copied or changed, and removing one here leaves its folder as it was. They are laid over the game in the order shown, the last on top.';
+      }
       showMods();
-    };
-    gone.textContent = 'Remove';
-    gone.onclick = async () => { await removeMod(m.id); modStatus(m.archive ? `${m.name} removed, and its archive deleted from this browser's storage.` : m.workshop ? `${m.name} removed from the list. It stays installed in Steam.` : `${m.name} removed from the list. The folder itself is untouched.`); showMods(); };
-    if (m.local) meta.title = m.local;
-    const order = document.createElement('span');
-    order.className = 'order';
-    if (all.length > 1) for (const [by, sign, tip] of [[-1, '▲', 'Move up: under the mods below it'], [1, '▼', 'Move down: over the mods above it']]) {
-      const b = document.createElement('button');
-      b.textContent = sign; b.title = tip; b.disabled = at + by < 0 || at + by >= all.length;
-      b.onclick = async () => { await moveMod(m.id, by); showMods(); };
-      order.append(b);
-    }
-    const more = actionMenu([edit, ...(m.archive ? [] : [again]), gone]);
-    edit.addEventListener('click', () => { more.button.disabled = true; });
-    row.append(order, use, name, meta, more);
-    el.append(row);
-  }
-  const off = app ? dismissedLocal().length : 0;
-  if (off) {
-    const p = document.createElement('p'), back = document.createElement('button');
-    p.className = 'note'; p.textContent = `${off === 1 ? 'A mod from your mod folders was' : off + ' mods from your mod folders were'} removed from this list. `;
-    back.className = 'small'; back.textContent = 'Put back';
-    back.onclick = async () => { if (busy) return; restoreLocal(); await findLocal(); };
-    p.append(back); el.append(p);
-  }
-  showProfiles(all);
-}
-
-function showProfiles(all) {
-  const kept = listProfiles(), el = $('profileList');
-  $('profiles').classList.toggle('hidden', !all.length && !kept.length);
-  el.replaceChildren();
-  const label = n => all.find(m => m.name === n)?.label || n;
-  for (const p of kept) {
-    const row = document.createElement('div'), name = document.createElement('span'), meta = document.createElement('span');
-    const on = p.mods.filter(e => e.on), cur = profileInUse(p, all);
-    row.className = 'rowline' + (cur ? ' cur' : '');
-    name.className = 'name'; name.textContent = p.name;
-    name.title = on.length ? on.map(e => label(e.name)).join(' → ') : 'No mods: the game as it shipped';
-    meta.className = 'meta'; meta.textContent = `${on.length ? on.length + (on.length === 1 ? ' mod' : ' mods') : 'no mods'} · ${new Date(p.saved).toLocaleDateString()}`;
-    const load = document.createElement('button'), over = document.createElement('button'), gone = document.createElement('button');
-    load.className = over.className = gone.className = 'small';
-    load.textContent = 'Load'; load.disabled = cur;
-    load.onclick = async () => {
-      if (busy) return;
-      const r = await loadProfile(p.name);
-      modStatus(!r ? `Profile “${p.name}” is gone.` : r.missing.length ? `Profile “${p.name}” loaded, but ${r.missing.length === 1 ? 'this mod is' : 'these mods are'} no longer in the list: ${r.missing.join(', ')}.` : `Profile “${p.name}” loaded.`, r && !r.missing.length ? 'ok' : 'bad');
-      showMods();
-    };
-    over.textContent = 'Overwrite'; over.title = 'Keep the mods as they are now under this name';
-    over.onclick = async () => { if (await saveProfile(p.name)) modStatus(`Profile “${p.name}” now holds the mods as they are.`, 'ok'); showMods(); };
-    gone.textContent = 'Delete';
-    gone.onclick = () => { deleteProfile(p.name); modStatus(`Profile “${p.name}” deleted. The mods themselves are untouched.`); showMods(); };
-    row.append(name, meta, load, over, gone);
-    el.append(row);
-  }
-}
-$('saveProfile').onsubmit = async e => {
-  e.preventDefault();
-  const name = $('profileName').value.trim();
-  if (!name) { $('profileName').focus(); return; }
-  const had = listProfiles().some(p => p.name === name);
-  if (await saveProfile(name)) { modStatus(`Profile “${name}” ${had ? 'overwritten' : 'saved'}.`, 'ok'); $('profileName').value = ''; }
-  else modStatus('The profile could not be kept: this browser refused the storage.', 'bad');
-  showMods();
-};
-$('addMod').onclick = async () => {
-  if (app) return addAppSource();
-  if (!modsSupported()) return useCompatMod();
-  if (busy) return;
-  busy = true;
-  modStatus('Choose the mod\'s folder…');
-  try {
-    const m = await addMod(t => modStatus('Reading the mod: ' + t));
-    if (m) modStatus(`${m.name} added: ${m.count.toLocaleString()} files. It loads the next time a battle starts.`, 'ok');
-    else offerCompat($('modStatus'), 'the mod', useCompatMod);
-  } catch (e) { console.error(e); modStatus(e.message, 'bad'); }
-  busy = false;
-  showMods();
-};
-$('addModArchive').onclick = () => { if (!busy) $('modFile').click(); };
-$('modFile').onchange = async () => {
-  const f = $('modFile').files[0];
-  $('modFile').value = '';
-  if (!f || busy) return;
-  if (/\.(zip|7z|rar)$/i.test(f.name)) { modStatus(`“${f.name}” is not a .tar. Make a .tar of the mod's folder, as for the game.`, 'bad'); return; }
-  const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
-  if (!/\.t?gz$/i.test(f.name) && est && est.quota && f.size > est.quota - (est.usage || 0)) {
-    modStatus(`Not enough room: the archive needs ${mb(f.size)}, this browser lets the page keep ${mb(est.quota - (est.usage || 0))} more. Free up disk space and try again.`, 'bad');
-    return;
-  }
-  busy = true;
-  const t0 = performance.now();
-  modStatus(`Importing ${f.name}…`);
-  try {
-    const m = await addModArchive(f, t => modStatus(`Importing ${f.name}: ${t}`));
-    modStatus(`${m.name} imported in ${((performance.now() - t0) / 1000).toFixed(0)} s: ${m.count.toLocaleString()} files. It loads the next time a battle starts.`, 'ok');
-  } catch (e) {
-    console.error(e);
-    modStatus(e.name === 'QuotaExceededError' ? 'Import failed: the browser ran out of storage space for this site. Free up disk space, or add the mod folder instead.' : 'Import failed: ' + e.message, 'bad');
-  }
-  busy = false;
-  showMods();
-  refresh();
-};
-
-await startServiceWorker({ mayReload: () => !busy });
-let setup = null;
-const HOW = { steam: 'found through Steam', chosen: 'chosen by you', env: 'set by SWR_GAME', dev: 'the copy next to the app (development)' };
-const KIND = { workshop: 'Steam Workshop: found through Steam', game: 'the game\'s own Mods folder: found with the game', added: 'added by you' };
-const row = (...parts) => { const r = document.createElement('div'); r.className = 'rowline'; r.append(...parts); return r; };
-const span = (cls, text, title) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; if (title) s.title = title; return s; };
-const gameStatus = (text, cls = '') => { $('appGameStatus').textContent = text; $('appGameStatus').className = 'status ' + cls; };
-const button = (text, onclick, title) => { const b = document.createElement('button'); b.className = 'small'; b.textContent = text; if (title) b.title = title; b.onclick = onclick; return b; };
-async function changeSetup(what, params, status) {
-  if (busy) return false;
-  busy = true;
-  try { setup = await appSetup(what, params); return true; }
-  catch (e) { status(e.message, 'bad'); return false; }
-  finally { busy = false; }
-}
-function showAppGame() {
-  const el = $('appGame'), g = setup.game;
-  el.replaceChildren();
-  const h = document.createElement('p');
-  h.className = 'note'; h.style.marginTop = '0';
-  h.textContent = g.path ? 'The game is played from this folder. Choose another to play a different copy:' : 'No game folder was found. Choose the folder the game is installed in (the one with GameData and corruption):';
-  const choose = button(g.path ? 'Choose another folder…' : 'Choose your game folder…', async () => {
-    const path = await appPickFolder('The folder the game is installed in', g.path || g.steam);
-    if (!path) return;
-    gameStatus('Opening the game…');
-    if (await changeSetup('game', { path }, gameStatus)) location.reload();
-  });
-  const parts = g.path ? [span('path', g.path, g.path), span('meta', HOW[g.how] || g.how)] : [];
-  if (g.how === 'chosen' && g.steam) parts.push(button('Use Steam\'s', async () => { if (await changeSetup('game', { path: '' }, gameStatus)) location.reload(); }, 'Play from the folder Steam has the game in: ' + g.steam));
-  el.append(h, ...(g.path ? [row(...parts)] : []));
-  const p = document.createElement('p'); p.className = 'modadd'; p.append(choose); el.append(p);
-}
-function showAppSources() {
-  const el = $('appSources');
-  el.replaceChildren();
-  const h = document.createElement('h3'); h.textContent = 'Mod folders';
-  const note = document.createElement('p'); note.className = 'note';
-  note.textContent = 'Every mod in these folders is on the list above, turned off until you use it. Add a mod\'s own folder (the one with Data in it) or a folder that holds several mods.';
-  el.append(h, note);
-  for (const s of setup.sources) {
-    el.append(row(span('path', s.path, s.path), span('meta', `${KIND[s.kind] || s.kind} · ${s.mods} mod${s.mods === 1 ? '' : 's'}`),
-      button('Remove', async () => {
-        if (await changeSetup('source', { remove: s.path }, modStatus)) { modStatus(`${s.path} is no longer read for mods. The folder itself is untouched.`, 'ok'); await findLocal(); }
-      }, 'Stop reading this folder for mods: its mods come off the list')));
-  }
-  if (!setup.sources.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'None.'; el.append(p); }
-  for (const path of setup.hidden) {
-    const p = document.createElement('p'); p.className = 'note';
-    p.append(`Found but removed by you: ${path} `, button('Put back', async () => { if (await changeSetup('source', { restore: path }, modStatus)) { restoreLocal(path); await findLocal(); } }));
-    el.append(p);
-  }
-}
-async function addAppSource() {
-  if (busy) return;
-  const path = await appPickFolder('A mod\'s folder, or a folder of mods');
-  if (!path) return;
-  if (await changeSetup('source', { add: path }, modStatus)) {
-    restoreLocal(path);
-    const s = setup.sources.find(x => x.path.toLowerCase() === path.toLowerCase());
-    if (s && !s.mods) modStatus(`No mod found in ${path}: a mod's folder has a Data folder in it.`, 'bad');
-    await findLocal();
-  }
-}
-async function findLocal() {
-  if (!app) return;
-  if (!setup) setup = await appSetup().catch(() => null);
-  if (!setup) return;
-  showAppGame(); showAppSources();
-  busy = true;
-  try {
-    const r = await syncLocalMods(t => modStatus('Reading the mods: ' + t));
-    const said = r && [[r.added, 'added (turned off)'], [r.updated, 'read again: changed'], [r.removed, 'removed: no longer in your mod folders']]
-      .filter(([names]) => names.length).map(([names, what]) => `${names.join(', ')} ${what}`);
-    if (said && said.length) modStatus(said.join('; ') + '.', 'ok');
-    else if (/^Reading the mods/.test($('modStatus').textContent)) modStatus('');
-  } catch (e) { console.error(e); modStatus('Mods: ' + e.message, 'bad'); }
-  busy = false;
-  setup = await appSetup().catch(() => setup);
-  showAppSources();
-  showMods();
-}
-if (app) {
-  for (const id of ['appGame', 'appSources']) $(id).classList.remove('hidden');
-  for (const el of document.querySelectorAll('.ways, #waysNote')) el.classList.add('hidden');
-  $('modHint').textContent = 'Mods are read where they are, through the app; nothing is copied or changed, and removing one here leaves its folder as it was. They are laid over the game in the order shown, the last on top.';
-}
-showMods();
-findLocal();
-desktopStrip();
-if (modsSupported()) nameMods().then(changed => changed && showMods(), e => console.warn('mod names:', e));
-refresh();
-</script>
-</body>
+      findLocal();
+      desktopStrip();
+      if (modsSupported())
+        nameMods().then(
+          changed => changed && showMods(),
+          e => console.warn('mod names:', e)
+        );
+      refresh();
+    </script>
+  </body>
 </html>

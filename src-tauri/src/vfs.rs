@@ -4,13 +4,20 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-pub const LANGUAGES: [&str; 11] = ["ENGLISH", "GERMAN", "FRENCH", "SPANISH", "ITALIAN", "JAPANESE", "KOREAN", "CHINESE", "RUSSIAN", "POLISH", "THAI"];
+pub const LANGUAGES: [&str; 11] = [
+    "ENGLISH", "GERMAN", "FRENCH", "SPANISH", "ITALIAN", "JAPANESE", "KOREAN", "CHINESE",
+    "RUSSIAN", "POLISH", "THAI",
+];
 
 pub fn language_id(value: &str) -> Option<usize> {
     if value.is_empty() {
         return None;
     }
-    let id = if value.bytes().all(|b| b.is_ascii_digit()) { value.parse::<usize>().ok()? } else { LANGUAGES.iter().position(|l| *l == value.to_uppercase())? };
+    let id = if value.bytes().all(|b| b.is_ascii_digit()) {
+        value.parse::<usize>().ok()?
+    } else {
+        LANGUAGES.iter().position(|l| *l == value.to_uppercase())?
+    };
     (id < LANGUAGES.len()).then_some(id)
 }
 
@@ -87,7 +94,10 @@ fn find_case_insensitive(root: &Path, rel: &str) -> Option<PathBuf> {
     let mut cur = root.to_path_buf();
     for part in rel.split('/') {
         let want = part.to_lowercase();
-        let hit = fs::read_dir(&cur).ok()?.flatten().find(|e| e.file_name().to_string_lossy().to_lowercase() == want)?;
+        let hit = fs::read_dir(&cur)
+            .ok()?
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().to_lowercase() == want)?;
         cur = cur.join(hit.file_name());
     }
     Some(cur)
@@ -96,13 +106,19 @@ fn find_case_insensitive(root: &Path, rel: &str) -> Option<PathBuf> {
 fn mega_files(xml: &Path) -> Vec<String> {
     let text = latin1(&fs::read(xml).unwrap_or_default());
     let rx = regex::Regex::new(r"<File>\s*([^<]+?)\s*</File>").unwrap();
-    rx.captures_iter(&text).map(|c| c[1].replace('\\', "/")).collect()
+    rx.captures_iter(&text)
+        .map(|c| c[1].replace('\\', "/"))
+        .collect()
 }
 
 fn meg_list(root: &Path, language: usize) -> Vec<String> {
     let mut out = mega_files(&root.join("Data").join("megafiles.xml"));
     out.extend(["Data/Patch.meg", "Data/Patch2.meg", "Data/64Patch.meg"].map(String::from));
-    for f in ["sfx2d_non_localized".to_string(), "sfx3d_non_localized".to_string(), format!("sfx2d_{}", language_name(language))] {
+    for f in [
+        "sfx2d_non_localized".to_string(),
+        "sfx3d_non_localized".to_string(),
+        format!("sfx2d_{}", language_name(language)),
+    ] {
         out.push(format!("Data/Audio/SFX/{f}.meg"));
     }
     out
@@ -136,7 +152,9 @@ impl Files {
 
     fn read_meg_index(&mut self, path: &Path) -> Entries {
         let mut entries = Entries::new();
-        let Some(i) = self.open(path) else { return entries };
+        let Some(i) = self.open(path) else {
+            return entries;
+        };
         let f = &self.handles[i];
         let mut head = [0u8; 8];
         if read_at(f, &mut head, 0).is_err() {
@@ -149,21 +167,39 @@ impl Files {
         if read_at(f, &mut buf, 0).is_err() {
             return entries;
         }
-        let u16at = |p: usize| buf.get(p..p + 2).map(|b| u16::from_le_bytes(b.try_into().unwrap()) as usize);
-        let u32at = |p: usize| buf.get(p..p + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+        let u16at = |p: usize| {
+            buf.get(p..p + 2)
+                .map(|b| u16::from_le_bytes(b.try_into().unwrap()) as usize)
+        };
+        let u32at = |p: usize| {
+            buf.get(p..p + 4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        };
         let mut p = 8;
         let mut names = Vec::with_capacity(n_names);
         for _ in 0..n_names {
             let Some(l) = u16at(p) else { return entries };
             p += 2;
-            let Some(s) = buf.get(p..p + l) else { return entries };
+            let Some(s) = buf.get(p..p + l) else {
+                return entries;
+            };
             names.push(latin1(s));
             p += l;
         }
         for _ in 0..n_files {
-            let (Some(size), Some(off), Some(name)) = (u32at(p + 8), u32at(p + 12), u32at(p + 16)) else { break };
+            let (Some(size), Some(off), Some(name)) = (u32at(p + 8), u32at(p + 12), u32at(p + 16))
+            else {
+                break;
+            };
             if let Some(n) = names.get(name as usize) {
-                entries.insert(n.to_uppercase(), Some(Entry { src: Src::Meg(i), off: Some(off as u64), size: size as u64 }));
+                entries.insert(
+                    n.to_uppercase(),
+                    Some(Entry {
+                        src: Src::Meg(i),
+                        off: Some(off as u64),
+                        size: size as u64,
+                    }),
+                );
             }
             p += 20;
         }
@@ -172,7 +208,9 @@ impl Files {
 }
 
 fn index_loose(root: &Path, dir: &str, entries: &mut Entries) {
-    let Ok(list) = fs::read_dir(root.join(dir)) else { return };
+    let Ok(list) = fs::read_dir(root.join(dir)) else {
+        return;
+    };
     for e in list.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let rel = format!("{dir}/{name}");
@@ -183,22 +221,34 @@ fn index_loose(root: &Path, dir: &str, entries: &mut Entries) {
             let file = root.join(&rel);
             let size = fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
             let key = rel.replace('/', "\\").to_uppercase();
-            entries.insert(key, (size > 0).then(|| Entry { src: Src::File(Arc::new(file)), off: None, size }));
+            entries.insert(
+                key,
+                (size > 0).then(|| Entry {
+                    src: Src::File(Arc::new(file)),
+                    off: None,
+                    size,
+                }),
+            );
         }
     }
 }
 
 fn be16(d: &[u8], p: usize) -> Option<usize> {
-    d.get(p..p + 2).map(|b| u16::from_be_bytes(b.try_into().unwrap()) as usize)
+    d.get(p..p + 2)
+        .map(|b| u16::from_be_bytes(b.try_into().unwrap()) as usize)
 }
 fn be32(d: &[u8], p: usize) -> Option<usize> {
-    d.get(p..p + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap()) as usize)
+    d.get(p..p + 4)
+        .map(|b| u32::from_be_bytes(b.try_into().unwrap()) as usize)
 }
 
 fn embedded_fonts(d: &[u8]) -> Vec<(String, usize, usize)> {
     let mut out = vec![];
     let mut i = 0;
-    while let Some(at) = d.get(i..).and_then(|s| s.windows(4).position(|w| w == [0, 1, 0, 0])) {
+    while let Some(at) = d
+        .get(i..)
+        .and_then(|s| s.windows(4).position(|w| w == [0, 1, 0, 0]))
+    {
         let start = i + at;
         i = start + 4;
         let Some(n) = be16(d, start + 4) else { break };
@@ -223,7 +273,9 @@ fn embedded_fonts(d: &[u8]) -> Vec<(String, usize, usize)> {
             continue;
         }
         let mut ps = String::new();
-        let (Some(count), Some(strings)) = (be16(d, name_at + 2), be16(d, name_at + 4)) else { continue };
+        let (Some(count), Some(strings)) = (be16(d, name_at + 2), be16(d, name_at + 4)) else {
+            continue;
+        };
         let strings = name_at + strings;
         for k in 0..count {
             if !ps.is_empty() {
@@ -233,11 +285,23 @@ fn embedded_fonts(d: &[u8]) -> Vec<(String, usize, usize)> {
             if be16(d, o + 6) != Some(6) {
                 continue;
             }
-            let (Some(platform), Some(len), Some(off)) = (be16(d, o), be16(d, o + 8), be16(d, o + 10)) else { continue };
-            let raw = d.get(strings + off..strings + off + len).unwrap_or_default();
-            ps = if platform == 1 { latin1(raw) } else { latin1(raw).replace('\0', "") };
+            let (Some(platform), Some(len), Some(off)) =
+                (be16(d, o), be16(d, o + 8), be16(d, o + 10))
+            else {
+                continue;
+            };
+            let raw = d
+                .get(strings + off..strings + off + len)
+                .unwrap_or_default();
+            ps = if platform == 1 {
+                latin1(raw)
+            } else {
+                latin1(raw).replace('\0', "")
+            };
         }
-        let good = ps.strip_prefix("EmpireAtWar-").is_some_and(|r| !r.is_empty() && r.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+        let good = ps.strip_prefix("EmpireAtWar-").is_some_and(|r| {
+            !r.is_empty() && r.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
         if good {
             out.push((ps, start, end));
         }
@@ -250,7 +314,10 @@ impl Game {
         let mut files = Files::default();
         let mut layers = vec![];
         let mut index = Index::new();
-        let mount = |layers: &mut Vec<Layer>, index: &mut Index, root: Option<PathBuf>, entries: Entries| {
+        let mount = |layers: &mut Vec<Layer>,
+                     index: &mut Index,
+                     root: Option<PathBuf>,
+                     entries: Entries| {
             apply(index, &entries);
             layers.push(Layer { root, entries });
         };
@@ -288,18 +355,31 @@ impl Game {
                     }
                 }
             }
-            let data = find_case_insensitive(root, "Data").and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or("Data".into());
+            let data = find_case_insensitive(root, "Data")
+                .and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or("Data".into());
             let mut loose = Entries::new();
             index_loose(root, &data, &mut loose);
             mount(&mut layers, &mut index, None, loose);
         }
 
-        for root in if expansion { vec!["corruption", "GameData"] } else { vec!["GameData"] } {
-            let Some(exe) = find_case_insensitive(game_dir, &format!("{root}/StarWarsG.exe")) else { continue };
+        for root in if expansion {
+            vec!["corruption", "GameData"]
+        } else {
+            vec!["GameData"]
+        } {
+            let Some(exe) = find_case_insensitive(game_dir, &format!("{root}/StarWarsG.exe"))
+            else {
+                continue;
+            };
             let d = fs::read(&exe).unwrap_or_default();
             let exe = Arc::new(exe);
             for (ps, off, size) in embedded_fonts(&d) {
-                let e = Entry { src: Src::File(exe.clone()), off: Some(off as u64), size: size as u64 };
+                let e = Entry {
+                    src: Src::File(exe.clone()),
+                    off: Some(off as u64),
+                    size: size as u64,
+                };
                 let key = format!("Data\\Fonts\\{ps}.ttf").to_uppercase();
                 if !index.contains_key(&key) {
                     index.insert(key, e.clone());
@@ -308,10 +388,27 @@ impl Game {
             }
             break;
         }
-        let fonts = index.iter().filter(|(k, e)| k.starts_with("DATA\\FONTS\\") && e.off.is_some() && e.file().is_some()).map(|(k, e)| (k.clone(), e.clone())).collect();
-        let game = Arc::new(Game { layers, fonts, files: Mutex::new(files), languages: Mutex::new(HashMap::new()) });
-        let view = Arc::new(View { index, game: game.clone() });
-        game.languages.lock().unwrap().insert(language, view.clone());
+        let fonts = index
+            .iter()
+            .filter(|(k, e)| {
+                k.starts_with("DATA\\FONTS\\") && e.off.is_some() && e.file().is_some()
+            })
+            .map(|(k, e)| (k.clone(), e.clone()))
+            .collect();
+        let game = Arc::new(Game {
+            layers,
+            fonts,
+            files: Mutex::new(files),
+            languages: Mutex::new(HashMap::new()),
+        });
+        let view = Arc::new(View {
+            index,
+            game: game.clone(),
+        });
+        game.languages
+            .lock()
+            .unwrap()
+            .insert(language, view.clone());
         view
     }
 
@@ -324,7 +421,10 @@ impl Game {
             match &layer.root {
                 None => apply(&mut selected, &layer.entries),
                 Some(root) => {
-                    if let Some(f) = find_case_insensitive(root, &format!("Data/Audio/SFX/sfx2d_{}.meg", language_name(id))) {
+                    if let Some(f) = find_case_insensitive(
+                        root,
+                        &format!("Data/Audio/SFX/sfx2d_{}.meg", language_name(id)),
+                    ) {
                         let entries = self.files.lock().unwrap().read_meg_index(&f);
                         apply(&mut selected, &entries);
                     }
@@ -336,8 +436,16 @@ impl Game {
                 selected.insert(k.clone(), f.clone());
             }
         }
-        let view = Arc::new(View { index: selected, game: self.clone() });
-        self.languages.lock().unwrap().entry(id).or_insert(view).clone()
+        let view = Arc::new(View {
+            index: selected,
+            game: self.clone(),
+        });
+        self.languages
+            .lock()
+            .unwrap()
+            .entry(id)
+            .or_insert(view)
+            .clone()
     }
 }
 
@@ -398,5 +506,9 @@ pub fn range_of(header: Option<&str>, size: u64) -> Option<Result<(u64, u64), ()
         (None, Some(n)) if a.is_empty() => (size.saturating_sub(n), size.saturating_sub(1)),
         _ => return None,
     };
-    Some(if size == 0 || from > to || from >= size { Err(()) } else { Ok((from, to)) })
+    Some(if size == 0 || from > to || from >= size {
+        Err(())
+    } else {
+        Ok((from, to))
+    })
 }

@@ -1,7 +1,11 @@
 import { diag } from './diag.js';
 import { ChunkReader, fetchBinary } from './vfs.js';
 
-const PARAM_INT = 0x10102, PARAM_FLOAT = 0x10103, PARAM_FLOAT3 = 0x10104, PARAM_TEXTURE = 0x10105, PARAM_FLOAT4 = 0x10106;
+const PARAM_INT = 0x10102,
+  PARAM_FLOAT = 0x10103,
+  PARAM_FLOAT3 = 0x10104,
+  PARAM_TEXTURE = 0x10105,
+  PARAM_FLOAT4 = 0x10106;
 
 function parseBone(r, c) {
   const bone = { name: '', parent: -1, visible: true, billboard: 0, matrix: null };
@@ -9,9 +13,14 @@ function parseBone(r, c) {
     if (k.type === 0x203) bone.name = r.str(k.start, k.end);
     else if (k.type === 0x205 || k.type === 0x206) {
       let p = k.start;
-      bone.parent = r.i32(p); p += 4;
-      bone.visible = r.u32(p) !== 0; p += 4;
-      if (k.type === 0x206) { bone.billboard = r.u32(p); p += 4; }
+      bone.parent = r.i32(p);
+      p += 4;
+      bone.visible = r.u32(p) !== 0;
+      p += 4;
+      if (k.type === 0x206) {
+        bone.billboard = r.u32(p);
+        p += 4;
+      }
       bone.matrix = r.vec(p, 12);
     }
   }
@@ -21,8 +30,12 @@ function parseBone(r, c) {
 function parseMaterial(r, c) {
   const mat = { shader: '', params: {} };
   for (const k of r.chunks(c.start, c.end)) {
-    if (k.type === 0x10101) { mat.shader = r.str(k.start, k.end).toLowerCase(); continue; }
-    let name = '', value = null;
+    if (k.type === 0x10101) {
+      mat.shader = r.str(k.start, k.end).toLowerCase();
+      continue;
+    }
+    let name = '',
+      value = null;
     for (const m of r.minis(k)) {
       if (m.type === 1) name = r.str(m.start, m.start + m.size);
       else if (m.type === 2) {
@@ -43,28 +56,56 @@ function parseGeometry(r, c) {
   let at = -1;
   for (const k of r.chunks(c.start, c.end)) {
     switch (k.type) {
-      case 0x10001: g.nVerts = r.u32(k.start); g.nPrims = r.u32(k.start + 4); break;
-      case 0x10002: g.format = r.str(k.start, k.end); break;
-      case 0x10004: g.indices = new Uint16Array(r.buf.slice(k.start, k.end)); break;
-      case 0x10005: g.stride = 128; at = k.start; break;
-      case 0x10007: g.stride = 144; at = k.start; break;
-      case 0x10006: g.boneMap = new Uint32Array(r.buf.slice(k.start, k.end)); break;
+      case 0x10001:
+        g.nVerts = r.u32(k.start);
+        g.nPrims = r.u32(k.start + 4);
+        break;
+      case 0x10002:
+        g.format = r.str(k.start, k.end);
+        break;
+      case 0x10004:
+        g.indices = new Uint16Array(r.buf.slice(k.start, k.end));
+        break;
+      case 0x10005:
+        g.stride = 128;
+        at = k.start;
+        break;
+      case 0x10007:
+        g.stride = 144;
+        at = k.start;
+        break;
+      case 0x10006:
+        g.boneMap = new Uint32Array(r.buf.slice(k.start, k.end));
+        break;
     }
   }
   if (g.stride) {
-    try { g.vertices = readVertices(r.buf, g, at); } catch (e) { console.warn('model vertices', e.message); g.stride = 0; }
+    try {
+      g.vertices = readVertices(r.buf, g, at);
+    } catch (e) {
+      console.warn('model vertices', e.message);
+      g.stride = 0;
+    }
   }
   return g;
 }
 
 function readVertices(buf, g, at) {
-  const n = g.nVerts, stride = g.stride, src = new DataView(buf, at, n * stride);
-  const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-  const tan = new Float32Array(n * 3), bin = new Float32Array(n * 3);
+  const n = g.nVerts,
+    stride = g.stride,
+    src = new DataView(buf, at, n * stride);
+  const pos = new Float32Array(n * 3),
+    nrm = new Float32Array(n * 3),
+    uv = new Float32Array(n * 2);
+  const tan = new Float32Array(n * 3),
+    bin = new Float32Array(n * 3);
   const col = g.format.endsWith('C') ? new Float32Array(n * 4) : null;
-  const skinned = /RSkin|B4I4/.test(g.format), rigid = /RSkin/.test(g.format);
-  const skinIndex = skinned ? new Float32Array(n * 4) : null, skinWeight = skinned ? new Float32Array(n * 4) : null;
-  const idxAt = stride === 144 ? 112 : 96, wAt = idxAt + 16;
+  const skinned = /RSkin|B4I4/.test(g.format),
+    rigid = /RSkin/.test(g.format);
+  const skinIndex = skinned ? new Float32Array(n * 4) : null,
+    skinWeight = skinned ? new Float32Array(n * 4) : null;
+  const idxAt = stride === 144 ? 112 : 96,
+    wAt = idxAt + 16;
   for (let i = 0; i < n; i++) {
     const o = i * stride;
     for (let k = 0; k < 3; k++) {
@@ -97,7 +138,9 @@ function parseMesh(r, c) {
       mesh.hidden = r.u32(k.start + 32) !== 0;
       mesh.collision = r.u32(k.start + 36) !== 0;
     } else if (k.type === 0x10100) material = parseMaterial(r, k);
-    else if (k.type === 0x10000) { mesh.subs.push({ material, geometry: parseGeometry(r, k) }); }
+    else if (k.type === 0x10000) {
+      mesh.subs.push({ material, geometry: parseGeometry(r, k) });
+    }
   }
   return mesh;
 }
@@ -111,14 +154,19 @@ export function parseALO(buffer) {
       for (const k of r.chunks(c.start, c.end)) if (k.type === 0x202) model.bones.push(parseBone(r, k));
     } else if (c.type === 0x400) {
       const m = parseMesh(r, c);
-      model.meshes.push(m); objects.push(m);
+      model.meshes.push(m);
+      objects.push(m);
     } else if (c.type === 0x1300) {
       objects.push({ light: true });
     } else if (c.type === 0x600) {
       for (const k of r.chunks(c.start, c.end)) {
         if (k.type === 0x602) {
-          let obj = -1, bone = -1;
-          for (const m of r.minis(k)) { if (m.type === 2) obj = r.u32(m.start); else if (m.type === 3) bone = r.u32(m.start); }
+          let obj = -1,
+            bone = -1;
+          for (const m of r.minis(k)) {
+            if (m.type === 2) obj = r.u32(m.start);
+            else if (m.type === 3) bone = r.u32(m.start);
+          }
           if (objects[obj]) objects[obj].bone = bone;
         } else if (k.type === 0x603) {
           const px = { name: '', bone: -1, hidden: false, altDecreaseStayHidden: false };
@@ -141,7 +189,11 @@ export function parseALO(buffer) {
 const models = new Map();
 
 export function loadALO(name) {
-  const stem = name.replace(/^.*[\\/]/, '').split('.')[0].toUpperCase(), key = stem;
+  const stem = name
+      .replace(/^.*[\\/]/, '')
+      .split('.')[0]
+      .toUpperCase(),
+    key = stem;
   let p = models.get(key);
   if (!p) {
     const alo = stem + '.ALO';

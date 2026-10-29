@@ -1,21 +1,44 @@
 import assert from 'node:assert/strict';
-import {fileURLToPath} from 'node:url';
-import {openGame} from './megfs.mjs';
-import {crawlDefinition,crawlCamera,crawlOpacity,crawlTextPixels} from '../public/js/game/tacticalcrawl.js';
-import {parseALO} from '../public/js/alo.js';
-import {parseALA} from '../public/js/ala.js';
-const archive=openGame(fileURLToPath(new URL('../../Star Wars Empire at War',import.meta.url)));
-const read=n=>archive.read(archive.resolve(n)),array=b=>b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);
-const source=read('Data/XML/StarWars3DTextCrawl.xml').toString();
-const intro=crawlDefinition(source,'A_Long_Time_Ago'),russian=crawlDefinition(source,'A_Long_Time_Ago',8),body=crawlDefinition(source,'EMPIRE_ACT_1');
-assert.equal(intro.num('Font_Size'),66);assert.equal(russian.num('Font_Size'),60);assert.equal(russian.val('Model_Name'),'W_TextIntro.alo');assert.equal(body.num('Font_Stretch_Factor'),.7);
-const model=parseALO(array(read('Data/Art/Models/'+intro.val('Model_Name')))),anim=parseALA(array(read('Data/Art/Models/W_TextIntro_IDLE_00.ALA')));
-assert.equal(anim.frames,236);assert(model.bones.some(b=>b.name.toUpperCase()==='CAMERA'));assert.equal(model.meshes[0].name,'Text');assert.deepEqual(model.meshes[0].subs[0].material.params.Diffuse,[0,0,0,1]);
-assert.equal(crawlOpacity(intro,0,anim.frames),0);assert.equal(crawlOpacity(intro,40,anim.frames),.5);assert.equal(crawlOpacity(intro,80,anim.frames),1);assert.equal(crawlOpacity(intro,235,anim.frames),0);
-const camera=crawlCamera();assert(Math.abs(camera.projectionMatrix.elements[0]-1/Math.tan(.5))<1e-6);assert(Math.abs(camera.projectionMatrix.elements[5]-(4/3)/Math.tan(.5))<1e-6);
-const widths=Array(256).fill(2),offsets=Array.from({length:256},(_,i)=>i*4),data=new Uint8Array(256*4).fill(255);
-const font={height:2,pages:new Map([[0,{widths,offsets,data}]]),measure:(s,p=0)=>s.length*(2+p)};
-const raster=crawlTextPixels(font,'A B',10,6),center=crawlTextPixels(font,'A',10,6,{header:true});
-assert.equal(raster.data.length,240);assert.equal(raster.data[0],255);assert.equal(center.data[4*4],255);assert.equal(center.data[0],0);
-assert(crawlDefinition(source,'Missing')===null);
-console.log('PASS: original crawl definitions, Russian inheritance, authored ALO/ALA identity, projection, native fade boundaries and raster text placement');
+import { fileURLToPath } from 'node:url';
+import { openGame } from './megfs.mjs';
+import { crawlDefinition, crawlCamera, crawlOpacity, crawlTextPixels } from '../public/js/game/tacticalcrawl.js';
+import { parseALO } from '../public/js/alo.js';
+import { parseALA } from '../public/js/ala.js';
+const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)));
+const read = n => archive.read(archive.resolve(n)),
+  array = b => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+const source = read('Data/XML/StarWars3DTextCrawl.xml').toString();
+const intro = crawlDefinition(source, 'A_Long_Time_Ago'),
+  russian = crawlDefinition(source, 'A_Long_Time_Ago', 8),
+  body = crawlDefinition(source, 'EMPIRE_ACT_1');
+assert.equal(intro.num('Font_Size'), 66);
+assert.equal(russian.num('Font_Size'), 60);
+assert.equal(russian.val('Model_Name'), 'W_TextIntro.alo');
+assert.equal(body.num('Font_Stretch_Factor'), 0.7);
+const model = parseALO(array(read('Data/Art/Models/' + intro.val('Model_Name')))),
+  anim = parseALA(array(read('Data/Art/Models/W_TextIntro_IDLE_00.ALA')));
+assert.equal(anim.frames, 236);
+assert(model.bones.some(b => b.name.toUpperCase() === 'CAMERA'));
+assert.equal(model.meshes[0].name, 'Text');
+assert.deepEqual(model.meshes[0].subs[0].material.params.Diffuse, [0, 0, 0, 1]);
+assert.equal(crawlOpacity(intro, 0, anim.frames), 0);
+assert.equal(crawlOpacity(intro, 40, anim.frames), 0.5);
+assert.equal(crawlOpacity(intro, 80, anim.frames), 1);
+assert.equal(crawlOpacity(intro, 235, anim.frames), 0);
+const camera = crawlCamera();
+assert(Math.abs(camera.projectionMatrix.elements[0] - 1 / Math.tan(0.5)) < 1e-6);
+assert(Math.abs(camera.projectionMatrix.elements[5] - 4 / 3 / Math.tan(0.5)) < 1e-6);
+const widths = Array(256).fill(2),
+  offsets = Array.from({ length: 256 }, (_, i) => i * 4),
+  data = new Uint8Array(256 * 4).fill(255);
+const font = { height: 2, pages: new Map([[0, { widths, offsets, data }]]), measure: (s, p = 0) => s.length * (2 + p) };
+const raster = crawlTextPixels(font, 'A B', 10, 6),
+  center = crawlTextPixels(font, 'A', 10, 6, { header: true });
+assert.equal(raster.data.length, 240);
+assert.equal(raster.data[0], 255);
+assert.equal(center.data[4 * 4], 255);
+assert.equal(center.data[0], 0);
+assert(crawlDefinition(source, 'Missing') === null);
+console.log(
+  'PASS: original crawl definitions, Russian inheritance, authored ALO/ALA identity, projection, native fade boundaries and raster text placement'
+);

@@ -72,51 +72,101 @@ const FRAG = `
   }`;
 
 function texturePlanes(L) {
-  const k = 1 / (L.tile > 0 ? L.tile : 215), s = Math.sin(L.tilt || 0), c = Math.cos(L.tilt || 0), S = Math.sin(L.turn || 0), C = Math.cos(L.turn || 0);
-  return [[k * C, -k * S, 0, 0], [k * c * S, k * c * C, -k * s, 0]];
+  const k = 1 / (L.tile > 0 ? L.tile : 215),
+    s = Math.sin(L.tilt || 0),
+    c = Math.cos(L.tilt || 0),
+    S = Math.sin(L.turn || 0),
+    C = Math.cos(L.turn || 0);
+  return [
+    [k * C, -k * S, 0, 0],
+    [k * c * S, k * c * C, -k * s, 0]
+  ];
 }
 
 const BLOCK = 16;
 const blocksOf = w => Math.max(1, w >> 2) ** 2;
 function flatBlocks(w, [r, g, b, a]) {
-  const out = new Uint8Array(blocksOf(w) * BLOCK), c = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-  for (let o = 0; o < out.length; o += BLOCK) { out[o] = out[o + 1] = a; out[o + 8] = out[o + 10] = c & 255; out[o + 9] = out[o + 11] = c >> 8; }
+  const out = new Uint8Array(blocksOf(w) * BLOCK),
+    c = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+  for (let o = 0; o < out.length; o += BLOCK) {
+    out[o] = out[o + 1] = a;
+    out[o + 8] = out[o + 10] = c & 255;
+    out[o + 9] = out[o + 11] = c >> 8;
+  }
   return out;
 }
 function dxt1To5(src) {
-  const n = src.length / 8, out = new Uint8Array(n * BLOCK);
-  for (let i = 0; i < n; i++) { out[i * BLOCK] = out[i * BLOCK + 1] = 255; out.set(src.subarray(i * 8, i * 8 + 8), i * BLOCK + 8); }
+  const n = src.length / 8,
+    out = new Uint8Array(n * BLOCK);
+  for (let i = 0; i < n; i++) {
+    out[i * BLOCK] = out[i * BLOCK + 1] = 255;
+    out.set(src.subarray(i * 8, i * 8 + 8), i * BLOCK + 8);
+  }
   return out;
 }
 function doubled(src, w) {
-  const ob = Math.max(1, w >> 2), W = w * 2, nb = Math.max(1, W >> 2), out = new Uint8Array(nb * nb * BLOCK);
-  const ai = new Uint8Array(16), ci = new Uint8Array(16);
-  for (let by = 0; by < nb; by++) for (let bx = 0; bx < nb; bx++) {
-    const from = (Math.min(ob - 1, by >> 1) * ob + Math.min(ob - 1, bx >> 1)) * BLOCK, to = (by * nb + bx) * BLOCK;
-    let bits = 0, have = 0, p = from + 2;
-    for (let i = 0; i < 16; i++) { while (have < 3) { bits |= src[p++] << have; have += 8; } ai[i] = bits & 7; bits >>= 3; have -= 3; }
-    for (let i = 0; i < 16; i++) ci[i] = (src[from + 12 + (i >> 2)] >> ((i & 3) * 2)) & 3;
-    out[to] = src[from]; out[to + 1] = src[from + 1];
-    for (let k = 8; k < 12; k++) out[to + k] = src[from + k];
-    const ox = W >= 8 ? (bx & 1) * 2 : 0, oy = W >= 8 ? (by & 1) * 2 : 0;
-    bits = 0; have = 0; p = to + 2;
-    for (let i = 0; i < 16; i++) {
-      const j = (oy + ((i >> 2) >> 1)) * 4 + ox + ((i & 3) >> 1);
-      bits |= ai[j] << have; have += 3;
-      while (have >= 8) { out[p++] = bits & 255; bits >>= 8; have -= 8; }
-      out[to + 12 + (i >> 2)] |= ci[j] << ((i & 3) * 2);
+  const ob = Math.max(1, w >> 2),
+    W = w * 2,
+    nb = Math.max(1, W >> 2),
+    out = new Uint8Array(nb * nb * BLOCK);
+  const ai = new Uint8Array(16),
+    ci = new Uint8Array(16);
+  for (let by = 0; by < nb; by++)
+    for (let bx = 0; bx < nb; bx++) {
+      const from = (Math.min(ob - 1, by >> 1) * ob + Math.min(ob - 1, bx >> 1)) * BLOCK,
+        to = (by * nb + bx) * BLOCK;
+      let bits = 0,
+        have = 0,
+        p = from + 2;
+      for (let i = 0; i < 16; i++) {
+        while (have < 3) {
+          bits |= src[p++] << have;
+          have += 8;
+        }
+        ai[i] = bits & 7;
+        bits >>= 3;
+        have -= 3;
+      }
+      for (let i = 0; i < 16; i++) ci[i] = (src[from + 12 + (i >> 2)] >> ((i & 3) * 2)) & 3;
+      out[to] = src[from];
+      out[to + 1] = src[from + 1];
+      for (let k = 8; k < 12; k++) out[to + k] = src[from + k];
+      const ox = W >= 8 ? (bx & 1) * 2 : 0,
+        oy = W >= 8 ? (by & 1) * 2 : 0;
+      bits = 0;
+      have = 0;
+      p = to + 2;
+      for (let i = 0; i < 16; i++) {
+        const j = (oy + ((i >> 2) >> 1)) * 4 + ox + ((i & 3) >> 1);
+        bits |= ai[j] << have;
+        have += 3;
+        while (have >= 8) {
+          out[p++] = bits & 255;
+          bits >>= 8;
+          have -= 8;
+        }
+        out[to + 12 + (i >> 2)] |= ci[j] << ((i & 3) * 2);
+      }
     }
-  }
   return out;
 }
 function layerChain(dds, flat) {
   const levels = Math.log2(TILE) + 1;
-  let chain = null, w = 0;
-  const dxt1 = dds && dds.format === THREE.RGBA_S3TC_DXT1_Format, dxt5 = dds && dds.format === THREE.RGBA_S3TC_DXT5_Format;
+  let chain = null,
+    w = 0;
+  const dxt1 = dds && dds.format === THREE.RGBA_S3TC_DXT1_Format,
+    dxt5 = dds && dds.format === THREE.RGBA_S3TC_DXT5_Format;
   if (dds && dds.compressed && dds.width === dds.height && (dds.width & (dds.width - 1)) === 0 && (dxt1 || dxt5)) {
-    chain = dds.mipmaps.map(m => (dxt1 ? dxt1To5(m.data) : m.data)); w = dds.width;
-    while (w > TILE && chain.length > 1) { chain.shift(); w >>= 1; }
-    while (w < TILE) { chain.unshift(doubled(chain[0], w)); w *= 2; }
+    chain = dds.mipmaps.map(m => (dxt1 ? dxt1To5(m.data) : m.data));
+    w = dds.width;
+    while (w > TILE && chain.length > 1) {
+      chain.shift();
+      w >>= 1;
+    }
+    while (w < TILE) {
+      chain.unshift(doubled(chain[0], w));
+      w *= 2;
+    }
     if (w !== TILE) chain = null;
   }
   if (!chain) return Array.from({ length: levels }, (_, k) => flatBlocks(TILE >> k, flat));
@@ -124,46 +174,79 @@ function layerChain(dds, flat) {
   return chain.slice(0, levels).map((d, k) => (d.length === blocksOf(TILE >> k) * BLOCK ? d : flatBlocks(TILE >> k, flat)));
 }
 function arrayTexture(chains) {
-  const depth = Math.max(1, chains.length), mips = [];
+  const depth = Math.max(1, chains.length),
+    mips = [];
   for (let k = 0; k <= Math.log2(TILE); k++) {
-    const w = Math.max(1, TILE >> k), each = blocksOf(w) * BLOCK, data = new Uint8Array(each * depth);
+    const w = Math.max(1, TILE >> k),
+      each = blocksOf(w) * BLOCK,
+      data = new Uint8Array(each * depth);
     chains.forEach((c, i) => data.set(c[k], i * each));
     mips.push({ data, width: w, height: w });
   }
   const tex = new THREE.CompressedArrayTexture(mips, TILE, TILE, depth, THREE.RGBA_S3TC_DXT5_Format);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter; tex.anisotropy = 8;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 8;
   tex.colorSpace = THREE.NoColorSpace;
   tex.needsUpdate = true;
   return tex;
 }
 
 export function heightAt(t, x, y) {
-  const n = t.size, gx = Math.min(n - 1.001, Math.max(0, x / CELL)), gy = Math.min(n - 1.001, Math.max(0, y / CELL));
-  const ix = gx | 0, iy = gy | 0, fx = gx - ix, fy = gy - iy, h = t.heights;
-  const a = h[iy * n + ix], b = h[iy * n + ix + 1], c = h[(iy + 1) * n + ix], d = h[(iy + 1) * n + ix + 1];
+  const n = t.size,
+    gx = Math.min(n - 1.001, Math.max(0, x / CELL)),
+    gy = Math.min(n - 1.001, Math.max(0, y / CELL));
+  const ix = gx | 0,
+    iy = gy | 0,
+    fx = gx - ix,
+    fy = gy - iy,
+    h = t.heights;
+  const a = h[iy * n + ix],
+    b = h[iy * n + ix + 1],
+    c = h[(iy + 1) * n + ix],
+    d = h[(iy + 1) * n + ix + 1];
   return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
 }
 
 export function fogTexture(t) {
   if (t.fog) return t.fog;
-  const m = Math.ceil(t.size / 2), data = new Uint8Array(m * m).fill(255);
+  const m = Math.ceil(t.size / 2),
+    data = new Uint8Array(m * m).fill(255);
   const tex = new THREE.DataTexture(data, m, m, THREE.RedFormat);
-  tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
-  t.fog = tex; t.fogSeen = new Uint8Array(m * m);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  t.fog = tex;
+  t.fogSeen = new Uint8Array(m * m);
   return tex;
 }
 export function paintFog(t, eyes, remember = true, dt = 0, regrow = 6) {
-  const tex = fogTexture(t), d = tex.image.data, m = tex.image.width, seen = t.fogSeen, cell = CELL * 2;
-  const light = t.fogLight ||= new Float32Array(d.length);
-  if (!eyes) { d.fill(255); light.fill(1); if(remember)seen.fill(1); tex.needsUpdate = true; return; }
+  const tex = fogTexture(t),
+    d = tex.image.data,
+    m = tex.image.width,
+    seen = t.fogSeen,
+    cell = CELL * 2;
+  const light = (t.fogLight ||= new Float32Array(d.length));
+  if (!eyes) {
+    d.fill(255);
+    light.fill(1);
+    if (remember) seen.fill(1);
+    tex.needsUpdate = true;
+    return;
+  }
   const fall = regrow > 0 ? dt / regrow : 1;
   for (let i = 0; i < light.length; i++) if (light[i] > 0) light[i] = Math.max(0, light[i] - fall);
   for (const [x, y, r] of eyes) {
-    const cx = x / cell, cy = y / cell, cr = r / cell, r2 = cr * cr;
+    const cx = x / cell,
+      cy = y / cell,
+      cr = r / cell,
+      r2 = cr * cr;
     for (let j = Math.max(0, Math.floor(cy - cr)); j <= Math.min(m - 1, Math.ceil(cy + cr)); j++)
       for (let i = Math.max(0, Math.floor(cx - cr)); i <= Math.min(m - 1, Math.ceil(cx + cr)); i++)
-        if ((i - cx) ** 2 + (j - cy) ** 2 <= r2) { light[j * m + i] = 1; seen[j * m + i] = 1; }
+        if ((i - cx) ** 2 + (j - cy) ** 2 <= r2) {
+          light[j * m + i] = 1;
+          seen[j * m + i] = 1;
+        }
   }
   for (let i = 0; i < d.length; i++) d[i] = seen[i] ? 150 + Math.round(105 * light[i]) : 0;
   tex.needsUpdate = true;
@@ -175,39 +258,70 @@ function quadLayers(t, slot, quad) {
 }
 
 export async function buildTerrain(t) {
-  const n = t.size, h = t.heights;
+  const n = t.size,
+    h = t.heights;
   const normals = new Float32Array(n * n * 3);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const l = h[y * n + Math.max(0, x - 1)], r = h[y * n + Math.min(n - 1, x + 1)], d = h[Math.max(0, y - 1) * n + x], u = h[Math.min(n - 1, y + 1) * n + x];
-    const nx = (l - r) / (2 * CELL), ny = (d - u) / (2 * CELL), len = Math.hypot(nx, ny, 1), o = (y * n + x) * 3;
-    normals[o] = nx / len; normals[o + 1] = ny / len; normals[o + 2] = 1 / len;
-  }
-  const used = [...new Set([...t.layerIndex, ...(t.extraLayers || [])])].filter(i => t.layers[i] && t.layers[i].texture).sort((a, b) => a - b);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const l = h[y * n + Math.max(0, x - 1)],
+        r = h[y * n + Math.min(n - 1, x + 1)],
+        d = h[Math.max(0, y - 1) * n + x],
+        u = h[Math.min(n - 1, y + 1) * n + x];
+      const nx = (l - r) / (2 * CELL),
+        ny = (d - u) / (2 * CELL),
+        len = Math.hypot(nx, ny, 1),
+        o = (y * n + x) * 3;
+      normals[o] = nx / len;
+      normals[o + 1] = ny / len;
+      normals[o + 2] = 1 / len;
+    }
+  const used = [...new Set([...t.layerIndex, ...(t.extraLayers || [])])]
+    .filter(i => t.layers[i] && t.layers[i].texture)
+    .sort((a, b) => a - b);
   const bare = i => !!t.layers[t.layerIndex[i]]?.hole;
   const slot = new Map(used.map((i, k) => [i, k]));
   const tris = (n - 1) * (n - 1) * 2;
-  const pos = new Float32Array(tris * 9), nor = new Float32Array(tris * 9), lay = new Float32Array(tris * 12), cor = new Float32Array(tris * 6), sh = new Float32Array(tris * 3);
+  const pos = new Float32Array(tris * 9),
+    nor = new Float32Array(tris * 9),
+    lay = new Float32Array(tris * 12),
+    cor = new Float32Array(tris * 6),
+    sh = new Float32Array(tris * 3);
   let v = 0;
   const triAt = new Int32Array(tris).fill(-1);
   const put = (ids, quad) => {
-    const L = quadLayers(t, slot, quad), x0 = quad[0] % n, y0 = (quad[0] / n) | 0;
+    const L = quadLayers(t, slot, quad),
+      x0 = quad[0] % n,
+      y0 = (quad[0] / n) | 0;
     ids.forEach(i => {
-      const x = i % n, y = (i / n) | 0, o = v * 3;
-      pos[o] = x * CELL; pos[o + 1] = y * CELL; pos[o + 2] = h[i];
-      nor[o] = normals[i * 3]; nor[o + 1] = normals[i * 3 + 1]; nor[o + 2] = normals[i * 3 + 2];
+      const x = i % n,
+        y = (i / n) | 0,
+        o = v * 3;
+      pos[o] = x * CELL;
+      pos[o + 1] = y * CELL;
+      pos[o + 2] = h[i];
+      nor[o] = normals[i * 3];
+      nor[o + 1] = normals[i * 3 + 1];
+      nor[o + 2] = normals[i * 3 + 2];
       lay.set(L, v * 4);
-      cor[v * 2] = x - x0; cor[v * 2 + 1] = y - y0;
+      cor[v * 2] = x - x0;
+      cor[v * 2 + 1] = y - y0;
       sh[v] = Math.min(1, t.shade[i] / 254);
       v++;
     });
   };
-  for (let y = 0; y < n - 1; y++) for (let x = 0; x < n - 1; x++) {
-    const a = y * n + x, b = a + 1, c = a + n, d = c + 1;
-    const q = (y * (n - 1) + x) * 2;
-    if ([a, b, c, d].every(bare)) continue;
-    triAt[q] = v; put([a, b, d], [a, b, c, d]);
-    triAt[q + 1] = v; put([a, d, c], [a, b, c, d]);
-  }
+  for (let y = 0; y < n - 1; y++)
+    for (let x = 0; x < n - 1; x++) {
+      const a = y * n + x,
+        b = a + 1,
+        c = a + n,
+        d = c + 1;
+      const q = (y * (n - 1) + x) * 2;
+      if ([a, b, c, d].every(bare)) continue;
+      triAt[q] = v;
+      put([a, b, d], [a, b, c, d]);
+      triAt[q + 1] = v;
+      put([a, d, c], [a, b, c, d]);
+    }
   const geo = new THREE.BufferGeometry();
   geo.setDrawRange(0, v);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -217,27 +331,60 @@ export async function buildTerrain(t) {
   geo.setAttribute('shade', new THREE.BufferAttribute(sh, 1));
   geo.computeBoundingSphere();
 
-  const texU = [], texV = [], matDiffuse = [], matSpecular = [];
+  const texU = [],
+    texV = [],
+    matDiffuse = [],
+    matSpecular = [];
   for (let k = 0; k < SLOTS; k++) {
-    const L = t.layers[used[k]] || {}, [U, V] = texturePlanes(L);
-    texU.push(new THREE.Vector4(...U)); texV.push(new THREE.Vector4(...V));
-    matDiffuse.push(new THREE.Vector3(...(L.diffuse || [1, 1, 1]))); matSpecular.push(new THREE.Vector3(...(L.specular || [1, 1, 1])));
+    const L = t.layers[used[k]] || {},
+      [U, V] = texturePlanes(L);
+    texU.push(new THREE.Vector4(...U));
+    texV.push(new THREE.Vector4(...V));
+    matDiffuse.push(new THREE.Vector3(...(L.diffuse || [1, 1, 1])));
+    matSpecular.push(new THREE.Vector3(...(L.specular || [1, 1, 1])));
   }
-  const files = await Promise.all(used.map(i => Promise.all([loadDDS(t.layers[i].texture), t.layers[i].bump ? loadDDS(t.layers[i].bump) : null])));
+  const files = await Promise.all(
+    used.map(i => Promise.all([loadDDS(t.layers[i].texture), t.layers[i].bump ? loadDDS(t.layers[i].bump) : null]))
+  );
   const tex = arrayTexture(files.map(f => layerChain(f[0], [128, 128, 128, 0])));
   const bump = arrayTexture(files.map(f => layerChain(f[1], [128, 128, 255, 255])));
-  const C = t.clouds || {}, cloudAt = new THREE.Vector3(0, 0, C.tile > 0 ? C.tile : 500);
+  const C = t.clouds || {},
+    cloudAt = new THREE.Vector3(0, 0, C.tile > 0 ? C.tile : 500);
   const mat = new THREE.ShaderMaterial({
-    glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: FRAG,
-    uniforms: { map: { value: tex }, bump: { value: bump }, texU: { value: texU }, texV: { value: texV }, matDiffuse: { value: matDiffuse }, matSpecular: { value: matSpecular },
-      clouds: { value: loadTexture(C.texture || '') }, cloudAt: { value: cloudAt },
-      fog: { value: fogTexture(t) }, side: { value: (n - 1) * CELL }, sunDir: lighting.sunDir, sunColor: lighting.sunColor, fillDir: lighting.fillDir, fillColor: lighting.fillColor, ambient: lighting.ambient, fogTint: lighting.fogTint, fogRange: lighting.fogRange,
-      shadowMap: lighting.shadowMap, shadowMatrix: lighting.shadowMatrix, shadowOn: lighting.shadowOn, shadowTexel: lighting.shadowTexel },
+    glslVersion: THREE.GLSL3,
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    uniforms: {
+      map: { value: tex },
+      bump: { value: bump },
+      texU: { value: texU },
+      texV: { value: texV },
+      matDiffuse: { value: matDiffuse },
+      matSpecular: { value: matSpecular },
+      clouds: { value: loadTexture(C.texture || '') },
+      cloudAt: { value: cloudAt },
+      fog: { value: fogTexture(t) },
+      side: { value: (n - 1) * CELL },
+      sunDir: lighting.sunDir,
+      sunColor: lighting.sunColor,
+      fillDir: lighting.fillDir,
+      fillColor: lighting.fillColor,
+      ambient: lighting.ambient,
+      fogTint: lighting.fogTint,
+      fogRange: lighting.fogRange,
+      shadowMap: lighting.shadowMap,
+      shadowMatrix: lighting.shadowMatrix,
+      shadowOn: lighting.shadowOn,
+      shadowTexel: lighting.shadowTexel
+    }
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   const drift = C.drift || [0, 0, 0];
-  mesh.userData.tick = dt => { cloudAt.x += drift[0] * dt; cloudAt.y += drift[1] * dt; };
+  mesh.userData.tick = dt => {
+    cloudAt.x += drift[0] * dt;
+    cloudAt.y += drift[1] * dt;
+  };
   t.paint = { slot, triAt, geo };
   return mesh;
 }
@@ -245,15 +392,23 @@ export async function buildTerrain(t) {
 export function paveTerrain(t, cells, layer) {
   const P = t.paint;
   if (!P || !P.slot.has(layer)) return;
-  const n = t.size, lay = P.geo.getAttribute('layers'), quads = new Set();
+  const n = t.size,
+    lay = P.geo.getAttribute('layers'),
+    quads = new Set();
   for (const i of cells) {
     if (!P.slot.has(t.layerIndex[i])) continue;
     t.layerIndex[i] = layer;
-    const x = i % n, y = (i / n) | 0;
-    for (let dy = -1; dy <= 0; dy++) for (let dx = -1; dx <= 0; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < n - 1 && y + dy < n - 1) quads.add((y + dy) * (n - 1) + x + dx);
+    const x = i % n,
+      y = (i / n) | 0;
+    for (let dy = -1; dy <= 0; dy++)
+      for (let dx = -1; dx <= 0; dx++)
+        if (x + dx >= 0 && y + dy >= 0 && x + dx < n - 1 && y + dy < n - 1) quads.add((y + dy) * (n - 1) + x + dx);
   }
   for (const q of quads) {
-    const x = q % (n - 1), y = (q / (n - 1)) | 0, a = y * n + x, L = quadLayers(t, P.slot, [a, a + 1, a + n, a + n + 1]);
+    const x = q % (n - 1),
+      y = (q / (n - 1)) | 0,
+      a = y * n + x,
+      L = quadLayers(t, P.slot, [a, a + 1, a + n, a + n + 1]);
     for (let k = 0; k < 2; k++) {
       const v0 = P.triAt[q * 2 + k];
       if (v0 >= 0) for (let j = 0; j < 3; j++) lay.setXYZW(v0 + j, L[0], L[1], L[2], L[3]);
@@ -320,31 +475,54 @@ const ICE_FRAG = `
 
 function mirrorOf(level) {
   const target = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true });
-  target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter; target.texture.colorSpace = THREE.NoColorSpace;
-  const eye = new THREE.PerspectiveCamera(), matrix = new THREE.Matrix4();
-  const at = new THREE.Vector3(0, 0, level), up = new THREE.Vector3(0, 0, 1), camAt = new THREE.Vector3(), view = new THREE.Vector3(), look = new THREE.Vector3(), aim = new THREE.Vector3();
-  const turn = new THREE.Matrix4(), plane = new THREE.Plane(), clip = new THREE.Vector4(), q = new THREE.Vector4(), size = new THREE.Vector2();
+  target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter;
+  target.texture.colorSpace = THREE.NoColorSpace;
+  const eye = new THREE.PerspectiveCamera(),
+    matrix = new THREE.Matrix4();
+  const at = new THREE.Vector3(0, 0, level),
+    up = new THREE.Vector3(0, 0, 1),
+    camAt = new THREE.Vector3(),
+    view = new THREE.Vector3(),
+    look = new THREE.Vector3(),
+    aim = new THREE.Vector3();
+  const turn = new THREE.Matrix4(),
+    plane = new THREE.Plane(),
+    clip = new THREE.Vector4(),
+    q = new THREE.Vector4(),
+    size = new THREE.Vector2();
   return {
-    target, matrix,
+    target,
+    matrix,
     render(renderer, camera, draw) {
       camAt.setFromMatrixPosition(camera.matrixWorld);
       if (camAt.z <= level) return false;
       renderer.getDrawingBufferSize(size);
-      const w = Math.max(4, size.x >> 1), h = Math.max(4, size.y >> 1);
+      const w = Math.max(4, size.x >> 1),
+        h = Math.max(4, size.y >> 1);
       if (target.width !== w || target.height !== h) target.setSize(w, h);
       view.subVectors(at, camAt).reflect(up).negate().add(at);
       turn.extractRotation(camera.matrixWorld);
       look.set(0, 0, -1).applyMatrix4(turn).add(camAt);
       aim.subVectors(at, look).reflect(up).negate().add(at);
-      eye.position.copy(view); eye.up.set(0, 1, 0).applyMatrix4(turn).reflect(up); eye.lookAt(aim);
-      eye.far = camera.far; eye.updateMatrixWorld(); eye.projectionMatrix.copy(camera.projectionMatrix);
-      matrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1).multiply(eye.projectionMatrix).multiply(eye.matrixWorldInverse);
+      eye.position.copy(view);
+      eye.up.set(0, 1, 0).applyMatrix4(turn).reflect(up);
+      eye.lookAt(aim);
+      eye.far = camera.far;
+      eye.updateMatrixWorld();
+      eye.projectionMatrix.copy(camera.projectionMatrix);
+      matrix
+        .set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
+        .multiply(eye.projectionMatrix)
+        .multiply(eye.matrixWorldInverse);
       plane.setFromNormalAndCoplanarPoint(up, at).applyMatrix4(eye.matrixWorldInverse);
       clip.set(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant);
       const p = eye.projectionMatrix.elements;
       q.set((Math.sign(clip.x) + p[8]) / p[0], (Math.sign(clip.y) + p[9]) / p[5], -1, (1 + p[10]) / p[14]);
       clip.multiplyScalar(2 / clip.dot(q));
-      p[2] = clip.x; p[6] = clip.y; p[10] = clip.z + 1 - 0.003; p[14] = clip.w;
+      p[2] = clip.x;
+      p[6] = clip.y;
+      p[10] = clip.z + 1 - 0.003;
+      p[14] = clip.w;
       eye.projectionMatrixInverse.copy(eye.projectionMatrix).invert();
       const was = renderer.getRenderTarget();
       renderer.setRenderTarget(target);
@@ -353,33 +531,58 @@ function mirrorOf(level) {
       draw(eye);
       renderer.setRenderTarget(was);
       return true;
-    },
+    }
   };
 }
 
 export function buildWater(t) {
   const w = t.water;
   if (!w || !w.mode) return null;
-  const n = t.size, h = t.heights, level = w.level, side = (n - 1) * CELL;
-  const pos = [], depth = [];
-  for (let y = 0; y < n - 1; y++) for (let x = 0; x < n - 1; x++) {
-    const a = y * n + x, ids = [a, a + 1, a + n + 1, a, a + n + 1, a + n];
-    if (!ids.some(i => h[i] < level)) continue;
-    for (const i of ids) { pos.push((i % n) * CELL, ((i / n) | 0) * CELL, level); depth.push(level - h[i]); }
-  }
+  const n = t.size,
+    h = t.heights,
+    level = w.level,
+    side = (n - 1) * CELL;
+  const pos = [],
+    depth = [];
+  for (let y = 0; y < n - 1; y++)
+    for (let x = 0; x < n - 1; x++) {
+      const a = y * n + x,
+        ids = [a, a + 1, a + n + 1, a, a + n + 1, a + n];
+      if (!ids.some(i => h[i] < level)) continue;
+      for (const i of ids) {
+        pos.push((i % n) * CELL, ((i / n) | 0) * CELL, level);
+        depth.push(level - h[i]);
+      }
+    }
   if (!pos.length) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('depth', new THREE.Float32BufferAttribute(depth, 1));
-  geo.computeBoundingBox(); geo.computeBoundingSphere();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
   const file = name => (name ? (/\.\w+$/.test(name) ? name : name + '.tga') : '');
-  const layer = i => { const r = w.ripples[i] || { tile: 150, turn: 0, speed: 0.05, heading: 0 }; return new THREE.Vector4(r.tile > 0 ? r.tile : 150, r.turn, r.speed, r.heading); };
-  const time = { value: 0 }, fog = { value: fogTexture(t) }, sideU = { value: side }, fogTint = lighting.fogTint, fogRange = lighting.fogRange;
+  const layer = i => {
+    const r = w.ripples[i] || { tile: 150, turn: 0, speed: 0.05, heading: 0 };
+    return new THREE.Vector4(r.tile > 0 ? r.tile : 150, r.turn, r.speed, r.heading);
+  };
+  const time = { value: 0 },
+    fog = { value: fogTexture(t) },
+    sideU = { value: side },
+    fogTint = lighting.fogTint,
+    fogRange = lighting.fogRange;
   const shore = { value: new THREE.Vector2(w.fade > 0 ? 1 / w.fade : 0.1, w.least) };
   const light = { sunDir: lighting.sunDir, sunColor: lighting.sunColor, ambient: lighting.ambient };
   const group = new THREE.Group();
   const add = (fragmentShader, uniforms, more = {}) => {
-    const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({ vertexShader: WATER_VERT, fragmentShader, uniforms: { time, fog, side: sideU, shore, fogTint, fogRange, ...uniforms }, ...more }));
+    const m = new THREE.Mesh(
+      geo,
+      new THREE.ShaderMaterial({
+        vertexShader: WATER_VERT,
+        fragmentShader,
+        uniforms: { time, fog, side: sideU, shore, fogTint, fogRange, ...uniforms },
+        ...more
+      })
+    );
     m.renderOrder = 1 + group.children.length * 0.1;
     group.add(m);
     return m;
@@ -388,24 +591,61 @@ export function buildWater(t) {
   if (w.mode === 1) {
     const k = Math.min(1, Math.max(0, w.reflect));
     glass = mirrorOf(level);
-    add(WATER_UNDER, { under: { value: new THREE.Vector3(...w.tint).multiplyScalar(1 - k) } }, { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor });
-    add(WATER_OVER, { over: { value: new THREE.Vector3(...w.tint).multiplyScalar(k) }, bump: { value: loadTexture(file(w.textures[0])) }, ripple: { value: layer(0) }, bend: { value: w.bend * 0.02 },
-      reflection: { value: glass.target.texture }, mirror: { value: glass.matrix } }, { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor });
+    add(
+      WATER_UNDER,
+      { under: { value: new THREE.Vector3(...w.tint).multiplyScalar(1 - k) } },
+      { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor }
+    );
+    add(
+      WATER_OVER,
+      {
+        over: { value: new THREE.Vector3(...w.tint).multiplyScalar(k) },
+        bump: { value: loadTexture(file(w.textures[0])) },
+        ripple: { value: layer(0) },
+        bend: { value: w.bend * 0.02 },
+        reflection: { value: glass.target.texture },
+        mirror: { value: glass.matrix }
+      },
+      { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor }
+    );
   } else if (w.mode === 2) {
-    add(LAVA_FRAG, { ...light, base: { value: loadTexture(file(w.textures[0])) }, crust: { value: loadTexture(file(w.textures[1])) }, bump: { value: loadTexture(file(w.textures[2])) },
-      flow: { value: layer(0) }, lie: { value: layer(1) }, glint: { value: new THREE.Vector3(...w.glint) }, mirror: { value: new THREE.Matrix4() } });
+    add(LAVA_FRAG, {
+      ...light,
+      base: { value: loadTexture(file(w.textures[0])) },
+      crust: { value: loadTexture(file(w.textures[1])) },
+      bump: { value: loadTexture(file(w.textures[2])) },
+      flow: { value: layer(0) },
+      lie: { value: layer(1) },
+      glint: { value: new THREE.Vector3(...w.glint) },
+      mirror: { value: new THREE.Matrix4() }
+    });
   } else {
     glass = mirrorOf(level);
-    add(ICE_FRAG, { ...light, base: { value: loadTexture(file(w.textures[0])) }, bump: { value: loadTexture(file(w.textures[1])) }, flow: { value: layer(0) }, lie: { value: layer(1) },
-      tint: { value: new THREE.Vector3(...w.tint) }, bend: { value: w.bend * 0.02 }, reflection: { value: glass.target.texture }, mirror: { value: glass.matrix } });
+    add(ICE_FRAG, {
+      ...light,
+      base: { value: loadTexture(file(w.textures[0])) },
+      bump: { value: loadTexture(file(w.textures[1])) },
+      flow: { value: layer(0) },
+      lie: { value: layer(1) },
+      tint: { value: new THREE.Vector3(...w.tint) },
+      bend: { value: w.bend * 0.02 },
+      reflection: { value: glass.target.texture },
+      mirror: { value: glass.matrix }
+    });
   }
-  const frustum = new THREE.Frustum(), pv = new THREE.Matrix4();
+  const frustum = new THREE.Frustum(),
+    pv = new THREE.Matrix4();
   let turn = 0;
-  group.userData.tick = dt => { time.value += dt; };
+  group.userData.tick = dt => {
+    time.value += dt;
+  };
   group.userData.mirror = (renderer, camera, draw) => {
     if (!glass) return;
     frustum.setFromProjectionMatrix(pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-    if (!frustum.intersectsBox(geo.boundingBox)) { turn = 0; return; }
+    if (!frustum.intersectsBox(geo.boundingBox)) {
+      turn = 0;
+      return;
+    }
     if (turn++ & 1) return;
     group.visible = false;
     glass.render(renderer, camera, draw);
@@ -429,10 +669,21 @@ const SKY_FRAG = `
 export function skyMaterial(params) {
   const time = { value: 0 };
   const m = new THREE.ShaderMaterial({
-    vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
-    uniforms: { map: { value: loadTexture(params.BaseTexture || '') }, clouds: { value: loadTexture(params.CloudTexture || params.BaseTexture || '') },
-      cloudScale: { value: params.CloudScale ?? 1 }, cloudRate: { value: params.CloudScrollRate ?? 0 }, time },
+    vertexShader: SKY_VERT,
+    fragmentShader: SKY_FRAG,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      map: { value: loadTexture(params.BaseTexture || '') },
+      clouds: { value: loadTexture(params.CloudTexture || params.BaseTexture || '') },
+      cloudScale: { value: params.CloudScale ?? 1 },
+      cloudRate: { value: params.CloudScrollRate ?? 0 },
+      time
+    }
   });
-  m.userData.tick = dt => { time.value += dt; };
+  m.userData.tick = dt => {
+    time.value += dt;
+  };
   return m;
 }

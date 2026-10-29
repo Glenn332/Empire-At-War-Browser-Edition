@@ -18,24 +18,43 @@ void main() { gl_FragColor = texture2D(map, vUv) * vec4(vColor, 1.0); }`;
 
 export class FleetLines {
   constructor(scene) {
-    this.scene = scene; this.capacity = 0; this.mesh = null;
+    this.scene = scene;
+    this.capacity = 0;
+    this.mesh = null;
     this.texture = db.constants.str('Fleet_Movement_Line_Texture_Name').trim() || 'w_galaxy_line.tga';
-    this.material = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      uniforms: { map: { value: loadTexture(this.texture, { repeat: false }) } } });
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { map: { value: loadTexture(this.texture, { repeat: false }) } }
+    });
   }
 
   grow(n) {
     this.mesh && (this.scene.remove(this.mesh), this.mesh.geometry.dispose());
     this.capacity = Math.max(64, n * 2);
-    const cap = this.capacity, index = new Uint32Array(cap * 6), uv = new Float32Array(cap * 8);
-    for (let i = 0; i < cap; i++) { const b = i * 4; index.set([b, b + 1, b + 2, b + 1, b + 3, b + 2], i * 6); uv.set([1, 1, 0, 1, 1, 0, 0, 0], i * 8); }
+    const cap = this.capacity,
+      index = new Uint32Array(cap * 6),
+      uv = new Float32Array(cap * 8);
+    for (let i = 0; i < cap; i++) {
+      const b = i * 4;
+      index.set([b, b + 1, b + 2, b + 1, b + 3, b + 2], i * 6);
+      uv.set([1, 1, 0, 1, 1, 0, 0, 0], i * 8);
+    }
     const geo = new THREE.BufferGeometry();
-    this.position = new Float32Array(cap * 12); this.color = new Float32Array(cap * 12);
+    this.position = new Float32Array(cap * 12);
+    this.color = new Float32Array(cap * 12);
     geo.setAttribute('position', new THREE.BufferAttribute(this.position, 3).setUsage(THREE.DynamicDrawUsage));
     geo.setAttribute('aColor', new THREE.BufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(index, 1));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.setDrawRange(0, 0);
-    this.mesh = new THREE.Mesh(geo, this.material); this.mesh.frustumCulled = false; this.mesh.renderOrder = 3; this.scene.add(this.mesh);
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 3;
+    this.scene.add(this.mesh);
   }
 
   update(galaxy, viewer, colorOf) {
@@ -46,16 +65,27 @@ export class FleetLines {
     if (n > this.capacity || !this.mesh) this.grow(n);
     let q = 0;
     for (const f of shown) {
-      const A = f.pos, B = f.leg.to, across = routeAxes(A, B).across, c = colorOf(f.owner), o = q * 12;
+      const A = f.pos,
+        B = f.leg.to,
+        across = routeAxes(A, B).across,
+        c = colorOf(f.owner),
+        o = q * 12;
       for (let v = 0; v < 4; v++) {
-        const P = v < 2 ? A : B, s = v & 1 ? 1 : -1;
-        for (let k = 0; k < 3; k++) { this.position[o + v * 3 + k] = P[k] + across[k] * s * WIDTH / 2; this.color[o + v * 3 + k] = c[k]; }
+        const P = v < 2 ? A : B,
+          s = v & 1 ? 1 : -1;
+        for (let k = 0; k < 3; k++) {
+          this.position[o + v * 3 + k] = P[k] + (across[k] * s * WIDTH) / 2;
+          this.color[o + v * 3 + k] = c[k];
+        }
       }
       q++;
     }
     const g = this.mesh.geometry;
     g.setDrawRange(0, q * 6);
-    if (q || this.drawn) { g.attributes.position.needsUpdate = true; g.attributes.aColor.needsUpdate = true; }
+    if (q || this.drawn) {
+      g.attributes.position.needsUpdate = true;
+      g.attributes.aColor.needsUpdate = true;
+    }
     this.drawn = q;
   }
 }

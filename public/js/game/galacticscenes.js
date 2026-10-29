@@ -5,10 +5,18 @@ export function placeGalacticModel(root, planet) {
 }
 
 export function renderGalacticScenes(renderer, camera, main, background, midground, midforeground) {
-  const autoClear = renderer.autoClear, near = camera.near, far = camera.far;
-  const restoreClip = () => { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); };
+  const autoClear = renderer.autoClear,
+    near = camera.near,
+    far = camera.far;
+  const restoreClip = () => {
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  };
   const distant = scene => {
-    camera.near = 10; camera.far = 100000; camera.updateProjectionMatrix();
+    camera.near = 10;
+    camera.far = 100000;
+    camera.updateProjectionMatrix();
     renderer.render(scene, camera);
     restoreClip();
   };

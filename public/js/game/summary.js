@@ -4,14 +4,22 @@ import { openDialog } from './dialogs.js';
 import { battlePlanetName } from './battleplanet.js';
 
 const isHero = ty => [...ty.categories()].some(c => c.includes('HERO'));
-let ranked = null, rankedFor = -1;
+let ranked = null,
+  rankedFor = -1;
 const rank = ty => {
-  if (rankedFor !== db.types.size) { ranked = new Map(); let i = 0; for (const t of db.types.values()) ranked.set(t, i++); rankedFor = db.types.size; }
+  if (rankedFor !== db.types.size) {
+    ranked = new Map();
+    let i = 0;
+    for (const t of db.types.values()) ranked.set(t, i++);
+    rankedFor = db.types.size;
+  }
   return ranked.get(ty) ?? Infinity;
 };
 
 export function summaryRows(lost) {
-  const all = [...(lost || new Map())].filter(([ty, n]) => n > 0 && ty.num('Score_Cost_Credits', 0) >= 1).sort((a, b) => rank(a[0]) - rank(b[0]));
+  const all = [...(lost || new Map())]
+    .filter(([ty, n]) => n > 0 && ty.num('Score_Cost_Credits', 0) >= 1)
+    .sort((a, b) => rank(a[0]) - rank(b[0]));
   return { heroes: all.filter(([ty]) => isHero(ty)), units: all.filter(([ty]) => !isHero(ty)) };
 }
 
@@ -25,7 +33,10 @@ export function fillSummary(dlg, { title, time, planet, yours, enemy, bounty = 0
   dlg.setText('IDC_TIME_STATIC', time);
   dlg.setText('IDC_BATTLE_END_PLANET_STATIC', planet || '');
   for (const id of ['IDC_LAND_INVADE_BUTTON', 'IDC_SAVE_REPLAY_BUTTON', 'IDC_COUNTDOWN_TIMER']) dlg.show(id, false);
-  for (const id of ['IDC_RIGHT_ARROW1', 'IDC_RIGHT_ARROW2']) { dlg.setImage(id, iconUrl('i_tree_arrow_right.tga')); dlg.imageFrame(id, false); }
+  for (const id of ['IDC_RIGHT_ARROW1', 'IDC_RIGHT_ARROW2']) {
+    dlg.setImage(id, iconUrl('i_tree_arrow_right.tga'));
+    dlg.imageFrame(id, false);
+  }
   const line = bountyLine(bounty, collects);
   dlg.show('IDC_STATIC_BOUNTY', line !== null);
   if (line !== null) dlg.setText('IDC_STATIC_BOUNTY', line);
@@ -39,7 +50,8 @@ export function fillSummary(dlg, { title, time, planet, yours, enemy, bounty = 0
         if (namePrefix && dlg.ctl(namePrefix + i)) dlg.show(namePrefix + i, !!it);
         dlg.imageText(prefix + i, it && it[1] > 1 ? String(it[1]) : '');
         if (!it) continue;
-        const [ty] = it, c = dlg.ctl(prefix + i);
+        const [ty] = it,
+          c = dlg.ctl(prefix + i);
         dlg.setImage(prefix + i, iconUrl(icon(ty)));
         dlg.imageFrame(prefix + i, false);
         c.title = db.t(ty.str('Text_ID')) || ty.name;
@@ -49,7 +61,8 @@ export function fillSummary(dlg, { title, time, planet, yours, enemy, bounty = 0
     };
     put(`IDC_${side}_HERO`, null, heroes);
     const slots = put(`IDC_${side}_UNIT`, `IDC_${side}_UNIT_NAME`, units);
-    const first = dlg.def.controls.find(c => c.id === `IDC_${side}_UNIT0`), bar = dlg.def.controls.find(c => c.id === `IDC_${side}_SCROLLBAR`);
+    const first = dlg.def.controls.find(c => c.id === `IDC_${side}_UNIT0`),
+      bar = dlg.def.controls.find(c => c.id === `IDC_${side}_SCROLLBAR`);
     const over = first && bar ? { x: first.x, y: bar.y, w: bar.x - first.x, h: bar.h } : null;
     dlg.scroll(`IDC_${side}_SCROLLBAR`, units.length - slots, v => put(`IDC_${side}_UNIT`, `IDC_${side}_UNIT_NAME`, units, v), over);
   };
@@ -62,7 +75,8 @@ export function openSummary() {
 }
 
 export function battleTime(seconds) {
-  const t = Math.max(0, Math.floor(seconds || 0)), two = n => String(n).padStart(2, '0');
+  const t = Math.max(0, Math.floor(seconds || 0)),
+    two = n => String(n).padStart(2, '0');
   return `${db.t('TEXT_BATTLE_TIME') || 'Battle Time:'} ${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
 }
 
@@ -78,15 +92,32 @@ export async function showSummary(game, won, me) {
     title: db.t(won ? 'TEXT_WIN_BATTLE' : 'TEXT_LOST_BATTLE') || (won ? 'Victory!' : 'Defeat!'),
     time: battleTime(t),
     planet: game.setup?.campaign ? battlePlanetName(game) : '',
-    yours: losses.get(me), enemy: foe,
-    bounty: game.human ? game.human.bounty : game.world?.collected?.[game.me] || 0, collects: !!(game.human?.faction || db.faction(game.factions?.[game.me]))?.bool('Benefits_From_Corruption'),
+    yours: losses.get(me),
+    enemy: foe,
+    bounty: game.human ? game.human.bounty : game.world?.collected?.[game.me] || 0,
+    collects: !!(game.human?.faction || db.faction(game.factions?.[game.me]))?.bool('Benefits_From_Corruption')
   });
-  const au = game.audio, hush = au ? au.menuOnly : false, held = game.paused;
-  if (au) { au.menuOnly = true; au.stopLoops?.(); }
+  const au = game.audio,
+    hush = au ? au.menuOnly : false,
+    held = game.paused;
+  if (au) {
+    au.menuOnly = true;
+    au.stopLoops?.();
+  }
   if (!game.lock) game.paused = true;
   game.endScreen = true;
-  const resume = () => { if (au) au.menuOnly = hush; if (!game.lock) game.paused = held; game.endScreen = false; };
-  dlg.on('IDC_CONTINUE_BUTTON', () => { dlg.close(); resume(); game.tacticalStory?.generic('battle_end_closed'); if (game.campaignOutcome) game.returnToGalaxy(); else game.toggleMenu(); });
+  const resume = () => {
+    if (au) au.menuOnly = hush;
+    if (!game.lock) game.paused = held;
+    game.endScreen = false;
+  };
+  dlg.on('IDC_CONTINUE_BUTTON', () => {
+    dlg.close();
+    resume();
+    game.tacticalStory?.generic('battle_end_closed');
+    if (game.campaignOutcome) game.returnToGalaxy();
+    else game.toggleMenu();
+  });
   game.summary = dlg;
   return true;
 }

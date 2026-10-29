@@ -2,7 +2,10 @@ import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { strategicStealth } from './galacticfog.js';
 
-const key = s => String(s || '').trim().toUpperCase();
+const key = s =>
+  String(s || '')
+    .trim()
+    .toUpperCase();
 const same = (a, b) => key(a) === key(b);
 
 export const canBribe = faction => !!db.faction(faction)?.bool('Benefits_From_Corruption');
@@ -57,14 +60,16 @@ export function hudQuote(galaxy, fleet, path, me) {
   if (!canBribe(me)) return 0;
   let total = 0;
   for (const index of path.slice(0, -1)) {
-    const planet = galaxy.planets[index], ctl = controllerOf(galaxy, index);
+    const planet = galaxy.planets[index],
+      ctl = controllerOf(galaxy, index);
     if (planet && ctl && !same(ctl, me) && corrupted(planet)) total += shipsPrice(planet, fleet.units);
   }
   return total;
 }
 
 export function passByBribe(galaxy, fleet, index) {
-  const planet = galaxy.planets[index], ctl = controllerOf(galaxy, index);
+  const planet = galaxy.planets[index],
+    ctl = controllerOf(galaxy, index);
   if (!planet || !canBribe(fleet.owner) || !corrupted(planet) || !ctl || same(ctl, fleet.owner)) return false;
   const cost = multiplied(galaxy, fleet.owner, shipsPrice(planet, fleet.units));
   if (cost > creditsOf(galaxy, fleet.owner)) return false;

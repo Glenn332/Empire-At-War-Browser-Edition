@@ -5,11 +5,16 @@ const mod = process.argv.indexOf('--mod');
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), mod < 0 ? [] : [process.argv[mod + 1]]);
 globalThis.fetch = async input => {
   const path = String(input);
-  if (path.startsWith('api/find?q=')) { const re = new RegExp(decodeURIComponent(path.slice(11)), 'i'); return new Response(JSON.stringify([...archive.index.keys()].filter(n => re.test(n)))); }
-  const key = archive.resolve(decodeURIComponent(path.replace(/^asset\//, ''))), data = key && archive.read(key);
+  if (path.startsWith('api/find?q=')) {
+    const re = new RegExp(decodeURIComponent(path.slice(11)), 'i');
+    return new Response(JSON.stringify([...archive.index.keys()].filter(n => re.test(n))));
+  }
+  const key = archive.resolve(decodeURIComponent(path.replace(/^asset\//, ''))),
+    data = key && archive.read(key);
   return new Response(data ? new Uint8Array(data) : null, { status: data ? 200 : 404 });
 };
-const { db, loadGameData, loadFileList } = await import('../public/js/gamedata.js'); await loadGameData();
+const { db, loadGameData, loadFileList } = await import('../public/js/gamedata.js');
+await loadGameData();
 const { fetchText } = await import('../public/js/vfs.js');
 const { parseXML } = await import('../public/js/xml.js');
 const { loadALO } = await import('../public/js/alo.js');
@@ -17,55 +22,161 @@ const { loadALA } = await import('../public/js/ala.js');
 const { uiMeshes } = await import('../public/js/game/hud.js');
 const { loadCampaignData, startingGalaxy } = await import('../public/js/game/galaxy.js');
 const { stepVisibility } = await import('../public/js/game/galacticfog.js');
-const { radarPlanets, radarPoint, radarWorld, radarAppearance, radarViewPoint, nativeRound, selectRadarPlanet, recenterRadar, advanceRadarFlash } = await import('../public/js/game/galacticradardata.js');
+const {
+  radarPlanets,
+  radarPoint,
+  radarWorld,
+  radarAppearance,
+  radarViewPoint,
+  nativeRound,
+  selectRadarPlanet,
+  recenterRadar,
+  advanceRadarFlash
+} = await import('../public/js/game/galacticradardata.js');
 const { GalacticGame } = await import('../public/js/game/galactic.js');
-const data = await loadCampaignData(), campaign = mod < 0 ? data.campaigns.get('SANDBOX_EQUAL_FOOTING_EMPIRE') : data.campaigns.get('FULLLARGE_ERA_3_EMPIRE');
+const data = await loadCampaignData(),
+  campaign = mod < 0 ? data.campaigns.get('SANDBOX_EQUAL_FOOTING_EMPIRE') : data.campaigns.get('FULLLARGE_ERA_3_EMPIRE');
 assert(campaign);
-const g = startingGalaxy(data, campaign); stepVisibility(g, g.active);
-const planets = radarPlanets(g); assert(planets.length > 20);
+const g = startingGalaxy(data, campaign);
+stepVisibility(g, g.active);
+const planets = radarPlanets(g);
+assert(planets.length > 20);
 assert(planets.every(p => p.type.list('Behavior').some(n => n.toUpperCase() === 'PLANET')));
-assert(g.planets.filter(p => !planets.includes(p)).every(p => p.owner == null || !p.type.list('Behavior').some(n => n.toUpperCase() === 'PLANET')));
-const size = [175,175];
-assert.deepEqual(radarPoint([-380,460],size),{x:-87.5,y:87.5});
-assert.deepEqual(radarWorld({x:87.5,y:-87.5},size),{x:380,y:-460});
-for (const p of planets) { const at=radarPoint(p.pos,size), back=radarWorld(at,size); assert(Math.abs(back.x-p.pos[0])<1e-9 && Math.abs(back.y-p.pos[1])<1e-9); }
-const unknown = planets.find(p => !g.visibility.planets[p.index].discovered), known = planets.find(p => g.visibility.planets[p.index].discovered);
+assert(
+  g.planets
+    .filter(p => !planets.includes(p))
+    .every(p => p.owner == null || !p.type.list('Behavior').some(n => n.toUpperCase() === 'PLANET'))
+);
+const size = [175, 175];
+assert.deepEqual(radarPoint([-380, 460], size), { x: -87.5, y: 87.5 });
+assert.deepEqual(radarWorld({ x: 87.5, y: -87.5 }, size), { x: 380, y: -460 });
+for (const p of planets) {
+  const at = radarPoint(p.pos, size),
+    back = radarWorld(at, size);
+  assert(Math.abs(back.x - p.pos[0]) < 1e-9 && Math.abs(back.y - p.pos[1]) < 1e-9);
+}
+const unknown = planets.find(p => !g.visibility.planets[p.index].discovered),
+  known = planets.find(p => g.visibility.planets[p.index].discovered);
 assert(unknown && known);
-assert.equal(radarAppearance(g,unknown).alpha,128/255);
-assert.deepEqual(radarAppearance(g,unknown).color,db.faction('Neutral').vec('Color'));
-const v = g.visibility.planets[known.index], oldOwner = known.owner;
-known.owner=g.active; v.ownerKnown=true;
-assert.deepEqual(radarAppearance(g,known).color,db.faction(g.active).vec('Color'));
-v.ownerKnown=false; assert.deepEqual(radarAppearance(g,known).color,db.faction('Neutral').vec('Color'));
-v.ownerKnown=true; known.owner=oldOwner;
-const originView=radarViewPoint({x:0,y:0,z:100},{x:0,y:0,z:-1},size,[132,90]); assert.deepEqual(originView,{x:0,y:-10});
-assert.deepEqual(radarViewPoint({x:1000,y:-1000,z:100},{x:0,y:0,z:-1},size,[132,90]),{x:21.5,y:-42.5});
-assert.equal(radarViewPoint({x:0,y:0,z:10},{x:0,y:1,z:0},size,[132,90]),null);
-assert.equal(nativeRound(-1.5),-2); assert.equal(nativeRound(1.5),2);
-const flash={timer:0,count:0,persistent:true};assert.equal(advanceRadarFlash(flash,0.25),127);assert.equal(flash.timer,0.25);advanceRadarFlash(flash,0.25);assert.equal(flash.timer,0.5);
-const finite={timer:1.5,count:3,persistent:false};assert.equal(advanceRadarFlash(finite,0.25),125,'Native finite flash wraps RGB bytes above255');
-for(let n=1;n<9;n++)advanceRadarFlash(finite,0.25);assert.equal(finite.timer,0.25);assert.equal(finite.count,1);advanceRadarFlash(finite,0.25);assert.equal(finite.timer,0);assert.equal(finite.count,0);
-const game = new GalacticGame({}, {audio:null,progress:null}); game.galaxy=g; game.selected=-1;
-game.view={x:0,y:0,zoom:0,dir:0,planet:-1};game.select=i=>{game.selected=i;};game.placeCamera=()=>{};
-assert(!selectRadarPlanet(game,unknown.index)); assert.equal(game.selected,-1);
-assert(selectRadarPlanet(game,known.index)); assert.equal(game.selected,known.index);assert.equal(game.view.zoom,0);
-game.view={x:10,y:20,zoom:1,dir:0,planet:unknown.index};
-assert(selectRadarPlanet(game,known.index));assert.equal(game.view.planet,known.index);assert.equal(game.view.zoom,1);
-game.view={x:10,y:20,zoom:0.4,dir:1,planet:unknown.index};selectRadarPlanet(game,known.index);assert.equal(game.view.zoom,1);assert.equal(game.view.dir,0);
-game.view={x:10,y:20,zoom:0.4,dir:-1,planet:unknown.index};selectRadarPlanet(game,known.index);assert.equal(game.view.planet,unknown.index);assert.equal(game.view.dir,-1);
-assert(recenterRadar(game,{x:379,y:-459})); assert.equal(game.view.x,379);assert.equal(game.view.y,-459);assert.equal(game.view.z,10);assert.equal(game.selected,known.index);assert.equal(game.view.dir,-1);
-game.battle={};assert(!recenterRadar(game,{x:0,y:0}));assert.equal(game.view.x,379);game.battle=null;
-let zoom='';game.zoomIn=()=>{zoom='in';};game.zoomOut=()=>{zoom='out';};
-game.view={zoom:0,dir:0};game.toggleZoom();assert.equal(zoom,'in');
-game.view={zoom:1,dir:0};game.toggleZoom();assert.equal(zoom,'out');
-zoom='';game.view={zoom:0.4,dir:-1};game.toggleZoom();assert.equal(zoom,'','The native zoom handlers do not reverse an active transition');
-const comps=new Map();for(const file of await loadFileList('CommandBarComponentFiles.xml'))for(const top of parseXML(await fetchText('Data/XML/'+file)).children)for(const c of top.children)if(c.attrs.Name)comps.set(c.attrs.Name.toUpperCase(),c);
+assert.equal(radarAppearance(g, unknown).alpha, 128 / 255);
+assert.deepEqual(radarAppearance(g, unknown).color, db.faction('Neutral').vec('Color'));
+const v = g.visibility.planets[known.index],
+  oldOwner = known.owner;
+known.owner = g.active;
+v.ownerKnown = true;
+assert.deepEqual(radarAppearance(g, known).color, db.faction(g.active).vec('Color'));
+v.ownerKnown = false;
+assert.deepEqual(radarAppearance(g, known).color, db.faction('Neutral').vec('Color'));
+v.ownerKnown = true;
+known.owner = oldOwner;
+const originView = radarViewPoint({ x: 0, y: 0, z: 100 }, { x: 0, y: 0, z: -1 }, size, [132, 90]);
+assert.deepEqual(originView, { x: 0, y: -10 });
+assert.deepEqual(radarViewPoint({ x: 1000, y: -1000, z: 100 }, { x: 0, y: 0, z: -1 }, size, [132, 90]), { x: 21.5, y: -42.5 });
+assert.equal(radarViewPoint({ x: 0, y: 0, z: 10 }, { x: 0, y: 1, z: 0 }, size, [132, 90]), null);
+assert.equal(nativeRound(-1.5), -2);
+assert.equal(nativeRound(1.5), 2);
+const flash = { timer: 0, count: 0, persistent: true };
+assert.equal(advanceRadarFlash(flash, 0.25), 127);
+assert.equal(flash.timer, 0.25);
+advanceRadarFlash(flash, 0.25);
+assert.equal(flash.timer, 0.5);
+const finite = { timer: 1.5, count: 3, persistent: false };
+assert.equal(advanceRadarFlash(finite, 0.25), 125, 'Native finite flash wraps RGB bytes above255');
+for (let n = 1; n < 9; n++) advanceRadarFlash(finite, 0.25);
+assert.equal(finite.timer, 0.25);
+assert.equal(finite.count, 1);
+advanceRadarFlash(finite, 0.25);
+assert.equal(finite.timer, 0);
+assert.equal(finite.count, 0);
+const game = new GalacticGame({}, { audio: null, progress: null });
+game.galaxy = g;
+game.selected = -1;
+game.view = { x: 0, y: 0, zoom: 0, dir: 0, planet: -1 };
+game.select = i => {
+  game.selected = i;
+};
+game.placeCamera = () => {};
+assert(!selectRadarPlanet(game, unknown.index));
+assert.equal(game.selected, -1);
+assert(selectRadarPlanet(game, known.index));
+assert.equal(game.selected, known.index);
+assert.equal(game.view.zoom, 0);
+game.view = { x: 10, y: 20, zoom: 1, dir: 0, planet: unknown.index };
+assert(selectRadarPlanet(game, known.index));
+assert.equal(game.view.planet, known.index);
+assert.equal(game.view.zoom, 1);
+game.view = { x: 10, y: 20, zoom: 0.4, dir: 1, planet: unknown.index };
+selectRadarPlanet(game, known.index);
+assert.equal(game.view.zoom, 1);
+assert.equal(game.view.dir, 0);
+game.view = { x: 10, y: 20, zoom: 0.4, dir: -1, planet: unknown.index };
+selectRadarPlanet(game, known.index);
+assert.equal(game.view.planet, unknown.index);
+assert.equal(game.view.dir, -1);
+assert(recenterRadar(game, { x: 379, y: -459 }));
+assert.equal(game.view.x, 379);
+assert.equal(game.view.y, -459);
+assert.equal(game.view.z, 10);
+assert.equal(game.selected, known.index);
+assert.equal(game.view.dir, -1);
+game.battle = {};
+assert(!recenterRadar(game, { x: 0, y: 0 }));
+assert.equal(game.view.x, 379);
+game.battle = null;
+let zoom = '';
+game.zoomIn = () => {
+  zoom = 'in';
+};
+game.zoomOut = () => {
+  zoom = 'out';
+};
+game.view = { zoom: 0, dir: 0 };
+game.toggleZoom();
+assert.equal(zoom, 'in');
+game.view = { zoom: 1, dir: 0 };
+game.toggleZoom();
+assert.equal(zoom, 'out');
+zoom = '';
+game.view = { zoom: 0.4, dir: -1 };
+game.toggleZoom();
+assert.equal(zoom, '', 'The native zoom handlers do not reverse an active transition');
+const comps = new Map();
+for (const file of await loadFileList('CommandBarComponentFiles.xml'))
+  for (const top of parseXML(await fetchText('Data/XML/' + file)).children)
+    for (const c of top.children) if (c.attrs.Name) comps.set(c.attrs.Name.toUpperCase(), c);
 assert(comps.get('RADAR_GALACTIC') && comps.get('RADAR_GALACTIC_ADV_MAP') && comps.get('G_RADAR_BLIP'));
-const main=uiMeshes(await loadALO('i_galactic_controls.alo')), advanced=uiMeshes(await loadALO(comps.get('MAP_SHELL')?.val('Model_Name')||'planetary_mode.alo'));
-assert(main.has('RADAR_GALACTIC'));assert(advanced.has('RADAR_GALACTIC_ADV_MAP'));
-const model=await loadALO('i_galactic_radar.alo');assert(model.meshes.some(m=>m.subs.some(s=>s.geometry.boneMap)),'Native indicator is skinned');
-const move=await loadALA('I_GALACTIC_RADAR_MOVE_00.ALA'),attack=await loadALA('I_GALACTIC_RADAR_ATTACK_00.ALA');assert(move && attack);
-assert(move.tracks.some(t=>t.trans)&&attack.tracks.some(t=>t.trans));
-const mtd=archive.read(archive.resolve('Data/Art/Textures/MT_CommandBar.mtd')),icons=new Set();for(let i=0;i<mtd.readUInt32LE(0);i++){const at=4+i*81;icons.add(mtd.toString('latin1',at,at+64).replace(/\0.*$/,'').toUpperCase());}
-for(const prop of ['Icon_Texture_Name','Mouse_Over_Texture_Name','Selected_Texture_Name','Flash_Texture_Name'])assert(icons.has(comps.get('G_RADAR_BLIP').val(prop).toUpperCase()),prop+' resolves to native atlas art');
-console.log(JSON.stringify({mod:mod>=0,campaign:campaign.name,planets:planets.length,unknown:planets.filter(p=>!g.visibility.planets[p.index].discovered).length,result:'fixed projection, fog colors, camera frame, release selection, zoom states and native asset checks passed'}));
+const main = uiMeshes(await loadALO('i_galactic_controls.alo')),
+  advanced = uiMeshes(await loadALO(comps.get('MAP_SHELL')?.val('Model_Name') || 'planetary_mode.alo'));
+assert(main.has('RADAR_GALACTIC'));
+assert(advanced.has('RADAR_GALACTIC_ADV_MAP'));
+const model = await loadALO('i_galactic_radar.alo');
+assert(
+  model.meshes.some(m => m.subs.some(s => s.geometry.boneMap)),
+  'Native indicator is skinned'
+);
+const move = await loadALA('I_GALACTIC_RADAR_MOVE_00.ALA'),
+  attack = await loadALA('I_GALACTIC_RADAR_ATTACK_00.ALA');
+assert(move && attack);
+assert(move.tracks.some(t => t.trans) && attack.tracks.some(t => t.trans));
+const mtd = archive.read(archive.resolve('Data/Art/Textures/MT_CommandBar.mtd')),
+  icons = new Set();
+for (let i = 0; i < mtd.readUInt32LE(0); i++) {
+  const at = 4 + i * 81;
+  icons.add(
+    mtd
+      .toString('latin1', at, at + 64)
+      .replace(/\0.*$/, '')
+      .toUpperCase()
+  );
+}
+for (const prop of ['Icon_Texture_Name', 'Mouse_Over_Texture_Name', 'Selected_Texture_Name', 'Flash_Texture_Name'])
+  assert(icons.has(comps.get('G_RADAR_BLIP').val(prop).toUpperCase()), prop + ' resolves to native atlas art');
+console.log(
+  JSON.stringify({
+    mod: mod >= 0,
+    campaign: campaign.name,
+    planets: planets.length,
+    unknown: planets.filter(p => !g.visibility.planets[p.index].discovered).length,
+    result: 'fixed projection, fog colors, camera frame, release selection, zoom states and native asset checks passed'
+  })
+);
