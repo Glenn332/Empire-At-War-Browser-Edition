@@ -487,7 +487,7 @@ export class ParticleManager {
       key,
       f: h.f,
       heatOn: this.heatOn,
-      opts: { points: opts.points || null, scale: opts.scale || 1, maxEmit: opts.maxEmit ?? Infinity, slot: h.slot }
+      opts: { points: opts.points || null, basis: opts.basis || null, scale: opts.scale || 1, maxEmit: opts.maxEmit ?? Infinity, slot: h.slot }
     });
     this.byId.set(h.id, h);
     this.systems.push(h);

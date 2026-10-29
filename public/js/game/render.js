@@ -1233,7 +1233,7 @@ export class Renderer {
           (!px.ion || u.ionUntil > u.world.time)
         );
       },
-      { points: u.proxyPoints(px) }
+      { points: u.proxyPoints(px), basis: u.proxyBasis(px) }
     );
     px.engine = /engine/i.test(px.name);
     px.sys = sys;

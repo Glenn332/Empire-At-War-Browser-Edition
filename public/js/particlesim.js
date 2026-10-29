@@ -94,6 +94,15 @@ class Batch {
 }
 
 const _v = [0, 0, 0];
+const turn = (B, v) => {
+  const x = v[0],
+    y = v[1],
+    z = v[2];
+  v[0] = B[0] * x + B[3] * y + B[6] * z;
+  v[1] = B[1] * x + B[4] * y + B[7] * z;
+  v[2] = B[2] * x + B[5] * y + B[8] * z;
+  return v;
+};
 const cl = v => (v < 0 ? 0 : v > 255 ? 1 : v / 255);
 
 class System {
@@ -101,6 +110,7 @@ class System {
     this.sim = sim;
     this.def = def;
     this.points = opts.points || null;
+    this.basis = opts.basis || null;
     this.scale = opts.scale || 1;
     this.slot = opts.slot ?? -1;
     this.density = 1;
@@ -113,7 +123,7 @@ class System {
     this.f = { x: 0, y: 0, z: 0, rot: 0, roll: 0, scale: 1, vx: 0, vy: 0, bright: 1, dx: 0, dy: 0, dz: 0, lr: 0, ll: 0, lt: 0, ...f };
     this.emitters = def.emitters
       .filter(e => !e.heat || sim.heatOn)
-      .map(e => ({ e, time: 0, next: e.delay, bursts: 0, parts: [], trailAcc: 0, pointIdx: 0 }));
+      .map(e => ({ e, time: 0, next: e.delay, bursts: 0, parts: [], trailAcc: 0, pointIdx: 0, accel: this.basis ? turn(this.basis, [...e.accel]) : e.accel }));
     for (const s of this.emitters) s.trailState = s.e.trail ? this.emitters.find(o => o.e === s.e.trail) : null;
     for (const s of this.emitters) if (s.e.skipTime > 0) for (let t = 0; t <= s.e.skipTime; t += 0.1) this.stepEmitter(s, 0.1);
   }
@@ -197,11 +207,13 @@ class System {
       return;
     } else {
       sampleGroup(e.pos, _v);
+      if (this.basis) turn(this.basis, _v);
       lx = _v[0] * sc;
       ly = _v[1] * sc;
       lz = _v[2] * sc;
     }
     sampleGroup(e.vel, _v);
+    if (this.basis && !at) turn(this.basis, _v);
     let vx = _v[0] * sc,
       vy = _v[1] * sc,
       vz = _v[2] * sc;
@@ -287,9 +299,9 @@ class System {
     }
     const parts = s.parts;
     let n = 0;
-    const ax = e.accel[0],
-      ay = e.accel[1],
-      az = e.accel[2] - e.gravity;
+    const ax = s.accel[0],
+      ay = s.accel[1],
+      az = s.accel[2] - e.gravity;
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
       p.age += dt;

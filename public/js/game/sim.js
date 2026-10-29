@@ -876,6 +876,20 @@ export class Unit {
     return { x: -e[13] * this.scale, y: e[12] * this.scale, z: e[14] * this.scale, ax: -e[1], ay: e[0] };
   }
 
+  proxyBasis(proxy) {
+    if (proxy.basis !== undefined) return proxy.basis;
+    const e = this.modelMatrix(proxy.bone, _m1).elements,
+      b = [];
+    for (let c = 0; c < 3; c++) {
+      const x = e[c * 4],
+        y = e[c * 4 + 1],
+        z = e[c * 4 + 2],
+        l = Math.hypot(x, y, z) || 1;
+      b.push(x / l, y / l, z / l);
+    }
+    return (proxy.basis = b.every((v, i) => Math.abs(v - (i % 4 === 0 ? 1 : 0)) < 1e-4) ? null : b);
+  }
+
   proxyPoints(proxy) {
     if (proxy.points !== undefined) return proxy.points;
     proxy.points = null;
