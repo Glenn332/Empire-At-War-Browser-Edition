@@ -1,8 +1,7 @@
 import { db, factionColor, autoColors } from '../gamedata.js';
 import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
 import { openDialog } from './dialogs.js';
-import { loadTextureCanvas } from '../dds.js';
-import { mapHeader, mapTitle, controlMap } from '../ted.js';
+import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions } from './lobby.js';
 import { loadCampaignData } from './galaxy.js';
@@ -780,7 +779,7 @@ async function openStaging({
   const isLand = m => landMaps.includes(m) || mapHeader(m)?.kind === 1;
   const mapPlayers = { get: m => mapHeader(m)?.players || 0 };
   const loadAllPlayers = Promise.resolve();
-  const kindLabel = m => (isLand(m) ? T('TEXT_LOBBY_LIST_GAME_TYPE_LAND', 'Land') : T('TEXT_LOBBY_LIST_GAME_TYPE_SPACE', 'Space'));
+  const kindLabel = m => (isLand(m) ? T('TEXT_GAME_TYPE_TEAM_LAND', 'Land') : T('TEXT_GAME_TYPE_TEAM_SPACE', 'Space'));
   const C = db.constants,
     campaignOf = n => campaigns.find(c => c.name.toUpperCase() === String(n).toUpperCase());
   const allPlayable = [...db.factions.values()].filter(f => f.bool('Is_Playable')).map(f => f.name);
@@ -1139,7 +1138,7 @@ async function openStaging({
     if (!previews.has(m))
       previews.set(
         m,
-        loadTextureCanvas(m.replace(/\.TED$/i, '.tga'))
+        loadMapPreview(m)
           .then(cv => (cv ? cv.toDataURL() : ''))
           .catch(() => '')
       );

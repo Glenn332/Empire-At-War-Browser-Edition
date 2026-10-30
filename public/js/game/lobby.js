@@ -1,8 +1,7 @@
 import { db, factionColor, autoColors } from '../gamedata.js';
 import { openDialog } from './dialogs.js';
 import { Menus } from './menus.js';
-import { loadTextureCanvas, decodeTGA } from '../dds.js';
-import { loadMap, mapHeader, mapTitle, loadMapPicture } from '../ted.js';
+import { loadMap, mapHeader, mapTitle, loadMapPreview } from '../ted.js';
 import { iconUrl } from '../icons.js';
 import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
 
@@ -76,20 +75,6 @@ export async function openLobby({
       .map(m => ({ key: m, name: mapName(m), label: (players.get(m) ? `(${players.get(m)}) ` : '') + mapName(m) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   const previews = new Map();
-  const ownPicture = async m => {
-    const buf = await loadMapPicture(m);
-    if (!buf) return null;
-    const p = decodeTGA(buf),
-      cv = document.createElement('canvas');
-    cv.width = p.width;
-    cv.height = p.height;
-    cv.getContext('2d').putImageData(
-      new ImageData(new Uint8ClampedArray(p.data.buffer, p.data.byteOffset, p.width * p.height * 4), p.width, p.height),
-      0,
-      0
-    );
-    return cv;
-  };
   const starts = new Map();
   const marks = [];
   const markStarts = async () => {
@@ -136,9 +121,7 @@ export async function openLobby({
     if (!previews.has(m))
       previews.set(
         m,
-        loadTextureCanvas(m.replace(/\.TED$/i, '.tga'))
-          .catch(() => null)
-          .then(cv => cv || ownPicture(m))
+        loadMapPreview(m)
           .then(cv => (cv ? cv.toDataURL() : ''))
           .catch(() => '')
       );
@@ -165,8 +148,8 @@ export async function openLobby({
     const picked = dlg.ctl('IDC_STAGING_MAP_LIST').querySelector('.sel');
     if (picked) picked.scrollIntoView({ block: 'nearest' });
   };
-  const kinds = [{ key: 'space', label: T('TEXT_LOBBY_LIST_GAME_TYPE_SPACE', 'Space') }];
-  if (landMaps.length || customMaps.land.length) kinds.push({ key: 'land', label: T('TEXT_LOBBY_LIST_GAME_TYPE_LAND', 'Land') });
+  const kinds = [{ key: 'space', label: T('TEXT_GAME_TYPE_TEAM_SPACE', 'Space') }];
+  if (landMaps.length || customMaps.land.length) kinds.push({ key: 'land', label: T('TEXT_GAME_TYPE_TEAM_LAND', 'Land') });
   dlg
     .list('IDC_GAME_TYPE_LIST', kinds, row => {
       if (st.mode !== row.key) {

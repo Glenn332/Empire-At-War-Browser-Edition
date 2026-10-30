@@ -1,5 +1,6 @@
 import { ChunkReader, fetchBinary, fetchHead, findFiles } from './vfs.js';
 import { db } from './gamedata.js';
+import { loadTextureCanvas, decodeTGA } from './dds.js';
 
 export function parseMapMarkerHeader(buffer) {
   const r = new ChunkReader(buffer),
@@ -495,4 +496,21 @@ export async function loadMap(name) {
   const map = parseTED(buf);
   map.file = name;
   return map;
+}
+
+export async function loadMapPreview(name) {
+  const loose = await loadTextureCanvas(name.replace(/\.TED$/i, '.tga')).catch(() => null);
+  if (loose) return loose;
+  const buf = await loadMapPicture(name);
+  if (!buf) return null;
+  const p = decodeTGA(buf),
+    cv = document.createElement('canvas');
+  cv.width = p.width;
+  cv.height = p.height;
+  cv.getContext('2d').putImageData(
+    new ImageData(new Uint8ClampedArray(p.data.buffer, p.data.byteOffset, p.width * p.height * 4), p.width, p.height),
+    0,
+    0
+  );
+  return cv;
 }
