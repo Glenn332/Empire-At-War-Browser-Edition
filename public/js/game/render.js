@@ -18,8 +18,7 @@ import { LaserBatch } from './laser.js';
 
 const DEG = Math.PI / 180;
 const NO_FX = [];
-const SHOT_FX_SCALE = false,
-  SHOT_FX_CARRY = false;
+const SHOT_FX_SCALE = false;
 const NO_INSTANCING = typeof location !== 'undefined' && new URLSearchParams(location.search).get('instancing') === '0';
 const boneShown = (b, root) => {
   for (; b && b !== root; b = b.parent) if (!b.visible) return false;
@@ -288,7 +287,11 @@ export class CameraRig {
       sy = (Math.random() - 0.5) * this.shake;
       this.shake *= Math.exp(-dt * 5);
     }
-    c.position.set(this.x + Math.cos(this.yaw) * cp * this.dist + sx, this.y + Math.sin(this.yaw) * cp * this.dist + sy, this.z + sp * this.dist);
+    c.position.set(
+      this.x + Math.cos(this.yaw) * cp * this.dist + sx,
+      this.y + Math.sin(this.yaw) * cp * this.dist + sy,
+      this.z + sp * this.dist
+    );
     c.up.set(0, 0, 1);
     c.lookAt(this.x + sx, this.y + sy, this.z);
   }
@@ -1184,8 +1187,9 @@ export class Renderer {
         f.rot = Math.atan2(dy, dx) + Math.PI / 2;
         f.roll = 0;
         f.scale = SHOT_FX_SCALE ? scale : 1;
-        f.vx = SHOT_FX_CARRY ? p.vx : 0;
-        f.vy = SHOT_FX_CARRY ? p.vy : 0;
+        f.vx = p.vx;
+        f.vy = p.vy;
+        f.vz = p.vz;
         return !p.hidden;
       });
       if (h) hs.push(h);
@@ -1202,8 +1206,8 @@ export class Renderer {
       px.name,
       f => {
         if (u.dead) {
-          sys.dead = true;
-          return false;
+          sys.release();
+          return true;
         }
         const c = Math.cos(u.heading),
           s = Math.sin(u.heading);
@@ -1400,7 +1404,7 @@ export class Renderer {
       if (!playing || c.age > c.limit) {
         c.inst.box.getCenter(_cv).applyMatrix4(c.holder.matrixWorld);
         this.explosion(_cv.x, _cv.y, _cv.z, Math.min(300, c.inst.radius * 0.6 * c.holder.scale.x), false);
-        for (const p of c.proxies) if (p.sys) p.sys.stop();
+        for (const p of c.proxies) if (p.sys) p.sys.release();
         this.scene.remove(c.holder);
         continue;
       }
@@ -1513,7 +1517,7 @@ export class Renderer {
           fx[fn++] = p;
           continue;
         }
-        for (const h of p.fxs) h.stop();
+        for (const h of p.fxs) h.release();
       }
       fx.length = fn;
       const viewer = world.viewer ? world.viewer.bit : 0;

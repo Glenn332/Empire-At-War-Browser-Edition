@@ -72,6 +72,7 @@ export class Shots {
             f.scale = 1;
             f.vx = s.vx;
             f.vy = s.vy;
+            f.vz = s.vz || 0;
           });
           if (!sys) continue;
           it = { sys };
@@ -107,7 +108,7 @@ export class Shots {
     kites.end();
     for (const [s, it] of this.live) {
       if (seen.has(s)) continue;
-      if (it.sys) it.sys.orphan();
+      if (it.sys) it.sys.release();
       else {
         it.holder.visible = false;
         if (!this.spare.has(it.file)) this.spare.set(it.file, []);

@@ -128,7 +128,6 @@ class System {
     this.slot = opts.slot ?? -1;
     this.density = 1;
     this.emitting = true;
-    this.orphaned = false;
     this.age = 0;
     this.maxEmit = opts.maxEmit ?? Infinity;
     this.dead = false;
@@ -136,7 +135,16 @@ class System {
     this.f = { x: 0, y: 0, z: 0, rot: 0, roll: 0, scale: 1, vx: 0, vy: 0, bright: 1, dx: 0, dy: 0, dz: 0, lr: 0, ll: 0, lt: 0, ...f };
     this.emitters = def.emitters
       .filter(e => !e.heat || sim.heatOn)
-      .map(e => ({ e, time: 0, next: e.delay, bursts: 0, parts: [], trailAcc: 0, pointIdx: 0, accel: this.basis ? turn(this.basis, [...e.accel]) : e.accel }));
+      .map(e => ({
+        e,
+        time: 0,
+        next: e.delay,
+        bursts: 0,
+        parts: [],
+        trailAcc: 0,
+        pointIdx: 0,
+        accel: this.basis ? turn(this.basis, [...e.accel]) : e.accel
+      }));
     for (const s of this.emitters) s.trailState = s.e.trail ? this.emitters.find(o => o.e === s.e.trail) : null;
     for (const s of this.emitters) if (s.e.skipTime > 0) for (let t = 0; t <= s.e.skipTime; t += 0.1) this.stepEmitter(s, 0.1);
   }
@@ -284,9 +292,9 @@ class System {
       p.x = f.x + cr * lx - sr * ly;
       p.y = f.y + sr * lx + cr * ly;
       p.z = f.z + lz;
-      p.vx = cr * vx - sr * vy + f.vx;
-      p.vy = sr * vx + cr * vy + f.vy;
-      p.vz = vz + (f.vz || 0);
+      p.vx = cr * vx - sr * vy;
+      p.vy = sr * vx + cr * vy;
+      p.vz = vz;
       p.rx = cr * rx - sr * ry;
       p.ry = sr * rx + cr * ry;
       p.rz = rz;
@@ -315,6 +323,10 @@ class System {
     const ax = s.accel[0],
       ay = s.accel[1],
       az = s.accel[2] - e.gravity;
+    const k = e.inherit ? e.inheritFraction : 0,
+      ix = k * f.vx,
+      iy = k * f.vy,
+      iz = k * (f.vz || 0);
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
       p.age += dt;
@@ -337,9 +349,15 @@ class System {
           p.vz += oz * k;
         }
       }
-      p.x += (p.vx + p.rx) * dt;
-      p.y += (p.vy + p.ry) * dt;
-      p.z += (p.vz + p.rz) * dt;
+      if (p.world) {
+        p.x += (p.vx + p.rx + ix) * dt;
+        p.y += (p.vy + p.ry + iy) * dt;
+        p.z += (p.vz + p.rz + iz) * dt;
+      } else {
+        p.x += (p.vx + p.rx) * dt;
+        p.y += (p.vy + p.ry) * dt;
+        p.z += (p.vz + p.rz) * dt;
+      }
       if (!e.staticRot) {
         const rs = sampleTrack(e.tracks[6], p.age / p.life);
         if (rs) p.angle += rs * TAU * dt * (1 + (Math.random() * 2 - 1) * e.randRot);
@@ -493,12 +511,7 @@ export class ParticleSim {
       f.vz = frames[i + 20];
       s.visible = frames[i + 9] !== 0;
       s.density = frames[i + 10];
-      const em = frames[i + 11];
-      if (em !== 1) s.emitting = false;
-      if (em === 2 && !s.orphaned) {
-        s.orphaned = true;
-        for (const st of s.emitters) if (st.parts.length) st.parts = st.parts.filter(p => p.world);
-      }
+      if (frames[i + 11] !== 1) s.emitting = false;
     }
     for (const b of this.batches.values()) b.count = 0;
     for (const [id, s] of this.systems) {

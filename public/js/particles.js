@@ -78,6 +78,8 @@ function parseEmitter(r, c) {
     weather: false,
     noDepth: false,
     staticRot: false,
+    inherit: false,
+    inheritFraction: 1,
     linkDeath: -1,
     linkLife: -1,
     vel: { type: 0, point: [0, 0, 0] },
@@ -148,6 +150,9 @@ function parseEmitter(r, c) {
           case 0x27:
             e.nBursts = r.u32(p);
             break;
+          case 0x28:
+            e.inheritFraction = r.f32(p);
+            break;
           case 0x2a:
             e.perSecond = r.u32(p);
             break;
@@ -171,6 +176,9 @@ function parseEmitter(r, c) {
             break;
           case 0x3d:
             e.weather = dv.getUint8(p) !== 0;
+            break;
+          case 0x43:
+            e.inherit = dv.getUint8(p) !== 0;
             break;
           case 0x46:
             e.noDepth = dv.getUint8(p) !== 0;
@@ -216,11 +224,12 @@ function parseEmitter(r, c) {
 
 export function parseParticles(buffer) {
   const r = new ChunkReader(buffer);
-  const def = { name: '', emitters: [] };
+  const def = { name: '', emitters: [], leave: true };
   for (const c of r.chunks()) {
     if (c.type !== 0x900) continue;
     for (const k of r.chunks(c.start, c.end)) {
       if (k.type === 0) def.name = r.str(k.start, k.end);
+      else if (k.type === 2 && k.end > k.start) def.leave = r.dv.getUint8(k.start) !== 0;
       else if (k.type === 0x800) for (const e of r.chunks(k.start, k.end)) if (e.type === 0x700) def.emitters.push(parseEmitter(r, e));
     }
   }
@@ -352,13 +361,14 @@ class Batch {
 }
 
 class Handle {
-  constructor(id, frame, slot) {
+  constructor(id, frame, slot, leave) {
     this.id = id;
+    this.leave = leave;
     this.frame = frame;
     this.slot = slot;
     this.density = 1;
     this.emitting = true;
-    this.orphaned = false;
+    this.released = false;
     this.dead = false;
     this.gone = false;
     this.visible = true;
@@ -367,9 +377,10 @@ class Handle {
   stop() {
     this.emitting = false;
   }
-  orphan() {
+  release() {
     this.emitting = false;
-    this.orphaned = true;
+    this.released = true;
+    if (!this.leave) this.dead = true;
   }
 }
 
@@ -478,7 +489,7 @@ export class ParticleManager {
       this.sent.add(key);
       this.worker.postMessage({ type: 'def', key, def: d });
     }
-    const h = new Handle(this.nextId++, frame, this.freeSlots.length ? this.freeSlots.pop() : -1);
+    const h = new Handle(this.nextId++, frame, this.freeSlots.length ? this.freeSlots.pop() : -1, d.leave !== false);
     frame(h.f);
     this.writeFrame(h);
     this.worker.postMessage({
@@ -487,7 +498,13 @@ export class ParticleManager {
       key,
       f: h.f,
       heatOn: this.heatOn,
-      opts: { points: opts.points || null, basis: opts.basis || null, scale: opts.scale || 1, maxEmit: opts.maxEmit ?? Infinity, slot: h.slot }
+      opts: {
+        points: opts.points || null,
+        basis: opts.basis || null,
+        scale: opts.scale || 1,
+        maxEmit: opts.maxEmit ?? Infinity,
+        slot: h.slot
+      }
     });
     this.byId.set(h.id, h);
     this.systems.push(h);
@@ -538,7 +555,7 @@ export class ParticleManager {
       k = 0;
     for (const h of list) {
       if (h.gone) continue;
-      if (!h.dead) h.visible = h.frame(h.f) !== false;
+      if (!h.dead && !h.released) h.visible = h.frame(h.f) !== false;
       if (h.dead && !h.killed) {
         if (!send) {
           list[n++] = h;
@@ -560,7 +577,7 @@ export class ParticleManager {
         frames[k + 8] = f.vy;
         frames[k + 9] = h.visible ? 1 : 0;
         frames[k + 10] = h.density;
-        frames[k + 11] = h.emitting ? 1 : h.orphaned ? 2 : 0;
+        frames[k + 11] = h.emitting ? 1 : 0;
         frames[k + 12] = h.killed ? 1 : 0;
         frames[k + 13] = f.bright ?? 1;
         frames[k + 14] = f.dx || 0;
