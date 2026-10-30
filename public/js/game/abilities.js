@@ -34,7 +34,7 @@ const TARGET = {
   CLUSTER_BOMB: 'point',
   FOW_REVEAL_PING: 'point',
   WEAKEN_ENEMY: 'point',
-  BUZZ_DROIDS: 'unit',
+  BUZZ_DROIDS: 'point',
   CONCENTRATE_FIRE: 'unit',
   CORRUPT_SYSTEMS: 'unit',
   ENERGY_WEAPON: 'unit',
@@ -229,9 +229,9 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
       if (!t || t.dead || t.x === undefined || !t.type) return 'Select an enemy target';
       if (!hostile(lead, t)) return 'Select an enemy target';
       if (!validTarget(def, t)) return 'Cannot be used on that target';
-      if (def.range && Math.hypot(t.x - e.x, t.y - e.y) > def.range + t.hitRadius) {
+      if (def.range && !inRange(e.isSquad ? lead : e, t, def.range)) {
         if (!approach || !(e.isSquad || lead.isMobile)) return 'Out of range';
-        e.setOrder({ kind: 'attack', target: target.squad || target, reach: def.range * 0.85 });
+        e.setOrder({ kind: 'attack', target: target.squad || target, reach: def.range * 0.85 + (lead.hitRadius || 0) });
         e.pendingAbility = { kind, target: t, until: world.time + 90 };
         return null;
       }
@@ -337,10 +337,27 @@ function start(world, u, st, target) {
       });
       world.beams.push({ a: u, b: target, color: [0.4, 1, 0.5], until: world.time + 0.8, width: 6 });
       break;
-    case 'BUZZ_DROIDS':
-      addStatus(world, target, { kind: 'BUZZ', source: u.squad || u, dur: 20, dps: 12, sparks: true, owner: u.player });
-      world.beams.push({ a: u, b: target, color: [1, 0.8, 0.3], until: world.time + 0.5, width: 3 });
+    case 'BUZZ_DROIDS': {
+      const obj = def.spec && db.type(def.spec.val('Object_Type'));
+      if (obj) {
+        if (!u.squad || u.squad.fighters[0] === u) world.spawnSwarm(obj, u, target, def.spec);
+        break;
+      }
+      let victim = null,
+        best = 200 ** 2;
+      for (const o of world.units) {
+        if (o.dead || o.hyper || !o.targetableUnit || !hostile(u, o)) continue;
+        const d = (o.x - target.x) ** 2 + (o.y - target.y) ** 2;
+        if (d < best) {
+          best = d;
+          victim = o;
+        }
+      }
+      if (!victim) break;
+      addStatus(world, victim, { kind: 'BUZZ', source: u.squad || u, dur: 20, dps: 12, sparks: true, owner: u.player });
+      world.beams.push({ a: u, b: victim, color: [1, 0.8, 0.3], until: world.time + 0.5, width: 3 });
       break;
+    }
     case 'ION_CANNON_SHOT': {
       const proj = db.type(def.node.val('Projectile_Types_Override'));
       if (proj) world.launch(proj, u, target, null, u.x, u.y, u.z, proj.str('Damage_Type'), new Map());
@@ -393,7 +410,7 @@ function stop(world, u, st) {
   sound(world, u, def.sfxOff);
 }
 
-const inRange = (u, t, r) => (t.x - u.x) ** 2 + (t.y - u.y) ** 2 <= (r + t.hitRadius) ** 2;
+export const inRange = (u, t, r) => (t.x - u.x) ** 2 + (t.y - u.y) ** 2 <= (r + (u.hitRadius || 0) + (t.hitRadius || 0)) ** 2;
 
 export function tickAbilities(world, u, dt) {
   if (u.statuses.length) {
@@ -574,6 +591,24 @@ export function tickAbilities(world, u, dt) {
   }
 }
 
+const supportSwarm = def =>
+  def.kind === 'BUZZ_DROIDS' && !!def.spec && !!def.spec.val('Object_Type') && !(def.spec.num('Enemy_Damage_Per_Second', 0) > 0);
+
+function hurtAlly(world, lead, range) {
+  let best = null,
+    bf = 0.9;
+  for (const o of world.units) {
+    if (o.dead || o.hyper || o.swarm || o.isFighter || o.player.team !== lead.player.team || o.player.id < 0) continue;
+    if (range && Math.hypot(o.x - lead.x, o.y - lead.y) > range + (o.hitRadius || 0)) continue;
+    const f = o.healthFrac;
+    if (f < bf) {
+      bf = f;
+      best = o;
+    }
+  }
+  return best;
+}
+
 export function aiUseAbilities(world, e, onlyAuto = false) {
   const lead = posOf(e);
   if (!lead || !lead.abilities || !lead.abilities.length) return;
@@ -584,13 +619,17 @@ export function aiUseAbilities(world, e, onlyAuto = false) {
     const def = st.def;
     if ((onlyAuto && !st.auto) || st.active || st.cooldown > 0 || !def.spec) continue;
     if (def.target === 'unit' && (!hostile(lead, victim) || !validTarget(def, victim))) continue;
-    if (def.target !== 'none' && def.range && Math.hypot(victim.x - lead.x, victim.y - lead.y) > def.range + (victim.hitRadius || 0))
-      continue;
+    if (def.target !== 'none' && def.range && !inRange(lead, victim, def.range)) continue;
     const chance = def.spec.val('Activation_Chance').trim() === '' ? 1 : def.spec.num('Activation_Chance', 1);
     if (!(chance > 0) || simRandom() > chance) continue;
     ready.push(st);
   }
   if (!ready.length) return;
   const def = ready[Math.floor(simRandom() * ready.length)].def;
+  if (supportSwarm(def)) {
+    const ally = hurtAlly(world, lead, def.range);
+    if (ally) useAbility(world, e, def.kind, true, { x: ally.x, y: ally.y });
+    return;
+  }
   useAbility(world, e, def.kind, true, def.target === 'unit' ? victim : def.target === 'point' ? { x: victim.x, y: victim.y } : null);
 }

@@ -185,6 +185,8 @@ export function adjustCredits(g, owner, amount) {
   }
 }
 
+export const cycleNumber = g => (g.fiscal?.cycle || 0) + 1;
+
 export function stepIncome(g, seconds) {
   const interval = fiscalCycleSeconds();
   const fiscal = g.fiscal || (g.fiscal = { cycle: 0, previous: 0, next: interval });

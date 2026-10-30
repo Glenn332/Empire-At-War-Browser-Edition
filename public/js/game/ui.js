@@ -1288,7 +1288,8 @@ export class UI {
         return false;
       }
     } else {
-      target = this.r.pickGround(x, y);
+      const hit = this.pick(x, y);
+      target = hit && !hit.isPad ? { x: hit.x, y: hit.y, z: hit.z } : this.r.pickGround(x, y);
       if (!target) return false;
     }
     const r = this.game.command(

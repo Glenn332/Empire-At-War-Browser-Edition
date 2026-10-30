@@ -69,7 +69,7 @@ import { GalacticStoryDialog } from './galacticstorydialog.js';
 import { GalacticMovies } from './galacticmovies.js';
 import { GalacticLog } from './galacticlog.js';
 import { Menus } from './menus.js';
-import { stepIncome, orbitFleets } from './galacticeconomy.js';
+import { stepIncome, orbitFleets, cycleNumber } from './galacticeconomy.js';
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
 import { packContrast } from './galacticautoresolve.js';
@@ -420,7 +420,7 @@ export class GalacticGame {
 
   saveName() {
     const g = this.galaxy;
-    return `${g.campaign.name} - ${db.t('TEXT_CYCLES') || 'Cycle'} ${g.fiscal?.cycle || 0}`;
+    return `${g.campaign.name} - ${db.t('TEXT_CYCLES') || 'Cycle'} ${cycleNumber(g)}`;
   }
 
   galacticSnapshot(name, { version, build }) {
@@ -446,7 +446,7 @@ export class GalacticGame {
         mode: 'galactic',
         campaign: g.campaign.name,
         factions: [this.me],
-        cycle: g.fiscal?.cycle || 0,
+        cycle: cycleNumber(g),
         time: Math.round(g.time || 0)
       },
       galaxy: snap

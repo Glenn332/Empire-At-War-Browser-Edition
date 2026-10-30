@@ -4,7 +4,7 @@ import { loadALO } from '../alo.js';
 import { iconUrl, iconCanvasRect } from '../icons.js';
 import { CommandBar, loadHudAssets, uiMeshes } from './hud.js';
 import { displayIncome, intelligence } from './galacticfog.js';
-import { playerIncome, fiscalCycleSeconds, incomeBreakdown, planetBreakdown } from './galacticeconomy.js';
+import { playerIncome, fiscalCycleSeconds, cycleNumber, incomeBreakdown, planetBreakdown } from './galacticeconomy.js';
 import { orders } from './galacticnet.js';
 import {
   availableUnits,
@@ -424,7 +424,7 @@ export class GalacticBar extends CommandBar {
     this.updatePips();
     this.setReadout('Text_Credits', '$ ' + rounded(player?.credits || 0));
     this.setReadout('Text_Day_Credits', '$ ' + rounded(playerIncome(g, game.me)));
-    this.setReadout('Text_Day_Counter', db.t('TEXT_CYCLES') + ': ' + (g.fiscal?.cycle || 0));
+    this.setReadout('Text_Day_Counter', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));
     this.setReadout(
       'Text_Tech_Level',
       db.t('TEXT_TECH') + ' ' + ((player?.tech || 0) + db.faction(game.me).num('Displayed_Tech_Level_Adjustment', 0))

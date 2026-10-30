@@ -1222,7 +1222,7 @@ export class Renderer {
         f.z = u.z + lz;
         f.rot = u.heading + Math.PI / 2;
         f.roll = ro;
-        f.scale = u.scale;
+        f.scale = 1;
         f.vx = c * u.speed * cp;
         f.vy = s * u.speed * cp;
         f.vz = u.speed * sp;
@@ -1230,6 +1230,7 @@ export class Renderer {
           u.obj.visible &&
           !u.hyper &&
           (!px.engine || u.engineAlive()) &&
+          (!px.turbo || u.turboOn()) &&
           (!px.byBone || boneShown(px.bone, u.model.root)) &&
           (!px.ion || u.ionUntil > u.world.time)
         );
@@ -1370,7 +1371,6 @@ export class Renderer {
           }
         if (on && !p.on) {
           const bone = p.bone,
-            scale = c.holder.scale.x,
             pos = new THREE.Vector3();
           if (this.fxParticles.state(p.name) === 'ready') {
             bone.updateWorldMatrix(true, false);
@@ -1385,7 +1385,7 @@ export class Renderer {
                 f.scale = 1;
                 f.vx = f.vy = 0;
               },
-              { scale, basis: basisOf(bone.matrixWorld.elements) }
+              { basis: basisOf(bone.matrixWorld.elements) }
             );
           } else {
             bone.getWorldPosition(pos);

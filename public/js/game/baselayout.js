@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { cycleNumber } from './galacticeconomy.js';
 import { loadTextureCanvas } from '../dds.js';
 import { loadMapLayoutHeader } from '../ted.js';
 import { iconCanvasRect, iconUrl } from '../icons.js';
@@ -201,7 +202,7 @@ export class BaseLayout extends NativePanel {
     putText('building_cap_number', p.groundStructures.length + ' / ' + p.type.num('Special_Structures_Land', 3));
     putText('Planet_name_text', title(p.type));
     putText('Planetary_Income_number', String(Math.round(displayIncome(g, p))));
-    putText('Day_Counter_text', db.t('TEXT_CYCLES') + ': ' + (g.fiscal?.cycle || 0));
+    putText('Day_Counter_text', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));
     for (const tag of ['Encyclopedia_Weather_Icon', 'Planet_Ability_Icon']) {
       const { img, name } = this[tag],
         origin = this.origins.get(name.toUpperCase()),

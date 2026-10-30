@@ -172,6 +172,7 @@ function spaceSnapshot(game, name) {
       o.gt = r1(u.spawnTimer || 0);
     }
     if (u.income) o.inc = r1(u.income.timer);
+    if (u.swarm) o.sw = u.swarm;
     if (u.everSeenBy) o.seen = u.everSeenBy;
     return o;
   };
@@ -450,6 +451,7 @@ export function restore(game, save) {
         });
       if (o.gt !== undefined) e.spawnTimer = o.gt;
       if (o.inc !== undefined && e.income) e.income.timer = o.inc;
+      if (o.sw) e.swarm = { ...o.sw };
       if (o.seen) e.everSeenBy = o.seen;
     }
     made.push(e);

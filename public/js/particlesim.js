@@ -302,7 +302,7 @@ class System {
     s.time += dt;
     if (this.emitting && !e.slave) {
       while (s.time >= s.next && (!e.burst || e.nBursts === 0 || s.bursts < e.nBursts)) {
-        const n = e.burst ? e.perBurst : e.emitMode === 3 && this.points ? this.points.length : 1;
+        const n = (e.burst ? e.perBurst : 1) * (e.emitMode === 3 && this.points ? this.points.length : 1);
         const age = Math.min(s.time - s.next, e.lifetime * 0.9);
         const dens = this.density * (e.burst && n <= 2 ? 1 : this.sim.detail);
         for (let i = 0; i < n; i++) if (dens >= 1 || Math.random() < dens) this.spawn(s, age);

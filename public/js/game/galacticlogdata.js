@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { cycleNumber } from './galacticeconomy.js';
 
 export const LOG_TABS = ['IDC_DROID_LOG_RADIO', 'IDC_DATA_CHART_RADIO', 'IDC_TECH_TREE_RADIO', 'IDC_SUMMARY_SCREEN_RADIO'];
 export const LOG_WEATHER = [
@@ -15,10 +16,10 @@ export function logState(g) {
 }
 export function appendLog(g, text, color = db.constants.vec('Droid_Text_Color', [255, 255, 255])) {
   const record = {
-    cycle: g.fiscal?.cycle || 0,
+    cycle: cycleNumber(g),
     text: String(text),
     color: color.slice(),
-    heading: db.t('TEXT_LOG_CYCLE_01').replace('##0', String(g.fiscal?.cycle || 0)),
+    heading: db.t('TEXT_LOG_CYCLE_01').replace('##0', String(cycleNumber(g))),
     dateColor: db.constants.vec('Droid_Date_Color', [255, 0, 0]),
     separator: db.t('TEXT_HELP_SEPERATOR'),
     separatorColor: db.constants.vec('Droid_Seperator_Color', [128, 128, 128])

@@ -5,7 +5,16 @@ import { prioritySet, priorityOf, setOf } from './priorities.js';
 import { BountyBook, bountyValue } from './bounty.js';
 import { getModelData, buildModel, flattenModel } from '../model.js';
 import { getALA, animName, AnimState } from '../ala.js';
-import { parseAbilities, attachAbilities, tickAbilities, useAbility, refreshMods, addStatus, aiUseAbilities } from './abilities.js';
+import {
+  parseAbilities,
+  attachAbilities,
+  tickAbilities,
+  useAbility,
+  refreshMods,
+  addStatus,
+  aiUseAbilities,
+  inRange
+} from './abilities.js';
 import { simRandom } from './simrandom.js';
 import { collisionOf, meshHit } from './collmesh.js';
 import {
@@ -346,12 +355,16 @@ export class Unit {
     this.isMobile = this.isFighter || beh.has('SIMPLE_SPACE_LOCOMOTOR') || beh.has('STARSHIP_LOCOMOTOR');
     this.isPad = (beh.has('TACTICAL_BUILD_OBJECTS') && !type.has('Tactical_Health')) || type.name.toUpperCase().endsWith('_PAD');
     this.isStation = type.tag.toLowerCase() === 'starbase';
+    if (beh.has('BUZZ_DROIDS')) {
+      this.isMobile = true;
+      this.noAI = true;
+    }
     this.isStructure = !this.isMobile;
     this.layer = layerMask(type);
     this.asteroidDamage = beh.has('ASTEROID_FIELD_DAMAGE') && ASTEROID_LAYERS.has(this.layer);
     this.underConstruction = beh.has('TACTICAL_UNDER_CONSTRUCTION');
     this.selectable = beh.has('SELECTABLE') || this.isPad || type.has('Tactical_Buildable_Objects_Multiplayer');
-    this.targetableUnit = !this.isPad && type.bool('Collidable_By_Projectile_Living', !this.isPad);
+    this.targetableUnit = !this.isPad && type.bool('Collidable_By_Projectile_Living', !this.isPad) && type.bool('Is_Valid_Target', true);
     this.sizeClass = sizeClass(type);
     this.scale = type.num('Scale_Factor', 1);
     this.armor = type.str('Armor_Type', 'Armor_Default');
@@ -720,7 +733,17 @@ export class Unit {
         const damage = !!hp || /damage|smoke|fire|elec|_ALT\d/i.test(px.name) || /_ALT\d/i.test(px.bone.name);
         let byBone = false;
         for (let b = px.bone; b && b !== this.model.root && !byBone; b = b.parent) byBone = !b.visible;
-        const proxy = { name: px.name, bone: px.bone, local: this.localOf(px.bone), damage, hp, on: false, sys: null, byBone };
+        const proxy = {
+          name: px.name,
+          bone: px.bone,
+          local: this.localOf(px.bone),
+          damage,
+          hp,
+          on: false,
+          sys: null,
+          byBone,
+          turbo: /^PTE_/i.test(px.name)
+        };
         this.proxies.push(proxy);
         if (!damage) this.pendingProxies.push(proxy);
         if (/engine/i.test(px.name)) this.hasEngineFx = true;
@@ -741,7 +764,7 @@ export class Unit {
         skirmish: /^skirmish_automatic$/i.test(inc.val('Activation_Style').trim())
       };
     const heal = t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))[0];
-    if (heal && this.isStructure) {
+    if (heal && (this.isStructure || this.noAI)) {
       this.heal = {
         range: heal.num('Heal_Range', 0),
         percent: heal.num('Heal_Percent', 0),
@@ -1029,6 +1052,10 @@ export class Unit {
     }
     o.quaternion.copy(_qz);
     o.updateMatrix();
+  }
+
+  turboOn() {
+    return this.abilities.some(a => a.active && a.def.kind === 'TURBO');
   }
 
   engineAlive() {
@@ -1323,6 +1350,56 @@ export class World {
     if (opts.hyperspace && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
     this.recountPop();
     return e;
+  }
+
+  spawnSwarm(type, from, at, spec) {
+    const u = this.spawn(type, from.player, at.x, at.y, from.heading);
+    if (!u || u.isSquad) return u;
+    u.swarm = {
+      chase: spec.num('Chase_Radius', 0),
+      reach: spec.num('Damage_Radius', 0),
+      dps: spec.num('Enemy_Damage_Per_Second', 0),
+      decay: spec.num('Own_Damage_Per_Second', 0),
+      speed: type.num('Max_Speed', 1) * LOGIC_FPS
+    };
+    return u;
+  }
+
+  updateSwarm(u, dt) {
+    const s = u.swarm;
+    if (s.decay > 0 && (u.health -= s.decay * dt) <= 0) {
+      this.kill(u, null);
+      return;
+    }
+    if (!(s.dps > 0)) return;
+    const foe = o => !o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
+    let prey = null,
+      best = s.chase * s.chase;
+    for (const o of this.units) {
+      if (!foe(o)) continue;
+      const d = (o.x - u.x) ** 2 + (o.y - u.y) ** 2;
+      if (d <= best) {
+        best = d;
+        prey = o;
+      }
+    }
+    if (prey) {
+      const dx = prey.x - u.x,
+        dy = prey.y - u.y,
+        d = Math.hypot(dx, dy),
+        step = Math.min(s.speed * dt, Math.max(0, d - prey.hitRadius * 0.5));
+      if (d > 0) {
+        u.heading = Math.atan2(dy, dx);
+        u.x += (dx / d) * step;
+        u.y += (dy / d) * step;
+      }
+    }
+    for (const o of this.units) {
+      if (!foe(o) || (o.x - u.x) ** 2 + (o.y - u.y) ** 2 > (s.reach + o.hitRadius) ** 2) continue;
+      this.damage(o, s.dps * dt, { damageType: 'Damage_Default', attacker: u.player, shields: false, quiet: true });
+      if (!o.dead && simRandom() < dt * 6)
+        this.fx.hit(o.x + rand(-1, 1) * o.hitRadius * 0.6, o.y + rand(-1, 1) * o.hitRadius * 0.6, o.z + o.height * 0.3, 8);
+    }
   }
 
   startHyperspace(e) {
@@ -2227,6 +2304,10 @@ export class World {
   updateUnit(u, dt) {
     if (u.abilities.length || u.statuses.length) {
       tickAbilities(this, u, dt);
+      if (u.dead) return;
+    }
+    if (u.swarm) {
+      this.updateSwarm(u, dt);
       if (u.dead) return;
     }
     if (u.energy) {
@@ -3605,7 +3686,7 @@ export class World {
       e.pendingAbility = null;
       return;
     }
-    if (Math.hypot(t.x - e.x, t.y - e.y) > st.def.range + t.hitRadius) return;
+    if (!inRange(e.isSquad ? lead : e, t, st.def.range)) return;
     e.pendingAbility = null;
     ord.reach = 0;
     const why = useAbility(this, e, p.kind, true, t);
