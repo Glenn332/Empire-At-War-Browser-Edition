@@ -4,6 +4,7 @@ import { Menus } from './menus.js';
 import { loadMap, mapHeader, mapTitle, loadMapPreview } from '../ted.js';
 import { iconUrl } from '../icons.js';
 import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
+import { leaveTo } from '../leaveguard.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
 
@@ -279,7 +280,7 @@ export async function openLobby({
     if (cancel) {
       dlg.close();
       cancel();
-    } else location.assign('./');
+    } else leaveTo('./');
   });
   dlg.on('IDC_SKIRMISH_START_GAME_BUTTON', () => {
     const players = slots

@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { openDialog } from './dialogs.js';
 import { stageStart, toMainMenu } from './transit.js';
+import { reloadPage } from '../leaveguard.js';
 
 const T = (id, fallback) => {
   const t = db.t(id);
@@ -33,7 +34,7 @@ export async function openRetryDialog(game) {
 
 export function retryMission(game) {
   if (window.parent !== window && window.parent.game?.linkedMission?.frame?.contentWindow === window) {
-    location.reload();
+    reloadPage();
     return;
   }
   stageStart(game.setup);

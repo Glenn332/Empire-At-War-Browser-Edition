@@ -1,4 +1,5 @@
 import { BUILD } from './build.js';
+import { reloadPage } from './leaveguard.js';
 
 const get = (store, key) => {
   try {
@@ -28,7 +29,7 @@ export async function ensureCurrentBuild() {
         .map(e => e.name)
         .filter(u => u.startsWith(location.origin) && /\.(js|css|html)$/.test(new URL(u).pathname));
       await Promise.all([location.href, ...mods].map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
-      location.reload();
+      reloadPage();
       return new Promise(() => {});
     }
   } catch {}

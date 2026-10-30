@@ -1,3 +1,5 @@
+import { leaveTo } from '../leaveguard.js';
+
 const DB = 'swr-transit',
   STORE = 'blobs';
 
@@ -72,7 +74,7 @@ export function loadSaved(id) {
   try {
     sessionStorage.setItem('swr-load', id);
   } catch {}
-  location.assign(location.pathname);
+  leaveTo(location.pathname);
 }
 
 export function toMainMenu() {
@@ -81,10 +83,10 @@ export function toMainMenu() {
     return;
   }
   const top = window.top || window;
-  top.location.assign(top.location.pathname);
+  leaveTo(top.location.pathname, top);
 }
 
-export async function stageStart(setup, go = () => location.assign(location.pathname)) {
+export async function stageStart(setup, go = () => leaveTo(location.pathname)) {
   if (canInPlace()) {
     inPlace.start(carried(setup));
     return;

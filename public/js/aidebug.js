@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three/build/three.module.js';
 import { luaTrace } from './lua.js';
+import { leaveTo } from './leaveguard.js';
 
 const KEEP = 1000;
 const KEEP_MAX = 100000;
@@ -1438,7 +1439,7 @@ function benchPage(mode, n) {
   else if (up !== mode) q.delete('map');
   if (mode === 'land') q.set('mode', 'land');
   q.set('benchmark', String(n));
-  location.href = location.pathname + '?' + q.toString().replace(/=(?=&|$)/g, '');
+  leaveTo(location.pathname + '?' + q.toString().replace(/=(?=&|$)/g, ''));
 }
 
 let conquestRun = null;

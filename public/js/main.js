@@ -86,8 +86,11 @@ import { stageStart, unstash, setInPlace, toMainMenu } from './game/transit.js';
 import { TacticalCinematics } from './game/tacticalcinematics.js';
 import { stepDualFlash } from './game/tutorialrewards.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
+import { leaveTo, guardLeaving } from './leaveguard.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
+
+guardLeaving();
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -2494,7 +2497,7 @@ async function boot() {
       try {
         sessionStorage.setItem('swr-load', id);
       } catch {}
-      location.assign(location.pathname);
+      leaveTo(location.pathname);
       return;
     }
     const snap = await getSave(id);
@@ -2889,12 +2892,12 @@ async function boot() {
       version: BUILD,
       launch,
       kind,
-      back: () => location.assign(location.pathname)
+      back: () => leaveTo(location.pathname)
     }).catch(e => {
       console.warn('multiplayer', e);
       return false;
     });
-    if (!ok) location.assign(location.pathname);
+    if (!ok) leaveTo(location.pathname);
   };
   const exits = {
     lobby,
@@ -2917,7 +2920,7 @@ async function boot() {
           : false;
       if (front) return;
       if (window.game) {
-        location.assign(location.pathname + '?nomenu');
+        leaveTo(location.pathname + '?nomenu');
         return;
       }
     }
@@ -3002,7 +3005,7 @@ async function boot() {
       launch,
       join: params.get('join'),
       kind: params.get('multiplayer') === 'lan' ? 'lan' : 'internet',
-      back: () => location.assign(location.pathname)
+      back: () => leaveTo(location.pathname)
     }).catch(e => {
       console.warn('multiplayer', e);
       return false;
@@ -3050,7 +3053,7 @@ async function startFrontEnd(mapFile, { lobby, multiplayer, load, start }) {
     skirmish: cancel => lobby(cancel),
     multiplayer,
     start,
-    leave: () => location.assign('index.html')
+    leave: () => leaveTo('index.html')
   }));
   if (!(await front.open())) return false;
   hideSplash();

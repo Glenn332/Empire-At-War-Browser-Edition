@@ -1,4 +1,5 @@
 import { inApp } from './platform.js';
+import { reloadPage } from './leaveguard.js';
 
 export async function startServiceWorker({ mayReload = () => true } = {}) {
   if (!('serviceWorker' in navigator)) return false;
@@ -22,7 +23,7 @@ export async function startServiceWorker({ mayReload = () => true } = {}) {
         if (again) sessionStorage.setItem('swr-coi-reload', '1');
       } catch {}
       if (again) {
-        location.reload();
+        reloadPage();
         await new Promise(() => {});
       }
     }
