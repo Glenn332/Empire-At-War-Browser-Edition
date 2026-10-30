@@ -1230,6 +1230,12 @@ export class ScriptHost {
         vm.push(undefined, L);
         return 1;
       }
+      if (t.tag.toLowerCase() === 'upgradeobject') {
+        if (this.game.grantUpgrade) this.game.grantUpgrade(t, p);
+        else w.applyUpgrade?.(p, t);
+        vm.push(undefined, L);
+        return 1;
+      }
       if (this.game.spawnNow) {
         const e = this.game.spawnNow(t, p, at);
         vm.push(e ? this.wrap(e) : undefined, L);

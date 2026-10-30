@@ -476,6 +476,7 @@ export class LandScripts {
       cmd: s.cmd(),
       perceive: (p, name, e) => s.perceive(p, name, e),
       spawnNow: (t, p, at) => s.spawnNow(t, p, at),
+      grantUpgrade: (t, p) => game.world.grant(p.id, t),
       targetThing: t => (t.unit && t.unit.squad ? t.unit.squad : t.site ? s.view.site(t.site) : t.point ? s.view.point(t.point) : null)
     }).catch(e => {
       console.warn('land scripts', e);
