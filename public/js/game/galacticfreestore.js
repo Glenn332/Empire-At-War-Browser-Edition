@@ -320,7 +320,7 @@ export class GalacticFreeStore {
     }
     const next = this.plans.network.path(this.owner, at, s.dest)[1];
     const controller = next && this.orbitController(next);
-    if (!next || (controller && controller !== this.owner) || !orderMove(g, f, next.index)) {
+    if (!next || (controller && controller !== this.owner) || !orderMove(g, f, next.index, p => p === next)) {
       s.done = true;
       return;
     }
