@@ -1,7 +1,7 @@
 import { db } from '../gamedata.js';
 import { loadALO } from '../alo.js';
 import { loadTextureCanvas } from '../dds.js';
-import { iconCanvasRect, iconUrl } from '../icons.js';
+import { iconAdditiveUrl, iconCanvasRect, iconUrl } from '../icons.js';
 import { snapNativeText } from '../nativefont.js';
 import { setComponentText, componentTextAlign } from './componenttext.js';
 import { loadHudAssets, uiMeshes, uiBoneTransforms, drawMesh } from './hud.js';
@@ -341,9 +341,13 @@ export class NativePanel {
     const wide = big && !packed && r?.w >= 52,
       tall = big && !packed && r?.h >= 52;
     const frames = this.comps.get(slot.name)?.val('Mouse_Over_Texture_Name').trim().split(/\s+/).filter(Boolean) || [];
-    const frame = frames[Math.min(frames.length - 1, (wide ? 1 : 0) + (tall ? 2 : 0))],
+    const sized = frames.map(n => [n, iconCanvasRect(n)]).filter(([, rc]) => rc),
+      base = sized[0]?.[1];
+    const frame =
+        sized.find(([, rc]) => rc.w > base.w === wide && rc.h > base.h === tall)?.[0] ||
+        frames[Math.min(frames.length - 1, (wide ? 1 : 0) + (tall ? 2 : 0))],
       fr = iconCanvasRect(frame);
-    slot.el.style.setProperty('--over', css(iconUrl(frame)));
+    slot.el.style.setProperty('--over', css(iconAdditiveUrl(frame)));
     slot.el.style.setProperty('--over-w', (fr?.w || 0) + 'px');
     slot.el.style.setProperty('--over-h', (fr?.h || 0) + 'px');
     slot.el.style.setProperty('--over-x', (wide ? 22 : 0) + 'px');

@@ -1501,7 +1501,7 @@ export class CommandBar {
         c = i % 4;
       const s = at(el('rslot', win), 32 + 43 * c, -(49 + 46 * r), 43, 43);
       s.style.backgroundImage = css(iconUrl(iconNameFor(t)));
-      s.style.setProperty('--over', css(iconUrl('i_button_unit_frame_select.tga')));
+      s.style.setProperty('--over', css(iconAdditiveUrl('i_button_unit_frame_select.tga')));
       s.innerHTML = `<span>${n > 1 ? n : ''}</span>`;
       s.onmouseenter = () => this.tipOn('rein' + i, t);
       s.onmouseleave = ev => {
