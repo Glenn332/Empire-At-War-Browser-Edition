@@ -272,6 +272,7 @@ function start(world, u, st, target) {
     st.active = true;
     st.timer = def.duration;
   } else st.cooldown = def.recharge;
+  if (kind === 'INTERDICT') world.onEvent('interdict', { unit: u, on: true });
   if (kind !== 'STEALTH' && def.target !== 'none') {
     const c = u.abilities.find(s => s.active && s.def.kind === 'STEALTH');
     if (c) stop(world, u, c);
@@ -398,6 +399,7 @@ function stop(world, u, st) {
   const def = st.def;
   st.active = false;
   st.cooldown = def.recharge;
+  if (def.kind === 'INTERDICT') world.onEvent('interdict', { unit: u, on: false });
   if (def.kind === 'SWAP_WEAPONS') swapWeapon(u);
   if (def.kind === 'TRACTOR_BEAM' && st.data && st.data.target && !st.data.target.dead) {
     const t = st.data.target;

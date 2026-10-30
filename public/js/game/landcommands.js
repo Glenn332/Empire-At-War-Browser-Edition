@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { bombingRun, garrison, ungarrison } from './landbase.js';
 import { SILENT } from './landabilities.js';
+import { Beacons, beaconType } from './beacons.js';
 
 export function executeLand(game, side, cmd) {
   const w = game.world;
@@ -9,6 +10,18 @@ export function executeLand(game, side, cmd) {
   const movers = () => own().filter(q => q.isMobile && !q.native);
   const num = v => (Number.isFinite(+v) ? +v : 0);
   switch (cmd.c) {
+    case 'beacon': {
+      const b = (w.beacons ||= new Beacons()).place(
+        side,
+        beaconType(db.faction(game.factions[side])),
+        num(cmd.x),
+        num(cmd.y),
+        num(cmd.z),
+        w.time
+      );
+      if (b) game.beaconPlaced?.(b);
+      return {};
+    }
     case 'move': {
       const sel = movers();
       if (!sel.length) return {};

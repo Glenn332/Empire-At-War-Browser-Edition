@@ -421,7 +421,11 @@ const GROUPS = [
       ['Battle summary screen', D],
       ['Dialog renderer (GUIDialogs.rc + GUIDialogs.xml)', D],
       ['Loading screen', D],
-      ['Chat', T],
+      [
+        'Chat',
+        D,
+        'multiplayer space, land and galactic: Enter (rebindable) opens IDD_INGAME_CHAT_DIALOG with Send to allies only remembered; 160 characters; lines read Name(All): or Name(Team): from TEXT_CHAT_MESSAGE_ALL and _TEAM in the sender colour; team lines reach allies only; GUI_Common_Chat_Send on sending and GUI_Common_Chat_Receive for others (the shipped SFX file misspells it, so it stays silent as in the original)'
+      ],
       [
         'Radar only with a communications array or station (Enable_Radar_Ability)',
         D,
@@ -434,8 +438,8 @@ const GROUPS = [
       ],
       [
         'Radar events (RadarMap.xml: order clicks, a unit lost, a point changing hands, interdiction)',
-        T,
-        'the pings the game draws on the radar for these are not drawn'
+        D,
+        'as the engine: move, attack-move and ground-targeted ability orders from the main view or the radar ping the GameConstants click events, a second click on the same spot swaps the last click for the double-click event; every death the player can see pings Default_Unit_Die; on land the Begin_ and End_Control_Transition_Radar_Event of a point (reinforcement points) ping for players allied with the old owner or the taker; Interdict_Activated stays on the interdictor while its gravity well is on, for every player; beacons ping for allies. Events play their model animation over the icons on the game clock, space and land. Not done: the separate radar blip system (Lua Add_Radar_Blip, story highlights, structure under attack pings)'
       ],
       [
         'Double-click: select all of a type in view',
@@ -447,7 +451,11 @@ const GROUPS = [
         P,
         'MousePointerClass as the engine has it: the pointers of MousePointerFiles.xml (mods included), frames numbered at the first 0 of the name, (delay+1) ticks of about 16 ms a frame, the class default DEFAULTPOINTER_00 for a missing one; POINTER_NORMAL everywhere, and in battles the tactical choice of (drag box, armed commands, bombing run, reinforcements, abilities, select, attack, move, attack move, superweapon). In the game fullscreen (Alt+Enter) the mouse is kept inside the window as ClipCursor does and the pointer is drawn by the page, so edge scrolling works. Open: the galactic and menu callers of the pointer (wait, grab and drop), ability validity, out of range and the attack and move only modes'
       ],
-      ['Multiplayer beacons', T, 'placed for allies (BeaconPlaceDelay, Default_Beacon_Placement); a multiplayer feature']
+      [
+        'Multiplayer beacons',
+        D,
+        'multiplayer space and land: the command bar ping button (TEXT_PLACE_BEACON) or the PLACE_BEACON key, then a click on the ground; a lockstep command places the faction Multiplayer_Beacon_Type (E_ or R_Multiplayer_Beacon) at the spot, one per player, for Beacon_Lifetime_In_Secs; allies see its model and radar icon, hear SFXEvent_Beacon_Placed and get its Beacon_Radar_Map_Event_Name ping; enemies see nothing. Ours: BeaconPlaceDelay is applied per player as a cooldown (where the engine reads it was not found); the default key is unknown and left unbound. Checked between two players through the LAN lobby, space and land, with matching lockstep hashes'
+      ]
     ]
   ],
   [

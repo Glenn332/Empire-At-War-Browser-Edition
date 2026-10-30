@@ -113,13 +113,14 @@ import { simRandom, seedSim, simRandomState } from './simrandom.js';
 import { resetLandIds, preloadLand } from './land.js';
 import { resetBrainIds } from './landbrain.js';
 import { executeLand } from './landcommands.js';
-import { Lockstep, TURN } from './netgame.js';
+import { Lockstep, TURN, CHAT_MAX, chatText } from './netgame.js';
 import { ticker } from '../net.js';
 import { openDialog } from './dialogs.js';
 
 import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
 import { pressed, held, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
+import { beaconType } from './beacons.js';
 
 const LAND_TICK = 1 / 30;
 const nextTask = () =>
@@ -407,6 +408,17 @@ export class LandGame {
     if (fs) fs();
     return true;
   }
+  beaconReady() {
+    const w = this.world;
+    return !!this.lock && !!beaconType(db.faction(this.factions[this.me])) && (!w.beacons || w.beacons.ready(this.me, w.time));
+  }
+
+  beaconPlaced(b) {
+    if (!this.world.ally(b.owner, this.me)) return;
+    this.audio.play(b.type.str('SFXEvent_Beacon_Placed'));
+    this.ui.radar?.event(b.type.str('Beacon_Radar_Map_Event_Name').trim(), b.x, b.y);
+  }
+
   async openChat() {
     if (this.chatDlg) {
       this.chatDlg.edit('IDC_IME_EDITBOX')?.focus();
@@ -432,10 +444,11 @@ export class LandGame {
       close();
       return;
     }
-    box.maxLength = 200;
+    box.maxLength = CHAT_MAX;
     box.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (box.value.trim()) this.audio.play('GUI_Common_Chat_Send');
         this.lock?.say(box.value, team);
         close();
       } else if (e.key === 'Escape') {
@@ -445,10 +458,10 @@ export class LandGame {
     });
     box.focus();
   }
-  chatLine(from, text, team) {
+  chatLine(from, text, team, mine) {
     if (!from) return;
-    this.say(`${from.name}${team ? ' (' + (db.t('TEXT_TEAM') || 'Team') + ')' : ''}: ${text}`, 'chat', from.color || '');
-    this.audio.play('GUI_Chat_Message_SFX');
+    this.say(chatText(from, text, team), 'chat', from.color || '');
+    if (!mine) this.audio.play('GUI_Common_Chat_Receive');
   }
 
   async prepareLockstep() {
@@ -887,14 +900,21 @@ export class LandGame {
       this.audio.play(u.type.str('Death_SFXEvent_Start_Die') || u.type.str('SFXEvent_Die'), u.x, u.y);
       const f = db.faction(this.factions[this.me]);
       if (u.structure && world.ally(u.side, this.me)) this.audio.play(u.type.str('SFXEvent_Unit_Lost'));
+      if (!world.fog || world.ally(u.side, this.me) || u.seen !== false) this.ui.radar?.event('Default_Unit_Die', u.x, u.y);
     };
+    const transition = (pt, tag, a, b) => {
+      if ((a >= 0 && world.ally(a, this.me)) || (b >= 0 && world.ally(b, this.me)))
+        this.ui.radar?.event(pt.type.str(tag).trim(), pt.x, pt.y);
+    };
+    world.onCaptureStart = (pt, taker) => transition(pt, 'Begin_Control_Transition_Radar_Event', pt.side, taker);
     world.onFx = (name, x, y, z) => {
       scorch(decals, name, x, y);
       const t = db.type(name);
       burst(t ? t.str('Land_Model_Name') || t.str('Space_Model_Name') : name, x, y, z);
     };
     world.onSound = (name, x, y) => this.audio.play(name, x, y);
-    world.onCapture = pt => {
+    world.onCapture = (pt, was) => {
+      transition(pt, 'End_Control_Transition_Radar_Event', was, pt.side);
       if (pt.side >= 0 && this.factions[pt.side]) this.tacticalStory?.signalCapture(pt.type.name, this.factions[pt.side]);
       const f = db.faction(this.factions[this.me]);
       if (pt.reinforce)
@@ -2038,6 +2058,10 @@ export class LandGame {
         this.toggleBenchmark();
         return;
       }
+      if (pressed(e, 'PLACE_BEACON') && !this.menus.open) {
+        this.ui.bar?.bPing?.click();
+        return;
+      }
       if (pressed(e, 'DIRECT_CONTROL') && !this.menus.open) {
         this.toggleDirect();
         return;
@@ -2186,6 +2210,7 @@ export class LandGame {
       const sel = ui.movers();
       if (!sel.length || (!attack && !g)) return;
       const r = this.command({ c: 'move', u: sel.map(q => q.id), mode, t: attack ? foe.squad.id : 0, ...(g ? { x: g.x, y: g.y } : {}) });
+      if (!attack && g) ui.radar?.click(g.x, g.y, mode === 'attack');
       const at = r?.at || new Map();
       for (const q of sel) {
         if (!attack && g && mode === 'attack' && q.members.some(u => u.needsDeploy && u.weapon)) {
@@ -2304,6 +2329,10 @@ export class LandGame {
       if (e.button === 0 && ui.placing) {
         if (dragged && (ui.placeList || []).length > 1) place(cx, cy, e.clientX, e.clientY);
         else place(cx, cy);
+      } else if (e.button === 0 && ui.armed === 'beacon') {
+        const g = this.groundAt(cx, cy);
+        if (g && this.beaconReady()) this.command({ c: 'beacon', x: g.x, y: g.y, z: g.z || 0 });
+        ui.armed = null;
       } else if (e.button === 0 && ui.armed === 'bombing') {
         ui.bombAt(this.groundAt(cx, cy));
       } else if (e.button === 0 && ui.aiming) {
@@ -2753,7 +2782,10 @@ export class LandGame {
       const lead = this.direct?.direct?.lead;
       if (lead && this.chase?.on) this.chase.setPivot(lead.x, lead.y, lead.z);
     }
-    const z = this.track?.on && this.following ? Math.max(heightAt(this.terrain, v.x, v.y), this.track.focus(this.following).z) : heightAt(this.terrain, v.x, v.y),
+    const z =
+        this.track?.on && this.following
+          ? Math.max(heightAt(this.terrain, v.x, v.y), this.track.focus(this.following).z)
+          : heightAt(this.terrain, v.x, v.y),
       cp = Math.cos(v.pitch),
       cam = this.camera;
     if (this.cine && this.cine.on) this.cine.frame(real);

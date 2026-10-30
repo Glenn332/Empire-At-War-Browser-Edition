@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { orderMove, orderAttack, orderGuard, orderStop, orderPlaced } from './orders.js';
+import { Beacons, beaconType } from './beacons.js';
 
 export const ids = list => list.map(e => e.id);
 
@@ -81,6 +82,18 @@ export function execute(world, player, cmd) {
           const a = f.abilities?.find(x => x.def.kind === cmd.kind);
           if (a && a.def.autofire) a.auto = !!cmd.on;
         }
+      return {};
+    }
+    case 'beacon': {
+      const b = (world.beacons ||= new Beacons()).place(
+        player,
+        beaconType(player.faction),
+        clampX(cmd.x),
+        clampY(cmd.y),
+        num(cmd.z),
+        world.time
+      );
+      if (b) world.onEvent('beacon', { beacon: b });
       return {};
     }
     case 'autofire': {

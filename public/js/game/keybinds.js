@@ -17,6 +17,7 @@ export const ACTIONS = [
   { id: 'MOVE', page: 0, edit: 'IDC_EDIT_MOVE', label: 'TEXT_MOVE', keys: ['KeyM'] },
   { id: 'ATTACK_MOVE', page: 0, edit: 'IDC_EDIT_ATTACK_MOVE', label: 'TEXT_TOOLTIP_ATTACK_MOVE', keys: ['KeyF'] },
   { id: 'WAYPOINT', page: 0, edit: 'IDC_EDIT_WAYPOINT', label: 'TEXT_WAYPOINT', keys: [] },
+  { id: 'PLACE_BEACON', page: 1, edit: 'IDC_EDIT_PLACE_BEACON', label: 'TEXT_PLACE_BEACON', keys: [] },
   { id: 'SUPER_WEAPON', page: 0, edit: 'IDC_EDIT_SUPER_WEAPON', label: 'TEXT_SUPER_WEAPON', keys: [] },
   { id: 'SCROLL_UP', page: 3, edit: 'IDC_EDIT_SCROLL_UP', label: 'TEXT_SCROLL_UP', keys: ['KeyW', 'ArrowUp'] },
   { id: 'SCROLL_DOWN', page: 3, edit: 'IDC_EDIT_SCROLL_DOWN', label: 'TEXT_SCROLL_DOWN', keys: ['KeyS', 'ArrowDown'] },

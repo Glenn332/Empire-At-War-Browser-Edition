@@ -202,7 +202,7 @@ export class Radar {
     return cv;
   }
 
-  event(name, x, y) {
+  event(name, x, y, obj = null) {
     const def = this.settings && this.settings.events && this.eventDefs.get(String(name).toUpperCase());
     if (!def || !def.model) return;
     if (def.look === null) def.look = this.look(def).then(l => (def.look = l));
@@ -210,10 +210,83 @@ export class Radar {
       const e = this.events[0];
       e.x = x;
       e.y = y;
-      e.left = def.duration;
+      e.age = 0;
       return;
     }
-    this.events.push({ def, x, y, left: def.duration });
+    if (def.persistent && obj) this.remove(obj);
+    this.events.push({ def, x, y, age: 0, obj: def.persistent ? obj : null });
+  }
+
+  click(x, y, attack) {
+    const C = db.constants,
+      name = (key, def) => (C ? C.str(key).trim() : '') || def,
+      click = name('GUI_Movement_Click_Radar_Event_Name', 'Default_Click'),
+      now = performance.now(),
+      last = this.lastClick;
+    this.lastClick = { t: now, x, y };
+    if (attack) this.event(name('GUI_Attack_Movement_Click_Radar_Event_Name', 'Default_Attack_Click'), x, y);
+    else if (last && now - last.t < 350 && Math.hypot(x - last.x, y - last.y) < 250) {
+      this.removeLatest(click);
+      this.event(name('GUI_Movement_Double_Click_Radar_Event_Name', 'Default_Double_Click'), x, y);
+      this.lastClick = null;
+    } else this.event(click, x, y);
+  }
+
+  remove(obj) {
+    this.events = this.events.filter(e => e.obj !== obj);
+  }
+
+  removeLatest(name) {
+    const def = this.eventDefs?.get(String(name).toUpperCase());
+    if (!def) return;
+    for (let i = this.events.length - 1; i >= 0; i--)
+      if (this.events[i].def === def) {
+        this.events.splice(i, 1);
+        return;
+      }
+  }
+
+  drawBeacons(g, X, Y, W, H, list, toneOf) {
+    for (const b of list) {
+      const t = this.of(b.type);
+      if (!t.show) continue;
+      const c = toneOf(b.owner);
+      let img = c.icons.get(t.icon);
+      if (!img && (img = this.icon(t.icon, c.c))) c.icons.set(t.icon, img);
+      if (!img) continue;
+      const hw = (t.sx * W) / 2,
+        hh = (t.sy * H) / 2;
+      g.drawImage(img, X(b.x) - hw, Y(b.y) - hh, hw * 2, hh * 2);
+    }
+  }
+
+  drawEvents(g, X, Y, W, H, now) {
+    const dt = this.lastNow === undefined ? 0 : Math.max(0, now - this.lastNow);
+    this.lastNow = now;
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i];
+      e.age += dt;
+      if (e.obj ? e.obj.dead : !e.def.persistent && e.age >= e.def.duration) {
+        this.events.splice(i, 1);
+        continue;
+      }
+      if (e.obj) {
+        e.x = e.obj.x;
+        e.y = e.obj.y;
+      }
+      const l = e.def.look;
+      if (!l || typeof l.then === 'function') continue;
+      let half = l.half;
+      if (l.sizes) {
+        const f = Math.floor(e.age * l.fps);
+        half = l.sizes[e.def.persistent ? f % l.sizes.length : Math.min(l.sizes.length - 1, f)];
+      }
+      const hw = half * e.def.scale * W,
+        hh = half * e.def.scale * H;
+      g.globalCompositeOperation = l.additive ? 'lighter' : 'source-over';
+      g.drawImage(l.cv, X(e.x) - hw, Y(e.y) - hh, hw * 2, hh * 2);
+    }
+    g.globalCompositeOperation = 'source-over';
   }
 
   radarOn(world, player) {
@@ -328,21 +401,17 @@ export class Radar {
         } else g.drawImage(img, x - hw, y - hh, hw * 2, hh * 2);
       }
     g.globalAlpha = 1;
-    for (let i = this.events.length - 1; i >= 0; i--) {
-      const e = this.events[i];
-      if (!e.def.persistent && (e.left -= dt) <= 0) {
-        this.events.splice(i, 1);
-        continue;
-      }
-      const l = e.def.look;
-      if (!l || typeof l.then === 'function') continue;
-      const half = l.sizes ? l.sizes[Math.min(l.sizes.length - 1, Math.floor((e.def.duration - e.left) * l.fps))] : l.half;
-      const hw = half * e.def.scale * W,
-        hh = half * e.def.scale * H;
-      g.globalCompositeOperation = l.additive ? 'lighter' : 'source-over';
-      g.drawImage(l.cv, X(e.x) - hw, Y(e.y) - hh, hw * 2, hh * 2);
-    }
-    g.globalCompositeOperation = 'source-over';
+    if (w.beacons)
+      this.drawBeacons(
+        g,
+        X,
+        Y,
+        W,
+        H,
+        w.beacons.live(w.time).filter(b => b.owner.team === player.team),
+        p => this.colorOf(p)
+      );
+    this.drawEvents(g, X, Y, W, H, w.time);
     const corners = [
       [0, 0],
       [r.width, 0],

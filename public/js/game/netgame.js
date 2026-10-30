@@ -1,7 +1,13 @@
+import { db } from '../gamedata.js';
 import { execute } from './commands.js';
 import { simRandomState } from './simrandom.js';
 
 export const TURN = 3;
+export const CHAT_MAX = 160;
+
+export function chatText(from, text, team) {
+  return `${from.name}${db.t(team ? 'TEXT_CHAT_MESSAGE_TEAM' : 'TEXT_CHAT_MESSAGE_ALL') || (team ? '(Team)' : '(All)')}: ${text}`;
+}
 const DELAY = 2;
 const MAX_AHEAD = 8;
 const HASH_EVERY = 10;
@@ -203,7 +209,7 @@ export class Lockstep {
       else if (m.k === 'go') this.begin();
       else if (m.k === 'desync') this.desync(m.n);
       else if (m.k === 'resume') this.lift(m.n);
-      else if (m.k === 'chat') this.game.chatLine?.(this.player(m.from), m.text, m.team);
+      else if (m.k === 'chat') this.game.chatLine?.(this.player(m.from), m.text, m.team, m.from === this.playerOf.get(this.me));
     }
   }
 
@@ -240,7 +246,7 @@ export class Lockstep {
 
   say(text, team) {
     text = String(text || '')
-      .slice(0, 200)
+      .slice(0, CHAT_MAX)
       .trim();
     if (!text) return;
     if (text.toLowerCase() === '/stalls') {
@@ -255,7 +261,7 @@ export class Lockstep {
   }
   chat(pid, text, team) {
     text = String(text || '')
-      .slice(0, 200)
+      .slice(0, CHAT_MAX)
       .trim();
     const from = this.player(pid);
     if (!text || !from) return;
@@ -263,7 +269,7 @@ export class Lockstep {
       if (this.gone.has(peer)) continue;
       const to = this.player(id);
       if (team && to.team !== from.team) continue;
-      if (peer === 0) this.game.chatLine?.(from, text, team);
+      if (peer === 0) this.game.chatLine?.(from, text, team, pid === this.hostPlayer);
       else this.session.send(peer, { k: 'chat', from: pid, text, team });
     }
   }

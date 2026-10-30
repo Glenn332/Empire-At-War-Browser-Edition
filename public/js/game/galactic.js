@@ -59,6 +59,7 @@ import { executeHack } from './galactichack.js';
 import { SabotagePanel, loadSabotageAssets } from './sabotagepanel.js';
 import { sabotageStructure } from './galacticsabotage.js';
 import { GalacticRadar, loadGalacticRadarAssets } from './galacticradar.js';
+import { CHAT_MAX, chatText } from './netgame.js';
 import { PlanetInfo } from './planetinfo.js';
 import { ScriptUI } from './scriptui.js';
 import { GalacticStoryHost } from './galacticstory.js';
@@ -2093,10 +2094,10 @@ export class GalacticGame {
     this.ui?.refresh();
     this.overview?.refresh();
   }
-  chatLine(from, text, team) {
+  chatLine(from, text, team, mine) {
     if (!from) return;
-    this.message(`${from.name}${team ? ' (' + (db.t('TEXT_TEAM') || 'Team') + ')' : ''}: ${text}`);
-    this.audio?.play('GUI_Chat_Message_SFX');
+    this.message(chatText(from, text, team));
+    if (!mine) this.audio?.play('GUI_Common_Chat_Receive');
   }
   async openChat() {
     if (this.chatDlg) {
@@ -2123,11 +2124,12 @@ export class GalacticGame {
       close();
       return;
     }
-    box.maxLength = 200;
+    box.maxLength = CHAT_MAX;
     box.addEventListener('keydown', e => {
       e.stopPropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (box.value.trim()) this.audio?.play('GUI_Common_Chat_Send');
         this.net?.lock.say(box.value, team);
         close();
       } else if (e.key === 'Escape') {

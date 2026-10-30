@@ -714,7 +714,13 @@ export class CommandBar {
       }
     });
     this.bWeapon.classList.add('dis');
-    this.bPing = this.button('b_special_weapon2');
+    this.bPing = this.button('b_special_weapon2', {
+      title: db.t('TEXT_PLACE_BEACON') || 'Place beacon',
+      onClick: () => {
+        if (this.bPing.classList.contains('dis')) return;
+        ui.arm(ui.armed === 'beacon' ? null : 'beacon');
+      }
+    });
     this.bPing.classList.add('dis');
     this.bReinforce = this.button('b_reinforcement', {
       onClick: () => {
@@ -1094,6 +1100,8 @@ export class CommandBar {
     const sw = this.weaponOf();
     this.bWeapon.classList.toggle('dis', !sw || sw.charge < 0.99 || !sw.enabled());
     this.bWeapon.classList.toggle('sel', ui.armed === 'special');
+    this.bPing.classList.toggle('dis', !game.beaconReady?.());
+    this.bPing.classList.toggle('sel', ui.armed === 'beacon');
     this.bReinforce.classList.toggle('flash', reinforcing && p.reinforcements.length > 0 && !this.reinforceOpen);
     const movable = ui.mine().some(s => s.isSquad || s.isMobile);
     for (const b of this.orderButtons) {

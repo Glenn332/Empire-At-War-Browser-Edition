@@ -1844,14 +1844,16 @@ export class LandWorld {
         if (!(pt.taker >= 0 && this.ally(pt.taker, only))) {
           pt.taker = only;
           pt.progress = 0;
+          if (this.onCaptureStart) this.onCaptureStart(pt, only);
         }
         pt.progress += dt / pt.seconds;
         if (pt.progress >= 1) {
+          const was = pt.side;
           pt.side = only;
           pt.taker = -1;
           pt.progress = 0;
           this.showOwner(pt);
-          if (this.onCapture) this.onCapture(pt);
+          if (this.onCapture) this.onCapture(pt, was);
         }
       } else {
         if (pt.taker >= 0) {

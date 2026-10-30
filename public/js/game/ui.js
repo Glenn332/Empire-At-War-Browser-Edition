@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { db } from '../gamedata.js';
 import { getModelData, buildModel } from '../model.js';
+import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas } from '../icons.js';
 import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop } from './sim.js';
@@ -577,6 +578,10 @@ export class UI {
       }
     if (pressed(e, 'SUPER_WEAPON')) {
       this.bar?.bWeapon?.click();
+      return;
+    }
+    if (pressed(e, 'PLACE_BEACON')) {
+      this.bar?.bPing?.click();
       return;
     }
     const armKey = ORDER_KEYS.find(([id]) => pressed(e, id))?.[1];
@@ -1214,7 +1219,13 @@ export class UI {
   }
 
   arm(mode) {
-    if (mode && mode !== 'special' && !mode.startsWith('ability:') && !this.mine().some(s => s.isSquad || s.isMobile || s.hasWeapons))
+    if (
+      mode &&
+      mode !== 'special' &&
+      mode !== 'beacon' &&
+      !mode.startsWith('ability:') &&
+      !this.mine().some(s => s.isSquad || s.isMobile || s.hasWeapons)
+    )
       mode = null;
     this.armed = mode;
     this.hudTimer = 0;
@@ -1222,6 +1233,11 @@ export class UI {
 
   runArmed(x, y) {
     if (this.armed.startsWith('ability:')) return this.runAbility(this.armed.slice(8), x, y);
+    if (this.armed === 'beacon') {
+      const g = this.r.pickGround(x, y);
+      if (g && this.game.beaconReady?.()) this.game.command({ c: 'beacon', x: g.x, y: g.y, z: 0 });
+      return true;
+    }
     if (this.armed === 'special') {
       const mine = (this.world.specialWeapons || []).filter(w => w.player === this.player),
         sw = mine.find(w => w.charge >= 0.99) || mine[0],
@@ -1299,7 +1315,10 @@ export class UI {
     );
     if (r && !r.ok) return false;
     if (def.target === 'unit') this.pingTarget(target, null, '#ffd76a');
-    else this.pings.push({ x: target.x, y: target.y, t: 0, color: '#ffd76a', r: 50 });
+    else {
+      this.pings.push({ x: target.x, y: target.y, t: 0, color: '#ffd76a', r: 50 });
+      this.radarClick(target.x, target.y, true);
+    }
     if (kind === 'BARRAGE') this.say(this.voiceOf(users), 'SFXEvent_Barrage', 'SFXEvent_Attack');
     else if (def.target === 'unit') this.say(this.voiceOf(users), 'SFXEvent_Attack_With_Non_Hero_Ability', 'SFXEvent_Attack');
     this.hudTimer = 0;
@@ -1394,7 +1413,12 @@ export class UI {
     g.y = Math.max(w.min.y, Math.min(w.max.y, g.y));
     this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: !!attackMove, waypoint: !!waypoint });
     this.pings.push({ x: g.x, y: g.y, t: 0, color: attackMove ? '#ffb347' : waypoint ? '#7fd4ff' : '#6be675', r: 40 });
+    this.radarClick(g.x, g.y, attackMove);
     this.sayMove(mine, g.x, g.y, attackMove);
+  }
+
+  radarClick(x, y, attack) {
+    this.radar.click(x, y, attack);
   }
 
   minimapClick(e) {
@@ -1407,14 +1431,6 @@ export class UI {
       fy = (e.clientY - rect.top) / rect.height;
     const x = w.min.x + fx * (w.max.x - w.min.x),
       y = w.max.y - fy * (w.max.y - w.min.y);
-    const C = db.constants,
-      mark = attack =>
-        this.radar.event(
-          C.str(attack ? 'GUI_Attack_Movement_Click_Radar_Event_Name' : 'GUI_Movement_Click_Radar_Event_Name') ||
-            (attack ? 'Default_Attack_Click' : 'Default_Click'),
-          x,
-          y
-        );
     const armed = e.button === 0 && ['attackmove', 'waypoint', 'guard', 'move'].includes(this.armed) ? this.armed : null;
     if (e.button === 2 || armed) {
       if (e.type === 'mousemove') {
@@ -1427,7 +1443,7 @@ export class UI {
         if (armed === 'guard') this.game.command({ c: 'guard', u: ids(mine), t: 0, x, y });
         else this.game.command({ c: 'move', u: ids(mine), x, y, attack: !!attack, waypoint: armed === 'waypoint' });
         this.pings.push({ x, y, t: 0, color: attack ? '#ffb347' : '#6be675', r: 40 });
-        mark(attack);
+        this.radarClick(x, y, attack);
         if (armed === 'guard') this.say(this.voiceOf(mine), 'SFXEvent_Guard', 'SFXEvent_Move');
         else this.sayMove(mine, x, y, attack);
       }
@@ -1512,6 +1528,14 @@ export class UI {
     const rig = this.r.rig,
       k = this.keys;
     this.updateWaypointBeacons();
+    const w = this.world;
+    if (w.beacons) {
+      this.beaconView ||= new BeaconView(this.r.scene, 'Space_Model_Name', {
+        colorOf: p => p.color,
+        onModel: (inst, file) => this.r.addIdle(inst, file)
+      });
+      this.beaconView.update(w.beacons.live(w.time).filter(b => b.owner.team === this.player.team));
+    }
     const pan = rig.dist * 0.9 * dt;
     let px = 0,
       py = 0;

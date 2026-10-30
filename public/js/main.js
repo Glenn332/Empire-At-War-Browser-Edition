@@ -18,7 +18,7 @@ import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { seedSim } from './game/simrandom.js';
-import { Lockstep, TURN } from './game/netgame.js';
+import { Lockstep, TURN, CHAT_MAX, chatText } from './game/netgame.js';
 import { ticker } from './net.js';
 import { execute } from './game/commands.js';
 import { SkirmishAI } from './game/ai.js';
@@ -87,6 +87,7 @@ import { TacticalCinematics } from './game/tacticalcinematics.js';
 import { stepDualFlash } from './game/tutorialrewards.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
+import { beaconType } from './game/beacons.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
@@ -1258,6 +1259,15 @@ class Game {
     const me = this.human;
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))
       this.ui.radar.event('Default_Unit_Die', d.unit.x, d.unit.y);
+    if (kind === 'beacon' && me && d.beacon.owner.team === me.team) {
+      const b = d.beacon;
+      this.audio.play(b.type.str('SFXEvent_Beacon_Placed'));
+      this.ui?.radar?.event(b.type.str('Beacon_Radar_Map_Event_Name').trim(), b.x, b.y);
+    }
+    if (kind === 'interdict' && this.ui?.radar) {
+      if (d.on) this.ui.radar.event('Interdict_Activated', d.unit.x, d.unit.y, d.unit);
+      else this.ui.radar.remove(d.unit);
+    }
     if (kind === 'reinforcementReady' && d.player === me)
       this.message(`${db.t(d.type.str('Text_ID')) || d.type.name} ready — drag it from Reinforcements onto the map`, 'good');
     else if (kind === 'built' && d.player === me && !d.replaced && d.entity?.isStructure) this.message(`${d.entity.name} ready`, 'good');
@@ -1752,6 +1762,12 @@ class Game {
     }
   }
 
+  beaconReady() {
+    const me = this.human,
+      w = this.world;
+    return !!this.lock && !!me && !!beaconType(me.faction) && (!w.beacons || w.beacons.ready(me, w.time));
+  }
+
   async openChat() {
     if (this.chatDlg) {
       this.chatDlg.edit('IDC_IME_EDITBOX')?.focus();
@@ -1777,10 +1793,11 @@ class Game {
       close();
       return;
     }
-    box.maxLength = 200;
+    box.maxLength = CHAT_MAX;
     box.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (box.value.trim()) this.audio.play('GUI_Common_Chat_Send');
         this.lock?.say(box.value, team);
         close();
       } else if (e.key === 'Escape') {
@@ -1791,10 +1808,10 @@ class Game {
     box.focus();
   }
 
-  chatLine(from, text, team) {
+  chatLine(from, text, team, mine) {
     if (!from) return;
-    this.message(`${from.name}${team ? ' (' + (db.t('TEXT_TEAM') || 'Team') + ')' : ''}: ${text}`, 'chat', '#' + from.color.getHexString());
-    this.audio.play('GUI_Chat_Message_SFX');
+    this.message(chatText(from, text, team), 'chat', '#' + from.color.getHexString());
+    if (!mine) this.audio.play('GUI_Common_Chat_Receive');
   }
 
   takeOver(p) {

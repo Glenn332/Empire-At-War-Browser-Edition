@@ -5,6 +5,7 @@ import { costOf } from './land.js';
 import { canBomb, bombingRun, garrison, ungarrison } from './landbase.js';
 import { CELL } from './terrain.js';
 import { Radar } from './radar.js';
+import { BeaconView } from './beacons.js';
 import { SILENT, bribeCost } from './landabilities.js';
 
 const $ = id => document.getElementById(id);
@@ -208,6 +209,7 @@ export class LandUI {
       toggleMenu: () => game.toggleMenu(),
       setSpeed: s => game.setSpeed(s),
       canRetreat: () => game.canRetreat(),
+      beaconReady: () => game.beaconReady(),
       retreatClicked: () => game.retreatClicked(),
       message: (text, cls) => game.say(text, cls),
       cine: { toggle: () => game.cine && game.cine.toggle() },
@@ -409,6 +411,11 @@ export class LandUI {
       } else if (this.bribeTip) this.bribeTip.hidden = true;
     }
     this.bar.refresh();
+    if (this.world.beacons) {
+      const w = this.world;
+      this.beaconView ||= new BeaconView(this.game.scene, 'Land_Model_Name', { colorOf: s => w.colors?.[s] });
+      this.beaconView.update(w.beacons.live(w.time).filter(b => w.ally(b.owner, this.me)));
+    }
     this.bar.bWeapon.classList.toggle('dis', !canBomb(this.world, this.me));
     this.bar.bWeapon.classList.toggle('sel', this.armed === 'bombing');
     this.drawRadar();
@@ -566,6 +573,17 @@ export class LandUI {
         const t = p.type && R.of(p.type);
         if (t && t.show) draw(t, p.x, p.y, 0, p.side);
       }
+    if (S && w.beacons)
+      R.drawBeacons(
+        g,
+        X,
+        Y,
+        W,
+        H,
+        w.beacons.live(w.time).filter(b => w.ally(b.owner, me)),
+        tone
+      );
+    if (S) R.drawEvents(g, X, Y, W, H, w.time);
     const v = game.view,
       r = Math.max(8, ((v.dist * 0.55) / side) * W);
     g.strokeStyle = '#fff';
