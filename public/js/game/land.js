@@ -1746,6 +1746,67 @@ export class LandWorld {
       if (seen && u.structure) u.everSeen = true;
       u.seen = !!((seen && !u.cloaked) || (u.structure && u.everSeen));
     }
+    this.viewSide = side;
+    this.markViewCells();
+    for (const s of this.shots) s.hidden = this.shotHidden(s);
+  }
+
+  markViewCells() {
+    const M = this.map,
+      C = (this.fowCell ||= db.constants.num('DesiredLandFOWCellSize', 15)),
+      x0 = Math.floor(M.playMin[0] / C) - 1,
+      y0 = Math.floor(M.playMin[1] / C) - 1,
+      w = Math.floor(M.playMax[0] / C) + 2 - x0,
+      h = Math.floor(M.playMax[1] / C) + 2 - y0;
+    let g = this.viewCells;
+    if (!g || g.x0 !== x0 || g.y0 !== y0 || g.w !== w || g.h !== h)
+      g = this.viewCells = { x0, y0, w, h, at: new Float64Array(w * h).fill(-Infinity) };
+    g.all = !this.eyes;
+    if (g.all) return;
+    const at = g.at,
+      now = this.time;
+    for (const [x, y, r] of this.eyes) {
+      const n = Math.ceil(r / C),
+        cx = Math.floor(x / C) - x0,
+        cy = Math.floor(y / C) - y0,
+        r2 = (r / C + 0.5) ** 2,
+        i0 = Math.max(-n, -cx),
+        i1 = Math.min(n, w - 1 - cx),
+        j0 = Math.max(-n, -cy),
+        j1 = Math.min(n, h - 1 - cy);
+      for (let j = j0; j <= j1; j++) {
+        const row = (cy + j) * w + cx;
+        for (let i = i0; i <= i1; i++) if (i * i + j * j <= r2) at[row + i] = now;
+      }
+    }
+    for (const u of this.units)
+      if (!u.dead && u.spotted)
+        for (const s of u.spotted)
+          if (s.until > now && this.ally(s.side, this.viewSide))
+            for (let j = -s.n; j <= s.n; j++)
+              for (let i = -s.n; i <= s.n; i++) {
+                const cx = s.cx + i - x0,
+                  cy = s.cy + j - y0;
+                if (i * i + j * j <= s.n * s.n && cx >= 0 && cy >= 0 && cx < w && cy < h) at[cy * w + cx] = now;
+              }
+  }
+
+  viewFogged(x, y) {
+    const g = this.viewCells;
+    if (this.viewSide === undefined || !g || g.all) return false;
+    const cx = Math.floor(x / this.fowCell) - g.x0,
+      cy = Math.floor(y / this.fowCell) - g.y0;
+    if (cx < 0 || cy < 0 || cx >= g.w || cy >= g.h) return true;
+    return this.time - g.at[cy * g.w + cx] >= (this.fowRegrow ??= db.constants.num('LandFOWRegrowTime', 6));
+  }
+
+  shotHidden(s) {
+    const P = s.w.proj;
+    if (this.viewSide === undefined || !P) return false;
+    const b = (P._landFog ??= new Set([...P.list('Behavior'), ...P.list('LandBehavior')].map(x => x.toUpperCase())));
+    if (!b.has('HIDE_WHEN_FOGGED')) return false;
+    if (s.from && this.ally(s.from.side, this.viewSide) && b.has('REVEAL')) return false;
+    return this.viewFogged(s.x, s.y);
   }
 
   firedOn(u, t) {
@@ -4166,6 +4227,7 @@ export class LandWorld {
       shot.ay = sy + (dy / d) * stop;
     }
     this.shots.push(shot);
+    shot.hidden = this.shotHidden(shot);
     if (!w.quiet && (u.revealsFiring ??= landReveals(u.type))) this.firedOn(u, t);
     if (u.foot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
     if (this.onShot) this.onShot(shot);

@@ -52,6 +52,7 @@ export class Shots {
       ku.zScale.value = C.num('Laser_Kite_Z_Scale_Factor', 1.2);
     }
     for (const s of shots) {
+      if (s.hidden) continue;
       const L = this.lookOf(s.w.proj);
       if (L.kind === 'none') continue;
       if (L.kind === 'pill') {

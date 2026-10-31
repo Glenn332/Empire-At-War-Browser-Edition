@@ -864,8 +864,8 @@ export class LandGame {
     let lastFire = 0;
     world.onShot = s => {
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
-      if (made) burst(made, s.x, s.y, s.z);
-      if (world.time - lastFire < 0.07) return;
+      if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
+      if (s.from?.seen === false || world.time - lastFire < 0.07) return;
       lastFire = world.time;
       this.audio.play(fireSound(s.from.type, s.w.proj) || s.w.proj.str('Projectile_SFXEvent_Fire'), s.x, s.y);
     };
@@ -875,6 +875,7 @@ export class LandGame {
     };
     world.onImpact = s => {
       const p = s.w.proj;
+      if (s.target && !s.target.dead && s.target.side !== undefined ? s.target.seen === false : world.viewFogged(s.ax, s.ay)) return;
       const first = s.ground ? 'Projectile_Ground_Detonation_Particle' : 'Projectile_Object_Detonation_Particle',
         second = s.ground ? 'Projectile_Object_Detonation_Particle' : 'Projectile_Ground_Detonation_Particle';
       if (s.expired) burst(particle(p.str('Projectile_Lifetime_Detonation_Particle')), s.ax, s.ay, s.z);
@@ -2760,6 +2761,7 @@ export class LandGame {
         paintFog(this.terrain, w.eyes, true, this.paused ? 0 : 0.25 * (this.speed || 1), db.constants.num('LandFOWRegrowTime', 6));
         for (const p of this.props || []) p.grp.visible = !p.scriptHidden;
       } else {
+        w.viewSide = undefined;
         for (const u of w.units) u.holder.visible = !u.inside && !u.scriptHidden;
         for (const prop of this.props || []) prop.grp.visible = !prop.scriptHidden;
         paintFog(this.terrain, null, false);

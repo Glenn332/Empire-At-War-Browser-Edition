@@ -1919,7 +1919,7 @@ export class World {
         target.shieldAt.z = target.z;
       }
       if (!(k > 0) || d <= took) {
-        this.fx.shieldHit(x, y, z, target, fx && fx.shield);
+        if (this.viewerSees(target)) this.fx.shieldHit(x, y, z, target, fx && fx.shield);
         return;
       }
       amount = (d - took) / k;
@@ -1946,7 +1946,7 @@ export class World {
       }
     }
     let d = (amount * db.damageMod(damageType, target.armor)) / target.bonus.defense;
-    this.fx.hit(x, y, z, Math.min(40, 6 + d * 0.5), fx && fx.hit);
+    if (this.viewerSees(target)) this.fx.hit(x, y, z, Math.min(40, 6 + d * 0.5), fx && fx.hit);
     if (target.hpDriven) {
       if (!hp || !hp.alive || !hp.destroyable) hp = this.pickHardpoint(target, x, y);
       if (!hp) {
@@ -2011,8 +2011,10 @@ export class World {
     hp.alive = false;
     hp.health = 0;
     hp.worldPos(_p);
-    this.fx.explosion(_p.x, _p.y, _p.z, 45, false, particleFile(hp.def.str('Death_Explosion_Particles')));
-    this.audio.play(hp.def.str('Death_Explosion_SFXEvent'), _p.x, _p.y);
+    if (this.viewerSees(unit)) {
+      this.fx.explosion(_p.x, _p.y, _p.z, 45, false, particleFile(hp.def.str('Death_Explosion_Particles')));
+      this.audio.play(hp.def.str('Death_Explosion_SFXEvent'), _p.x, _p.y);
+    }
     for (const px of unit.proxies)
       if (px.hp === hp && !px.on) {
         px.on = true;
@@ -2067,13 +2069,15 @@ export class World {
     }
     this.removeUnit(u);
     const big = u.visualRadius;
-    this.fx.explosion(u.x, u.y, u.z, clamp(big * 1.1, 14, 600), big > 120, particleFile(u.type.list('Death_Explosions')[0]));
+    if (this.viewerSees(u)) {
+      this.fx.explosion(u.x, u.y, u.z, clamp(big * 1.1, 14, 600), big > 120, particleFile(u.type.list('Death_Explosions')[0]));
+      this.audio.play(
+        u.type.str('Death_SFXEvent_Start_Die') || (big > 120 ? 'Unit_Star_Destroyer_Death_SFX' : 'Unit_Fighter_Death_SFX'),
+        u.x,
+        u.y
+      );
+    }
     this.fx.deathClone(u);
-    this.audio.play(
-      u.type.str('Death_SFXEvent_Start_Die') || (big > 120 ? 'Unit_Star_Destroyer_Death_SFX' : 'Unit_Fighter_Death_SFX'),
-      u.x,
-      u.y
-    );
     if (u.player && u.player.id >= 0 && !u.underConstruction) {
       u.player.stats.lost++;
       if (u.player.human && !u.isFighter && this.time - (this.lastLossVoice ?? -99) > 8) {
@@ -2835,6 +2839,69 @@ export class World {
       for (const u of units) if (!u.dead) u.seenBy |= b;
       for (const s of this.squads) for (const f of s.fighters) f.seenBy |= b;
     }
+    this.markViewCells();
+    for (const p of this.projectiles) if (!p.dead) p.hidden = this.shotHidden(p);
+  }
+
+  viewGrid() {
+    const C = this.fowCell,
+      x0 = Math.floor(this.min.x / C) - 1,
+      y0 = Math.floor(this.min.y / C) - 1,
+      w = Math.floor(this.max.x / C) + 2 - x0,
+      h = Math.floor(this.max.y / C) + 2 - y0;
+    const g = this.viewCells;
+    if (g && g.x0 === x0 && g.y0 === y0 && g.w === w && g.h === h) return g;
+    return (this.viewCells = { x0, y0, w, h, at: new Float64Array(w * h).fill(-Infinity) });
+  }
+
+  markViewCells() {
+    const v = this.viewer;
+    if (!v || !this.fog) return;
+    const C = this.fowCell,
+      g = this.viewGrid(),
+      at = g.at,
+      now = this.time,
+      mark = (x, y, r) => {
+        const n = Math.ceil(r / C),
+          cx = Math.floor(x / C) - g.x0,
+          cy = Math.floor(y / C) - g.y0,
+          r2 = (r / C + 0.5) ** 2,
+          i0 = Math.max(-n, -cx),
+          i1 = Math.min(n, g.w - 1 - cx),
+          j0 = Math.max(-n, -cy),
+          j1 = Math.min(n, g.h - 1 - cy);
+        for (let j = j0; j <= j1; j++) {
+          const row = (cy + j) * g.w + cx;
+          for (let i = i0; i <= i1; i++) if (i * i + j * j <= r2) at[row + i] = now;
+        }
+      };
+    for (const u of this.units) if (!u.dead && !u.hyper && u.player.team === v.team && u.revealRange > 0) mark(u.x, u.y, u.revealRange);
+    for (const r of this.reveals) if (r.team === v.team) mark(r.x, r.y, r.r);
+    for (const u of this.units)
+      if (!u.dead && u.spotted)
+        for (const s of u.spotted) if (s.team === v.team && s.until > now) mark((s.cx + 0.5) * C, (s.cy + 0.5) * C, s.n * C);
+  }
+
+  viewFogged(x, y) {
+    const v = this.viewer,
+      g = this.viewCells;
+    if (!this.fog || !v || this.reveal || this.fogLifted & v.bit || !g) return false;
+    const cx = Math.floor(x / this.fowCell) - g.x0,
+      cy = Math.floor(y / this.fowCell) - g.y0;
+    if (cx < 0 || cy < 0 || cx >= g.w || cy >= g.h) return true;
+    return this.time - g.at[cy * g.w + cx] >= this.fowRegrow;
+  }
+
+  viewerSees(e) {
+    return !this.fog || !this.viewer || this.reveal || this.canSee(this.viewer, e);
+  }
+
+  shotHidden(p) {
+    const P = p.def,
+      hides = (P._hideFogged ??= P.behaviors().has('HIDE_WHEN_FOGGED'));
+    if (!hides || !this.viewer) return false;
+    if (p.owner && p.owner.team === this.viewer.team && (P._reveals ??= P.behaviors().has('REVEAL'))) return false;
+    return this.viewFogged(p.x, p.y);
   }
 
   tacticalPop(t) {
@@ -3332,7 +3399,7 @@ export class World {
             (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
           );
           const sfx = fireSound(u.type, w.proj);
-          if (sfx && w.pulsesLeft === w.pulses) this.audio.play(sfx, x, y);
+          if (sfx && w.pulsesLeft === w.pulses && this.viewerSees(u)) this.audio.play(sfx, x, y);
         }
         w.pulsesLeft--;
         w.pulseTimer = w.pulseDelay;
@@ -3545,7 +3612,9 @@ export class World {
       fxSeen: 0
     });
     const made = (proj._made ??= particleFile(proj.str('Projectile_Object_Creation_Particle')));
-    if (made && this.fx.made) this.fx.made(made, x, y, z);
+    const shot = this.projectiles[this.projectiles.length - 1];
+    shot.hidden = this.shotHidden(shot);
+    if (made && this.fx.made && !this.viewFogged(x, y)) this.fx.made(made, x, y, z);
     if (shooter.revealsFiring && !shooter.isSpecialWeapon) this.firedOn(shooter, target);
   }
 
@@ -3622,6 +3691,8 @@ export class World {
       fxs: null,
       fxSeen: 0
     });
+    const shot = this.projectiles[this.projectiles.length - 1];
+    shot.hidden = this.shotHidden(shot);
   }
 
   areaDamage(x, y, radius, amount, damageType, owner, { shields = true, hull = true, proj = null } = {}) {
@@ -3730,7 +3801,8 @@ export class World {
           dz = p.point.z - p.z;
         if (Math.hypot(dx, dy, dz) <= step + 4) {
           const range = p.blastRange || 60;
-          this.fx.explosion(p.point.x, p.point.y, p.point.z, Math.min(160, range * 0.7), false, p.fx.hit);
+          if (!this.viewFogged(p.point.x, p.point.y))
+            this.fx.explosion(p.point.x, p.point.y, p.point.z, Math.min(160, range * 0.7), false, p.fx.hit);
           this.areaDamage(p.point.x, p.point.y, range, p.blastDamage || p.damage, p.damageType, p.owner, {
             shields: p.shields,
             hull: p.hull,
@@ -3917,7 +3989,7 @@ export class World {
       )
         keep = false;
       if (!keep && p.reach !== undefined && !p.hitDone) {
-        if (p.end) this.fx.hit(p.x, p.y, p.z, 8, p.end);
+        if (p.end && !p.hidden) this.fx.hit(p.x, p.y, p.z, 8, p.end);
         if (p.blastRange > 0 && p.blastDamage > 0)
           this.areaDamage(p.x, p.y, p.blastRange, p.blastDamage, p.damageType, p.owner, { shields: p.shields, hull: p.hull, proj: p.def });
       }
@@ -4565,7 +4637,7 @@ export class World {
       (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
     );
     const sfx = fireSound(u.type, w.proj);
-    if (sfx && w.pulsesLeft === w.pulses) this.audio.play(sfx, x, y);
+    if (sfx && w.pulsesLeft === w.pulses && this.viewerSees(u)) this.audio.play(sfx, x, y);
   }
 
   probe(u, st, leader, dt) {
