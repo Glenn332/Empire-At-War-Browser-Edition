@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three/build/three.module.js';
 import { db } from '../gamedata.js';
 import { loadModel } from '../model.js';
 
@@ -20,9 +20,12 @@ export class Beacons {
 
   place(owner, type, x, y, z, now) {
     if (!type || !this.ready(owner, now)) return null;
-    this.last.set(owner, now);
-    this.list = this.list.filter(b => b.owner !== owner && b.until > now);
-    const b = { owner, type, x, y, z, until: now + type.num('Beacon_Lifetime_In_Secs', 10) };
+    return this.add({ owner, type, x, y, z, until: now + type.num('Beacon_Lifetime_In_Secs', 10) }, now);
+  }
+
+  add(b, now) {
+    this.last.set(b.owner, now);
+    this.list = this.list.filter(o => o.owner !== b.owner && o.until > now);
     this.list.push(b);
     return b;
   }

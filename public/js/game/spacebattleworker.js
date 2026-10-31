@@ -1,3 +1,4 @@
+import './workeroverlay.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { loadGameData, db } from '../gamedata.js';
 import { loadMap } from '../ted.js';
@@ -173,9 +174,14 @@ async function setUp(m, events) {
 
 onmessage = async e => {
   const m = e.data;
+  if (m && m.k === 'vfsr') return;
   globalThis.SWR_BASE = m.base;
   try {
-    if (m.k === 'run') return await run(m);
+    if (m.k === 'run') {
+      globalThis.SWR_NOJOBS = !!m.nojobs;
+      globalThis.SWR_SPAWN_JOBS = (sh, n) => postMessage({ k: 'spawnJobs', sh, n });
+      return await run(m);
+    }
     const { w, ms } = await setUp(m, null);
     const rec = new SpaceRecorder(w);
     const steps = [],
@@ -386,7 +392,8 @@ async function run(m) {
         fresh: rec.fresh.slice(),
         spawns: spawns.splice(0),
         events: events.splice(0),
-        stepMs: steps % 30 === 0 ? stepMs / 30 : undefined
+        stepMs: steps % 30 === 0 ? stepMs / 30 : undefined,
+        jobs: steps % 30 === 0 && w.ahead ? w.ahead.report() : undefined
       },
       [units.buffer, shots.buffer, points.buffer, abilities.buffer]
     );
@@ -399,7 +406,9 @@ async function run(m) {
     const c = e.data;
     if (c.k === 'cmd') commands.push([w.viewer ? w.viewer.id : 0, c.cmd]);
     else if (c.k === 'lockstep') step(c.cmds, c.hash);
-    else if (c.k === 'pace') {
+    else if (c.k === 'jobs') {
+      if (w.ahead) w.ahead.on = !!c.on;
+    } else if (c.k === 'pace') {
       speed = c.speed || 1;
       paused = !!c.paused;
     } else if (c.k === 'save') {

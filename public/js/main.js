@@ -87,7 +87,7 @@ import { TacticalCinematics } from './game/tacticalcinematics.js';
 import { stepDualFlash } from './game/tutorialrewards.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
-import { beaconType } from './game/beacons.js';
+import { Beacons, beaconType } from './game/beacons.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
@@ -470,7 +470,7 @@ class Game {
       this.bring(type);
     };
     this.workerMode =
-      (this.setup.spaceWorker !== undefined ? !!this.setup.spaceWorker : new URLSearchParams(location.search).has('spaceworker')) &&
+      (this.setup.spaceWorker !== undefined ? !!this.setup.spaceWorker : !new URLSearchParams(location.search).has('nospaceworker')) &&
       !this.setup.campaign &&
       !this.setup.linkedTactical &&
       !this.setup.attract;
@@ -1259,7 +1259,8 @@ class Game {
     const me = this.human;
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))
       this.ui.radar.event('Default_Unit_Die', d.unit.x, d.unit.y);
-    if (kind === 'beacon' && me && d.beacon.owner.team === me.team) {
+    if (kind === 'beacon' && this.mirror && d.beacon.owner) (this.world.beacons ||= new Beacons()).add(d.beacon, this.world.time);
+    if (kind === 'beacon' && me && d.beacon.owner?.team === me.team) {
       const b = d.beacon;
       this.audio.play(b.type.str('SFXEvent_Beacon_Placed'));
       this.ui?.radar?.event(b.type.str('Beacon_Radar_Map_Event_Name').trim(), b.x, b.y);

@@ -1,3 +1,4 @@
+import { ScanAhead } from './scanjobs.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
 import { Pathfinder, layerMask, ASTEROID_LAYERS } from './pathfind.js';
@@ -1039,6 +1040,7 @@ export class Unit {
   }
 
   syncObj() {
+    if (this.world.modelOpts?.headless) return;
     const o = this.obj;
     o.position.set(this.x, this.y, this.z);
     _qz.setFromAxisAngle(_Z, this.heading + Math.PI / 2);
@@ -2170,6 +2172,7 @@ export class World {
       l.push(o);
     }
     this.unitGridN = units.length;
+    (this.ahead ||= new ScanAhead()).prepare(units, dt);
     if (this.timers.length) {
       const due = this.timers.filter(t => t.at <= this.time);
       if (due.length) {
@@ -2217,6 +2220,7 @@ export class World {
   updateEnd() {
     const units = this.units,
       dt = this.stepDt;
+    this.ahead?.clear();
     for (const s of this.squads) if (!s.dead) this.updateSquad(s, dt);
     for (const sw of this.specialWeapons) sw.update();
     this.tacticalSuperweapons?.update();
@@ -2950,8 +2954,12 @@ export class World {
       )
         list.push(o);
     };
-    const ug = this.unitGrid;
-    if (ug && this.unitGridN <= this.units.length) {
+    const ug = this.unitGrid,
+      pre = this.ahead && this.ahead.take(u);
+    if (pre) {
+      for (const o of pre) if (!o.dead && !o.hyper) list.push(o);
+      for (let i = this.unitGridN; i < this.units.length; i++) take(this.units[i]);
+    } else if (ug && this.unitGridN <= this.units.length) {
       const pad = range + UNIT_PAD,
         x0 = Math.floor((u.x - pad) / UNIT_CELL),
         x1 = Math.floor((u.x + pad) / UNIT_CELL),

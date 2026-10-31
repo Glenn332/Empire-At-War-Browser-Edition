@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { instanceable, skinBatchable } from '../model.js';
+import { CollectJobs } from './collectjobs.js';
 
 const ROW = 24 * 4;
 
@@ -43,6 +44,7 @@ export class Instances {
     this.put = [];
     this.gpu = null;
     this.camera = null;
+    this.jobs = CollectJobs.create();
   }
 
   poolFor(mesh, skinned = false) {
@@ -101,6 +103,10 @@ export class Instances {
     tint.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('instanceTint', tint);
     const im = new THREE.InstancedMesh(geo, p.mat, cap);
+    if (this.jobs) {
+      im.instanceMatrix = new THREE.InstancedBufferAttribute(new Float32Array(new SharedArrayBuffer(cap * 64)), 16);
+      p.pid = this.jobs.pool(im.instanceMatrix.array, p.pid ?? -1);
+    }
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     im.frustumCulled = false;
     im.matrixAutoUpdate = false;
@@ -129,7 +135,10 @@ export class Instances {
     obj.userData.ship = true;
     obj.updateWorldMatrix(true, true);
     _inv.copy(obj.matrixWorld).invert();
-    for (const e of list) e.local.multiplyMatrices(_inv, e.mesh.matrixWorld);
+    for (const e of list) {
+      e.local.multiplyMatrices(_inv, e.mesh.matrixWorld);
+      e.dirty = true;
+    }
     let skins = null;
     obj.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || this.known.has(o)) return;
@@ -181,6 +190,9 @@ export class Instances {
       put = this.put;
     _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     for (const p of this.list) p.n = 0;
+    if (this.jobs?.broken) this.jobs = null;
+    const J = this.jobs;
+    if (J) J.begin();
     let drawn = 0;
     for (const u of units) {
       if (u.dead || !u.obj) continue;
@@ -230,10 +242,15 @@ export class Instances {
       const world = obj.matrixWorld;
       if (whole && pose >= 0) {
         _inv.copy(world).invert();
-        for (let i = 0; i < list.length; i++) list[i].local.multiplyMatrices(_inv, list[i].mesh.matrixWorld);
+        for (let i = 0; i < list.length; i++) {
+          list[i].local.multiplyMatrices(_inv, list[i].mesh.matrixWorld);
+          list[i].dirty = true;
+        }
         u.instPosed = pose;
       }
-      let rest = 0;
+      let rest = 0,
+        uk = -1;
+      const defer0 = !!J && !whole && !u.casters;
       for (let i = 0; i < list.length; i++) {
         const e = list[i],
           m = e.mesh;
@@ -258,17 +275,29 @@ export class Instances {
         let o = m;
         while (o && o !== obj && o.visible) o = o.parent;
         if (o !== obj) continue;
-        if (!whole) m.matrixWorld.multiplyMatrices(world, e.local);
-        const p = e.pool;
-        if (!p || (e.skin && !this.taken.has(m))) {
+        const p = e.pool,
+          pooled = !!p && !(e.skin && !this.taken.has(m)),
+          defer = defer0 && pooled;
+        if (!whole && !defer) m.matrixWorld.multiplyMatrices(world, e.local);
+        if (!pooled) {
           rest++;
           continue;
         }
         if (p.n === p.cap) this.size(p, p.cap * 2);
-        const a = p.im.instanceMatrix.array,
-          me = m.matrixWorld.elements,
-          at = p.n * 16;
-        for (let k = 0; k < 16; k++) a[at + k] = me[k];
+        if (defer) {
+          if (uk < 0) uk = J.addUnit(world.elements);
+          if (e.slot === undefined) e.slot = J.slot();
+          if (e.dirty !== false) {
+            J.setLocal(e.slot, e.local.elements);
+            e.dirty = false;
+          }
+          J.add(uk, e.slot, p.pid, p.n);
+        } else {
+          const a = p.im.instanceMatrix.array,
+            me = m.matrixWorld.elements,
+            at = p.n * 16;
+          for (let k = 0; k < 16; k++) a[at + k] = me[k];
+        }
         if (e.skin) p.rows[p.n] = e.skin.mats;
         const t = p.tint.array,
           tt = p.n * 4;
@@ -300,6 +329,7 @@ export class Instances {
         put.push(obj);
       }
     }
+    if (J) J.run();
     for (const u of this.units) if (u.instStamp !== stamp) this.release(u);
     for (const p of this.list) {
       const im = p.im;

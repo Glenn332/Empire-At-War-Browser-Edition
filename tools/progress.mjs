@@ -520,8 +520,8 @@ const GROUPS = [
       ],
       [
         'Multithreading',
-        T,
-        'logic runs on one thread; measured at 1.5 ms a step with 640 units in the field, so there is nothing to win yet'
+        D,
+        'space battles step in a worker of their own by default (skirmish, benchmarks, multiplayer; ?nospaceworker steps on the page, campaign battles still do), the page drawing from its records. In the battle worker, job workers sharing memory (SharedArrayBuffer, Atomics) gather every unit due a target scan from one snapshot a step, the same answer on any number of cores so lockstep holds, and the headless battle skips model transforms. On the page, job workers work out the instance matrices of moving units. Mod 400 v 400 benchmark: 7.9 / 5.3 fps on one thread, 39.1 / 20.6 with the threads, the battle at real time. Not split yet: fighters, projectiles and weapons within a step, the page record apply and drawing'
       ]
     ]
   ],

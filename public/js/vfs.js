@@ -2,10 +2,11 @@ import { openOverlay } from './mods.js';
 import { languageId } from './language.js';
 import { expansion } from './edition.js';
 
-const overlay = openOverlay().catch(e => {
+const overlay = (globalThis.SWR_OVERLAY ? Promise.resolve(globalThis.SWR_OVERLAY) : openOverlay()).catch(e => {
   console.warn('mods', e);
   return null;
 });
+export const pageOverlay = () => overlay;
 const keyOf = path => path.replace(/\//g, '\\').toUpperCase();
 
 const cache = new Map();

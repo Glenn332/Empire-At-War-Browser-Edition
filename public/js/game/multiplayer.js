@@ -1122,7 +1122,7 @@ async function openStaging({
       players,
       seed: crypto.getRandomValues(new Uint32Array(1))[0],
       restoreSlot: snap.multiplayer.saver,
-      spaceWorker: new URLSearchParams(location.search).has('spaceworker')
+      spaceWorker: !new URLSearchParams(location.search).has('nospaceworker')
     };
     note.textContent = 'Sending the saved game to the players...';
     const save = await packSave(snap);
@@ -1519,7 +1519,7 @@ async function openStaging({
       fog: st.fog,
       teamFactions: st.teamFactions.slice(),
       seed,
-      spaceWorker: new URLSearchParams(location.search).has('spaceworker'),
+      spaceWorker: !new URLSearchParams(location.search).has('nospaceworker'),
       players: players.map(s =>
         s.kind === 'human'
           ? { human: true, peer: s.peer, name: s.name, team: s.team, color: s.color, auto: false }

@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **91.4%** | 155 | 28 | 2 | 185 |
-| **Whole game** | **80.7%** | 218 | 113 | 9 | 340 |
+| **Space skirmish** | **91.9%** | 156 | 28 | 1 | 185 |
+| **Whole game** | **81.0%** | 219 | 113 | 8 | 340 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -26,7 +26,7 @@ Regenerate with `node tools/progress.mjs`.
 | Skirmish AI | space skirmish | 87.5% | 15 | 5 | 0 |
 | Interface | space skirmish | 92.3% | 33 | 6 | 0 |
 | Audio | space skirmish | 95.8% | 11 | 1 | 0 |
-| Platform | space skirmish | 83.3% | 11 | 3 | 1 |
+| Platform | space skirmish | 90.0% | 12 | 3 | 0 |
 | What a mod can change | rest of the game | 71.9% | 8 | 7 | 1 |
 | Game modes | rest of the game | 45.0% | 1 | 7 | 2 |
 | Land battles | rest of the game | 85.2% | 53 | 15 | 3 |
@@ -227,7 +227,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Ambient / battle music switching
 - 🟡 Spotted-enemy lines — *the faction lines play when a listed enemy unit comes into view; exactly when the original fires them could not be read from its code*
 
-### Platform — 83.3%
+### Platform — 90.0%
 
 - ✅ Runs in the browser, no install
 - ✅ Game data in private storage (OPFS): a tar of the game folder read through its archives
@@ -240,10 +240,10 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Model viewer
 - ✅ Volume settings remembered
 - ✅ Graphics options: shadows, bloom, heat haze, lens flare
+- ✅ Multithreading — *space battles step in a worker of their own by default (skirmish, benchmarks, multiplayer; ?nospaceworker steps on the page, campaign battles still do), the page drawing from its records. In the battle worker, job workers sharing memory (SharedArrayBuffer, Atomics) gather every unit due a target scan from one snapshot a step, the same answer on any number of cores so lockstep holds, and the headless battle skips model transforms. On the page, job workers work out the instance matrices of moving units. Mod 400 v 400 benchmark: 7.9 / 5.3 fps on one thread, 39.1 / 20.6 with the threads, the battle at real time. Not split yet: fighters, projectiles and weapons within a step, the page record apply and drawing*
 - 🟡 Build stamp and self-reload — *not yet exercised by a real deploy*
 - 🟡 Touch and mobile — *touch.js plays a finger as the mouse in every mode: tap is a left click, a double tap a double click, drag the left drag, press and hold a right click (held and moved a right drag), two fingers scroll, pinch for the wheel and turn the view. One button of ours, on a touch screen only: fullscreen on and off (with landscape asked for). Still to do: try it on real phones and tablets, the HUD at phone size, tooltips that need hovering, hotkeys with no button (groups, abilities by key, speed). iOS draws with WebGPU as elsewhere (?webgl for WebGL): on WebKit without render bundles (WebKit bugs 320490, 321876), its programs keep every array index in range themselves, and DXT textures are unpacked to RGBA where WebGL has no S3TC (?nodxt tries that on desktop; land terrain layers still need it); ?gfxinfo shows the drawing path on the build tag. Still to check on an iPhone that this ends the flicker*
 - 🟡 Other languages — *Native language IDs0..10 select installed or mod DATs through a browser language query or portable-pack default. Native whole-file fallback updates text and conquest fonts together, with language-specific face and minimum-size rules. Installed test data contain only English; translated DAT fixtures cover localized loading and BMP glyph pages. The live conquest API refreshes current text and fonts through native layout and retained-source callbacks without restarting the campaign. Translated-DAT browser checks cover French and Russian and preserve existing panel objects, pause, sorting and story playback state. Speech queues and active SFX capture the selected language. Native filename marker priority, suffix substitution and speech directories select original recordings; only Localize SFX substitute filenames. Server archive views reuse ordered mount indices instead of rescanning folders; the first real-mod alternate view measured about5ms rather than two seconds. Cached server and folder-import archive views mount SFX2D for the selected language while preserving expansion, mod and loose-file order. Missing localized clips retain native failure completion with no English retry. Menu artwork reads language mappings and keeps the full texture. All11 policy, cache, queue, loop, race, missing-file and real archive fixtures pass. Browser checks use original English Tarkin audio, a real German mod alarm and missing French speech, plus native base/mod artwork. Action points: native platform language selection, localized splash screens and full original-engine comparisons for translated installs*
-- ⬜ Multithreading — *logic runs on one thread; measured at 1.5 ms a step with 640 units in the field, so there is nothing to win yet*
 
 ### What a mod can change — 71.9%
 

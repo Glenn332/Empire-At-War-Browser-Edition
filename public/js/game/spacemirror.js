@@ -3,6 +3,7 @@ import { db } from '../gamedata.js';
 import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
 import { battleSnapshot } from './spaceprobe.js';
 import { TURN } from './netgame.js';
+import { pageOverlay } from '../vfs.js';
 
 const TICK = 1 / 30;
 
@@ -17,6 +18,7 @@ export class SpaceMirror {
     this.ready = false;
     this.lastAt = 0;
     this.stats = { records: 0, applyMs: 0, events: 0, failed: 0, stepMs: 0 };
+    this.jobWorkers = [];
     const start = battleSnapshot(game, loaded && loaded.save, loaded && loaded.refs);
     this.saves = new Map();
     this.pace = '';
@@ -49,10 +51,23 @@ export class SpaceMirror {
           else s.rej(new Error(m.error));
         }
       } else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
-      else if (m.ok === false) console.error('space worker:', m.error);
+      else if (m.k === 'vfs') this.answerFile(m);
+      else if (m.k === 'spawnJobs') {
+        for (let i = 0; i < m.n; i++) {
+          const wk = new Worker(new URL('./jobworker.js', import.meta.url), { type: 'module' });
+          wk.onerror = e => console.error('job worker', e.message);
+          wk.postMessage({ sh: m.sh, slot: i });
+          this.jobWorkers.push(wk);
+        }
+      } else if (m.ok === false) console.error('space worker:', m.error);
     };
     this.worker.onerror = e => console.error('space worker', e.message);
-    this.worker.postMessage({ ...start, k: 'run', base: new URL('.', location.href).href });
+    this.worker.postMessage({
+      ...start,
+      k: 'run',
+      base: new URL('.', location.href).href,
+      nojobs: new URLSearchParams(location.search).has('nojobs')
+    });
     this.held = new Set();
     this.whenReady = new Promise(res => {
       this.onReady = res;
@@ -71,6 +86,20 @@ export class SpaceMirror {
       p.human = false;
       return true;
     };
+  }
+
+  async answerFile(m) {
+    let result;
+    try {
+      const o = await pageOverlay();
+      if (m.op === 'meta') result = o ? { names: o.names, whole: !!o.whole } : null;
+      else if (o) result = await o[m.op](...m.args);
+    } catch (e) {
+      console.warn('space worker file', m.op, m.args && m.args[0], e);
+    }
+    if (result instanceof ArrayBuffer) result = result.slice(0);
+    else if (ArrayBuffer.isView(result)) result = result.slice().buffer;
+    this.worker.postMessage({ k: 'vfsr', id: m.id, result }, result instanceof ArrayBuffer ? [result] : []);
   }
 
   save(name = '') {
@@ -204,6 +233,7 @@ export class SpaceMirror {
       st = this.stats;
     st.records++;
     if (m.stepMs !== undefined) st.stepMs = m.stepMs;
+    if (m.jobs) st.jobs = m.jobs;
     w.time = m.time;
     for (const s of m.spawns) {
       const ty = db.type(s.type),
@@ -408,6 +438,7 @@ export class SpaceMirror {
   }
 
   stop() {
+    for (const wk of this.jobWorkers) wk.terminate();
     this.worker.terminate();
   }
 }
