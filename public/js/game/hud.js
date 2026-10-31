@@ -844,7 +844,7 @@ export class CommandBar {
       w = this.world;
     const sel = ui.selection.filter(s => !s.dead);
     const units = sel.filter(
-      s => s.isSquad || s.isMobile || s.sellable || (s.player !== p && !s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length))
+      s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length))
     );
     const items = new Array(24).fill(null),
       columns = [];
