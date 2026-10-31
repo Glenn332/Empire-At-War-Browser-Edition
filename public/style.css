@@ -1140,9 +1140,6 @@ body:not(.original-hud) .heroframe {
   height: 32px;
   background: center/100% 100% no-repeat;
 }
-.sideitem.building {
-  cursor: pointer;
-}
 .sideitem span {
   position: absolute;
   left: -2px;

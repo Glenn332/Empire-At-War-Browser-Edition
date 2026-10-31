@@ -1355,7 +1355,8 @@ export class CommandBar {
             return d;
           }
           d.firstChild.style.backgroundImage = css(iconUrl(iconNameFor(r.type)));
-          d.title = (db.t(r.type.str('Text_ID')) || r.type.name) + (r.it ? ' — click to cancel' : '');
+          d.onmouseenter = () => this.tipOn('side' + i, r.type);
+          d.onmouseleave = () => this.hideInfo();
           if (r.it)
             d.onclick = () => {
               this.game.command({ c: 'cancel', b: r.u.id, q: r.name, i: r.u.buildQueues.get(r.name).indexOf(r.it), type: r.it.type.name });
