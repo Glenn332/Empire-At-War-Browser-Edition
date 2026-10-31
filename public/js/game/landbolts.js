@@ -102,7 +102,7 @@ export class Bolts {
       if (L && (e.b.x - L.x) ** 2 + (e.b.y - L.y) ** 2 > L.r * L.r && (e.a.x - L.x) ** 2 + (e.a.y - L.y) ** 2 > L.r * L.r) return true;
       let made = 0;
       while (e.wait <= 0 && e.live.length < def.bolts && made++ < 3) {
-        this.strike(def, endOf(e.a, e.aBone, _a), endOf(e.b, e.bBone, _b));
+        this.strike(def, e.from ? _a.copy(e.from) : endOf(e.a, e.aBone, _a), e.to ? _b.copy(e.to) : endOf(e.b, e.bBone, _b));
         e.live.push(this.bolts[this.bolts.length - 1]);
         e.wait += Math.max(0.02, rand(def.every[0], def.every[1]));
       }

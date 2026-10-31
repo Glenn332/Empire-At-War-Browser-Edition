@@ -15,6 +15,7 @@ import { gfx, pixelRatio, shadowSize, gammaOn } from '../gfx.js';
 import { Instances } from './instances.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
+import { TractorBeams } from './tractorbeam.js';
 
 const DEG = Math.PI / 180;
 const NO_FX = [];
@@ -1616,6 +1617,8 @@ export class Renderer {
     for (const a of this.idlers) a.step(dt);
     for (const inst of this.sceneryBillboards) updateBillboards(inst, cam);
     if (this.clones.length) this.updateClones(dt);
+    const pulls = (this.pulls ||= []);
+    pulls.length = 0;
     if (world)
       for (const b of world.beams) {
         const a = b.a,
@@ -1626,6 +1629,10 @@ export class Renderer {
           from = bone
             ? (bone.updateWorldMatrix(true, false), bone.getWorldPosition(_beamFrom))
             : _beamFrom.set(a.x, a.y, (a.z ?? 0) + (b.bone ? 0 : (a.height || 0) * 0.3));
+        if (b.kind === 'tractor') {
+          pulls.push({ a, b: t, from: from.clone(), to: new THREE.Vector3(t.x, t.y, tz) });
+          continue;
+        }
         bolts.add(
           from.x,
           from.y,
@@ -1640,6 +1647,7 @@ export class Renderer {
         );
         sp.add(t.x, t.y, tz, b.width * 2.2, b.color[0], b.color[1], b.color[2], 0.7);
       }
+    if (pulls.length || this.tractor) (this.tractor ||= new TractorBeams(this.scene)).update(dt || 0, pulls, cam, sp);
     sp.end();
     bolts.end();
     pills.end();

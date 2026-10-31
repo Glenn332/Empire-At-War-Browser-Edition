@@ -318,10 +318,10 @@ export class SpaceMirror {
       if (hp.maxHealth) hp.health = H[o + 4] * hp.maxHealth;
     }
     if (m.beams || w.beams.length)
-      w.beams = (m.beams || []).flatMap(([a, b, color, width, bone]) => {
+      w.beams = (m.beams || []).flatMap(([a, b, color, width, bone, kind]) => {
         const from = this.byW.get(a),
           to = this.byW.get(b);
-        return from && to ? [{ a: from, b: to, color, width, bone, until: Infinity }] : [];
+        return from && to ? [{ a: from, b: to, color, width, bone, kind, until: Infinity }] : [];
       });
     const A = m.abilities;
     for (let o = 0; o < A.length; o += ABILITY) {

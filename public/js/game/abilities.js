@@ -483,7 +483,7 @@ export function tickAbilities(world, u, dt) {
             speed: 1 - (def.spec ? def.spec.num('Target_Speed_Decrease_Percent', 0.75) : 0.75)
           });
         }
-        world.beam(u, tgt, [0.45, 0.6, 1], 10, 'HP_trac_bone');
+        world.beam(u, tgt, [0.45, 0.6, 1], 10, 'HP_trac_bone', 'tractor');
         break;
       case 'ENERGY_WEAPON':
         if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.2)) {
