@@ -4091,7 +4091,9 @@ export class LandGame {
       g.fillRect(s[0] - 40, s[1], 80 * f, 6);
     };
     if (globalThis.showCaptureBars)
-      for (const pt of w.points) if (pt.taker >= 0) bar(pt.x, pt.y, pt.z + 60, pt.progress, w.ally(pt.taker, me) ? '#35e04a' : '#e04535');
+      for (const pt of w.points)
+        if (pt.taker !== -1)
+          bar(pt.x, pt.y, pt.z + 60, pt.progress, (pt.taker >= 0 ? w.ally(pt.taker, me) : !w.ally(pt.side, me)) ? '#35e04a' : '#e04535');
     for (const s of w.sites)
       if (s.building) bar(s.x, s.y, s.z + 40, 1 - s.building.left / s.building.total, w.ally(s.building.side, me) ? '#ffd421' : '#e08a35');
     if (this.pings && this.pings.length) {

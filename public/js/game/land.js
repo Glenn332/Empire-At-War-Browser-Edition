@@ -1613,7 +1613,7 @@ export class LandWorld {
   paintPoint(pt) {
     if (!pt.inst) return;
     const col = side => (side >= 0 && this.colors[side]) || NEUTRAL,
-      k = pt.taker >= 0 ? Math.min(1, pt.progress) : 0;
+      k = pt.taker !== -1 ? Math.min(1, pt.progress) : 0;
     const c = _paint.copy(col(pt.side)).lerp(col(pt.taker), k);
     for (const m of pt.paint || []) m.uniforms.colorization.value.set(c.r, c.g, c.b, 1);
     const taking = pt.taker >= 0 ? (this.factions[pt.taker] || '').toUpperCase() : '';
@@ -1890,43 +1890,58 @@ export class LandWorld {
     for (const pt of this.points) {
       if (pt.anim) pt.anim.step(dt);
       if (pt.locked) continue;
-      const here = new Set();
-      for (const u of this.units)
-        if (
-          !u.dead &&
-          !u.inside &&
-          u.captures &&
-          (u.x - pt.x) ** 2 + (u.y - pt.y) ** 2 <= pt.radius * pt.radius &&
-          ![...here].some(s => this.ally(s, u.side))
-        )
-          here.add(u.side);
-      const only = here.size === 1 ? [...here][0] : -1;
-      if (only >= 0 && !(pt.side >= 0 && this.ally(only, pt.side))) {
-        if (!(pt.taker >= 0 && this.ally(pt.taker, only))) {
-          pt.taker = only;
+      if (pt.side >= 0 && this.time < (this.captureWait ??= db.constants.num('Land_Capture_Allowed_Countdown_Seconds', 0))) continue;
+      const lead = this.pointLead(pt),
+        rate = dt / Math.max(1e-3, pt.seconds);
+      if (lead === pt.side) {
+        if (pt.taker !== -1 && (pt.progress -= rate) <= 0) {
+          pt.taker = -1;
           pt.progress = 0;
-          if (this.onCaptureStart) this.onCaptureStart(pt, only);
+          this.showOwner(pt);
         }
-        pt.progress += dt / pt.seconds;
+      } else {
+        const mark = lead >= 0 ? lead : -2;
+        if (pt.taker !== mark) {
+          pt.taker = mark;
+          pt.progress = 0;
+          if (this.onCaptureStart) this.onCaptureStart(pt, lead);
+        }
+        pt.progress += rate;
         if (pt.progress >= 1) {
           const was = pt.side;
-          pt.side = only;
+          pt.side = lead;
           pt.taker = -1;
           pt.progress = 0;
           this.showOwner(pt);
           if (this.onCapture) this.onCapture(pt, was);
         }
-      } else {
-        if (pt.taker >= 0) {
-          pt.taker = -1;
-          pt.progress = 0;
-          this.showOwner(pt);
-        }
-        pt.taker = -1;
-        pt.progress = 0;
       }
-      if (pt.taker >= 0) this.paintPoint(pt);
+      if (pt.taker !== -1) this.paintPoint(pt);
     }
+  }
+
+  pointLead(pt) {
+    if (!pt.ground && this.time >= (pt.siteAt || 0)) {
+      pt.siteAt = this.time + 1;
+      pt.ground = this.sites.find(s => s.point === pt) || null;
+    }
+    const s = pt.ground,
+      o = s && s.structure && !s.structure.dead ? s.structure : null;
+    if (s && !s.capturable && (o || s.building)) return pt.side;
+    if (o && o.holds && o.holds.length) return o.holds[0].side;
+    const owned = pt.side >= 0;
+    let lead = -1,
+      any = false;
+    for (const u of this.units) {
+      if (u.dead || u.inside || !u.captures || (u.x - pt.x) ** 2 + (u.y - pt.y) ** 2 > pt.radius * pt.radius) continue;
+      any = true;
+      if (owned) {
+        if (!this.ally(pt.side, u.side)) return -1;
+      } else if (lead < 0) lead = u.side;
+      else if (!this.ally(lead, u.side)) return -1;
+    }
+    if (owned) return any || pt.reinforce || (pt.sticks ??= pt.type.bool('Ownership_Sticks')) ? pt.side : -1;
+    return lead;
   }
 
   addBaseSite(o, side, built = false) {
