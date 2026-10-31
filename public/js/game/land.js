@@ -1891,7 +1891,6 @@ export class LandWorld {
 
   updatePoints(dt) {
     for (const pt of this.points) {
-      if (pt.anim) pt.anim.step(dt);
       if (pt.locked) continue;
       if (pt.side >= 0 && this.time < (this.captureWait ??= db.constants.num('Land_Capture_Allowed_Countdown_Seconds', 0))) continue;
       const lead = this.pointLead(pt),

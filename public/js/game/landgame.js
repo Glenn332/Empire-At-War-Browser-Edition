@@ -2747,6 +2747,7 @@ export class LandGame {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);
     }
+    for (const pt of w.points) if (pt.anim) pt.anim.step(this.paused ? 0 : real * (this.speed || 1));
     for (const p of this.propAnims || []) {
       if (p.grp.visible && p.anim) p.anim.step(this.paused ? 0 : real * (this.speed || 1));
       if (p.proxies?.length) this.stepPropProxies(p);
