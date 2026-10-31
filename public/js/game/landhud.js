@@ -50,6 +50,11 @@ function playerOf(world, side, factionName) {
 }
 
 const NONE = new Map();
+const padReach = s => {
+  const b = s.point?.inst?.box || s.inst?.box;
+  if (!b || b.isEmpty()) return 0;
+  return Math.max(-b.min.x, b.max.x, -b.min.y, b.max.y) * (s.scale || 1);
+};
 class PadPick {
   constructor(site, world, index) {
     this.site = site;
@@ -358,14 +363,20 @@ export class LandUI {
 
   padAt(x, y) {
     const w = this.world;
+    let best = -1,
+      bestD = Infinity;
     for (let i = 0; i < w.sites.length; i++) {
       const s = w.sites[i];
       if (s.base && !s.pad) continue;
       const owner = s.base ? (s.structure ? -1 : s.side) : s.point.side;
-      if (!(owner >= 0 && w.ally(owner, this.me)) || Math.hypot(s.x - x, s.y - y) > (s.base ? 60 : 45)) continue;
-      return this.padPick(i);
+      if (!(owner >= 0 && w.ally(owner, this.me))) continue;
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d <= Math.max(s.base ? 60 : 45, padReach(s)) && d < bestD) {
+        best = i;
+        bestD = d;
+      }
     }
-    return null;
+    return best >= 0 ? this.padPick(best) : null;
   }
 
   padPick(i) {
