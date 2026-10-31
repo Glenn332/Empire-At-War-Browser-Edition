@@ -1017,6 +1017,24 @@ export class CommandBar {
     box.classList.remove('hidden');
   }
 
+  showWeather(m) {
+    const box = this.info;
+    this.infoKey = 'weather|' + m.icon;
+    this.infoPinned = false;
+    box.classList.remove('hint');
+    box.innerHTML = `<div class="etop"><i class="eicon"></i><b></b></div>
+      <div class="ebody"><div class="eclass"><span></span></div><div class="eline"></div><p class="etext"></p></div><div class="ebeam"></div>`;
+    const q = sel => box.querySelector(sel);
+    q('.etop').style.backgroundImage = css(iconUrl('e_topbar2.tga'));
+    q('.eicon').style.backgroundImage = css(iconUrl(m.icon));
+    q('.etop b').textContent = db.t(m.display);
+    q('.ebody').style.backgroundImage = css(iconUrl('e_background.tga'));
+    q('.eclass span').textContent = db.t(m.cls);
+    q('.eline').style.backgroundImage = css(iconUrl('e_line.tga'));
+    q('.etext').textContent = db.t(m.desc);
+    box.classList.remove('hidden');
+  }
+
   infoWhy(type, builder) {
     const why = this.world.cantBuild(builder, type, this.player);
     const w = this.info.querySelector('.ewhy');
@@ -1315,16 +1333,27 @@ export class CommandBar {
         if (!next || !p.upgrades.has(next.name.toUpperCase())) rows.push({ type: t });
       }
     }
-    const sig = rows.map(r => r.type.name + (r.it ? '*' : '')).join();
+    const wx = w.weatherNow?.();
+    if (wx) rows.unshift({ weather: wx });
+    const sig = rows.map(r => (r.weather ? 'wx:' + r.weather.icon : r.type.name + (r.it ? '*' : ''))).join();
     if (sig !== this.sideSig) {
       this.sideSig = sig;
       side.replaceChildren(
         ...rows.map((r, i) => {
           const d = document.createElement('div');
           d.className = 'sideitem' + (r.it ? ' building' : '');
-          const piece = rows.length === 1 ? 3 : i === 0 ? 0 : i === rows.length - 1 ? 2 : 1;
+          const k = wx ? i - 1 : i,
+            n = wx ? rows.length - 1 : rows.length,
+            piece = r.weather || n === 1 ? 3 : k === 0 ? 0 : k === n - 1 ? 2 : 1;
           d.style.backgroundImage = css(this.tex('skirmish_upgrade', 'Blank_Texture_Name', piece));
           d.innerHTML = '<i></i><span></span>';
+          d._r = r;
+          if (r.weather) {
+            d.firstChild.style.backgroundImage = css(iconUrl(r.weather.icon));
+            d.onmouseenter = () => (this.tipTarget = { id: 'weather', key: 'weather|' + r.weather.icon, show: () => this.showWeather(r.weather) });
+            d.onmouseleave = () => this.hideInfo();
+            return d;
+          }
           d.firstChild.style.backgroundImage = css(iconUrl(iconNameFor(r.type)));
           d.title = (db.t(r.type.str('Text_ID')) || r.type.name) + (r.it ? ' — click to cancel' : '');
           if (r.it)
@@ -1332,13 +1361,12 @@ export class CommandBar {
               this.game.command({ c: 'cancel', b: r.u.id, q: r.name, i: r.u.buildQueues.get(r.name).indexOf(r.it), type: r.it.type.name });
               this.ui.hudTimer = 0;
             };
-          d._r = r;
           return d;
         })
       );
     }
     for (const d of side.children) {
-      const it = d._r.it;
+      const it = d._r && d._r.it;
       if (it) d.lastChild.textContent = Math.round(100 * (1 - it.left / it.total)) + '%';
     }
   }

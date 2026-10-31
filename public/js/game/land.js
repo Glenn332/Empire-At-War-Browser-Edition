@@ -928,8 +928,11 @@ export class LandWorld {
     w.lightning = s.phases[0].lightning || 0;
     w.fog = w.fogTo = s.phases[0].fog || 0;
   }
+  wxNow() {
+    return this.weather.level > 0.5 ? this.weather.name : 'clear';
+  }
   wxOf(u) {
-    const name = this.weather.name;
+    const name = this.wxNow();
     if (u.wx && u.wx.name === name) return u.wx;
     if (this.weatherproof && this.weatherproof.has(u.side)) return (u.wx = { name, sight: 1, speed: 1 });
     const m = this.tables && this.tables.weather.get(name);
@@ -944,7 +947,7 @@ export class LandWorld {
     return this.wxOf(u).sight;
   }
   wxSpread(w) {
-    const name = this.weather.name;
+    const name = this.wxNow();
     if (w.wxName === name) return w.wxSpread;
     const m = this.tables && this.tables.weather.get(name),
       cat = w.proj.str('Projectile_Category').toUpperCase();

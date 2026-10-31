@@ -159,6 +159,11 @@ export class LandUI {
         return game.setup.fog !== false && !game.reveal;
       },
       canSee: (p, e) => !e.members || e.members.some(u => u.seen !== false),
+      weatherNow: () => {
+        const name = w.wxNow(),
+          m = name !== 'clear' ? w.tables?.weather.get(name) : null;
+        return m && m.icon ? m : null;
+      },
       tacticalPop: t => (t.has('Land_Override_Population_Value') ? t.num('Land_Override_Population_Value', 0) : undefined),
       abilityBlocked: (q, kind) => (q.abilityState ? w.abilityBlocked(q, kind) : null),
       buildOptions: b => {

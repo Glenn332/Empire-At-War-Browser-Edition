@@ -59,10 +59,12 @@ export async function loadLandTables() {
     t.surface.set((g.attrs.name || '').toUpperCase(), kinds);
   }
   for (const m of top(wm)?.children || []) {
-    const e = { sight: new Map(), speed: new Map(), aim: new Map(), objective: '' };
+    const e = { sight: new Map(), speed: new Map(), aim: new Map(), objective: '', icon: '', display: '', cls: '', desc: '' };
+    const texts = { OBJECTIVE_TEXT: 'objective', ICON_NAME: 'icon', DISPLAY_TEXT: 'display', CLASS_TEXT: 'cls', DESCRIPTION_TEXT: 'desc' };
     for (const k of m.children) {
-      if (/^Objective_Text$/i.test(k.tag)) {
-        e.objective = k.text.trim();
+      const key = texts[k.tag.toUpperCase()];
+      if (key) {
+        e[key] = k.text.trim();
         continue;
       }
       const v = parseFloat(k.text);
