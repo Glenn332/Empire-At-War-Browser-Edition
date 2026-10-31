@@ -4493,7 +4493,7 @@ export class World {
     if (tgt && tgt.isSquad) {
       const cell = s.cell || lead;
       let p = st.partner;
-      if (p && (p.dead || this.time >= st.until)) p = st.partner = null;
+      if (p && (p.dead || p.squad !== tgt || this.time >= st.until)) p = st.partner = null;
       if (!p && this.time >= (st.taken || 0) && dist2(lead, cell) <= DOG_NEAR) {
         const reach = ((u.weapon ? u.weapon.range : u.maxRange) || 400) ** 2;
         for (const e of tgt.fighters) {

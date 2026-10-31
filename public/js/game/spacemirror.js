@@ -5,7 +5,9 @@ import { battleSnapshot } from './spaceprobe.js';
 import { TURN } from './netgame.js';
 import { pageOverlay } from '../vfs.js';
 
-const TICK = 1 / 30;
+const TICK = 1 / 30,
+  LAG = 1.5 * TICK,
+  LAG_MAX = 6 * TICK;
 
 export class SpaceMirror {
   constructor(game, loaded = null) {
@@ -170,6 +172,8 @@ export class SpaceMirror {
         this.pace = pace;
         this.worker.postMessage({ k: 'pace', speed: g.speed, paused: pace[0] === 'p' });
       }
+      this.playback(real, pace[0] === 'p' ? 0 : g.speed);
+      return;
     }
     if (this.queue.length) {
       const t = performance.now();
@@ -182,6 +186,30 @@ export class SpaceMirror {
       this.stats.applyMs += this.lastAt - t;
     }
     g.present(Math.min(1, (performance.now() - this.lastAt) / (TICK * 1000)));
+  }
+
+  playback(real, rate) {
+    const g = this.game,
+      Q = this.queue;
+    if (!Q.length && this.shown === undefined) return;
+    const newest = Q.length ? Q[Q.length - 1].time : this.shown;
+    if (this.clock === undefined) this.clock = Q[0].time - TICK;
+    const lag = newest - this.clock;
+    if (lag > LAG_MAX) this.clock = newest - LAG;
+    else this.clock += real * rate * (1 + Math.max(-0.15, Math.min(0.15, (lag - LAG) / (8 * TICK))));
+    if (Q.length && Q[0].time - TICK <= this.clock) {
+      const t = performance.now();
+      while (Q.length && Q[0].time - TICK <= this.clock) {
+        const m = Q.shift();
+        g.settle();
+        this.apply(m);
+        g.remember();
+        this.shown = m.time;
+      }
+      this.lastAt = performance.now();
+      this.stats.applyMs += this.lastAt - t;
+    }
+    g.present(this.shown === undefined ? 0 : Math.max(0, Math.min(1, (this.clock - this.shown + TICK) / TICK)));
   }
 
   lockFrame(real) {
@@ -297,6 +325,7 @@ export class SpaceMirror {
         e.obj.scale.setScalar(e.scale || 1);
       }
       e.cloaked = !!(flags & 8);
+      if (flags & 32) e.flip = true;
       e.seenBy = U[o + 13];
       e.target = U[o + 14] >= 0 ? this.byW.get(U[o + 14]) || null : null;
       e.aim = Number.isNaN(U[o + 15]) ? undefined : U[o + 15];

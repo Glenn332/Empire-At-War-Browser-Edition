@@ -34,7 +34,8 @@ export class SpaceRecorder {
     for (let i = 0; i < us.length; i++) {
       const u = us[i];
       U[o] = u.id;
-      U[o + 1] = (u.dead ? 1 : 0) | (u.isFighter ? 2 : 0) | (u.hyper ? 4 : 0) | (u.cloaked ? 8 : 0);
+      U[o + 1] = (u.dead ? 1 : 0) | (u.isFighter ? 2 : 0) | (u.hyper ? 4 : 0) | (u.cloaked ? 8 : 0) | (u.flip ? 32 : 0);
+      u.flip = false;
       U[o + 2] = u.x;
       U[o + 3] = u.y;
       U[o + 4] = u.z || 0;
