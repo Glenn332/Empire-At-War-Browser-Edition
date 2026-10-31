@@ -83,7 +83,7 @@ export function specialAttack(world, u, t, dt) {
         every: Math.max(0.05, a.num('Damage_Interval_In_Secs', 0.4)),
         fx: a.val('Target_Particle_Effect').trim()
       };
-      if (world.onSound) world.onSound(a.val('SFXEvent_Activate').trim(), u.x, u.y);
+      if (world.onSound) world.onSound(a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side);
       return true;
     }
     const ok = world.cast(
@@ -198,7 +198,7 @@ function tickQuakes(world, step) {
     if (!Q || Q.t !== t) {
       if (simRandom() >= S.chance) continue;
       u.quake = { t, acc: 0, phase: '' };
-      if (world.onSound) world.onSound(S.a.val('SFXEvent_Activate').trim(), u.x, u.y);
+      if (world.onSound) world.onSound(S.a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side);
     }
     const q = u.quake,
       every = Math.max(0.05, S.a.num('Damage_Interval_In_Secs', 0.4)),
@@ -385,7 +385,7 @@ function tickAmbient(world, step) {
     const lo = t.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 5),
       hi = Math.max(lo, t.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 10));
     u.ambient.left = lo + Math.random() * (hi - lo);
-    if (world.onSound && u.seen !== false) world.onSound(t.str('SFXEvent_Ambient_Moving'), u.x, u.y);
+    if (world.onSound && u.seen !== false) world.onSound(t.str('SFXEvent_Ambient_Moving'), u.x, u.y, u.side);
   }
 }
 

@@ -2882,7 +2882,7 @@ export class LandWorld {
         if (worst) {
           worst.health = Math.min(worst.maxHealth, worst.health + h.amount + worst.maxHealth * h.percent);
           if (this.onFx) this.onFx(h.fx, worst.x, worst.y, worst.z + worst.aimZ);
-          if (this.onSound) this.onSound(h.sfx, worst.x, worst.y);
+          if (this.onSound) this.onSound(h.sfx, worst.x, worst.y, u.side);
         }
       }
     }
@@ -4402,7 +4402,7 @@ export class LandWorld {
     if (r >= D.back + D.block) return false;
     const back = r < D.back && !s.from.dead;
     if (!t.path.length && !(t.cast > this.time)) this.cast(t, back ? 'REDIRECT_BLASTER' : 'BLOCK_BLASTER');
-    if (this.onSound) this.onSound(D.sfx, t.x, t.y);
+    if (this.onSound) this.onSound(D.sfx, t.x, t.y, t.side);
     if (back) {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
       this.shots[this.shots.length - 1].turned = true;
@@ -4413,7 +4413,7 @@ export class LandWorld {
   absorbs(t, s) {
     const A = t.absorb;
     if (!A || !/LASER/i.test(s.w.proj.str('Projectile_Category')) || simRandom() >= A.chance) return 1;
-    if (this.onSound) this.onSound(A.sfx, t.x, t.y);
+    if (this.onSound) this.onSound(A.sfx, t.x, t.y, t.side);
     if (A.color.length >= 3) this.glow(t, A.color, A.secs, 1);
     return 1 - A.part;
   }

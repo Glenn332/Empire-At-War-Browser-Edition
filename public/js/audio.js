@@ -385,11 +385,14 @@ export class Audio {
     return false;
   }
 
-  playAt(player, name, x, y) {
+  isVoice(name) {
     const ev = name && db.sfx.get(String(name).trim().toUpperCase());
-    if (!ev) return false;
-    if (ev.bool('Is_Unit_Response_VO') || ev.bool('Is_HUD_VO') || ev.bool('Is_Ambient_VO') || ev.bool('Localize'))
-      return this.playFor(player, name);
+    return !!ev && (ev.bool('Is_Unit_Response_VO') || ev.bool('Is_HUD_VO') || ev.bool('Is_Ambient_VO') || ev.bool('Localize'));
+  }
+
+  playAt(player, name, x, y) {
+    if (!(name && db.sfx.get(String(name).trim().toUpperCase()))) return false;
+    if (this.isVoice(name)) return this.playFor(player, name);
     return this.play(name, x, y);
   }
 
