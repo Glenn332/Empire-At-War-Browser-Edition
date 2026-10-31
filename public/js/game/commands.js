@@ -59,6 +59,11 @@ export function execute(world, player, cmd) {
     case 'stop':
       orderStop(own());
       return {};
+    case 'repair': {
+      const t = find(cmd.t);
+      if (!t || t.player.team !== player.team) return {};
+      return world.repairHardpoint(player, t, num(cmd.hp)) ? {} : { why: 'Nothing to repair' };
+    }
     case 'ability': {
       const users = own().filter(s => s.abilityState && s.abilityState(cmd.kind));
       if (!users.length) return {};

@@ -350,6 +350,12 @@ export class UI {
         if (this.runArmed(m.x, m.y) && !e.shiftKey && this.armed !== 'waypoint') this.arm(null);
         return;
       }
+      const fix = this.repairTarget(m.x, m.y);
+      if (fix) {
+        this.game.command({ c: 'repair', t: this.hover.id, hp: this.hover.hardpoints.indexOf(fix) });
+        this.say(this.player.faction, 'SFXEvent_HUD_Repairing');
+        return;
+      }
       this.drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, box: false, shift: e.shiftKey };
     } else if (e.button === 2) {
       if (ARMED_ORDERS.has(this.armed)) {
@@ -1383,6 +1389,13 @@ export class UI {
     return x >= x0 - margin && x <= x1 + margin && y >= y0 - margin && y <= y1 + margin;
   }
 
+  repairTarget(x, y) {
+    const h = this.hover;
+    if (!h || h.dead || !h.isStation || h.player.id < 0 || h.player.team !== this.player.team) return null;
+    const hp = this.hardpointAt(h, x, y);
+    return hp && hp.health < hp.maxHealth * 0.99 ? hp : null;
+  }
+
   hardpointAt(unit, x, y, reach = 20) {
     if (unit.isSquad || !unit.hpDriven) return null;
     let best = null,
@@ -1629,6 +1642,8 @@ export class UI {
       pointers.set(
         'POINTER_ATTACK_WITH_SPECIAL_WEAPON_' + (sw && this.hover && sw.canTarget(this.hover) ? Math.min(2, sw.action) : 'INVALID')
       );
+    } else if (!this.armed && !this.placing && !this.drag?.box && !this.direct && m.inside && this.repairTarget(m.x, m.y)) {
+      pointers.set('POINTER_REPAIR_HARDPOINT');
     } else {
       const h = this.hover,
         sel = this.selection.filter(s => s.player === this.player && (s.isSquad || s.isMobile || s.hasWeapons));

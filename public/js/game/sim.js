@@ -317,6 +317,7 @@ class Hardpoint {
     this.smoke = undefined;
     this.rules = undefined;
     this.lookAt = undefined;
+    this.repairers = null;
   }
   worldPos(out) {
     const u = this.unit,
@@ -2137,6 +2138,7 @@ export class World {
     this.stepAt = 0;
     this.time += dt;
     this.launches = 0;
+    if (this.repairs && this.repairs.size) this.tickRepairs(dt);
     const units = this.units;
     this.jammers.length = 0;
     this.interdictors.length = 0;
@@ -3282,6 +3284,43 @@ export class World {
     const next = e.queue && e.queue.shift();
     if (next) e.setOrder(next, true);
     else e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
+  }
+
+  repairHardpoint(player, u, index) {
+    const hp = u && !u.dead && u.isStation && u.hardpoints ? u.hardpoints[index] : null;
+    if (!hp || !hp.alive || !(hp.health < hp.maxHealth) || (hp.repairers && hp.repairers.includes(player))) return false;
+    (hp.repairers ||= []).push(player);
+    (this.repairs ||= new Set()).add(hp);
+    return true;
+  }
+
+  tickRepairs(dt) {
+    const k = dt * 30;
+    for (const hp of this.repairs) {
+      const u = hp.unit;
+      if (u.dead || !hp.alive || (hp.destroyable && hp.health <= 0)) {
+        hp.repairers = null;
+        this.repairs.delete(hp);
+        continue;
+      }
+      const cost = (hp.repairCost ??= hp.def.num('Repair_Cost_Per_Frame', 0)) * k,
+        heal = (hp.repairAmount ??= hp.def.num('Repair_Amount_Per_Frame', 0)) * k;
+      hp.repairers = hp.repairers.filter(p => {
+        if (!(p.credits >= cost)) return false;
+        p.credits -= cost;
+        hp.health = Math.min(hp.maxHealth, hp.health + heal);
+        return true;
+      });
+      if (u.hpDriven) {
+        let sum = 0;
+        for (const h of u.hardpoints) if (h.destroyable && h.alive) sum += h.health;
+        u.health = sum;
+      }
+      if (hp.health >= hp.maxHealth || !hp.repairers.length) {
+        hp.repairers = null;
+        this.repairs.delete(hp);
+      }
+    }
   }
 
   updateHeal(u, dt) {
