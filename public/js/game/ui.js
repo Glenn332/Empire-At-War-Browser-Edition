@@ -49,6 +49,7 @@ const heroType = t => {
   return v;
 };
 const unitIcon = s => !s.isPad && (!!s.isSquad || heroType(s.type) || !!globalThis.showAllUnitIcons);
+const ARMED_ORDERS = new Set(['guard', 'attack', 'move', 'attackmove']);
 
 function iconNameFor(type) {
   let name = type.str('Icon_Name');
@@ -341,12 +342,20 @@ export class UI {
       return;
     }
     if (e.button === 0) {
+      if (ARMED_ORDERS.has(this.armed)) {
+        if (this.armed !== 'guard') this.arm(null);
+        return;
+      }
       if (this.armed) {
         if (this.runArmed(m.x, m.y) && !e.shiftKey && this.armed !== 'waypoint') this.arm(null);
         return;
       }
       this.drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, box: false, shift: e.shiftKey };
     } else if (e.button === 2) {
+      if (ARMED_ORDERS.has(this.armed)) {
+        if (this.runArmed(m.x, m.y) && !e.shiftKey && this.armed !== 'attackmove') this.arm(null);
+        return;
+      }
       if (this.armed) {
         this.arm(null);
         return;
@@ -582,6 +591,25 @@ export class UI {
     }
     if (pressed(e, 'PLACE_BEACON')) {
       this.bar?.bPing?.click();
+      return;
+    }
+    if (pressed(e, 'SELECT_ALL')) {
+      e.preventDefault();
+      this.select(this.world.selectables().filter(s => s.player === this.player && (s.isSquad || s.isMobile) && this.canSelect(s)));
+      return;
+    }
+    if (pressed(e, 'SELECT_LIKE')) {
+      e.preventDefault();
+      const h = this.hover;
+      if (h && !h.dead && h.player === this.player) {
+        const same = [];
+        for (const s of this.world.selectables()) {
+          if (s.player !== this.player || s.type !== h.type) continue;
+          const p = this.screenOf(s);
+          if (!p.behind && p.x >= 0 && p.x <= this.r.width && p.y >= 0 && p.y <= this.r.height) same.push(s);
+        }
+        this.select(same, true);
+      }
       return;
     }
     const armKey = ORDER_KEYS.find(([id]) => pressed(e, id))?.[1];
@@ -1431,7 +1459,12 @@ export class UI {
       fy = (e.clientY - rect.top) / rect.height;
     const x = w.min.x + fx * (w.max.x - w.min.x),
       y = w.max.y - fy * (w.max.y - w.min.y);
-    const armed = e.button === 0 && ['attackmove', 'waypoint', 'guard', 'move'].includes(this.armed) ? this.armed : null;
+    const armed =
+      e.button === 2 && ['attackmove', 'guard', 'move'].includes(this.armed)
+        ? this.armed
+        : e.button === 0 && this.armed === 'waypoint'
+          ? this.armed
+          : null;
     if (e.button === 2 || armed) {
       if (e.type === 'mousemove') {
         e.preventDefault();
@@ -1447,7 +1480,7 @@ export class UI {
         if (armed === 'guard') this.say(this.voiceOf(mine), 'SFXEvent_Guard', 'SFXEvent_Move');
         else this.sayMove(mine, x, y, attack);
       }
-      if (armed && !e.shiftKey && armed !== 'waypoint') this.arm(null);
+      if (armed && !e.shiftKey && armed !== 'waypoint' && armed !== 'attackmove') this.arm(null);
     } else {
       this.r.rig.x = x;
       this.r.rig.y = y;
@@ -1856,7 +1889,7 @@ export class UI {
       for (const h of hv.hardpoints) tracked.delete(h);
     }
     for (const h of tracked) drawHp(h, false, true, true);
-    if (this.armed && this.mouse.inside) {
+    if (this.armed?.startsWith('ability:') && this.mouse.inside) {
       g.font = '12px "Segoe UI", sans-serif';
       g.textAlign = 'left';
       g.fillStyle = '#ffd76a';
@@ -1865,13 +1898,7 @@ export class UI {
             .map(s => s.abilityState(this.armed.slice(8)))
             .find(Boolean)
         : null;
-      g.fillText(
-        ab
-          ? ab.def.label
-          : { move: 'Move', attack: 'Attack', attackmove: 'Attack move', guard: 'Guard', waypoint: 'Waypoint' }[this.armed] || '',
-        this.mouse.x + 18,
-        this.mouse.y + 20
-      );
+      if (ab) g.fillText(ab.def.label, this.mouse.x + 18, this.mouse.y + 20);
     }
     if (this.direct) {
       g.font = '13px "Segoe UI", sans-serif';

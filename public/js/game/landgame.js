@@ -123,6 +123,7 @@ import { pressed, held, bothButtonsRotate, keysOf, keyName } from './keybinds.js
 import { beaconType } from './beacons.js';
 
 const LAND_TICK = 1 / 30;
+const ARMED_ORDERS = new Set(['guard', 'attack', 'move', 'attackmove']);
 const nextTask = () =>
   new Promise(r => {
     const ch = new MessageChannel();
@@ -2126,6 +2127,19 @@ export class LandGame {
         ['GUARD', 'guard']
       ].find(([id]) => pressed(e, id))?.[1];
       if (order && ui.movers().length) ui.arm(order);
+      if (pressed(e, 'SELECT_ALL')) {
+        e.preventDefault();
+        ui.select(this.ownSquads());
+      }
+      if (pressed(e, 'SELECT_LIKE')) {
+        e.preventDefault();
+        const h = ui.hover;
+        if (h && !h.dead && !h.isPad && h.side === this.me)
+          ui.select(
+            this.ownSquads(q => q.type === h.type && this.onScreen(q)),
+            true
+          );
+      }
       if (pressed(e, 'STOP')) ui.stop();
       for (let n = 1; n <= 5; n++)
         if (pressed(e, 'ABILITY_' + n)) {
@@ -2345,9 +2359,11 @@ export class LandGame {
         ui.bombAt(this.groundAt(cx, cy));
       } else if (e.button === 0 && ui.aiming) {
         ui.aimAt(this.unitAt(cx, cy), this.groundAt(cx, cy));
-      } else if (e.button === 0 && ui.armed) {
+      } else if (e.button === 0 && ui.armed === 'waypoint') {
         send(cx, cy, ui.armed);
-        if (ui.armed !== 'waypoint') ui.armed = null;
+        this.hudTimer = 0;
+      } else if (e.button === 0 && ui.armed) {
+        if (ui.armed !== 'guard') ui.armed = null;
         this.hudTimer = 0;
       } else if (e.button === 0) {
         const u = this.unitAt(cx, cy),
@@ -2358,21 +2374,10 @@ export class LandGame {
             twice = this.lastPick && now - this.lastPick.t < 400 && this.lastPick.type === u.squad.type && u.side === me && !u.structure;
           this.lastPick = { t: now, type: u.squad.type };
           if (twice) {
-            const pr = this.proj || (this.proj = new THREE.Vector3());
-            const same = w.squads.filter(
-              q =>
-                q.side === me &&
-                q.type === u.squad.type &&
-                q.members.length &&
-                !q.structure &&
-                !q.native &&
-                !q.members[0].inside &&
-                q.members.some(m => {
-                  pr.set(m.x, m.y, m.z + 4).project(this.camera);
-                  return pr.z < 1 && Math.abs(pr.x) <= 1 && Math.abs(pr.y) <= 1;
-                })
+            ui.select(
+              this.ownSquads(q => q.type === u.squad.type && this.onScreen(q)),
+              e.shiftKey
             );
-            ui.select(same, e.shiftKey);
             this.audio.play(u.type.str('SFXEvent_Select'));
           } else if (u.side === me || (u.structure && w.ally(u.side, me))) {
             ui.select([u.squad], e.shiftKey && ui.mine().length === ui.selection.length);
@@ -2381,7 +2386,11 @@ export class LandGame {
         } else if (pad) ui.select([pad]);
         else if (!e.shiftKey) ui.select([]);
       } else if (e.button === 2) {
-        if (ui.placing || ui.armed) {
+        if (!ui.placing && !ui.aiming && ARMED_ORDERS.has(ui.armed)) {
+          send(cx, cy, ui.armed);
+          if (ui.armed !== 'attackmove') ui.armed = null;
+          this.hudTimer = 0;
+        } else if (ui.placing || ui.armed) {
           ui.placing = ui.armed = ui.aiming = null;
           this.hudTimer = 0;
         } else if (dragged && this.moveDragOn && this.moveAt) {
@@ -2404,6 +2413,28 @@ export class LandGame {
           }
         }
       }
+    });
+  }
+
+  ownSquads(keep = () => true) {
+    return this.world.squads.filter(
+      q =>
+        q.side === this.me &&
+        q.members.length &&
+        !q.structure &&
+        !q.native &&
+        !q.craft &&
+        q.selectable !== false &&
+        !q.members[0].inside &&
+        keep(q)
+    );
+  }
+
+  onScreen(q) {
+    const pr = (this.proj ||= new THREE.Vector3());
+    return q.members.some(m => {
+      pr.set(m.x, m.y, m.z + 4).project(this.camera);
+      return pr.z < 1 && Math.abs(pr.x) <= 1 && Math.abs(pr.y) <= 1;
     });
   }
 

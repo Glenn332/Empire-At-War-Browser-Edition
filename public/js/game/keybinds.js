@@ -15,6 +15,8 @@ export const ACTIONS = [
   { id: 'ATTACK', page: 0, edit: 'IDC_EDIT_ATTACK', label: 'TEXT_ATTACK', keys: ['KeyT'] },
   { id: 'STOP', page: 0, edit: 'IDC_EDIT_STOP', label: 'TEXT_STOP', keys: ['KeyX'] },
   { id: 'MOVE', page: 0, edit: 'IDC_EDIT_MOVE', label: 'TEXT_MOVE', keys: ['KeyM'] },
+  { id: 'SELECT_ALL', page: 0, edit: 'IDC_EDIT_SELECT_ALL', label: 'TEXT_SELECT_ALL', keys: ['Ctrl+KeyA'] },
+  { id: 'SELECT_LIKE', page: 0, edit: 'IDC_EDIT_SELECT_LIKE', label: 'TEXT_SELECT_LIKE', keys: ['Ctrl+KeyQ'] },
   { id: 'ATTACK_MOVE', page: 0, edit: 'IDC_EDIT_ATTACK_MOVE', label: 'TEXT_TOOLTIP_ATTACK_MOVE', keys: ['KeyF'] },
   { id: 'WAYPOINT', page: 0, edit: 'IDC_EDIT_WAYPOINT', label: 'TEXT_WAYPOINT', keys: [] },
   { id: 'PLACE_BEACON', page: 1, edit: 'IDC_EDIT_PLACE_BEACON', label: 'TEXT_PLACE_BEACON', keys: [] },
@@ -133,9 +135,10 @@ export function pressed(e, id) {
 }
 
 export function held(keys, id) {
+  const ctrl = keys.has('ControlLeft') || keys.has('ControlRight');
   for (const k of keysOf(id)) {
-    const codes = split(k)[1];
-    if (codes.length && codes.every(c => keys.has(c))) return true;
+    const [mods, codes] = split(k);
+    if (codes.length && codes.every(c => keys.has(c)) && (!ctrl || mods.includes('Ctrl'))) return true;
   }
   return false;
 }
