@@ -69,7 +69,7 @@ export class Shots {
             f.x = s.x;
             f.y = s.y;
             f.z = s.z;
-            f.rot = Math.atan2(s.vy, s.vx);
+            f.rot = Math.atan2(s.vy, s.vx) + Math.PI / 2;
             f.scale = 1;
             f.vx = s.vx;
             f.vy = s.vy;
