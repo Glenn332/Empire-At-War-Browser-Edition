@@ -928,8 +928,12 @@ export class Renderer {
         return v.length >= 3 && v.every(Number.isFinite) ? new THREE.Color(v[0] / 255, v[1] / 255, v[2] / 255) : new THREE.Color(...d);
       };
       const material = new THREE.ShaderMaterial({
-        transparent: true,
+        transparent: false,
         depthWrite: false,
+        depthTest: false,
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.SrcAlphaFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
         uniforms: {
           state: { value: texture },
           grid: { value: whiteTexture() },
@@ -969,7 +973,7 @@ export class Renderer {
       });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w * 3, h * 3), material);
       mesh.position.set((world.min.x + world.max.x) / 2, (world.min.y + world.max.y) / 2, c.num('SpaceFOWHeight', -80));
-      mesh.renderOrder = -1;
+      mesh.renderOrder = -100;
       this.scene.add(mesh);
       const canvas = document.createElement('canvas');
       canvas.width = nx;
