@@ -855,12 +855,21 @@ export class CommandBar {
         if (!groups.has(k)) groups.set(k, []);
         groups.get(k).push(s);
       }
+      const recs = [...groups.values()].map(list => ({ list, one: false }));
+      let need = units.length;
+      while (need > items.length) {
+        const big = recs.filter(r => !r.one && r.list.length > 1).sort((a, b) => b.list.length - a.list.length)[0];
+        if (!big) break;
+        big.one = true;
+        need -= big.list.length - 1;
+      }
       let col = 0;
-      for (const list of groups.values()) {
-        const first = col;
-        for (let i = 0; i < list.length && col < 12; i += 2, col++) {
-          list.slice(i, i + 2).forEach((s, r) => {
-            items[col * 2 + r] = { unit: s };
+      for (const { list, one } of recs) {
+        const first = col,
+          entries = one ? [{ unit: list[0], group: list }] : list.map(s => ({ unit: s }));
+        for (let i = 0; i < entries.length && col < 12; i += 2, col++) {
+          entries.slice(i, i + 2).forEach((it, r) => {
+            items[col * 2 + r] = it;
           });
         }
         for (let c = first; c < col; c++)
@@ -898,11 +907,13 @@ export class CommandBar {
       ui = this.ui;
     if (!it) return;
     if (it.unit) {
+      const picked = it.group || [it.unit];
       if (ev.ctrlKey || ev.shiftKey)
         ui.select(
-          ui.selection.filter(x => x !== it.unit),
+          ui.selection.filter(x => !picked.includes(x)),
           false
         );
+      else if (it.group) ui.select(it.group, false);
       else ui.select([it.unit], false);
     } else if (it.build) {
       const r = this.game.command({ c: 'build', b: it.builder.id, type: it.build.name, n: ev.shiftKey ? 5 : 1 });
@@ -1131,7 +1142,10 @@ export class CommandBar {
     }
 
     const L = this.layout();
-    const sig = L.mode + '|' + L.items.map(it => (it ? (it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : '')).join(',');
+    const sig =
+      L.mode +
+      '|' +
+      L.items.map(it => (it ? (it.group ? 'g' + it.unit.id + 'x' + it.group.length : it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : '')).join(',');
     if (sig !== this.sig) {
       this.sig = sig;
       L.items.forEach((it, i) => {
@@ -1142,9 +1156,9 @@ export class CommandBar {
         s.el.classList.toggle('build', !!(it && it.build));
         s.el.querySelector('.ic').style.backgroundImage = type ? css(iconUrl(iconNameFor(type))) : 'none';
         s.el.querySelector('.cost').textContent = it && it.build ? buildCost(it.build) : '';
-        s.el.querySelector('.num').textContent = '';
+        s.el.querySelector('.num').textContent = it && it.group ? 'x' + it.group.length : '';
         s.el.classList.remove('off');
-        s.hp.style.display = s.sh.style.display = it && it.unit ? '' : 'none';
+        s.hp.style.display = s.sh.style.display = it && it.unit && !it.group ? '' : 'none';
         s.el.title = '';
       });
       this.borders.forEach((b, c) => {
@@ -1242,7 +1256,7 @@ export class CommandBar {
     }
     for (const s of this.slots) {
       const it = s.item;
-      if (!it) continue;
+      if (!it || it.group) continue;
       if (it.unit) {
         const u = it.unit,
           f = u.healthFrac;
