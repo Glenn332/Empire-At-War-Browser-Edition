@@ -4693,6 +4693,12 @@ export class LandWorld {
     const team = sq.box && !sq.ext ? sq.box : null,
       reach = u.range + (team ? team.slack : 0);
     const D = sq.direct;
+    const walking = u.path.length || (team && team.path.length);
+    if (w.hp && !D && walking && (!foe || (team && team.path.length)) && !(u.still ??= u.type.bool('Is_Stationary_When_Attacking'))) {
+      if (foe && this.time >= sq.advance) this.advance(sq);
+      this.moveFire(u, w, foe, reach, dt);
+      return false;
+    }
     let t = null;
     if (D) {
       if (team && team.path.length) {
@@ -4775,6 +4781,31 @@ export class LandWorld {
     if (u.path.length) return false;
     this.setAnim(u, 'attack');
     return true;
+  }
+
+  moveFire(u, w, foe, reach, dt) {
+    let t = u.target && !u.target.inside && this.nearestFoe(u, [u.target], reach, w) ? u.target : null;
+    if (!t && this.time >= (u.scanAt || 0)) {
+      u.scanAt = this.time + 0.2 + simRandom() * 0.15;
+      t = (foe && this.nearestFoe(u, foe.members, reach, w)) || this.nearestFoe(u, this.units, reach, w);
+    }
+    if (t && u.minRange > 0 && Math.hypot(t.x - u.x, t.y - u.y) < u.minRange) t = null;
+    u.target = t;
+    if (!t) {
+      w.left = 0;
+      return;
+    }
+    if (w.left > 0) {
+      if ((w.timer -= dt) <= 0) {
+        this.fire(u, t);
+        w.left--;
+        w.timer = w.pulseDelay;
+      }
+    } else if (w.cooldown <= 0) {
+      w.left = w.pulses;
+      w.timer = 0;
+      w.cooldown = w.recharge * (u.mod ? u.mod.delay : 1);
+    }
   }
 
   directArcs(u, out = []) {
