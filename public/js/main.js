@@ -706,7 +706,7 @@ class Game {
       if (loaded.missing.length)
         this.message(`${loaded.missing.length} saved item(s) no longer exist in the game data and were left out`, 'bad');
     } else if (this.setup.attract) this.startAttract();
-    else this.message(`${db.t(map.textId) || map.planet} — destroy the enemy space station`);
+    else if (this.world.skirmish) this.message(`${db.t(map.textId) || map.planet} — destroy the enemy space station`);
     this.last = performance.now();
     requestAnimationFrame(this.frame);
     window.game = this;
