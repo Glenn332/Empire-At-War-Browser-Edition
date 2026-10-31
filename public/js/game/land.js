@@ -19,6 +19,7 @@ import { setOf, priorityOf } from './priorities.js';
 import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
 import { tickCollisions, resetCollideIds } from './landcollide.js';
+import { collisionOf, meshHit } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
 import {
   CAT,
@@ -46,6 +47,8 @@ const _tilt = new THREE.Quaternion(),
   _turn = new THREE.Quaternion(),
   _up = new THREE.Vector3();
 const _paint = new THREE.Color();
+const _ms0 = new THREE.Vector3(),
+  _ms1 = new THREE.Vector3();
 const _ropeAt = new THREE.Vector3();
 const _q = new THREE.Quaternion(),
   _X = new THREE.Vector3(1, 0, 0),
@@ -4186,7 +4189,7 @@ export class LandWorld {
       if (u.foot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
       return;
     }
-    const reach = (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) + (t.hitRadius > 0 ? t.hitRadius : 0) + Math.abs(tz - z0);
+    const reach = (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) + (this.meshOf(t) ? t.collR : t.hitRadius > 0 ? t.hitRadius : 0) + Math.abs(tz - z0);
     const shot = {
       x: sx,
       y: sy,
@@ -4507,11 +4510,12 @@ export class LandWorld {
         ht = 2;
       for (const o of this.foesNear(s.x, s.y, step + this.hitMax)) {
         if (!this.shotMeets(o, s)) continue;
-        const r = o.hitRadius,
+        const C = this.meshOf(o),
+          r = C ? o.collR : o.hitRadius,
           h = Math.max(r, o.aimZ * 0.6),
           reach = r + step;
         if ((o.x - s.x) ** 2 + (o.y - s.y) ** 2 > reach * reach) continue;
-        const tt = sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
+        const tt = C ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z) : sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
         if (tt >= 0 && tt < ht) {
           ht = tt;
           hit = o;
@@ -4554,6 +4558,27 @@ export class LandWorld {
       return this.shotEnds(s, null);
     }
     return true;
+  }
+
+  meshOf(o) {
+    if (o.coll !== undefined) return o.coll;
+    if (!o.structure) return (o.coll = null);
+    const m = o.inst && o.inst.model;
+    if (!m) return null;
+    const C = (o.coll = collisionOf(m));
+    if (C) {
+      const B = C.box;
+      o.holder.updateMatrixWorld(true);
+      o.collInv = new THREE.Matrix4().copy(o.inst.root.matrixWorld).invert();
+      o.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4])) * o.holder.scale.x;
+    }
+    return C;
+  }
+
+  meshStrike(o, x0, y0, z0, x1, y1, z1) {
+    const a = _ms0.set(x0, y0, z0).applyMatrix4(o.collInv),
+      b = _ms1.set(x1, y1, z1).applyMatrix4(o.collInv);
+    return meshHit(o.coll, a.x, a.y, a.z, b.x - a.x, b.y - a.y, b.z - a.z);
   }
 
   shotMeets(o, s) {
@@ -6677,7 +6702,7 @@ export class LandWorld {
     let k = 0;
     if (this.shots.length) {
       let m = 0;
-      for (const u of this.units) if (!u.dead && u.hitRadius > m) m = u.hitRadius;
+      for (const u of this.units) if (!u.dead) m = Math.max(m, u.hitRadius, u.collR || 0);
       this.hitMax = m;
     }
     for (const s of this.shots) {
