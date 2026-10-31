@@ -953,9 +953,9 @@ export class CommandBar {
     const text = src('Encyclopedia_Text')
       .list('Encyclopedia_Text')
       .map(id => db.text.get(id.toUpperCase()))
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\\n/g, ' ');
+      .filter(s => s !== undefined)
+      .join('\n')
+      .replace(/\\n/g, '\n');
     const icons = k =>
       src(k)
         .list(k)

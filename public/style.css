@@ -1344,6 +1344,9 @@ body:not(.original-hud) .heroframe {
 #encyc p {
   margin: 0 0 4px;
 }
+#encyc .etext {
+  white-space: pre-line;
+}
 #encyc.hint .etext {
   margin: 2px 0;
   font-size: 11.5px;
