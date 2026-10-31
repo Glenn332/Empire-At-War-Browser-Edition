@@ -317,6 +317,12 @@ export class SpaceMirror {
       hp.target = H[o + 3] >= 0 ? this.byW.get(H[o + 3]) || null : null;
       if (hp.maxHealth) hp.health = H[o + 4] * hp.maxHealth;
     }
+    if (m.beams || w.beams.length)
+      w.beams = (m.beams || []).flatMap(([a, b, color, width, bone]) => {
+        const from = this.byW.get(a),
+          to = this.byW.get(b);
+        return from && to ? [{ a: from, b: to, color, width, bone, until: Infinity }] : [];
+      });
     const A = m.abilities;
     for (let o = 0; o < A.length; o += ABILITY) {
       const u = this.byW.get(A[o]),

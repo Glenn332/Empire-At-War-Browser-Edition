@@ -3741,8 +3741,8 @@ export class World {
     this.timers.push({ at: this.time + seconds, fn });
   }
 
-  beam(a, b, color, width) {
-    this.beams.push({ a, b, color, until: this.time + 0.06, width });
+  beam(a, b, color, width, bone = null) {
+    this.beams.push({ a, b, color, until: this.time + 0.06, width, bone });
   }
 
   useAbility(e, kind, on = true, target = null, approach = false) {

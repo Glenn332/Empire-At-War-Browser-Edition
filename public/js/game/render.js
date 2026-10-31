@@ -450,6 +450,7 @@ class RingBatch {
     }
   }
 }
+const _beamFrom = new THREE.Vector3();
 const _sun = new THREE.Vector3(),
   _sunDir = new THREE.Vector3();
 const NO_TINT = new THREE.Vector4(1, 1, 1, 0);
@@ -1620,11 +1621,15 @@ export class Renderer {
         const a = b.a,
           t = b.b;
         if (a.obj && !a.obj.visible) continue;
-        const tz = t.z ?? 0;
+        const tz = (t.z ?? 0) + (t.type ? (t.type._rtz ??= t.type.num('Ranged_Target_Z_Adjust', 0)) : 0),
+          bone = b.bone && a.model && a.model.bone ? a.model.bone(b.bone) : null,
+          from = bone
+            ? (bone.updateWorldMatrix(true, false), bone.getWorldPosition(_beamFrom))
+            : _beamFrom.set(a.x, a.y, (a.z ?? 0) + (b.bone ? 0 : (a.height || 0) * 0.3));
         bolts.add(
-          a.x,
-          a.y,
-          a.z + (a.height || 0) * 0.3,
+          from.x,
+          from.y,
+          from.z,
           t.x,
           t.y,
           tz,
