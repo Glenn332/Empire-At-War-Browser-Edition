@@ -31,6 +31,12 @@ export function pathfinder(units, authoredHero = '') {
   return units[0];
 }
 
+function staysInTransport(t) {
+  const stays = x => !!x && x.bool('Stay_In_Transport_During_Ground_Battle') && !x.str('Unique_Ground_Unit');
+  const inner = t.list('Company_Units').map(n => db.type(n));
+  return inner.length ? inner.every(stays) : stays(t);
+}
+
 function remember(book, gid, squad) {
   book.companies.set(gid, squad ? squad.mates || [squad] : []);
 }
@@ -84,7 +90,8 @@ export async function placeLandInvasion(w, map, cb) {
     pending: 0,
     absent: [],
     planetType: db.type(cb.planetType),
-    anchors: { [a.side]: entry, [d.side]: defend }
+    anchors: { [a.side]: entry, [d.side]: defend },
+    contained: new Map()
   };
   book.persistent = new Map();
   const finishSite = w.finishSite.bind(w),
@@ -171,8 +178,20 @@ export async function placeLandInvasion(w, map, cb) {
     }
     remember(book, u.gid, await w.spawn(u.type, open.x, open.y, at.heading || 0, side));
   };
-  for (let i = 0; i < d.units.length; i++)
-    await spawn(d.units[i], d.side, savedCompanyMarker(map, d.units[i].markerId) || defs[i % defs.length]);
+  const shelters = w.units
+    .filter(u => !u.dead && u.side === d.side && u.type.bool('Can_Contain_Heroes_During_Ground_Battle'))
+    .sort((x, y) => (y.maxHealth || 0) - (x.maxHealth || 0));
+  for (let i = 0; i < d.units.length; i++) {
+    const r = d.units[i],
+      t = db.type(r.type);
+    if (t && staysInTransport(t)) {
+      const home = shelters.shift();
+      if (home) book.contained.set(r.gid, home);
+      else book.absent.push(r.gid);
+      continue;
+    }
+    await spawn(r, d.side, savedCompanyMarker(map, r.markerId) || defs[i % defs.length]);
+  }
   const first = pathfinder(a.units, cb.linked?.hero);
   for (const u of a.units) {
     const type = db.type(u.type);
@@ -291,6 +310,7 @@ export function consolidatedCompanies(records, companies, untouched = new Set(),
 export function landInvasionResult(w, book, cb, winnerSide) {
   const untouched = new Set([...book.absent, ...book.waiting.map(u => u.gid)]);
   for (const [t, id] of book.transports) if (t.stage === 'land' && !t.craft.dead) untouched.add(id);
+  for (const [id, home] of book.contained || []) if (!home.dead) untouched.add(id);
   const ids = [
     ...consolidatedCompanies(cb.attacker.units, book.companies, untouched, cb.attacker.side),
     ...consolidatedCompanies(cb.defender.units, book.companies, untouched, cb.defender.side)
