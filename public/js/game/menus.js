@@ -43,7 +43,8 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_MULTI_PLACE', input: 'optMultiPlace', label: 'Call in several reinforcements at once' },
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
-  { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' }
+  { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
+  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' }
 ];
 
 export class Menus {

@@ -4801,6 +4801,10 @@ export class LandWorld {
       u.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
       aimed = Math.abs(da) < 0.25;
     }
+    if (aimed && this.clearShots && globalThis.clearShots && this.shotBlocked(u, t, w)) {
+      aimed = false;
+      this.seekClear(sq, u, t);
+    }
     if (aimed && specialAttack(this, u, t, dt)) {
       if (u.special && u.special.kind === 'quake') this.setAnim(u, 'attack');
       return true;
@@ -4821,6 +4825,54 @@ export class LandWorld {
     if (u.path.length) return false;
     this.setAnim(u, 'attack');
     return true;
+  }
+
+  shotBlocked(u, t, w) {
+    if (u.flies || !(w.speed > 0) || lobOf(w) > 0) return false;
+    const c = categoryOf(w.proj);
+    if (c !== CAT.DEFAULT && c !== CAT.LASER) return false;
+    if (u.losT === t && this.time < u.losAt) return u.losBad;
+    u.losT = t;
+    u.losAt = this.time + 0.5;
+    return (u.losBad = this.lineBlocked(u.x, u.y, u.z + u.aimZ * 0.8, t));
+  }
+
+  lineBlocked(x0, y0, z0, t) {
+    const x1 = t.x,
+      y1 = t.y,
+      z1 = t.z + t.aimZ * 0.6,
+      d = Math.hypot(x1 - x0, y1 - y0),
+      n = Math.ceil(d / (CELL * 0.5)),
+      tm = this.meshOf(t) ? this.meshStrike(t, x0, y0, z0, x1, y1, z1) : -1,
+      end = tm >= 0 ? tm : Math.min(0.95, 1 - Math.max(0, t.hitRadius || 0) / (d || 1));
+    for (let i = 1; i < n; i++) {
+      const k = i / n;
+      if (k > 0.05 && k < end && heightAt(this.terrain, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k) > z0 + (z1 - z0) * k + 1) return true;
+    }
+    return false;
+  }
+
+  seekClear(sq, u, t) {
+    if (this.time < (sq.clearAt || 0) || sq.direct || u.rooted || u.setup || (u.needsDeploy && u.deployed) || !(u.speed > 0)) return;
+    const box = this.teamOf(sq);
+    if (sq.members.some(m => m.path.length) || (box && box.path.length)) return;
+    sq.clearAt = this.time + 3;
+    const R = Math.min(u.range * 0.85, Math.hypot(u.x - t.x, u.y - t.y)),
+      base = Math.atan2(u.y - t.y, u.x - t.x),
+      lift = u.aimZ * 0.8,
+      need = u.need || 1;
+    for (let k = 0; k <= 12; k++) {
+      const a = base + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
+      for (const f of [1, 0.65]) {
+        const r = R * f,
+          x = t.x + Math.cos(a) * r,
+          y = t.y + Math.sin(a) * r;
+        if (r < u.minRange || !this.isOpen(x, y, need) || this.lineBlocked(x, y, heightAt(this.terrain, x, y) + lift, t)) continue;
+        this.order(sq, x, y, Math.atan2(t.y - y, t.x - x));
+        return;
+      }
+    }
+    sq.clearAt = this.time + 6;
   }
 
   moveFire(u, w, foe, reach, dt) {

@@ -2831,6 +2831,23 @@ async function boot() {
     };
   }
   {
+    const box = $('optClearShots');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-clear-shots') === '1';
+    } catch {}
+    box.checked = on;
+    window.clearShots = on;
+    box.parentElement.title =
+      'In land battles, a unit whose shot would hit a hill holds fire and moves to a spot from which it can hit its target. Off: it fires into the hill as in the original. Not in multiplayer.';
+    box.onchange = () => {
+      window.clearShots = box.checked;
+      try {
+        localStorage.setItem('swr-clear-shots', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
     const box = $('optAutofire');
     let on = true;
     try {

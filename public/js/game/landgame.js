@@ -597,6 +597,7 @@ export class LandGame {
       popCap: setup.popCap
     }));
     world.campaign = !!setup.campaign;
+    world.clearShots = !setup.net;
     world.autofireSides = new Set(!setup.net && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
     world.isHumanSide = s => !!this.players?.[s]?.human;
     const treasury = setup.campaign?.treasury;
