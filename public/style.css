@@ -1276,6 +1276,19 @@ body:not(.original-hud) .heroframe {
   white-space: nowrap;
   overflow: hidden;
 }
+#encyc .epop {
+  position: absolute;
+  left: 11px;
+  top: 0;
+  line-height: 20px;
+  z-index: 2;
+  color: #ffd738;
+  font-weight: 700;
+  text-shadow: 0 0 2px #000;
+}
+#encyc .epop.adds {
+  color: #00ff00;
+}
 #encyc .ecost {
   color: #ffd421;
   font-weight: 700;

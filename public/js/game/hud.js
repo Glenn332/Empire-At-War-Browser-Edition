@@ -974,9 +974,10 @@ export class CommandBar {
       abil = [];
     }
     const cost = builder ? buildCost(type) : 0,
-      pop = builder ? (this.world.tacticalPop?.(type) ?? src('Population_Value').num('Population_Value', 0)) : 0;
+      use = this.world.tacticalPop?.(type) ?? src('Population_Value').num('Population_Value', 0),
+      pop = use > 0 ? -use : type.num('Additional_Population_Capacity', 0);
     box.classList.remove('hint');
-    box.innerHTML = `<div class="etop"><i class="eicon"></i><b></b><span class="ecost"></span></div>
+    box.innerHTML = `<div class="etop"><i class="eicon"></i><span class="epop"></span><b></b><span class="ecost"></span></div>
       <div class="ebody"><div class="eclass"><span></span><span class="eabil"></span></div><div class="eline"></div>
       <p class="etext"></p><p class="ewhy"></p>
       <div class="eagainst"><div class="good"><em></em><div class="eframe"></div></div><div class="bad"><em></em><div class="eframe"></div></div></div></div><div class="ebeam"></div>`;
@@ -984,7 +985,9 @@ export class CommandBar {
     q('.etop').style.backgroundImage = css(iconUrl('e_topbar.tga'));
     q('.eicon').style.backgroundImage = css(iconUrl(iconNameFor(type)));
     q('.etop b').textContent = name;
-    q('.ecost').textContent = builder ? (pop ? `${pop}  ·  ` : '') + cost : '';
+    q('.epop').textContent = pop ? String(Math.abs(pop)) : '';
+    q('.epop').classList.toggle('adds', pop > 0);
+    q('.ecost').textContent = builder ? String(cost) : '';
     q('.ebody').style.backgroundImage = css(iconUrl('e_background.tga'));
     q('.eclass span').textContent = cls;
     for (const a of abil) {
