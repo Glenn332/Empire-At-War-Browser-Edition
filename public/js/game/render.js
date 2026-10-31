@@ -298,12 +298,16 @@ export class CameraRig {
 }
 
 const RING_GRID = 8,
-  RING_POINTS = (RING_GRID + 1) * (RING_GRID + 1),
-  RING_TRIS = RING_GRID * RING_GRID * 2;
+  RING_GRID_BIG = 32,
+  RING_BIG = 80;
 class RingBatch {
-  constructor(max, texture, color, mask = null, ground = null) {
+  constructor(max, texture, color, mask = null, ground = null, grid = RING_GRID) {
     this.max = max;
     this.ground = ground;
+    this.G = grid;
+    this.textures = [texture, mask].filter(Boolean);
+    this.points = (grid + 1) * (grid + 1);
+    this.tris = grid * grid * 2;
     const geo = ground ? this.drapedGeometry(max) : new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial({ map: texture, color, transparent: true, depthWrite: false, side: THREE.DoubleSide });
     if (ground) {
@@ -357,18 +361,18 @@ class RingBatch {
   }
   drapedGeometry(max) {
     const geo = new THREE.BufferGeometry(),
-      G = RING_GRID,
-      uv = new Float32Array(max * RING_POINTS * 2),
-      index = new Uint32Array(max * RING_TRIS * 3);
+      G = this.G,
+      uv = new Float32Array(max * this.points * 2),
+      index = new Uint32Array(max * this.tris * 3);
     for (let r = 0; r < max; r++) {
-      const p0 = r * RING_POINTS;
+      const p0 = r * this.points;
       for (let j = 0; j <= G; j++)
         for (let i = 0; i <= G; i++) {
           const k = (p0 + j * (G + 1) + i) * 2;
           uv[k] = i / G;
           uv[k + 1] = j / G;
         }
-      let t = r * RING_TRIS * 3;
+      let t = r * this.tris * 3;
       for (let j = 0; j < G; j++)
         for (let i = 0; i < G; i++) {
           const a = p0 + j * (G + 1) + i,
@@ -383,7 +387,7 @@ class RingBatch {
           index[t++] = c;
         }
     }
-    const pos = new THREE.BufferAttribute(new Float32Array(max * RING_POINTS * 3), 3);
+    const pos = new THREE.BufferAttribute(new Float32Array(max * this.points * 3), 3);
     pos.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', pos);
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
@@ -395,14 +399,14 @@ class RingBatch {
     this.n = 0;
   }
   add(x, y, z, size, heading) {
-    if (this.n >= this.max) return;
+    if (this.n >= this.max || this.textures.some(t => t.userData.pending)) return;
     if (this.ground) {
       const P = this.mesh.geometry.attributes.position.array,
-        G = RING_GRID,
+        G = this.G,
         c = Math.cos(heading) * size,
         s = Math.sin(heading) * size;
-      const lift = z - this.ground(x, y);
-      let k = this.n++ * RING_POINTS * 3;
+      const lift = Math.max(0.6, z - this.ground(x, y));
+      let k = this.n++ * this.points * 3;
       for (let j = 0; j <= G; j++)
         for (let i = 0; i <= G; i++) {
           const lx = i / G - 0.5,
@@ -424,10 +428,10 @@ class RingBatch {
     if (this.ground) {
       const geo = this.mesh.geometry,
         pos = geo.attributes.position;
-      geo.setDrawRange(0, this.n * RING_TRIS * 3);
+      geo.setDrawRange(0, this.n * this.tris * 3);
       if (this.n) {
         pos.clearUpdateRanges();
-        pos.addUpdateRange(0, this.n * RING_POINTS * 3);
+        pos.addUpdateRange(0, this.n * this.points * 3);
         pos.needsUpdate = true;
       }
       this.mesh.count = this.n ? 1 : 0;
@@ -475,14 +479,21 @@ export class SelectionRings {
   get ok() {
     return !!(blobMaterials && blobMaterials.get(this.base));
   }
-  batch(name, own) {
-    const key = name + '|' + (own ? 1 : 0);
+  batch(name, own, big = false) {
+    const key = name + '|' + (own ? 1 : 0) + (big ? '|big' : '');
     let b = this.batches.get(key);
     if (b) return b;
     const m = blobMaterials && (blobMaterials.get(name) || blobMaterials.get(this.base));
     if (!m) return null;
     const tex = n => loadTexture(n, { repeat: false });
-    b = new RingBatch(own ? 1024 : 256, tex(m.ring), own ? this.color : new THREE.Color(1, 1, 1), m.mask ? tex(m.mask) : null, this.ground);
+    b = new RingBatch(
+      big ? 64 : own ? 1024 : 256,
+      tex(m.ring),
+      own ? this.color : new THREE.Color(1, 1, 1),
+      m.mask ? tex(m.mask) : null,
+      this.ground,
+      big ? RING_GRID_BIG : RING_GRID
+    );
     this.scene.add(b.mesh);
     if (b.mask) this.scene.add(b.mask);
     this.batches.set(key, b);
@@ -497,7 +508,7 @@ export class SelectionRings {
       : blobMaterials && blobMaterials.has('INVALID_MOVE_LAND')
         ? 'INVALID_MOVE_LAND'
         : this.base;
-    const b = this.batch(name, own);
+    const b = this.batch(name, own, !!this.ground && size > RING_BIG);
     if (b) b.add(x, y, z, size, heading);
   }
   end() {
