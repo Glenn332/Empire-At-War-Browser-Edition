@@ -623,14 +623,22 @@ export class UI {
       this.arm(this.armed === armKey ? null : armKey);
       return;
     }
-    if (pressed(e, 'CAMERA_HOME')) {
+    const home = pressed(e, 'CAMERA_HOME');
+    if (home || pressed(e, 'CAMERA_RESET')) {
       e.preventDefault();
-      const st = this.player.station;
-      if (st && !st.dead) {
-        this.following = null;
-        this.r.rig.x = st.x;
-        this.r.rig.y = st.y;
-        this.select([st]);
+      const rig = this.r.rig,
+        h = rig.home;
+      if (h) {
+        if (home) {
+          this.following = null;
+          rig.x = h.x;
+          rig.y = h.y;
+        }
+        rig.dist = h.dist;
+        rig.yaw = h.yaw;
+        rig.pitch = h.pitch;
+        rig.fovH = h.fovH;
+        rig.clamp();
       }
       return;
     }

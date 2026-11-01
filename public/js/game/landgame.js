@@ -953,6 +953,7 @@ export class LandGame {
     this.cine = new LandCinematic(this);
     this.cam = await landCamera();
     this.view.dist = this.cam.start;
+    this.viewHome = { ...this.view };
     this.bindInput();
     const me = db.faction(this.factions[this.me]);
     const tracks = tag => {
@@ -2091,6 +2092,21 @@ export class LandGame {
       }
       if (e.code === 'Escape' && this.direct) {
         this.releaseDirect();
+        return;
+      }
+      const home = pressed(e, 'CAMERA_HOME');
+      if ((home || pressed(e, 'CAMERA_RESET')) && !this.menus.open && !this.controlsLocked && !this.cine.on && this.viewHome) {
+        e.preventDefault();
+        const h = this.viewHome,
+          v = this.view;
+        if (home) {
+          this.following = null;
+          v.x = h.x;
+          v.y = h.y;
+        }
+        v.dist = h.dist;
+        v.yaw = h.yaw;
+        v.pitch = h.pitch;
         return;
       }
       const squadCam = pressed(e, 'SQUAD_CAM');

@@ -648,6 +648,7 @@ class Game {
         rig.y = a.y;
       }
     }
+    rig.home = { x: rig.x, y: rig.y, dist: rig.dist, yaw: rig.yaw, pitch: rig.pitch, fovH: rig.fovH };
     if (loaded) restoreView(this, this.setup.restore, loaded.refs);
     const tracks = tag => {
       const t = human.faction.tuples(tag).find(t => t[0].toUpperCase() === 'SPACE');
