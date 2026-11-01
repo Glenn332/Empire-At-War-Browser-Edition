@@ -11,9 +11,16 @@ const TICK = 1 / 30,
   LAG_MAX = 6 * TICK;
 
 export class SpaceMirror {
-  constructor(game, loaded = null) {
+  static headless(game) {
+    const m = Object.create(SpaceMirror.prototype);
+    m.init(game);
+    m.ready = true;
+    return m;
+  }
+
+  init(game) {
     this.game = game;
-    const w = (this.world = game.world);
+    this.world = game.world;
     this.byW = new Map();
     this.toW = new WeakMap();
     this.shots = new Map();
@@ -22,6 +29,14 @@ export class SpaceMirror {
     this.lastAt = 0;
     this.stats = { records: 0, applyMs: 0, events: 0, failed: 0, stepMs: 0 };
     this.jobWorkers = [];
+    this.held = new Set();
+    this.pending = [];
+    this.inFlight = false;
+  }
+
+  constructor(game, loaded = null) {
+    this.init(game);
+    const w = this.world;
     const start = battleSnapshot(game, loaded && loaded.save, loaded && loaded.refs);
     this.saves = new Map();
     this.pace = '';
@@ -71,12 +86,9 @@ export class SpaceMirror {
       base: new URL('.', location.href).href,
       nojobs: new URLSearchParams(location.search).has('nojobs')
     });
-    this.held = new Set();
     this.whenReady = new Promise(res => {
       this.onReady = res;
     });
-    this.pending = [];
-    this.inFlight = false;
     game.execute = (pid, cmd) => {
       this.pending.push([pid, this.ours(cmd)]);
       return {};
@@ -261,7 +273,10 @@ export class SpaceMirror {
   applyProps(m) {
     const w = this.world,
       player = id => (id < 0 ? w.neutral : w.players.find(p => p.id === id) || w.neutral),
-      order = o => (o ? { kind: o[0], x: o[1], y: o[2] } : { kind: 'idle' });
+      order = o =>
+        o
+          ? { kind: o[0], x: o[1] ?? undefined, y: o[2] ?? undefined, target: o[3] >= 0 ? this.byW.get(o[3]) || null : null }
+          : { kind: 'idle' };
     for (const [wid, v] of m.props || []) {
       const e = this.byW.get(wid);
       if (!e || e.dead) continue;
@@ -271,6 +286,9 @@ export class SpaceMirror {
         e.fighters = v[1].map(id => this.byW.get(id)).filter(f => f && !f.dead);
         e.order = order(v[2]);
         e.queue = v[3].length ? v[3].map(order) : undefined;
+        e.mode = v[4] || undefined;
+        e.about = v[5] ? { x: v[5][0], y: v[5][1], cell: !!v[5][2] } : undefined;
+        e.target = v[6] >= 0 ? this.byW.get(v[6]) || null : null;
         continue;
       }
       if (e.player !== pl) {
@@ -303,7 +321,9 @@ export class SpaceMirror {
     const st = m.state;
     if (st) {
       if (st[0] !== null) w.lastViewerCombat = st[0];
-      w.reveals = st[1].map(([ti, x, y, r, until]) => ({ team: w.teams[ti], x, y, r, until: until < 0 ? Infinity : until })).filter(r => r.team);
+      w.reveals = st[1]
+        .map(([ti, x, y, r, until]) => ({ team: w.teams[ti], x, y, r, until: until < 0 ? Infinity : until }))
+        .filter(r => r.team);
       w.reveal = !!st[2];
       w.fogLifted = st[3];
       (st[4] || []).forEach(([firedAt, readyAt, left], i) => {

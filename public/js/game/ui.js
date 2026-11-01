@@ -4,7 +4,7 @@ import { getModelData, buildModel } from '../model.js';
 import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas } from '../icons.js';
 import { loadTextureCanvas } from '../dds.js';
-import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop } from './sim.js';
+import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
 import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
@@ -1738,8 +1738,7 @@ export class UI {
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
       const enemy = s.player.team !== me.team && s.player.id >= 0;
       if (enemy && !this.world.canSee(me, s)) continue;
-      const h = (s.isSquad ? s.fighters[0] : s)?.hyper;
-      if (h && !h.shown) continue;
+      if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
       const r = Math.min(this.screenRadius(s), 260);

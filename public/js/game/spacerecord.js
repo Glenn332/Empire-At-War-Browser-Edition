@@ -35,7 +35,8 @@ export class SpaceRecorder {
     const w = this.world,
       seen = new Set();
     this.props = [];
-    const order = o => (o && o.x !== undefined && (o.kind === 'move' || o.kind === 'attackmove') ? [o.kind, o.x, o.y] : null);
+    const order = o =>
+      o && o.kind && o.kind !== 'idle' ? [o.kind, o.x ?? null, o.y ?? null, o.target && !o.target.dead ? o.target.id : -1] : null;
     for (const u of w.units) {
       if (u.dead) continue;
       seen.add(u.id);
@@ -60,7 +61,15 @@ export class SpaceRecorder {
     for (const q of w.squads) {
       if (q.dead) continue;
       seen.add(q.id);
-      this.changed(q.id, [q.player ? q.player.id : -1, q.fighters.map(f => f.id), order(q.order), (q.queue || []).map(order).filter(Boolean)]);
+      this.changed(q.id, [
+        q.player ? q.player.id : -1,
+        q.fighters.map(f => f.id),
+        order(q.order),
+        (q.queue || []).map(order).filter(Boolean),
+        q.mode || null,
+        q.about ? [q.about.x, q.about.y, q.about.cell ? 1 : 0] : null,
+        q.target && !q.target.dead ? q.target.id : -1
+      ]);
     }
     if (this.sent.size > seen.size * 2 + 256) for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
     this.teams = w.teams.map(t => (t.station && !t.station.dead ? t.station.id : -1));

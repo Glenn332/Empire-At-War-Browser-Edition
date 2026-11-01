@@ -91,6 +91,11 @@ export function sizeClass(type) {
   return SIZE_CLASSES.includes(sc) ? sc : 'FRIGATE';
 }
 
+export function hiddenInJump(e) {
+  const h = (e.isSquad ? e.fighters[0] : e)?.hyper;
+  return !!h && !h.shown;
+}
+
 export function buildListFor(type, factionName) {
   const out = [];
   let current = null;

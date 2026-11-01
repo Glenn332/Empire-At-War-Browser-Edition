@@ -10,6 +10,7 @@
     "wasm": "asc wasm/pathsearch.ts -o public/js/game/pathsearch.wasm -O3 --runtime stub --noAssert --initialMemory 32 && asc wasm/landpose.ts -o public/js/game/landpose.wasm -O3 --runtime stub --noAssert --initialMemory 2 --enable simd",
     "app": "node tools/build-app.mjs",
     "app:bump": "node tools/release-app.mjs bump",
+    "test:space-mirror": "node tools/test-space-mirror.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
