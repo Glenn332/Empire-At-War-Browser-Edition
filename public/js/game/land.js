@@ -2573,9 +2573,10 @@ export class LandWorld {
     const L = u.speed > 0 && !u.structure ? (u.loco ??= this.locoOf(u)) : null,
       yaw = L && L.sec && !u.fixedHeading ? this.secondaryYaw(u, dt) : u.heading;
     if (yaw !== u.heading && u.holder) u.holder.rotation.z = yaw + Math.PI / 2;
-    if (u.holder && !u.holder.visible) return;
-    if (l && (u.x - l.x) ** 2 + (u.y - l.y) ** 2 > l.r * l.r) return;
-    if (l && l.see && !l.see(u, POSE_MARGIN)) return;
+    if ((u.holder && !u.holder.visible) || (l && (u.x - l.x) ** 2 + (u.y - l.y) ** 2 > l.r * l.r) || (l && l.see && !l.see(u, POSE_MARGIN))) {
+      u.lagDt = (u.lagDt || 0) + dt;
+      return;
+    }
     if (L && (L.len > 0 || L.wid > 0) && !u.foot && !u.flies && !u.flight && u.scriptZ === undefined) {
       const c = Math.cos(u.heading),
         sn = Math.sin(u.heading),
@@ -4347,7 +4348,12 @@ export class LandWorld {
     let fx = dx / d,
       fy = dy / d,
       fz = dz / d;
-    if ((cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET) && M && !this.fixed && u.inView !== false) {
+    if ((cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET) && M && u.inst) {
+      const late = (u.poseDt || 0) + (u.lagDt || 0);
+      if (late > 0 && !this.interp) {
+        u.poseDt = 0;
+        this.pose(u, late);
+      }
       M.bone.updateWorldMatrix(true, false);
       const e = M.bone.matrixWorld.elements,
         l = Math.hypot(e[0], e[1], e[2]);
@@ -4355,14 +4361,9 @@ export class LandWorld {
         const lag = (u.loco?.sec && u.face !== undefined ? u.face : u.heading) + Math.PI / 2 - (u.holder ? u.holder.rotation.z : 0),
           c = Math.cos(lag),
           sn = Math.sin(lag);
-        const mx = (e[0] * c - e[1] * sn) / l,
-          my = (e[0] * sn + e[1] * c) / l,
-          mz = e[2] / l;
-        if (mx * fx + my * fy + mz * fz > Math.SQRT1_2) {
-          fx = mx;
-          fy = my;
-          fz = mz;
-        }
+        fx = (e[0] * c - e[1] * sn) / l;
+        fy = (e[0] * sn + e[1] * c) / l;
+        fz = e[2] / l;
       }
     }
     let speed = speed0,
@@ -5293,6 +5294,7 @@ export class LandWorld {
   }
 
   pose(u, dt) {
+    u.lagDt = 0;
     if (this.poseCache && cachedPose(u, dt, this)) {
       if (u.looksOf !== false) looks(this, u, dt);
       return;
