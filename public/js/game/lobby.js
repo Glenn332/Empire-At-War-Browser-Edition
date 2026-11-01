@@ -7,6 +7,23 @@ import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
 import { leaveTo } from '../leaveguard.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
+const POP_MAX = 10000,
+  POP_STEP = 50,
+  SETUP_KEY = 'swr-skirmish-setup';
+const KINDS = ['you', 'closed', 'easy', 'medium', 'hard'];
+
+const loadSetup = () => {
+  try {
+    return JSON.parse(localStorage.getItem(SETUP_KEY) || 'null');
+  } catch {
+    return null;
+  }
+};
+const saveSetup = setup => {
+  try {
+    localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+  } catch {}
+};
 
 export async function openLobby({
   maps,
@@ -20,26 +37,44 @@ export async function openLobby({
 }) {
   const dlg = await openDialog('IDD_SKIRMISH_STAGING_DIALOG', { modal: false });
   if (!dlg) return false;
+  const saved = loadSetup() || {};
   const st = {
-    preBuilt: true,
+    preBuilt: typeof saved.preBuilt === 'boolean' ? saved.preBuilt : true,
     mode: 'space',
     custom: !maps.length && !landMaps.length && !!(customMaps.space.length || customMaps.land.length),
     mapFile: init.mapFile,
-    teamFactions: init.teamFactions.slice(),
-    credits: init.credits,
-    popCap: init.popCap,
-    fog: init.fog
+    teamFactions: init.teamFactions.map((f, i) => (factions.includes(saved.teamFactions?.[i]) ? saved.teamFactions[i] : f)),
+    credits: Number.isFinite(saved.credits) ? saved.credits : init.credits,
+    popCap: Number.isFinite(saved.popCap) ? saved.popCap : init.popCap,
+    fog: typeof saved.fog === 'boolean' ? saved.fog : init.fog
   };
   const lastMap = { space: init.mapFile, land: landMaps.find(m => /TATOOINE/i.test(m)) || landMaps[0] };
   const mapsOf = () => (st.custom ? customMaps : { space: maps, land: landMaps })[st.mode];
   const lastKey = () => (st.custom ? 'custom ' : '') + st.mode;
+  if (
+    (saved.mode === 'space' || saved.mode === 'land') &&
+    (saved.custom ? customMaps : { space: maps, land: landMaps })[saved.mode].includes(saved.mapFile)
+  ) {
+    st.mode = saved.mode;
+    st.custom = !!saved.custom;
+    lastMap[lastKey()] = saved.mapFile;
+  }
+  const savedSlots =
+    Array.isArray(saved.slots) &&
+    saved.slots.filter(s => s?.kind === 'you').length === 1 &&
+    saved.slots.every(s => KINDS.includes(s?.kind) && (s.team === 0 || s.team === 1))
+      ? saved.slots
+      : null;
   const slots = [];
-  for (let i = 0; i < Math.max(rowsOf(dlg) || ROWS, init.players.length); i++) {
-    const p = init.players[i];
+  for (let i = 0; i < Math.max(rowsOf(dlg) || ROWS, savedSlots?.length ?? init.players.length); i++) {
+    const p = init.players[i],
+      s = savedSlots?.[i];
     slots.push(
-      p
-        ? { kind: p.human ? 'you' : p.difficulty, team: p.team, color: p.color, auto: p.auto !== false }
-        : { kind: 'closed', team: i % 2, color: PALETTE[i], auto: true }
+      s
+        ? { kind: s.kind, team: s.team, color: typeof s.color === 'string' ? s.color : PALETTE[i % PALETTE.length], auto: s.auto !== false }
+        : p && !savedSlots
+          ? { kind: p.human ? 'you' : p.difficulty, team: p.team, color: p.color, auto: p.auto !== false }
+          : { kind: 'closed', team: i % 2, color: PALETTE[i % PALETTE.length], auto: true }
     );
   }
   const fLabel = f => T(db.faction(f).str('Text_ID'), f);
@@ -158,7 +193,7 @@ export async function openLobby({
         fillMaps();
       }
     })
-    .select('space');
+    .select(st.mode);
   fillMaps();
   const showCustom = on => {
     if (st.custom !== on) {
@@ -275,8 +310,23 @@ export async function openLobby({
     () => menus.load()
   );
 
-  dlg.on('IDC_SELECT_OPTIONS', () => advancedOptions(st));
+  const remember = () =>
+    saveSetup({
+      mode: st.mode,
+      custom: st.custom,
+      mapFile: st.mapFile,
+      preBuilt: st.preBuilt,
+      credits: st.credits,
+      popCap: st.popCap,
+      fog: st.fog,
+      teamFactions: st.teamFactions,
+      slots: slots.map(({ kind, team, color, auto }) => ({ kind, team, color, auto }))
+    });
+  dlg.on('IDC_SELECT_OPTIONS', async () => {
+    if (await advancedOptions(st)) remember();
+  });
   dlg.on('IDC_CANCEL_BUTTON', () => {
+    remember();
     if (cancel) {
       dlg.close();
       cancel();
@@ -295,6 +345,7 @@ export async function openLobby({
       return;
     }
     if (!st.mapFile) return;
+    remember();
     dlg.close();
     start({
       mode: st.mode,
@@ -325,7 +376,16 @@ export async function advancedOptions(st) {
     });
     dlg.setText('IDC_SKIRMISH_CREDITS_VALUE', st.credits.toLocaleString());
     fog.classList.toggle('on', !!st.fog);
-    if (pop) pop.set(st.popCap);
+    dlg.slider(
+      'IDC_POP_CAP_SLIDER',
+      Math.min(POP_MAX, st.popCap) / POP_MAX,
+      v => {
+        st.popCap = Math.round((v * POP_MAX) / POP_STEP) * POP_STEP;
+        popText();
+      },
+      POP_MAX / POP_STEP + 1
+    );
+    popText();
   };
   for (const id of ['IDC_ALLOW_HEROES', 'IDC_ALLOW_STARTING_UNIT_PURCHASE', 'IDC_ALLOW_SUPER_WEAPONS']) dlg.enable(id, false);
   dlg.check('IDC_PRE_BUILT_BASE', st.preBuilt, v => {
@@ -333,27 +393,20 @@ export async function advancedOptions(st) {
   });
   dlg.check('IDC_ALLOW_HEROES', true, () => {});
   dlg.setText('IDC_WIN_CONDITION_TEXT', T('TEXT_POP_CAP', 'Unit Max'));
-  const pop = dlg.combo(
-    'IDC_WIN_CONDITION_COMBO',
-    [
-      [0, 'Default'],
-      [20, '20'],
-      [30, '30'],
-      [50, '50'],
-      [100, '100'],
-      [200, '200'],
-      [300, '300'],
-      [500, '500'],
-      [1000, '1000'],
-      [2000, '2000'],
-      [5000, '5000'],
-      [9999, '9999']
-    ].map(([value, label]) => ({ value, label })),
-    st.popCap,
-    v => {
-      st.popCap = +v;
-    }
-  );
+  const box = id => {
+    const s = dlg.ctl(id)?.style;
+    return s && { x: parseFloat(s.left), y: parseFloat(s.top), h: parseFloat(s.height) };
+  };
+  const combo = box('IDC_WIN_CONDITION_COMBO'),
+    credits = box('IDC_SKIRMISH_CREDITS_SLIDER'),
+    creditsText = box('IDC_SKIRMISH_CREDITS_VALUE');
+  if (combo && credits && creditsText) {
+    const y = combo.y + (combo.h - credits.h) / 2;
+    dlg.show('IDC_WIN_CONDITION_COMBO', false);
+    dlg.clone('IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_POP_CAP_SLIDER', combo.x, y);
+    dlg.clone('IDC_SKIRMISH_CREDITS_VALUE', 'IDC_POP_CAP_VALUE', creditsText.x, y + creditsText.y - credits.y);
+  }
+  const popText = () => dlg.setText('IDC_POP_CAP_VALUE', st.popCap ? st.popCap.toLocaleString() : T('TEXT_DEFAULT', 'Default'));
   const like = dlg.def.controls.find(c => c.id === 'IDC_ALLOW_HEROES');
   const fog = dlg.ctl('IDC_ALLOW_HEROES').cloneNode(true);
   fog.classList.remove('off', 'on');

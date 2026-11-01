@@ -1183,6 +1183,24 @@ export async function openDialog(
     veil,
     def: dlg,
     ctl: cid => ctls.get(cid) || null,
+    clone(cid, as, x, y) {
+      const c = ctls.get(cid);
+      if (!c || ctls.has(as)) return ctls.get(as) || null;
+      const d = c.cloneNode(true);
+      const twin = n => {
+        const path = [];
+        for (; n !== c; n = n.parentNode) path.unshift([...n.parentNode.children].indexOf(n));
+        return path.reduce((p, i) => p.children[i], d);
+      };
+      for (const [k, v] of Object.entries(c))
+        if (k[0] === '_' && typeof v !== 'function') d[k] = v instanceof Element ? (c.contains(v) ? twin(v) : null) : v;
+      d.dataset.id = as;
+      if (x != null) d.style.left = x + 'px';
+      if (y != null) d.style.top = y + 'px';
+      c.parentNode.appendChild(d);
+      ctls.set(as, d);
+      return d;
+    },
     _paintText(cid, t, color = null) {
       t = String(t ?? '');
       t = db.text.get(t.toUpperCase()) ?? t;
