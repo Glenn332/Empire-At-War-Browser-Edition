@@ -2148,7 +2148,7 @@ export class World {
     const grid = this.obstacleGrid || (this.obstacleGrid = new Map());
     for (const l of grid.values()) l.length = 0;
     for (const o of this.obstacles) {
-      const r = Math.max(o.radius || 0, o.hitRadius || 0) + PROBE_PAD;
+      const r = Math.max(o.radius || 0, o.hitRadius || 0, o.collR || 0) + PROBE_PAD;
       if (r <= PROBE_PAD) continue;
       const x0 = Math.floor((o.x - r) / PROBE_CELL),
         x1 = Math.floor((o.x + r) / PROBE_CELL),
@@ -4593,13 +4593,14 @@ export class World {
     }
     st.mode = tgt ? 'attack' : 'form';
     const away = this.probe(u, st, lead === u, dt);
+    let gz = u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50);
     if (away) {
       gx = away.x;
       gy = away.y;
+      gz = away.z;
       want = top;
     }
-    const cruiseZ = u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50);
-    this.fly(u, gx, gy, cruiseZ, want, dt, k, !(mode === 'idle' && !tgt));
+    this.fly(u, gx, gy, gz, want, dt, k, !(mode === 'idle' && !tgt));
     u.syncObj();
 
     const w = u.weapon;
@@ -4688,45 +4689,54 @@ export class World {
   }
 
   probe(u, st, leader, dt) {
+    const p = u.pitch || 0,
+      flat = Math.cos(p),
+      ex = Math.cos(u.heading) * flat,
+      ey = Math.sin(u.heading) * flat,
+      ez = Math.sin(p);
     if (st.avoid > 0) {
       st.avoid -= dt;
-      return { x: u.x + (Math.cos(u.heading) * u.speed * 10) / LOGIC_FPS, y: u.y + (Math.sin(u.heading) * u.speed * 10) / LOGIC_FPS };
+      const k = (u.speed * 10) / LOGIC_FPS;
+      return { x: u.x + ex * k, y: u.y + ey * k, z: u.z + ez * k };
     }
-    const T = (2 / Math.max(0.05, u.turnRate)) * (leader ? 2 : 1),
-      v = u.speed * T;
+    const v = u.speed * (2 / Math.max(0.05, u.turnRate)) * (leader ? 2 : 1);
     if (v < 1) return null;
-    const ex = Math.cos(u.heading),
-      ey = Math.sin(u.heading);
-    let hit = null,
-      best = Infinity;
-    const step = u.speed / LOGIC_FPS;
-    const near =
-      step <= PROBE_PAD
-        ? this.obstacleGrid && this.obstacleGrid.get(Math.floor(u.x / PROBE_CELL) * 65536 + Math.floor(u.y / PROBE_CELL))
-        : this.obstacles;
+    const x1 = u.x + ex * v,
+      y1 = u.y + ey * v,
+      z1 = u.z + ez * v;
+    const G = this.obstacleGrid,
+      k0 = Math.floor(u.x / PROBE_CELL) * 65536 + Math.floor(u.y / PROBE_CELL),
+      k1 = Math.floor(x1 / PROBE_CELL) * 65536 + Math.floor(y1 / PROBE_CELL),
+      near = v > PROBE_CELL / 2 ? this.obstacles : G ? (k0 === k1 ? G.get(k0) : [...(G.get(k0) || []), ...(G.get(k1) || [])]) : null;
     if (!near) return null;
+    let hit = null,
+      best = 2;
     for (const o of near) {
-      const r = o.hitRadius || o.radius || 0;
-      if (!r) continue;
-      const ox = o.x - u.x,
-        oy = o.y - u.y,
-        d2 = ox * ox + oy * oy;
-      const bound = Math.max(o.radius || 0, r) + u.speed / LOGIC_FPS;
-      if (d2 > bound * bound || d2 < r * r) continue;
-      const along = ox * ex + oy * ey;
-      if (along < 0) continue;
-      const off2 = d2 - along * along;
-      if (off2 > r * r) continue;
-      const at = along - Math.sqrt(r * r - off2);
-      if (at <= v && at < best) {
-        best = at;
+      const R = Math.max(o.collR || 0, o.hitRadius || 0);
+      if (!R || !segNear(u.x, u.y, u.z, x1, y1, z1, o.x, o.y, o.z, R)) continue;
+      let t;
+      if (o.coll) t = this.meshStep(o, u.x, u.y, u.z, x1, y1, z1);
+      else {
+        const r = o.hitRadius || 0,
+          fx = u.x - o.x,
+          fy = u.y - o.y,
+          fz = u.z - o.z,
+          c = fx * fx + fy * fy + fz * fz - r * r;
+        if (c <= 0) continue;
+        const b = (fx * ex + fy * ey + fz * ez) * v,
+          q = b * b - v * v * c;
+        t = q < 0 || b > 0 ? -1 : (-b - Math.sqrt(q)) / (v * v);
+      }
+      if (t >= 0 && t < best) {
+        best = t;
         hit = o;
       }
     }
     if (!hit) return null;
     st.avoid = 15 / LOGIC_FPS;
     const ax = u.x - hit.x,
-      ay = u.y - hit.y;
-    return ax || ay ? { x: u.x + ax, y: u.y + ay } : { x: u.x + 100, y: u.y };
+      ay = u.y - hit.y,
+      az = u.z - hit.z;
+    return ax || ay || az ? { x: u.x + ax, y: u.y + ay, z: u.z + az } : { x: u.x + 1, y: u.y, z: u.z };
   }
 }

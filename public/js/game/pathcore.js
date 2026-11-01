@@ -83,6 +83,21 @@ export class PathCore {
       cx = t.num('Custom_Hard_XExtent', 0),
       cy = t.num('Custom_Hard_YExtent', 0);
     const b = o.model && o.model.box;
+    if (o.isStructure) {
+      const soft = t.num('Custom_Soft_Footprint_Radius', 0),
+        obs = t.num('Space_Obstacle_Radius', 0),
+        R = Math.max(
+          4,
+          (soft > 0
+            ? soft
+            : obs > 0
+              ? obs
+              : b
+                ? Math.max(Math.abs(b.max.x), Math.abs(b.min.x), Math.abs(b.max.y), Math.abs(b.min.y))
+                : o.radius || 40) * s
+        );
+      return (o.pathExt = { ax: R, sd: R, r: R });
+    }
     const long = cx > 0 ? cx * s : b ? Math.max(Math.abs(b.max.y), Math.abs(b.min.y)) * s : o.halfLen || o.radius || 40;
     const wide = cy > 0 ? cy * s : b ? Math.max(Math.abs(b.max.x), Math.abs(b.min.x)) * s : o.halfWid || o.radius || 40;
     return (o.pathExt = { ax: Math.max(4, long), sd: Math.max(4, wide), r: Math.max(long, wide) });

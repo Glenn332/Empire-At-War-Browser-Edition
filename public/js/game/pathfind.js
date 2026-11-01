@@ -240,10 +240,12 @@ export class Pathfinder extends PathCore {
       if (o.dead || o.hyper || !(o.isStructure || o.speed < 2)) continue;
       if (o.isStructure) v = (v * 31 + o.id + 1) | 0;
       const ext = this.ext(o),
+        off = o.isStructure ? (o.pathOff ??= this.offsetOf(o)) : null,
+        h = o.heading || 0,
         e = {
           o,
-          x: o.x,
-          y: o.y,
+          x: off ? o.x + Math.cos(h) * off[0] - Math.sin(h) * off[1] : o.x,
+          y: off ? o.y + Math.sin(h) * off[0] + Math.cos(h) * off[1] : o.y,
           dx: Math.cos(o.heading || 0),
           dy: Math.sin(o.heading || 0),
           ext,
@@ -252,10 +254,10 @@ export class Pathfinder extends PathCore {
         };
       still.push(e);
       const r = ext.r,
-        x0 = Math.floor((o.x - r) / SCELL),
-        x1 = Math.floor((o.x + r) / SCELL),
-        y0 = Math.floor((o.y - r) / SCELL),
-        y1 = Math.floor((o.y + r) / SCELL);
+        x0 = Math.floor((e.x - r) / SCELL),
+        x1 = Math.floor((e.x + r) / SCELL),
+        y0 = Math.floor((e.y - r) / SCELL),
+        y1 = Math.floor((e.y + r) / SCELL);
       for (let ix = x0; ix <= x1; ix++)
         for (let iy = y0; iy <= y1; iy++) {
           const k = ix * 65536 + iy;
@@ -268,6 +270,16 @@ export class Pathfinder extends PathCore {
       this.structs = v;
       this.version++;
     }
+  }
+
+  offsetOf(o) {
+    const v = o.type
+      .str('Space_Obstacle_Offset')
+      .split(/[\s,]+/)
+      .map(Number)
+      .filter(Number.isFinite);
+    const s = o.scale || o.type.num('Scale_Factor', 1) || 1;
+    return v.length >= 2 && (v[0] || v[1]) ? [v[0] * s, v[1] * s] : null;
   }
 
   tracking() {
