@@ -730,7 +730,7 @@ export class Plans {
   buy(inst, f) {
     const w = this.world,
       p = inst.ai.player,
-      got = this.choose(p, f.specs, inst.flags.required);
+      got = this.choose(p, f.specs, inst.flags?.required);
     if (D.on && !got.chosen.length)
       this.dbg('build', inst, 'nothing could be bought for ' + f.name + ' (credits ' + Math.round(p.credits) + ')');
     return got.chosen.filter(t => {
@@ -957,7 +957,7 @@ export class Plans {
   }
 
   free(inst) {
-    return inst.ai.mine().filter(e => !e.aiPlan && !e.noAI && !this.host.locked(e) && (inst.flags.engaged || idle(e)));
+    return inst.ai.mine().filter(e => !e.aiPlan && !e.noAI && !this.host.locked(e) && (inst.flags?.engaged || idle(e)));
   }
 
   force(f) {
@@ -1089,7 +1089,7 @@ export class Plans {
       Produce_Force: () => {
         const bought = [],
           st = p.station;
-        if (inst.flags.buys) {
+        if (inst.flags?.buys) {
           if (f.specs.length) bought.push(...this.buy(inst, f));
         } else
           for (const e of (inst.staffed && inst.staffed.get(f.name)) || []) {
@@ -1358,7 +1358,7 @@ export class Plans {
         this.host.drop(inst);
         inst.state = 'over';
       }
-      if (inst.state === 'run' && !inst.flags.buys && inst.forces.some(f => f.specs.length)) {
+      if (inst.state === 'run' && !inst.flags?.buys && inst.forces.some(f => f.specs.length)) {
         if (inst.forces.some(f => f.units.some(e => !gone(e) && e.aiPlan === inst) || (f.pool && f.pool.length))) inst.emptySince = null;
         else if ((inst.emptySince ??= w.time) < w.time - 8) {
           this.host.drop(inst);
