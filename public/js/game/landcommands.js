@@ -37,7 +37,7 @@ export function executeLand(game, side, cmd) {
       for (const q of sel) {
         q.pending = null;
         q.busy = false;
-        q.march = q.post = null;
+        q.march = q.post = q.leash = null;
         if (mode !== 'waypoint') q.legs = null;
         if (!attack && g && mode === 'attack' && q.members.some(u => u.needsDeploy && u.weapon)) {
           w.bombard(q, g.x, g.y);
@@ -66,7 +66,7 @@ export function executeLand(game, side, cmd) {
         if (!q || q.side !== side || q.structure || !q.members.length) continue;
         q.pending = null;
         q.busy = false;
-        q.march = q.post = null;
+        q.march = q.post = q.leash = null;
         q.legs = null;
         q.foe = null;
         w.order(q, num(x), num(y), num(cmd.h));

@@ -2810,7 +2810,7 @@ export class LandWorld {
     }
     this.ordersAt = i;
     for (const q of batch) {
-      if (!(q.march || q.post || (q.legs && q.legs.length)) || !q.members.length || q.structure) continue;
+      if (!(q.march || q.post || q.leash || (q.legs && q.legs.length)) || !q.members.length || q.structure) continue;
       const lead = q.members[0],
         moving = q.members.some(u => u.path.length),
         fighting = q.foe || q.members.some(u => u.target);
@@ -2834,6 +2834,13 @@ export class LandWorld {
           }
           if (!moving && Math.hypot(lead.x - q.post.x, lead.y - q.post.y) > 60) this.order(q, q.post.x, q.post.y);
         }
+        continue;
+      }
+      if (q.leash && !q.march && !q.post) {
+        if (q.foe) continue;
+        const L = q.leash;
+        q.leash = null;
+        if (Math.hypot(lead.x - L.x, lead.y - L.y) > 20) this.order(q, L.x, L.y);
         continue;
       }
       if (q.march) {
@@ -2864,6 +2871,7 @@ export class LandWorld {
 
   stop(squad) {
     squad.foe = null;
+    squad.leash = null;
     squad.pending = null;
     squad.busy = false;
     squad.march = null;
@@ -3890,6 +3898,26 @@ export class LandWorld {
     this.advance(squad);
   }
 
+  retaliate(u, from) {
+    const q = u.squad,
+      t = u.type,
+      lb = t.str('LandBehavior') + ' ' + t.str('Behavior'),
+      reacts = /\bUNIT_AI\b/i.test(lb),
+      f = Math.max(0, t.num('Idle_Chase_Range', 0)) + (reacts && /\bDAMAGE_TRACKING\b/i.test(lb) ? t.num('Autonomous_Move_Extension_Vs_Attacker', 0) : 0);
+    if (q.march) {
+      this.attack(q, from.squad);
+      return;
+    }
+    const lead = q.members.find(m => !m.dead) || u,
+      home = q.leash || { x: lead.x, y: lead.y },
+      reach = Math.max(...q.members.map(m => m.range || 0)),
+      d = Math.hypot(from.x - home.x, from.y - home.y);
+    if (!reacts && d > reach + f) return;
+    if (d > reach + f) return;
+    q.leash = { x: home.x, y: home.y, f };
+    this.attack(q, from.squad);
+  }
+
   advance(squad) {
     const foe = squad.foe,
       m = squad.members;
@@ -3922,7 +3950,21 @@ export class LandWorld {
     const reach = Math.min(...m.map(u => u.range)) * 0.8;
     if (d <= reach) return;
     if (m.some(u => u.setup) && d <= Math.min(...m.map(u => u.range))) return;
-    this.order(squad, b.x - ((b.x - a.x) / d) * reach, b.y - ((b.y - a.y) / d) * reach);
+    let gx = b.x - ((b.x - a.x) / d) * reach,
+      gy = b.y - ((b.y - a.y) / d) * reach;
+    const L = squad.leash;
+    if (L) {
+      const lx = gx - L.x,
+        ly = gy - L.y,
+        ld = Math.hypot(lx, ly);
+      if (ld > L.f) {
+        if (!(L.f > 0)) return;
+        gx = L.x + (lx / ld) * L.f;
+        gy = L.y + (ly / ld) * L.f;
+        if (Math.hypot(gx - a.x, gy - a.y) < 4) return;
+      }
+    }
+    this.order(squad, gx, gy);
   }
 
   foesNear(x, y, reach) {
@@ -4249,8 +4291,7 @@ export class LandWorld {
       const firing = u.animKind === 'ATTACKIDLE' || u.animKind === 'attack' || u.once === 'attack';
       this.oneShot(u, (firing ? 'ATTACKFLINCH' : 'FLINCH') + side, firing ? 'attack' : 'idle');
     }
-    if (from && !from.dead && !u.structure && !u.squad.foe && !u.squad.busy && (!u.path.length || u.squad.march))
-      this.attack(u.squad, from.squad);
+    if (from && !from.dead && !u.structure && !u.squad.foe && !u.squad.busy && (!u.path.length || u.squad.march)) this.retaliate(u, from);
     if (u.health <= 0) {
       if (u.flies && u.type.bool('Spin_Away_On_Death') && simRandom() <= u.type.num('Spin_Away_On_Death_Chance', 0)) {
         u.spin = this.spinAway(u);
@@ -4989,6 +5030,19 @@ export class LandWorld {
     if (t && u.minRange > 0 && Math.hypot(t.x - u.x, t.y - u.y) < u.minRange) t = null;
     u.target = t;
     if (!t) {
+      const near = foe && !u.path.length ? foe.members.find(m => !m.dead) : null;
+      if (near) {
+        let rel = Math.atan2(near.y - u.y, near.x - u.x) - u.heading;
+        rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+        if (u.turret && Math.abs(rel) <= u.turret.extent) {
+          u.turret.wantPitch = 0;
+          this.aimTurret(u, rel, dt);
+        } else if (!u.rooted && !u.setup && u.speed > 0) {
+          const step = (u.stopTurn || u.turn) * dt;
+          u.heading += Math.abs(rel) <= step ? rel : Math.sign(rel) * step;
+        }
+        return false;
+      }
       if (u.turret) {
         u.turret.wantPitch = u.setup ? u.turret.restUp || 0 : 0;
         this.aimTurret(u, 0, dt);
