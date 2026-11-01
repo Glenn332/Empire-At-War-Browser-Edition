@@ -3282,6 +3282,14 @@ export class LandWorld {
                 : null
             });
           }
+        for (const g of u.guns || [])
+          if (g.turret && !g.turret.bone && inst.bone) {
+            const b = inst.bone(g.turret.name);
+            if (b) {
+              g.turret.bone = b;
+              g.turret.base = b.quaternion.clone();
+            }
+          }
         const lone = u.guns && !u.weapon && !u.turret ? u.guns.findIndex(g => !g.turret && Math.abs(g.facing) < 30 * DEG) : -1;
         if (lone >= 0) {
           u.weapon = u.guns.splice(lone, 1)[0];
@@ -3314,9 +3322,10 @@ export class LandWorld {
                 (inst.attached ||= []).push(a.root);
                 inst.pcGen = (inst.pcGen || 0) + 1;
                 const g = [...(u.guns || []), ...(u.weapon && u.weapon.hp ? [u.weapon] : [])].find(x => x.hp === name);
-                if (g && g.turret && a.bone) {
-                  g.turret.bone = a.bone(g.turret.name) || null;
-                  if (g.turret.bone) g.turret.base = g.turret.bone.quaternion.clone();
+                const own = g && g.turret && a.bone ? a.bone(g.turret.name) : null;
+                if (own) {
+                  g.turret.bone = own;
+                  g.turret.base = own.quaternion.clone();
                 }
                 if (g && !g.muzzles.length && a.bone)
                   g.muzzles = [h.str('Fire_Bone_A'), h.str('Fire_Bone_B')]
