@@ -22,6 +22,7 @@ export const lighting = {
   fillColor: { value: new THREE.Color(0.25, 0.28, 0.36) },
   fillDir2: { value: new THREE.Vector3(0, 0, 1) },
   fillColor2: { value: new THREE.Color(0, 0, 0) },
+  fillWrap: { value: 0 },
   ambient: { value: new THREE.Color(0.32, 0.32, 0.36) },
   shadowMap: { value: noShadow },
   shadowMatrix: { value: new THREE.Matrix4() },
@@ -164,7 +165,12 @@ uniform sampler2D normalMap;
 #ifdef GLOSSMAP
 uniform sampler2D glossMap;
 #endif
-uniform vec3 sunDir, sunColor, fillDir, fillColor, ambient;
+uniform vec3 sunDir, sunColor, fillDir, fillColor, fillDir2, fillColor2, ambient;
+uniform float fillWrap;
+float fillTerm(vec3 n, vec3 d) {
+  float x = dot(n, d);
+  return fillWrap > 0.5 ? max(0.0, 0.25 + 0.5 * x + 0.3125 * (1.5 * x * x - 0.5)) : max(x, 0.0);
+}
 #ifndef UNLIT
 uniform highp sampler2DShadow shadowMap;
 uniform mat4 shadowMatrix;
@@ -276,7 +282,7 @@ void main() {
   #endif
   if (!gl_FrontFacing) n = -n;
   float sun = sunlit(vWorldPos, normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0));
-  vec3 light = ambient + sunColor * max(dot(n, sunDir), 0.0) * sun + fillColor * max(dot(n, fillDir), 0.0);
+  vec3 light = ambient + sunColor * max(dot(n, sunDir), 0.0) * sun + fillColor * fillTerm(n, fillDir) + fillColor2 * fillTerm(n, fillDir2);
   vec3 v = normalize(cameraPosition - vWorldPos);
   float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), max(shininess, 1.0)) * sun;
   #ifdef NATIVE_MESH_GLOSS_EMISSIVE

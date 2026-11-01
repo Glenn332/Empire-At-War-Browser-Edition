@@ -661,6 +661,9 @@ export class GPURenderer {
     v3(72, L.fogTint.value);
     f[o + 76] = L.fogRange.value.x;
     f[o + 77] = L.fogRange.value.y;
+    v3(80, L.fillDir2.value);
+    f[o + 83] = L.fillWrap.value;
+    v3(84, L.fillColor2.value);
     const drawingIt = !!this.target && this.target.depthTexture === L.shadowMap.value;
     const sh = drawingIt ? undefined : this.depthViews.get(L.shadowMap.value),
       fow = this.texture(L.fowMap.value, '2d');

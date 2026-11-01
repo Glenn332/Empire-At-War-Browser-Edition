@@ -12,6 +12,8 @@ struct Pass {
   ambient: vec3f, _b: f32,
   fogTint: vec3f, _c: f32,
   fogRange: vec2f, _d: vec2f,
+  fillDir2: vec3f, fillWrap: f32,
+  fillColor2: vec3f, _e: f32,
 }
 @group(0) @binding(0) var<uniform> P: Pass;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
@@ -20,6 +22,10 @@ struct Pass {
 @group(0) @binding(4) var fowS: sampler;
 fn glDepth(p: vec4f) -> vec4f { return vec4f(p.x, -p.y, (p.z + p.w) * 0.5, p.w); }
 fn glMod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
+fn fillTerm(n: vec3f, d: vec3f) -> f32 {
+  let x = dot(n, d);
+  return select(max(x, 0.0), max(0.0, 0.25 + 0.5 * x + 0.3125 * (1.5 * x * x - 0.5)), P.fillWrap > 0.5);
+}
 `;
 
 export const PARAMS = 32;
@@ -46,6 +52,9 @@ const LIGHTING_KEYS = [
   'sunColor',
   'fillDir',
   'fillColor',
+  'fillDir2',
+  'fillColor2',
+  'fillWrap',
   'ambient',
   'shadowMap',
   'shadowMatrix',
@@ -247,7 +256,7 @@ fn rock(p: vec3f) -> f32 {
   }
   if (!front) { n = -n; }
   let sun = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
-  let light = P.ambient + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun + P.fillColor * max(dot(n, P.fillDir), 0.0);
+  let light = P.ambient + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun + P.fillColor * fillTerm(n, P.fillDir) + P.fillColor2 * fillTerm(n, P.fillDir2);
   let vv = normalize(P.cameraPosition - v.vWorldPos);
   let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), max(D.shininess, 1.0)) * sun;
   ${

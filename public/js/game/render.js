@@ -871,11 +871,14 @@ export class Renderer {
     setPlanetEnvironment(env);
     const [sun, f1, f2] = env.lights;
     const n = v => new THREE.Vector3(...v).normalize();
-    lighting.sunDir.value.copy(n(sun.dir));
-    lighting.sunColor.value.setRGB(...sun.color.map(c => c * 1.9));
-    lighting.fillDir.value.copy(n(f1.dir).add(n(f2.dir)).normalize());
-    lighting.fillColor.value.setRGB(...f1.color.map((c, i) => (c + f2.color[i]) * 1.3));
-    lighting.ambient.value.setRGB(...env.ambient.map(c => Math.max(c, 0.22)));
+    lighting.sunDir.value.copy(n(sun.nativeDir || sun.dir));
+    lighting.sunColor.value.setRGB(...sun.color.map(c => c * 2));
+    lighting.fillDir.value.copy(n(f1.nativeDir || f1.dir));
+    lighting.fillColor.value.setRGB(...f1.color.map(c => c * 2));
+    lighting.fillDir2.value.copy(n(f2.nativeDir || f2.dir));
+    lighting.fillColor2.value.setRGB(...f2.color.map(c => c * 2));
+    lighting.fillWrap.value = 1;
+    lighting.ambient.value.setRGB(...env.ambient.map(c => c * 2));
     for (const t of env.skydomes) {
       const data = getModelData(t.str('Space_Model_Name'));
       if (!data) continue;

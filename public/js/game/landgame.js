@@ -1485,6 +1485,8 @@ export class LandGame {
       lighting.sunColor.value.setRGB(...sun.color.map(c => c * 1.6));
       lighting.fillDir.value.copy(n(f1.dir).add(n(f2.dir)).normalize());
       lighting.fillColor.value.setRGB(...f1.color.map((c, i) => (c + f2.color[i]) * 0.8));
+      lighting.fillColor2.value.setRGB(0, 0, 0);
+      lighting.fillWrap.value = 0;
       lighting.ambient.value.setRGB(...env.ambient.map(c => Math.max(c, 0.25)));
     }
 

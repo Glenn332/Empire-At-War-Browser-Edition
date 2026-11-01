@@ -188,6 +188,13 @@ const NEBULA_KEEPS = new Set([
 const isFieldType = t => t.bool('Is_Asteroid_Field') || t.bool('Is_Nebula') || t.bool('Is_Ion_Storm');
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
+const shadowModels = new WeakMap();
+const castsShadow = m => {
+  if (!m) return false;
+  let v = shadowModels.get(m);
+  if (v === undefined) shadowModels.set(m, (v = !!m.meshes?.some(x => x.subs?.some(s => /shadowvolume/i.test(s.material?.shader || '')))));
+  return v;
+};
 const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
 
 export class Team {
@@ -812,7 +819,7 @@ export class Unit {
       }
       for (const part of this.parts) this.obj.add(part);
     }
-    if (!this.isFighter && this.visualRadius >= 60 && this.model) {
+    if (!this.isFighter && this.visualRadius >= 60 && this.model && castsShadow(this.model.model)) {
       const min = this.model.radius * 0.3;
       this.obj.traverse(o => {
         if (!o.isMesh || !o.material || o.material.transparent || !o.material.uniforms || !o.material.uniforms.shadowMap) return;
