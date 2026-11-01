@@ -1163,10 +1163,11 @@ export async function openDialog(
       arrow.style.setProperty('--down', u(PP || P));
       d._label = box(d, 'dlg-combo-text', lw + 4, 0, c.w - lw - pw - 8, h);
       styleText(d._label, controlFont(c.id, 'Combo_Box'));
-      d._drop = box(el, 'dlg-drop', c.x, c.y + h, c.w, 10);
+      const S = await image(tex(id, c.id, 'Scroll_Middle'));
+      d._drop = box(el, 'dlg-drop', c.x, c.y + h, c.w + (S ? S.w : 0), 10);
       d._drop.hidden = true;
       d._drop.style.height = 'auto';
-      d._drop.style.maxHeight = Math.max(60, c.h - h) + 'px';
+      d._drop.style.maxHeight = Math.max(25, c.h - h) + 'px';
       styleText(d._drop, controlFont(c.id, 'Combo_Box'));
     } else {
       d = box(el, 'dlg-etc', c.x, c.y, c.w, c.h);
