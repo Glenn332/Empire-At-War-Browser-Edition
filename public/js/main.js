@@ -2352,14 +2352,16 @@ async function boot() {
     if (window.game) endGame(mode || 'space');
   };
   const sel = $('pickMap');
-  for (const m of maps) {
+  const quickSpace = maps.length ? maps : customMaps.space,
+    quickLand = landMaps.length ? landMaps : customMaps.land;
+  for (const m of quickSpace) {
     const o = document.createElement('option');
     o.value = m;
     o.textContent = mapTitle(m);
     sel.appendChild(o);
   }
   const params = new URLSearchParams(location.search);
-  const pref = maps.find(m => m.toUpperCase().includes((params.get('map') || 'KUAT').toUpperCase()));
+  const pref = quickSpace.find(m => m.toUpperCase().includes((params.get('map') || 'KUAT').toUpperCase()));
   if (pref) sel.value = pref;
   const label = f => db.t(db.faction(f).str('Text_ID')) || f;
   const other = f => FACTIONS.find(x => x !== f);
@@ -2682,7 +2684,7 @@ async function boot() {
         benchmark: lbench,
         direct: true,
         preBuilt: params.get('prebuilt') !== '0',
-        mapFile: landMaps.find(m => m.toUpperCase().includes(want)) || landMaps[0],
+        mapFile: quickLand.find(m => m.toUpperCase().includes(want)) || quickLand[0],
         credits: getCredits(),
         popCap: lbench ? 9999 : getPop(),
         fog: lbench ? false : getFog(),
