@@ -1,7 +1,7 @@
 import { diag } from './diag.js';
 import * as THREE from '../vendor/three/build/three.module.js';
 import { loadALO } from './alo.js';
-import { loadTexture, whiteTexture } from './dds.js';
+import { loadTexture, whiteTexture, blackTexture } from './dds.js';
 import { rockTextures, rockBake } from './rockbake.js';
 import { gfx } from './gfx.js';
 import { planetVertex, planetFragment } from './planetshader.js';
@@ -661,6 +661,11 @@ function makeMaterial(mat, format, teamColor) {
   }
   m.userData.additive = additive;
   m.userData.alpha = alpha;
+  const base = m.uniforms.map.value;
+  if (additive && base?.userData?.ready)
+    base.userData.ready.then(t => {
+      if (t.userData.missing && m.uniforms.map.value === base) m.uniforms.map.value = blackTexture();
+    });
   if (alpha) shaderStates(shader, m);
   m.userData.depthOk = !(additive || alpha);
   if (!skinned && !alpha) instanceable.add(m);

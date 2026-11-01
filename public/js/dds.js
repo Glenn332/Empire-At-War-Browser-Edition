@@ -279,6 +279,23 @@ function makeTexture(dds, repeat) {
   return tex;
 }
 
+let absent = null;
+function missingTexture() {
+  if (!absent) {
+    absent = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+    absent.userData.missing = true;
+    absent.needsUpdate = true;
+  }
+  return absent;
+}
+let black = null;
+export function blackTexture() {
+  if (!black) {
+    black = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
+    black.needsUpdate = true;
+  }
+  return black;
+}
 export function whiteTexture() {
   if (!fallback) {
     fallback = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
@@ -300,8 +317,9 @@ export function loadTexture(name, { repeat = true } = {}) {
   tex.userData.ready = picture(name, repeat).then(real => {
     tex.copy(real);
     tex.userData.hasAlpha = real.userData.hasAlpha;
+    tex.userData.missing = !!real.userData.missing;
     tex.userData.pending = false;
-    if (real !== fallback) {
+    if (real !== fallback && !real.userData.missing) {
       files.set(tex.source, { name, repeat });
       tex.onUpdate = releasePictures;
     }
@@ -313,6 +331,7 @@ export function loadTexture(name, { repeat = true } = {}) {
 
 function picture(name, repeat) {
   return fetchBinary('Data/Art/Textures/' + fileOf(name), { keep: false }).then(async buf => {
+    if (!buf) return missingTexture();
     let real;
     try {
       const file = buf ? await fullChain(await wholeBlocks(detail(await parseAnyTexture(buf)))) : null;

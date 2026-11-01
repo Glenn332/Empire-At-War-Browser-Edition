@@ -871,7 +871,7 @@ export class LandGame {
       if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
       if (s.from?.seen === false || world.time - lastFire < 0.07) return;
       lastFire = world.time;
-      this.audio.play(fireSound(s.from.type, s.w.proj) || s.w.proj.str('Projectile_SFXEvent_Fire'), s.x, s.y);
+      this.audio.play(fireSound(s.from.type, s.w.proj), s.x, s.y);
     };
     world.onSound = (name, x, y, side) => {
       if (side !== undefined && side !== this.me && this.audio.isVoice(name)) return;
