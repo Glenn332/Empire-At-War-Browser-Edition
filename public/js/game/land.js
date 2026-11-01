@@ -4344,21 +4344,43 @@ export class LandWorld {
       dz = 0;
     }
     const d = Math.hypot(dx, dy, dz) || 1;
+    let fx = dx / d,
+      fy = dy / d,
+      fz = dz / d;
+    if ((cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET) && M && !this.fixed && u.inView !== false) {
+      M.bone.updateWorldMatrix(true, false);
+      const e = M.bone.matrixWorld.elements,
+        l = Math.hypot(e[0], e[1], e[2]);
+      if (l > 0) {
+        const lag = (u.loco?.sec && u.face !== undefined ? u.face : u.heading) + Math.PI / 2 - (u.holder ? u.holder.rotation.z : 0),
+          c = Math.cos(lag),
+          sn = Math.sin(lag);
+        const mx = (e[0] * c - e[1] * sn) / l,
+          my = (e[0] * sn + e[1] * c) / l,
+          mz = e[2] / l;
+        if (mx * fx + my * fy + mz * fz > Math.SQRT1_2) {
+          fx = mx;
+          fy = my;
+          fz = mz;
+        }
+      }
+    }
     let speed = speed0,
-      vx = (dx / d) * speed,
-      vy = (dy / d) * speed,
-      vz = (dz / d) * speed,
+      vx = fx * speed,
+      vy = fy * speed,
+      vz = fz * speed,
       total = d;
     if (cat === CAT.GRENADE && lobOf(w) > 0) {
       const D = Math.hypot(dx, dy) || 1,
-        L = lob(w, D, dz);
+        Dt = Math.hypot(tx - sx, ty - sy) || 1,
+        L = lob(w, Dt, tz - z0);
       if (!L) return false;
       speed = L.v;
       const h = Math.cos(L.angle) * speed;
       vx = (dx / D) * h;
       vy = (dy / D) * h;
       vz = Math.sin(L.angle) * speed;
-      total = (D / h) * speed;
+      total = (Dt / h) * speed;
     }
     if (M)
       for (const f of M.flash) {
@@ -4406,7 +4428,7 @@ export class LandWorld {
       oz: off.z
     };
     if (cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET)
-      shot.path = rocketPath(P, sx, sy, z0, dx / d, dy / d, dz / d, ax, ay, z1, (x, y) => heightAt(this.terrain, x, y));
+      shot.path = rocketPath(P, sx, sy, z0, fx, fy, fz, ax, ay, z1, (x, y) => heightAt(this.terrain, x, y));
     else if (cat === CAT.LIGHT_SABER)
       shot.path = boomerangPath(P, sx, sy, z0, ax, ay, z1, u.x, u.y, z0, (x, y) => heightAt(this.terrain, x, y));
     if (cat === CAT.GRENADE) {
@@ -5501,7 +5523,9 @@ export class LandWorld {
       return (q.box = null);
     const made = db.type(q.type.str('Create_Team_Type')),
       T = made || (q.type.has('ContainerArrangement') ? q.type : m[0].type);
-    const num = (a, b, d) => T.num(a, 0) || T.num(b, 0) || d;
+    const num = (a, b) => T.num(a, 0) || T.num(b, 0),
+      rate = v => (v > 0 ? v * LOGIC_FPS * LOGIC_FPS * landSpeedFactor() : Infinity),
+      close = T.num('Close_Enough_Angle_For_Move_Start', 0) || db.constants.num('CloseEnoughAngleForMoveStart', 180);
     const box = (q.box = {
       x: m.reduce((a, u) => a + u.x, 0) / m.length,
       y: m.reduce((a, u) => a + u.y, 0) / m.length,
@@ -5511,8 +5535,10 @@ export class LandWorld {
       face: null,
       max: T.num('Max_Speed', m[0].type.num('Max_Speed', 1)) * LOGIC_FPS * landSpeedFactor(),
       turn: T.num('Max_Rate_Of_Turn', 12) * LOGIC_FPS * DEG * landSpeedFactor(),
-      accel: num('Override_Acceleration', 'OverrideAcceleration', 0.1) * LOGIC_FPS * LOGIC_FPS,
-      decel: num('Override_Deceleration', 'OverrideDeceleration', 0.1) * LOGIC_FPS * LOGIC_FPS,
+      accel: rate(num('Override_Acceleration', 'OverrideAcceleration')),
+      decel: rate(num('Override_Deceleration', 'OverrideDeceleration')),
+      minFrac: T.num('Min_Speed_Fraction_For_Turn', 0),
+      close: close * DEG,
       scattered: /dart/i.test(T.str('ContainerArrangement')),
       lay: null,
       n: 0,
@@ -5773,6 +5799,8 @@ export class LandWorld {
         d = Math.hypot(dx, dy);
       let da = Math.atan2(dy, dx) - box.heading;
       da = Math.atan2(Math.sin(da), Math.cos(da));
+      const off = Math.abs(da),
+        aligned = d <= 1 || off <= box.turn * dt;
       if (d > 1) {
         const step = box.turn * dt;
         box.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
@@ -5787,13 +5815,18 @@ export class LandWorld {
           if (lag > 0) cap = Math.min(cap, box.max * (1 - Math.min(1, lag / 10)));
         }
       box.stall = cap < 1 ? box.stall + dt : box.speed > 1 ? 0 : box.stall;
-      if (Math.abs(da) > 0.6 && d > 1) cap = 0;
-      if (box.path.length === 1) cap = Math.min(cap, Math.sqrt(2 * box.decel * d) + 1);
-      box.speed += Math.max(-box.decel * dt, Math.min(box.accel * dt, cap - box.speed));
+      const full = cap;
+      if (!aligned) cap = Math.min(cap, off >= Math.PI / 2 ? 0 : (box.turn * d) / (2 * Math.sin(off)));
+      if (box.path.length === 1 && box.decel < Infinity) cap = Math.min(cap, Math.sqrt(2 * box.decel * d) + 1);
+      const frac = full > 0 ? cap / full : 0;
+      if (!aligned && (frac <= box.minFrac || (!(box.speed > 0) && (off > box.close || frac < 0.05)))) cap = 0;
+      box.speed = Math.max(0, box.speed + Math.max(-box.decel * dt, Math.min(box.accel * dt, cap - box.speed)));
       const go = Math.min(d, box.speed * dt);
-      if (d > 0) {
-        box.x += (dx / d) * go;
-        box.y += (dy / d) * go;
+      if (d > 0 && go > 0) {
+        const hx = aligned ? dx / d : Math.cos(box.heading),
+          hy = aligned ? dy / d : Math.sin(box.heading);
+        box.x += hx * go;
+        box.y += hy * go;
       }
       if (box.sides) {
         box.along += go;
@@ -5805,7 +5838,7 @@ export class LandWorld {
         box.ox = -Math.sin(box.heading) * off;
         box.oy = Math.cos(box.heading) * off;
       } else box.ox = box.oy = 0;
-      if (d - go < 1) {
+      if (Math.hypot(p.x - box.x, p.y - box.y) < Math.max(1, go * 1.5)) {
         box.path.shift();
         if (!box.path.length) {
           box.speed = 0;
@@ -5866,7 +5899,9 @@ export class LandWorld {
       dy = pt.y - u.y,
       pace = this.paceOf(u),
       own = u.speed * pace;
-    const acc = (u.acc ??= (t.num('OverrideAcceleration', 0) || t.num('Override_Acceleration', 0) || 0.05) * LOGIC_FPS * LOGIC_FPS);
+    const L = (u.loco ??= this.locoOf(u)),
+      acc = L.acc,
+      dec = L.dec;
     let wantH,
       wantV,
       v = u.v || 0;
@@ -5922,7 +5957,7 @@ export class LandWorld {
         held = u.wallAt && Math.abs(u.wallAt.x - pt.x) < 1 && Math.abs(u.wallAt.y - pt.y) < 1;
       if (held || (u.back ? d < 1 : d <= 4)) {
         u.back = false;
-        u.v = 0;
+        u.v = u.mv = 0;
         u.detour = null;
         if (u.path.length && u.path[0] === pt) u.path = [];
         if (!u.target) {
@@ -5935,7 +5970,7 @@ export class LandWorld {
       }
       u.back = true;
       wantH = Math.atan2(dy, dx);
-      wantV = Math.min(own, Math.sqrt(2 * acc * d));
+      wantV = Math.min(own, dec < Infinity ? Math.sqrt(2 * dec * d) : own);
     }
     if (u.detour) {
       const p0 = u.detour[0],
@@ -5955,9 +5990,15 @@ export class LandWorld {
     da = Math.atan2(Math.sin(da), Math.cos(da));
     const step = u.turn * dt;
     u.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
-    if ((u.back || u.detour) && Math.abs(da) > 0.6) wantV = 0;
-    v += Math.max(-acc * dt, Math.min(acc * dt, wantV - v));
-    u.v = v;
+    if (u.back || u.detour) {
+      const left = Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)),
+        aim0 = u.detour ? u.detour[0] : pt,
+        dd = Math.hypot(aim0.x - u.x, aim0.y - u.y);
+      if (left > step) wantV = Math.min(wantV, left >= Math.PI / 2 ? 0 : (u.turn * dd) / (2 * Math.sin(left)));
+      if (!(v > 0) && left > step && (left > L.close || wantV <= L.minFrac * own || wantV < 0.05 * own)) wantV = 0;
+    }
+    v = Math.max(0, v + Math.max(-dec * dt, Math.min(acc * dt, wantV - v)));
+    u.v = u.mv = v;
     u.slow = pace < 0.75;
     const go = v * dt,
       fx = u.x + Math.cos(u.heading) * go,
