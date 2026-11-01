@@ -56,7 +56,8 @@ export class GalacticBattles {
     const g = this.game.galaxy,
       planet = g.planets[p],
       rows = [];
-    const add = (type, record, extra = {}) => rows.push(autoCombatant(type, owner, { record, space, ...extra }));
+    const tech = g.players.find(x => key(x.faction) === key(owner))?.tech || 0,
+      add = (type, record, extra = {}) => rows.push(autoCombatant(type, owner, { record, space, tech, ...extra }));
     if (space) {
       for (const fleet of g.fleets)
         if (fleet.planet === p && !fleet.leg && key(fleet.owner) === key(owner))

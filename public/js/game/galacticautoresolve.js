@@ -120,12 +120,15 @@ function effective(type, space) {
   }
   return type;
 }
-export function autoCombatant(type, owner, { record = null, station = false, transport = false, space = true } = {}) {
+export function autoCombatant(type, owner, { record = null, station = false, transport = false, space = true, tech = -1 } = {}) {
   const resolved = effective(type, space),
     parts = [];
   if (transport && resolved !== type && forceKind(resolved) !== 'company') transport = false;
   if (!transport) parts.push(resolved);
+  const spawns = !transport && tech >= 0 ? startingSpawns(resolved, tech).filter(s => s.count > 0) : [];
   return {
+    spawns,
+    spawnPower: spawns.reduce((n, s) => f(n + f(strategicPower(s.type) * s.count)), 0),
     type: resolved,
     original: type,
     owner,
@@ -172,13 +175,15 @@ export function landBomber(g, planet, owner) {
 }
 function buckets(roster, contrast) {
   const out = [{ category: null, power: 0 }, ...Array.from(contrast.keys(), category => ({ category, power: 0 }))];
-  for (const u of roster)
-    for (const type of u.parts) {
-      const power = strategicPower(type);
-      out[0].power += power;
-      const row = out.find((r, i) => i && matches(type, r.category));
-      if (row) row.power += power;
-    }
+  const add = (type, power) => {
+    out[0].power += power;
+    const row = out.find((r, i) => i && matches(type, r.category));
+    if (row) row.power += power;
+  };
+  for (const u of roster) {
+    for (const type of u.parts) add(type, strategicPower(type));
+    for (const s of u.spawns || []) add(s.type, f(strategicPower(s.type) * s.count));
+  }
   return out;
 }
 export function subtractForces(roster, initial, contrast, attackOnly = [], scale = 1) {
@@ -193,39 +198,41 @@ export function subtractForces(roster, initial, contrast, attackOnly = [], scale
         for (let i = 0; i < 32; i++) if (categories & (1n << BigInt(i))) bonuses.set(i, Math.max(bonuses.get(i) || 0, bonus));
       }
   }
-  for (const u of attackOnly.concat(roster))
-    for (const type of u.parts) {
-      const original = f(f(strategicPower(type)) * scale);
-      if (!(original > 0)) continue;
-      let factor = 0;
-      const cats = typeMask(type);
-      for (let i = 0; i < 32; i++) if (cats & (1n << BigInt(i)) && (bonuses.get(i) || 0) > factor) factor = f(bonuses.get(i) + 1);
-      const power = f(original * (factor || 1));
-      let chosen = 0,
-        best = 0,
-        weight = 0;
-      for (let j = 1; j < out.length; j++)
-        if (out[j].power > 0) {
-          const c = contrastWeight(type, contrast.get(out[j].category));
-          if (!(c > 0)) continue;
-          const p = original * c,
-            b = out[j].power,
-            score = c * Math.max(0, 1 - ((b - p) / Math.max(b, p)) ** 2);
-          if (score > best) {
-            best = score;
-            chosen = j;
-            weight = f(c);
-          }
+  for (const u of attackOnly.concat(roster)) {
+    const s = u.spawns && u.spawns[0],
+      type = s ? s.type : u.parts[0];
+    if (!type) continue;
+    const original = f(f(strategicPower(type) * (s ? s.count : 1)) * scale);
+    if (!(original > 0)) continue;
+    let factor = 0;
+    const cats = typeMask(type);
+    for (let i = 0; i < 32; i++) if (cats & (1n << BigInt(i)) && (bonuses.get(i) || 0) > factor) factor = f(bonuses.get(i) + 1);
+    const power = f(original * (factor || 1));
+    let chosen = 0,
+      best = 0,
+      weight = 0;
+    for (let j = 1; j < out.length; j++)
+      if (out[j].power > 0) {
+        const c = contrastWeight(type, contrast.get(out[j].category));
+        if (!(c > 0)) continue;
+        const p = original * c,
+          b = out[j].power,
+          score = c * Math.max(0, 1 - ((b - p) / Math.max(b, p)) ** 2);
+        if (score > best) {
+          best = score;
+          chosen = j;
+          weight = f(c);
         }
-      if (!chosen) {
-        out[0].power -= power;
-        continue;
       }
-      const damage = Math.min(f(out[chosen].power), f(power * weight)),
-        remaining = f(f(1 - f(damage / f(power * weight))) * original);
-      out[chosen].power -= damage;
-      out[0].power -= f(damage + remaining);
+    if (!chosen) {
+      out[0].power -= power;
+      continue;
     }
+    const damage = Math.min(f(out[chosen].power), f(power * weight)),
+      remaining = f(f(1 - f(damage / f(power * weight))) * original);
+    out[chosen].power -= damage;
+    out[0].power -= f(damage + remaining);
+  }
   return out;
 }
 const positiveTotal = rows => rows.reduce((n, r) => n + Math.max(0, r.power), 0);
@@ -256,6 +263,7 @@ function casualties(roster, budget, won, playable, space, settings, random, enem
     const hero = pending.findIndex(u => u.hero || forceKind(u.original) === 'ground structure'),
       index = hero >= 0 ? hero : Math.min(pending.length - 1, Math.floor(random() * pending.length)),
       u = pending.splice(index, 1)[0];
+    if (u.spawnPower) budget = Math.max(0, budget - u.spawnPower);
     if (u.groundBase) {
       if (won) alive.add(u);
       continue;
@@ -304,8 +312,8 @@ export function resolveAutoBattle(
   };
   const initial = [buckets(attacker, contrast), buckets(defender, contrast)],
     remaining = [
-      subtractForces(defender, initial[0], contrast, [], scale),
-      subtractForces(attacker, initial[1], contrast, !space && bombardment ? [{ parts: [bombardment] }] : [], scale)
+      subtractForces(defender, initial[0], contrast),
+      subtractForces(attacker, initial[1], contrast, !space && bombardment ? [{ parts: [bombardment] }] : [])
     ];
   const playable = [attacker, defender].map(roster => db.faction(roster[0]?.owner)?.bool('Is_Playable') || false);
   let winner = positiveTotal(remaining[0]) > positiveTotal(remaining[1]) ? 0 : 1;
@@ -339,7 +347,8 @@ export function resolveAutoBattle(
       won = i === winner,
       name = (overrun ? 'Retreat' : '') + (won ? 'AutoResolveWinnerAttrition' : 'AutoResolveLoserAttrition'),
       attrition = constants.num(name, overrun ? (won ? 0.5 : 0.65) : won ? 0.75 : 0.8);
-    const budget = !won && !playable[i] ? 0 : remaining[i][0].power + (initial[i][0].power - remaining[i][0].power) * f(1 - f(attrition));
+    const budget =
+      !won && !playable[i] ? 0 : f((remaining[i][0].power + (initial[i][0].power - remaining[i][0].power) * f(1 - f(attrition))) * scale);
     result[i] = casualties(roster, budget, won, playable[i], space, settings, random, killers[1 - i]);
   }
   return { winner, initial, remaining, sides: result, retreat, superweaponDestroyed: supers[1 - winner] && killers[winner] };
