@@ -151,7 +151,11 @@ export class Radar {
     if (r) return r;
     const size = t.has('Radar_Icon_Size') ? t.vec('Radar_Icon_Size', [0.05, 0.05]) : [0.05, 0.05];
     r = {
-      show: yes(t, 'Is_Visible_On_Radar', false),
+      show:
+        yes(t, 'Is_Visible_On_Radar', false) &&
+        !yes(t, 'Is_Asteroid_Field', false) &&
+        !yes(t, 'Is_Ion_Storm', false) &&
+        !yes(t, 'Is_Nebula', false),
       enemy: yes(t, 'Is_Visible_On_Enemy_Radar', true),
       fogged: yes(t, 'Visible_On_Radar_When_Fogged', false),
       icon: t.has('Radar_Icon_Name') ? t.str('Radar_Icon_Name').trim() : 'i_radar_default_blip.tga',
