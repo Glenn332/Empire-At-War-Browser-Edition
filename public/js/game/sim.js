@@ -640,6 +640,7 @@ export class Unit {
             m.onBeforeRender = () => {
               const u = m.material.uniforms;
               if (!u.flash) return;
+              if (u.steady) u.steady.value = 1;
               u.flash.value = this.shieldGlow;
               u.hitPos.value.set(this.shieldAt.x, this.shieldAt.y, this.shieldAt.z);
               u.hitRadius.value = Math.max(40, this.visualRadius * 0.6);
@@ -1913,6 +1914,7 @@ export class World {
       if (target.shield <= 0) {
         target.shield = 0;
         target.shieldDownTimer = db.constants.num('Depleted_Shield_Disable_Time', 5);
+        if (target.abilities?.some(s => s.def.kind === 'DEFEND' && s.active)) useAbility(this, target, 'DEFEND', false);
       }
       target.shieldFlash = SHIELD_FLASH + SHIELD_FADE;
       if (x !== undefined) {
@@ -2332,6 +2334,7 @@ export class World {
       }
     }
     if (u.maxShield > 0) {
+      if (u.shieldFlash > 0) u.shieldFlash = Math.max(0, u.shieldFlash - dt);
       if (u.shieldDownTimer > 0) u.shieldDownTimer -= dt;
       const base = (this.shieldInterval ??= Math.max(0.05, db.constants.num('ShieldRechargeIntervalInSecs', 3)));
       const every = Math.max(0.05, base * u.mods.shieldInterval);

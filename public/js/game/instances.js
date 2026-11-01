@@ -309,7 +309,7 @@ export class Instances {
         drawn++;
       }
       const shield = u.shieldMesh;
-      if (!whole && shield && shield.visible && u.shieldFlash > 0) {
+      if (!whole && shield && shield.visible) {
         if (!placeBranch(obj, shield)) obj.updateWorldMatrix(false, true);
         else if (Instances.check) {
           const mine = [];

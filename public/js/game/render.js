@@ -6,7 +6,6 @@ import { ParticleManager } from '../particles.js';
 import { basisOf } from '../particlesim.js';
 import { PostFX } from './post.js';
 import { db } from '../gamedata.js';
-import { SHIELD_FLASH, SHIELD_FADE } from './sim.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import { loadTexture, whiteTexture, loadTextureCanvas } from '../dds.js';
 import { fetchText, fetchBinary } from '../vfs.js';
@@ -1563,18 +1562,9 @@ export class Renderer {
         const c = Math.cos(u.heading),
           s = Math.sin(u.heading);
         if (u.shieldMesh) {
-          if (u.shieldFlash > 0) u.shieldFlash -= dt;
-          const on = u.shieldFlash > 0;
+          const on = !!u.abilities?.some(s => s.active && s.def.kind === 'DEFEND');
           if (u.shieldMesh.visible !== on) u.shieldMesh.visible = on;
-          if (on) {
-            const t = SHIELD_FLASH + SHIELD_FADE - u.shieldFlash,
-              keys = (this.shieldScale ||= db.constants.str('Shield_Flash_Scale').split(',').map(parseFloat).filter(Number.isFinite));
-            const k = Math.min(1, t / SHIELD_FLASH) * Math.max(0, keys.length - 1),
-              i = Math.min(keys.length - 1, Math.floor(k));
-            const sc = keys.length ? keys[i] + ((keys[Math.min(keys.length - 1, i + 1)] ?? keys[i]) - keys[i]) * (k - i) : 1;
-            u.shieldMesh.scale.setScalar(sc);
-            u.shieldGlow = t < SHIELD_FLASH ? 1 : Math.max(0, 1 - (t - SHIELD_FLASH) / SHIELD_FADE) ** 2;
-          }
+          if (on) u.shieldGlow = 1;
         }
         if (u.hyper) this.darken(u);
         if (u.engineMeshes.length) {
