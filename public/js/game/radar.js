@@ -27,6 +27,89 @@ export class Radar {
     this.ready = this.load().catch(e => console.warn('radar', e));
   }
 
+  fieldLayer(w, W, H, X, Y, sx, sy, S) {
+    const key = W + 'x' + H + ':' + w.radarFields.length;
+    if (this.fieldKey === key && this.fieldCanvas) return this.fieldCanvas;
+    this.fieldKey = key;
+    const c = (this.fieldCanvas ||= document.createElement('canvas'));
+    c.width = Math.max(1, Math.ceil(W));
+    c.height = Math.max(1, Math.ceil(H));
+    const w0 = c.width,
+      h0 = c.height,
+      mask = new Uint8Array(w0 * h0);
+    for (const f of w.radarFields) {
+      const cx = X(f.x),
+        cy = Y(f.y),
+        rx = Math.max(1, f.rx * sx),
+        ry = Math.max(1, f.ry * sy);
+      for (let y = Math.max(0, Math.floor(cy - ry)); y <= Math.min(h0 - 1, Math.ceil(cy + ry)); y++)
+        for (let x = Math.max(0, Math.floor(cx - rx)); x <= Math.min(w0 - 1, Math.ceil(cx + rx)); x++) {
+          const dx = (x + 0.5 - cx) / rx,
+            dy = (y + 0.5 - cy) / ry;
+          if (dx * dx + dy * dy <= 1) mask[y * w0 + x] = 255;
+        }
+    }
+    const rim = new Uint8Array(w0 * h0);
+    for (let y = 0; y < h0; y++)
+      for (let x = 0; x < w0; x++) {
+        const i = y * w0 + x,
+          p = mask[i],
+          left = x ? mask[i - 1] : p,
+          up = y ? mask[i - w0] : p,
+          down = y < h0 - 1 ? mask[i + w0] : p,
+          e1 = Math.abs(p - left) + Math.abs(p - up),
+          e2 = Math.abs(p - left) + Math.abs(p - down);
+        rim[i] = Math.min(255, Math.max(e1 > 85 ? e1 : 0, e2 > 85 ? e2 : 0));
+      }
+    const blur = src => {
+      const out = new Uint8Array(w0 * h0),
+        k = [1, 2, 1];
+      for (let y = 0; y < h0; y++)
+        for (let x = 0; x < w0; x++) {
+          let sum = 0;
+          for (let j = -1; j <= 1; j++)
+            for (let i = -1; i <= 1; i++) {
+              const xx = Math.min(w0 - 1, Math.max(0, x + i)),
+                yy = Math.min(h0 - 1, Math.max(0, y + j));
+              sum += src[yy * w0 + xx] * k[i + 1] * k[j + 1];
+            }
+          out[y * w0 + x] = sum >> 4;
+        }
+      return out;
+    };
+    const m = blur(mask),
+      b = blur(rim),
+      g = c.getContext('2d'),
+      img = g.createImageData(w0, h0),
+      d = img.data,
+      F = [...S.field.slice(0, 3), S.field[3] ?? 255],
+      B = [...S.fieldBorder.slice(0, 3), S.fieldBorder[3] ?? 255];
+    for (let i = 0; i < w0 * h0; i++) {
+      const mi = m[i],
+        bi = b[i],
+        o = i * 4;
+      if (mi && bi) {
+        const a = mi / 255;
+        d[o] = F[0] * a + B[0] * (1 - a);
+        d[o + 1] = F[1] * a + B[1] * (1 - a);
+        d[o + 2] = F[2] * a + B[2] * (1 - a);
+        d[o + 3] = F[3] * a + B[3] * (1 - a);
+      } else if (mi) {
+        d[o] = F[0];
+        d[o + 1] = F[1];
+        d[o + 2] = F[2];
+        d[o + 3] = (F[3] * mi) / 255;
+      } else if (bi) {
+        d[o] = B[0];
+        d[o + 1] = B[1];
+        d[o + 2] = B[2];
+        d[o + 3] = (B[3] * bi) / 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
   async load() {
     const xml = await fetchText('Data/XML/RadarMap.xml').catch(() => null);
     const root = xml ? parseXML(xml) : null,
@@ -36,7 +119,7 @@ export class Radar {
       backdrop: set ? set.val('Space_Backdrop_Texture_Name') : '',
       fow: rgba(set && set.val('Space_FOW_Color'), [25, 66, 120, 100]),
       field: rgba(set && set.val('Space_Asteroid_Field_Color'), [128, 128, 250, 255]),
-      fieldBorder: rgba(set && set.val('Space_Asteroid_Field_Border_Color'), [128, 128, 250, 255]),
+      fieldBorder: rgba(set && set.val('Space_Asteroid_Field_Border_Color'), [98, 98, 150, 255]),
       events: !set || !/^no$/i.test(set.val('Use_Event_System', 'Yes')),
       base: rgba((/<Color\s+name\s*=\s*"space"\s*>([^<]*)</i.exec(xml || '') || [])[1], [12, 30, 51, 255])
     };
@@ -348,16 +431,7 @@ export class Radar {
     g.fillRect(0, 0, W, H);
     const fog = r.fog;
     if (w.fog && fog && fog.mesh.visible) g.drawImage(this.fogCanvas(fog, S.fow), 0, 0, W, H);
-    for (const f of w.fields) {
-      if (!f.radar) continue;
-      g.fillStyle = css(S.field);
-      g.beginPath();
-      g.ellipse(X(f.x), Y(f.y), Math.max(2.5, f.r * sx), Math.max(2.5, f.r * sy), 0, 0, 6.283);
-      g.fill();
-      g.strokeStyle = css(S.fieldBorder);
-      g.lineWidth = 1;
-      g.stroke();
-    }
+    if (w.radarFields?.length) g.drawImage(this.fieldLayer(w, W, H, X, Y, sx, sy, S), 0, 0, W, H);
     if (this.backdrop) g.drawImage(this.grid(W, H), 0, 0);
     const bit = player.bit,
       radar = this.radarOn(w, player),

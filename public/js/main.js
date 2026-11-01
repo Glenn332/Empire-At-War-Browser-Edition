@@ -1084,7 +1084,10 @@ class Game {
         if (!again) w.tacticalSuperweapons.addTarget(this.placeScenery(o));
         continue;
       }
-      if (!again) w.addField(o.type, o.pos[0], o.pos[1], o.type.num('Scale_Factor', 1) * (o.scale || 1));
+      if (!again) {
+        w.addField(o.type, o.pos[0], o.pos[1], o.type.num('Scale_Factor', 1) * (o.scale || 1));
+        this.addRadarField(w, o);
+      }
       if (!getModelData(o.type.str('Space_Model_Name'))) continue;
       const scenery = o.type.bool('In_Background') || o.type.bool('Is_Decoration') || !o.type.behaviors().size;
       if (scenery) {
@@ -1189,6 +1192,29 @@ class Game {
       return;
     }
     this.bench = this.benchOverlay('live battle', { battle: 'live' }, Infinity);
+  }
+
+  addRadarField(w, o) {
+    const t = o.type;
+    if (!(t.bool('Is_Asteroid_Field') || t.bool('Is_Nebula') || t.bool('Is_Ion_Storm'))) return;
+    const data = getModelData(t.str('Space_Model_Name')),
+      scale = t.num('Scale_Factor', 1) * (o.scale || 1);
+    let rx = 0,
+      ry = 0;
+    if (data) {
+      const g = new THREE.Group();
+      g.add(buildModel(data).root);
+      g.quaternion.setFromEuler(new THREE.Euler(o.rot[0] * DEG, o.rot[1] * DEG, o.rot[2] * DEG, 'ZYX')).multiply(_modelTurnQ);
+      g.scale.setScalar(scale);
+      g.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(g);
+      if (!b.isEmpty()) {
+        rx = 0.25 * (b.max.x - b.min.x);
+        ry = 0.25 * (b.max.y - b.min.y);
+      }
+    }
+    if (!(rx > 0)) rx = ry = 0.5 * t.num('Space_Obstacle_Radius', 0) * scale;
+    (w.radarFields ||= []).push({ x: o.pos[0], y: o.pos[1], rx, ry });
   }
 
   placeScenery(o, effects = false) {
