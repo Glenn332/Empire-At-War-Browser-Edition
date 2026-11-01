@@ -4875,6 +4875,9 @@ export class LandWorld {
 
   fireGuns(u, dt) {
     if (this.aiSuspended) return;
+    let hidden = null,
+      hideG = null,
+      seen = false;
     for (const g of u.guns) {
       g.cooldown -= dt;
       const D = u.squad.direct,
@@ -4958,6 +4961,17 @@ export class LandWorld {
         g.left = 0;
         continue;
       }
+      if (this.clearShots && globalThis.clearShots && !(this.time < (u.squad.clearFail || 0))) {
+        if (this.shotBlocked(u, t, g)) {
+          g.left = 0;
+          if (!hidden) {
+            hidden = t;
+            hideG = g;
+          }
+          continue;
+        }
+        seen = true;
+      }
       if (g.left > 0) {
         if ((g.timer -= dt) <= 0) {
           this.fire(u, t, g);
@@ -4970,6 +4984,7 @@ export class LandWorld {
         g.cooldown = g.recharge * (u.mod ? u.mod.delay : 1);
       }
     }
+    if (hidden && !seen && !u.weapon) this.seekClear(u.squad, u, hidden, hideG);
   }
 
   fight(u, dt) {
@@ -5070,6 +5085,7 @@ export class LandWorld {
       if (u.path.length && !foe) return false;
       if (u.path.length && foe && t.squad !== foe && Math.hypot(u.path[u.path.length - 1].x - u.x, u.path[u.path.length - 1].y - u.y) > 30)
         return false;
+      if (u.path.length && sq.clearGo > this.time) return false;
       u.path = [];
       let da = want - u.heading;
       da = Math.atan2(Math.sin(da), Math.cos(da));
@@ -5083,7 +5099,7 @@ export class LandWorld {
     }
     if (aimed && this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0)) && this.shotBlocked(u, t, w)) {
       aimed = false;
-      this.seekClear(sq, u, t);
+      this.seekClear(sq, u, t, w);
     }
     if (aimed && specialAttack(this, u, t, dt)) {
       if (u.special && u.special.kind === 'quake') this.setAnim(u, 'attack');
@@ -5111,10 +5127,21 @@ export class LandWorld {
     if (u.flies || !(w.speed > 0) || lobOf(w) > 0) return false;
     const c = categoryOf(w.proj);
     if (c !== CAT.DEFAULT && c !== CAT.LASER) return false;
-    if (u.losT === t && this.time < u.losAt) return u.losBad;
-    u.losT = t;
-    u.losAt = this.time + 0.5;
-    return (u.losBad = this.lineBlocked(u.x, u.y, u.z + u.aimZ, t));
+    if (w.losT === t && this.time < w.losAt) return w.losBad;
+    w.losT = t;
+    w.losAt = this.time + 0.5;
+    let x = u.x,
+      y = u.y,
+      z = u.z + u.aimZ;
+    const M = w.muzzles && w.muzzles.length ? w.muzzles[w.fixed >= 0 ? w.fixed : 0] : null;
+    if (M) {
+      this.boneAt(u, M.bone, _up);
+      x = _up.x;
+      y = _up.y;
+      z = _up.z;
+    }
+    w.muzzleLift = z - u.z;
+    return (w.losBad = this.lineBlocked(x, y, z, t));
   }
 
   lineBlocked(x0, y0, z0, t) {
@@ -5132,25 +5159,46 @@ export class LandWorld {
     return false;
   }
 
-  seekClear(sq, u, t) {
+  seekClear(sq, u, t, w) {
     if (this.time < (sq.clearAt || 0) || sq.direct || u.rooted || u.setup || (u.needsDeploy && u.deployed) || !(u.speed > 0)) return;
     const box = this.teamOf(sq);
     if (sq.members.some(m => m.path.length) || (box && box.path.length)) return;
     sq.clearAt = this.time + 3;
-    const R = Math.min(u.range * 0.85, Math.hypot(u.x - t.x, u.y - t.y)),
-      base = Math.atan2(u.y - t.y, u.x - t.x),
-      lift = u.aimZ,
-      need = u.need || 1;
-    for (let k = 0; k <= 12; k++) {
+    const live = sq.members.filter(m => !m.dead);
+    if (!live.length) return;
+    const cx = live.reduce((a, m) => a + m.x, 0) / live.length,
+      cy = live.reduce((a, m) => a + m.y, 0) / live.length,
+      spread = Math.max(CELL, ...live.map(m => Math.hypot(m.x - cx, m.y - cy))),
+      R = Math.min(u.range * 0.85, Math.hypot(u.x - t.x, u.y - t.y)),
+      base = Math.atan2(cy - t.y, cx - t.x),
+      lift = w?.muzzleLift ?? u.aimZ,
+      need = u.need || 1,
+      clear = (x, y) => !this.lineBlocked(x, y, heightAt(this.terrain, x, y) + lift, t);
+    let best = null;
+    for (let k = 0; k <= 24; k++) {
       const a = base + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
-      for (const f of [1, 0.65]) {
+      for (const f of [1, 0.65, 0.4]) {
         const r = R * f,
           x = t.x + Math.cos(a) * r,
           y = t.y + Math.sin(a) * r;
-        if (r < u.minRange || !this.isOpen(x, y, need) || this.lineBlocked(x, y, heightAt(this.terrain, x, y) + lift, t)) continue;
-        this.order(sq, x, y, Math.atan2(t.y - y, t.x - x));
-        return;
+        if (r < u.minRange || Math.hypot(x - cx, y - cy) < CELL || !this.isOpen(x, y, need) || !clear(x, y)) continue;
+        const px = -Math.sin(a) * spread,
+          py = Math.cos(a) * spread,
+          bx = Math.cos(a) * spread,
+          by = Math.sin(a) * spread,
+          score = clear(x + px, y + py) + clear(x - px, y - py) + clear(x + bx, y + by);
+        if (score === 3) {
+          best = { x, y, score };
+          break;
+        }
+        if (score && (!best || score > best.score)) best = { x, y, score };
       }
+      if (best && best.score === 3) break;
+    }
+    if (best) {
+      this.order(sq, best.x, best.y, Math.atan2(t.y - best.y, t.x - best.x));
+      sq.clearGo = this.time + 2 + Math.hypot(best.x - cx, best.y - cy) / Math.max(5, u.speed);
+      return;
     }
     sq.clearAt = this.time + 6;
     sq.clearFail = this.time + 6;
@@ -5164,7 +5212,7 @@ export class LandWorld {
     }
     if (t && u.minRange > 0 && Math.hypot(t.x - u.x, t.y - u.y) < u.minRange) t = null;
     u.target = t;
-    if (!t) {
+    if (!t || (this.clearShots && globalThis.clearShots && this.shotBlocked(u, t, w))) {
       w.left = 0;
       return;
     }
