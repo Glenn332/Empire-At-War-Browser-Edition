@@ -125,6 +125,7 @@ async function setUp(m, events) {
     if (p.campaignTech !== undefined) pl.campaignTech = p.campaignTech;
     if (p.autofire !== undefined) pl.autofire = p.autofire;
     if (p.spawn) pl.spawn = p.spawn;
+    if (p.upgrades) for (const u of p.upgrades) pl.upgrades.add(u);
   }
   w.viewer = w.players.find(p => p.human) || null;
   for (const f of m.fields) w.fields.push(f);

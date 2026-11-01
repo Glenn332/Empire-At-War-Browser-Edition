@@ -109,7 +109,16 @@ export class SpaceRecorder {
     }
     this.players = w.players
       .filter(p => p.id >= 0)
-      .map(p => [p.id, p.credits, p.pop, p.popCap, p.popExtra, (p.reinforcements || []).map(t => t.name).join('|')]);
+      .map(p => [
+        p.id,
+        p.credits,
+        p.pop,
+        p.popCap,
+        p.popExtra,
+        (p.reinforcements || []).map(t => t.name).join('|'),
+        [...p.upgrades].join('|'),
+        p.everBought ? [...p.everBought].map(([t, n]) => t.name + '=' + n).join('|') : ''
+      ]);
     for (let i = 0; i < qs.length; i++) {
       const q = qs[i];
       U[o] = q.id;

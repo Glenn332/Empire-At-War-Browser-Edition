@@ -377,7 +377,7 @@ export class SpaceMirror {
       st.timer = A[o + 3];
       st.cooldown = A[o + 4];
     }
-    for (const [id, credits, pop, popCap, popExtra, called] of m.players) {
+    for (const [id, credits, pop, popCap, popExtra, called, upgrades, bought] of m.players) {
       const p = w.players.find(x => x.id === id);
       if (!p) continue;
       p.credits = credits;
@@ -392,6 +392,20 @@ export class SpaceMirror {
               .map(n => db.type(n))
               .filter(Boolean)
           : [];
+      }
+      if (p.mirrorUpgrades !== upgrades) {
+        p.mirrorUpgrades = upgrades;
+        p.upgrades.clear();
+        for (const n of upgrades ? upgrades.split('|') : []) p.upgrades.add(n);
+      }
+      if (p.mirrorBought !== bought) {
+        p.mirrorBought = bought;
+        p.everBought = new Map();
+        for (const kv of bought ? bought.split('|') : []) {
+          const i = kv.lastIndexOf('='),
+            t = db.type(kv.slice(0, i));
+          if (t) p.everBought.set(t, +kv.slice(i + 1));
+        }
       }
     }
     const held = new Set();
