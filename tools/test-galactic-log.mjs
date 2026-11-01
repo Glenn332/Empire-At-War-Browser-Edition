@@ -84,7 +84,7 @@ assert.equal(g.players[0].advisorHints.Space, true, 'Snapshot flags do not alias
 
 g.fiscal = { cycle: 4, previous: 0, next: 45 };
 const record = appendLog(g, 'A long original message', [21, 42, 63, 255]);
-assert.equal(record.heading, db.t('TEXT_LOG_CYCLE_01').replace('##0', '4'));
+assert.equal(record.heading, db.t('TEXT_LOG_CYCLE_01').replace('##0', '5'), 'The log heading counts days from 1');
 const rows = logRows(g);
 assert.equal(rows.length, 3);
 assert.equal(rows[0].wrap, false);
