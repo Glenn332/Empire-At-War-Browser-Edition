@@ -23,7 +23,7 @@ export async function openLobby({
   const st = {
     preBuilt: true,
     mode: 'space',
-    custom: false,
+    custom: !maps.length && !landMaps.length && !!(customMaps.space.length || customMaps.land.length),
     mapFile: init.mapFile,
     teamFactions: init.teamFactions.slice(),
     credits: init.credits,
