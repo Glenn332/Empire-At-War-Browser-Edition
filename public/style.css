@@ -978,9 +978,14 @@ body:not(.original-hud) .heroframe {
   display: none;
 }
 .hb-native.sel > .hb-art-sel,
-.hb-native:hover:not(.dis) > .hb-art-over,
-.hb-native.dis > .hb-art-dis {
+.hb-native:hover:not(.dis) > .hb-art-over {
   display: block;
+}
+.hb-native.dis > .hb-art-blank {
+  background-image: var(--dis), var(--blank) !important;
+}
+.hb-native.galactic-build.dis > .hb-art {
+  filter: brightness(0.502);
 }
 .hb-native.hb-swap.sel:not(.dis) > .hb-art-icon,
 .hb-native.hb-swap:hover:not(.dis) > .hb-art-icon {

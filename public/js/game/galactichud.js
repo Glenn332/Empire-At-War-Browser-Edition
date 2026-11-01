@@ -228,6 +228,16 @@ export class GalacticBar extends CommandBar {
       });
       b.setAttribute('role', 'button');
       b.dataset.control = name;
+      b.classList.add('galactic-build');
+      b.addEventListener('pointerenter', e => {
+        this.game.buildTip = { slot: i, b, x: e.clientX, y: e.clientY };
+      });
+      b.addEventListener('pointermove', e => {
+        if (this.game.buildTip?.b === b) Object.assign(this.game.buildTip, { x: e.clientX, y: e.clientY });
+      });
+      b.addEventListener('pointerleave', () => {
+        if (this.game.buildTip?.b === b) this.game.buildTip = null;
+      });
       const cost = (b._cost = document.createElement('span'));
       this.positionCount(cost, name, true);
       b.appendChild(cost);
@@ -466,7 +476,9 @@ export class GalacticBar extends CommandBar {
         why = productionBlock(g, p.index, game.me, t, context);
       b.dataset.type = t.name;
       b.setAttribute('aria-label', label(t));
-      b.title = label(t) + '\n$ ' + cost + (why ? '\n' + db.t(why) : '');
+      b.removeAttribute('title');
+      b._price = cost;
+      b._status = /^TEXT_PRODUCTION_/.test(why || '') ? why : null;
       this.setButtonImage(
         b,
         'icon',

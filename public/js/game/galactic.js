@@ -1116,6 +1116,7 @@ export class GalacticGame {
       seen.set(f, f.leg);
       const p = this.galaxy.planets[f.leg.b];
       if (first || !p || p.owner !== this.me || relation(f.owner, this.me) !== 1 || hidden(f)) continue;
+      if (!this.galaxy.fleets.some(x => x.planet === p.index && !x.leg && x.owner === this.me && x.units.length)) continue;
       const now = performance.now();
       if (now - (this.approachWarnedAt ?? -Infinity) < 5000) continue;
       this.approachWarnedAt = now;
@@ -1762,6 +1763,22 @@ export class GalacticGame {
     if (!encyclopedia) return;
     const tips = (this.tips ||= new TooltipGate(this, encyclopedia));
     tips.update();
+    const build = this.buildTip,
+      b = build?.b;
+    if (b && b._type && b.style.display !== 'none') {
+      const type = b._type,
+        price = b._price;
+      tips.hover({
+        id: 'build:' + build.slot,
+        key: 'build:' + type.name + ':' + price,
+        show: () => {
+          encyclopedia.showType(type, false, price);
+          if (b._status) encyclopedia.linked(db.t(b._status), build.x, build.y);
+        }
+      });
+      if (tips.popup) encyclopedia.moveLinked(build.x, build.y);
+      return;
+    }
     const idle = this.mouse.in !== false && !this.dragFleet && this.dragGround === undefined,
       at = idle ? this.pickCorruptionIcon(this.mouse.x, this.mouse.y) : null;
     const stack =

@@ -116,7 +116,7 @@ export class GalacticEncyclopedia {
       }
     );
   }
-  async showType(type, droid = true) {
+  async showType(type, droid = true, cost) {
     this.type = type;
     const generation = ++this.generation;
     await this.warm([
@@ -151,9 +151,12 @@ export class GalacticEncyclopedia {
     items.push(
       ...this.text(db.t(type.str('Text_ID')) || type.name, 'ENCYCLOPEDIA_HEADER_TEXT', {
         x: this.headerX(C.num('Encyclopedia_Name_Offset', 68) + shift),
-        extra: 8
+        extra: 8,
+        end: cost === undefined
       })
     );
+    if (cost !== undefined)
+      items.push(...this.text('$ ' + Math.round(cost), 'ENCYCLOPEDIA_COST_TEXT', { x: this.headerX(C.num('Encyclopedia_Cost_Offset', 250)) }));
     items.push(
       ...this.text(db.t(type.str('Encyclopedia_Unit_Class')), 'ENCYCLOPEDIA_TEXT', {
         x: C.num('Encyclopedia_Name_Offset', 68) + shift,
