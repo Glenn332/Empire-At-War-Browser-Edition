@@ -3,7 +3,7 @@ import { planetAllowsCompany } from './invasion.js';
 import { simRandom } from './simrandom.js';
 
 const spawners = new Map();
-const isSpawner = t => {
+export const isSpawner = t => {
   let v = spawners.get(t);
   if (v === undefined) spawners.set(t, (v = /\bSPAWN_SQUADRON\b/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior'))));
   return v;

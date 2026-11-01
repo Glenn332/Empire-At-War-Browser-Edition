@@ -19,6 +19,7 @@ import { setOf, priorityOf } from './priorities.js';
 import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
 import { tickCollisions, resetCollideIds } from './landcollide.js';
+import { isSpawner } from './landgarrison.js';
 import { collisionOf, meshHit } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
 import {
@@ -2273,6 +2274,10 @@ export class LandWorld {
       }))
     });
     this.arm(u, type, side, () => 1);
+    if (site.pad || site.mdu) {
+      const from = uc !== type ? uc : site.mdu?.type || site.pad;
+      u.noGarrison = !(from && isSpawner(from)) || !!site.mdu?.noGarrison;
+    }
     const proj = u.weapon && u.weapon.proj;
     if (proj) {
       const tb = inst.bone(type.str('Turret_Bone_Name'));
