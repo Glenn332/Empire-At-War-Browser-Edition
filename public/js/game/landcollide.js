@@ -49,6 +49,7 @@ function gather(W) {
     b.side = u.side;
     b.v = (b.v ?? 0) * 0.75 + (u.v ?? 0) * 0.25;
     b.max = u.rooted || u.stunUntil > W.time ? 0 : (u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * W.paceOf(u);
+    b.min = b.max * Math.min(1, (u.minFrac ??= u.type.num('Min_Speed', 0) / (u.type.num('Max_Speed', 0) || 1)));
     b.moving = b.path.length > 0 && b.max > 0;
     b.need = u.need || 2;
     b.form = u.squad.formMove || null;
@@ -77,6 +78,7 @@ function gather(W) {
     b.hx = Math.max(4, box.rear || 4);
     b.hy = Math.max(4, box.hw || 4);
     b.max = q.formSpeed ? Math.min(box.max, q.formSpeed.v) : box.max;
+    b.min = b.max * Math.min(1, (q.minFrac ??= u.type.num('Min_Speed', 0) / (u.type.num('Max_Speed', 0) || 1)));
     b.moving = !q.ext && b.path.length > 0;
     b.need = u.need || 1;
     b.form = q.formMove || null;
@@ -172,7 +174,7 @@ function runsInto(a, b, far) {
 
 function holdOff(a, b, T) {
   const vmax = a.max,
-    vmin = 0;
+    vmin = Math.min(vmax, a.min || 0);
   let dx = b.x - a.x,
     dy = b.y - a.y;
   const d = Math.hypot(dx, dy) || 1;
@@ -259,10 +261,13 @@ function wayRound(W, s, m, T) {
   while (k < s.path.length - 1 && (s.path[k].x - s.x) * fx + (s.path[k].y - s.y) * fy < f1) k++;
   const on = s.path[k],
     need = s.need;
-  for (const lat of sides) {
+  const others = (W.ccBodies || []).filter(o => o !== s && o !== m && !o.moving),
+    rs = radius(s),
+    taken = p => others.some(o => (o.x - p.x) ** 2 + (o.y - p.y) ** 2 < (radius(o) + rs) ** 2);
+  for (const lat of sides.flatMap(l => [l, l * 1.6, l * 2.2])) {
     const a = { x: s.x + fx * Math.max(0, f0) + nx * lat, y: s.y + fy * Math.max(0, f0) + ny * lat };
     const b = { x: s.x + fx * f1 + nx * lat, y: s.y + fy * f1 + ny * lat };
-    if (!W.isOpen(a.x, a.y, need) || !W.isOpen(b.x, b.y, need)) continue;
+    if (!W.isOpen(a.x, a.y, need) || !W.isOpen(b.x, b.y, need) || taken(a) || taken(b)) continue;
     if (!W.clear(s.x, s.y, a.x, a.y, need) || !W.clear(a.x, a.y, b.x, b.y, need) || !W.clear(b.x, b.y, on.x, on.y, need)) continue;
     a.round = b.round = true;
     s.path.splice(0, k, a, b);
@@ -273,7 +278,7 @@ function wayRound(W, s, m, T) {
 
 function busy(b) {
   const u = unitOf(b);
-  return !u || !!u.target || !!(u.squad && u.squad.foe);
+  return !u || !!u.rooted || !!u.inside || !!u.setup || !!(u.needsDeploy && u.deployed);
 }
 
 function standAside(W, mover, b, bodies) {
@@ -461,7 +466,7 @@ export function tickCollisions(W) {
         if (c.state === MM.PATH_AROUND) {
           if (!S.path.some(p => p.round) || Math.cos(M.h) * (S.x - M.x) + Math.sin(M.h) * (S.y - M.y) < -(radius(M) + radius(S))) continue;
         } else if (look && !(c.a.moving && c.b.moving && willMeet(c.a, c.b, T))) continue;
-        if (c.state === MM.PATH_AROUND) M.cap = Math.min(M.cap, crushes(W, M, S) ? Infinity : laneSpeed(M, S, T));
+        if (c.state === MM.PATH_AROUND) M.cap = Math.min(M.cap, crushes(W, M, S) || M.path.some(p => p.round) ? Infinity : laneSpeed(M, S, T));
         else if (c.state === MM.SPEED_ONLY || c.state === MM.SPEED_SLAVE)
           S.cap = Math.min(S.cap, crushes(W, S, M) ? Infinity : holdOff(S, M, T));
         else if (c.state === MM.PASS) {
@@ -512,7 +517,7 @@ export function tickCollisions(W) {
       for (let j = gy - 1; j <= gy + 1; j++)
         for (const b of grid.get(i * 65536 + j) || []) {
           if (b === a || inColl.has(a.id * 1e6 + b.id)) continue;
-          if (a.cls < 6 && b.cls < 6) continue;
+          if (a.cls <= 6 && b.cls <= 6) continue;
           const rb = radius(b);
           if (Math.abs(b.x - a.x) > 80 + rb || Math.abs(b.y - a.y) > 80 + rb) continue;
           const crushEither = crushes(W, a, b) || crushes(W, b, a);
@@ -550,5 +555,42 @@ export function tickCollisions(W) {
   for (const b of bodies) {
     if (b.u) b.u.ccCap = b.cap;
     else b.q.ccCap = b.cap;
+  }
+  for (const a of bodies) {
+    const u = a.u;
+    if (!u) continue;
+    u.ccPush = null;
+    if (!a.moving || a.cls > 6) continue;
+    const gx = Math.floor(a.x / CELLS),
+      gy = Math.floor(a.y / CELLS),
+      ca = Math.cos(a.h),
+      sa = Math.sin(a.h),
+      pushes = [];
+    for (let i = gx - 1; i <= gx + 1; i++)
+      for (let j = gy - 1; j <= gy + 1; j++)
+        for (const b of grid.get(i * 65536 + j) || []) {
+          if (b === a || b.cls > 6) continue;
+          const dx = b.x - a.x,
+            dy = b.y - a.y,
+            d = Math.hypot(dx, dy),
+            R = 1.3 * (radius(a) + radius(b));
+          if (d >= R || ca * dx + sa * dy < 0) continue;
+          const side = -sa * dx + ca * dy > 0 ? -1 : 1,
+            px = -sa * side,
+            py = ca * side;
+          if (!W.isOpen(a.x + px * 25, a.y + py * 25, a.need)) continue;
+          const w = 1 - d / R;
+          pushes.push({ x: px * w, y: py * w, w });
+        }
+    if (!pushes.length) continue;
+    pushes.sort((p, q) => q.w - p.w);
+    const top = pushes[0];
+    let x = 0,
+      y = 0;
+    for (const p of pushes) if (p.x * top.x + p.y * top.y >= -0.5 * p.w * top.w) {
+      x += p.x;
+      y += p.y;
+    }
+    u.ccPush = { x, y };
   }
 }

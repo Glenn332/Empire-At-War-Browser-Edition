@@ -7286,7 +7286,8 @@ export class LandWorld {
         const dx = next.x - u.x,
           dy = next.y - u.y,
           d = Math.hypot(dx, dy);
-        const want = Math.atan2(dy, dx);
+        const P = u.ccPush,
+          want = P && d > 0 ? Math.atan2(dy / d + P.y, dx / d + P.x) : Math.atan2(dy, dx);
         let da = want - u.heading;
         da = Math.atan2(Math.sin(da), Math.cos(da));
         if (u.stopping && u.stopping.to !== u.path[u.path.length - 1]) u.stopping = null;
@@ -7359,10 +7360,15 @@ export class LandWorld {
           if (u.flies || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
             u.x = fx;
             u.y = fy;
+            u.blockFails = 0;
           } else if (this.isOpen(u.x + (dx / d) * go, u.y + (dy / d) * go, (u.need & ~3) | 1)) {
             u.x += (dx / d) * go;
             u.y += (dy / d) * go;
-          } else if (!this.blocked(u, next)) u.path = [];
+            u.blockFails = 0;
+          } else if (this.time >= (u.detourAt || 0) && !this.blocked(u, next) && (u.blockFails = (u.blockFails || 0) + 1) >= 5) {
+            u.path = [];
+            u.blockFails = 0;
+          }
         }
         const from = u.legFrom || u;
         if (d < Math.max(2, u.speed * dt * 1.5) || (next.x - u.x) * (next.x - from.x) + (next.y - u.y) * (next.y - from.y) <= 0) u.path.shift();
