@@ -203,8 +203,12 @@ export class AnimState {
         bone.quaternion.copy(_q0).slerp(_q1, k);
       } else if (t.defRot) bone.quaternion.set(t.defRot[0], t.defRot[1], t.defRot[2], t.defRot[3]).normalize();
       if (t.vis) {
+        if (!bone.userData.animHid) bone.userData.baseVis = bone.visible;
         bone.visible = ((t.vis[f0 >> 3] >> (f0 & 7)) & 1) === 1;
         bone.userData.animHid = !bone.visible;
+      } else if (bone.userData.animHid) {
+        bone.visible = bone.userData.baseVis ?? true;
+        bone.userData.animHid = false;
       }
     }
     this.inst.syncFromBones();

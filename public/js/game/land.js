@@ -1708,6 +1708,19 @@ export class LandWorld {
     const faction = pt.side < 0 ? '' : (this.factions[pt.side] || '').toUpperCase();
     const rows = pt.type.tuples('Faction_Anim_Subindex');
     if (rows.length) {
+      for (const [name, node] of pt.inst.meshByName) {
+        const m = /^(.+?)_SYMBOL/.exec(name);
+        if (!m) continue;
+        const on = !!faction && m[1] === faction,
+          bone = pt.inst.bone(name);
+        node.visible = true;
+        node.userData.hidByBone = false;
+        if (bone) {
+          bone.visible = on;
+          bone.userData.baseVis = on;
+          bone.userData.animHid = false;
+        }
+      }
       const row = rows.find(
         r =>
           String(r[0] || '')
@@ -5006,7 +5019,7 @@ export class LandWorld {
       const cone = (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG);
       aimed = Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone && (!u.anims?.attack || u.animKind === 'ATTACKIDLE' || u.animKind === 'attack' || u.once === 'attack');
     }
-    if (aimed && this.clearShots && globalThis.clearShots && this.shotBlocked(u, t, w)) {
+    if (aimed && this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0)) && this.shotBlocked(u, t, w)) {
       aimed = false;
       this.seekClear(sq, u, t);
     }
@@ -5078,6 +5091,7 @@ export class LandWorld {
       }
     }
     sq.clearAt = this.time + 6;
+    sq.clearFail = this.time + 6;
   }
 
   moveFire(u, w, foe, reach, dt) {
@@ -7293,9 +7307,26 @@ export class LandWorld {
           cap = Math.min((u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * pace, u.ccCap ?? Infinity),
           off = Math.abs(da),
           aligned = off <= u.turn * dt;
+        if (u.legTo !== next) {
+          u.legTo = next;
+          u.legFrom = { x: u.x, y: u.y };
+        }
         let goal = cap;
         if (!aligned) goal = Math.min(goal, off >= Math.PI / 2 ? 0 : (u.turn * d) / (2 * Math.sin(off)));
         if (u.path.length === 1 && L.dec < Infinity) goal = Math.min(goal, Math.sqrt(2 * L.dec * d));
+        else if (u.path.length > 1 && L.dec < Infinity) {
+          const after = u.path[1],
+            seg = Math.hypot(after.x - next.x, after.y - next.y);
+          let bend = Math.atan2(after.y - next.y, after.x - next.x) - Math.atan2(dy, dx);
+          bend = Math.abs(Math.atan2(Math.sin(bend), Math.cos(bend)));
+          if (bend > 1e-3 && seg > 0) {
+            const corner = Math.max(
+              0.1 * cap,
+              Math.min((u.turn / (1 - Math.cos(bend))) * Math.max(20, Math.min(100, seg / 2)), (seg * u.turn) / (2 * bend))
+            );
+            goal = Math.min(goal, Math.sqrt(corner * corner + 2 * L.dec * d));
+          }
+        }
         const frac = cap > 0 ? goal / cap : 0,
           mv = u.mv || 0,
           pivot = !aligned && !(mv > 0) && (off > L.close || frac <= L.minFrac || frac < 0.05);
@@ -7317,7 +7348,8 @@ export class LandWorld {
             u.y += (dy / d) * go;
           } else if (!this.blocked(u, next)) u.path = [];
         }
-        if (d < Math.max(2, u.speed * dt * 1.5)) u.path.shift();
+        const from = u.legFrom || u;
+        if (d < Math.max(2, u.speed * dt * 1.5) || (next.x - u.x) * (next.x - from.x) + (next.y - u.y) * (next.y - from.y) <= 0) u.path.shift();
         if (!u.path.length) u.mv = 0;
         this.setAnim(u, pivot ? (da > 0 ? 'turnL' : 'turnR') : 'move');
         this.moveRate(u);
