@@ -5353,7 +5353,7 @@ export class LandWorld {
     }
     if (/^TURN[LR]/.test(K)) {
       const r = t.num('Rotation_Animation_Speed', 0),
-        turn = t.num('Stopped_Rate_Of_Turn', 0) > 0 ? t.num('Stopped_Rate_Of_Turn', 0) : t.num('Max_Rate_Of_Turn', 0);
+        turn = t.num('Stopped_Rate_Of_Turn', 0) > 0 ? t.num('Stopped_Rate_Of_Turn', 0) : t.num('Max_Rate_Of_Turn', 0) * landSpeedFactor();
       return r > 0 && turn > 0 ? turn / r : 1;
     }
     return 1;
@@ -5391,9 +5391,12 @@ export class LandWorld {
       rate = v => (v > 0 && u.speed > 0 && !u.walkTrans ? (v / max) * u.speed * LOGIC_FPS : Infinity),
       close = t.num('Close_Enough_Angle_For_Move_Start', 0) || db.constants.num('CloseEnoughAngleForMoveStart', 180),
       sc = t.num('Scale_Factor', 1) || 1;
+    const walkAcc = u.walkTrans ? this.walkRate(u, 'MOVESTART', u.speed / LOGIC_FPS) : 0,
+      walkDec = u.walkTrans ? this.walkDecel(u) : 0;
     return {
-      acc: rate(t.num('OverrideAcceleration', 0)),
-      dec: rate(t.num('OverrideDeceleration', 0)),
+      acc: walkAcc > 0 ? walkAcc : rate(t.num('OverrideAcceleration', 0)),
+      dec: walkDec > 0 ? walkDec : rate(t.num('OverrideDeceleration', 0)),
+      pending: !!u.walkTrans && !(walkAcc > 0),
       minFrac: t.num('Min_Speed_Fraction_For_Turn', 0),
       close: close * DEG,
       len: t.num('Overall_Length', 0) * sc,
@@ -5463,14 +5466,18 @@ export class LandWorld {
     return { anim, rate: Math.max(rate, full * 0.05) };
   }
 
-  walkDecel(u) {
+  walkRate(u, kind, v) {
     const t = u.type,
       B = t.num('Scale_Factor', 1) * t.num('Movement_Animation_Speed', 0),
-      s = variants(t, 'MOVESTART'),
-      n = s && s[0].frames;
-    if (!(B > 0) || !n) return 0;
-    const v = u.speed / LOGIC_FPS;
+      s = variants(t, kind),
+      n = s && s[0].frames - (kind === 'MOVESTART' ? 0 : 1);
+    if (!(B > 0) || !(n > 0) || !(v > 0)) return 0;
     return (B / n) * (v / B) * (v / B) * LOGIC_FPS * LOGIC_FPS;
+  }
+
+  walkDecel(u) {
+    const V = u.speed / LOGIC_FPS;
+    return this.walkRate(u, 'MOVE_ENDONE', Math.max(0.75 * V, (u.v || u.speed) / LOGIC_FPS));
   }
 
   walkStopStarts(u, d) {
@@ -7310,6 +7317,7 @@ export class LandWorld {
           this.show(u, dt);
           continue;
         }
+        if (u.loco?.pending) u.loco = null;
         const L = (u.loco ??= this.locoOf(u)),
           pace = this.paceOf(u),
           cap = Math.min((u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * pace, u.ccCap ?? Infinity),

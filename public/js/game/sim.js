@@ -188,6 +188,8 @@ const NEBULA_KEEPS = new Set([
 const isFieldType = t => t.bool('Is_Asteroid_Field') || t.bool('Is_Nebula') || t.bool('Is_Ion_Storm');
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
+const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
+
 export class Team {
   constructor(id, factionName) {
     this.id = id;
@@ -371,11 +373,12 @@ export class Unit {
     this.scale = type.num('Scale_Factor', 1);
     this.armor = type.str('Armor_Type', 'Armor_Default');
     this.shieldArmor = type.str('Shield_Armor_Type', 'Shield_Default');
-    this.maxSpeed = type.num('Max_Speed', 0) * LOGIC_FPS;
-    this.minSpeed = type.num('Min_Speed', 0) * LOGIC_FPS;
-    this.turnRate = type.num('Max_Rate_Of_Turn', 1) * LOGIC_FPS * DEG;
+    const M = spaceSpeedFactor();
+    this.maxSpeed = type.num('Max_Speed', 0) * LOGIC_FPS * M;
+    this.minSpeed = type.num('Min_Speed', 0) * LOGIC_FPS * M;
+    this.turnRate = type.num('Max_Rate_Of_Turn', 1) * LOGIC_FPS * DEG * M;
     this.bankAngle = type.num('Bank_Turn_Angle', 0) * DEG;
-    this.accel = type.num('OverrideAcceleration', 0) * LOGIC_FPS * LOGIC_FPS || Math.max(10, this.maxSpeed * 0.6);
+    this.accel = type.num('OverrideAcceleration', 0) * LOGIC_FPS * LOGIC_FPS * M || Math.max(10, this.maxSpeed * 0.6);
     this.maxShield = type.num('Shield_Points', 0);
     this.shield = this.maxShield;
     this.shieldRate = type.num('Shield_Refresh_Rate', 0) / db.constants.num('ShieldRechargeIntervalInSecs', 3);
@@ -1363,7 +1366,7 @@ export class World {
       reach: spec.num('Damage_Radius', 0),
       dps: spec.num('Enemy_Damage_Per_Second', 0),
       decay: spec.num('Own_Damage_Per_Second', 0),
-      speed: type.num('Max_Speed', 1) * LOGIC_FPS
+      speed: type.num('Max_Speed', 1) * LOGIC_FPS * spaceSpeedFactor()
     };
     return u;
   }
@@ -4416,8 +4419,8 @@ export class World {
     return (
       t._fly ||
       (t._fly = {
-        lift: t.num('Max_Lift', 0) * LOGIC_FPS * DEG,
-        roll: (t.num('Max_Rate_Of_Roll', 0) || 5) * LOGIC_FPS * DEG,
+        lift: t.num('Max_Lift', 0) * LOGIC_FPS * DEG * spaceSpeedFactor(),
+        roll: (t.num('Max_Rate_Of_Roll', 0) || 5) * LOGIC_FPS * DEG * spaceSpeedFactor(),
         thrust: t.num('Max_Thrust', 0) * LOGIC_FPS * LOGIC_FPS,
         bank: t.num('Bank_Turn_Angle', 0) * DEG,
         strafe: t.num('Strafe_Distance', 0),
@@ -4548,6 +4551,37 @@ export class World {
         gy = c.y;
       }
       want = top;
+    }
+    if (mode === 'idle' && s && !tgt) {
+      const c = s.about || lead,
+        m = Math.max(1, Math.hypot(lead.x - c.x, lead.y - c.y));
+      if (m < 90) {
+        form = false;
+        let dx = u.x - c.x,
+          dy = u.y - c.y;
+        if (!dx && !dy) dx = 1;
+        const nd = Math.hypot(dx, dy);
+        if (lead === u) {
+          const a = 10 / nd,
+            ux = dx / nd,
+            uy = dy / nd;
+          gx = c.x + 60 * (Math.cos(a) * ux - Math.sin(a) * uy);
+          gy = c.y + 60 * (Math.sin(a) * ux + Math.cos(a) * uy);
+        } else {
+          const ch = Math.cos(lead.heading),
+            sh = Math.sin(lead.heading),
+            ox = u.slot.x - lead.slot.x,
+            oy = u.slot.y - lead.slot.y,
+            ahead = (lead.speed / LOGIC_FPS) * 40;
+          gx = lead.x + ch * ahead + 0.75 * (ch * ox - sh * oy);
+          gy = lead.y + sh * ahead + 0.75 * (sh * ox + ch * oy);
+        }
+        want = (nd / m) * 0.5 * LOGIC_FPS;
+      } else if (lead === u) {
+        gx = c.x;
+        gy = c.y;
+        want = low > 0 ? low : top;
+      }
     }
     if (form) {
       const ch = Math.cos(lead.heading),
