@@ -336,6 +336,37 @@ function endsOn(a, b) {
 
 const later = () => (FPS + Math.floor(simRandom() * 16)) / FPS;
 
+function similar(A, B) {
+  const a = A.u.type,
+    b = B.u.type;
+  if (a === b) return true;
+  if (a.str('FormationOrder').trim() !== b.str('FormationOrder').trim()) return false;
+  const ta = a.num('FormationSpacing', 0) * 10,
+    tb = b.num('FormationSpacing', 0) * 10;
+  return B.hx + tb >= A.hx && B.hy + tb >= A.hy && A.hx + ta >= B.hx && A.hy + ta >= B.hy;
+}
+
+function swapOrders(A, B) {
+  const ua = A.u,
+    ub = B.u,
+    F = A.form,
+    path = ua.path;
+  ua.path = ub.path;
+  ub.path = path;
+  A.path = ua.path;
+  B.path = ub.path;
+  for (const u of [ua, ub]) {
+    u.legTo = null;
+    u.stopping = null;
+  }
+  const ea = F.members?.find(e => e.q === ua.squad),
+    eb = F.members?.find(e => e.q === ub.squad);
+  if (ea && eb) [ea.dest, eb.dest] = [eb.dest, ea.dest];
+  const fa = ua.squad.formSpeed,
+    fb = ub.squad.formSpeed;
+  if (fa && fb) [fa.x, fa.y, fb.x, fb.y] = [fb.x, fb.y, fa.x, fa.y];
+}
+
 function classifyMM(W, c, T) {
   const A = c.a,
     B = c.b;
@@ -347,6 +378,20 @@ function classifyMM(W, c, T) {
     c.slave = slave;
   };
   if (A.form && A.form === B.form) {
+    if (!(A.cls <= 6 && B.cls <= 6) && A.u && B.u && A.path.length && B.path.length && similar(A, B)) {
+      const ch = Math.cos(A.h),
+        sh = Math.sin(A.h),
+        ga = A.path[A.path.length - 1],
+        gb = B.path[B.path.length - 1],
+        pa = ga.x * ch + ga.y * sh,
+        pb = gb.x * ch + gb.y * sh,
+        aLeads = (A.x - B.x) * ch + (A.y - B.y) * sh > 0.001,
+        bLeads = (B.x - A.x) * ch + (B.y - A.y) * sh > 0.001;
+      if ((aLeads && pb > pa) || (bLeads && pa > pb)) {
+        swapOrders(A, B);
+        return;
+      }
+    }
     const aheadA = Math.cos(B.h) * (A.x - B.x) + Math.sin(B.h) * (A.y - B.y);
     return aheadA > 0 ? set(MM.SPEED_SLAVE, A, B) : set(MM.SPEED_SLAVE, B, A);
   }

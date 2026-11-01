@@ -18,7 +18,7 @@ import { simRandom } from './simrandom.js';
 import { setOf, priorityOf } from './priorities.js';
 import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
-import { tickCollisions, resetCollideIds } from './landcollide.js';
+import { tickCollisions, resetCollideIds, collisionClass } from './landcollide.js';
 import { isSpawner } from './landgarrison.js';
 import { collisionOf, meshHit } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
@@ -5808,6 +5808,87 @@ export class LandWorld {
         m.stall = 0;
         for (const u of M.members) u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
         if (M.post) M.post = { x: spot.x, y: spot.y };
+      }
+    this.standSingles(least, now);
+  }
+
+  boxOverlap(a, b) {
+    const ext = u => [u.type.num('Custom_Hard_XExtent', 0) || u.body || 10, u.type.num('Custom_Hard_YExtent', 0) || u.body || 10],
+      [ax, ay] = ext(a),
+      [bx, by] = ext(b),
+      cx = b.x - a.x,
+      cy = b.y - a.y;
+    let least = 1;
+    for (const h of [a.heading, a.heading + Math.PI / 2, b.heading, b.heading + Math.PI / 2]) {
+      const nx = Math.cos(h),
+        ny = Math.sin(h),
+        half = (u, x, y) => x * Math.abs(Math.cos(u.heading) * nx + Math.sin(u.heading) * ny) + y * Math.abs(-Math.sin(u.heading) * nx + Math.cos(u.heading) * ny),
+        sum = half(a, ax, ay) + half(b, bx, by);
+      if (!(sum > 0)) continue;
+      least = Math.min(least, 1 - Math.abs(cx * nx + cy * ny) / sum);
+    }
+    return least;
+  }
+
+  standSingles(least, now) {
+    const solo = this.units.filter(
+      u =>
+        !u.dead &&
+        !u.structure &&
+        !u.flies &&
+        !u.inside &&
+        !u.path.length &&
+        u.speed > 0 &&
+        u.squad &&
+        !(u.squad.box && u.slot) &&
+        (u.ccls ??= collisionClass(u.type)) >= 5
+    );
+    const R = u => (u.standR ??= Math.hypot(u.type.num('Custom_Hard_XExtent', 0) || u.body || 10, u.type.num('Custom_Hard_YExtent', 0) || u.body || 10)),
+      fixed = u => !!(u.rooted || u.setup || (u.needsDeploy && u.deployed) || u.stunUntil > now || u.squad.busy || u.squad.pending);
+    for (let i = 0; i < solo.length; i++)
+      for (let j = i + 1; j < solo.length; j++) {
+        const a = solo[i],
+          b = solo[j],
+          ra = R(a),
+          rb = R(b),
+          d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d >= ra + rb || !(this.boxOverlap(a, b) > least)) continue;
+        if (now < (a.standRetry || 0) || now < (b.standRetry || 0)) continue;
+        if (a.target === b || b.target === a) continue;
+        a.standRetry = b.standRetry = now + 1;
+        const fa = fixed(a),
+          fb = fixed(b);
+        let M = null;
+        if (fa || fb) M = fa && fb ? null : fa ? b : a;
+        else if (a.ccls === 9 && b.ccls < 9) M = b;
+        else if (b.ccls === 9 && a.ccls < 9) M = a;
+        else {
+          const clear = (u, o) => (ra + rb - d) / Math.max(1, u.speed) + Math.abs(Math.atan2(Math.sin(Math.atan2(u.y - o.y, u.x - o.x) - u.heading), Math.cos(Math.atan2(u.y - o.y, u.x - o.x) - u.heading))) / Math.max(0.1, u.stopTurn || u.turn);
+          M = clear(a, b) <= clear(b, a) ? a : b;
+        }
+        if (!M) continue;
+        const O = M === a ? b : a,
+          rm = R(M),
+          dir = d < 1e-3 ? M.heading + Math.PI / 2 : Math.atan2(M.y - O.y, M.x - O.x),
+          need = M.need || 1,
+          cap = Math.min(10, 1.5 * rm);
+        let spot = null;
+        for (let ring = 0, r = 0, step = 1; ring < 20 && !spot; ring++) {
+          r += step;
+          step = Math.min(cap, step + 0.8);
+          const n = Math.max(ring ? 4 : 1, Math.floor((2 * Math.PI * r) / Math.max(1, rm)) + 1);
+          for (let k = 0; k < n && !spot; k++) {
+            const ang = dir + ((k & 1 ? 1 : -1) * Math.ceil(k / 2) * 2 * Math.PI) / n,
+              x = M.x + Math.cos(ang) * r,
+              y = M.y + Math.sin(ang) * r;
+            if (!this.isOpen(x, y, need)) continue;
+            if (solo.some(o => o !== M && Math.hypot(o.x - x, o.y - y) < R(o) + rm)) continue;
+            spot = { x, y };
+          }
+        }
+        if (!spot) continue;
+        const way = this.route(M.x, M.y, spot.x, spot.y, need);
+        if (way && way.length) M.path = way.slice();
       }
   }
 
