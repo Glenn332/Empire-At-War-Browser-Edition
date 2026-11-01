@@ -18,6 +18,59 @@ export class SpaceRecorder {
     this.queues = [];
     this.known = new Set();
     this.fresh = [];
+    this.sent = new Map();
+    this.props = [];
+    this.teams = [];
+    this.world_ = [];
+  }
+
+  changed(id, v) {
+    const k = JSON.stringify(v);
+    if (this.sent.get(id) === k) return;
+    this.sent.set(id, k);
+    this.props.push([id, v]);
+  }
+
+  writeProps() {
+    const w = this.world,
+      seen = new Set();
+    this.props = [];
+    const order = o => (o && o.x !== undefined && (o.kind === 'move' || o.kind === 'attackmove') ? [o.kind, o.x, o.y] : null);
+    for (const u of w.units) {
+      if (u.dead) continue;
+      seen.add(u.id);
+      const c = u.capture,
+        th = u.targetHp,
+        hs = th && th.unit && th.unit.hardpoints;
+      this.changed(u.id, [
+        u.player ? u.player.id : -1,
+        c ? c.progress : 0,
+        c && c.by ? c.by.id : -1,
+        u.lastHitTime ?? -100,
+        u.inNebula ? 1 : 0,
+        u.ionUntil || 0,
+        u.scriptHidden ? 1 : 0,
+        u.maxHealth || 0,
+        u.maxShield || 0,
+        order(u.order),
+        (u.queue || []).map(order).filter(Boolean),
+        hs && th.alive ? [th.unit.id, hs.indexOf(th)] : null
+      ]);
+    }
+    for (const q of w.squads) {
+      if (q.dead) continue;
+      seen.add(q.id);
+      this.changed(q.id, [q.player ? q.player.id : -1, q.fighters.map(f => f.id), order(q.order), (q.queue || []).map(order).filter(Boolean)]);
+    }
+    if (this.sent.size > seen.size * 2 + 256) for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
+    this.teams = w.teams.map(t => (t.station && !t.station.dead ? t.station.id : -1));
+    this.world_ = [
+      w.lastViewerCombat ?? null,
+      (w.reveals || []).map(r => [w.teams.indexOf(r.team), r.x, r.y, r.r, r.until === Infinity ? -1 : r.until]),
+      w.reveal ? 1 : 0,
+      w.fogLifted || 0,
+      (w.specialWeapons || []).map(sw => [sw.firedAt, sw.readyAt, sw.left])
+    ];
   }
 
   write() {
@@ -86,7 +139,7 @@ export class SpaceRecorder {
           const st = u.abilities[k];
           A[a] = u.id;
           A[a + 1] = k;
-          A[a + 2] = st.active ? 1 : 0;
+          A[a + 2] = (st.active ? 1 : 0) | (st.auto ? 2 : 0);
           A[a + 3] = st.timer || 0;
           A[a + 4] = st.cooldown || 0;
           a += ABILITY;
@@ -117,8 +170,13 @@ export class SpaceRecorder {
         p.popExtra,
         (p.reinforcements || []).map(t => t.name).join('|'),
         [...p.upgrades].join('|'),
-        p.everBought ? [...p.everBought].map(([t, n]) => t.name + '=' + n).join('|') : ''
+        p.everBought ? [...p.everBought].map(([t, n]) => t.name + '=' + n).join('|') : '',
+        p.stats,
+        p.bounty || 0,
+        p.lockedTech ? [...p.lockedTech].map(t => t.name) : [],
+        p.unlockedTech ? [...p.unlockedTech].map(t => t.name) : []
       ]);
+    this.writeProps();
     for (let i = 0; i < qs.length; i++) {
       const q = qs[i];
       U[o] = q.id;

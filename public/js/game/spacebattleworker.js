@@ -19,6 +19,7 @@ import { aiFreeStore } from './landbrain.js';
 import { execute } from './commands.js';
 import { stateHash } from './netgame.js';
 import { loadSpaceBrain } from './spacebrain.js';
+import { placeSpecialWeapons } from './superweapon.js';
 
 const TICK = 1 / 30;
 const AI_STEP_MS = 4,
@@ -128,6 +129,7 @@ async function setUp(m, events) {
     if (p.upgrades) for (const u of p.upgrades) pl.upgrades.add(u);
   }
   w.viewer = w.players.find(p => p.human) || null;
+  if (w.skirmish) placeSpecialWeapons(w, map.objects);
   for (const f of m.fields) w.fields.push(f);
   w.mapObjects = new Map();
   for (const [i, o] of map.objects.entries())
@@ -392,6 +394,9 @@ async function run(m) {
         players: rec.players,
         queues: rec.queues,
         pads: rec.pads,
+        props: rec.props,
+        teams: rec.teams,
+        state: rec.world_,
         fresh: rec.fresh.slice(),
         spawns: spawns.splice(0),
         events: events.splice(0),

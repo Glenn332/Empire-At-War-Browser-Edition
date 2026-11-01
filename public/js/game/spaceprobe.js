@@ -54,7 +54,7 @@ export function battleSnapshot(game, save = null, refs = null) {
         team: w.teams.indexOf(p.team),
         human: !!p.human,
         credits: p.credits,
-        popCap: p.popCap,
+        popCap: p.popCapFixed,
         color: p.color ? '#' + p.color.getHexString() : '#ffffff',
         difficulty: p.difficulty,
         name: p.name,

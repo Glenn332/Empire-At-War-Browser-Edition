@@ -1,5 +1,6 @@
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db } from '../gamedata.js';
+import { buildListFor } from './sim.js';
 import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
 import { battleSnapshot } from './spaceprobe.js';
 import { TURN } from './netgame.js';
@@ -146,6 +147,7 @@ export class SpaceMirror {
     if (Array.isArray(cmd.u)) out.u = cmd.u.map(wid).filter(Boolean);
     if (cmd.t) out.t = wid(cmd.t);
     if (cmd.b) out.b = wid(cmd.b);
+    if (Array.isArray(cmd.p)) out.p = cmd.p.map(([id, ...rest]) => [wid(id), ...rest]).filter(([id]) => id);
     return out;
   }
 
@@ -254,6 +256,64 @@ export class SpaceMirror {
     this.inFlight = false;
     lock.stepped();
     this.pump();
+  }
+
+  applyProps(m) {
+    const w = this.world,
+      player = id => (id < 0 ? w.neutral : w.players.find(p => p.id === id) || w.neutral),
+      order = o => (o ? { kind: o[0], x: o[1], y: o[2] } : { kind: 'idle' });
+    for (const [wid, v] of m.props || []) {
+      const e = this.byW.get(wid);
+      if (!e || e.dead) continue;
+      const pl = player(v[0]);
+      if (e.isSquad) {
+        e.player = pl;
+        e.fighters = v[1].map(id => this.byW.get(id)).filter(f => f && !f.dead);
+        e.order = order(v[2]);
+        e.queue = v[3].length ? v[3].map(order) : undefined;
+        continue;
+      }
+      if (e.player !== pl) {
+        e.player = pl;
+        if (!e.isPad && e.capture) {
+          e.buildList = pl.id >= 0 ? buildListFor(e.type, pl.factionName) : [];
+          e._lists = null;
+        }
+      }
+      if (e.capture) {
+        e.capture.progress = v[1];
+        e.capture.by = v[2] >= 0 ? player(v[2]) : null;
+      }
+      if (v[3] > (e.lastHitTime ?? -100)) e.radarHit = 3;
+      e.lastHitTime = v[3];
+      e.inNebula = !!v[4];
+      e.ionUntil = v[5];
+      e.scriptHidden = !!v[6];
+      if (v[7]) e.maxHealth = v[7];
+      if (v[8] || e.maxShield) e.maxShield = v[8];
+      e.order = order(v[9]);
+      e.queue = v[10].length ? v[10].map(order) : undefined;
+      const t = v[11] && this.byW.get(v[11][0]);
+      e.targetHp = (t && t.hardpoints && t.hardpoints[v[11][1]]) || null;
+    }
+    (m.teams || []).forEach((id, i) => {
+      const t = w.teams[i];
+      if (t) t.station = id >= 0 ? this.byW.get(id) || t.station : null;
+    });
+    const st = m.state;
+    if (st) {
+      if (st[0] !== null) w.lastViewerCombat = st[0];
+      w.reveals = st[1].map(([ti, x, y, r, until]) => ({ team: w.teams[ti], x, y, r, until: until < 0 ? Infinity : until })).filter(r => r.team);
+      w.reveal = !!st[2];
+      w.fogLifted = st[3];
+      (st[4] || []).forEach(([firedAt, readyAt, left], i) => {
+        const sw = w.specialWeapons && w.specialWeapons[i];
+        if (!sw) return;
+        sw.firedAt = firedAt;
+        sw.readyAt = readyAt;
+        sw.left = left;
+      });
+    }
   }
 
   apply(m) {
@@ -374,11 +434,12 @@ export class SpaceMirror {
       const u = this.byW.get(A[o]),
         st = u && u.abilities && u.abilities[A[o + 1]];
       if (!st) continue;
-      st.active = !!A[o + 2];
+      st.active = !!(A[o + 2] & 1);
+      st.auto = !!(A[o + 2] & 2);
       st.timer = A[o + 3];
       st.cooldown = A[o + 4];
     }
-    for (const [id, credits, pop, popCap, popExtra, called, upgrades, bought] of m.players) {
+    for (const [id, credits, pop, popCap, popExtra, called, upgrades, bought, stats, bounty, locked, unlocked] of m.players) {
       const p = w.players.find(x => x.id === id);
       if (!p) continue;
       p.credits = credits;
@@ -408,7 +469,14 @@ export class SpaceMirror {
           if (t) p.everBought.set(t, +kv.slice(i + 1));
         }
       }
+      if (stats) Object.assign(p.stats, stats);
+      p.bounty = bounty || 0;
+      const types = l => new Set((l || []).map(n => db.type(n)).filter(Boolean));
+      if (locked && (locked.length || p.lockedTech)) p.lockedTech = types(locked);
+      if (unlocked && (unlocked.length || p.unlockedTech)) p.unlockedTech = types(unlocked);
     }
+    this.applyProps(m);
+    this.game.advisor?.update(TICK);
     const held = new Set();
     for (const [wid, qs] of m.queues) {
       const u = this.byW.get(wid);
