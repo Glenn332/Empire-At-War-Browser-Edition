@@ -282,7 +282,7 @@ void main() {
   #ifdef NATIVE_MESH_GLOSS_EMISSIVE
   vec3 col = albedo * emissive * 2.0;
   #else
-  vec3 col = albedo * (emissive + diffuse * light) + specular * sunColor * sp * gloss * 0.6;
+  vec3 col = albedo * (2.0 * emissive + diffuse * light) + specular * sunColor * sp * gloss * 0.6;
   #endif
   col = mix(col, tint.rgb, tint.a);
   col = mix(col, vTint.rgb, vTint.a);

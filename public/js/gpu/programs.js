@@ -253,7 +253,7 @@ fn rock(p: vec3f) -> f32 {
   ${
     on('NATIVE_MESH_GLOSS_EMISSIVE')
       ? 'var col = albedo * D.emissive * 2.0;'
-      : 'var col = albedo * (D.emissive + D.diffuse * light) + D.specular * P.sunColor * sp * gloss * 0.6;'
+      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light) + D.specular * P.sunColor * sp * gloss * 0.6;'
   }
   col = mix(col, D.tint.rgb, D.tint.a);
   col = mix(col, v.vTint.rgb, v.vTint.a);
