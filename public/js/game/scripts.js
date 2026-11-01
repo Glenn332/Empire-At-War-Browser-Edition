@@ -10,6 +10,7 @@ import { simRandom } from './simrandom.js';
 import { namedSet } from './priorities.js';
 import { aidebug as D, who, group, targetOf, nameOf } from '../aidebug.js';
 import { installBattlePersistence } from './tacticalsave.js';
+import { tacticalPower } from './galacticforces.js';
 
 const settable = (o, k) => {
   for (let p = o; p; p = Object.getPrototypeOf(p)) {
@@ -378,7 +379,7 @@ export class ScriptHost {
       __name: t.name,
       Get_Name: () => t.name.toUpperCase(),
       Is_Hero: () => /HERO/.test(t.str('CategoryMask').toUpperCase()),
-      Get_Combat_Rating: () => t.num('AI_Combat_Power', 0),
+      Get_Combat_Rating: () => tacticalPower(t),
       Get_Score_Cost_Credits: () => t.num('Score_Cost_Credits', 0),
       Get_Max_Range: () => t.num('Targeting_Max_Attack_Distance', t.num('Max_Attack_Distance', 800)),
       Get_Min_Range: () => t.num('Targeting_Min_Attack_Distance', 0),

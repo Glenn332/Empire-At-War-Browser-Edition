@@ -43,6 +43,14 @@ export function strategicPower(type, seen = new Set()) {
   powerCache.set(type, power);
   return power;
 }
+export function tacticalPower(type) {
+  const company = type.list('Company_Units'),
+    team = company.length ? company : type.list('Squadron_Units'),
+    power = strategicPower(type);
+  if (!team.length || !db.type(team[0])?.bool('Create_Team')) return power;
+  const share = Math.fround(Math.trunc(type.num('Max_Squad_Size', 0)) / team.length);
+  return Math.fround((share >= 0 ? Math.min(share, 1) : 0) * power);
+}
 export function startingSpawns(type, tech, exact = false) {
   let cache = spawnCache.get(type);
   if (!cache) {
