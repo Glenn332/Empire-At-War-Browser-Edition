@@ -3523,6 +3523,7 @@ export class LandWorld {
       squad.mates = made;
       this.squads.push(squad);
     }
+    if (!saved) this.unloadGrid(made, x, y, heading);
     for (const q of squads) q.forming = false;
     for (const q of made)
       if (q.scriptQueue) {
@@ -3531,6 +3532,64 @@ export class LandWorld {
         for (const go of list) go();
       }
     return made[0] || squads[0];
+  }
+
+  unloadGrid(made, x, y, heading) {
+    const entries = [];
+    for (const q of made) {
+      if (q.scriptPosition) return;
+      const m = q.members.filter(u => !u.dead && !u.inside);
+      if (!m.length) continue;
+      if (m.length > 1 && m.every(u => u.foot && !u.flies && /LAND_TEAM_INFANTRY_LOCOMOTOR/i.test(u.type.str('LandBehavior')))) {
+        let X = 0,
+          Y = 0,
+          gap = 0;
+        for (const u of m) {
+          X = Math.max(X, soldierExtent(u, 'X'));
+          Y = Math.max(Y, soldierExtent(u, 'Y'));
+          gap = Math.max(gap, u.type.num('FormationSpacing', 0) * 20);
+        }
+        const cols = Math.ceil(Math.sqrt(m.length)),
+          rows = Math.ceil(m.length / cols);
+        entries.push({ units: m, cx: 1.5 * (rows * (2 * X + gap) - gap), cy: 1.5 * (cols * (2 * Y + gap) - gap) });
+      } else
+        for (const u of m) {
+          const g = u.type.num('FormationSpacing', 0) * 20;
+          entries.push({ units: [u], cx: 2 * soldierExtent(u, 'X') + g, cy: 2 * soldierExtent(u, 'Y') + g });
+        }
+    }
+    const n = entries.length;
+    if (!n) return;
+    const cx = Math.max(...entries.map(e => e.cx)),
+      cy = Math.max(...entries.map(e => e.cy)),
+      S = Math.sqrt(Math.max(400, n * cx * cy * 1.8)),
+      per = Math.max(1, Math.floor(S / cy)),
+      rows = Math.ceil(n / per),
+      c = Math.cos(heading),
+      s = Math.sin(heading);
+    entries.forEach((e, i) => {
+      const r = Math.floor(i / per),
+        cnt = Math.min(per, n - r * per),
+        fx = ((rows - 1) / 2 - r) * cx,
+        fy = ((i % per) - (cnt - 1) / 2) * (S / cnt);
+      let px = x + c * fx - s * fy,
+        py = y + s * fx + c * fy;
+      const need = Math.max(...e.units.map(u => u.need || 1));
+      if (!this.isOpen(px, py, need)) {
+        const o = this.nearestOpen(px, py, need);
+        if (o) {
+          px = o.x;
+          py = o.y;
+        }
+      }
+      const mx = e.units.reduce((a, u) => a + u.x, 0) / e.units.length,
+        my = e.units.reduce((a, u) => a + u.y, 0) / e.units.length;
+      for (const u of e.units) {
+        u.x = px + u.x - mx;
+        u.y = py + u.y - my;
+        u.holder.position.set(u.x, u.y, heightAt(this.terrain, u.x, u.y) + (u.lift || 0) + (u.hoverZ || 0));
+      }
+    });
   }
 
   playOnce(u, kind, loop = false) {
