@@ -29,7 +29,7 @@ import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
 import { Decals, scorch } from './landdecals.js';
-import { addHouse, addWall, addCapturable, putInside, tickCapturables } from './landbase.js';
+import { addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf } from './landbase.js';
 import { loadLandTables } from './landtables.js';
 import { loadClashes } from './landclash.js';
 import { LandCinematic } from './landcine.js';
@@ -599,6 +599,7 @@ export class LandGame {
     }));
     world.campaign = !!setup.campaign;
     world.clearShots = !setup.net;
+    world.fowOn = setup.fog !== false;
     world.autofireSides = new Set(!setup.net && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
     world.isHumanSide = s => !!this.players?.[s]?.human;
     const treasury = setup.campaign?.treasury;
@@ -2807,6 +2808,7 @@ export class LandGame {
       }
     }
     this.ui.drawRadar();
+    this.fogFade(real);
     if (w.interp) {
       w.lerpIn((this.acc || 0) / LAND_TICK);
       w.poseQueued(dt);
@@ -4045,6 +4047,58 @@ export class LandGame {
     for (; k < this.zones.length; k++) this.zones[k].visible = false;
   }
 
+  fogFade(dt) {
+    const w = this.world,
+      on = this.setup.fog !== false && !this.reveal && !this.tacticalCinematics?.on,
+      k = 8,
+      x = k * Math.min(dt, 0.1),
+      e = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+    for (const u of w.units) {
+      if (u.dead || u.inside || u.scriptHidden || !u.holder) continue;
+      const want = !on || u.seen !== false ? 1 : 0;
+      if (u.fogA === undefined) {
+        u.fogA = want;
+        u.fogV = 0;
+      }
+      if (u.fogA !== want) {
+        const t = (u.fogV + k * (u.fogA - want)) * dt;
+        u.fogA = want + (u.fogA - want + t) * e;
+        u.fogV = (u.fogV - k * t) * e;
+        if (Math.abs(u.fogA - want) < 1e-4) {
+          u.fogA = want;
+          u.fogV = 0;
+        }
+      }
+      u.holder.visible = u.fogA > 0.025;
+      if (u.cloakFade || (u.fogA >= 1 && !u.fogFading)) continue;
+      u.fogFading = u.fogA < 1;
+      w.skin(u).fade = u.fogFading ? 1 - u.fogA : -1;
+    }
+  }
+
+  garrisonPips(g, u, x, y) {
+    const img = name => {
+      const c = (this.pipImages ||= new Map());
+      if (!c.has(name)) {
+        const im = new Image();
+        const url = iconUrl(name);
+        if (url) im.src = url;
+        c.set(name, im);
+      }
+      return c.get(name);
+    };
+    const on = img('i_dialogue_radio_on.tga'),
+      off = img('i_dialogue_radio_off.tga');
+    if (!off.complete || !off.naturalWidth) return;
+    const k = 0.5 * Math.min(innerHeight / 768, innerWidth / 1024),
+      pw = off.naturalWidth * k,
+      ph = off.naturalHeight * k,
+      used = usedOf(u),
+      n = u.slots;
+    let px = x - ((n - 1) * pw) / 2 - pw / 2;
+    for (let i = 0; i < n; i++, px += pw) g.drawImage(i < used && on.naturalWidth ? on : off, px, y - ph, pw, ph);
+  }
+
   drawBars() {
     const c = this.bars,
       w = this.world,
@@ -4090,9 +4144,12 @@ export class LandGame {
         abilityMark(u.squad, s[0], s[1]);
         continue;
       }
-      if (!u.squad.selected && u.health >= u.maxHealth && u.shield >= u.maxShield) continue;
+      const pips = u.slots > 0 && (u.squad.selected || this.ui.hover === u.squad);
+      if (!pips && !u.squad.selected && u.health >= u.maxHealth && u.shield >= u.maxShield) continue;
       const s = at(u.x, u.y, u.z + u.aimZ * 2.2 + 4);
       if (!s) continue;
+      if (pips) this.garrisonPips(g, u, s[0], s[1] - 2);
+      if (!u.squad.selected && u.health >= u.maxHealth && u.shield >= u.maxShield) continue;
       const wd = u.structure ? 70 : u.maxHealth > 150 ? 44 : 22,
         f = Math.max(0, u.health / u.maxHealth);
       g.fillStyle = 'rgba(0,0,0,.7)';

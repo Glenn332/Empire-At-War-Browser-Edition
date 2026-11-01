@@ -1028,9 +1028,68 @@ export class LandWorld {
   }
   targetEnemy(a, b) {
     if (b.untargetable) return false;
+    if (this.fowOn && !this.sightOf(a.side, b)) return false;
     if (!(a.confuseUntil > this.time)) return this.enemy(a, b);
     return this.ally(a.side, b.side) && (a.side !== this.wild || !!a.squad?.native) && (b.side !== this.wild || !!b.squad?.native);
   }
+  sightOf(side, e) {
+    const T = this.team[side];
+    if (T === undefined || e.side < 0 || this.team[e.side] === T) return true;
+    if (!(e.type._fogs ??= /\b(HIDE_WHEN_FOGGED|TEAM)\b/i.test(e.type.str('LandBehavior') + ' ' + e.type.str('Behavior')))) return true;
+    const v = e.vis && e.vis.get(T);
+    if (!v) return false;
+    if (this.time - v.at <= 0.3) return true;
+    const C = (this.fowCell ||= db.constants.num('DesiredLandFOWCellSize', 15));
+    return (
+      this.time - v.at < (this.fowRegrow ??= db.constants.num('LandFOWRegrowTime', 6)) &&
+      v.cell === Math.floor(e.x / C) * 65536 + Math.floor(e.y / C)
+    );
+  }
+
+  teamSight() {
+    if (!this.fowOn || this.time < (this.sightAt || 0)) return;
+    this.sightAt = this.time + 0.25;
+    const C = (this.fowCell ||= db.constants.num('DesiredLandFOWCellSize', 15)),
+      done = new Set();
+    for (let side = 0; side < this.team.length; side++) {
+      const T = this.team[side];
+      if (T === undefined || done.has(T)) continue;
+      done.add(T);
+      if (this.revealUntil[side] > this.time) {
+        for (const u of this.units) if (!u.dead) (u.vis ||= new Map()).set(T, { at: this.time, cell: Math.floor(u.x / C) * 65536 + Math.floor(u.y / C) });
+        continue;
+      }
+      const eyes = [];
+      for (const u of this.units)
+        if (!u.dead && this.team[u.side] === T)
+          eyes.push([u.x, u.y, ((u.sight ??= u.type.num('Land_FOW_Reveal_Range', 150)) * (u.structure ? 1 : this.sightMod(u))) ** 2, u.z + Math.max(8, u.aimZ * 1.5)]);
+      for (const p of this.points)
+        if (p.side >= 0 && this.team[p.side] === T) eyes.push([p.x, p.y, (p.sight ??= p.type.num('Land_FOW_Reveal_Range', 250)) ** 2, p.z + 30]);
+      for (const p of this.pings) if (this.team[p.side] === T) eyes.push([p.x, p.y, p.r ** 2, 1e6]);
+      for (const r of this.reveals) if (r.until > this.time && r.team.id === T) eyes.push([r.x, r.y, r.r * r.r, 1e6]);
+      for (const u of this.units) {
+        if (u.dead || this.team[u.side] === T || u.cloaked) continue;
+        let seen = false;
+        if (u.spotted) {
+          const cx = Math.floor(u.x / C),
+            cy = Math.floor(u.y / C);
+          for (const s of u.spotted)
+            if (s.until > this.time && this.team[s.side] === T && (cx - s.cx) ** 2 + (cy - s.cy) ** 2 <= s.n * s.n) {
+              seen = true;
+              break;
+            }
+        }
+        if (!seen)
+          for (const e of eyes)
+            if ((u.x - e[0]) ** 2 + (u.y - e[1]) ** 2 <= e[2] && (u.flies || this.sightLine(e[0], e[1], e[3], u))) {
+              seen = true;
+              break;
+            }
+        if (seen) (u.vis ||= new Map()).set(T, { at: this.time, cell: Math.floor(u.x / C) * 65536 + Math.floor(u.y / C) });
+      }
+    }
+  }
+
   teamSides(side) {
     return this.team.map((t, i) => (t === this.team[side] ? i : -1)).filter(i => i >= 0);
   }
@@ -2162,7 +2221,7 @@ export class LandWorld {
       kind: 'STRUCTURE',
       hitRadius: Math.max(20, type.num('Select_Box_Scale', 90) * 0.3),
       captures: false,
-      inaccuracy: new Map(type.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])),
+      inaccuracy: type.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]),
       builds: buildsFor(type, this.factions[side], this.campaign).filter(t => t.has('Company_Units') || isUpgrade(t)),
       queue: [],
       income: inc
@@ -3013,7 +3072,7 @@ export class LandWorld {
       kind: 'VEHICLE',
       hitRadius: 30,
       captures: false,
-      inaccuracy: new Map(),
+      inaccuracy: [],
       untargetable,
       invulnUntil: untargetable ? Infinity : 0
     }));
@@ -3182,7 +3241,7 @@ export class LandWorld {
           squashable: t.bool('Is_Squashable'),
           squashableBig: t.bool('Is_Squashable_By_Supercrusher'),
           minRange: t.num('Targeting_Min_Attack_Distance', 0),
-          inaccuracy: new Map(t.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]))
+          inaccuracy: t.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])
         });
         const tb = inst.bone(t.str('Turret_Bone_Name'));
         if (tb)
@@ -3253,6 +3312,7 @@ export class LandWorld {
               timer: 0,
               range: h.num('Fire_Range_Distance', u.range),
               spare: new Set(h.list('Fire_Category_Restrictions').map(c => c.toUpperCase())),
+              inacc: h.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]),
               muzzles: [h.str('Fire_Bone_A'), h.str('Fire_Bone_B')]
                 .filter((b, i, l) => b && l.indexOf(b) === i)
                 .map(muzzle)
@@ -3889,7 +3949,7 @@ export class LandWorld {
             reach: thrownReach(proj) ?? base,
             inacc:
               swap && proj.has('Targeting_Fire_Inaccuracy')
-                ? new Map(proj.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]))
+                ? proj.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])
                 : null,
             fixed: -1
           }
@@ -4232,15 +4292,29 @@ export class LandWorld {
     const lead = leadTurning(_lead, sx, sy, z0, t.x, t.y, tz, t.mvx || 0, t.mvy || 0, t.mvz || 0, t.turnW || 0, speed0 > 0 ? speed0 : 1);
     const dist = Math.hypot(lead.x - sx, lead.y - sy, lead.z - z0),
       wxk = this.weatherproof && this.weatherproof.has(u.side) ? 1 : this.wxSpread(w);
-    const inacc = Math.max(u.inaccuracy.get(t.kind) ?? 0, (w.inacc && w.inacc.get(t.kind)) || 0) * wxk;
-    const off = offAim(
-      _off,
-      dist,
-      inacc,
-      u.range || dist,
-      (u.type.num('Targeting_Fire_Inaccuracy_Fixed_Radius_Override', 0) || 0) * wxk,
-      false
-    );
+    const pick = list => {
+      if (list && t.type) for (const [c, v] of list) if (inCategory(t.type, c)) return v;
+      return 0;
+    };
+    let fixed = 0;
+    for (const st of u.squad?.abilities || []) {
+      const o = st.active && st.def.spec ? st.def.spec.num('Targeting_Fire_Inaccuracy_Fixed_Radius_Override', 0) : 0;
+      if (o > 0) {
+        fixed = o;
+        break;
+      }
+    }
+    if (!fixed) fixed = (u.type._fixedR ??= u.type.num('Targeting_Fire_Inaccuracy_Fixed_Radius', 0)) * wxk;
+    const off = w.hp
+      ? offAim(_off, Math.hypot(lead.x - sx, lead.y - sy), pick(w.inacc) * wxk, w.range, fixed, false)
+      : offAim(
+          _off,
+          dist,
+          Math.max(pick(u.inaccuracy), pick(w.inacc)) * wxk,
+          (u.type._maxAtk ??= u.type.num('Targeting_Max_Attack_Distance', 0)) || u.range || dist,
+          fixed,
+          false
+        );
     const ax = aimsOff(cat) ? lead.x + off.x : lead.x,
       ay = aimsOff(cat) ? lead.y + off.y : lead.y,
       z1 = aimsOff(cat) ? lead.z + off.z : lead.z;
@@ -4817,8 +4891,9 @@ export class LandWorld {
     }
     if (!w || (u.cloaked && !u.squad.foe)) return false;
     w.cooldown -= dt;
-    const sq = u.squad,
-      foe = sq.foe && sq.foe.members.length ? sq.foe : (sq.foe = null);
+    const sq = u.squad;
+    if (sq.foe && this.fowOn && !sq.foe.members.some(m => !m.dead && this.sightOf(sq.side, m))) sq.foe = null;
+    const foe = sq.foe && sq.foe.members.length ? sq.foe : (sq.foe = null);
     const team = sq.box && !sq.ext ? sq.box : null,
       reach = u.range + (team ? team.slack : 0);
     const D = sq.direct;
@@ -6778,6 +6853,7 @@ export class LandWorld {
     if (this.interp) this.snapPrev();
     this.time += dt;
     this.repathSome();
+    this.teamSight();
     if ((this.pointsDt = (this.pointsDt || 0) + dt) >= 0.2) {
       this.updatePoints(this.pointsDt);
       this.pointsDt = 0;

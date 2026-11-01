@@ -844,7 +844,7 @@ const kindOf = u => u.type.list('Garrison_Category').map(c => c.toUpperCase());
 const sizeOf = u => Math.max(1, u.type.num('Garrison_Value', 1));
 const suits = (host, u) => u !== host && !u.flies && !u.slots && kindOf(u).some(k => host.accepts.has(k));
 const squadSize = (host, q) => Math.max(1, ...q.members.filter(u => suits(host, u)).map(sizeOf));
-const usedOf = host => host.holds.reduce((n, q) => n + (q.members.some(u => u.inside === host) ? squadSize(host, q) : 0), 0);
+export const usedOf = host => host.holds.reduce((n, q) => n + (q.members.some(u => u.inside === host) ? squadSize(host, q) : 0), 0);
 
 export function canGarrison(world, squad, host) {
   if (!host || host.dead || !host.slots || !world.ally(host.side, squad.side)) return false;
