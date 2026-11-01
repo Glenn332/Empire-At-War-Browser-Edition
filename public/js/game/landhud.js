@@ -240,9 +240,10 @@ export class LandUI {
     const look = e => {
       game.following = null;
       const r = mm.getBoundingClientRect(),
-        side = (game.terrain.size - 1) * CELL;
-      game.view.x = ((e.clientX - r.left) / r.width) * side;
-      game.view.y = (1 - (e.clientY - r.top) / r.height) * side;
+        lo = game.map.playMin,
+        hi = game.map.playMax;
+      game.view.x = lo[0] + ((e.clientX - r.left) / r.width) * (hi[0] - lo[0]);
+      game.view.y = lo[1] + (1 - (e.clientY - r.top) / r.height) * (hi[1] - lo[1]);
     };
     mm.addEventListener('mousedown', e => {
       if (e.button === 0) look(e);
@@ -434,7 +435,7 @@ export class LandUI {
     }
     this.bar.bWeapon.classList.toggle('dis', !canBomb(this.world, this.me));
     this.bar.bWeapon.classList.toggle('sel', this.armed === 'bombing');
-    this.drawRadar();
+    this.fogDirty = true;
   }
 
   radarGround() {
@@ -532,15 +533,24 @@ export class LandUI {
     const R = (this.radar ||= new Radar()),
       S = R.settings;
     const side = (game.terrain.size - 1) * CELL,
-      X = x => (x / side) * W,
-      Y = y => (1 - y / side) * H;
+      lo = game.map.playMin,
+      hi = game.map.playMax,
+      spanX = hi[0] - lo[0],
+      spanY = hi[1] - lo[1],
+      X = x => ((x - lo[0]) / spanX) * W,
+      Y = y => (1 - (y - lo[1]) / spanY) * H;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = 1;
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.ground, 0, 0, W, H);
+    g.drawImage(this.ground, lo[0] / CELL, (side - hi[1]) / CELL, spanX / CELL, spanY / CELL, 0, 0, W, H);
     {
-      const fog = this.radarFog((S && S.landFow) || (w.tables && w.tables.radar.fog) || [10, 10, 10, 100]);
-      if (fog) g.drawImage(fog, 0, 0, W, H);
+      if (this.fogDirty || this.fogShown === undefined) {
+        this.fogDirty = false;
+        this.fogShown = this.radarFog((S && S.landFow) || (w.tables && w.tables.radar.fog) || [10, 10, 10, 100]);
+      }
+      const fog = this.fogShown,
+        F = 2 * CELL;
+      if (fog) g.drawImage(fog, lo[0] / F, fog.height - 1 - hi[1] / F, spanX / F, spanY / F, 0, 0, W, H);
     }
     if (R.landBackdrop) g.drawImage(R.grid(W, H, R.landBackdrop), 0, 0);
     const tone = s => {
@@ -601,7 +611,7 @@ export class LandUI {
       );
     if (S) R.drawEvents(g, X, Y, W, H, w.time);
     const v = game.view,
-      r = Math.max(8, ((v.dist * 0.55) / side) * W);
+      r = Math.max(8, ((v.dist * 0.55) / spanX) * W);
     g.strokeStyle = '#fff';
     g.lineWidth = 1.5;
     g.strokeRect(X(v.x) - r, Y(v.y) - r * 0.75, r * 2, r * 1.5);

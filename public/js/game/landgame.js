@@ -2806,6 +2806,7 @@ export class LandGame {
         paintFog(this.terrain, null, false);
       }
     }
+    this.ui.drawRadar();
     if (w.interp) {
       w.lerpIn((this.acc || 0) / LAND_TICK);
       w.poseQueued(dt);
