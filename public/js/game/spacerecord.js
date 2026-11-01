@@ -113,12 +113,13 @@ export class SpaceRecorder {
     for (let i = 0; i < qs.length; i++) {
       const q = qs[i];
       U[o] = q.id;
-      U[o + 1] = (q.dead ? 1 : 0) | 16;
+      U[o + 1] = (q.dead ? 1 : 0) | (q.hyper ? 4 : 0) | 16;
       U[o + 2] = q.x;
       U[o + 3] = q.y;
       U[o + 4] = 0;
       U[o + 5] = q.heading || 0;
       for (let k = 6; k < UNIT; k++) U[o + k] = 0;
+      U[o + 12] = q.hyper || 0;
       o += UNIT;
     }
     this.nUnits = n;

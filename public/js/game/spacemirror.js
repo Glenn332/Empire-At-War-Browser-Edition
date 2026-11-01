@@ -300,6 +300,7 @@ export class SpaceMirror {
         e.x = U[o + 2];
         e.y = U[o + 3];
         e.heading = U[o + 5];
+        e.hyper = flags & 4 ? U[o + 12] : 0;
         if (flags & 1) e.dead = true;
         continue;
       }
