@@ -3163,7 +3163,7 @@ export class GalacticGame {
           this.mergeFleets();
           for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
-          for (const done of completed) if (done.tech !== undefined) this.story?.signal('STORY_TECH_LEVEL', String(done.tech));
+          for (const done of completed) if (done.tech !== undefined) this.story?.signalTech(done.owner, done.tech);
           if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner);
           for (const done of completed) this.battles.dirty.add(done.planet);
         }

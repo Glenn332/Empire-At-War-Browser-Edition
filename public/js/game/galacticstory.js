@@ -195,6 +195,7 @@ export class GalacticStoryHost extends StoryPlots {
       await this.warmInstance(this.scoring);
     }
     for (const plot of this.plots.values()) this.startPlot(plot);
+    if (!this.game.setup?.restore) this.techPending = true;
     if (warm) await this.warm();
     else this.unwarmed = true;
   }
@@ -1324,7 +1325,7 @@ export class GalacticStoryHost extends StoryPlots {
           const level = Math.trunc(+p[1] || 0);
           player.maxTech = Math.max(player.maxTech, level);
           player.tech = Math.max(0, Math.min(player.maxTech, level));
-          this.signal('STORY_TECH_LEVEL', String(player.tech));
+          this.signalTech(player.faction, player.tech);
         }
         break;
       }
@@ -1679,6 +1680,10 @@ export class GalacticStoryHost extends StoryPlots {
             this.service(inst);
           }
         }
+      if (this.techPending) {
+        this.techPending = false;
+        for (const p of this.game.galaxy.players) this.signalTech(p.faction, p.tech);
+      }
       this.pollEvents(!service);
     } finally {
       this.running = false;

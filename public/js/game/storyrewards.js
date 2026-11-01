@@ -40,12 +40,9 @@ export function galacticStoryReward(host, e) {
       return true;
     }
     case 'TRIGGER_EVENT': {
-      for (const plot of host.plots.values()) {
+      for (const plot of [...host.plots.values()]) {
         const ev = plot.events.get(key(p[0]));
-        if (ev) {
-          host.fire(ev, true);
-          break;
-        }
+        if (ev) host.fire(ev, true);
       }
       return true;
     }

@@ -240,6 +240,18 @@ export class StoryPlots {
     }
     return true;
   }
+  signalTech(owner, level) {
+    for (const e of this.eventTypes.get('STORY_TECH_LEVEL') || []) {
+      if (e.plot?.owner && key(e.plot.owner) !== key(owner)) continue;
+      const want = parseInt(e.params[0], 10);
+      if (want === -1) {
+        const seen = e.techSeen;
+        e.techSeen = level;
+        if (seen === undefined || seen === level) continue;
+      } else if (!(level >= want)) continue;
+      this.fire(e);
+    }
+  }
   signal(type, value) {
     const target = key(value);
     for (const e of this.eventTypes.get(type) || []) {
