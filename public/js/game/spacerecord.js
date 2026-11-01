@@ -99,6 +99,14 @@ export class SpaceRecorder {
       }
     }
     this.nAbilities = a / ABILITY;
+    const pads = (this.pads = []);
+    for (let i = 0; i < us.length; i++) {
+      const u = us[i];
+      if (u.dead) continue;
+      if (u.isPad || u.padChild || u.padOwner !== undefined)
+        pads.push([u.id, u.padChild && !u.padChild.dead ? u.padChild.id : -1, u.padOwner ? u.padOwner.id : u.padOwner === null ? -2 : -3]);
+      if (u.construction) pads.push([u.id, -4, u.construction.left, u.construction.total]);
+    }
     this.players = w.players
       .filter(p => p.id >= 0)
       .map(p => [p.id, p.credits, p.pop, p.popCap, p.popExtra, (p.reinforcements || []).map(t => t.name).join('|')]);

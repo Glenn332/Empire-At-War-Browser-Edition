@@ -352,6 +352,21 @@ export class SpaceMirror {
           to = this.byW.get(b);
         return from && to ? [{ a: from, b: to, color, width, bone, kind, until: Infinity }] : [];
       });
+    for (const [wid, child, a, b] of m.pads || []) {
+      const e = this.byW.get(wid);
+      if (!e || e.dead) continue;
+      if (child === -4) {
+        e.construction ||= { result: db.type(e.type.str('Tactical_Buildable_Constructed')) };
+        e.construction.left = a;
+        e.construction.total = b;
+        continue;
+      }
+      const c = child >= 0 ? this.byW.get(child) || null : null;
+      e.padChild = c;
+      if (c) c.padOf = e;
+      if (a !== -3) e.padOwner = a === -2 ? null : w.players.find(p => p.id === a) || null;
+      if (e.obj) e.obj.visible = !c || !e.type.bool('Hides_When_Built_On', true);
+    }
     const A = m.abilities;
     for (let o = 0; o < A.length; o += ABILITY) {
       const u = this.byW.get(A[o]),

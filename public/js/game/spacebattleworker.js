@@ -390,6 +390,7 @@ async function run(m) {
         beams: w.beams.length ? w.beams.map(b => [b.a.id, b.b.id, b.color, b.width, b.bone, b.kind]) : undefined,
         players: rec.players,
         queues: rec.queues,
+        pads: rec.pads,
         fresh: rec.fresh.slice(),
         spawns: spawns.splice(0),
         events: events.splice(0),
