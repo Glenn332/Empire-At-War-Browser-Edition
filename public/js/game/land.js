@@ -3566,27 +3566,46 @@ export class LandWorld {
       per = Math.max(1, Math.floor(S / cy)),
       rows = Math.ceil(n / per),
       c = Math.cos(heading),
-      s = Math.sin(heading);
+      s = Math.sin(heading),
+      placed = [];
+    for (const q of this.squads) {
+      if (made.includes(q) || q.structure || !q.members.length) continue;
+      const b = q.box || q.members[0];
+      if ((b.x - x) ** 2 + (b.y - y) ** 2 > (S + 400) ** 2) continue;
+      placed.push({ x: b.x, y: b.y, r: q.box ? q.box.slack + 15 : Math.max(10, q.members[0].hitRadius || 0) });
+    }
     entries.forEach((e, i) => {
       const r = Math.floor(i / per),
         cnt = Math.min(per, n - r * per),
         fx = ((rows - 1) / 2 - r) * cx,
         fy = ((i % per) - (cnt - 1) / 2) * (S / cnt);
-      let px = x + c * fx - s * fy,
-        py = y + s * fx + c * fy;
-      const need = Math.max(...e.units.map(u => u.need || 1));
-      if (!this.isOpen(px, py, need)) {
-        const o = this.nearestOpen(px, py, need);
-        if (o) {
-          px = o.x;
-          py = o.y;
+      const gx = x + c * fx - s * fy,
+        gy = y + s * fx + c * fy,
+        need = Math.max(...e.units.map(u => u.need || 1)),
+        room = Math.min(e.cx, e.cy) / 2,
+        free = (px, py) => this.isOpen(px, py, need) && !placed.some(p => (p.x - px) ** 2 + (p.y - py) ** 2 < (p.r + room) ** 2);
+      let at = null;
+      for (let ring = 0; !at && ring <= 6; ring++)
+        for (let k = 0; k < (ring ? 8 * ring : 1) && !at; k++) {
+          const a = (k / (8 * ring || 1)) * Math.PI * 2,
+            px = gx + Math.cos(a) * ring * room,
+            py = gy + Math.sin(a) * ring * room;
+          if (free(px, py)) at = { x: px, y: py };
         }
-      }
+      at ||= this.nearestOpen(gx, gy, need) || { x: gx, y: gy };
+      placed.push({ x: at.x, y: at.y, r: room });
       const mx = e.units.reduce((a, u) => a + u.x, 0) / e.units.length,
         my = e.units.reduce((a, u) => a + u.y, 0) / e.units.length;
       for (const u of e.units) {
-        u.x = px + u.x - mx;
-        u.y = py + u.y - my;
+        let ux = at.x + u.x - mx,
+          uy = at.y + u.y - my;
+        if (!this.isOpen(ux, uy, u.need || 1)) {
+          const o = this.nearestOpen(ux, uy, u.need || 1);
+          ux = o ? o.x : at.x;
+          uy = o ? o.y : at.y;
+        }
+        u.x = ux;
+        u.y = uy;
         u.holder.position.set(u.x, u.y, heightAt(this.terrain, u.x, u.y) + (u.lift || 0) + (u.hoverZ || 0));
       }
     });
