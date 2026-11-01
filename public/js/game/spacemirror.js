@@ -382,6 +382,12 @@ export class SpaceMirror {
       if (flags & 4) {
         e.hyper ||= { f: 0, tx: e.x, ty: e.y, h: e.heading, shown: true };
         e.hyper.dark = U[o + 12];
+        const shown = !(flags & 64);
+        if (e.hyper.shown !== shown) {
+          e.hyper.shown = shown;
+          e.obj.scale.setScalar(shown ? e.scale || 1 : 1e-4);
+          e.obj.updateMatrix();
+        }
       } else if (e.hyper) {
         e.hyper = null;
         e.obj.scale.setScalar(e.scale || 1);

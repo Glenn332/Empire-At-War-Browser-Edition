@@ -1738,6 +1738,8 @@ export class UI {
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
       const enemy = s.player.team !== me.team && s.player.id >= 0;
       if (enemy && !this.world.canSee(me, s)) continue;
+      const h = (s.isSquad ? s.fighters[0] : s)?.hyper;
+      if (h && !h.shown) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
       const r = Math.min(this.screenRadius(s), 260);
