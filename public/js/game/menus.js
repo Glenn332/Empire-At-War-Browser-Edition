@@ -2,6 +2,8 @@ import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
 import { gfx, storeGfx, presets } from '../gfx.js';
+import { particleCap, setParticleCap } from '../particles.js';
+import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, defaultName, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { enterFullscreen } from '../pointertrap.js';
@@ -37,6 +39,7 @@ function setInput(id, value) {
   }
 }
 
+const TWEAK_EXTRA = ['IDC_TWEAK_PARTICLE_LABEL', 'IDC_TWEAK_PARTICLE_COUNT', 'IDC_TWEAK_PARTICLE_VALUE'];
 const TWEAKS = [
   { id: 'IDC_TWEAK_CAPTURE_BARS', input: 'optCaptureBars', label: 'Show capture progress bars' },
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
@@ -572,23 +575,28 @@ export class Menus {
       shift = (W - 321) / 2;
     const dlg = await this.push('IDD_IN_GAME_OPTIONS_DIALOG', {
       size: { w: W, h: back + 53 },
-      extra: TWEAKS.map((t, i) => ({
-        kind: 'CONTROL',
-        text: '',
-        id: t.id,
-        cls: 'Button',
-        style: 'BS_AUTOCHECKBOX | WS_TABSTOP',
-        x: 0,
-        y: i * row,
-        w: W - 64,
-        h: 23
-      })),
+      extra: [
+        ...TWEAKS.map((t, i) => ({
+          kind: 'CONTROL',
+          text: '',
+          id: t.id,
+          cls: 'Button',
+          style: 'BS_AUTOCHECKBOX | WS_TABSTOP',
+          x: 0,
+          y: i * row,
+          w: W - 64,
+          h: 23
+        })),
+        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_LABEL', x: 4, y: TWEAKS.length * row + 4, w: 150, h: 20, style: '' },
+        { kind: 'CONTROL', text: '', id: 'IDC_TWEAK_PARTICLE_COUNT', cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 160, y: TWEAKS.length * row + 2, w: W - 300, h: 20 },
+        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_VALUE', x: W - 130, y: TWEAKS.length * row + 4, w: 70, h: 20, style: '' }
+      ],
       adjust: c =>
         c.id === 'IDC_OK_IN_GAME'
           ? { ...c, x: c.x + shift, y: back }
           : c.id === 'IDC_STATIC_IN_GAME_OPTIONS'
             ? { ...c, kind: 'LTEXT', x: 24 }
-            : TWEAKS.some(t => t.id === c.id)
+            : TWEAKS.some(t => t.id === c.id) || TWEAK_EXTRA.includes(c.id)
               ? null
               : { ...c, x: c.x + shift }
     });
@@ -608,7 +616,7 @@ export class Menus {
       `position:absolute;left:20px;top:${top}px;width:${W - 40}px;height:${panelH}px;overflow-y:auto;overflow-x:hidden;` +
       'box-sizing:border-box;background:rgba(0,0,0,0.35);border:1px solid rgba(140,170,200,0.35);scrollbar-width:thin;scrollbar-color:rgba(160,190,220,0.6) transparent';
     const inner = document.createElement('div');
-    inner.style.cssText = `position:relative;left:8px;top:4px;height:${TWEAKS.length * row + 4}px`;
+    inner.style.cssText = `position:relative;left:8px;top:4px;height:${(TWEAKS.length + 1) * row + 4}px`;
     panel.appendChild(inner);
     dlg.el.appendChild(panel);
     for (const t of TWEAKS) {
@@ -619,6 +627,21 @@ export class Menus {
       if (input?.parentElement?.title && c) c.title = input.parentElement.title;
       dlg.check(t.id, !!input?.checked, on => setInput(t.input, on));
     }
+    for (const id of TWEAK_EXTRA) {
+      const c = dlg.ctl(id);
+      if (c) inner.appendChild(c);
+    }
+    const P = PARTICLE_CAP,
+      span = P.max - P.min,
+      showCap = v => dlg.setText('IDC_TWEAK_PARTICLE_VALUE', v.toLocaleString('en-US'));
+    dlg.setText('IDC_TWEAK_PARTICLE_LABEL', 'Particle count');
+    const tip = 'Most particles alive at once. Higher keeps more smoke, sparks and engine glow in big battles, at a cost in frame rate.';
+    for (const id of ['IDC_TWEAK_PARTICLE_LABEL', 'IDC_TWEAK_PARTICLE_COUNT']) {
+      const c = dlg.ctl(id);
+      if (c) c.title = tip;
+    }
+    showCap(particleCap());
+    dlg.slider('IDC_TWEAK_PARTICLE_COUNT', (particleCap() - P.min) / span, v => showCap(setParticleCap(P.min + v * span)), span / P.step + 1);
     dlg.on('IDC_OK_IN_GAME', () => this.pop());
   }
 

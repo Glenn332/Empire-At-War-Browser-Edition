@@ -1651,7 +1651,7 @@ export class Renderer {
     kites.end();
     this.shotModels.end();
     diag.lap('scene update');
-    this.fxParticles.update(dt);
+    this.fxParticles.update(dt, this.camera);
     diag.lap('particles');
 
     if (world) this.updateFog(world, dt || 0.016);

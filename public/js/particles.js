@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ChunkReader, fetchBinary } from './vfs.js';
 import { loadTexture } from './dds.js';
 import { gfx } from './gfx.js';
-import { FRAME } from './particlesim.js';
+import { FRAME, PARTICLE_CAP } from './particlesim.js';
 
 const TAU = Math.PI * 2;
 const SAMPLES = 32;
@@ -273,6 +273,23 @@ export function loadParticles(name) {
 }
 
 const SLOTS = 2048;
+let cap = PARTICLE_CAP.def;
+try {
+  const v = +localStorage.getItem('swr-particle-cap');
+  if (v >= PARTICLE_CAP.min && v <= PARTICLE_CAP.max) cap = v;
+} catch {}
+export const particleCap = () => cap;
+export const setParticleCap = v => {
+  cap = Math.max(PARTICLE_CAP.min, Math.min(PARTICLE_CAP.max, Math.round(v / PARTICLE_CAP.step) * PARTICLE_CAP.step));
+  try {
+    localStorage.setItem('swr-particle-cap', String(cap));
+  } catch {}
+  return cap;
+};
+const _frustum = new THREE.Frustum(),
+  _viewProj = new THREE.Matrix4(),
+  _nearAt = new THREE.Vector3(),
+  _near = new THREE.Sphere();
 
 class Batch {
   constructor(texture, additive, noDepth, heat, frames) {
@@ -538,8 +555,9 @@ export class ParticleManager {
     );
   }
 
-  update(dt) {
+  update(dt, camera = null) {
     const list = this.systems;
+    if (camera) _frustum.setFromProjectionMatrix(_viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const send = !this.busy && (dt > 0 || this.owedDt > 0);
     const need = list.length * FRAME;
     let frames = null;
@@ -587,6 +605,7 @@ export class ParticleManager {
         frames[k + 18] = f.ll || 0;
         frames[k + 19] = f.lt || 0;
         frames[k + 20] = f.vz || 0;
+        frames[k + 21] = !camera || _frustum.intersectsSphere(_near.set(_nearAt.set(f.x, f.y, f.z), 400)) ? 1 : 0;
         k += FRAME;
       }
       list[n++] = h;
@@ -604,6 +623,7 @@ export class ParticleManager {
           dt: this.owedDt,
           frames: frames.subarray(0, k),
           detail: Math.max(0.1, Math.min(1, +gfx.particle)),
+          cap,
           heatOn: this.heatOn,
           heatScene: !!this.heatScene,
           free

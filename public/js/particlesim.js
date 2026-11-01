@@ -127,6 +127,7 @@ class System {
     this.scale = opts.scale || 1;
     this.slot = opts.slot ?? -1;
     this.density = 1;
+    this.near = true;
     this.emitting = true;
     this.age = 0;
     this.maxEmit = opts.maxEmit ?? Infinity;
@@ -153,7 +154,10 @@ class System {
     const e = s.e,
       f = this.f,
       sc = f.scale * this.scale;
-    if (s.parts.length > 1500 || this.sim.total > 30000) return;
+    const total = this.sim.total,
+      held = s.parts.length;
+    const cap = this.sim.cap;
+    if (held > 1500 || total > cap || (!this.near && total > cap * 0.5) || (held >= 24 && total > cap * 0.75 && Math.random() * cap * 0.25 < total - cap * 0.75)) return;
     const cr = Math.cos(f.rot),
       sr = Math.sin(f.rot);
     let lx, ly, lz;
@@ -449,7 +453,8 @@ class System {
   }
 }
 
-export const FRAME = 21;
+export const FRAME = 22;
+export const PARTICLE_CAP = { def: 30000, min: 30000, max: 50000, step: 1000 };
 
 export class ParticleSim {
   constructor() {
@@ -460,6 +465,7 @@ export class ParticleSim {
     this.heatOn = false;
     this.heatScene = false;
     this.detail = 1;
+    this.cap = PARTICLE_CAP.def;
   }
 
   batch(e) {
@@ -511,6 +517,7 @@ export class ParticleSim {
       f.vz = frames[i + 20];
       s.visible = frames[i + 9] !== 0;
       s.density = frames[i + 10];
+      s.near = frames[i + 21] !== 0;
       if (frames[i + 11] !== 1) s.emitting = false;
     }
     for (const b of this.batches.values()) b.count = 0;
