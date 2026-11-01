@@ -5017,7 +5017,10 @@ export class LandWorld {
       const step = u.turn * dt;
       u.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
       const cone = (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG);
-      aimed = Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone && (!u.anims?.attack || u.animKind === 'ATTACKIDLE' || u.animKind === 'attack' || u.once === 'attack');
+      const stance = animSet(u.type);
+      aimed =
+        Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone &&
+        !(stance.ready && stance.kinds.has('ATTACKIDLE') && (u.animKind === 'idle' || u.animKind === 'move'));
     }
     if (aimed && this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0)) && this.shotBlocked(u, t, w)) {
       aimed = false;
