@@ -534,6 +534,10 @@ export class GalacticGame {
     abortLinkedMission(this, error);
   }
 
+  setDifficulty(level) {
+    this.setup.difficulty = level;
+    this.ai?.setDifficulty?.(level);
+  }
   setSpeed(speed) {
     if (this.net) {
       if (speed !== this.speed) this.net.lock.setSpeed(speed);

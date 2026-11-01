@@ -854,8 +854,19 @@ export class Menus {
       'IDC_SCROLL_SPEED'
     ])
       dlg.enable(id, false);
-    for (const id of ['IDC_RADIO_BLANK', 'IDC_RADIO_BLANK2', 'IDC_RADIO_BLANK3']) dlg.show(id, false);
-    dlg.on('IDC_BUTTON_ACCEPT', () => this.pop());
+    const levels = ['easy', 'medium', 'hard'],
+      radios = ['IDC_RADIO_EASY', 'IDC_RADIO_MEDIUM', 'IDC_RADIO_HARD'],
+      pickDifficulty = !!g.galactic && !g.net;
+    for (const id of [...radios, 'IDC_RADIO_BLANK', 'IDC_RADIO_BLANK2', 'IDC_RADIO_BLANK3']) dlg.show(id, pickDifficulty);
+    let difficulty = levels.includes(g.setup?.difficulty) ? g.setup.difficulty : 'medium';
+    const showDifficulty = () => {
+      if (pickDifficulty) dlg.radios(radios, radios[levels.indexOf(difficulty)], id => (difficulty = levels[radios.indexOf(id)]));
+    };
+    showDifficulty();
+    dlg.on('IDC_BUTTON_ACCEPT', () => {
+      if (pickDifficulty && difficulty !== g.setup?.difficulty) g.setDifficulty?.(difficulty);
+      this.pop();
+    });
     dlg.on('IDC_CANCEL_BUTTON', () => {
       g.setSpeed?.(was.speed);
       if (strategic) saveStrategicIndex(strategicIndexOf(was.speed));
@@ -876,6 +887,8 @@ export class Menus {
         saveTacticalSpeed(1);
       }
       setInput('optAutofire', true);
+      difficulty = 'medium';
+      showDifficulty();
       setSimplified(false);
       setDelayed(false);
       setBothButtonsRotate(false);

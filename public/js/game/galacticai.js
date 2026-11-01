@@ -762,6 +762,15 @@ class GalacticGoals extends GoalSystem {
 }
 
 export class GalacticAI {
+  async setDifficulty(value) {
+    const difficulty = level(value);
+    for (const c of this.perceptionPlayers?.values() || []) c.difficulty = difficulty;
+    for (const c of this.controllers.values()) {
+      c.difficulty = difficulty;
+      c.adjustment = await difficultyAdjustment(c.player.faction, difficulty, c.type);
+      c.player.bribeMultiplier = c.adjustment?.bribe ?? 1;
+    }
+  }
   static async create(game) {
     const ai = new GalacticAI(game);
     game.ai = ai;
