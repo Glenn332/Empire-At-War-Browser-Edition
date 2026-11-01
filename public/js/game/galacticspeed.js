@@ -14,7 +14,20 @@ export function saveStrategicIndex(index) {
     localStorage.setItem(KEY, String(index));
   } catch {}
 }
-export const strategicMultiplier = index => STRATEGIC_FRAMES[index] / 30;
+const TACTICAL_KEY = 'swr-tactical-game-speed';
+export function tacticalSpeed() {
+  try {
+    const s = parseFloat(localStorage.getItem(TACTICAL_KEY));
+    if (s >= 0.5 && s <= 2) return s;
+  } catch {}
+  return 1;
+}
+export function saveTacticalSpeed(speed) {
+  try {
+    localStorage.setItem(TACTICAL_KEY, String(speed));
+  } catch {}
+}
+export const strategicMultiplier =index => STRATEGIC_FRAMES[index] / 30;
 export const strategicIndexOf = speed => {
   let best = STRATEGIC_DEFAULT;
   STRATEGIC_FRAMES.forEach((f, i) => {

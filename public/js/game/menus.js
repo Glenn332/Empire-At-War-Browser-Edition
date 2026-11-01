@@ -3,7 +3,7 @@ import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
 import { gfx, storeGfx, presets } from '../gfx.js';
 import { snapshot, snapshotNow, defaultName, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
-import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex } from './galacticspeed.js';
+import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { enterFullscreen } from '../pointertrap.js';
 import {
   ACTIONS,
@@ -802,7 +802,7 @@ export class Menus {
       } catch {}
     };
     const strategic = !!g.galactic,
-      was = { speed: g.speed, auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate() };
+      was = { speed: g.speed, tactical: tacticalSpeed(), auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate() };
     const setDelayed = on => {
       delayed = on;
       g.delayTooltips = on;
@@ -831,7 +831,11 @@ export class Menus {
           },
           STRATEGIC_FRAMES.length
         );
-      else dlg.slider('IDC_GAME_SPEED_SLIDER', toV(Math.max(0.5, Math.min(2, g.speed))), v => g.setSpeed(toS(v)));
+      else
+        dlg.slider('IDC_GAME_SPEED_SLIDER', toV(tacticalSpeed()), v => {
+          saveTacticalSpeed(toS(v));
+          g.setSpeed?.(toS(v));
+        });
       dlg.check('IDC_ABILITIES_DEFAULT_TO_AUTOFIRE', $('optAutofire').checked, on => setInput('optAutofire', on));
       dlg.check('IDC_SIMPLIFIED_FACTION_COLORS', simplified, setSimplified);
       dlg.check('IDC_DELAY_TOOLTIPS', delayed, setDelayed);
@@ -853,8 +857,9 @@ export class Menus {
     for (const id of ['IDC_RADIO_BLANK', 'IDC_RADIO_BLANK2', 'IDC_RADIO_BLANK3']) dlg.show(id, false);
     dlg.on('IDC_BUTTON_ACCEPT', () => this.pop());
     dlg.on('IDC_CANCEL_BUTTON', () => {
-      g.setSpeed(was.speed);
+      g.setSpeed?.(was.speed);
       if (strategic) saveStrategicIndex(strategicIndexOf(was.speed));
+      else saveTacticalSpeed(was.tactical);
       setInput('optAutofire', was.auto);
       setSimplified(was.simplified);
       setDelayed(was.delayed);
@@ -863,8 +868,13 @@ export class Menus {
       this.pop();
     });
     dlg.on('IDC_DEFAULTS_BUTTON', () => {
-      g.setSpeed(1);
-      if (strategic) saveStrategicIndex(STRATEGIC_DEFAULT);
+      if (strategic) {
+        g.setSpeed(strategicMultiplier(STRATEGIC_DEFAULT));
+        saveStrategicIndex(STRATEGIC_DEFAULT);
+      } else {
+        g.setSpeed?.(1);
+        saveTacticalSpeed(1);
+      }
       setInput('optAutofire', true);
       setSimplified(false);
       setDelayed(false);

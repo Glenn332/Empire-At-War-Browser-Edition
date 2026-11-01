@@ -451,6 +451,9 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Stop_All_Music', () => {
       game.audio?.stopMusic?.();
     });
+    vm.global('Cancel_Fast_Forward', () => {
+      game.setFastForward?.(false);
+    });
     vm.global('Add_Objective', (id, flag) => {
       if (typeof id !== 'string' || typeof flag !== 'boolean') throw new Error('Add_Objective -- expected a text id and a boolean');
       this.objectives.add(id, flag);

@@ -127,6 +127,7 @@ export class GalacticGame {
     this.paused = false;
     this.galacticPauseCount = 0;
     this.userPaused = false;
+    this.fastForward = false;
     this.over = false;
     this.galactic = true;
     this.speed = strategicMultiplier(strategicIndex());
@@ -672,8 +673,22 @@ export class GalacticGame {
     await this.galacticLog?.encyclopedia?.refreshLanguage();
     await settleNativeFonts();
   }
+  get rate() {
+    return this.fastForward ? 4 : this.speed;
+  }
+  setFastForward(on) {
+    on = !!on && !this.net && !this.paused && !this.over;
+    if (this.fastForward !== on) this.fastForward = on;
+    const ui = this.scriptUI,
+      s = ui?.states?.get('B_FAST_FORWARD');
+    if (s && s.selected !== on) {
+      s.selected = on;
+      ui.apply('B_FAST_FORWARD');
+    }
+  }
   setUIPause(reason, on) {
     if (this.uiPauseReasons.has(reason) === on) return;
+    if (on) this.setFastForward(false);
     if (on) {
       this.uiPauseReasons.add(reason);
       this.audio?.speech?.suspend();
@@ -685,6 +700,7 @@ export class GalacticGame {
   }
   pauseGalactic(on) {
     if (this.setup.net) return;
+    this.setFastForward(false);
     pauseGalactic(this, on);
   }
   setUserPaused(on) {
@@ -692,9 +708,11 @@ export class GalacticGame {
       this.net.lock.togglePause();
       return;
     }
+    this.setFastForward(false);
     userPauseGalactic(this, on);
   }
   toggleMenu() {
+    this.setFastForward(false);
     this.menus?.toggle();
   }
   benchmark(options) {
@@ -845,7 +863,7 @@ export class GalacticGame {
         Math.floor(opacity * 0.7 * 255) / 255
       );
       if (!this.paused) {
-        rt.clock += real * this.speed * LOGIC_FPS;
+        rt.clock += real * this.rate * LOGIC_FPS;
         const n = Math.floor(rt.clock);
         rt.clock -= n;
         rt.ticks = (rt.ticks + n) % 50;
@@ -2193,6 +2211,7 @@ export class GalacticGame {
   }
 
   startBattle(p, attacker, defender, mode = 'space', options = {}) {
+    this.setFastForward(false);
     const C = db.constants;
     const planet = this.galaxy.planets[p],
       player = this.galaxy.players.find(p => p.faction === defender);
@@ -2983,7 +3002,7 @@ export class GalacticGame {
     if (this.battle && !this.net && this.advanceBattle(real)) return;
     if (this.net) this.net.pump();
     else if (!this.over) {
-      this.story?.update(this.paused ? 0 : real * this.speed, false, real);
+      this.story?.update(this.paused ? 0 : real * this.rate, false, real);
       storyMoviesDone(this.story);
     }
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
@@ -2991,7 +3010,7 @@ export class GalacticGame {
       for (const a of this.idlers) a.step(real);
       planetClock.value += real;
       if (!this.battle && !this.net) {
-        this.simulate(real * this.speed);
+        this.simulate(real * this.rate);
         if (this.over) return;
       }
     }
@@ -3106,9 +3125,9 @@ export class GalacticGame {
   }
 
   present(real, elapsed, zoom) {
-    this.abilityParticles?.update(this.paused ? 0 : real * this.speed);
-    if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.speed);
-    (this.corruptionVisuals ||= new CorruptionVisuals(this)).update(this.paused ? 0 : real * this.speed);
+    this.abilityParticles?.update(this.paused ? 0 : real * this.rate);
+    if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.rate);
+    (this.corruptionVisuals ||= new CorruptionVisuals(this)).update(this.paused ? 0 : real * this.rate);
     this.galacticLog?.update(elapsed);
     if ((this.hudTimer -= real) <= 0) {
       this.hudTimer = 0.25;

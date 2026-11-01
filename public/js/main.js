@@ -73,6 +73,7 @@ import { placeSpecialWeapons, placeCampaignSpecialWeapons } from './game/superwe
 import { placeCampaignBattle, sideBeaten, battleResult } from './game/campaignbattle.js';
 import { storyTypes } from './game/storyart.js';
 import { openRetreatDialog, resolveTactical, spaceRosters } from './game/tacticalautoresolve.js';
+import { tacticalSpeed } from './game/galacticspeed.js';
 import { RetreatCoordinator, showRetreatLine, hasRetreatPrevention } from './game/retreat.js';
 import { installTacticalBattle } from './game/tacticalbattle.js';
 import { TacticalStoryHost } from './game/tacticalstory.js';
@@ -317,7 +318,7 @@ class Game {
     this.setup = setup;
     this.audio = audio;
     this.paused = false;
-    this.speed = 1;
+    this.speed = setup.net || setup.benchmark || setup.attract ? 1 : tacticalSpeed();
     this.over = false;
     this.last = performance.now();
     this.frame = this.frame.bind(this);
@@ -1544,6 +1545,7 @@ class Game {
       if (sfx) this.audio.play(sfx);
       return;
     }
+    if (this.paused) this.togglePause();
     const { winner, doomed } = resolveTactical(spaceRosters(w, cb), cb, { space: true });
     for (const e of doomed) if (!e.dead) w.kill(e, null);
     const [won, lost] = winner === 0 ? [cb.attacker.team, cb.defender.team] : [cb.defender.team, cb.attacker.team];

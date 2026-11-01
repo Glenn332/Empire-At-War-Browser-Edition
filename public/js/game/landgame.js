@@ -24,6 +24,7 @@ import { Pointers, tacticalPointer } from './pointers.js';
 import { showSummary } from './summary.js';
 import { openRetryDialog } from './retrydialog.js';
 import { openRetreatDialog, resolveTactical, landRosters } from './tacticalautoresolve.js';
+import { tacticalSpeed } from './galacticspeed.js';
 import { RetreatCoordinator, showRetreatLine, hasRetreatPrevention } from './retreat.js';
 import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
@@ -256,7 +257,7 @@ export class LandGame {
     this.paused = false;
     this.over = false;
     this.landBattle = true;
-    this.speed = 1;
+    this.speed = setup.net || setup.benchmark || setup.attract ? 1 : tacticalSpeed();
     this.tacticalWinner = undefined;
     if (setup.net) {
       resetLandIds();
@@ -3605,6 +3606,7 @@ export class LandGame {
       if (sfx) this.audio.play(sfx);
       return;
     }
+    if (this.paused) this.togglePause();
     const sides = [cb.attacker.side, cb.defender.side],
       { winner, doomed } = resolveTactical(landRosters(w, this.factions, sides), cb, { space: false });
     for (const e of doomed) if (!e.dead) w.hurt(e, 1e9, null);
@@ -3891,8 +3893,8 @@ export class LandGame {
       if (m.parent !== scene) scene.add(m);
       if (!this.beamMats.has(bm.color)) this.beamMats.set(bm.color, mat(bm.color));
       m.material = this.beamMats.get(bm.color);
-      const az = a.aimZ !== undefined ? a.z + a.aimZ * 0.8 : a.z,
-        bz = b2.aimZ !== undefined ? b2.z + b2.aimZ * 0.6 : b2.z;
+      const az = a.aimZ !== undefined ? a.z + a.aimZ : a.z,
+        bz = b2.aimZ !== undefined ? b2.z + b2.aimZ : b2.z;
       const dx = b2.x - a.x,
         dy = b2.y - a.y,
         dz = bz - az,
