@@ -345,6 +345,7 @@ function lob(w, D, dz) {
 
 const NEUTRAL = new THREE.Color(0.6, 0.6, 0.6),
   NO_TINT = new THREE.Vector4(1, 1, 1, 0);
+const _tb = new THREE.Vector3();
 const _lead = { x: 0, y: 0, z: 0 },
   _off = { x: 0, y: 0, z: 0 },
   _at = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 },
@@ -2214,7 +2215,7 @@ export class LandWorld {
       maxShield: type.num('Shield_Points', 0),
       shield: type.num('Shield_Points', 0),
       armor: type.str('Armor_Type'),
-      aimZ: type.num('Ranged_Target_Z_Adjust', 25),
+      aimZ: type.num('Ranged_Target_Z_Adjust', 6),
       range: type.num('Targeting_Max_Attack_Distance', 0),
       weapon: null,
       turret: null,
@@ -2556,7 +2557,7 @@ export class LandWorld {
     if (!r) return out.set(u.x, u.y, u.z);
     const s = u.holder ? u.holder.scale.x : 1,
       T = u.turret;
-    let a = u.heading + Math.PI / 2;
+    let a = (u.loco?.sec && u.face !== undefined ? u.face : u.heading) + Math.PI / 2;
     if (T && (T.axis ?? 2) === 2 && T.bone) {
       let b = bone;
       while (b && b !== T.bone) b = b.parent;
@@ -2569,18 +2570,25 @@ export class LandWorld {
 
   show(u, dt) {
     const l = this.look;
+    const L = u.speed > 0 && !u.structure ? (u.loco ??= this.locoOf(u)) : null,
+      yaw = L && L.sec && !u.fixedHeading ? this.secondaryYaw(u, dt) : u.heading;
+    if (yaw !== u.heading && u.holder) u.holder.rotation.z = yaw + Math.PI / 2;
     if (u.holder && !u.holder.visible) return;
     if (l && (u.x - l.x) ** 2 + (u.y - l.y) ** 2 > l.r * l.r) return;
     if (l && l.see && !l.see(u, POSE_MARGIN)) return;
-    if (!u.foot && !u.structure && !u.flies && !u.flight && u.scriptZ === undefined && u.kind === 'VEHICLE') {
+    if (L && (L.len > 0 || L.wid > 0) && !u.foot && !u.flies && !u.flight && u.scriptZ === undefined) {
       const c = Math.cos(u.heading),
         sn = Math.sin(u.heading),
-        d = 10,
+        a = L.len / 2,
+        b = L.wid / 2,
         t = this.terrain;
-      const fz = heightAt(t, u.x + c * d, u.y + sn * d) - heightAt(t, u.x - c * d, u.y - sn * d);
-      const sz = heightAt(t, u.x - sn * d, u.y + c * d) - heightAt(t, u.x + sn * d, u.y - c * d);
-      _up.set(-(fz * c - sz * sn) / (2 * d), -(fz * sn + sz * c) / (2 * d), 1).normalize();
-      u.holder.quaternion.copy(_tilt.setFromUnitVectors(_Z, _up)).multiply(_turn.setFromAxisAngle(_Z, u.heading + Math.PI / 2));
+      const fz = a > 0 ? heightAt(t, u.x + c * a, u.y + sn * a) - heightAt(t, u.x - c * a, u.y - sn * a) : 0;
+      const sz = b > 0 ? heightAt(t, u.x - sn * b, u.y + c * b) - heightAt(t, u.x + sn * b, u.y - c * b) : 0;
+      const gx = a > 0 ? fz / (2 * a) : 0,
+        gy = b > 0 ? sz / (2 * b) : 0;
+      _up.set(-(gx * c - gy * sn), -(gx * sn + gy * c), 1).normalize();
+      u.holder.quaternion.copy(_tilt.setFromUnitVectors(_Z, _up)).multiply(_turn.setFromAxisAngle(_Z, yaw + Math.PI / 2));
+      u.holder.position.z = u.z + Math.abs(fz) / 5;
     }
     if (this.interp) {
       if (!u.inPose) {
@@ -4272,7 +4280,7 @@ export class LandWorld {
   fire(u, t, w = u.weapon) {
     let sx = u.x,
       sy = u.y,
-      z0 = u.z + u.aimZ * 0.8;
+      z0 = u.z + u.aimZ;
     const M =
       !w.muzzles || !w.muzzles.length
         ? null
@@ -4287,9 +4295,18 @@ export class LandWorld {
     }
     const P = w.proj,
       cat = categoryOf(P);
-    const tz = t.z + t.aimZ * 0.6,
-      speed0 = w.speed;
-    const lead = leadTurning(_lead, sx, sy, z0, t.x, t.y, tz, t.mvx || 0, t.mvy || 0, t.mvz || 0, t.turnW || 0, speed0 > 0 ? speed0 : 1);
+    const tbs = t.type && t.inst?.bone ? (t.targetBones ??= t.type.list('Target_Bones').map(n => t.inst.bone(n)).filter(Boolean)) : null;
+    let tx = t.x,
+      ty = t.y,
+      tz = t.z + t.aimZ;
+    if (tbs && tbs.length) {
+      this.boneAt(t, tbs[Math.floor(simRandom() * tbs.length)], _tb);
+      tx = _tb.x;
+      ty = _tb.y;
+      tz = _tb.z;
+    }
+    const speed0 = w.speed;
+    const lead = leadTurning(_lead, sx, sy, z0, tx, ty, tz, t.mvx || 0, t.mvy || 0, t.mvz || 0, t.turnW || 0, speed0 > 0 ? speed0 : 1);
     const dist = Math.hypot(lead.x - sx, lead.y - sy, lead.z - z0),
       wxk = this.weatherproof && this.weatherproof.has(u.side) ? 1 : this.wxSpread(w);
     const pick = list => {
@@ -4613,7 +4630,7 @@ export class LandWorld {
         const turn = (P._turn ??= (P.num('Max_Rate_Of_Turn', 0) * LOGIC_FPS * Math.PI) / 180) * dt;
         let gx = T.x,
           gy = T.y,
-          gz = T.z + T.aimZ * 0.6;
+          gz = T.z + T.aimZ;
         if (s.ox && s.oy && s.oz) {
           const h = T.heading || 0,
             c = Math.cos(h),
@@ -4833,9 +4850,9 @@ export class LandWorld {
           if (T.bone && T.base) T.bone.quaternion.copy(T.base).multiply(_q.setFromAxisAngle(_Z, T.yaw));
           if (T.barrel) {
             const D = Math.hypot(t.x - u.x, t.y - u.y);
-            let rise = Math.atan2(t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8), D);
+            let rise = Math.atan2(t.z + t.aimZ - (u.z + u.aimZ), D);
             if (lobOf(g) > 0) {
-              const L = lob(g, D, t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8));
+              const L = lob(g, D, t.z + t.aimZ - (u.z + u.aimZ));
               if (L) rise = L.angle;
             }
             const want = Math.max(-T.lift, Math.min(T.lift, rise)),
@@ -4943,9 +4960,9 @@ export class LandWorld {
       let rel = want - u.heading;
       rel = Math.atan2(Math.sin(rel), Math.cos(rel));
       const inArc = Math.abs(rel) <= u.turret.extent;
-      let rise = Math.atan2(t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8), Math.hypot(t.x - u.x, t.y - u.y));
+      let rise = Math.atan2(t.z + t.aimZ - (u.z + u.aimZ), Math.hypot(t.x - u.x, t.y - u.y));
       if (lobOf(w) > 0) {
-        const L = lob(w, Math.hypot(t.x - u.x, t.y - u.y), t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8));
+        const L = lob(w, Math.hypot(t.x - u.x, t.y - u.y), t.z + t.aimZ - (u.z + u.aimZ));
         if (L) rise = L.angle;
       }
       u.turret.wantPitch = Math.max(-u.turret.lift, Math.min(u.turret.lift, rise));
@@ -4963,7 +4980,8 @@ export class LandWorld {
       da = Math.atan2(Math.sin(da), Math.cos(da));
       const step = u.turn * dt;
       u.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
-      aimed = Math.abs(da) < 0.25;
+      const cone = (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG);
+      aimed = Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone && (!u.anims?.attack || u.animKind === 'ATTACKIDLE' || u.animKind === 'attack' || u.once === 'attack');
     }
     if (aimed && this.clearShots && globalThis.clearShots && this.shotBlocked(u, t, w)) {
       aimed = false;
@@ -4998,13 +5016,13 @@ export class LandWorld {
     if (u.losT === t && this.time < u.losAt) return u.losBad;
     u.losT = t;
     u.losAt = this.time + 0.5;
-    return (u.losBad = this.lineBlocked(u.x, u.y, u.z + u.aimZ * 0.8, t));
+    return (u.losBad = this.lineBlocked(u.x, u.y, u.z + u.aimZ, t));
   }
 
   lineBlocked(x0, y0, z0, t) {
     const x1 = t.x,
       y1 = t.y,
-      z1 = t.z + t.aimZ * 0.6,
+      z1 = t.z + t.aimZ,
       d = Math.hypot(x1 - x0, y1 - y0),
       n = Math.ceil(d / (CELL * 0.5)),
       tm = this.meshOf(t) ? this.meshStrike(t, x0, y0, z0, x1, y1, z1) : -1,
@@ -5023,7 +5041,7 @@ export class LandWorld {
     sq.clearAt = this.time + 3;
     const R = Math.min(u.range * 0.85, Math.hypot(u.x - t.x, u.y - t.y)),
       base = Math.atan2(u.y - t.y, u.x - t.x),
-      lift = u.aimZ * 0.8,
+      lift = u.aimZ,
       need = u.need || 1;
     for (let k = 0; k <= 12; k++) {
       const a = base + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
@@ -5158,9 +5176,9 @@ export class LandWorld {
         rel = Math.atan2(Math.sin(rel), Math.cos(rel));
         let aimed;
         if (u.turret) {
-          let rise = Math.atan2(t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8), Math.hypot(t.x - u.x, t.y - u.y));
+          let rise = Math.atan2(t.z + t.aimZ - (u.z + u.aimZ), Math.hypot(t.x - u.x, t.y - u.y));
           if (lobOf(w) > 0) {
-            const L = lob(w, Math.hypot(t.x - u.x, t.y - u.y), t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8));
+            const L = lob(w, Math.hypot(t.x - u.x, t.y - u.y), t.z + t.aimZ - (u.z + u.aimZ));
             if (L) rise = L.angle;
           }
           u.turret.wantPitch = Math.max(-u.turret.lift, Math.min(u.turret.lift, rise));
@@ -5213,7 +5231,7 @@ export class LandWorld {
     }
     let rel = Math.atan2(t.y - u.y, t.x - u.x) - u.heading;
     rel = Math.atan2(Math.sin(rel), Math.cos(rel));
-    const rise = Math.atan2(t.z + t.aimZ * 0.6 - (u.z + u.aimZ * 0.8), Math.hypot(t.x - u.x, t.y - u.y));
+    const rise = Math.atan2(t.z + t.aimZ - (u.z + u.aimZ), Math.hypot(t.x - u.x, t.y - u.y));
     T.wantPitch = Math.max(-T.lift, Math.min(T.lift, rise));
     this.aimTurret(u, Math.max(-T.extent, Math.min(T.extent, rel)), dt);
   }
@@ -5319,6 +5337,67 @@ export class LandWorld {
     u.onceEnd = this.time + (clip.duration - u.anim.time) / u.anim.speed;
     u.animKind = '~';
     u.fromStart = false;
+  }
+
+  locoOf(u) {
+    const t = u.type,
+      max = t.num('Max_Speed', 1) || 1,
+      rate = v => (v > 0 && u.speed > 0 && !u.walkTrans ? (v / max) * u.speed * LOGIC_FPS : Infinity),
+      close = t.num('Close_Enough_Angle_For_Move_Start', 0) || db.constants.num('CloseEnoughAngleForMoveStart', 180),
+      sc = t.num('Scale_Factor', 1) || 1;
+    return {
+      acc: rate(t.num('OverrideAcceleration', 0)),
+      dec: rate(t.num('OverrideDeceleration', 0)),
+      minFrac: t.num('Min_Speed_Fraction_For_Turn', 0),
+      close: close * DEG,
+      len: t.num('Overall_Length', 0) * sc,
+      wid: t.num('Overall_Width', 0) * sc,
+      sec: t.bool('UseSecondaryFacing')
+        ? {
+            inPlace: t.num('SecondaryTurnInPlaceROTCoefficient', 0.5),
+            angle: (t.num('SecondaryTurnAngle', 90) || 90) * DEG,
+            min: t.num('MinSecondaryTurnROTCoefficient', 0),
+            max: t.num('MaxSecondaryTurnROTCoefficient', 1),
+            look: t.num('SecondaryTurnLookaheadDistance', 0)
+          }
+        : null
+    };
+  }
+
+  secondaryYaw(u, dt) {
+    const S = u.loco.sec;
+    if (u.face === undefined) u.face = u.heading;
+    const moving = (u.mv || 0) > 0 && u.path.length > 0;
+    let want = u.heading;
+    if (moving) {
+      let px = u.x,
+        py = u.y,
+        left = S.look,
+        tx = u.path[0].x,
+        ty = u.path[0].y;
+      for (const p of u.path) {
+        const seg = Math.hypot(p.x - px, p.y - py);
+        tx = p.x;
+        ty = p.y;
+        if (seg >= left) {
+          if (seg > 0) {
+            tx = px + ((p.x - px) / seg) * left;
+            ty = py + ((p.y - py) / seg) * left;
+          }
+          break;
+        }
+        left -= seg;
+        px = p.x;
+        py = p.y;
+      }
+      if (Math.hypot(tx - u.x, ty - u.y) > 1) want = Math.atan2(ty - u.y, tx - u.x);
+    }
+    let diff = want - u.face;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    const k = moving ? Math.min(S.max, Math.max(S.min, (Math.abs(diff) / S.angle) * (u.mv / (u.speed || 1)))) : S.inPlace,
+      step = k * u.turn * dt;
+    u.face += Math.abs(diff) <= step ? diff : Math.sign(diff) * step;
+    return u.face;
   }
 
   preTurnOf(u, da) {
@@ -6932,7 +7011,7 @@ export class LandWorld {
           sp = s.speed ?? s.w.speed,
           dx = T.x + s.ox - s.x,
           dy = T.y + s.oy - s.y,
-          dz = T.z + T.aimZ * 0.6 - s.bz,
+          dz = T.z + T.aimZ - s.bz,
           d = Math.hypot(dx, dy, dz) || 1;
         s.vx = (dx / d) * sp;
         s.vy = (dy / d) * sp;
@@ -7147,8 +7226,11 @@ export class LandWorld {
           this.walkStop(u, next, d, dt);
           continue;
         }
-        if (u.preTurns && !u.preTurn && Math.abs(da) > (u.stopTurn || u.turn) / LOGIC_FPS) u.preTurn = this.preTurnOf(u, da);
-        const step = (u.preTurn ? u.preTurn.rate : u.turn) * dt,
+        const L0 = (u.loco ??= this.locoOf(u)),
+          rest = !(u.mv > 0),
+          gate = rest && Math.abs(da) > (u.stopTurn || u.turn) / LOGIC_FPS && (Math.abs(da) > L0.close || Math.abs(da) >= Math.PI / 2 || L0.minFrac > 0);
+        if (u.preTurns && !u.preTurn && gate) u.preTurn = this.preTurnOf(u, da);
+        const step = (u.preTurn ? u.preTurn.rate : rest ? u.stopTurn || u.turn : u.turn) * dt,
           turned = Math.abs(da) <= step ? da : Math.sign(da) * step;
         u.heading += turned;
         if (u.preTurn && u.preTurn.until && this.time >= u.preTurn.until)
@@ -7163,15 +7245,24 @@ export class LandWorld {
           this.show(u, dt);
           continue;
         }
-        if (Math.abs(da) < 0.6 && !u.walking && u.walkTrans && this.oneShot(u, 'MOVESTART', 'move')) u.fromStart = true;
-        u.walking = Math.abs(da) < 0.6;
-        if (Math.abs(da) < 0.6) {
-          const pace = this.paceOf(u);
-          u.slow = pace < 0.75;
-          const go = Math.min(
-            d,
-            Math.min((u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * pace, u.ccCap ?? Infinity) * dt
-          );
+        const L = (u.loco ??= this.locoOf(u)),
+          pace = this.paceOf(u),
+          cap = Math.min((u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * pace, u.ccCap ?? Infinity),
+          off = Math.abs(da),
+          aligned = off <= u.turn * dt;
+        let goal = cap;
+        if (!aligned) goal = Math.min(goal, off >= Math.PI / 2 ? 0 : (u.turn * d) / (2 * Math.sin(off)));
+        if (u.path.length === 1 && L.dec < Infinity) goal = Math.min(goal, Math.sqrt(2 * L.dec * d));
+        const frac = cap > 0 ? goal / cap : 0,
+          mv = u.mv || 0,
+          pivot = !aligned && !(mv > 0) && (off > L.close || frac <= L.minFrac || frac < 0.05);
+        if (pivot || (!aligned && mv > 0 && frac <= L.minFrac)) goal = 0;
+        u.mv = Math.max(0, Math.min(cap, mv + Math.max(-L.dec * dt, Math.min(L.acc * dt, goal - mv))));
+        if (!pivot && !u.walking && u.walkTrans && this.oneShot(u, 'MOVESTART', 'move')) u.fromStart = true;
+        u.walking = !pivot;
+        u.slow = pace < 0.75;
+        if (!pivot && u.mv > 0) {
+          const go = Math.min(d, u.mv * dt);
           u.v = dt > 0 ? go / dt : 0;
           const fx = u.x + Math.cos(u.heading) * go,
             fy = u.y + Math.sin(u.heading) * go;
@@ -7184,13 +7275,15 @@ export class LandWorld {
           } else if (!this.blocked(u, next)) u.path = [];
         }
         if (d < Math.max(2, u.speed * dt * 1.5)) u.path.shift();
-        this.setAnim(u, Math.abs(da) < 0.6 ? 'move' : da > 0 ? 'turnL' : 'turnR');
+        if (!u.path.length) u.mv = 0;
+        this.setAnim(u, pivot ? (da > 0 ? 'turnL' : 'turnR') : 'move');
         this.moveRate(u);
       } else {
         if (u.walking && u.walkTrans) this.walkEnd(u);
         u.walking = false;
         u.preTurn = null;
         u.stopping = null;
+        u.mv = 0;
         this.setAnim(u, 'idle');
         if (u.foot && u.animKind === 'idle' && this.time > (u.fidgetAt ??= this.time + 5 + simRandom() * 15)) {
           u.fidgetAt = this.time + 8 + simRandom() * 16;
