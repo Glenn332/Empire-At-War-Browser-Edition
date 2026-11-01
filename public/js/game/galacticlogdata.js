@@ -196,8 +196,10 @@ export function updateHistory(g) {
   let next = state.historyFrame === undefined ? 0 : state.historyFrame < 2 ? state.historyFrame + 1 : Math.max(30, state.historyFrame + 30);
   for (; next <= frame; next = next < 2 ? next + 1 : next < 30 ? 30 : next + 30) sampleHistory(g, next);
 }
-export function historyChart(g, metric = 'economy') {
-  const series = historyFactions(g).map(player => ({ player, rows: logState(g).history[player.faction] || [] }));
+export function historyChart(g, metric = 'economy', only = null) {
+  const series = historyFactions(g)
+    .filter(player => !only || player.faction.toUpperCase() === String(only).toUpperCase())
+    .map(player => ({ player, rows: logState(g).history[player.faction] || [] }));
   if (!series.length || series.some(s => s.rows.length < 2)) return null;
   const frames = series.flatMap(s => s.rows.map(r => r.frame)),
     start = Math.min(...frames),
@@ -219,7 +221,10 @@ export function historyChart(g, metric = 'economy') {
     metric,
     series: series.map(s => ({
       ...s,
-      points: s.rows.map(r => ({ x: end === start ? 0 : (1.5 * (r.frame - start)) / (end - start), y: 1 - r[metric] / maximum }))
+      points: s.rows.map((r, i) => {
+        const at = series[0].rows[i]?.frame ?? r.frame;
+        return { x: end === start ? 0 : (1.5 * (at - start)) / (end - start), y: 1 - r[metric] / maximum };
+      })
     }))
   };
 }

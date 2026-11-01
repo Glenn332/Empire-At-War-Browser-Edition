@@ -1433,6 +1433,10 @@ export class GalacticGame {
       this.keys.add(e.code);
       if (pressed(e, 'TACTICAL_OVERVIEW')) this.zoomOut();
       if (pressed(e, 'PAUSE')) this.setUserPaused(!this.userPaused);
+      if (pressed(e, 'CAMERA_HOME')) {
+        e.preventDefault();
+        this.cameraHome();
+      }
     });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -1638,6 +1642,49 @@ export class GalacticGame {
       }
     });
     return best;
+  }
+
+  lightLoop() {
+    const m = this.movies;
+    if (!m || m.noLight) return;
+    const log = this.galacticLog,
+      enc = log?.encyclopedia,
+      tip = enc && !enc.root.hidden ? (this.tips?.popup && enc.shown === this.tips.key ? this.tips.alpha : 1) : 0,
+      help = log?.showing ? log.helpAlpha : 0,
+      want = tip > 0 || !!log?.showing,
+      mine = m.active && m.canvas.dataset.movie === 'Light_Loop';
+    if (want && !m.active && !m.starting) {
+      m.starting = true;
+      m.play('Light_Loop', true)
+        .then(ok => {
+          if (!ok) m.noLight = true;
+        })
+        .finally(() => (m.starting = false));
+    } else if (!want && mine) m.stop();
+    if (mine) m.canvas.style.opacity = String(Math.trunc(Math.max(tip, help) * 255) / 255);
+  }
+
+  leaderPlanet() {
+    if (this.leaderAt >= 0) return this.leaderAt;
+    const up = x => String(x || '').toUpperCase(),
+      leader = up(db.faction(this.me)?.str('Faction_Leader'));
+    if (!leader) return -1;
+    const is = r => r && [r.type, r.carries].some(t => t && (up(t.name) === leader || t.list('Company_Units').some(n => up(n) === leader)));
+    const g = this.galaxy;
+    for (const p of g.planets) if (['garrison', 'groundStructures', 'orbitalStructures'].some(l => (p[l] || []).some(is))) return (this.leaderAt = p.index);
+    for (const f of g.fleets) if (f.planet >= 0 && f.units.some(is)) return (this.leaderAt = f.planet);
+    return -1;
+  }
+
+  cameraHome() {
+    if (this.view.zoom || this.view.planet >= 0) return;
+    const i = this.leaderPlanet(),
+      p = this.galaxy.planets[i];
+    if (!p) return;
+    this.view.x = p.pos[0];
+    this.view.y = p.pos[1];
+    this.view.z = this.cam.plane;
+    this.select(i);
   }
 
   select(i) {
@@ -3129,6 +3176,7 @@ export class GalacticGame {
     if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.rate);
     (this.corruptionVisuals ||= new CorruptionVisuals(this)).update(this.paused ? 0 : real * this.rate);
     this.galacticLog?.update(elapsed);
+    this.lightLoop();
     if ((this.hudTimer -= real) <= 0) {
       this.hudTimer = 0.25;
       this.ui?.refresh();

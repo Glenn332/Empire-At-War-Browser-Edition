@@ -38,6 +38,9 @@ export class GalacticLog {
     this.hold = 0;
     this.cleanup = null;
     this.encyclopedia = hud && new GalacticEncyclopedia(game, hud);
+    this.help = hud && new GalacticEncyclopedia(game, hud);
+    if (this.help) this.help.root.style.zIndex = '60';
+    this.helpAlpha = 0;
   }
   toggle() {
     if (this.opened) this.close();
@@ -53,7 +56,7 @@ export class GalacticLog {
     this.encyclopedia?.hide();
     this.cleanup?.();
     this.cleanup = null;
-    this.dialog?.close();
+    if (this.dialog) this.stale = this.dialog;
     this.dialog = null;
     const generation = ++this.generation;
     if (page === 3) {
@@ -77,6 +80,10 @@ export class GalacticLog {
       if (page === 3 && this.summaryKind === 'economy') name = 'IDD_SUMMARY_SCREEN_ECONOMY';
       if (page === 2 && !skin.dialogs.has(name)) name = 'IDD_TECH_TREE_REBEL' + (this.techSpace ? '_SPACE' : '');
       const d = await openDialog(name, { cls: 'galactic-log', nativeImages: true, nativeLists: true, nativeFonts: true });
+      if (generation === this.generation || !this.opened) {
+        this.stale?.close();
+        this.stale = null;
+      }
       if (!d) {
         this.close();
         return false;
@@ -124,11 +131,11 @@ export class GalacticLog {
       throw error;
     }
   }
-  async picture(d, id, name, color = [255, 255, 255]) {
+  async picture(d, id, name, color = [255, 255, 255], frame = false) {
     const ctl = d.ctl(id);
     if (!ctl) return;
     const request = (ctl._pictureRequest = Symbol());
-    d.imageFrame(id, false);
+    d.imageFrame(id, frame);
     if (!name) {
       d.setImage(id, '');
       return;
@@ -226,10 +233,13 @@ export class GalacticLog {
     }
     if (this.opened || g.storyDialog?.opened || g.menus?.open || g.planetInfo?.open || g.scriptUI?.modal) return;
     this.hold -= dt;
-    if (this.hold > 0) return;
     if (this.showing) {
+      const step = (8 / 255) * dt * 60;
+      this.helpAlpha = this.hold > 0 ? Math.min(1, this.helpAlpha + step) : Math.max(0, this.helpAlpha - step);
+      if (this.help) this.help.root.style.opacity = String(Math.trunc(this.helpAlpha * 255) / 255);
+      if (this.hold > 0 || this.helpAlpha > 0) return;
       this.showing = false;
-      if (this.encyclopedia?.shown === null) this.encyclopedia.hide();
+      this.help?.hide();
     }
     if (!this.queue.length) return;
     const record = this.queue.shift();
@@ -237,8 +247,10 @@ export class GalacticLog {
     const faction = db.faction(g.me);
     g.audio?.play(record.sfx || faction.str(record.urgent ? 'SFXEvent_HUD_Advisor_Urgent' : 'SFXEvent_HUD_Advisor_Message'));
     this.hold = record.text.length * db.constants.num('Advisor_Hint_Duration', 0.1);
-    if (this.hold > 0) {
-      this.encyclopedia?.message(record.text, record.color);
+    if (this.hold > 0 && this.help) {
+      this.helpAlpha = 0;
+      this.help.root.style.opacity = '0';
+      this.help.message(record.text, record.color);
       this.showing = true;
     }
   }
@@ -251,6 +263,8 @@ export class GalacticLog {
     this.cleanup = null;
     this.dialog?.close();
     this.dialog = null;
+    this.stale?.close();
+    this.stale = null;
     this.portraits.clear();
     if (this.game.pauseGalactic) this.game.pauseGalactic(false);
     else this.game.paused = this.wasPaused;
@@ -259,5 +273,6 @@ export class GalacticLog {
     this.close();
     this.queue.length = 0;
     this.encyclopedia?.dispose();
+    this.help?.dispose();
   }
 }

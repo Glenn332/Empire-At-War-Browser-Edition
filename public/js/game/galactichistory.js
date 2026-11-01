@@ -34,9 +34,11 @@ export function drawHistory(chart, game) {
   const colors = [];
   for (const series of chart.series) {
     const f = db.faction(series.player.faction),
-      color = game.simplifiedFactionColors
-        ? db.constants.vec(series.player.faction === game.me ? 'Player_Color' : 'Enemy_Color', f.vec('Color', [255, 255, 255]))
-        : f.vec('Color', [255, 255, 255]);
+      mine = series.player.faction === game.me,
+      color =
+        game.simplifiedFactionColors && (mine || (f.bool('Is_Playable') && !f.bool('Is_Neutral')))
+          ? db.constants.vec(mine ? 'Player_Color' : 'Enemy_Color', f.vec('Color', [255, 255, 255]))
+          : f.vec('Color', [255, 255, 255]);
     ctx.fillStyle = logColor(color);
     colors.push(ctx.fillStyle);
     for (let i = 1; i < series.points.length; i++) {
@@ -93,7 +95,7 @@ export async function renderHistory(owner, d) {
   const prepare = async () => {
     const bitmap = await loadNativeFont('EmpireAtWar-Bold', dialogFontPixels(innerHeight, 24));
     await bitmap?.ensure(
-      historyChart(owner.game.galaxy, owner.historyMetric)
+      historyChart(owner.game.galaxy, owner.historyMetric, owner.game.net ? owner.game.me : null)
         ?.series.map(series => {
           const faction = db.faction(series.player.faction);
           return db.t(faction.str('Text_ID')) || faction.name;
@@ -105,21 +107,22 @@ export async function renderHistory(owner, d) {
   if (owner.dialog !== d) return;
   const refresh = () => {
     const metric = owner.historyMetric,
-      chart = historyChart(owner.game.galaxy, metric);
+      chart = historyChart(owner.game.galaxy, metric, owner.game.net ? owner.game.me : null);
     const captions = {
       economy: 'TEXT_AXIS_ECONOMY',
       military: 'TEXT_AXIS_MILITARY',
       planets: 'TEXT_AXIS_PLANETS',
       tech: 'TEXT_AXIS_TECH_LEVEL'
     };
-    d.setText('IDC_Y_CAPTION', db.t(captions[metric]));
     if (!chart) {
+      d.setText('IDC_Y_CAPTION', '');
       d.setImage('IDC_DATA_CHART_IMAGE', '');
       for (const id of ['IDC_STATIC_START', 'IDC_STATIC_MIDDLE', 'IDC_STATIC_END', 'IDC_Y_MIN', 'IDC_Y_MAX']) d.setText(id, '');
       return;
     }
+    d.setText('IDC_Y_CAPTION', db.t(captions[metric]));
     d.setImage('IDC_DATA_CHART_IMAGE', drawHistory(chart, owner.game).toDataURL());
-    d.imageFrame('IDC_DATA_CHART_IMAGE', false);
+    d.imageFrame('IDC_DATA_CHART_IMAGE', true);
     d.setText('IDC_STATIC_START', '0');
     d.setText('IDC_STATIC_MIDDLE', String(Math.trunc(chart.cycles / 2)));
     d.setText('IDC_STATIC_END', String(chart.cycles));

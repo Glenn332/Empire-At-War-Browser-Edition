@@ -19,18 +19,21 @@ export async function renderTechTree(owner, d) {
     const id = 'IDC_TECHTREE_' + type.name.replace(/-/g, '_'),
       ctl = d.ctl(id);
     if (!ctl) continue;
-    const unlocked = player.unlockedTypes?.some(n => n.toUpperCase() === type.name.toUpperCase()),
-      locked = player.lockedTypes?.some(n => n.toUpperCase() === type.name.toUpperCase());
-    const disabled = player.tech < type.num('Tech_Level', 0) || locked || (type.bool('Build_Initially_Locked') && !unlocked);
-    work.push(owner.picture(d, id, type.str('Icon_Name'), disabled ? [90, 90, 90] : [255, 255, 255]));
+    const unlocked = player.unlockedTypes?.some(n => n.toUpperCase() === type.name.toUpperCase());
+    const disabled = player.tech < type.num('Tech_Level', 0) || (type.bool('Build_Initially_Locked') && !unlocked);
+    work.push(owner.picture(d, id, type.str('Icon_Name'), disabled ? [90, 90, 90] : [255, 255, 255], true));
     const label = () => ctl.setAttribute('aria-label', db.t(type.str('Text_ID')) || type.name);
     label();
     d.onLanguageRefresh(label);
     ctl.dataset.type = type.name;
     ctl.setAttribute('role', 'button');
     ctl.tabIndex = 0;
-    ctl.onmouseenter = () => owner.showType(type);
-    ctl.onclick = () => owner.showType(type);
+    ctl.onmouseenter = e => {
+      owner.showType(type);
+      owner.showLinked(type, e);
+    };
+    ctl.onpointermove = e => owner.moveLinked(e);
+    ctl.onmouseleave = () => owner.hideLinked();
     ctl.onfocus = () => owner.showType(type);
     ctl.onkeydown = e => {
       if (e.code === 'Enter' || e.code === 'Space') {

@@ -1,5 +1,7 @@
 import { db, loadFileList } from '../gamedata.js';
-import { fetchText } from '../vfs.js';
+import { fetchText, fetchBinary } from '../vfs.js';
+import { BinkPlayer } from '../bink.js';
+import { movieDefinitions } from './galacticmovies.js';
 import { parseXML } from '../xml.js';
 import { loadALO } from '../alo.js';
 import { loadTextureCanvas } from '../dds.js';
@@ -256,7 +258,9 @@ export async function loadHudAssets() {
   const dsName = comps.get('DS_SHELL')?.val('Model_Name');
   const ds = !assets.shell.has('DEATHSTAR_SWITCH') && dsName ? await loadALO(dsName).catch(() => null) : null;
   const matrices = uiBoneTransforms(shell),
-    timer = shell.bones.findIndex(b => b.name.toUpperCase() === 'DS_COUNTDOWN_TIMER');
+    timer = shell.bones.findIndex(b => b.name.toUpperCase() === 'DS_COUNTDOWN_TIMER'),
+    movieBone = shell.bones.findIndex(b => b.name.toUpperCase() === 'MOVIE_TACTICAL');
+  assets.movieAt = movieBone < 0 ? null : { x: matrices[movieBone][3], y: matrices[movieBone][7] };
   assets.superweapon = {
     shell: ds ? uiMeshes(ds) : assets.shell,
     centered: !!ds,
@@ -807,9 +811,11 @@ export class CommandBar {
       if (tipBar !== this) return;
       if (this.ui) this.refreshInfo();
       this.tips.update();
+      this.lightLoop();
       requestAnimationFrame(fade);
     };
     requestAnimationFrame(fade);
+    this.light = null;
     this.infoKey = '';
     this.infoPinned = false;
     this.hoverUnit = null;
@@ -991,7 +997,7 @@ export class CommandBar {
     box.innerHTML = `<div class="etop"><i class="eicon"></i><span class="epop"></span><b></b><span class="ecost"></span></div>
       <div class="ebody"><div class="eclass"><span></span><span class="eabil"></span></div><div class="eline"></div>
       <p class="etext"></p><p class="ewhy"></p>
-      <div class="eagainst"><div class="good"><em></em><div class="eframe"></div></div><div class="bad"><em></em><div class="eframe"></div></div></div></div><div class="ebeam"></div>`;
+      <div class="eagainst"><div class="good"><em></em><div class="eframe"></div></div><div class="bad"><em></em><div class="eframe"></div></div></div></div>`;
     const q = sel => box.querySelector(sel);
     q('.etop').style.backgroundImage = css(iconUrl('e_topbar.tga'));
     q('.eicon').style.backgroundImage = css(iconUrl(iconNameFor(type)));
@@ -1034,7 +1040,7 @@ export class CommandBar {
     this.infoPinned = false;
     box.classList.remove('hint');
     box.innerHTML = `<div class="etop"><i class="eicon"></i><b></b></div>
-      <div class="ebody"><div class="eclass"><span></span></div><div class="eline"></div><p class="etext"></p></div><div class="ebeam"></div>`;
+      <div class="ebody"><div class="eclass"><span></span></div><div class="eline"></div><p class="etext"></p></div>`;
     const q = sel => box.querySelector(sel);
     q('.etop').style.backgroundImage = css(iconUrl('e_topbar2.tga'));
     q('.eicon').style.backgroundImage = css(iconUrl(m.icon));
@@ -1056,13 +1062,62 @@ export class CommandBar {
     this.tipTarget = null;
   }
 
+  lightLoop() {
+    const box = this.info,
+      want = !!box && !box.classList.contains('hidden'),
+      at = assets?.movieAt;
+    if (!at) return;
+    let L = this.light;
+    if (want && !L) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'hlight';
+      canvas.hidden = true;
+      this.root.appendChild(canvas);
+      L = this.light = { canvas, player: new BinkPlayer(canvas, { onError: () => (L.dead = true) }), on: false, last: performance.now() };
+      movieDefinitions()
+        .then(async defs => {
+          const movie = defs.get('LIGHT_LOOP'),
+            buffer = movie && (await fetchBinary(movie.val('Movie_File')));
+          if (!buffer || L.dead) {
+            L.dead = true;
+            return;
+          }
+          const off = db.constants.vec('CB_Movie_Offset', [0, 0]),
+            own = String(movie.val('Commandbar_Offset') || '')
+              .trim()
+              .split(/[\s,]+/)
+              .map(Number);
+          await L.player.play(buffer, { loop: true, alpha: /^(yes|true|1)$/i.test(movie.val('Alpha') || ''), color: db.constants.vec('CB_Movie_Color', [255, 255, 255, 255]) });
+          L.x = at.x + (off[0] || 0) + (own[0] || 0);
+          L.y = at.y + (off[1] || 0) + (own[1] || 0);
+          L.ready = true;
+        })
+        .catch(() => (L.dead = true));
+    }
+    if (!L || L.dead) return;
+    const now = performance.now(),
+      dt = (now - L.last) / 1000;
+    L.last = now;
+    const tip = this.tips.popup ? this.tips.alpha : parseFloat(box.style.opacity || '1');
+    L.canvas.hidden = !(want && L.ready);
+    if (L.canvas.hidden) return;
+    L.player.update(dt);
+    Object.assign(L.canvas.style, {
+      left: L.x + 'px',
+      bottom: L.y - L.canvas.height + 'px',
+      width: L.canvas.width + 'px',
+      height: L.canvas.height + 'px',
+      opacity: String(Math.trunc(tip * 255) / 255)
+    });
+  }
+
   showHint(text, seconds) {
     const box = this.info;
     this.infoKey = 'hint';
     this.infoPinned = false;
     this.encyclopedia.shown = 'hint';
     box.style.opacity = '';
-    box.innerHTML = '<div class="ebody"><p class="etext"></p></div><div class="ebeam"></div>';
+    box.innerHTML = '<div class="ebody"><p class="etext"></p></div>';
     box.classList.add('hint');
     const body = box.querySelector('.ebody'),
       c = db.constants

@@ -1401,14 +1401,9 @@ body:not(.original-hud) .heroframe {
   height: 43px;
   background: center/100% 100% no-repeat;
 }
-#encyc .ebeam {
+#cmdbar .hlight {
   position: absolute;
-  left: -10px;
-  bottom: -19px;
-  width: 272px;
-  height: 19px;
-  clip-path: polygon(9px 0, 272px 0, 266px 2.3px, 217px 3.8px, 104px 5.3px, 72px 8.3px, 56.5px 11.3px, 40px 14.3px, 17px 17.3px, 0 19px);
-  background: linear-gradient(to right, rgba(100, 205, 222, 0.95), rgba(60, 135, 178, 0.85) 35%, rgba(90, 135, 155, 0.7) 80%);
+  pointer-events: none;
 }
 
 #bench {
