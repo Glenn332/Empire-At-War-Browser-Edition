@@ -129,6 +129,7 @@ export class SpaceRecorder {
       U[o + 5] = q.heading || 0;
       for (let k = 6; k < UNIT; k++) U[o + k] = 0;
       U[o + 12] = q.hyper || 0;
+      U[o + 14] = q.carrier && !q.carrier.dead ? q.carrier.id : -1;
       o += UNIT;
     }
     this.nUnits = n;

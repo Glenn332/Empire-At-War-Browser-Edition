@@ -301,6 +301,7 @@ export class SpaceMirror {
         e.y = U[o + 3];
         e.heading = U[o + 5];
         e.hyper = flags & 4 ? U[o + 12] : 0;
+        e.carrier = U[o + 14] >= 0 ? this.byW.get(U[o + 14]) || null : null;
         if (flags & 1) e.dead = true;
         continue;
       }
