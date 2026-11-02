@@ -45,7 +45,12 @@ export class SkirmishAI {
     this.lastCredits = player.credits;
     this.plans = [];
     const foe = world.teams.find(t => t !== player.team && t.station);
-    this.enemyStart = foe ? { x: foe.station.x, y: foe.station.y } : { x: 0, y: 0 };
+    const own = player.spawn || player.team.spawnPoints[0] || { x: 0, y: 0 };
+    const entry = world.teams
+      .filter(t => t !== player.team && !t.mapSide && t.spawnPoints.length)
+      .map(t => t.spawnPoints[0])
+      .sort((a, b) => Math.hypot(a.x - own.x, a.y - own.y) - Math.hypot(b.x - own.x, b.y - own.y))[0];
+    this.enemyStart = foe ? { x: foe.station.x, y: foe.station.y } : entry ? { x: entry.x, y: entry.y } : { x: 0, y: 0 };
     this.brain = null;
     this.brainReady =
       brain !== undefined
@@ -71,7 +76,7 @@ export class SkirmishAI {
     const w = this.world,
       enemies = this.known(),
       mine = this.mine();
-    for (const pl of this.places) if (mine.some(e => d2(e, pl) < (pl.r + 600) ** 2)) this.seenAt.set(pl.key, w.time);
+    for (const pl of this.places) if (!w.fog || mine.some(e => d2(e, pl) < (pl.r + 600) ** 2)) this.seenAt.set(pl.key, w.time);
     this.enemies = enemies;
     this.mind = this.brain
       ? new SpaceMind(this.brain, w, this.player, {

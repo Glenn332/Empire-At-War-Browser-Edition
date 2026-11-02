@@ -6,10 +6,11 @@ import { openMainCampaignMenu, suggestTutorial, tutorialSuggested, markTutorialS
 const PANEL = { cls: 'front', stretch: true };
 
 export class FrontEnd {
-  constructor(game, { skirmish, leave, start, multiplayer }) {
+  constructor(game, { skirmish, instant, leave, start, multiplayer }) {
     this.game = game;
     this.menus = game.menus;
     this.skirmish = skirmish;
+    this.instant = instant;
     this.leave = leave;
     this.start = start;
     this.openLobbies = multiplayer;
@@ -64,17 +65,40 @@ export class FrontEnd {
     if (!dlg) return;
     dlg.on('IDC_NEW_CAMPAIGN_BUTTON', () => this.newCampaign(dlg));
     dlg.on('IDC_CUSTOM_CAMPAIGN_BUTTON', () => this.campaign(dlg));
+    const show = on => {
+      dlg.veil.style.display = on ? '' : 'none';
+      const o = document.getElementById('frontOverlay');
+      if (o) o.style.display = on ? '' : 'none';
+    };
     dlg.on('IDC_SKIRMISH_GAMES_BUTTON', async () => {
-      const show = on => {
-        dlg.veil.style.display = on ? '' : 'none';
-        const o = document.getElementById('frontOverlay');
-        if (o) o.style.display = on ? '' : 'none';
-      };
       show(false);
       const ok = await this.skirmish(() => show(true)).catch(() => false);
       if (!ok) show(true);
     });
     dlg.on('IDC_BACK_BUTTON_MAIN', () => this.menus.pop());
+    if (this.instant) this.instantEntry(dlg, show);
+  }
+
+  instantEntry(dlg, show) {
+    const box = id => dlg.def.controls.find(c => c.id === id);
+    const skirmish = box('IDC_SKIRMISH_GAMES_BUTTON'),
+      back = box('IDC_BACK_BUTTON_MAIN');
+    if (!skirmish || !back) return;
+    const step = back.y - skirmish.y;
+    for (const id of ['IDC_STATIC_OPTIONS', 'IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON']) {
+      const c = box(id),
+        e = dlg.ctl(id);
+      if (c && e) e.style.top = c.y - step + 'px';
+    }
+    this.menus.extra(dlg, 'IDC_SKIRMISH_GAMES_BUTTON', 'Instant Battle', skirmish.x, skirmish.y, skirmish.w, async () => {
+      this.game.audio.unlock();
+      show(false);
+      const ok = await this.instant(() => show(true)).catch(e => {
+        console.warn('instant battle', e);
+        return false;
+      });
+      if (!ok) show(true);
+    });
   }
 
   async multiplayer() {

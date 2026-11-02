@@ -7,7 +7,7 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
 | **Space skirmish** | **91.9%** | 156 | 28 | 1 | 185 |
-| **Whole game** | **81.0%** | 219 | 113 | 8 | 340 |
+| **Whole game** | **80.9%** | 219 | 114 | 8 | 341 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -28,7 +28,7 @@ Regenerate with `node tools/progress.mjs`.
 | Audio | space skirmish | 95.8% | 11 | 1 | 0 |
 | Platform | space skirmish | 90.0% | 12 | 3 | 0 |
 | What a mod can change | rest of the game | 71.9% | 8 | 7 | 1 |
-| Game modes | rest of the game | 45.0% | 1 | 7 | 2 |
+| Game modes | rest of the game | 45.5% | 1 | 8 | 2 |
 | Land battles | rest of the game | 85.2% | 53 | 15 | 3 |
 | Galactic conquest | rest of the game | 50.0% | 1 | 56 | 1 |
 
@@ -264,9 +264,10 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Shaders — *a mod's compiled shaders are not run: a material goes to ours by what its shader's name says (bump, gloss, colorize, additive, alpha). Counted over the trial mod's 5,385 models, all but two of the shaders they name are the game's own; the two (MeshBumpSpecColorize, MeshAdditiveOffset) are drawn as bump-and-colorize with a gloss picture, and as additive. A gloss picture of its own (GlossTexture) is used wherever a material names one*
 - ⬜ Movies — *Bink*
 
-### Game modes — 45.0%
+### Game modes — 45.5%
 
 - ✅ Space skirmish
+- 🟡 Instant battle (space, our own mode) — *not in the original game: a Single Player entry under Skirmish Battles. Up to ten fleets on up to ten teams, each bought from a budget (15000 by default, set for all or per fleet) out of the space units the faction skirmish stations can build and those the capturable structures of skirmish maps sell it (merchant docks and pirate bases: the heroes of Thrawn Revenge are sold there), hero teams placed as their ships. Ours: the list also offers every combat hero of the faction with a skirmish price of 50 or more that a skirmish does not sell (Phoenix Rising sells none in space); copies are left out by their variant parent (a variant of a hero already offered or of another faction hero) and by name and model, or picked at random within the budget; players on one team share a faction. No stations, no building, no credits in battle; the build pads and the capturable or income structures of the map (mines, merchant docks, sensor pods and the like) are left out so the AI does not go for them. The teams come in from evenly spaced points around the middle of the map and drop out of hyperspace as an attacking fleet does in a campaign battle, under a letterboxed camera shot of the player fleet (Escape, Space or Enter skips it). A team is out when it has no ships left; the last team wins. Runs in the battle worker; the ships still in hyperspace are listed in the battle snapshot and the worker starts their jump again. Multiplayer: Instant Battle is a game type in Host Game; the host sets the map, budgets and computer fleets, every player builds their own fleet and presses Ready, and the battle runs in lockstep (checked with two players and a computer fleet, page and battle worker, hashes equal for 100 seconds). Not done in multiplayer: saving, and a check over a whole battle to the end. Action points: the Tactical_Intro speech for space attackers is asked for but has not been heard in a test; a stagger between the teams arrivals; whether to hold units over the faction Space_Tactical_Unit_Cap back as reinforcements as campaign battles do*
 - 🟡 Land skirmish — *playable from the setup screen to the end-of-battle screen on every land map, with several commanders a side; the enemy is a stand-in commander*
 - 🟡 Galactic conquest — *native campaign entry, scripted setup menus and a partial playable galaxy are available; see the detailed conquest entries below*
 - 🟡 Story campaigns — *the three campaigns start (Full_Story_Campaign_Empire, Rebel, Underworld) with no galactic reward unsupported: storyrewards.js adds REVEAL_PLANET, UNIQUE_UNIT, TRIGGER_EVENT, CREDITS, STORY_ELEMENT, REMOVE_UNIT, CHANGE_OWNER, DESTROY_OBJECT, MOVE_FLEET, INVADE_PLANET and the lock and camera rewards; the generic story triggers fire; the Underworld prologue mission runs. Single player New Campaign opens IDD_MAIN_CAMPAIGN_DIALOG (tutorial suggested once, difficulty radios) and starts Full_Story_Campaign_Underworld, as the executable names it. Battles play story speech and screen text (SPEECH, MULTIMEDIA, STORY_SPEECH_DONE: tacticalspeech.js), so scripted dialogue advances; a hidden hinted prop stays hidden through the fog pass. Land scripts: Create_Generic_Object spawns, Play_SFX_Event is heard (Allow_Localized_SFX), Get_Bone_Position reads the bone, Play_Lightning_Effect strikes its bolts, Hide_Sub_Object reaches props, animated props fire their particle proxies, and sound loops follow the cinematic camera. Land units move at Object_Max_Speed_Multiplier_Land times their Max_Speed, as the engine does; small vehicles route with one cell of room; cast shadows follow the cinematic camera. Battle rewards: the retry dialog of story missions (USE_RETRY_DIALOG, ACTIVATE_RETRY_DIALOG; Retry starts the mission again where the engine loads its autosave), DISABLE_REINFORCEMENTS, SET_ADVISOR, ENABLE_FOW, POSITION_CAMERA, CREDITS and STORY_CHECK_DESTROYED. Not played through to the end*

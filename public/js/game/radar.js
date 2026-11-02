@@ -377,6 +377,7 @@ export class Radar {
   }
 
   radarOn(world, player) {
+    if (world.radarAlways) return true;
     if (world.time === this.radarAt && player === this.radarFor) return this.radarHas;
     let on = false;
     for (const u of world.units) {

@@ -7,10 +7,12 @@ export function battleSnapshot(game, save = null, refs = null) {
     save = snapshot(game);
     refs = new Map([...saveRefs(w).refs].map(([e, r]) => [r, e]));
   }
-  const pids = [];
+  const pids = [],
+    hyper = [];
   for (const [r, e] of refs) {
     if (!e || e.dead) continue;
     pids.push([r, e.id]);
+    if (e.isSquad ? e.hyper > 0 : e.hyper) hyper.push(r);
     if (e.isSquad) e.fighters.forEach((f, i) => pids.push([r + '.' + i, f.id]));
   }
   const mapObjects = w.units
@@ -68,6 +70,9 @@ export function battleSnapshot(game, save = null, refs = null) {
     mapObjects,
     save,
     pids,
+    hyper,
+    holdHyperspace: !!w.holdHyperspace,
+    viewer: game.human ? game.human.id : null,
     at: w.time,
     ai: !(game.setup.benchmark || game.setup.attract),
     switches: ['oldai', 'nofreestore', 'noscripts', 'noplans'].filter(k => new URLSearchParams(location.search).has(k))

@@ -21,6 +21,7 @@ import { execute } from './commands.js';
 import { stateHash } from './netgame.js';
 import { loadSpaceBrain } from './spacebrain.js';
 import { placeSpecialWeapons } from './superweapon.js';
+import { InstantRules } from './instantrules.js';
 
 const TICK = 1 / 30;
 const AI_STEP_MS = 4,
@@ -140,6 +141,11 @@ async function setUp(m, events) {
   for (const [r, pid] of m.pids) {
     const x = thing(r);
     if (x) ids.push([x.id, pid]);
+  }
+  w.holdHyperspace = !!m.holdHyperspace;
+  for (const r of m.hyper || []) {
+    const x = thing(r);
+    if (x && !x.dead && !(x.isSquad ? x.hyper > 0 : x.hyper)) w.startHyperspace(x);
   }
   w.recountPop();
   lap('spawn');
@@ -304,6 +310,13 @@ async function run(m) {
   const told = w.onEvent;
   hookBattle(w, events, spawns);
   w.onEvent = told;
+  const rules = m.setup?.instant
+    ? new InstantRules(
+        w,
+        () => w.players.find(p => p.id === m.viewer) || w.viewer,
+        (...a) => events.push(['game', 'message', a.map(x => plain(x))])
+      )
+    : null;
   const entity = id => w.units.find(u => u.id === id) || w.squads.find(q => q.id === id) || null;
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
@@ -328,6 +341,7 @@ async function run(m) {
     w.updateSome(Infinity);
     w.updateEnd();
     think();
+    rules?.step(TICK);
     stepMs += performance.now() - s;
     steps++;
     const { message, transfer } = stepRecord(w, rec, spawns, events);

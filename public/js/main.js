@@ -38,6 +38,8 @@ import { texturesReady, loadTexture, textureBytes, dxtSupported } from './dds.js
 import { loadParticles } from './particles.js';
 import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
+import { InstantBattle, placeInstantBattle, shipsOf, leftOutOfInstant } from './game/instantbattle.js';
+import { openInstantBattle } from './game/instantmenu.js';
 import { showSummary } from './game/summary.js';
 import { showLoadScreen, endLoadScreen, activeLoadScreen, loadProgress } from './game/loadscreen.js';
 import { LandGame } from './game/landgame.js';
@@ -341,7 +343,11 @@ class Game {
     const names = (this.artNames = new Set()),
       seen = (this.artSeen = new Set()),
       later = [];
-    if (!this.setup.attract && !this.setup.campaign) for (const f of factions) modelsForType(stationType(f), factions, names, seen, later);
+    const instant = this.setup.instant;
+    if (instant)
+      for (const army of instant.armies || [])
+        for (const n of army || []) for (const t of shipsOf(db.type(n))) modelsForType(t, factions, names, seen, null);
+    if (!this.setup.attract && !this.setup.campaign && !instant) for (const f of factions) modelsForType(stationType(f), factions, names, seen, later);
     const cb = this.setup.campaign;
     if (cb)
       for (const n of [
@@ -359,7 +365,7 @@ class Game {
         [...(cb.storyPlots || []).map(p => p.name), this.setup.tacticalStoryPlot, 'SANDBOX_STANDARD.XML'].filter(Boolean)
       ))
         modelsForType(t, factions, names, seen, null);
-    if (!this.setup.attract && !this.setup.campaign)
+    if (!this.setup.attract && !this.setup.campaign && !instant)
       for (const f of factions)
         for (const k of ['Standalone_Space_Maps_Special_Weapon_A', 'Standalone_Space_Maps_Special_Weapon_B']) {
           const t = db.faction(f) && db.type(db.faction(f).str(k).trim());
@@ -378,7 +384,7 @@ class Game {
               if (t) modelsForType(t, factions, superweaponAssets, new Set(), null);
             }
     for (const name of superweaponAssets) names.add(name);
-    if (!this.setup.attract)
+    if (!this.setup.attract && !instant)
       for (const o of map.objects) {
         if (!/^TEAM_\d\d_/i.test(o.type.name) || !o.type.has('Marker_For_Specific_Object_Type')) continue;
         for (const f of factions) {
@@ -386,7 +392,7 @@ class Game {
           if (t) modelsForType(t, factions, names, seen, later);
         }
       }
-    if (!this.setup.attract && !this.setup.campaign) {
+    if (!this.setup.attract && !this.setup.campaign && !instant) {
       const sides = new Set(factions.map(f => f.toUpperCase()));
       for (const t of db.types.values()) {
         if (!t.str('Space_Model_Name') && !t.list('Squadron_Units').length) continue;
@@ -523,7 +529,7 @@ class Game {
     world.fog = this.setup.fog !== false;
     world.onEvent = (kind, data) => this.onEvent(kind, data);
 
-    world.skirmish = !this.setup.attract && !this.setup.benchmark && !this.setup.campaign;
+    world.skirmish = !this.setup.attract && !this.setup.benchmark && !this.setup.campaign && !this.setup.instant;
     world.campaign = !!this.setup.campaign;
     await installTacticalBattle(this);
     if (this.setup.campaign)
@@ -531,6 +537,10 @@ class Game {
         if (p.id >= 0 && this.setup.campaign.tech?.[p.factionName] !== undefined) p.campaignTech = this.setup.campaign.tech[p.factionName];
     this.placeArgs = [map, teams, stationType];
     this.placeMap(map, teams, stationType);
+    if (this.setup.instant) {
+      this.instant = new InstantBattle(this, this.setup.restore ? new Map() : placeInstantBattle(world, teams, this.setup));
+      world.radarAlways = true;
+    }
     if (this.setup.campaign) {
       const cbk = this.setup.campaign;
       await loadBlackMarket();
@@ -641,6 +651,11 @@ class Game {
       rig.x = human.station.x;
       rig.y = human.station.y;
     }
+    const fleet = this.instant?.fleets.get(human.team);
+    if (fleet) {
+      rig.x = fleet.center.x;
+      rig.y = fleet.center.y;
+    }
     if (this.campaignBook) {
       const a = this.campaignBook.anchors[human.team.id];
       if (a) {
@@ -709,6 +724,10 @@ class Game {
         this.message(`${loaded.missing.length} saved item(s) no longer exist in the game data and were left out`, 'bad');
     } else if (this.setup.attract) this.startAttract();
     else if (this.world.skirmish) this.message(`${db.t(map.textId) || map.planet} — destroy the enemy space station`);
+    else if (this.instant) {
+      this.message(`${db.t(map.textId) || map.planet} — the last fleet standing wins`);
+      this.instant.intro();
+    }
     this.last = performance.now();
     requestAnimationFrame(this.frame);
     window.game = this;
@@ -1011,7 +1030,7 @@ class Game {
   placeMap(map, teams, stationType, again = false) {
     const w = this.world;
     if (!again) w.mapObjects = new Map();
-    const byOwner = !expansion() && !this.setup.attract && !this.setup.campaign && !this.setup.linkedTactical,
+    const byOwner = !expansion() && !this.setup.attract && !this.setup.campaign && !this.setup.linkedTactical && !this.setup.instant,
       factionOrder = [...db.factions.values()];
     const mapSides = new Map();
     const mapSide = o => {
@@ -1035,6 +1054,7 @@ class Game {
       if (!again && (o.type.behaviors().has('MARKER') || o.type.bool('Is_Marker')))
         w.mapObjects.set(mapIndex, [new TacticalMarker(o, () => w.neutral)]);
       const team = /^TEAM_(\d\d)_/.exec(n);
+      if (this.setup.instant && (team || leftOutOfInstant(o.type))) continue;
       if (team) {
         const t = teams[+team[1]];
         if (!t || !t.players.length) continue;
@@ -2182,6 +2202,7 @@ class Game {
       if (this.scripts) this.scripts.update(TICK);
       if (this.advisor) this.advisor.update(TICK);
       this.campaignVictoryStep();
+      this.instant?.step(TICK);
       this.retreat?.step(TICK);
       this.stepCinematicJumps(TICK);
       diag.lap('ai');
@@ -2237,6 +2258,7 @@ class Game {
           if (this.scripts) this.scripts.update(TICK);
           if (this.advisor) this.advisor.update(TICK);
           this.campaignVictoryStep();
+          this.instant?.step(TICK);
           this.retreat?.step(TICK);
           this.stepCinematicJumps(TICK);
           diag.lap('ai');
@@ -2945,6 +2967,18 @@ async function boot() {
         launch(setup);
       }
     });
+  const instant = cancel =>
+    openInstantBattle({
+      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m))],
+      factions: FACTIONS,
+      audio,
+      cancel,
+      start: setup => {
+        audio.unlock();
+        leaveFor('space');
+        launch(setup);
+      }
+    });
   const multiplayer = async kind => {
     leaveFor('multiplayer');
     hideSplash();
@@ -2967,6 +3001,7 @@ async function boot() {
   };
   const exits = {
     lobby,
+    instant,
     multiplayer,
     load: loadSave,
     start: setup => {
@@ -3091,7 +3126,7 @@ async function boot() {
   await mainMenu();
 }
 
-async function startFrontEnd(mapFile, { lobby, multiplayer, load, start }) {
+async function startFrontEnd(mapFile, { lobby, instant, multiplayer, load, start }) {
   if (!(await loadMap(mapFile).catch(() => null))) return false;
   const game = new Game({
     attract: true,
@@ -3117,6 +3152,7 @@ async function startFrontEnd(mapFile, { lobby, multiplayer, load, start }) {
   addEventListener('pointerdown', unlock, true);
   const front = (game.front = new FrontEnd(game, {
     skirmish: cancel => lobby(cancel),
+    instant: cancel => instant(cancel),
     multiplayer,
     start,
     leave: () => leaveTo('index.html')

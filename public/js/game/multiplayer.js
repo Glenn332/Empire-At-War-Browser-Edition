@@ -4,6 +4,7 @@ import { openDialog } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions } from './lobby.js';
+import { openInstantBattle } from './instantmenu.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 
@@ -78,6 +79,14 @@ export const GAME_TYPES = [
     text: 'TEXT_GAME_TYPE_CAPTURE_CONTROL_POINTS',
     desc: 'TEXT_GAME_DESCRIPTION_CAPTURE_CONTROL_POINTS',
     fallback: 'Land Control'
+  },
+  {
+    id: 5,
+    type: 'instant',
+    text: '',
+    desc: '',
+    fallback: 'Instant Battle',
+    about: 'Space only. Every player buys a fleet from the same budget, up to ten fleets on ten teams come in from the edges of the map, and the last team with ships left wins.'
   }
 ];
 const gameType = t => GAME_TYPES.find(g => g.type === t) || GAME_TYPES[2];
@@ -147,7 +156,7 @@ async function hostOptions({ name, campaigns, landMaps, customMaps = { land: [] 
   const types = GAME_TYPES.filter(
     g =>
       (g.type !== 'campaign' || campaigns.length) &&
-      (g.type === 'campaign' || g.type === 'space' || landMaps.length || customMaps.land.length)
+      (g.type === 'campaign' || g.type === 'space' || g.type === 'instant' || landMaps.length || customMaps.land.length)
   );
   let type = (() => {
     try {
@@ -172,7 +181,7 @@ async function hostOptions({ name, campaigns, landMaps, customMaps = { land: [] 
   }
   const describe = () => {
     const g = gameType(type);
-    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', T(g.desc, ''));
+    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', T(g.desc, g.about || ''));
     const d = dlg.ctl('IDC_GAME_TYPE_DESCRIPTION_TEXT');
     if (d) d.style.whiteSpace = 'normal';
   };
@@ -768,6 +777,27 @@ async function openStaging({
   options = null,
   password = ''
 }) {
+  const instant = (initial = null) =>
+    openInstantBattle({
+      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m))],
+      factions,
+      audio,
+      start: setup => launch({ ...setup, net: { session: net, me: net.id } }),
+      mp: {
+        session: net,
+        host,
+        name,
+        gameName: options?.name || `${name}'s game`,
+        version,
+        data,
+        kind,
+        password: host ? options?.password || '' : '',
+        invite: host ? inviteLink(net.gameId, kind) : null,
+        initial,
+        back
+      }
+    });
+  if (host && options?.type === 'instant') return instant();
   const dlg = await openDialog(K.staging, { ...SCREEN, modal: false });
   if (host) password = options?.password || '';
   for (const id of K.stagingOff) dlg.enable(id, false);
@@ -967,7 +997,16 @@ async function openStaging({
       publish();
     });
   } else {
-    net.on('message', (from, m) => {
+    const offMessage = net.on('message', (from, m) => {
+      if (m.k === 'state' && m.ib) {
+        if (left) return;
+        left = true;
+        offMessage();
+        offClosed();
+        dlg.close();
+        instant(m.ib);
+        return;
+      }
       if (m.k === 'state') {
         st = m.st;
         slots = m.slots;
@@ -994,7 +1033,7 @@ async function openStaging({
     });
     net.send(0, { k: 'hello', name, version, data, ...(password ? { password } : {}) });
   }
-  net.on('closed', why => {
+  const offClosed = net.on('closed', why => {
     if (!started) leave(why === 'host left' ? 'The host closed the game.' : 'The connection to the game was lost (' + why + ').');
   });
 
