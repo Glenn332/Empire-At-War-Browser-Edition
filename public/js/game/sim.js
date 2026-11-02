@@ -1915,10 +1915,9 @@ export class World {
       this.onEvent('baseAttacked', { unit: target });
     }
     if (shields && target.maxShield > 0 && target.shieldDownTimer > 0) {
-      const inc = db.constants.num('Depleted_Shield_Damage_Increment', 0);
+      const inc = Math.trunc(LOGIC_FPS * db.constants.num('Depleted_Shield_Damage_Increment', 0.25)) / LOGIC_FPS;
       if (inc > 0) target.shieldDownTimer = Math.min(db.constants.num('Depleted_Shield_Disable_Time', 5), target.shieldDownTimer + inc);
-    }
-    if (shields && target.shield > 0 && target.maxShield > 0) {
+    } else if (shields && target.shield > 0 && target.maxShield > 0) {
       const k = db.damageMod(damageType, target.shieldArmor),
         d = amount * k,
         took = Math.min(d, target.shield);
