@@ -212,7 +212,11 @@ const GROUPS = [
       ['Nebula haze on ships inside (Nebula_Effect_Color)', D],
       ['Visibility and stealth', D],
       ['Teams sharing a station', D],
-      ['Group-move formations (per layer, arrive together)', D],
+      [
+        'Group-move formations (per layer, arrive together)',
+        D,
+        'as the engine space movement coordinator (read): each ship is paced once at launch, its straight distance to the order goal over its top speed plus half its turn to it over its turn rate, against the longest of the non-fighter ships, floored at SpaceIdleMovementSpeed (0); squadrons are not paced; nothing paces again on the way, so a ship that is held up or detours arrives late in the original too. In an attack-move a ship with a Space_Layer (every corvette, frigate and capital ship of the game) does not stop for what it meets unless its type has Disregard_Space_Layer_For_Guard_Attack_Move: it flies on to its place and fires as it goes (read). Ships are kept apart only by their route planning; space has no pushing apart, so ships fighting in a crowd may overlap as in the original'
+      ],
       ['Route planning around stations, rocks and asteroid fields', D],
       ['Height layers (Space_Layer)', D],
       [

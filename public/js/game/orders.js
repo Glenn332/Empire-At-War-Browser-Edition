@@ -76,15 +76,25 @@ function travelTime(e, p) {
   return d / Math.max(1, e.maxSpeed) + (turn * 0.5) / Math.max(0.01, e.turnRate);
 }
 
-function formationSpeeds(movers, slots) {
-  const times = movers.map((e, i) => travelTime(e, slots[i]));
+function formationSpeeds(movers, goal) {
+  const times = movers.map(e => (e.isSquad ? 0 : travelTime(e, goal)));
   const longest = Math.max(0, ...times);
   const floor = db.constants.num('SpaceIdleMovementSpeed', 0);
   return movers.map((e, i) => {
-    if (longest <= 0 || movers.length < 2) return 1;
-    return Math.max(floor / Math.max(1, e.isSquad ? e.speed : e.maxSpeed), Math.min(1, times[i] / longest));
+    if (e.isSquad || longest <= 0 || movers.length < 2) return 1;
+    return Math.max(floor / Math.max(1, e.maxSpeed), Math.min(1, times[i] / longest));
   });
 }
+
+const centreOf = list => {
+  let x = 0,
+    y = 0;
+  for (const p of list) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / Math.max(1, list.length), y: y / Math.max(1, list.length) };
+};
 
 export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false) {
   const movers = entities.filter(e => e.isSquad || e.isMobile);
@@ -99,7 +109,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
       return v;
     });
     const slots = formationSlots(from, x, y),
-      speeds = formationSpeeds(from, slots);
+      speeds = formationSpeeds(from, { x, y });
     movers.forEach((e, i) => {
       const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i] };
       if (moving(e)) (e.queue ||= []).push(leg);
@@ -112,7 +122,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     movers.forEach((e, i) => {
       if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y);
     });
-  const speeds = formationSpeeds(movers, slots);
+  const speeds = formationSpeeds(movers, { x, y });
   movers.forEach((e, i) => e.setOrder({ kind, x: slots[i].x, y: slots[i].y, pace: speeds[i] }));
   return movers.length;
 }
@@ -120,7 +130,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
 export function orderPlaced(placed, face, attackMove = false) {
   const kind = attackMove ? 'attackmove' : 'move',
     movers = placed.map(o => o.e),
-    speeds = formationSpeeds(movers, placed);
+    speeds = formationSpeeds(movers, centreOf(placed));
   placed.forEach((o, i) => o.e.setOrder({ kind, x: o.x, y: o.y, pace: speeds[i], ...(o.e.isSquad ? {} : { face }) }));
   return placed.length;
 }

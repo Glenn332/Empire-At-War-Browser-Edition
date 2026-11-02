@@ -377,6 +377,7 @@ export class Unit {
     }
     this.isStructure = !this.isMobile;
     this.layer = layerMask(type);
+    this.attackMoveStops = !type.str('Space_Layer').trim() || type.bool('Disregard_Space_Layer_For_Guard_Attack_Move', false);
     this.asteroidDamage = beh.has('ASTEROID_FIELD_DAMAGE') && ASTEROID_LAYERS.has(this.layer);
     this.underConstruction = beh.has('TACTICAL_UNDER_CONSTRUCTION');
     this.selectable = beh.has('SELECTABLE') || this.isPad || type.has('Tactical_Buildable_Objects_Multiplayer');
@@ -3081,7 +3082,7 @@ export class World {
       faceOnly = null;
     if (ord.kind === 'move' || ord.kind === 'attackmove') {
       goal = ord;
-      if (ord.kind === 'attackmove' && u.target && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
+      if (ord.kind === 'attackmove' && u.attackMoveStops && u.target && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
         goal = null;
         faceOnly = u.target;
       }
