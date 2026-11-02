@@ -5,7 +5,8 @@ export const DYNAMIC_SIZES = [
   { key: 'small', label: 'Small', half: 5000, players: 3 },
   { key: 'medium', label: 'Medium', half: 6500, players: 4 },
   { key: 'large', label: 'Large', half: 8500, players: 6 },
-  { key: 'huge', label: 'Huge', half: 11000, players: 10 }
+  { key: 'huge', label: 'Huge', half: 11000, players: 10 },
+  { key: 'massive', label: 'Massive', half: 20000, players: 10 }
 ];
 const PREFIX = '@dynamic/';
 const SEEDS_KEY = 'swr-dynamic-seeds';
@@ -177,6 +178,15 @@ export function seedBar({ get, set, readonly = () => false, sound = () => {}, co
   update();
   return { el: bar, update };
 }
+
+export const dynamicTurn = (name, teams, turn = 0) => {
+  const d = parseDynamic(name),
+    k = Math.max(2, Math.min(10, teams | 0)),
+    step = (Math.PI * 2) / k;
+  const base = d ? random(d.seed ^ 0x2545f491)() * step : 0;
+  const j = Math.round((turn - base) / step);
+  return base + (((j % k) + k) % k) * step;
+};
 
 const random = seed => {
   let a = seed >>> 0;
@@ -452,7 +462,7 @@ export async function generateDynamicMap(name, opts = {}) {
         p => put(pick(K.pad), p.x, p.y, 250, { z: 0, heading: face })
       );
   } else {
-    axis = Number.isFinite(opts.turn) ? opts.turn : 0;
+    axis = dynamicTurn(name, k);
     for (let j = 0; j < k; j++) {
       const a = axis + (j * TAU) / k,
         e = edge(a);

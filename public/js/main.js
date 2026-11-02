@@ -332,7 +332,7 @@ class Game {
     $('lobby').classList.add('hidden');
     if (!this.setup.attract) showSplash();
     progress('Loading map', 0);
-    const map = await loadMap(mapFile, { teams: teamFactions.length, turn: this.setup.instant?.turn || 0, instant: !!this.setup.instant });
+    const map = await loadMap(mapFile, { teams: teamFactions.length, instant: !!this.setup.instant });
     ensureMissionPlayers(this.setup, map);
     pickEnvironment(map, this.setup.net ? environmentRoll(this.setup.seed) : Math.random());
     this.map = map;

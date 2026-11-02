@@ -2,7 +2,7 @@ import { db, factionColor } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
 import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
-import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar } from './dynamicmap.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar, dynamicTurn } from './dynamicmap.js';
 import {
   INSTANT_MAX_PLAYERS,
   INSTANT_MAX_TEAMS,
@@ -390,7 +390,10 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     changed(null, true);
   });
   const spinBtn = button('Shuffle Entry', () => {
-    st.turn = Math.random() * Math.PI * 2;
+    if (isDynamic(st.mapFile)) {
+      const k = Math.max(2, teamsUsed().length);
+      st.turn = entryTurn() + ((1 + Math.floor(Math.random() * (k - 1))) * Math.PI * 2) / k;
+    } else st.turn = Math.random() * Math.PI * 2;
     changed(null, true);
   });
   mapOpts.append(fogBtn, spinBtn);
@@ -424,6 +427,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   };
 
   const filled = () => players.filter(p => p.kind !== 'open');
+  const entryTurn = () => (isDynamic(st.mapFile) ? dynamicTurn(st.mapFile, teamsUsed().length, st.turn) : st.turn);
   const teamsUsed = () => [...new Set(filled().map(p => p.team))].sort((a, b) => a - b);
   const nameOf = (p, i) =>
     p.kind === 'you'
@@ -683,7 +687,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     previewMarks.replaceChildren();
     if (!b) return;
     const used = teamsUsed(),
-      pts = entryPoints(b.min, b.max, used.length, st.turn);
+      pts = entryPoints(b.min, b.max, used.length, entryTurn());
     const W = b.max.x - b.min.x,
       H = b.max.y - b.min.y;
     used.forEach((team, k) => {
@@ -703,7 +707,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     });
   };
   let shownMap = null;
-  const viewKey = () => (isDynamic(st.mapFile) ? `${st.mapFile}|${teamsUsed().length}|${st.turn}` : st.mapFile);
+  const viewKey = () => (isDynamic(st.mapFile) ? `${st.mapFile}|${teamsUsed().length}` : st.mapFile);
   const drawPreview = async () => {
     const m = st.mapFile,
       key = viewKey();
@@ -715,7 +719,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     if (!previews.has(key))
       previews.set(
         key,
-        loadMapPreview(m, { teams: Math.max(2, teamsUsed().length), turn: st.turn, instant: true })
+        loadMapPreview(m, { teams: Math.max(2, teamsUsed().length), instant: true })
           .then(cv => (cv ? cv.toDataURL() : ''))
           .catch(e => (console.warn('map preview', e), ''))
       );
@@ -853,7 +857,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
             ? { human: true, peer: p.peer, name: p.name, team: index.get(p.team), color, auto: false }
             : { human: false, team: index.get(p.team), difficulty: p.kind, color, auto: false }
       ),
-      instant: { turn: st.turn, armies: fleets.map(({ p }) => p.army.slice()) }
+      instant: { turn: entryTurn(), armies: fleets.map(({ p }) => p.army.slice()) }
     };
     if (net) {
       setup.seed = crypto.getRandomValues(new Uint32Array(1))[0];
