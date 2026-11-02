@@ -300,7 +300,9 @@ async function run(m) {
   };
   const { think, game, takeOver, scriptsFrom } = await minds(w, m, map, events, thing);
   events.length = 0;
+  const told = w.onEvent;
   hookBattle(w, events, spawns);
+  w.onEvent = told;
   const entity = id => w.units.find(u => u.id === id) || w.squads.find(q => q.id === id) || null;
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
