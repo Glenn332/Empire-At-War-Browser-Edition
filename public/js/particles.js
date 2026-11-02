@@ -246,6 +246,40 @@ export function parseParticles(buffer) {
 
 const defs = new Map();
 
+const groupReach = g => {
+  switch (g.type) {
+    case 1:
+      return Math.hypot(...g.min.map((v, i) => Math.max(Math.abs(v), Math.abs(g.max[i]))));
+    case 2:
+      return Math.abs(g.cube) * Math.sqrt(3);
+    case 3:
+      return Math.abs(g.sphereR);
+    case 4:
+      return Math.hypot(g.cylR, g.cylH);
+    default:
+      return Math.hypot(...g.point);
+  }
+};
+
+export function particleReach(name) {
+  let key = name.toUpperCase();
+  if (!key.endsWith('.ALO')) key += '.ALO';
+  const def = defs.get(key);
+  if (!def || def instanceof Promise) return 0;
+  if (def.reach === undefined) {
+    let reach = 0;
+    for (const e of def.emitters) {
+      const life = e.lifetime * (1 + Math.abs(e.randLife)),
+        speed = groupReach(e.vel) + Math.abs(e.radialSpeed),
+        push = Math.hypot(...e.accel) + Math.abs(e.radialAccel) + Math.abs(e.gravity),
+        size = Math.max(...e.tracks[4]) * (1 + Math.abs(e.randScale)) * 0.5;
+      reach = Math.max(reach, groupReach(e.pos) + speed * life + 0.5 * push * life * life + size);
+    }
+    def.reach = Math.min(reach, 50000);
+  }
+  return def.reach;
+}
+
 export function loadParticles(name) {
   let key = name.toUpperCase();
   if (!key.endsWith('.ALO')) key += '.ALO';

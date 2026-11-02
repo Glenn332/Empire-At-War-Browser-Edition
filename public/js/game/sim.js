@@ -448,6 +448,7 @@ export class Unit {
     this.parts = undefined;
     this.proxies = undefined;
     this.pendingProxies = undefined;
+    this.fxReach = 0;
     this.hasEngineFx = undefined;
     this.shieldMesh = undefined;
     this.shieldFlash = undefined;
@@ -594,6 +595,7 @@ export class Unit {
       this.model = buildModel(data, { teamColor: this.player && this.player.id >= 0 ? this.player.color : null, ...w.modelOpts });
       this.obj.add(this.model.root);
       const r = this.model.radius * this.scale;
+      this.fxReach = Math.max(this.fxReach, this.model.drawRadius * this.scale);
       this.revealSize = r;
       this.height = (this.model.box.max.z - this.model.box.min.z) * this.scale;
       this.radius = t.num('Custom_Soft_Footprint_Radius', 0) || t.num('Custom_Footprint_Radius', 0) || Math.max(8, r * 0.7);

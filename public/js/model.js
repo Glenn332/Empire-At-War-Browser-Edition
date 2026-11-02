@@ -803,6 +803,8 @@ export class ModelInstance {
     this.flat = null;
     this.radius = 1;
     this.box = new THREE.Box3();
+    this.drawBox = new THREE.Box3();
+    this.drawRadius = 0;
     this.model = null;
     this.poseVersion = 0;
     this.lazy = false;
@@ -985,9 +987,10 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
       else if (obj.material.userData.alpha) obj.renderOrder = 1;
       group.add(obj);
       any = true;
-      if (!mesh.hidden && !obj.material.transparent) {
+      if (!mesh.hidden) {
         tmpBox.copy(geo.boundingBox).applyMatrix4(parent.matrixWorld);
-        inst.box.union(tmpBox);
+        inst.drawBox.union(tmpBox);
+        if (!obj.material.transparent) inst.box.union(tmpBox);
       }
     }
     let key = mesh.name.toUpperCase();
@@ -1002,6 +1005,10 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
   if (inst.box.isEmpty()) inst.box.set(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
   const size = inst.box.getSize(new THREE.Vector3());
   inst.radius = Math.max(size.x, size.y) / 2;
+  if (!inst.drawBox.isEmpty()) {
+    const { min, max } = inst.drawBox;
+    inst.drawRadius = Math.hypot(Math.max(-min.x, max.x), Math.max(-min.y, max.y), Math.max(-min.z, max.z));
+  }
   return inst;
 }
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { setPlanetEnvironment, lighting, getModelData, buildModel, updateBillboards, planetClock, programSources } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { diag } from '../diag.js';
-import { ParticleManager } from '../particles.js';
+import { ParticleManager, particleReach } from '../particles.js';
 import { basisOf } from '../particlesim.js';
 import { PostFX } from './post.js';
 import { db } from '../gamedata.js';
@@ -1262,6 +1262,7 @@ export class Renderer {
     );
     px.engine = /engine/i.test(px.name);
     px.sys = sys;
+    u.fxReach = Math.max(u.fxReach, particleReach(px.name) + Math.hypot(l.x, l.y, l.z));
     return true;
   }
 
@@ -1549,7 +1550,7 @@ export class Renderer {
         if (u.inNebula || u.haze) this.updateHaze(u, dt);
         if (u.pendingProxies.length) u.pendingProxies = u.pendingProxies.filter(px => !this.attachProxy(u, px));
         _sphere.center.set(u.x, u.y, u.z || 0);
-        _sphere.radius = (u.visualRadius || 50) * 2.5;
+        _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
         const inView = !!u.casters || _frustum.intersectsSphere(_sphere);
         if (u.buildAnim && u.construction) {
           if (inView) u.buildAnim.seek(1 - u.construction.left / u.construction.total);

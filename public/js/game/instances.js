@@ -217,7 +217,7 @@ export class Instances {
         u.pendingProxies.length > 0;
       if (u.instWarm > 0) u.instWarm--;
       _sphere.center.set(u.x, u.y, u.z || 0);
-      _sphere.radius = (u.visualRadius || 50) * 2.5;
+      _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
       const inView = _frustum.intersectsSphere(_sphere);
       if (!inView && !u.casters) {
         obj.visible = false;

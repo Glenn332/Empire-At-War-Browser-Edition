@@ -210,6 +210,11 @@ const GROUPS = [
         'the engine occupancy test marks fields with a category bit; how the space path finder uses that bit for a corvette is not traced; ours lets a ship through any field that does not hurt it'
       ],
       ['Nebula haze on ships inside (Nebula_Effect_Color)', D],
+      [
+        'Nebulae stay drawn off the centre of the screen',
+        D,
+        'a nebula model is all see-through meshes (and some carry particle effects), so the model bounds, which leave see-through meshes out so glows do not grow hit boxes, came out as the one-unit fallback and the nebula was culled as soon as its centre left the view. Culling now uses a separate draw radius over every shown mesh and the reach of the attached particle effects (spawn volume, speed over the lifetime, acceleration and particle size), so any model drawn mostly by see-through meshes or particles is kept while part of it is on screen. Checked on Thrawn Revenge'
+      ],
       ['Visibility and stealth', D],
       ['Teams sharing a station', D],
       [

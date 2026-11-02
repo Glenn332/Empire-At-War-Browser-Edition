@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **91.9%** | 156 | 28 | 1 | 185 |
-| **Whole game** | **80.8%** | 219 | 115 | 8 | 342 |
+| **Space skirmish** | **91.9%** | 157 | 28 | 1 | 186 |
+| **Whole game** | **80.9%** | 220 | 115 | 8 | 343 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -21,7 +21,7 @@ Regenerate with `node tools/progress.mjs`.
 |---|---|---|---|---|---|
 | Data formats | space skirmish | 86.8% | 14 | 5 | 0 |
 | Rendering | space skirmish | 87.5% | 21 | 7 | 0 |
-| Space simulation | space skirmish | 94.6% | 26 | 1 | 1 |
+| Space simulation | space skirmish | 94.8% | 27 | 1 | 1 |
 | Abilities | space skirmish | 100.0% | 24 | 0 | 0 |
 | Skirmish AI | space skirmish | 87.5% | 15 | 5 | 0 |
 | Interface | space skirmish | 92.3% | 33 | 6 | 0 |
@@ -89,7 +89,7 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Space battle camera — *from TacticalCameras.xml Space_Mode (a mod has its own): start tilt, tilt range, field of view, start and nearest distance, a wheel notch moving the distance and narrowing the view as the game does, the zoom-tilt rule. Ours: it pulls back past Distance_Max to 9000, the distance is not smoothed (the game eases it over Distance_Smooth_Time), no tactical overview. The start yaw is the file Yaw_Default as a world angle, as the engine has it. Ours: C on a selected unit follows it with a free orbiting camera (HUD hidden, mouse orbits, wheel zooms, C or Escape leaves), moving to the next squad member when it dies; Alt+C (rebindable) follows the middle of the squad*
 - 🟡 Cinematic camera: letterbox, self-directed shots, cut to large ships dying — *own shot director; the authored glory camera scripts (.tec) are not used because their coordinate frame is unknown*
 
-### Space simulation — 94.6%
+### Space simulation — 94.8%
 
 - ✅ Capital ship movement and turning
 - ✅ Fighter and bomber squadrons — *flight by the engine fighter locomotor: roll before turn, loops, leader and formation, strafing runs at the ordered hardpoint (else the ship), dogfight pairing, idle passes over a spot at full speed, the look ahead that turns a craft away from ships and structures it is about to fly into (circles of hit radius where the engine has model boxes)*
@@ -108,6 +108,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Asteroid fields, nebulae, ion storms — *a nebula: no ability may be switched on inside or for Nebula_Ability_Disable_Time after (read from the engine); what is on is switched off once on the way in, except the kinds the engine ability table gives no nebula flag - hunt, lure, lucky shot, deploy troopers, self-destruct, sprint, ion cannon shot, S-foils, maximum firepower, stim pack (their flag is the table default, taken as off - the default was not found). UnitAbilityTypes.xml, which may change that table, is empty in the game and the trial mod and is not read*
 - ✅ Craft fly through asteroid fields, nebulae and ion storms — *the engine keeps those out of the tree its fighter look ahead asks; impassable asteroids are still avoided*
 - ✅ Nebula haze on ships inside (Nebula_Effect_Color)
+- ✅ Nebulae stay drawn off the centre of the screen — *a nebula model is all see-through meshes (and some carry particle effects), so the model bounds, which leave see-through meshes out so glows do not grow hit boxes, came out as the one-unit fallback and the nebula was culled as soon as its centre left the view. Culling now uses a separate draw radius over every shown mesh and the reach of the attached particle effects (spawn volume, speed over the lifetime, acceleration and particle size), so any model drawn mostly by see-through meshes or particles is kept while part of it is on screen. Checked on Thrawn Revenge*
 - ✅ Visibility and stealth
 - ✅ Teams sharing a station
 - ✅ Group-move formations (per layer, arrive together) — *as the engine space movement coordinator (read): each ship is paced once at launch, its straight distance to the order goal over its top speed plus half its turn to it over its turn rate, against the longest of the non-fighter ships, floored at SpaceIdleMovementSpeed (0); squadrons are not paced; nothing paces again on the way, so a ship that is held up or detours arrives late in the original too. In an attack-move a ship with a Space_Layer (every corvette, frigate and capital ship of the game) does not stop for what it meets unless its type has Disregard_Space_Layer_For_Guard_Attack_Move: it flies on to its place and fires as it goes (read). Ships are kept apart only by their route planning; space has no pushing apart, so ships fighting in a crowd may overlap as in the original*
