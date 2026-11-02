@@ -4,7 +4,6 @@ import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
 import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar, dynamicTurn } from './dynamicmap.js';
 import {
-  INSTANT_MAX_PLAYERS,
   INSTANT_MAX_TEAMS,
   INSTANT_BUDGET,
   INSTANT_BUDGET_MIN,
@@ -105,7 +104,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     players[0].army = randomArmy(instantRoster(me), st.budget);
   } else {
     if (Array.isArray(saved.players) && saved.players.length && saved.players[0]?.kind === 'you')
-      players = saved.players.slice(0, INSTANT_MAX_PLAYERS).map((p, i) => ({
+      players = saved.players.map((p, i) => ({
         kind: i === 0 ? 'you' : isAI(p.kind) ? p.kind : 'medium',
         team: Math.max(0, Math.min(INSTANT_MAX_TEAMS - 1, p.team | 0)),
         faction: factions.includes(p.faction) ? p.faction : factions[0],
@@ -294,7 +293,6 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   fleetsHead.append(el('h2', '', 'Fleets'));
   const fleetTools = el('div', 'ib-tools');
   const addBtn = button('Add AI', () => {
-    if (players.length >= INSTANT_MAX_PLAYERS) return;
     const taken = new Set(players.map(p => p.team));
     let team = 0;
     while (taken.has(team) && team < INSTANT_MAX_TEAMS - 1) team++;
@@ -567,7 +565,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       row.append(top, bottom);
       fleetList.appendChild(row);
     });
-    addBtn.disabled = !host || players.length >= INSTANT_MAX_PLAYERS;
+    addBtn.disabled = !host;
     rollAll.disabled = !players.some(p => canEdit(p) && p.kind !== 'open');
     const used = teamsUsed();
     teamNote.textContent =

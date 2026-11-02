@@ -89,7 +89,7 @@ export const GAME_TYPES = [
     desc: '',
     fallback: 'Instant Battle',
     about:
-      'Space only. Every player buys a fleet from the same budget, up to ten fleets on ten teams come in from the edges of the map, and the last team with ships left wins.'
+      'Space only. Every player buys a fleet from the same budget, any number of fleets on up to ten teams come in from the edges of the map, and the last team with ships left wins.'
   }
 ];
 const gameType = t => GAME_TYPES.find(g => g.type === t) || GAME_TYPES[2];

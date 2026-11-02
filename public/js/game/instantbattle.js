@@ -5,7 +5,6 @@ import { InstantRules } from './instantrules.js';
 
 export { InstantRules };
 
-export const INSTANT_MAX_PLAYERS = 10;
 export const INSTANT_MAX_TEAMS = 10;
 export const INSTANT_BUDGET = 15000;
 export const INSTANT_BUDGET_MIN = 1000;
