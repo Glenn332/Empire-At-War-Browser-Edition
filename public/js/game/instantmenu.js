@@ -2,7 +2,7 @@ import { db, factionColor } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
 import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
-import { DYNAMIC_SIZES, isDynamic, dynamicSize, rerollDynamic, resizeDynamic } from './dynamicmap.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar } from './dynamicmap.js';
 import {
   INSTANT_MAX_PLAYERS,
   INSTANT_MAX_TEAMS,
@@ -245,7 +245,13 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   const titleBox = el('div', 'ib-title');
   titleBox.append(
     el('h1', '', net ? 'Instant Battle · Multiplayer' : 'Instant Battle'),
-    el('p', '', net ? mp.gameName || 'Pick your fleet and wait for the host to start.' : 'Pick your fleets, choose the field and fight to the last ship.')
+    el(
+      'p',
+      '',
+      net
+        ? mp.gameName || 'Pick your fleet and wait for the host to start.'
+        : 'Pick your fleets, choose the field and fight to the last ship.'
+    )
   );
   const budgetBox = el('label', 'ib-budget');
   budgetBox.append(el('span', '', 'Starting budget'));
@@ -324,7 +330,11 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     if (link)
       line.onclick = () => {
         const done = ok => say('', ok ? 'Invite link copied.' : 'Copy the link by hand: ' + link);
-        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(() => done(true), () => done(false));
+        if (navigator.clipboard?.writeText)
+          navigator.clipboard.writeText(link).then(
+            () => done(true),
+            () => done(false)
+          );
         else done(false);
       };
     chatLog.appendChild(line);
@@ -392,22 +402,24 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       changed(null, true);
     })
   );
-  const rerollBtn = button('New Layout', () => {
-    if (!isDynamic(st.mapFile)) return;
-    st.mapFile = rerollDynamic(st.mapFile);
-    changed(null, true);
+  const seeds = seedBar({
+    get: () => st.mapFile,
+    set: next => {
+      st.mapFile = next;
+      changed(null, true);
+    },
+    readonly: () => !host,
+    sound: () => sound('GUI_Button_Press_2_SFX')
   });
-  rerollBtn.classList.add('ib-reroll');
   dynOpts.append(...sizeBtns);
-  preview.appendChild(rerollBtn);
   const mapList = el('div', 'ib-list ib-maplist');
-  mapCol.append(mapHead, preview, mapName, mapOpts, dynOpts, mapList);
+  mapCol.append(mapHead, preview, mapName, mapOpts, dynOpts, seeds.el, mapList);
   const drawOpts = () => {
     fogBtn.textContent = st.fog ? 'Fog of War: On' : 'Fog of War: Off';
     fogBtn.classList.toggle('on', st.fog);
     const dyn = isDynamic(st.mapFile);
     dynOpts.classList.toggle('hidden', !dyn);
-    rerollBtn.classList.toggle('hidden', !dyn);
+    seeds.update();
     sizeBtns.forEach((b, i) => b.classList.toggle('on', dyn && dynamicSize(st.mapFile).key === DYNAMIC_SIZES[i].key));
   };
 
@@ -461,7 +473,10 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
         p.faction,
         v => {
           unify(p, v);
-          changed(p, players.some(q => q !== p && q.team === p.team));
+          changed(
+            p,
+            players.some(q => q !== p && q.team === p.team)
+          );
         }
       );
       const team = select(
@@ -494,7 +509,11 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
         const fill = el('div', 'ib-bar-fill');
         fill.style.width = Math.min(100, (100 * spent) / Math.max(1, p.budget)) + '%';
         bar.append(fill);
-        const sum = el('div', 'ib-sum', `${p.army.length} ${p.army.length === 1 ? 'unit' : 'units'} · ${money(spent)} / ${money(p.budget)}`);
+        const sum = el(
+          'div',
+          'ib-sum',
+          `${p.army.length} ${p.army.length === 1 ? 'unit' : 'units'} · ${money(spent)} / ${money(p.budget)}`
+        );
         bottom.append(bar, sum);
         if (net && p.kind === 'human') {
           const ok = p.peer === 0 || p.ready;
@@ -737,7 +756,8 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   };
 
   const drawHost = () => {
-    for (const b of [applyAll, fogBtn, spinBtn, rerollBtn, ...sizeBtns]) b.disabled = !host;
+    for (const b of [applyAll, fogBtn, spinBtn, ...sizeBtns]) b.disabled = !host;
+    seeds.update();
     budgetIn.disabled = !host;
     budgetIn.value = st.budget;
     if (!host) {
@@ -765,7 +785,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   const offs = [];
   const finished = new Promise(r => (done = r));
   const onKey = e => {
-    if (e.code === 'Escape' && document.activeElement !== chatIn) {
+    if (e.code === 'Escape' && document.activeElement !== chatIn && !document.activeElement?.classList.contains('dyn-seed-input')) {
       e.stopPropagation();
       close(false);
     }
@@ -928,7 +948,9 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           start(m.setup);
         }
       }),
-      net.on('closed', why => close(false, why === 'host left' ? 'The host closed the game.' : 'The connection to the game was lost (' + why + ').'))
+      net.on('closed', why =>
+        close(false, why === 'host left' ? 'The host closed the game.' : 'The connection to the game was lost (' + why + ').')
+      )
     );
   }
 

@@ -5,7 +5,7 @@ import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
-import { dynamicMaps, isDynamic } from './dynamicmap.js';
+import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 
@@ -88,7 +88,8 @@ export const GAME_TYPES = [
     text: '',
     desc: '',
     fallback: 'Instant Battle',
-    about: 'Space only. Every player buys a fleet from the same budget, up to ten fleets on ten teams come in from the edges of the map, and the last team with ships left wins.'
+    about:
+      'Space only. Every player buys a fleet from the same budget, up to ten fleets on ten teams come in from the edges of the map, and the last team with ships left wins.'
   }
 ];
 const gameType = t => GAME_TYPES.find(g => g.type === t) || GAME_TYPES[2];
@@ -1185,7 +1186,23 @@ async function openStaging({
 
   const mine = () => slots.findIndex(s => s.kind === 'human' && s.peer === net.id);
   const previews = new Map();
+  const seeds = seedBar({
+    get: () => st.mapFile,
+    set: next => {
+      if (!host) return;
+      dropSave();
+      st.mapFile = next;
+      unready();
+      publish();
+      fillMaps();
+    },
+    readonly: () => !host,
+    sound: () => audio?.play?.('GUI_Button_Press_2_SFX'),
+    compact: true
+  });
+  dockSeedBar(dlg, seeds);
   const preview = async m => {
+    seeds.update();
     const teams = Math.max(2, usedTeams().length),
       key = isDynamic(m) ? `${m}|${teams}` : m;
     if (!previews.has(key))
@@ -1421,7 +1438,10 @@ async function openStaging({
       });
     }
     if (!campaign()) preview(st.mapFile);
-    else dlg.setImage('IDC_IMAGE', '');
+    else {
+      dlg.setImage('IDC_IMAGE', '');
+      seeds.update();
+    }
     if (host) dlg.enable('IDC_SELECT_OPTIONS', !single() && !st.save);
     const hint = !single()
       ? ''

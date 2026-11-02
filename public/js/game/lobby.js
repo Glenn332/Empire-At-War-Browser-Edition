@@ -5,7 +5,7 @@ import { loadMap, mapHeader, mapTitle, loadMapPreview } from '../ted.js';
 import { iconUrl } from '../icons.js';
 import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
 import { leaveTo } from '../leaveguard.js';
-import { DYNAMIC_SIZES, isDynamic, dynamicSize, rerollDynamic, resizeDynamic } from './dynamicmap.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, liveMaps, seedBar, dockSeedBar } from './dynamicmap.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
 const POP_MAX = 10000,
@@ -51,11 +51,11 @@ export async function openLobby({
     fog: typeof saved.fog === 'boolean' ? saved.fog : init.fog
   };
   const lastMap = { space: init.mapFile, land: landMaps.find(m => /TATOOINE/i.test(m)) || landMaps[0] };
-  const mapsOf = () => (st.custom ? customMaps : { space: maps, land: landMaps })[st.mode];
+  const mapsOf = () => (st.custom ? customMaps : { space: liveMaps(maps), land: landMaps })[st.mode];
   const lastKey = () => (st.custom ? 'custom ' : '') + st.mode;
   if (
     (saved.mode === 'space' || saved.mode === 'land') &&
-    (saved.custom ? customMaps : { space: maps, land: landMaps })[saved.mode].includes(saved.mapFile)
+    (saved.custom ? customMaps : { space: liveMaps(maps), land: landMaps })[saved.mode].includes(saved.mapFile)
   ) {
     st.mode = saved.mode;
     st.custom = !!saved.custom;
@@ -172,7 +172,7 @@ export async function openLobby({
   };
   const preview = async m => {
     const key = viewKey(m);
-    reroll.style.display = isDynamic(m) ? '' : 'none';
+    seeds.update();
     if (!previews.has(key))
       previews.set(
         key,
@@ -193,24 +193,16 @@ export async function openLobby({
       preview(st.mapFile);
     }
   };
-  const reroll = document.createElement('div');
-  reroll.className = 'dlg-txt dyn-reroll';
-  reroll.textContent = 'New Layout';
-  reroll.title = 'Generate a new dynamic map';
-  reroll.onclick = () => {
-    if (!isDynamic(st.mapFile)) return;
-    const next = rerollDynamic(st.mapFile);
-    st.mapFile = lastMap[lastKey()] = next;
-    fillMaps();
-  };
-  {
-    const box = dlg.ctl('IDC_IMAGE');
-    if (box) {
-      reroll.style.cssText =
-        'position:absolute;right:6px;bottom:6px;padding:3px 10px;font-size:11px;color:#ffe9a0;background:rgba(0,0,0,0.75);border:1px solid #c3ab02;cursor:pointer;z-index:2;display:none';
-      box.appendChild(reroll);
-    }
-  }
+  const seeds = seedBar({
+    get: () => st.mapFile,
+    set: next => {
+      st.mapFile = lastMap[lastKey()] = next;
+      fillMaps();
+    },
+    sound: () => audio?.play?.('GUI_Button_Press_2_SFX'),
+    compact: true
+  });
+  dockSeedBar(dlg, seeds);
   const forceDynamic = () => {
     if (st.mode !== 'space' || teamsUsed().length <= 2 || isDynamic(st.mapFile)) return false;
     st.mapFile = lastMap[lastKey()] = mapsOf().find(isDynamic) || resizeDynamic('medium');

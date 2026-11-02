@@ -58,6 +58,125 @@ export function adoptDynamic(name) {
   keepSeeds();
   return dynamicName(d.size.key, d.seed);
 }
+export const liveMaps = list => [...list.filter(m => !isDynamic(m)), ...(list.some(isDynamic) ? dynamicMaps() : [])];
+
+export const seedCode = name => {
+  const d = parseDynamic(name);
+  return d ? `${d.size.key.toUpperCase()}-${d.seed}` : '';
+};
+export function readSeedCode(text, current) {
+  const s = String(text || '').trim();
+  const full = parseDynamic(s);
+  if (full) return dynamicName(full.size.key, full.seed);
+  const m = /^(?:([a-z]+)\s*[-:/ ]\s*)?(\d{1,10})$/i.exec(s);
+  if (!m || +m[2] > 0xffffffff) return null;
+  const size = m[1] ? DYNAMIC_SIZES.find(z => z.key === m[1].toLowerCase()) : dynamicSize(current);
+  return size ? dynamicName(size.key, +m[2]) : null;
+}
+export function dockSeedBar(dlg, bar) {
+  const box = dlg.ctl('IDC_IMAGE');
+  if (!box) return;
+  const n = k => parseFloat(box.style[k]) || 0;
+  Object.assign(bar.el.style, {
+    left: n('left') + 4 + 'px',
+    top: n('top') + n('height') - 26 + 'px',
+    width: n('width') - 8 + 'px'
+  });
+  dlg.el.appendChild(bar.el);
+}
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const t = document.createElement('textarea');
+    t.value = text;
+    t.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(t);
+    t.select();
+    const ok = document.execCommand('copy');
+    t.remove();
+    return ok;
+  }
+}
+export function seedBar({ get, set, readonly = () => false, sound = () => {}, compact = false }) {
+  const label = compact
+    ? { copy: '⧉', copied: '✓', bad: '✕', roll: '↻' }
+    : { copy: 'Copy', copied: 'Copied', bad: 'Bad seed', roll: 'Random' };
+  const bar = document.createElement('div');
+  bar.className = 'dyn-seed' + (compact ? ' dyn-seed-dock' : '');
+  const input = document.createElement('input');
+  input.className = 'dyn-seed-input';
+  input.spellcheck = false;
+  input.placeholder = 'Map seed';
+  input.title = 'Map seed: copy it to share this map, or paste one and press Enter to play that exact map';
+  const tool = (label, title, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'dyn-seed-btn';
+    b.textContent = label;
+    b.title = title;
+    b.onclick = e => {
+      e.stopPropagation();
+      if (b.disabled) return;
+      sound();
+      fn();
+    };
+    return b;
+  };
+  let flash = 0;
+  const say = (text, cls) => {
+    clearTimeout(flash);
+    copy.textContent = label[text];
+    bar.classList.toggle(cls, true);
+    flash = setTimeout(() => {
+      copy.textContent = label.copy;
+      bar.classList.remove('copied', 'bad');
+    }, 1400);
+  };
+  const copy = tool(label.copy, 'Copy the map seed', async () => {
+    if (await copyText(seedCode(get()))) say('copied', 'copied');
+    else {
+      input.focus();
+      input.select();
+    }
+  });
+  const roll = tool(label.roll, 'Random seed: generate a new map', () => {
+    set(rerollDynamic(get()));
+    update();
+  });
+  const apply = () => {
+    if (readonly()) return update();
+    const next = readSeedCode(input.value, get());
+    if (!next) {
+      say('bad', 'bad');
+      return;
+    }
+    if (next !== get()) set(adoptDynamic(next));
+    input.blur();
+    update();
+  };
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') apply();
+    else if (e.key === 'Escape') {
+      input.value = seedCode(get());
+      input.blur();
+    }
+  });
+  input.addEventListener('change', apply);
+  input.addEventListener('focus', () => input.select());
+  bar.append(input, copy, roll);
+  function update() {
+    const name = get();
+    bar.classList.toggle('hidden', !isDynamic(name));
+    if (document.activeElement !== input) input.value = seedCode(name);
+    input.readOnly = readonly();
+    roll.disabled = readonly();
+  }
+  update();
+  return { el: bar, update };
+}
 
 const random = seed => {
   let a = seed >>> 0;

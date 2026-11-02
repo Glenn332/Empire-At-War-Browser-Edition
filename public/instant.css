@@ -565,9 +565,11 @@
 #instantBattle .ib-maplist {
   gap: 1px;
 }
-#instantBattle .ib-dynopts.hidden,
-#instantBattle .ib-reroll.hidden {
+#instantBattle .ib-dynopts.hidden {
   display: none;
+}
+#instantBattle .dyn-seed {
+  flex: none;
 }
 #instantBattle .ib-dynopts {
   gap: 2px;
@@ -576,16 +578,6 @@
   padding: 0 2px;
   font-size: 9px;
   letter-spacing: 0;
-}
-#instantBattle .ib-reroll {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  z-index: 2;
-  height: 22px;
-  padding: 0 10px;
-  font-size: 10px;
-  background: rgba(0, 0, 0, 0.78);
 }
 #instantBattle .ib-dynopts .ib-btn.on {
   border-color: var(--gold-hi);
@@ -779,4 +771,76 @@
   width: 100%;
   text-align: left;
   font-family: 'Segoe UI', Arial, sans-serif;
+}
+.dyn-seed {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  font-family: inherit;
+}
+.dyn-seed.hidden {
+  display: none;
+}
+.dyn-seed-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(195, 171, 2, 0.55);
+  background: rgba(0, 0, 0, 0.8);
+  color: #ffe9a0;
+  font: 11px/1 Consolas, 'Courier New', monospace;
+  letter-spacing: 0.02em;
+  outline: none;
+}
+.dyn-seed-input:focus {
+  border-color: #ffd34a;
+  box-shadow: 0 0 0 1px rgba(255, 211, 74, 0.35);
+}
+.dyn-seed-input[readonly] {
+  color: #c9bd8a;
+}
+.dyn-seed-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid rgba(195, 171, 2, 0.7);
+  background: linear-gradient(#2a2410, #120f05);
+  color: #ffe9a0;
+  font: 600 10px/1 inherit;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.dyn-seed-btn:hover:not(:disabled) {
+  border-color: #ffd34a;
+  color: #fff;
+}
+.dyn-seed-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.dyn-seed.copied .dyn-seed-btn:first-of-type {
+  color: #7dffb0;
+  border-color: #7dffb0;
+}
+.dyn-seed.bad .dyn-seed-input,
+.dyn-seed.bad .dyn-seed-btn:first-of-type {
+  border-color: #ff6a5a;
+  color: #ff9a8e;
+}
+.dyn-seed-dock {
+  position: absolute;
+  z-index: 5;
+}
+.dyn-seed-dock .dyn-seed-input {
+  font-size: 10px;
+  padding: 0 4px;
+}
+.dyn-seed-dock .dyn-seed-btn {
+  width: 22px;
+  padding: 0;
+  font: 13px/1 'Segoe UI Symbol', 'Segoe UI', sans-serif;
 }
