@@ -2147,7 +2147,8 @@ class Game {
     if (!document.hidden && now - this.last < 3 * TICK * 1000) return;
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     this.last = now;
-    this.lockFrame(real);
+    if (this.mirror) this.mirror.frame(real);
+    else this.lockFrame(real);
   }
 
   lockFrame(real) {
