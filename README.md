@@ -8,10 +8,13 @@
   <a href="https://github.com/Glenn332/Empire-At-War-Browser-Edition/releases/latest/download/EmpireAtWarBrowserEdition-setup.exe">Windows app</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/Glenn332/Empire-At-War-Browser-Edition/blob/main/progression.md">Progress</a>
+  &nbsp;·&nbsp;
+  <a href="https://discord.gg/tAaZEVFmn">Discord</a>
 </p>
 
 <p align="center">
   <a href="https://ko-fi.com/Z4S429CUIG"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
+  <a href="https://discord.gg/tAaZEVFmn"><img src="public/icons/discord-button.svg" alt="Join our Discord"></a>
 </p>
 
 # Empire at War: Browser Edition
