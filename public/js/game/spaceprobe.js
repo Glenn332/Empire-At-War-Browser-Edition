@@ -36,6 +36,22 @@ export function battleSnapshot(game, save = null, refs = null) {
   );
   return {
     mapFile: game.setup.mapFile,
+    map: game.map?.dynamic
+      ? {
+          dynamic: true,
+          file: game.map.file,
+          planet: game.map.planet,
+          textId: '',
+          min: game.map.min,
+          max: game.map.max,
+          playMin: game.map.playMin,
+          playMax: game.map.playMax,
+          environments: [],
+          environment: null,
+          terrain: null,
+          objects: game.map.objects.map(o => ({ ...o, type: o.type.name }))
+        }
+      : null,
     language: activeLanguage,
     autofire: !!w.autofire,
     fog: !!w.fog,

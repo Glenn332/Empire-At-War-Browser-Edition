@@ -5,12 +5,14 @@ import { loadMap, mapHeader, mapTitle, loadMapPreview } from '../ted.js';
 import { iconUrl } from '../icons.js';
 import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
 import { leaveTo } from '../leaveguard.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, rerollDynamic, resizeDynamic } from './dynamicmap.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
 const POP_MAX = 10000,
   POP_STEP = 50,
   SETUP_KEY = 'swr-skirmish-setup';
 const KINDS = ['you', 'closed', 'easy', 'medium', 'hard'];
+const MAX_TEAMS = 10;
 
 const loadSetup = () => {
   try {
@@ -62,7 +64,7 @@ export async function openLobby({
   const savedSlots =
     Array.isArray(saved.slots) &&
     saved.slots.filter(s => s?.kind === 'you').length === 1 &&
-    saved.slots.every(s => KINDS.includes(s?.kind) && (s.team === 0 || s.team === 1))
+    saved.slots.every(s => KINDS.includes(s?.kind) && Number.isInteger(s.team) && s.team >= 0 && s.team < MAX_TEAMS)
       ? saved.slots
       : null;
   const slots = [];
@@ -77,8 +79,13 @@ export async function openLobby({
           : { kind: 'closed', team: i % 2, color: PALETTE[i % PALETTE.length], auto: true }
     );
   }
+  for (let t = 0; t < MAX_TEAMS; t++) if (!factions.includes(st.teamFactions[t])) st.teamFactions[t] = factions[t % factions.length];
   const fLabel = f => T(db.faction(f).str('Text_ID'), f);
   const mapName = mapTitle;
+  let note = null;
+  const teamsUsed = () => [...new Set(slots.filter(s => s.kind !== 'closed').map(s => s.team))].sort((a, b) => a - b);
+  const mapOpts = () => ({ teams: Math.max(2, teamsUsed().length) });
+  const viewKey = m => (isDynamic(m) ? `${m}|${mapOpts().teams}` : m);
 
   dlg.setText('IDC_SCENARIO_DESCRIPTION_TEXT_BOX', '');
   const type = dlg.def.controls.find(c => c.id === 'IDC_GAME_TYPE_LIST'),
@@ -109,20 +116,29 @@ export async function openLobby({
   const mapRows = list =>
     list
       .map(m => ({ key: m, name: mapName(m), label: (players.get(m) ? `(${players.get(m)}) ` : '') + mapName(m) }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort(
+        (a, b) =>
+          isDynamic(b.key) - isDynamic(a.key) ||
+          (isDynamic(a.key)
+            ? DYNAMIC_SIZES.indexOf(dynamicSize(a.key)) - DYNAMIC_SIZES.indexOf(dynamicSize(b.key))
+            : a.name.localeCompare(b.name))
+      );
   const previews = new Map();
   const starts = new Map();
   const marks = [];
   const markStarts = async () => {
-    const m = st.mapFile;
-    if (!starts.has(m)) {
+    const m = st.mapFile,
+      key = viewKey(m);
+    if (!starts.has(key)) {
       starts.set(
-        m,
-        loadMap(m)
+        key,
+        loadMap(m, mapOpts())
           .then(map => {
             const at = [];
             for (const o of map.objects) {
-              const t = /^TEAM_(\d\d)_(SPACE_STATION|BASE_POSITION_MARKER)$/.exec(o.type.name.toUpperCase());
+              const t = /^TEAM_(\d\d)_(SPACE_STATION|BASE_POSITION_MARKER)$/.exec(
+                o.role ? `TEAM_${String(o.team).padStart(2, '0')}_${o.role}` : o.type.name.toUpperCase()
+              );
               if (t) at[+t[1]] = o.pos;
             }
             return { at, min: map.min, max: map.max };
@@ -130,16 +146,17 @@ export async function openLobby({
           .catch(() => null)
       );
     }
-    const info = await starts.get(m);
-    if (st.mapFile !== m) return;
+    const info = await starts.get(key);
+    if (viewKey(st.mapFile) !== key) return;
     for (const e of marks.splice(0)) e.remove();
     if (!info) return;
     const box = dlg.ctl('IDC_IMAGE'),
       W = parseFloat(box.style.width),
       H = parseFloat(box.style.height),
       SIZE = 26;
+    const used = teamsUsed();
     info.at.forEach((p, team) => {
-      const f = st.teamFactions[team];
+      const f = st.teamFactions[isDynamic(m) ? used[team] : team];
       if (!p || !f) return;
       const icon = iconUrl(db.faction(f).str('Multiplayer_Map_Preview_Icon'));
       if (!icon) return;
@@ -154,23 +171,57 @@ export async function openLobby({
     });
   };
   const preview = async m => {
-    if (!previews.has(m))
+    const key = viewKey(m);
+    reroll.style.display = isDynamic(m) ? '' : 'none';
+    if (!previews.has(key))
       previews.set(
-        m,
-        loadMapPreview(m)
+        key,
+        loadMapPreview(m, mapOpts())
           .then(cv => (cv ? cv.toDataURL() : ''))
-          .catch(() => '')
+          .catch(e => (console.warn('map preview', e), ''))
       );
-    const url = await previews.get(m);
-    if (st.mapFile === m) {
+    const url = await previews.get(key);
+    if (viewKey(st.mapFile) === key) {
       dlg.setImage('IDC_IMAGE', url);
       markStarts();
     }
+  };
+  let shown = null;
+  const freshPreview = () => {
+    if (st.mapFile && shown !== viewKey(st.mapFile)) {
+      shown = viewKey(st.mapFile);
+      preview(st.mapFile);
+    }
+  };
+  const reroll = document.createElement('div');
+  reroll.className = 'dlg-txt dyn-reroll';
+  reroll.textContent = 'New Layout';
+  reroll.title = 'Generate a new dynamic map';
+  reroll.onclick = () => {
+    if (!isDynamic(st.mapFile)) return;
+    const next = rerollDynamic(st.mapFile);
+    st.mapFile = lastMap[lastKey()] = next;
+    fillMaps();
+  };
+  {
+    const box = dlg.ctl('IDC_IMAGE');
+    if (box) {
+      reroll.style.cssText =
+        'position:absolute;right:6px;bottom:6px;padding:3px 10px;font-size:11px;color:#ffe9a0;background:rgba(0,0,0,0.75);border:1px solid #c3ab02;cursor:pointer;z-index:2;display:none';
+      box.appendChild(reroll);
+    }
+  }
+  const forceDynamic = () => {
+    if (st.mode !== 'space' || teamsUsed().length <= 2 || isDynamic(st.mapFile)) return false;
+    st.mapFile = lastMap[lastKey()] = mapsOf().find(isDynamic) || resizeDynamic('medium');
+    if (note) note.textContent = 'Battles with more than two teams are played on a Dynamic Map.';
+    return true;
   };
   const fillMaps = () => {
     const list = mapsOf();
     if (!list.includes(lastMap[lastKey()])) lastMap[lastKey()] = mapRows(list)[0]?.key;
     st.mapFile = lastMap[lastKey()] || null;
+    forceDynamic();
     if (!st.mapFile) {
       for (const e of marks.splice(0)) e.remove();
       dlg.setImage('IDC_IMAGE', '');
@@ -178,9 +229,16 @@ export async function openLobby({
     dlg
       .list('IDC_STAGING_MAP_LIST', mapRows(list), row => {
         st.mapFile = lastMap[lastKey()] = row.key;
-        preview(row.key);
+        if (forceDynamic()) {
+          queueMicrotask(fillMaps);
+          return;
+        }
+        if (note && !isDynamic(row.key)) note.textContent = '';
+        freshPreview();
       })
       .select(st.mapFile);
+    shown = null;
+    freshPreview();
     const picked = dlg.ctl('IDC_STAGING_MAP_LIST').querySelector('.sel');
     if (picked) picked.scrollIntoView({ block: 'nearest' });
   };
@@ -191,6 +249,7 @@ export async function openLobby({
       if (st.mode !== row.key) {
         st.mode = row.key;
         fillMaps();
+        refresh();
       }
     })
     .select(st.mode);
@@ -250,7 +309,7 @@ export async function openLobby({
     colours(r, s);
     dlg.combo(
       `IDC_PLAYER_TEAM_${r}`,
-      [0, 1].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
+      [...Array(st.mode === 'space' ? MAX_TEAMS : 2).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
       s.team,
       v => {
         s.team = +v;
@@ -265,6 +324,7 @@ export async function openLobby({
     for (let r = 0; r < win.rows; r++) row(r);
   };
   const refresh = () => {
+    if (st.mode !== 'space') for (const s of slots) s.team = Math.min(1, s.team);
     autoColors(
       slots.filter(s => s.kind !== 'closed'),
       st.teamFactions,
@@ -272,6 +332,8 @@ export async function openLobby({
     );
     rows();
     win.update();
+    if (forceDynamic()) fillMaps();
+    else if (isDynamic(st.mapFile)) freshPreview();
     markStarts();
   };
   const win = slotWindow(dlg, {
@@ -294,7 +356,7 @@ export async function openLobby({
       note.textContent = text;
     }
   });
-  const note = document.createElement('div');
+  note = document.createElement('div');
   note.className = 'dlg-txt';
   note.style.cssText = 'position:absolute;left:230px;top:362px;width:480px;text-align:center;color:#ff6a5a;font-size:11px';
   dlg.el.appendChild(note);
@@ -340,11 +402,17 @@ export async function openLobby({
           ? { human: true, team: s.team, color: s.color, auto: false }
           : { human: false, team: s.team, difficulty: s.kind, color: s.color, auto: false }
       );
-    if (![0, 1].every(t => players.some(p => p.team === t))) {
-      note.textContent = 'Each team needs at least one player.';
+    const used = [...new Set(players.map(p => p.team))].sort((a, b) => a - b);
+    if (used.length < 2) {
+      note.textContent = 'At least two teams need a player.';
+      return;
+    }
+    if (forceDynamic()) {
+      fillMaps();
       return;
     }
     if (!st.mapFile) return;
+    for (const p of players) p.team = used.indexOf(p.team);
     remember();
     dlg.close();
     start({
@@ -354,7 +422,7 @@ export async function openLobby({
       credits: st.credits,
       popCap: st.popCap,
       fog: st.fog,
-      teamFactions: st.teamFactions.slice(),
+      teamFactions: used.map(t => st.teamFactions[t]),
       players
     });
   });

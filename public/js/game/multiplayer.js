@@ -5,6 +5,7 @@ import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
+import { dynamicMaps, isDynamic } from './dynamicmap.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 
@@ -13,6 +14,7 @@ const T = (id, fallback) => {
   return s ?? fallback;
 };
 const NAME_KEY = 'swr.mpname';
+const MAX_TEAMS = 10;
 
 const storedName = () => {
   try {
@@ -779,7 +781,7 @@ async function openStaging({
 }) {
   const instant = (initial = null) =>
     openInstantBattle({
-      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m))],
+      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m)), ...dynamicMaps()],
       factions,
       audio,
       start: setup => launch({ ...setup, net: { session: net, me: net.id } }),
@@ -805,6 +807,7 @@ async function openStaging({
   const fLabel = f => T(db.faction(f).str('Text_ID'), f);
   const mapName = mapTitle;
   const factionsFor = [factions[0], factions.find(f => f !== factions[0]) || factions[0]];
+  for (let t = 2; t < MAX_TEAMS; t++) factionsFor.push(factions[t % factions.length]);
 
   const isLand = m => landMaps.includes(m) || mapHeader(m)?.kind === 1;
   const mapPlayers = { get: m => mapHeader(m)?.players || 0 };
@@ -918,6 +921,11 @@ async function openStaging({
     for (const s of slots) if (s.kind === 'human' && lead()) s.faction = lead();
   };
   const publish = () => {
+    if (manyTeams() && !isDynamic(st.mapFile)) {
+      st.mapFile = dynamicMaps()[1];
+      fillMaps();
+      addChat('', 'Battles with more than two teams are played on a Dynamic Map.');
+    }
     together();
     autoColors(
       slots.filter(s => s.kind !== 'closed' && s.kind !== 'open'),
@@ -931,6 +939,10 @@ async function openStaging({
   const unready = () => {
     for (const s of slots) if (s.peer !== 0) s.ready = false;
   };
+  const spaceTeams = () => !campaign() && !isLand(st.mapFile);
+  const teamCount = () => (spaceTeams() ? MAX_TEAMS : 2);
+  const usedTeams = () => [...new Set(slots.filter(s => s.kind !== 'closed' && s.kind !== 'open').map(s => s.team))].sort((a, b) => a - b);
+  const manyTeams = () => spaceTeams() && usedTeams().length > 2;
   if (host) {
     net.on('message', (from, m) => {
       const i = slots.findIndex(s => s.kind === 'human' && s.peer === from);
@@ -967,7 +979,7 @@ async function openStaging({
       } else if (m.k === 'mine') {
         const s = slots[i];
         if (s.saved) return;
-        if (m.team === 0 || m.team === 1) s.team = m.team;
+        if (Number.isInteger(m.team) && m.team >= 0 && m.team < teamCount()) s.team = m.team;
         if (typeof m.faction === 'string' && campaign() && menuEntry()) {
         } else if (typeof m.faction === 'string' && campaign() && sidesOf(st.mapFile).includes(m.faction)) s.faction = m.faction;
         else if (typeof m.faction === 'string' && factions.includes(m.faction)) st.teamFactions[s.team] = m.faction;
@@ -1174,14 +1186,16 @@ async function openStaging({
   const mine = () => slots.findIndex(s => s.kind === 'human' && s.peer === net.id);
   const previews = new Map();
   const preview = async m => {
-    if (!previews.has(m))
+    const teams = Math.max(2, usedTeams().length),
+      key = isDynamic(m) ? `${m}|${teams}` : m;
+    if (!previews.has(key))
       previews.set(
-        m,
-        loadMapPreview(m)
+        key,
+        loadMapPreview(m, { teams })
           .then(cv => (cv ? cv.toDataURL() : ''))
           .catch(() => '')
       );
-    const url = await previews.get(m);
+    const url = await previews.get(key);
     if (st.mapFile === m) dlg.setImage('IDC_IMAGE', url);
   };
   dlg.enable('IDC_LOAD_GAME', host);
@@ -1206,7 +1220,7 @@ async function openStaging({
           : st.type === 'control'
             ? P.land.filter(controlMap).map(row).sort(byName)
             : st.type === 'space'
-              ? P.space.map(row).sort(byName)
+              ? [...(custom ? [] : dynamicMaps().map(row)), ...P.space.map(row).sort(byName)]
               : [...P.space.map(row).sort(byName), ...P.land.map(row).sort(byName)];
     };
     let filling = false;
@@ -1348,7 +1362,7 @@ async function openStaging({
       );
       dlg.combo(
         `IDC_PLAYER_TEAM_${r}`,
-        [0, 1].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
+        [...Array(teamCount()).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
         s.team,
         v => change('team', v)
       );
@@ -1538,8 +1552,9 @@ async function openStaging({
       begin(setup);
       return;
     }
-    if (![0, 1].every(t => players.some(p => p.team === t))) {
-      note.textContent = 'Each team needs at least one player.';
+    const used = [...new Set(players.map(p => p.team))].sort((a, b) => a - b);
+    if (used.length < 2 || (!spaceTeams() && used.some(t => t > 1))) {
+      note.textContent = 'At least two teams need a player.';
       return;
     }
     if (players.some(s => s.kind === 'human' && s.peer !== 0 && !s.ready)) {
@@ -1556,13 +1571,13 @@ async function openStaging({
       credits: st.credits,
       popCap: st.popCap,
       fog: st.fog,
-      teamFactions: st.teamFactions.slice(),
+      teamFactions: used.map(t => st.teamFactions[t]),
       seed,
       spaceWorker: !new URLSearchParams(location.search).has('nospaceworker'),
       players: players.map(s =>
         s.kind === 'human'
-          ? { human: true, peer: s.peer, name: s.name, team: s.team, color: s.color, auto: false }
-          : { human: false, team: s.team, difficulty: s.kind, color: s.color, auto: false }
+          ? { human: true, peer: s.peer, name: s.name, team: used.indexOf(s.team), color: s.color, auto: false }
+          : { human: false, team: used.indexOf(s.team), difficulty: s.kind, color: s.color, auto: false }
       )
     };
     net.setListing(null);

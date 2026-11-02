@@ -39,7 +39,9 @@ async function setUp(m, events) {
   };
   await loadGameData(() => {}, { language: m.language });
   lap('data');
-  const map = await loadMap(m.mapFile);
+  const map = m.map
+    ? { ...m.map, objects: m.map.objects.map(o => ({ ...o, type: db.type(o.type) })).filter(o => o.type) }
+    : await loadMap(m.mapFile);
   lap('map');
   const names = new Set(),
     seen = new Set();

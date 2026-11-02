@@ -40,6 +40,7 @@ import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
 import { InstantBattle, placeInstantBattle, shipsOf, leftOutOfInstant } from './game/instantbattle.js';
 import { openInstantBattle } from './game/instantmenu.js';
+import { isDynamic, dynamicMaps, warmDynamicMaps } from './game/dynamicmap.js';
 import { showSummary } from './game/summary.js';
 import { showLoadScreen, endLoadScreen, activeLoadScreen, loadProgress } from './game/loadscreen.js';
 import { LandGame } from './game/landgame.js';
@@ -331,7 +332,7 @@ class Game {
     $('lobby').classList.add('hidden');
     if (!this.setup.attract) showSplash();
     progress('Loading map', 0);
-    const map = await loadMap(mapFile);
+    const map = await loadMap(mapFile, { teams: teamFactions.length, turn: this.setup.instant?.turn || 0, instant: !!this.setup.instant });
     ensureMissionPlayers(this.setup, map);
     pickEnvironment(map, this.setup.net ? environmentRoll(this.setup.seed) : Math.random());
     this.map = map;
@@ -1049,7 +1050,7 @@ class Game {
       return p;
     };
     for (const [mapIndex, o] of map.objects.entries()) {
-      const n = o.type.name.toUpperCase();
+      const n = o.role ? `TEAM_${String(o.team).padStart(2, '0')}_${o.role}` : o.type.name.toUpperCase();
       const heading = o.rot[2] * DEG;
       if (!again && (o.type.behaviors().has('MARKER') || o.type.bool('Is_Marker')))
         w.mapObjects.set(mapIndex, [new TacticalMarker(o, () => w.neutral)]);
@@ -1351,6 +1352,7 @@ class Game {
       if (e.player === me && !e.isSquad && e.visualRadius > 60) this.message(`${e.name} lost`, 'bad');
     } else if (kind === 'baseAttacked' && me && d.unit.player.team === me.team) this.message('Our space station is under attack!', 'bad');
     else if (kind === 'gameover') this.gameOver(d.winner, !!d.ready);
+    else if (kind === 'teamDefeated' && me && d.team === me.team && !this.over && !this.setup.net) this.gameOver(d.winner);
     if (kind === 'built' && this.campaignBook && d.entity) {
       const m = this.campaignBook.called,
         t = d.player.team.id;
@@ -2355,7 +2357,8 @@ async function boot() {
     return;
   }
   const { space: maps, land: landMaps, custom: customMaps } = await skirmishMaps();
-  const anyMap = m => [maps, landMaps, customMaps.space, customMaps.land].some(l => l.includes(m));
+  setTimeout(warmDynamicMaps, 4000);
+  const anyMap = m => isDynamic(m) || [maps, landMaps, customMaps.space, customMaps.land].some(l => l.includes(m));
   const launch = setup =>
     setup.mode === 'galactic' && setup.net && !galaxyFrameSetup()
       ? (startGalaxyFrame(setup), Promise.resolve())
@@ -2954,7 +2957,7 @@ async function boot() {
   $('loading').classList.add('hidden');
   const lobby = cancel =>
     openLobby({
-      maps,
+      maps: [...maps, ...dynamicMaps()],
       landMaps,
       customMaps,
       factions: FACTIONS,
@@ -2969,7 +2972,7 @@ async function boot() {
     });
   const instant = cancel =>
     openInstantBattle({
-      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m))],
+      maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m)), ...dynamicMaps()],
       factions: FACTIONS,
       audio,
       cancel,
@@ -3027,7 +3030,7 @@ async function boot() {
     }
     hideSplash();
     const staged = await openLobby({
-      maps,
+      maps: [...maps, ...dynamicMaps()],
       landMaps,
       customMaps,
       factions: FACTIONS,

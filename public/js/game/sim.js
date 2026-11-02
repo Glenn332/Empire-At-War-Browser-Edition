@@ -2141,7 +2141,7 @@ export class World {
     if (alive.length === 1) {
       this.winner = alive[0];
       this.onEvent('gameover', { winner: alive[0] });
-    }
+    } else if (alive.length > 1) this.onEvent('teamDefeated', { team: loser, winner: alive[0] });
   }
 
   update(dt) {

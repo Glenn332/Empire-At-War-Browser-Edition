@@ -84,6 +84,11 @@ export function loadMapHeader(name) {
   return mapHeaders.get(key);
 }
 const listed = new Map();
+let dynamic = null;
+export const registerDynamicMaps = api => {
+  dynamic = api;
+};
+const dynamicOf = name => (dynamic?.is(name) ? dynamic : null);
 export async function skirmishMaps() {
   const names = list => list.map(n => n.split('\\').pop());
   const art = names(await findFiles('ART\\\\MAPS\\\\[^\\\\]*\\.TED$').catch(() => []));
@@ -106,9 +111,10 @@ export async function skirmishMaps() {
   });
   return out;
 }
-export const mapHeader = name => listed.get(String(name).toUpperCase()) || null;
+export const mapHeader = name => listed.get(String(name).toUpperCase()) || dynamicOf(name)?.header(name) || null;
 export const controlMap = name => !!mapHeader(name)?.tag.includes('CONTROL');
 export function mapTitle(name) {
+  if (dynamicOf(name)) return dynamic.title(name);
   const h = mapHeader(name),
     s = h && h.textId ? db.text.get(h.textId.trim().toUpperCase()) : null;
   return (
@@ -490,7 +496,8 @@ export function pickEnvironment(map, r) {
   map.activeEnvironment = i;
 }
 
-export async function loadMap(name) {
+export async function loadMap(name, opts = {}) {
+  if (dynamicOf(name)) return dynamic.load(name, opts);
   const buf = await fetchBinary(mapPath(name));
   if (!buf) throw new Error('map not found: ' + name);
   const map = parseTED(buf);
@@ -498,7 +505,8 @@ export async function loadMap(name) {
   return map;
 }
 
-export async function loadMapPreview(name) {
+export async function loadMapPreview(name, opts = {}) {
+  if (dynamicOf(name)) return dynamic.preview(name, opts);
   const loose = await loadTextureCanvas(name.replace(/\.TED$/i, '.tga')).catch(() => null);
   if (loose) return loose;
   const buf = await loadMapPicture(name);

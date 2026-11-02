@@ -2,6 +2,7 @@ import { db, factionColor } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
 import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, rerollDynamic, resizeDynamic } from './dynamicmap.js';
 import {
   INSTANT_MAX_PLAYERS,
   INSTANT_MAX_TEAMS,
@@ -57,7 +58,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   const fLabel = f => db.t(db.faction(f)?.str('Text_ID')) || f;
   const saved = load() || {};
   const st = {
-    mapFile: maps.includes(saved.mapFile) ? saved.mapFile : maps.find(m => /KUAT/i.test(m)) || maps[0],
+    mapFile: maps.includes(saved.mapFile) || isDynamic(saved.mapFile) ? saved.mapFile : maps.find(m => /KUAT/i.test(m)) || maps[0],
     fog: typeof saved.fog === 'boolean' ? saved.fog : false,
     budget: Number.isFinite(saved.budget) ? clampBudget(saved.budget) : INSTANT_BUDGET,
     turn: Number.isFinite(saved.turn) ? saved.turn : Math.random() * Math.PI * 2
@@ -383,11 +384,31 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     changed(null, true);
   });
   mapOpts.append(fogBtn, spinBtn);
+  const dynOpts = el('div', 'ib-tools ib-mapopts ib-dynopts');
+  const sizeBtns = DYNAMIC_SIZES.map(s =>
+    button(s.label, () => {
+      if (!isDynamic(st.mapFile) || dynamicSize(st.mapFile).key === s.key) return;
+      st.mapFile = resizeDynamic(s.key);
+      changed(null, true);
+    })
+  );
+  const rerollBtn = button('New Layout', () => {
+    if (!isDynamic(st.mapFile)) return;
+    st.mapFile = rerollDynamic(st.mapFile);
+    changed(null, true);
+  });
+  rerollBtn.classList.add('ib-reroll');
+  dynOpts.append(...sizeBtns);
+  preview.appendChild(rerollBtn);
   const mapList = el('div', 'ib-list ib-maplist');
-  mapCol.append(mapHead, preview, mapName, mapOpts, mapList);
+  mapCol.append(mapHead, preview, mapName, mapOpts, dynOpts, mapList);
   const drawOpts = () => {
     fogBtn.textContent = st.fog ? 'Fog of War: On' : 'Fog of War: Off';
     fogBtn.classList.toggle('on', st.fog);
+    const dyn = isDynamic(st.mapFile);
+    dynOpts.classList.toggle('hidden', !dyn);
+    rerollBtn.classList.toggle('hidden', !dyn);
+    sizeBtns.forEach((b, i) => b.classList.toggle('on', dyn && dynamicSize(st.mapFile).key === DYNAMIC_SIZES[i].key));
   };
 
   const filled = () => players.filter(p => p.kind !== 'open');
@@ -663,36 +684,47 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     });
   };
   let shownMap = null;
+  const viewKey = () => (isDynamic(st.mapFile) ? `${st.mapFile}|${teamsUsed().length}|${st.turn}` : st.mapFile);
   const drawPreview = async () => {
-    const m = st.mapFile;
-    shownMap = m;
+    const m = st.mapFile,
+      key = viewKey();
+    shownMap = key;
     mapName.textContent = mapTitle(m);
     const n = mapHeader(m)?.players;
-    if (n) mapName.appendChild(el('span', '', ` · ${n} player map`));
-    if (!previews.has(m))
+    if (isDynamic(m)) mapName.appendChild(el('span', '', ' · generated for every fleet'));
+    else if (n) mapName.appendChild(el('span', '', ` · ${n} player map`));
+    if (!previews.has(key))
       previews.set(
-        m,
-        loadMapPreview(m)
+        key,
+        loadMapPreview(m, { teams: Math.max(2, teamsUsed().length), turn: st.turn, instant: true })
           .then(cv => (cv ? cv.toDataURL() : ''))
-          .catch(() => '')
+          .catch(e => (console.warn('map preview', e), ''))
       );
-    const url = await previews.get(m);
-    if (m !== st.mapFile) return;
+    const url = await previews.get(key);
+    if (key !== viewKey()) return;
     previewImg.style.backgroundImage = url ? `url(${url})` : '';
     previewImg.classList.toggle('none', !url);
     drawMarks();
   };
   const drawMaps = () => {
     mapList.replaceChildren();
-    const rows = maps.map(m => ({ m, name: mapTitle(m) })).sort((a, b) => a.name.localeCompare(b.name));
+    const rows = maps
+      .filter(m => !isDynamic(m))
+      .map(m => ({ m, name: mapTitle(m) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (maps.some(isDynamic)) rows.unshift({ m: null, name: 'Dynamic Map' });
     for (const { m, name } of rows) {
-      const r = el('div', 'ib-maprow' + (m === st.mapFile ? ' sel' : ''), name);
+      const on = m ? m === st.mapFile : isDynamic(st.mapFile);
+      const r = el('div', 'ib-maprow' + (m ? '' : ' ib-dynamic') + (on ? ' sel' : ''), name);
+      if (!m) r.appendChild(el('span', 'ib-maptag', 'Generated'));
       if (!host) r.classList.add('locked');
       r.onclick = () => {
-        if (!host || st.mapFile === m) return;
-        st.mapFile = m;
+        const next = m || (isDynamic(st.mapFile) ? st.mapFile : resizeDynamic('medium'));
+        if (!host || st.mapFile === next) return;
+        st.mapFile = next;
         sound('GUI_Button_Press_2_SFX');
         for (const x of mapList.children) x.classList.toggle('sel', x === r);
+        drawOpts();
         drawPreview();
         changed(null, true);
       };
@@ -705,7 +737,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   };
 
   const drawHost = () => {
-    for (const b of [applyAll, fogBtn, spinBtn]) b.disabled = !host;
+    for (const b of [applyAll, fogBtn, spinBtn, rerollBtn, ...sizeBtns]) b.disabled = !host;
     budgetIn.disabled = !host;
     budgetIn.value = st.budget;
     if (!host) {
@@ -720,8 +752,8 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     drawHost();
     drawFleets();
     drawArmy();
-    if (shownMap !== st.mapFile) {
-      drawMaps();
+    if (shownMap !== viewKey()) {
+      if (!shownMap || shownMap.split('|')[0] !== st.mapFile) drawMaps();
       drawPreview();
     } else drawMarks();
     remember();

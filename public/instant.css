@@ -565,6 +565,58 @@
 #instantBattle .ib-maplist {
   gap: 1px;
 }
+#instantBattle .ib-dynopts.hidden,
+#instantBattle .ib-reroll.hidden {
+  display: none;
+}
+#instantBattle .ib-dynopts {
+  gap: 2px;
+}
+#instantBattle .ib-dynopts .ib-btn {
+  padding: 0 2px;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+#instantBattle .ib-reroll {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  height: 22px;
+  padding: 0 10px;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.78);
+}
+#instantBattle .ib-dynopts .ib-btn.on {
+  border-color: var(--gold-hi);
+  background: rgba(195, 171, 2, 0.3);
+  color: #fff;
+}
+#instantBattle .ib-maprow.ib-dynamic {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  border-color: rgba(195, 171, 2, 0.35);
+  background: linear-gradient(90deg, rgba(90, 140, 220, 0.18), rgba(195, 171, 2, 0.08));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+#instantBattle .ib-maprow.ib-dynamic.sel {
+  border-color: var(--gold-hi);
+  background: linear-gradient(90deg, rgba(90, 140, 220, 0.35), rgba(195, 171, 2, 0.25));
+}
+#instantBattle .ib-maptag {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9fc4ff;
+  border: 1px solid rgba(159, 196, 255, 0.45);
+}
 #instantBattle .ib-maprow {
   padding: 5px 8px;
   cursor: pointer;
