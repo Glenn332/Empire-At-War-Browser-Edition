@@ -480,6 +480,9 @@ export class Unit {
     this.turnW = undefined;
     this.lastH = undefined;
     this.coll = undefined;
+    this.hpColl = undefined;
+    this.pathOff = undefined;
+    this.visMask = 0;
     this.collR = undefined;
     this.collBall = undefined;
     this.isField = undefined;
@@ -679,6 +682,7 @@ export class Unit {
       this.attachHardpoint(hp);
       this.hardpoints.push(hp);
     }
+    if (this.hpColl) this.collR = Math.max(this.collR || 0, ...this.hpColl.map(p => p.r * this.scale));
     const destroyable = this.hardpoints.filter(h => h.destroyable);
     this.hpDriven = destroyable.length > 0;
     if (this.hpDriven) {
@@ -981,6 +985,16 @@ export class Unit {
     else hp.facing = Math.atan2(hp.local.y, hp.local.x);
     hp.bone = bone;
     const attach = getModelData(def.str('Model_To_Attach'));
+    const partColl = attach && bone ? collisionOf(attach) : null;
+    if (partColl) {
+      const at = this.modelMatrix(bone, new THREE.Matrix4()),
+        B = partColl.box;
+      const v = new THREE.Vector3();
+      let r = 0;
+      for (const x of [B[0], B[3]])
+        for (const y of [B[1], B[4]]) for (const z of [B[2], B[5]]) r = Math.max(r, v.set(x, y, z).applyMatrix4(at).length());
+      (this.hpColl ||= []).push({ hp, coll: partColl, inv: at.invert().elements, r });
+    }
     if (attach && bone) {
       hp.model = buildModel(attach, { teamColor: this.player && this.player.id >= 0 ? this.player.color : null, ...this.world.modelOpts });
       const own = fireA ? [] : [def.str('Fire_Bone_A'), def.str('Fire_Bone_B')].map(n => n && hp.model.bone(n)).filter(Boolean);
@@ -1343,6 +1357,7 @@ export class World {
     this.timers = [];
     this.fields = [];
     this.onEvent = () => {};
+    this.hitPart = null;
   }
 
   addTeam(t) {
@@ -3968,6 +3983,7 @@ export class World {
       }
       if (keep) {
         let hit = null,
+          hitPart = null,
           ht = 2;
         const hg = this.hitGrid,
           C = HIT_CELL;
@@ -3986,31 +4002,34 @@ export class World {
                 const h = o.heading || 0,
                   ch = Math.cos(h),
                   sh = Math.sin(h);
-                let tt = o.coll
-                  ? segNear(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, o.collR)
-                    ? this.meshStep(o, x0, y0, z0, p.x, p.y, p.z)
-                    : -1
-                  : o.hitA
-                    ? sweepBox(
-                        x0,
-                        y0,
-                        z0,
-                        p.x,
-                        p.y,
-                        p.z,
-                        o.x + ch * o.hitF - sh * o.hitL,
-                        o.y + sh * o.hitF + ch * o.hitL,
-                        o.z + o.hitZ,
-                        h,
-                        o.hitA,
-                        o.hitB,
-                        o.hitC
-                      )
-                    : sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.hitRadius, o.hitRadius, o.hitRadius);
+                this.hitPart = null;
+                let tt =
+                  o.coll || o.hpColl
+                    ? segNear(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, o.collR)
+                      ? this.meshStep(o, x0, y0, z0, p.x, p.y, p.z)
+                      : -1
+                    : o.hitA
+                      ? sweepBox(
+                          x0,
+                          y0,
+                          z0,
+                          p.x,
+                          p.y,
+                          p.z,
+                          o.x + ch * o.hitF - sh * o.hitL,
+                          o.y + sh * o.hitF + ch * o.hitL,
+                          o.z + o.hitZ,
+                          h,
+                          o.hitA,
+                          o.hitB,
+                          o.hitC
+                        )
+                      : sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.hitRadius, o.hitRadius, o.hitRadius);
                 if (tt < 0 && o.collBall > 0) tt = sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.collBall, o.collBall, o.collBall);
                 if (tt >= 0 && tt < ht) {
                   ht = tt;
                   hit = o;
+                  hitPart = this.hitPart;
                 }
               }
           }
@@ -4021,7 +4040,9 @@ export class World {
           const hp = hit.hpDriven
             ? p.targetHp && p.targetHp.alive && p.target === hit
               ? p.targetHp
-              : this.pickHardpoint(hit, hx, hy, p.from)
+              : hitPart && hitPart.alive && hitPart.destroyable
+                ? hitPart
+                : this.pickHardpoint(hit, hx, hy, p.from)
             : null;
           this.damage(hit, p.damage, {
             damageType: p.damageType,
@@ -4128,7 +4149,25 @@ export class World {
     };
     const A = to(x0, y0, z0, _ms0),
       B = to(x1, y1, z1, _ms1);
-    return meshHit(o.coll, A.x, A.y, A.z, B.x - A.x, B.y - A.y, B.z - A.z);
+    let best = o.coll ? meshHit(o.coll, A.x, A.y, A.z, B.x - A.x, B.y - A.y, B.z - A.z) : -1;
+    this.hitPart = null;
+    if (o.hpColl)
+      for (const part of o.hpColl) {
+        if (!part.hp.alive && part.hp.destroyable) continue;
+        const e = part.inv,
+          ax = e[0] * A.x + e[4] * A.y + e[8] * A.z + e[12],
+          ay = e[1] * A.x + e[5] * A.y + e[9] * A.z + e[13],
+          az = e[2] * A.x + e[6] * A.y + e[10] * A.z + e[14],
+          bx = e[0] * B.x + e[4] * B.y + e[8] * B.z + e[12],
+          by = e[1] * B.x + e[5] * B.y + e[9] * B.z + e[13],
+          bz = e[2] * B.x + e[6] * B.y + e[10] * B.z + e[14];
+        const t = meshHit(part.coll, ax, ay, az, bx - ax, by - ay, bz - az);
+        if (t >= 0 && (best < 0 || t < best)) {
+          best = t;
+          this.hitPart = part.hp;
+        }
+      }
+    return best;
   }
 
   updateHunt(e, dt) {

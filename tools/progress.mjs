@@ -211,6 +211,11 @@ const GROUPS = [
       ],
       ['Nebula haze on ships inside (Nebula_Effect_Color)', D],
       [
+        'Shots hit the models attached to hardpoints',
+        D,
+        'read from the engine: a hardpoint with a Model_To_Attach puts that model on its bone as part of the object, and the collision meshes of the attached model take projectile hits like the hull does (the shot then goes through the shields first, and a shot that was not aimed at another hardpoint damages the hardpoint it struck). Before, only the collision meshes of the base model were tested, so turrets and shield generators that sit outside the hull could not be hit: on the Rebel level 5 station the shield generator hangs 231 below the hull, every shot at it missed and the station regenerated its shields under the fire of three Star Destroyers. Three Star Destroyers ordered onto that generator now land 459 of 534 shots, take the 9000 shields down in about 18 seconds and destroy the generator a few seconds later; shots aimed at laser turrets went from 24 of 324 to 379 of 391 hits'
+      ],
+      [
         'Nebulae stay drawn off the centre of the screen',
         D,
         'a nebula model is all see-through meshes (and some carry particle effects), so the model bounds, which leave see-through meshes out so glows do not grow hit boxes, came out as the one-unit fallback and the nebula was culled as soon as its centre left the view. Culling now uses a separate draw radius over every shown mesh and the reach of the attached particle effects (spawn volume, speed over the lifetime, acceleration and particle size), so any model drawn mostly by see-through meshes or particles is kept while part of it is on screen. Checked on Thrawn Revenge'
