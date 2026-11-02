@@ -304,16 +304,95 @@ function classify(maps) {
       offs.push([best.pos[0] - o.pos[0], best.pos[1] - o.pos[1], best.pos[2]]);
     }
   const host = [...hosts].sort((a, b) => b[1] - a[1] || a[0].name.localeCompare(b[0].name))[0]?.[0] || kinds.field[0] || null;
+  const size = t => t.num('Space_Obstacle_Radius', 0);
+  const homeHost =
+    [...hosts.keys()].filter(t => kinds.field.includes(t)).sort((a, b) => size(a) - size(b) || a.name.localeCompare(b.name))[0] ||
+    kinds.field[0] ||
+    host;
   const donors = maps
     .filter(m => m.environments?.length)
     .map(m => ({
       file: m.file,
       half: Math.max(Math.abs(m.min[0]), Math.abs(m.min[1]), m.max[0], m.max[1]) || 6000
     }));
+  const kit = new Map(),
+    mineSet = new Set(kinds.mine),
+    mineSpots = [];
+  let bases = 0,
+    turnX = 0,
+    turnY = 0;
+  for (const map of maps) {
+    const cx = (map.min[0] + map.max[0]) / 2,
+      cy = (map.min[1] + map.max[1]) / 2;
+    for (const s of map.objects) {
+      const own = /^TEAM_(\d\d)_SPACE_STATION$/i.exec(s.type.name);
+      if (!own) continue;
+      bases++;
+      const fx = cx - s.pos[0],
+        fy = cy - s.pos[1],
+        fl = Math.hypot(fx, fy) || 1,
+        f = [fx / fl, fy / fl],
+        h = (s.rot[2] * Math.PI) / 180,
+        hf = [Math.cos(h), Math.sin(h)],
+        rel = h - Math.atan2(fy, fx);
+      turnX += Math.cos(rel);
+      turnY += Math.sin(rel);
+      for (const o of map.objects) {
+        if (!mineSet.has(o.type)) continue;
+        const dx = o.pos[0] - s.pos[0],
+          dy = o.pos[1] - s.pos[1];
+        if (dx * dx + dy * dy <= 3500 * 3500) mineSpots.push([dx * hf[0] + dy * hf[1], -dx * hf[1] + dy * hf[0]]);
+      }
+      const here = new Map();
+      for (const o of map.objects) {
+        const q = /^TEAM_(\d\d)_(.+)$/i.exec(o.type.name);
+        if (
+          !q ||
+          q[1] !== own[1] ||
+          !o.type.has('Marker_For_Specific_Object_Type') ||
+          /^(SPACE_STATION|BASE_POSITION_MARKER|SPAWN_POINT_MARKER)$/i.test(q[2])
+        )
+          continue;
+        const dx = o.pos[0] - s.pos[0],
+          dy = o.pos[1] - s.pos[1];
+        if (dx * dx + dy * dy > 3000 * 3000) continue;
+        const key = q[2].toUpperCase();
+        let e = kit.get(key);
+        if (!e) kit.set(key, (e = { suffix: q[2], bases: 0, maps: new Set(), counts: [], spots: [], back: [] }));
+        here.set(key, (here.get(key) || 0) + 1);
+        e.spots.push([dx * hf[0] + dy * hf[1], -dx * hf[1] + dy * hf[0]]);
+        e.back.push(Math.max(0, -(dx * f[0] + dy * f[1])));
+        e.maps.add(map.file);
+      }
+      for (const [key, n] of here) {
+        const e = kit.get(key);
+        e.bases++;
+        e.counts.push(n);
+      }
+    }
+  }
+  const baseKit = [...kit.values()]
+    .filter(e => e.maps.size >= 2 && e.bases >= bases * 0.1)
+    .sort((a, b) => b.bases - a.bases || a.suffix.localeCompare(b.suffix))
+    .map(e => ({
+      suffix: e.suffix,
+      count: Math.max(1, Math.round(median(e.counts))),
+      spots: e.spots,
+      reach: median(e.spots.map(s => Math.hypot(s[0], s[1]))),
+      back: (() => {
+        const b = e.back.slice().sort((x, y) => x - y);
+        return b.length ? b[Math.floor(b.length * 0.75)] : 0;
+      })()
+    }));
+  const stationTurn = bases && Math.hypot(turnX, turnY) > bases * 0.5 ? Math.atan2(turnY, turnX) : 0;
   return {
     kinds,
+    baseKit,
+    stationTurn,
+    mineSpots,
     z,
     host,
+    homeHost,
     hostAt: offs.length ? [median(offs.map(o => o[0])), median(offs.map(o => o[1])), median(offs.map(o => o[2]))] : [0, 0, -100],
     donors
   };
@@ -339,7 +418,10 @@ export async function generateDynamicMap(name, opts = {}) {
 
   const objects = [],
     solids = [],
-    lanes = [];
+    lanes = [],
+    homes = [];
+  const KEEP_OUT = 2000;
+  const nearHome = (x, y, r) => homes.some(b => Math.hypot(x - b.x, y - b.y) < KEEP_OUT + r);
   const add = (type, x, y, z, rot, extra = null) =>
     objects.push({ id: objects.length + 1, crc: 0, owner: -1, type, pos: [x, y, z], rot, scale: 1, hint: '', ...extra });
   const images = (x, y) => {
@@ -377,8 +459,8 @@ export async function generateDynamicMap(name, opts = {}) {
       if (r > 0) solids.push({ x: p.x, y: p.y, r });
     }
   };
-  const once = (type, x, y, r, { z = zOf(type), heading = R() * 360, tilt = [0, 0] } = {}) => {
-    if (!type) return;
+  const once = (type, x, y, r, { z = zOf(type), heading = R() * 360, tilt = [0, 0], anywhere = false } = {}) => {
+    if (!type || (!anywhere && nearHome(x, y, Math.max(r, radius(type))))) return false;
     add(type, x, y, z, [tilt[0], tilt[1], heading]);
     if (r > 0) solids.push({ x, y, r });
   };
@@ -392,75 +474,111 @@ export async function generateDynamicMap(name, opts = {}) {
   };
   const anywhere = () => (k === 2 ? { x: range(-P, P), y: range(-P, P) } : polar(R() * TAU, Math.sqrt(R()) * P));
   const tilted = () => [range(-25, 25), range(-25, 25)];
-  const mineAt = (x, y, place = put) => {
+  const mineAt = (x, y, place = put, home = false) => {
     const m = pick(K.mine);
     if (!m) return false;
     const [dx, dy, dz] = v.hostAt;
-    if (v.host) place(v.host, x + dx, y + dy, 0, { z: dz });
+    const field = home ? v.homeHost : v.host;
+    if (field) place(field, x + dx, y + dy, 0, { z: dz });
     place(m, x, y, 380, { z: 0 });
     return true;
-  };
-  const fieldOf = (lo, hi) => {
-    const list = K.field.filter(t => radius(t) >= lo && radius(t) <= hi);
-    return pick(list.length ? list : K.field);
   };
 
   const edge = a => P / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
   let axis;
   if (!instant) {
     axis = k === 2 ? pick([1, 3, 5, 7, 1, 3, 5, 7, 0, 2, 4, 6].map(i => (i * Math.PI) / 4)) + range(-0.1, 0.1) : R() * TAU;
-    const rb = k === 2 ? Math.max(P * 0.55, Math.min(edge(axis) - 1100, P * 1.05)) : Math.max(P * 0.55, P - 1000),
+    const room = Math.max(1000, ...v.baseKit.map(e => e.back + 500));
+    const rb = k === 2 ? Math.max(P * 0.45, Math.min(edge(axis) - room - 100, P * 1.05)) : Math.max(P * 0.45, P - room),
       bx = Math.cos(axis) * rb,
       by = Math.sin(axis) * rb;
     const f = { x: -Math.cos(axis), y: -Math.sin(axis) },
       l = { x: -f.y, y: f.x };
     const at = (fw, lt) => ({ x: bx + f.x * fw + l.x * lt, y: by + f.y * fw + l.y * lt });
+    const hs = Math.atan2(f.y, f.x) + v.stationTurn,
+      atS = (fw, lt) => ({ x: bx + Math.cos(hs) * fw - Math.sin(hs) * lt, y: by + Math.sin(hs) * fw + Math.cos(hs) * lt });
     const face = Math.atan2(f.y, f.x) * DEG;
     const team = (kind, p, heading) =>
       images(p.x, p.y).forEach(q => {
         const t = db.type(`Team_${String(q.j).padStart(2, '0')}_${kind}`) || db.type(`Team_00_${kind}`);
         if (t) add(t, q.x, q.y, 0, [0, 0, heading + q.turn], { team: q.j, role: kind.toUpperCase() });
       });
-    team('Space_Station', { x: bx, y: by }, face);
+    team('Space_Station', { x: bx, y: by }, hs * DEG);
     team('Base_Position_Marker', at(-120, 0), face);
     for (const lt of [-260, 0, 260]) team('Spawn_Point_Marker', at(650, lt), face);
     for (const q of images(bx, by)) {
+      homes.push({ x: q.x, y: q.y });
       solids.push({ x: q.x, y: q.y, r: 650 });
       lanes.push({ ax: q.x, ay: q.y, bx: 0, by: 0, r: 380 });
     }
+    for (const e of v.baseKit)
+      for (let i = 0; i < e.count; i++) {
+        const shuffled = e.spots
+          .map((s, j) => [R(), j])
+          .sort((a, b) => a[0] - b[0])
+          .map(([, j]) => e.spots[j]);
+        const far = shuffled.filter(s => Math.hypot(s[0], s[1]) >= e.reach),
+          close = shuffled.filter(s => Math.hypot(s[0], s[1]) < e.reach);
+        let p = spot(far.length, j => atS(far[j][0], far[j][1]), 350, 150, false);
+        if (!p)
+          p = spot(
+            far.length,
+            j => {
+              const k = Math.max(e.reach / Math.hypot(far[j][0], far[j][1]), 0.8);
+              return atS(far[j][0] * k, far[j][1] * k);
+            },
+            350,
+            150,
+            false
+          );
+        if (!p) p = spot(close.length, j => atS(close[j][0], close[j][1]), 350, 150, false);
+        if (!p) continue;
+        team(e.suffix, p, hs * DEG);
+        for (const q of images(p.x, p.y)) solids.push({ x: q.x, y: q.y, r: 350 });
+      }
     const home = (cands, r, gap, fn) => {
       const p = spot(cands.length, i => at(...cands[i]), r, gap, false);
       if (p) fn(p);
       return !!p;
     };
     const sides = R() < 0.5 ? [1, -1] : [-1, 1];
-    for (const s of sides)
-      home(
-        [
-          [-300, 1250 * s],
-          [200, 1300 * s],
-          [-700, 1100 * s],
-          [700, 1250 * s],
-          [-200, 1600 * s],
-          [1100, 1000 * s],
-          [1400, 600 * s]
-        ],
-        380,
-        80,
-        p => mineAt(p.x, p.y)
-      );
-    for (const s of sides)
-      home(
-        [
-          [1300, 700 * s],
-          [1500, 450 * s],
-          [1100, 1000 * s],
-          [1700, 800 * s]
-        ],
-        250,
-        120,
-        p => put(pick(K.pad), p.x, p.y, 250, { z: 0, heading: face })
-      );
+    const shuffledSpots = v.mineSpots
+      .map((m, j) => [R(), j])
+      .sort((x, y) => x[0] - y[0])
+      .map(([, j]) => v.mineSpots[j]);
+    const fixed = s => [
+      [-300, 1250 * s],
+      [200, 1300 * s],
+      [-700, 1100 * s],
+      [700, 1250 * s],
+      [-200, 1600 * s],
+      [1100, 1000 * s],
+      [1400, 600 * s]
+    ];
+    const homeMines = [];
+    for (const s of sides) {
+      const cands = [
+        ...shuffledSpots.map(m => atS(m[0], m[1])),
+        ...shuffledSpots.map(m => atS(m[0], -m[1])),
+        ...fixed(s).map(c => at(c[0], c[1]))
+      ];
+      const p = spot(cands.length, i => cands[i], 380, 150, false);
+      if (!p) continue;
+      mineAt(p.x, p.y, put, true);
+      homeMines.push(p);
+    }
+    for (const m of homeMines) {
+      const away = Math.atan2(m.y - by, m.x - bx);
+      const ring = [];
+      for (let i = 0; i < 36; i++) {
+        const a = away + (i % 2 ? 1 : -1) * (0.3 + 0.2 * Math.floor((i % 18) / 2)),
+          d = 800 + (i < 18 ? 0 : 250) + 60 * (i % 3);
+        ring.push({ x: m.x + Math.cos(a) * d, y: m.y + Math.sin(a) * d });
+      }
+      const cands = [...ring, ...shuffledSpots.map(s => atS(s[0], s[1])), ...shuffledSpots.map(s => atS(s[0], -s[1]))];
+      const p = spot(cands.length, i => cands[i], 250, 120, false);
+      if (p) put(pick(K.pad), p.x, p.y, 250, { z: 0, heading: face });
+    }
   } else {
     axis = dynamicTurn(name, k);
     for (let j = 0; j < k; j++) {
@@ -476,11 +594,56 @@ export async function generateDynamicMap(name, opts = {}) {
     }
   }
 
+  const fitsOne = (x, y, r, gap = 0, open = true, reach = r) =>
+    !nearHome(x, y, reach) &&
+    inside(x, y, Math.min(r, 600)) &&
+    solids.every(s => Math.hypot(x - s.x, y - s.y) >= r + s.r + gap) &&
+    (!open || lanes.every(c => laneGap(x, y, c) >= r));
+  const spotOne = (tries, gen, r, gap, open = true) => {
+    for (let i = 0; i < tries; i++) {
+      const p = gen(i);
+      if (p && fitsOne(p.x, p.y, r, gap, open)) return p;
+    }
+    return null;
+  };
+  const square = () => ({ x: range(-P, P), y: range(-P, P) });
+  const blobs = (list, from, count, { open = true, flash = 0, shrink = 0.35 } = {}) => {
+    let x = from.x,
+      y = from.y,
+      dir = R() * TAU,
+      placed = 0;
+    for (let i = 0; i < count; i++) {
+      const t = pick(list),
+        r = radius(t);
+      if (i) {
+        dir += range(-1.2, 1.2);
+        const len = r * range(0.55, 1.05);
+        x += Math.cos(dir) * len;
+        y += Math.sin(dir) * len;
+      }
+      if (!fitsOne(x, y, r * shrink, 0, open, r)) {
+        if (!placed) return 0;
+        continue;
+      }
+      once(t, x, y, r * shrink);
+      placed++;
+      if (K.flash.length && R() < flash) once(pick(K.flash), x + range(-0.3, 0.3) * r, y + range(-0.3, 0.3) * r, 0);
+    }
+    return placed;
+  };
+  const sizedField = (lo, hi) => {
+    const list = K.field.filter(t => radius(t) >= lo && radius(t) <= hi);
+    return list.length ? list : K.field;
+  };
+
   const Rc = Math.max(900, Math.min(1800, P * 0.17));
-  const m = k * Math.max(1, Math.round(6 / k));
-  const step = TAU / m;
-  const ring = (count, rr, fn) => {
-    for (let i = 0; i < count / k; i++) fn(axis + (i + 0.5) * step * (m / count), rr);
+  const around = (n, rLo, rHi, fn) => {
+    const base = R() * TAU;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i / n) * TAU + range(-0.35, 0.35) * (TAU / n),
+        p = polar(a, Rc * range(rLo, rHi));
+      fn(p, a);
+    }
   };
   const prize = () => {
     if (instant) {
@@ -488,29 +651,28 @@ export async function generateDynamicMap(name, opts = {}) {
       if (big) once(big, 0, 0, radius(big) || 250, { tilt: tilted() });
       return;
     }
-    if (K.hub.length && R() < 0.6) once(pick(K.hub), 0, 0, 500, { z: 0 });
-    else if (!mineAt(0, 0, once) && K.capture.length) once(pick(K.capture), 0, 0, 400, { z: 0 });
+    const centre = (t, x, y, r, o = {}) => once(t, x, y, r, { ...o, anywhere: true });
+    if (K.hub.length && R() < 0.6) centre(pick(K.hub), 0, 0, 500, { z: 0 });
+    else if (!mineAt(0, 0, centre) && K.capture.length) centre(pick(K.capture), 0, 0, 400, { z: 0 });
+  };
+  const deep = (n, near = null, spread = 0) => {
+    if (!K.deepRock.length) return;
+    for (let i = 0; i < n; i++) {
+      const p = near ? { x: near.x + range(-spread, spread), y: near.y + range(-spread, spread) } : square();
+      if (inside(p.x, p.y, 0)) once(pick(K.deepRock), p.x, p.y, 0, { z: range(-1400, -500), tilt: [R() * 360, R() * 360] });
+    }
   };
   const pieces = [
     {
       ok: K.field.length > 0,
       build() {
         prize();
-        ring(m, Rc, a => {
-          const t = fieldOf(400, 800),
-            p = polar(a, Rc);
-          put(t, p.x, p.y, radius(t) * 0.5);
-        });
+        around(5 + Math.floor(R() * 4), 0.85, 1.25, p => blobs(sizedField(350, 800), p, 1 + Math.floor(R() * 3)));
         if (K.rock.length)
-          ring(m, Rc * 1.35, a => {
-            const p = polar(a + step / 2, Rc * 1.35);
-            if (fits(p.x, p.y, 200, 0, false)) put(pick(K.rock), p.x, p.y, 200, { tilt: tilted() });
+          around(3 + Math.floor(R() * 4), 1.2, 1.6, p => {
+            if (fitsOne(p.x, p.y, 200, 0)) once(pick(K.rock), p.x, p.y, 200, { tilt: tilted() });
           });
-        if (K.deepRock.length)
-          ring(m * 2, Rc * 0.8, a => {
-            const p = polar(a + range(-0.2, 0.2), Rc * range(0.5, 1.3));
-            put(pick(K.deepRock), p.x, p.y, 0, { z: range(-1100, -500), tilt: [R() * 360, R() * 360] });
-          });
+        deep(6 + Math.floor(R() * 6), { x: 0, y: 0 }, Rc * 1.3);
       }
     },
     {
@@ -518,14 +680,15 @@ export async function generateDynamicMap(name, opts = {}) {
       build() {
         const pool = K.ion.length ? K.ion : K.nebula,
           core = pool.filter(t => radius(t) <= Rc * 1.3).pop() || pool[0];
-        once(core, 0, 0, 0);
+        once(core, range(-0.15, 0.15) * Rc, range(-0.15, 0.15) * Rc, 0);
         if (K.flash.length) for (let i = 0; i < 2; i++) once(pick(K.flash), range(-0.3, 0.3) * Rc, range(-0.3, 0.3) * Rc, 0);
         prize();
-        ring(m, Rc * 1.7, a => {
-          const p = polar(a, Rc * 1.7),
-            t = K.nebula.length && R() < 0.6 ? pick(K.nebula.filter(n => radius(n) < Rc)) || K.nebula[0] : fieldOf(250, 550);
-          put(t, p.x, p.y, radius(t) * 0.5);
-        });
+        const ring = K.nebula.filter(n => radius(n) < Rc);
+        around(4 + Math.floor(R() * 4), 1.4, 2, p =>
+          ring.length && R() < 0.6
+            ? blobs(ring, p, 1 + Math.floor(R() * 3), { flash: 0.3 })
+            : blobs(sizedField(250, 550), p, 1 + Math.floor(R() * 2))
+        );
       }
     },
     {
@@ -533,20 +696,16 @@ export async function generateDynamicMap(name, opts = {}) {
       build() {
         prize();
         const junk = K.junk.length ? K.junk : K.field;
-        ring(m, Rc * 1.2, a => {
-          const t = pick(junk),
-            p = polar(a + range(-0.15, 0.15), Rc * range(1, 1.4));
-          put(t, p.x, p.y, radius(t) * 0.5);
-        });
+        around(4 + Math.floor(R() * 4), 1, 1.5, p => blobs(junk, p, 1 + Math.floor(R() * 2)));
         const hulks = K.wreck.length ? K.wreck : K.scrap;
-        for (let i = 0; i < Math.max(1, Math.round(4 / k)); i++) {
-          const p = polar(axis + range(0, TAU / k), Rc * range(0.45, 0.9));
-          put(pick(hulks), p.x, p.y, 0, { tilt: [range(-20, 20), range(-40, 40)] });
+        for (let i = 0; i < 2 + Math.floor(R() * 3); i++) {
+          const p = polar(R() * TAU, Rc * range(0.4, 1));
+          once(pick(hulks), p.x, p.y, 0, { tilt: [range(-20, 20), range(-40, 40)] });
         }
         if (K.scrap.length)
-          for (let i = 0; i < Math.max(2, Math.round(8 / k)); i++) {
-            const p = polar(axis + range(0, TAU / k), Rc * range(0.4, 1.6));
-            put(pick(K.scrap), p.x, p.y, 0);
+          for (let i = 0; i < 4 + Math.floor(R() * 6); i++) {
+            const p = polar(R() * TAU, Rc * range(0.3, 1.7));
+            once(pick(K.scrap), p.x, p.y, 0);
           }
       }
     },
@@ -555,25 +714,19 @@ export async function generateDynamicMap(name, opts = {}) {
       build() {
         prize();
         const parts = K.solidDeco.length ? K.solidDeco : K.deco;
-        ring(m, Rc * 0.85, a => {
-          const p = polar(a, Rc * 0.85);
-          put(pick(parts), p.x, p.y, K.solidDeco.length ? 160 : 0, { heading: a * DEG + 90 });
+        around(4 + Math.floor(R() * 4), 0.7, 1, (p, a) => {
+          if (!K.solidDeco.length || fitsOne(p.x, p.y, 160, 0))
+            once(pick(parts), p.x, p.y, K.solidDeco.length ? 160 : 0, { heading: a * DEG + 90 + range(-25, 25) });
         });
         if (K.deco.length)
-          ring(m, Rc * 1.3, a => {
+          around(2 + Math.floor(R() * 4), 1.1, 1.6, (p, a) => {
             const t = pick(K.deco),
-              tan = a + Math.PI / 2;
-            for (let i = -2; i <= 1; i++) {
-              const p = polar(a + step / 2, Rc * 1.3),
-                q = { x: p.x + Math.cos(tan) * (i + 0.5) * 110, y: p.y + Math.sin(tan) * (i + 0.5) * 110 };
-              put(t, q.x, q.y, 0, { heading: tan * DEG, z: -100 });
-            }
+              tan = a + Math.PI / 2 + range(-0.4, 0.4),
+              n = 2 + Math.floor(R() * 4);
+            for (let i = 0; i < n; i++)
+              once(t, p.x + Math.cos(tan) * (i - n / 2) * 110, p.y + Math.sin(tan) * (i - n / 2) * 110, 0, { heading: tan * DEG, z: -100 });
           });
-        if (K.deepRock.length)
-          ring(m, Rc * 0.5, a => {
-            const p = polar(a + step / 2, Rc * 0.5);
-            put(pick(K.deepRock), p.x, p.y, 0, { z: range(-1200, -700), tilt: [R() * 360, R() * 360] });
-          });
+        deep(4 + Math.floor(R() * 4), { x: 0, y: 0 }, Rc * 0.7);
       }
     }
   ].filter(p => p.ok);
@@ -581,7 +734,7 @@ export async function generateDynamicMap(name, opts = {}) {
   solids.push({ x: 0, y: 0, r: Rc * 1.1 });
 
   if (!instant) {
-    const contested = { small: 1, medium: 2, large: 3, huge: 4 }[d.size.key] || 2;
+    const contested = { small: 1, medium: 2, large: 3, huge: 4, massive: 6 }[d.size.key] || 2;
     for (let i = 0; i < contested; i++) {
       const p = spot(120, anywhere, 380, 450);
       if (!p) break;
@@ -592,18 +745,17 @@ export async function generateDynamicMap(name, opts = {}) {
         if (near) put(pick(K.pad), near.x, near.y, 250, { z: 0 });
       }
     }
-    const caps = d.size.key === 'small' ? (R() < 0.5 ? 1 : 0) : 1 + (d.size.key === 'huge' ? 1 : 0);
+    const caps = { small: 1, medium: 2, large: 3, huge: 4, massive: 6 }[d.size.key] || 2;
     for (let i = 0; i < caps && K.capture.length; i++) {
-      const s = R() < 0.5 ? 1 : -1;
-      const p = spot(30, () => polar(axis + (Math.PI / k) * s + range(-0.35, 0.35) / k, range(0.35, 0.7) * P), 450, 600);
-      if (p) put(pick(K.capture), p.x, p.y, 450, { z: 0 });
+      const p = spotOne(60, square, 450, 700);
+      if (p) once(pick(K.capture), p.x, p.y, 450, { z: 0 });
     }
   }
 
   const themes = [
-    ['field', 8],
-    ['rocks', K.rock.length ? 2 : 0],
-    ['nebula', K.nebula.length ? 2 : 0],
+    ['field', 7],
+    ['rocks', K.rock.length ? 1.5 : 0],
+    ['nebula', K.nebula.length ? 2.5 : 0],
     ['ion', K.ion.length ? 1 : 0],
     ['junk', K.junk.length ? 1.5 : 0]
   ].filter(t => t[1] > 0);
@@ -613,55 +765,40 @@ export async function generateDynamicMap(name, opts = {}) {
     for (const [name, w] of themes) if ((x -= w) < 0) return name;
     return 'field';
   };
-  const total = Math.round((P * P) / 3e6) + 3;
-  for (let c = 0; c < Math.ceil(total / k); c++) {
+  const total = Math.round((P * P) / 3.5e6) + 3;
+  for (let c = 0; c < total; c++) {
     const kind = theme();
     if (kind === 'field' || kind === 'junk') {
       const list = kind === 'junk' ? K.junk : K.field,
-        first = pick(list),
-        p = spot(40, anywhere, radius(first) * 0.6, 250);
-      if (!p) continue;
-      put(first, p.x, p.y, radius(first) * 0.6);
-      const more = 1 + Math.floor(R() * 3);
-      for (let i = 0; i < more; i++) {
-        const t = pick(list),
-          a = R() * TAU,
-          dist = (radius(first) + radius(t)) * range(0.55, 0.85),
-          q = { x: p.x + Math.cos(a) * dist, y: p.y + Math.sin(a) * dist };
-        if (fits(q.x, q.y, radius(t) * 0.5, 0)) put(t, q.x, q.y, radius(t) * 0.5);
-      }
-      if (K.rock.length && R() < 0.5) {
-        const a = R() * TAU,
-          q = { x: p.x + Math.cos(a) * radius(first), y: p.y + Math.sin(a) * radius(first) };
-        if (fits(q.x, q.y, 150, 50)) put(pick(K.rock), q.x, q.y, 150, { tilt: tilted() });
-      }
+        p = spotOne(40, square, 250, 250);
+      if (!p || !blobs(list, p, 2 + Math.floor(R() * 5))) continue;
+      if (K.rock.length && R() < 0.5)
+        for (let i = 0; i < 1 + Math.floor(R() * 3); i++) {
+          const q = { x: p.x + range(-700, 700), y: p.y + range(-700, 700) };
+          if (fitsOne(q.x, q.y, 120, 30)) once(pick(K.rock), q.x, q.y, 120, { tilt: tilted() });
+        }
       if (kind === 'junk' && K.scrap.length)
-        for (let i = 0; i < 2; i++)
-          put(pick(K.scrap), p.x + range(-1, 1) * radius(first) * 0.6, p.y + range(-1, 1) * radius(first) * 0.6, 0);
+        for (let i = 0; i < 2 + Math.floor(R() * 3); i++) once(pick(K.scrap), p.x + range(-600, 600), p.y + range(-600, 600), 0);
+      deep(Math.floor(R() * 3), p, 800);
     } else if (kind === 'rocks') {
-      const p = spot(40, anywhere, 300, 300);
+      const p = spotOne(40, square, 300, 300);
       if (!p) continue;
-      const n = 2 + Math.floor(R() * 3);
+      const n = 2 + Math.floor(R() * 4);
       for (let i = 0; i < n; i++) {
         const t = pick(K.rock),
-          q = i ? { x: p.x + range(-450, 450), y: p.y + range(-450, 450) } : p;
-        if (!i || fits(q.x, q.y, Math.max(80, radius(t)), 30)) put(t, q.x, q.y, Math.max(80, radius(t)), { tilt: tilted() });
+          q = i ? { x: p.x + range(-500, 500), y: p.y + range(-500, 500) } : p;
+        if (fitsOne(q.x, q.y, Math.max(80, radius(t)), 30)) once(t, q.x, q.y, Math.max(80, radius(t)), { tilt: tilted() });
       }
+      deep(1 + Math.floor(R() * 3), p, 600);
     } else {
-      const pool = kind === 'ion' ? K.ion : K.nebula,
-        t = pick(pool.filter(n => radius(n) <= P * 0.25)) || pool[0],
-        p = spot(40, anywhere, radius(t) * 0.7, 200);
+      const pool = (kind === 'ion' ? K.ion : K.nebula).filter(n => radius(n) <= P * 0.2),
+        list = pool.length ? pool : kind === 'ion' ? K.ion : K.nebula,
+        p = spotOne(40, square, 300, 200);
       if (!p) continue;
-      put(t, p.x, p.y, radius(t) * 0.7);
-      if (K.flash.length && R() < 0.6) put(pick(K.flash), p.x + range(-0.3, 0.3) * radius(t), p.y + range(-0.3, 0.3) * radius(t), 0);
+      blobs(list, p, (kind === 'ion' ? 1 : 2) + Math.floor(R() * (kind === 'ion' ? 2 : 4)), { flash: 0.35, shrink: 0.45 });
     }
   }
-  if (K.deepRock.length)
-    for (let i = 0; i < Math.ceil((total * 1.5) / k); i++) {
-      const p = anywhere();
-      if (images(p.x, p.y).every(q => inside(q.x, q.y, 0)))
-        put(pick(K.deepRock), p.x, p.y, 0, { z: range(-1400, -600), tilt: [R() * 360, R() * 360] });
-    }
+  deep(Math.round(total * 0.8));
 
   const donor = pick(v.donors),
     source = await loadMap(donor.file),
