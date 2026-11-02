@@ -1,14 +1,16 @@
 import { Player, Team, Unit, Squad } from './sim.js';
 import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
 
+const kept = new WeakSet();
+
 export function plain(v, depth = 0, seen = new Set()) {
   if (v === null || v === undefined || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
-  if (typeof v === 'function') return undefined;
+  if (typeof v === 'function' || typeof v === 'symbol' || typeof v === 'bigint' || kept.has(v)) return undefined;
   if (v instanceof Unit || v instanceof Squad) return { $u: v.id };
   if (v instanceof Player) return { $pl: v.id };
   if (v instanceof Team) return { $tm: v.id };
-  if (v.isVector3) return { $v: [v.x, v.y, v.z] };
-  if (v.isColor) return { $c: v.getHex() };
+  if (v.isVector3 === true) return { $v: [v.x, v.y, v.z] };
+  if (v.isColor === true) return { $c: v.getHex() };
   if (typeof v.str === 'function' && typeof v.name === 'string') return { $t: v.name };
   if (v.def && v.vx !== undefined && v.id) return { $p: v.id };
   if (ArrayBuffer.isView(v)) return Array.from(v);
@@ -29,7 +31,9 @@ export function keeper(to, events) {
     (...args) => {
       events.push([to, name, args.map(a => plain(a))]);
     };
-  return new Proxy({}, { get: (t, k) => (typeof k === 'string' ? call(k) : undefined) });
+  const p = new Proxy({}, { get: (t, k) => (typeof k === 'string' ? call(k) : undefined) });
+  kept.add(p);
+  return p;
 }
 
 export function hookBattle(w, events, spawns) {

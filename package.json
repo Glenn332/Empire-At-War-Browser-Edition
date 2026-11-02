@@ -11,6 +11,7 @@
     "app": "node tools/build-app.mjs",
     "app:bump": "node tools/release-app.mjs bump",
     "test:space-mirror": "node tools/test-space-mirror.mjs",
+    "test:space-hooks": "node tools/test-space-hooks.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
