@@ -213,13 +213,16 @@ export class SpaceMirror {
     else this.clock += real * rate * (1 + Math.max(-0.15, Math.min(0.15, (lag - LAG) / (8 * TICK))));
     if (Q.length && Q[0].time - TICK <= this.clock) {
       const t = performance.now();
+      let n = 0;
       while (Q.length && Q[0].time - TICK <= this.clock) {
         const m = Q.shift();
         g.settle();
         this.apply(m);
         g.remember();
         this.shown = m.time;
+        n++;
       }
+      this.worker.postMessage({ k: 'seen', n });
       this.lastAt = performance.now();
       this.stats.applyMs += this.lastAt - t;
     }

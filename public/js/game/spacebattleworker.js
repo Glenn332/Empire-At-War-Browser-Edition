@@ -24,7 +24,8 @@ import { placeSpecialWeapons } from './superweapon.js';
 
 const TICK = 1 / 30;
 const AI_STEP_MS = 4,
-  AI_STEP_WORK = 80;
+  AI_STEP_WORK = 80,
+  AHEAD = 15;
 const nothing = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : nothing), apply: () => undefined });
 
 async function setUp(m, events) {
@@ -338,10 +339,18 @@ async function run(m) {
   };
   const commands = [];
   let speed = 1,
-    paused = false;
+    paused = false,
+    unseen = 0,
+    waiting = false;
   onmessage = e => {
     const c = e.data;
-    if (c.k === 'cmd') commands.push([w.viewer ? w.viewer.id : 0, c.cmd]);
+    if (c.k === 'seen') {
+      unseen = Math.max(0, unseen - c.n);
+      if (waiting && unseen < AHEAD) {
+        waiting = false;
+        tick();
+      }
+    } else if (c.k === 'cmd') commands.push([w.viewer ? w.viewer.id : 0, c.cmd]);
     else if (c.k === 'lockstep') step(c.cmds, c.hash);
     else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
@@ -373,12 +382,17 @@ async function run(m) {
     const now = performance.now();
     let n = 0;
     if (paused) next = now;
-    while (!paused && next <= now && n < 4) {
+    while (!paused && next <= now && n < 4 && unseen < AHEAD) {
       step(commands.splice(0), false);
+      unseen++;
       next += (TICK * 1000) / speed;
       n++;
     }
     if (next < now - 200) next = now;
+    if (!paused && unseen >= AHEAD) {
+      waiting = true;
+      return;
+    }
     setTimeout(tick, Math.max(0, next - performance.now()));
   };
   tick();
