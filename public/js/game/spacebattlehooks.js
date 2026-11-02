@@ -1,4 +1,4 @@
-import { Player, Team, Unit, Squad } from './sim.js';
+import { World, Player, Team, Unit, Squad } from './sim.js';
 import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
 
 const kept = new WeakSet();
@@ -6,6 +6,7 @@ const kept = new WeakSet();
 export function plain(v, depth = 0, seen = new Set()) {
   if (v === null || v === undefined || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
   if (typeof v === 'function' || typeof v === 'symbol' || typeof v === 'bigint' || kept.has(v)) return undefined;
+  if (v instanceof World) return { $w: 1 };
   if (v instanceof Unit || v instanceof Squad) return { $u: v.id };
   if (v instanceof Player) return { $pl: v.id };
   if (v instanceof Team) return { $tm: v.id };
@@ -34,6 +35,45 @@ export function keeper(to, events) {
   const p = new Proxy({}, { get: (t, k) => (typeof k === 'string' ? call(k) : undefined) });
   kept.add(p);
   return p;
+}
+
+export function guard(said, what, f) {
+  try {
+    return f();
+  } catch (err) {
+    const key = what + ': ' + String((err && err.message) || err);
+    if (!said.has(key)) {
+      said.add(key);
+      console.error('space worker: ' + what + ' failed, the battle goes on', err);
+    }
+  }
+}
+
+const clonable = v => {
+  try {
+    structuredClone(v);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export function send(post, message, transfer, said) {
+  try {
+    return post(message, transfer);
+  } catch (err) {
+    if (!err || err.name !== 'DataCloneError') throw err;
+  }
+  message.events = message.events.filter(e => {
+    if (clonable(e)) return true;
+    const key = 'event ' + e[0] + '.' + e[1];
+    if (!said.has(key)) {
+      said.add(key);
+      console.error('space worker: dropped an event the page cannot receive:', e[0] + '.' + e[1]);
+    }
+    return false;
+  });
+  return post(message, transfer);
 }
 
 export function hookBattle(w, events, spawns) {

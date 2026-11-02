@@ -126,7 +126,15 @@ const events = [],
 const truth = build(events);
 events.length = 0;
 const undo = hookBattle(truth, events, spawns);
+const told = [],
+  heard = [];
+const hooked = truth.onEvent;
+truth.onEvent = (kind, data) => {
+  told.push([kind, data]);
+  hooked(kind, data);
+};
 const page = build(null);
+page.onEvent = (kind, data) => heard.push([kind, data]);
 const game = new Proxy({ world: page, advisor: undefined, lock: undefined }, { get: (t, k) => (k in t ? t[k] : nothing) });
 const mirror = SpaceMirror.headless(game);
 for (const e of [...page.units, ...page.squads, ...page.squads.flatMap(q => q.fighters)]) mirror.match(e.id, e);
@@ -253,6 +261,47 @@ function compareObject(kind, a, b) {
     }
   }
 }
+const isPlain = v => v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype);
+function sameEvent(a, b, depth) {
+  if (a === truth) return b === page;
+  if (a && a.isVector3) return !!b && b.isVector3 === true && a.distanceTo(b) < 1e-3;
+  if (
+    a === null ||
+    typeof a !== 'object' ||
+    isEntity(a) ||
+    a instanceof S.Player ||
+    a instanceof S.Team ||
+    a instanceof Map ||
+    a instanceof Set
+  )
+    return same(a, b, 0, 'event');
+  if (typeof a.str === 'function' && typeof a.name === 'string') return same(a, b, 0, 'event');
+  if (a.isColor) return same(a, b, 0, 'event');
+  if (!b || typeof b !== 'object') return false;
+  if (depth > 2) return true;
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((x, i) => sameEvent(x, b[i], depth + 1));
+  for (const k of Object.keys(a)) {
+    const v = a[k];
+    if (typeof v === 'function' || v === truth.fx || v === truth.audio) continue;
+    if (!isPlain(a) && v && typeof v === 'object' && !isEntity(v) && !(v instanceof S.Player) && v !== truth) continue;
+    if (!sameEvent(v, b[k], depth + 1)) return false;
+  }
+  return true;
+}
+const eventKinds = new Set();
+function compareEvents() {
+  assert.equal(heard.length, told.length, 'the page heard as many battle events as the worker told');
+  for (const [i, [kind, data]] of told.entries()) {
+    const [pageKind, pageData] = heard[i];
+    eventKinds.add(kind);
+    if (pageKind !== kind || !sameEvent(data, pageData, 0))
+      note(
+        'event.' + kind,
+        `the page got ${pageKind} with ${Object.keys(pageData || {}).join(', ')} for worker data ${Object.keys(data || {}).join(', ')}`
+      );
+  }
+  told.length = heard.length = 0;
+}
 const covered = new Set();
 function cover() {
   for (const q of truth.squads) {
@@ -312,7 +361,9 @@ const want = [
   'station upgrade',
   'upgrade',
   'kills',
-  'lifetime build count'
+  'lifetime build count',
+  'beacon event',
+  'special weapon event'
 ];
 const steps = +(arg('--steps') || 1200);
 const at = {
@@ -343,6 +394,22 @@ const at = {
     execute(truth, me, mirror.ours({ c: 'formmove', p: [[twin(q).id, -1000, -1000]], h: 0 }));
   },
   260: () => truth.upgradeStation(foe, foe.station),
+  320: () => {
+    assert.deepEqual(execute(truth, me, { c: 'beacon', x: 0, y: 0, z: 0 }), {});
+  },
+  340: () => {
+    const sw = truth.specialWeapons.find(s => s.player === me),
+      up = [...db.types.values()].find(
+        t =>
+          (t.bool('Is_Skirmish_Tactical_Super_Weapon') || t.bool('Enable_Special_Weapons')) &&
+          t.str('Affiliation').toUpperCase().includes('EMPIRE')
+      );
+    assert(sw && up, 'a special weapon and the upgrade that arms it');
+    me.upgrades.add(up.name);
+    const t = [...truth.units, ...truth.squads].find(u => sw.canTarget(u));
+    assert(t, 'a special weapon target');
+    assert.equal(sw.fire(t), null);
+  },
   300: () => {
     for (const f of truth.squads.find(s => !s.dead && s.player === foe)?.fighters || []) [f.x, f.y] = [me.station.x + 300, me.station.y];
   }
@@ -358,9 +425,13 @@ for (let i = 1; i <= steps; i++) {
   truth.updateEnd();
   const { message } = stepRecord(truth, rec, spawns, events);
   mirror.apply(structuredClone(message));
+  compareEvents();
   compare();
 }
 undo();
+if (eventKinds.has('beacon')) covered.add('beacon event');
+if (eventKinds.has('specialWeaponFired')) covered.add('special weapon event');
+if (verbose) console.log('battle events seen: ' + [...eventKinds].sort().join(', '));
 
 const s = truth.units.find(u => u.type === sensor);
 console.log(
@@ -371,4 +442,5 @@ for (const [k, d] of list) console.log(`${k}  x${d.n}  ${verbose ? d.msg : d.msg
 assert.equal(list.length, 0, `${list.length} fields differ between the battle worker and the page`);
 const missed = want.filter(k => !covered.has(k));
 assert.deepEqual(missed, [], 'the battle never reached: ' + missed.join(', '));
+assert.equal(mirror.stats.failed, 0, 'every battle event plays on the page');
 console.log('space mirror parity ok');

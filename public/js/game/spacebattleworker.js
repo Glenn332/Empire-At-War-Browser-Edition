@@ -12,7 +12,7 @@ import { loadALA, animName } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { loadPrioritySets } from './priorities.js';
 import { SpaceRecorder } from './spacerecord.js';
-import { plain, keeper, hookBattle, stepRecord } from './spacebattlehooks.js';
+import { plain, keeper, hookBattle, stepRecord, guard, send } from './spacebattlehooks.js';
 import { ScriptHost } from './scripts.js';
 import { SkirmishAI } from './ai.js';
 import { SpaceGoals } from './spacegoals.js';
@@ -323,6 +323,7 @@ async function run(m) {
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
     steps = 0;
+  const said = new Set();
   const step = (cmds, wantHash) => {
     const s = performance.now();
     const hash = wantHash ? stateHash(w) : undefined;
@@ -339,18 +340,25 @@ async function run(m) {
       }
       if (r.why && player === w.viewer) postMessage({ k: 'result', cmd, why: r.why });
     }
-    w.updateBegin(TICK);
-    w.updateSome(Infinity);
-    w.updateEnd();
-    think();
-    rules?.step(TICK);
+    guard(said, 'the battle step', () => {
+      w.updateBegin(TICK);
+      try {
+        w.updateSome(Infinity);
+      } finally {
+        w.updateEnd();
+      }
+    });
+    guard(said, 'the computer players and scripts', think);
+    if (rules) guard(said, 'the battle rules', () => rules.step(TICK));
     stepMs += performance.now() - s;
     steps++;
-    const { message, transfer } = stepRecord(w, rec, spawns, events);
-    message.hash = hash;
-    message.stepMs = steps % 30 === 0 ? stepMs / 30 : undefined;
-    message.jobs = steps % 30 === 0 && w.ahead ? w.ahead.report() : undefined;
-    postMessage(message, transfer);
+    guard(said, 'sending the step', () => {
+      const { message, transfer } = stepRecord(w, rec, spawns, events);
+      message.hash = hash;
+      message.stepMs = steps % 30 === 0 ? stepMs / 30 : undefined;
+      message.jobs = steps % 30 === 0 && w.ahead ? w.ahead.report() : undefined;
+      send(postMessage, message, transfer, said);
+    });
     if (steps % 30 === 0) stepMs = 0;
   };
   const commands = [];

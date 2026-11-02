@@ -32,6 +32,7 @@ export class SpaceMirror {
     this.held = new Set();
     this.pending = [];
     this.inFlight = false;
+    this.warned = new Set();
   }
 
   constructor(game, loaded = null) {
@@ -368,8 +369,13 @@ export class SpaceMirror {
       try {
         f.apply(target, a);
         st.events++;
-      } catch {
+      } catch (err) {
         st.failed++;
+        const key = to + '.' + name;
+        if (!this.warned.has(key)) {
+          this.warned.add(key);
+          console.warn('space mirror: the page could not play', key, err);
+        }
       }
     }
     const U = m.units,
@@ -587,6 +593,7 @@ export class SpaceMirror {
 
   back(a) {
     if (a === null || typeof a !== 'object') return a;
+    if (a.$w !== undefined) return this.world;
     if (a.$u !== undefined) return this.byW.get(a.$u);
     if (a.$pl !== undefined) return a.$pl < 0 ? this.world.neutral : this.world.players.find(p => p.id === a.$pl);
     if (a.$tm !== undefined) return this.world.teams.find(t => t.id === a.$tm) || null;
