@@ -4091,6 +4091,20 @@ export class LandWorld {
     if (this.aiSuspended && among === this.units) return null;
     if (u.retreating) return null;
     if (among === this.units && u.x !== undefined) among = this.foesNear(u.x, u.y, reach);
+    const w = gun || u.weapon,
+      first = this.pickFoe(u, among, reach, gun, null);
+    if (!first || !w || !this.shotBlocked(u, first, w)) return first;
+    const skip = new Set([first]);
+    for (let i = 0; i < 3; i++) {
+      const t = this.pickFoe(u, among, reach, gun, skip);
+      if (!t) break;
+      if (!this.shotBlocked(u, t, w)) return t;
+      skip.add(t);
+    }
+    return first;
+  }
+
+  pickFoe(u, among, reach, gun, skip) {
     const R = gun ? null : u.ranks;
     const aa = (u.antiAir ??= !!(
       u.flies ||
@@ -4115,7 +4129,8 @@ export class LandWorld {
         e.side < 0 ||
         (e.flies && !aa && !gun) ||
         !this.targetEnemy(u, e) ||
-        e.x === undefined
+        e.x === undefined ||
+        (skip && skip.has(e))
       )
         continue;
       if (gun && gun.spare.has(e.flies ? 'AIR' : e.kind)) continue;
@@ -5021,17 +5036,16 @@ export class LandWorld {
         g.left = 0;
         continue;
       }
-      if (this.clearShots && globalThis.clearShots && !(this.time < (u.squad.clearFail || 0))) {
-        if (this.shotBlocked(u, t, g)) {
-          g.left = 0;
-          if (!hidden) {
-            hidden = t;
-            hideG = g;
-          }
-          continue;
+      if (this.shotBlocked(u, t, g)) {
+        g.left = 0;
+        g.target = null;
+        if (!hidden) {
+          hidden = t;
+          hideG = g;
         }
-        seen = true;
+        continue;
       }
+      seen = true;
       if (g.left > 0) {
         if ((g.timer -= dt) <= 0) {
           this.fire(u, t, g);
@@ -5044,7 +5058,7 @@ export class LandWorld {
         g.cooldown = g.recharge * (u.mod ? u.mod.delay : 1);
       }
     }
-    if (hidden && !seen && !u.weapon) this.seekClear(u.squad, u, hidden, hideG);
+    if (hidden && !seen && !u.weapon && this.repositions(u.squad)) this.seekClear(u.squad, u, hidden, hideG);
   }
 
   fight(u, dt) {
@@ -5157,9 +5171,14 @@ export class LandWorld {
         Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone &&
         !(stance.ready && stance.kinds.has('ATTACKIDLE') && (u.animKind === 'idle' || u.animKind === 'move'));
     }
-    if (aimed && this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0)) && this.shotBlocked(u, t, w)) {
+    if (aimed && this.shotBlocked(u, t, w)) {
       aimed = false;
-      this.seekClear(sq, u, t, w);
+      if (!D && this.time >= (u.scanAt || 0)) {
+        u.scanAt = this.time + 0.5;
+        const alt = (foe && this.nearestFoe(u, foe.members, reach)) || this.nearestFoe(u, this.units, reach);
+        if (alt) u.target = alt;
+      }
+      if (this.repositions(sq)) this.seekClear(sq, u, t, w);
     }
     if (aimed && specialAttack(this, u, t, dt)) {
       if (u.special && u.special.kind === 'quake') this.setAnim(u, 'attack');
@@ -5183,10 +5202,14 @@ export class LandWorld {
     return true;
   }
 
+  repositions(sq) {
+    return this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0));
+  }
+
   shotBlocked(u, t, w) {
     if (u.flies || !(w.speed > 0) || lobOf(w) > 0) return false;
     const c = categoryOf(w.proj);
-    if (c !== CAT.DEFAULT && c !== CAT.LASER) return false;
+    if (c !== CAT.DEFAULT && c !== CAT.LASER && c !== CAT.MISSILE) return false;
     if (w.losT === t && this.time < w.losAt) return w.losBad;
     w.losT = t;
     w.losAt = this.time + 0.5;
@@ -5272,7 +5295,7 @@ export class LandWorld {
     }
     if (t && u.minRange > 0 && Math.hypot(t.x - u.x, t.y - u.y) < u.minRange) t = null;
     u.target = t;
-    if (!t || (this.clearShots && globalThis.clearShots && this.shotBlocked(u, t, w))) {
+    if (!t || this.shotBlocked(u, t, w)) {
       w.left = 0;
       return;
     }

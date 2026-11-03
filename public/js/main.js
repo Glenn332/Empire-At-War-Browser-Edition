@@ -2687,7 +2687,7 @@ async function boot() {
         });
       return;
     }
-    if (params.get('mode') === 'land' && landMaps.length) {
+    if (params.get('mode') === 'land' && quickLand.length) {
       const want = (params.get('map') || 'TATOOINE').toUpperCase();
       const all = players.map(p => ({ ...p }));
       for (let i = 0, n = Math.min(6, +params.get('bots') || 0); i < n; i++)
@@ -2896,7 +2896,7 @@ async function boot() {
     box.checked = on;
     window.clearShots = on;
     box.parentElement.title =
-      'In land battles, a unit whose shot would hit a hill holds fire and moves to a spot from which it can hit its target. Off: it fires into the hill as in the original. Not in multiplayer.';
+      'In land battles, a unit whose shot would hit a hill moves to a spot from which it can hit its target. Off: it holds fire or picks another target. Not in multiplayer.';
     box.onchange = () => {
       window.clearShots = box.checked;
       try {
