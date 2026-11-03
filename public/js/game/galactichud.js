@@ -37,6 +37,7 @@ export class GalacticBar extends CommandBar {
     this.scale = Math.min(innerHeight / 768, innerWidth / 1024);
     this.root.style.transform = `scale(${this.scale})`;
     this.root.style.setProperty('--slack', Math.max(0, innerHeight / this.scale - 768) + 'px');
+    for (const b of Object.values(this.heroBars || {})) b.el.style.transform = `scale(${this.scale})`;
     if (this.readouts) this.refresh();
   }
 
@@ -419,6 +420,48 @@ export class GalacticBar extends CommandBar {
     });
   }
 
+  refreshHeroes() {
+    if (!this.heroShells) return;
+    const g = this.game.galaxy,
+      up = x => String(x || '').toUpperCase(),
+      me = up(this.game.me),
+      ids = (this.heroIds ||= new WeakMap());
+    const hero = t =>
+      !t
+        ? null
+        : t.bool('Is_Named_Hero')
+          ? t
+          : t
+              .list('Company_Units')
+              .map(n => db.type(n))
+              .find(m => m?.bool('Is_Named_Hero')) || null;
+    const list = [];
+    const add = (u, at, fleet = null) => {
+      const type = !u.dead && up(u.owner || fleet?.owner) === me && hero(u.carries || u.type);
+      if (!type) return;
+      if (!ids.has(u)) ids.set(u, (this.heroNext = (this.heroNext || 0) + 1));
+      list.push({ e: { id: ids.get(u), player: this.player, healthFrac: 1, planet: at, fleet }, type });
+    };
+    for (const f of g.fleets) if (up(f.owner) === me) for (const u of f.units) add(u, f.leg ? f.leg.b : f.planet, f);
+    for (const p of g.planets) for (const u of p.garrison || []) add(u, p.index);
+    this.heroRow('good', list.slice(0, 11));
+    this.heroBars.good.el.classList.add('nohp');
+    this.heroBars.evil.el.style.display = 'none';
+  }
+
+  heroClick(h) {
+    this.heroFocus(h);
+  }
+
+  heroFocus(h) {
+    const v = this.game.view,
+      at = h.e.fleet?.leg ? h.e.fleet.pos : this.game.galaxy.planets[h.e.planet]?.pos;
+    if (h.e.planet >= 0) this.game.select(h.e.planet);
+    if (!at || v.zoom || v.planet >= 0) return;
+    v.x = at[0];
+    v.y = at[1];
+  }
+
   refresh() {
     const game = this.game,
       g = game.galaxy,
@@ -440,6 +483,7 @@ export class GalacticBar extends CommandBar {
       db.t('TEXT_TECH') + ' ' + ((player?.tech || 0) + db.faction(game.me).num('Displayed_Tech_Level_Adjustment', 0))
     );
     this.setReadout('Text_Pop_Cap', popUsed + ' / ' + popCap);
+    this.refreshHeroes();
     this.setReadout('Text_Planet', p ? label(p.type) : '');
     this.setReadout('Text_Planetary_Income', p ? String(rounded(displayIncome(g, p))) : '');
     for (const { b, bit, name } of this.filters) {

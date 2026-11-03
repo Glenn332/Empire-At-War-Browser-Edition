@@ -3,6 +3,7 @@ import { isTacticalSuperweapon } from './tacticalsuperweapon.js';
 import { db } from '../gamedata.js';
 import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
+import { fleetIntro } from './instantbattle.js';
 
 const CLASS = s => {
   const v = String(s || '').toLowerCase();
@@ -140,6 +141,28 @@ export function markers(map, name) {
   return map.objects
     .filter(o => o.type.name.toUpperCase().replace(/[\s_]+/g, ' ') === want)
     .map(o => ({ x: o.pos[0], y: o.pos[1], heading: (o.rot[2] * Math.PI) / 180 }));
+}
+
+export function campaignIntro(game) {
+  const cb = game.setup.campaign,
+    team = game.human?.team,
+    a = team && game.campaignBook?.anchors[team.id];
+  if (!a) return;
+  const units = [...game.campaignBook.entity.values()].filter(e => e && !e.dead && e.player.team === team);
+  if (!units.length) return;
+  const cx = units.reduce((s, u) => s + u.x, 0) / units.length,
+    cy = units.reduce((s, u) => s + u.y, 0) / units.length;
+  const reach = units.reduce((r, u) => Math.max(r, Math.hypot(u.x - cx, u.y - cy) + (u.visualRadius || 0)), 350);
+  const attacking = team.id === cb.attacker.team;
+  fleetIntro(game, {
+    units,
+    center: { x: cx, y: cy },
+    facing: Math.atan2(a.toward.y - a.y, a.toward.x - a.x),
+    reach,
+    speech: game.human.faction
+      .str(attacking ? 'SpeechEvent_Tactical_Intro_Space_Attacker' : 'SpeechEvent_Tactical_Intro_Space_Defender')
+      .trim()
+  });
 }
 
 export function placeCampaignBattle(w, map, teams, cb) {

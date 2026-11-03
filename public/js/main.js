@@ -73,7 +73,7 @@ import { watchForResume, pendingResume, forgetResume } from './game/resume.js';
 import { restoreBattleScripts } from './game/tacticalsave.js';
 import { orderMove } from './game/orders.js';
 import { placeSpecialWeapons, placeCampaignSpecialWeapons } from './game/superweapon.js';
-import { placeCampaignBattle, sideBeaten, battleResult } from './game/campaignbattle.js';
+import { placeCampaignBattle, sideBeaten, battleResult, campaignIntro } from './game/campaignbattle.js';
 import { storyTypes } from './game/storyart.js';
 import { openRetreatDialog, resolveTactical, spaceRosters } from './game/tacticalautoresolve.js';
 import { tacticalSpeed } from './game/galacticspeed.js';
@@ -348,7 +348,8 @@ class Game {
     if (instant)
       for (const army of instant.armies || [])
         for (const n of army || []) for (const t of shipsOf(db.type(n))) modelsForType(t, factions, names, seen, null);
-    if (!this.setup.attract && !this.setup.campaign && !instant) for (const f of factions) modelsForType(stationType(f), factions, names, seen, later);
+    if (!this.setup.attract && !this.setup.campaign && !instant)
+      for (const f of factions) modelsForType(stationType(f), factions, names, seen, later);
     const cb = this.setup.campaign;
     if (cb)
       for (const n of [
@@ -728,7 +729,7 @@ class Game {
     else if (this.instant) {
       this.message(`${db.t(map.textId) || map.planet} — the last fleet standing wins`);
       this.instant.intro();
-    }
+    } else if (this.campaignBook && !this.setup.linkedTactical && !this.setup.tacticalStoryPlot) campaignIntro(this);
     this.last = performance.now();
     requestAnimationFrame(this.frame);
     window.game = this;

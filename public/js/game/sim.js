@@ -4507,6 +4507,8 @@ export class World {
     const F = this.flight(u),
       st = u.fstate;
     u.roll ||= 0;
+    tx = clamp(tx, this.min.x, this.max.x);
+    ty = clamp(ty, this.min.y, this.max.y);
     const err = wrapAngle(Math.atan2(ty - u.y, tx - u.x) - u.heading);
     if (
       !st.loop &&
@@ -4544,8 +4546,8 @@ export class World {
       u.pitch = p + clamp(Math.atan2(dz, h) - p, -F.lift * dt * k, F.lift * dt * k);
     }
     const flat = Math.cos(u.pitch || 0);
-    u.x += Math.cos(u.heading) * u.speed * flat * dt;
-    u.y += Math.sin(u.heading) * u.speed * flat * dt;
+    u.x = clamp(u.x + Math.cos(u.heading) * u.speed * flat * dt, this.min.x, this.max.x);
+    u.y = clamp(u.y + Math.sin(u.heading) * u.speed * flat * dt, this.min.y, this.max.y);
     if (st.loop || F.lift > 0) u.z += Math.sin(u.pitch || 0) * u.speed * dt;
     else u.z += (tz - u.z) * Math.min(1, dt * 0.8);
   }
@@ -4708,7 +4710,7 @@ export class World {
       gz = away.z;
       want = top;
     }
-    this.fly(u, gx, gy, gz, want, dt, k, !(mode === 'idle' && !tgt));
+    this.fly(u, gx, gy, gz, want, dt, k, !away && !(mode === 'idle' && !tgt));
     u.syncObj();
 
     const w = u.weapon;

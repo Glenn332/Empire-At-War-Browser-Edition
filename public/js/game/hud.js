@@ -1087,7 +1087,11 @@ export class CommandBar {
               .trim()
               .split(/[\s,]+/)
               .map(Number);
-          await L.player.play(buffer, { loop: true, alpha: /^(yes|true|1)$/i.test(movie.val('Alpha') || ''), color: db.constants.vec('CB_Movie_Color', [255, 255, 255, 255]) });
+          await L.player.play(buffer, {
+            loop: true,
+            alpha: /^(yes|true|1)$/i.test(movie.val('Alpha') || ''),
+            color: db.constants.vec('CB_Movie_Color', [255, 255, 255, 255])
+          });
           L.x = at.x + (off[0] || 0) + (own[0] || 0);
           L.y = at.y + (off[1] || 0) + (own[1] || 0);
           L.ready = true;
@@ -1200,7 +1204,9 @@ export class CommandBar {
     const sig =
       L.mode +
       '|' +
-      L.items.map(it => (it ? (it.group ? 'g' + it.unit.id + 'x' + it.group.length : it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : '')).join(',');
+      L.items
+        .map(it => (it ? (it.group ? 'g' + it.unit.id + 'x' + it.group.length : it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : ''))
+        .join(',');
     if (sig !== this.sig) {
       this.sig = sig;
       L.items.forEach((it, i) => {
@@ -1419,7 +1425,8 @@ export class CommandBar {
           d._r = r;
           if (r.weather) {
             d.firstChild.style.backgroundImage = css(iconUrl(r.weather.icon));
-            d.onmouseenter = () => (this.tipTarget = { id: 'weather', key: 'weather|' + r.weather.icon, show: () => this.showWeather(r.weather) });
+            d.onmouseenter = () =>
+              (this.tipTarget = { id: 'weather', key: 'weather|' + r.weather.icon, show: () => this.showWeather(r.weather) });
             d.onmouseleave = () => this.hideInfo();
             return d;
           }
@@ -1459,6 +1466,15 @@ export class CommandBar {
     for (const q of w.squads) if (q.fighters[0]) add(q, q.fighters[0].type);
     this.heroRow('evil', theirs.slice(0, 11));
     this.heroRow('good', mine.concat(allies).slice(0, 11));
+  }
+
+  heroClick(h, ev) {
+    this.ui.select([h.e], ev.shiftKey);
+  }
+
+  heroFocus(h) {
+    this.ui.r.rig.x = h.e.x;
+    this.ui.r.rig.y = h.e.y;
   }
 
   heroRow(side, list) {
@@ -1528,12 +1544,9 @@ export class CommandBar {
           d.onclick = ev => {
             ev.stopPropagation();
             this.game.audio.play(c.val('Click_SFX'));
-            this.ui.select([h.e], ev.shiftKey);
+            this.heroClick(h, ev);
           };
-          d.ondblclick = () => {
-            this.ui.r.rig.x = h.e.x;
-            this.ui.r.rig.y = h.e.y;
-          };
+          d.ondblclick = () => this.heroFocus(h);
           d.onmousedown = ev => ev.stopPropagation();
         }
         d._h = h;

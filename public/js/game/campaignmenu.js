@@ -52,7 +52,12 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
   if (!dlg) return false;
   const rows = campaignMenuRows(data.campaigns, id => db.t(id), { tutorial });
   if (tutorial) for (const row of rows) row.icon = isTutorialComplete(row.campaign) ? 'checked_box.tga' : 'i_dialogue_blank.tga';
-  const factions = [...db.factions.values()].filter(f => f.bool('Is_Playable'));
+  const sets = new Set(rows.map(r => key(r.key))),
+    starters = new Set(
+      [...data.campaigns.values()].filter(c => sets.has(key(c.str('Campaign_Set')))).map(c => key(c.str('Starting_Active_Player')))
+    );
+  const playable = [...db.factions.values()].filter(f => f.bool('Is_Playable')),
+    factions = playable.some(f => starters.has(key(f.name))) ? playable.filter(f => starters.has(key(f.name))) : playable;
   let faction = factions.find(f => key(f.name) === key(rememberedFaction))?.name || factions[0]?.name || '';
   let selection = null,
     difficulty = 'medium',

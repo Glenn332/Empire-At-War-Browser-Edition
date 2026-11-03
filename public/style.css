@@ -1206,6 +1206,9 @@ body:not(.original-hud) .heroframe {
   margin: 12px 0 0 -17px;
   background-color: #000;
 }
+.heroframe.nohp .hp {
+  display: none;
+}
 .heroslot .hp b {
   position: absolute;
   left: 0;

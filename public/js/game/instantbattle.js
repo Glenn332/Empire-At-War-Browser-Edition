@@ -107,7 +107,12 @@ export function instantRoster(faction, allHeroes = true) {
         }
         return r;
       },
-      offered = new Set(out.flatMap(r => shipsOf(r.type)).map(s => rootOf(s)).filter(isHeroType)),
+      offered = new Set(
+        out
+          .flatMap(r => shipsOf(r.type))
+          .map(s => rootOf(s))
+          .filter(isHeroType)
+      ),
       extra = [];
     for (const t of db.types.values()) {
       if (got.has(t) || isUpgradeType(t) || !t.list('Affiliation').some(a => a.toUpperCase() === F)) continue;
@@ -265,7 +270,11 @@ export class InstantBattle {
   constructor(game, fleets) {
     this.game = game;
     this.fleets = fleets;
-    this.rules = new InstantRules(game.world, () => game.human, (text, cls) => game.message(text, cls));
+    this.rules = new InstantRules(
+      game.world,
+      () => game.human,
+      (text, cls) => game.message(text, cls)
+    );
   }
 
   step(dt) {
@@ -274,76 +283,85 @@ export class InstantBattle {
 
   intro() {
     const g = this.game,
-      cine = g.cine,
-      R = g.renderer,
       mine = this.fleets.get(g.human.team);
-    if (!mine || !mine.units.length || !cine) return;
-    const { at, units, reach } = mine,
-      cx = mine.center.x,
-      cy = mine.center.y;
-    const ships = units.filter(u => !u.isSquad);
-    const lead = ships.length ? ships.reduce((a, b) => ((b.visualRadius || 0) > (a.visualRadius || 0) ? b : a)) : null;
-    const fx = Math.cos(at.facing),
-      fy = Math.sin(at.facing),
-      side = Math.random() < 0.5 ? -1 : 1;
-    const LEN = 8.5;
-    let t = 0;
-    const speech = g.human.faction.str('SpeechEvent_Tactical_Intro_Space_Attacker').trim();
-    const skip = e => {
-      if (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter') {
-        e.preventDefault();
-        e.stopPropagation();
-        cine.stop();
-      }
-    };
-    addEventListener('keydown', skip, true);
-    const pos = { x: 0, y: 0, z: 0 },
-      look = { x: 0, y: 0, z: 0 };
-    cine.start();
-    cine.subject = lead;
-    cine.sequence = {
-      stop() {
-        removeEventListener('keydown', skip, true);
-        const rig = R.rig;
-        if (rig) {
-          rig.x = cx;
-          rig.y = cy;
-          rig.clamp?.();
-          rig.home = { ...(rig.home || {}), x: cx, y: cy };
-        }
-        cine.subject = null;
-      },
-      frame(dt) {
-        if (!g.paused) t += Math.min(dt, 0.1);
-        if (t >= LEN || g.over) return false;
-        if (speech && t > 1.2 && !this.spoke) {
-          this.spoke = true;
-          g.audio.speech?.enqueue(speech);
-        }
-        const k = Math.min(1, t / LEN),
-          e = k * k * (3 - 2 * k);
-        const ahead = reach * (1.2 - 0.25 * e),
-          off = side * reach * (0.35 + 0.3 * e),
-          up = reach * (0.1 + 0.4 * e);
-        pos.x = cx + fx * ahead - fy * off;
-        pos.y = cy + fy * ahead + fx * off;
-        pos.z = up;
-        look.x = cx - fx * reach * 0.35 * (1 - e);
-        look.y = cy - fy * reach * 0.35 * (1 - e);
-        look.z = 0;
-        const cam = R.camera;
-        if (cam.fov !== 55) {
-          cam.fov = 55;
-          cam.updateProjectionMatrix();
-        }
-        cam.position.set(pos.x, pos.y, pos.z);
-        cam.up.set(0, 0, 1);
-        cam.lookAt(look.x, look.y, look.z);
-        cine.lookX = look.x;
-        cine.lookY = look.y;
-        cine.camDist = Math.hypot(pos.x - look.x, pos.y - look.y, pos.z - look.z);
-        return true;
-      }
-    };
+    if (!mine || !mine.units.length) return;
+    fleetIntro(g, {
+      units: mine.units,
+      center: mine.center,
+      facing: mine.at.facing,
+      reach: mine.reach,
+      speech: g.human.faction.str('SpeechEvent_Tactical_Intro_Space_Attacker').trim()
+    });
   }
+}
+
+export function fleetIntro(g, { units, center, facing, reach, speech }) {
+  const cine = g.cine,
+    R = g.renderer;
+  if (!cine || !units.length) return;
+  const cx = center.x,
+    cy = center.y;
+  const ships = units.filter(u => !u.isSquad);
+  const lead = ships.length ? ships.reduce((a, b) => ((b.visualRadius || 0) > (a.visualRadius || 0) ? b : a)) : null;
+  const fx = Math.cos(facing),
+    fy = Math.sin(facing),
+    side = Math.random() < 0.5 ? -1 : 1;
+  const LEN = 8.5;
+  let t = 0;
+  const skip = e => {
+    if (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      cine.stop();
+    }
+  };
+  addEventListener('keydown', skip, true);
+  const pos = { x: 0, y: 0, z: 0 },
+    look = { x: 0, y: 0, z: 0 };
+  cine.start();
+  cine.subject = lead;
+  cine.sequence = {
+    stop() {
+      removeEventListener('keydown', skip, true);
+      const rig = R.rig;
+      if (rig) {
+        rig.x = cx;
+        rig.y = cy;
+        rig.clamp?.();
+        rig.home = { ...(rig.home || {}), x: cx, y: cy };
+      }
+      cine.subject = null;
+    },
+    frame(dt) {
+      if (!g.paused) t += Math.min(dt, 0.1);
+      if (t >= LEN || g.over) return false;
+      if (speech && t > 1.2 && !this.spoke) {
+        this.spoke = true;
+        g.audio.speech?.enqueue(speech);
+      }
+      const k = Math.min(1, t / LEN),
+        e = k * k * (3 - 2 * k);
+      const ahead = reach * (1.2 - 0.25 * e),
+        off = side * reach * (0.35 + 0.3 * e),
+        up = reach * (0.1 + 0.4 * e);
+      pos.x = cx + fx * ahead - fy * off;
+      pos.y = cy + fy * ahead + fx * off;
+      pos.z = up;
+      look.x = cx - fx * reach * 0.35 * (1 - e);
+      look.y = cy - fy * reach * 0.35 * (1 - e);
+      look.z = 0;
+      const cam = R.camera;
+      if (cam.fov !== 55) {
+        cam.fov = 55;
+        cam.updateProjectionMatrix();
+      }
+      cam.position.set(pos.x, pos.y, pos.z);
+      cam.up.set(0, 0, 1);
+      cam.lookAt(look.x, look.y, look.z);
+      cine.lookX = look.x;
+      cine.lookY = look.y;
+      cine.camDist = Math.hypot(pos.x - look.x, pos.y - look.y, pos.z - look.z);
+      return true;
+    }
+  };
 }
