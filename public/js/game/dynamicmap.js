@@ -218,7 +218,17 @@ const padBuilds = t =>
 let vocab = null;
 export const warmDynamicMaps = () => vocabulary().catch(() => null);
 const PROP_REACH = 1500;
-const propReach = new Map();
+const propReach = new Map(),
+  propParts = new Map();
+const CLUSTER_PARTS = 6;
+const ROCK_FLOOR = 0.05;
+const ABUNDANCE = [0.2, 1.6];
+const rockyType = t => /aster|rock/i.test(t.name + ' ' + t.str('Space_Model_Name'));
+const heft = t => {
+  if (!rockyType(t)) return 0;
+  const r = t.num('Space_Obstacle_Radius', 0) || (propReach.get(t) || 0) * 0.7;
+  return (Math.PI * Math.max(r, 60) ** 2) / 1e6;
+};
 async function measure(type) {
   const model = type.str('Space_Model_Name');
   const a = model && (await loadALO(model).catch(() => null));
@@ -235,13 +245,16 @@ async function measure(type) {
     }
     return [x, y];
   };
-  let r = 0;
+  let r = 0,
+    parts = 0;
   for (const m of a.meshes) {
     if (m.hidden || !m.bbox) continue;
+    parts++;
     const [bx, by] = m.bone >= 0 ? at(m.bone) : [0, 0],
       [x0, y0, , x1, y1] = m.bbox;
     r = Math.max(r, Math.hypot(bx + (x0 + x1) / 2, by + (y0 + y1) / 2) + Math.hypot(x1 - x0, y1 - y0) / 2);
   }
+  propParts.set(type, parts);
   return r * type.num('Scale_Factor', 1);
 }
 function vocabulary() {
@@ -254,8 +267,13 @@ function vocabulary() {
       if (m && !m.terrain) maps.push(m);
     }
     const types = new Set();
-    for (const m of maps) for (const o of m.objects) if (!o.type.num('Space_Obstacle_Radius', 0)) types.add(o.type);
-    await Promise.all([...types].map(async t => propReach.set(t, await measure(t))));
+    for (const m of maps) for (const o of m.objects) if (!o.type.num('Space_Obstacle_Radius', 0) || rockyType(o.type)) types.add(o.type);
+    await Promise.all(
+      [...types].map(async t => {
+        const r = await measure(t);
+        if (!t.num('Space_Obstacle_Radius', 0)) propReach.set(t, r);
+      })
+    );
     return classify(maps);
   })();
   return vocab;
@@ -306,7 +324,9 @@ function classify(maps) {
       solid = b.has('SPACE_OBSTACLE'),
       text = t.name + ' ' + model,
       scrap = /junk|debris|scrap/i.test(text),
-      rocky = /aster|rock/i.test(text);
+      rocky = rockyType(t),
+      spread = r || (propReach.get(t) || 0) * 0.7,
+      cluster = !solid && rocky && (propParts.get(t) || 0) >= CLUSTER_PARTS;
     const pad = (b.has('TACTICAL_BUILD_OBJECTS') && !t.has('Tactical_Health')) || /_PAD$/i.test(t.name);
     if (pad) (padBuilds(t).some(incomeOf) ? kinds.mine : kinds.pad).push(t);
     else if (b.has('CAPTURE_POINT')) (b.has('DUMMY_STAR_BASE') ? kinds.hub : kinds.capture).push(t);
@@ -314,7 +334,7 @@ function classify(maps) {
     else if (shipModels.has(model.toUpperCase()) || (!r && (propReach.get(t) || 0) > PROP_REACH)) continue;
     else if (t.bool('Is_Ion_Storm') && r > 0) kinds.ion.push(t);
     else if (t.bool('Is_Nebula') && r > 0) kinds.nebula.push(t);
-    else if (t.bool('Is_Asteroid_Field') && r > 0) (scrap ? kinds.junk : kinds.field).push(t);
+    else if ((t.bool('Is_Asteroid_Field') || cluster) && spread > 0) (scrap ? kinds.junk : kinds.field).push(t);
     else if (!rocky && oneOff(t)) continue;
     else if (t.bool('Is_Decoration')) kinds.flash.push(t);
     else if (solid && rocky) kinds.rock.push(t);
@@ -345,12 +365,10 @@ function classify(maps) {
       hosts.set(best.type, (hosts.get(best.type) || 0) + 1);
       offs.push([best.pos[0] - o.pos[0], best.pos[1] - o.pos[1], best.pos[2]]);
     }
-  const host = [...hosts].sort((a, b) => b[1] - a[1] || a[0].name.localeCompare(b[0].name))[0]?.[0] || kinds.field[0] || null;
+  const host = [...hosts].sort((a, b) => b[1] - a[1] || a[0].name.localeCompare(b[0].name))[0]?.[0] || null;
   const size = t => t.num('Space_Obstacle_Radius', 0);
   const homeHost =
-    [...hosts.keys()].filter(t => kinds.field.includes(t)).sort((a, b) => size(a) - size(b) || a.name.localeCompare(b.name))[0] ||
-    kinds.field[0] ||
-    host;
+    [...hosts.keys()].filter(t => kinds.field.includes(t)).sort((a, b) => size(a) - size(b) || a.name.localeCompare(b.name))[0] || host;
   const donors = maps
     .filter(m => m.environments?.length)
     .map(m => ({
@@ -427,8 +445,15 @@ function classify(maps) {
       })()
     }));
   const stationTurn = bases && Math.hypot(turnX, turnY) > bases * 0.5 ? Math.atan2(turnY, turnX) : 0;
+  const rockDensity = median(
+    maps.map(m => {
+      const km2 = ((m.max[0] - m.min[0]) * (m.max[1] - m.min[1])) / 1e6;
+      return km2 > 0 ? m.objects.reduce((a, o) => a + heft(o.type), 0) / km2 : 0;
+    })
+  );
   return {
     kinds,
+    rockDensity,
     baseKit,
     stationTurn,
     mineSpots,
@@ -463,6 +488,10 @@ export async function generateDynamicMap(name, opts = {}) {
     lanes = [],
     homes = [];
   const KEEP_OUT = 2000;
+  const abundance = instant ? 1 : ABUNDANCE[0] + (ABUNDANCE[1] - ABUNDANCE[0]) * R() ** 1.3;
+  const rockBudget = Math.max(1.2, (Math.max(v.rockDensity, ROCK_FLOOR) * abundance * 4 * P * P) / 1e6);
+  let rocks = 0,
+    rockCap = rockBudget * 0.4;
   const nearHome = (x, y, r) => homes.some(b => Math.hypot(x - b.x, y - b.y) < KEEP_OUT + r);
   const add = (type, x, y, z, rot, extra = null) =>
     objects.push({ id: objects.length + 1, crc: 0, owner: -1, type, pos: [x, y, z], rot, scale: 1, hint: '', ...extra });
@@ -496,13 +525,17 @@ export async function generateDynamicMap(name, opts = {}) {
   };
   const put = (type, x, y, r, { z = zOf(type), heading = R() * 360, tilt = [0, 0] } = {}) => {
     if (!type) return;
+    rocks += heft(type) * k;
     for (const p of images(x, y)) {
       add(type, p.x, p.y, z, [tilt[0], tilt[1], heading + p.turn]);
       if (r > 0) solids.push({ x: p.x, y: p.y, r });
     }
   };
-  const once = (type, x, y, r, { z = zOf(type), heading = R() * 360, tilt = [0, 0], anywhere = false } = {}) => {
+  const once = (type, x, y, r, { z = zOf(type), heading = R() * 360, tilt = [0, 0], anywhere = false, free = false } = {}) => {
     if (!type || (!anywhere && nearHome(x, y, Math.max(r, radius(type))))) return false;
+    const w = free ? 0 : heft(type);
+    if (w && rocks + w > rockCap) return false;
+    rocks += w;
     add(type, x, y, z, [tilt[0], tilt[1], heading]);
     if (r > 0) solids.push({ x, y, r });
   };
@@ -521,7 +554,20 @@ export async function generateDynamicMap(name, opts = {}) {
     if (!m) return false;
     const [dx, dy, dz] = v.hostAt;
     const field = home ? v.homeHost : v.host;
-    if (field) place(field, x + dx, y + dy, 0, { z: dz });
+    if (field) {
+      const fx = x + dx,
+        fy = y + dy,
+        r = radius(field),
+        a = R() * TAU,
+        w = heft(field) * (place === put ? k : 1);
+      place(field, fx, fy, 0, { z: dz });
+      for (const s of [-1, 1]) {
+        if (rocks + w > rockCap) break;
+        const d = r * range(0.75, 0.95) * s,
+          q = r * range(-0.08, 0.2);
+        place(field, fx + Math.cos(a) * d - Math.sin(a) * q, fy + Math.sin(a) * d + Math.cos(a) * q, 0, { z: dz });
+      }
+    }
     place(m, x, y, 380, { z: 0 });
     return true;
   };
@@ -649,30 +695,89 @@ export async function generateDynamicMap(name, opts = {}) {
     return null;
   };
   const square = () => ({ x: range(-P, P), y: range(-P, P) });
-  const blobs = (list, from, count, { open = true, flash = 0, shrink = 0.35 } = {}) => {
+  const paths = [];
+  const belt = (
+    list,
+    from,
+    {
+      dir = R() * TAU,
+      bend = range(-1, 1) * 0.0003,
+      steps = 5 + Math.floor(R() * (5 + P / 2000)),
+      wide = 1 + R() ** 1.5 * 1.6,
+      space = 1,
+      shrink = 0.35,
+      solid = 0,
+      flash = 0,
+      fringe = 0,
+      keep = Math.min(3, steps)
+    } = {}
+  ) => {
     if (!list.length) return 0;
+    const mark = [objects.length, solids.length, paths.length, rocks];
     let x = from.x,
       y = from.y,
-      dir = R() * TAU,
-      placed = 0;
-    for (let i = 0; i < count; i++) {
-      const t = pick(list),
-        r = radius(t);
+      placed = 0,
+      misses = 0;
+    for (let i = 0; i < steps && misses < 3; i++) {
+      const lead = pick(list),
+        r0 = Math.max(solid, radius(lead));
       if (i) {
-        dir += range(-1.2, 1.2);
-        const len = r * range(0.55, 1.05);
+        const len = r0 * range(0.8, 1.1) * space;
+        dir += bend * len + range(-0.12, 0.12);
         x += Math.cos(dir) * len;
         y += Math.sin(dir) * len;
       }
-      if (!fitsOne(x, y, r * shrink, 0, open, r)) {
-        if (!placed) return 0;
-        continue;
+      const taper = Math.sin((Math.PI * (i + 0.5)) / steps) ** 0.6,
+        m = Math.max(1, Math.min(Math.round(wide * taper + range(-0.3, 0.3)), Math.round(1400 / (r0 * space)))),
+        nx = -Math.sin(dir),
+        ny = Math.cos(dir);
+      let hit = 0;
+      for (let j = 0; j < m; j++) {
+        const t = j ? pick(list) : lead,
+          r = Math.max(solid, radius(t)),
+          off = ((j - (m - 1) / 2) * range(0.7, 0.95) + range(-0.15, 0.15)) * r * space,
+          along = range(-0.25, 0.25) * r * space,
+          px = x + nx * off + Math.cos(dir) * along,
+          py = y + ny * off + Math.sin(dir) * along;
+        if (!fitsOne(px, py, r * shrink, solid ? 30 : 0, true, r)) continue;
+        if (once(t, px, py, r * shrink, solid ? { tilt: tilted() } : {}) === false) continue;
+        hit++;
+        placed++;
+        paths.push({ x: px, y: py, dir, r });
+        if (K.flash.length && R() < flash) once(pick(K.flash), px + range(-0.3, 0.3) * r, py + range(-0.3, 0.3) * r, 0);
       }
-      once(t, x, y, r * shrink);
-      placed++;
-      if (K.flash.length && R() < flash) once(pick(K.flash), x + range(-0.3, 0.3) * r, y + range(-0.3, 0.3) * r, 0);
+      misses = hit ? 0 : misses + 1;
+      if (hit && fringe && K.rock.length && R() < fringe) {
+        const t = pick(K.rock),
+          r = Math.max(120, radius(t)),
+          off = (R() < 0.5 ? -1 : 1) * ((m / 2) * r0 * 0.8 + range(80, 350)),
+          px = x + nx * off,
+          py = y + ny * off;
+        if (fitsOne(px, py, r, 30)) once(t, px, py, r, { tilt: tilted() });
+      }
+    }
+    if (placed < keep) {
+      objects.length = mark[0];
+      solids.length = mark[1];
+      paths.length = mark[2];
+      rocks = mark[3];
+      return 0;
     }
     return placed;
+  };
+  const arc = (list, o = {}) => {
+    if (!list.length) return 0;
+    const r = radius(list[list.length >> 1]) || 300,
+      a = R() * TAU,
+      rad = Math.max(Rc * range(1.2, 1.8), r * range(3, 4)),
+      sign = R() < 0.5 ? -1 : 1,
+      len = rad * range(0.8, 1.5);
+    return belt(list, polar(a, rad), {
+      dir: a + (sign * Math.PI) / 2,
+      bend: sign / (rad * 2.2),
+      steps: Math.max(3, Math.round(len / (r * 0.85))),
+      ...o
+    });
   };
   const sizedField = (lo, hi) => {
     const list = K.field.filter(t => radius(t) >= lo && radius(t) <= hi);
@@ -698,11 +803,15 @@ export async function generateDynamicMap(name, opts = {}) {
     if (K.hub.length && R() < 0.6) centre(pick(K.hub), 0, 0, 500, { z: 0 });
     else if (!mineAt(0, 0, centre) && K.capture.length) centre(pick(K.capture), 0, 0, 400, { z: 0 });
   };
-  const deep = (n, near = null, spread = 0) => {
-    if (!K.deepRock.length) return;
+  const deep = (n, from = 0) => {
+    if (!K.deepRock.length || paths.length <= from) return;
     for (let i = 0; i < n; i++) {
-      const p = near ? { x: near.x + range(-spread, spread), y: near.y + range(-spread, spread) } : square();
-      if (inside(p.x, p.y, 0)) once(pick(K.deepRock), p.x, p.y, 0, { z: range(-1400, -500), tilt: [R() * 360, R() * 360] });
+      const p = paths[from + Math.floor(R() * (paths.length - from))],
+        along = range(-1, 1) * p.r,
+        side = range(-1.6, 1.6) * p.r,
+        x = p.x + Math.cos(p.dir) * along - Math.sin(p.dir) * side,
+        y = p.y + Math.sin(p.dir) * along + Math.cos(p.dir) * side;
+      if (inside(x, y, 0)) once(pick(K.deepRock), x, y, 0, { z: range(-1400, -500), tilt: [R() * 360, R() * 360], free: true });
     }
   };
   const pieces = [
@@ -710,14 +819,8 @@ export async function generateDynamicMap(name, opts = {}) {
       ok: K.field.length > 0,
       build() {
         prize();
-        around(5 + Math.floor(R() * 4), 0.85, 1.25, p => blobs(sizedField(350, 800), p, 1 + Math.floor(R() * 3)));
-        if (K.rock.length)
-          around(3 + Math.floor(R() * 4), 1.2, 1.6, p => {
-            const t = pick(K.rock),
-              r = Math.max(200, radius(t));
-            if (fitsOne(p.x, p.y, r, 0)) once(t, p.x, p.y, r, { tilt: tilted() });
-          });
-        deep(6 + Math.floor(R() * 6), { x: 0, y: 0 }, Rc * 1.3);
+        for (let i = 0, n = R() < 0.35 ? 2 : 1; i < n; i++) arc(sizedField(300, 650), { fringe: 0.35, wide: 1 + R() * 0.9 });
+        deep(6 + Math.floor(R() * 6));
       }
     },
     {
@@ -729,10 +832,10 @@ export async function generateDynamicMap(name, opts = {}) {
         if (K.flash.length) for (let i = 0; i < 2; i++) once(pick(K.flash), range(-0.3, 0.3) * Rc, range(-0.3, 0.3) * Rc, 0);
         prize();
         const ring = K.nebula.filter(n => radius(n) < Rc);
-        around(4 + Math.floor(R() * 4), 1.4, 2, p =>
+        around(4 + Math.floor(R() * 4), 1.4, 2, (p, a) =>
           ring.length && R() < 0.6
-            ? blobs(ring, p, 1 + Math.floor(R() * 3), { flash: 0.3 })
-            : blobs(sizedField(250, 550), p, 1 + Math.floor(R() * 2))
+            ? belt(ring, p, { dir: a + Math.PI / 2, steps: 2 + Math.floor(R() * 3), wide: 1 + R(), flash: 0.3 })
+            : belt(sizedField(250, 550), p, { dir: a + Math.PI / 2, steps: 2 + Math.floor(R() * 3), wide: 1 + R() })
         );
       }
     },
@@ -741,7 +844,7 @@ export async function generateDynamicMap(name, opts = {}) {
       build() {
         prize();
         const junk = K.junk.length ? K.junk : K.field;
-        around(4 + Math.floor(R() * 4), 1, 1.5, p => blobs(junk, p, 1 + Math.floor(R() * 2)));
+        for (let i = 0, n = R() < 0.35 ? 2 : 1; i < n; i++) arc(junk, { wide: 1 + R() * 0.6 });
         const hulks = K.wreck.length ? K.wreck : K.scrap;
         for (let i = 0; i < 2 + Math.floor(R() * 3); i++) {
           const p = polar(R() * TAU, Rc * range(0.4, 1));
@@ -777,11 +880,12 @@ export async function generateDynamicMap(name, opts = {}) {
               if (span(t) <= 55 || fitsOne(x, y, span(t), 0)) once(t, x, y, span(t) > 55 ? span(t) : 0, { heading: tan * DEG, z: -100 });
             }
           });
-        deep(4 + Math.floor(R() * 4), { x: 0, y: 0 }, Rc * 0.7);
+        deep(4 + Math.floor(R() * 4));
       }
     }
   ].filter(p => p.ok);
   pick(pieces)?.build();
+  rockCap = rockBudget;
   solids.push({ x: 0, y: 0, r: Rc * 1.1 });
 
   if (!instant) {
@@ -816,39 +920,38 @@ export async function generateDynamicMap(name, opts = {}) {
     for (const [name, w] of themes) if ((x -= w) < 0) return name;
     return 'field';
   };
-  const total = Math.round((P * P) / 3.5e6) + 3;
+  const total = Math.round(((P * P) / 3.5e6 + 3) * abundance);
   for (let c = 0; c < total; c++) {
     const kind = theme();
     if (kind === 'field' || kind === 'junk') {
       const list = kind === 'junk' ? K.junk : K.field,
-        p = spotOne(40, square, 250, 250);
-      if (!p || !blobs(list, p, 2 + Math.floor(R() * 5))) continue;
-      if (K.rock.length && R() < 0.5)
-        for (let i = 0; i < 1 + Math.floor(R() * 3); i++) {
-          const q = { x: p.x + range(-700, 700), y: p.y + range(-700, 700) };
-          const t = pick(K.rock),
-            r = Math.max(120, radius(t));
-          if (fitsOne(q.x, q.y, r, 30)) once(t, q.x, q.y, r, { tilt: tilted() });
-        }
+        p = spotOne(40, square, 250, 250),
+        from = paths.length;
+      if (!p || !belt(list, p, { fringe: R() < 0.5 ? 0.4 : 0 })) continue;
       if (kind === 'junk' && K.scrap.length)
-        for (let i = 0; i < 2 + Math.floor(R() * 3); i++) once(pick(K.scrap), p.x + range(-600, 600), p.y + range(-600, 600), 0);
-      deep(Math.floor(R() * 3), p, 800);
+        for (let i = 0; i < 2 + Math.floor(R() * 3); i++) {
+          const q = paths[from + Math.floor(R() * (paths.length - from))];
+          once(pick(K.scrap), q.x + range(-0.6, 0.6) * q.r, q.y + range(-0.6, 0.6) * q.r, 0);
+        }
+      deep(Math.floor(R() * 3), from);
     } else if (kind === 'rocks') {
-      const p = spotOne(40, square, 300, 300);
+      const p = spotOne(40, square, 300, 300),
+        from = paths.length;
       if (!p) continue;
-      const n = 2 + Math.floor(R() * 4);
-      for (let i = 0; i < n; i++) {
-        const t = pick(K.rock),
-          q = i ? { x: p.x + range(-500, 500), y: p.y + range(-500, 500) } : p;
-        if (fitsOne(q.x, q.y, Math.max(80, radius(t)), 30)) once(t, q.x, q.y, Math.max(80, radius(t)), { tilt: tilted() });
-      }
-      deep(1 + Math.floor(R() * 3), p, 600);
+      belt(K.rock, p, { solid: 80, shrink: 1, space: 2.2, wide: 1 + R() * 0.9, steps: 3 + Math.floor(R() * 5) });
+      deep(1 + Math.floor(R() * 3), from);
     } else {
       const pool = (kind === 'ion' ? K.ion : K.nebula).filter(n => radius(n) <= P * 0.2),
         list = pool.length ? pool : kind === 'ion' ? K.ion : K.nebula,
         p = spotOne(40, square, 300, 200);
       if (!p) continue;
-      blobs(list, p, (kind === 'ion' ? 1 : 2) + Math.floor(R() * (kind === 'ion' ? 2 : 4)), { flash: 0.35, shrink: 0.45 });
+      belt(
+        list,
+        p,
+        kind === 'ion'
+          ? { steps: 2 + Math.floor(R() * 2), wide: 1 + R() * 0.6, flash: 0.35, shrink: 0.45 }
+          : { steps: 3 + Math.floor(R() * 4), wide: 1 + R() * 1.4, flash: 0.35, shrink: 0.45 }
+      );
     }
   }
   deep(Math.round(total * 0.8));
