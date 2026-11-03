@@ -6,6 +6,7 @@ import { loadTextureCanvas } from '../dds.js';
 import { uiBoneTransforms } from './hud.js';
 import { dialogFontPixels, uiTextHeight } from './dialogtext.js';
 import { encyclopediaAbilityIcons } from './nativeabilityicons.js';
+import { Pointers } from './pointers.js';
 
 const yes = s => /^(yes|true|1)$/i.test(s || '');
 const pair = (c, k, fallback) =>
@@ -511,21 +512,89 @@ export class GalacticEncyclopedia {
     if (await this.paintBox(this.linkedRoot, this.linkedSource, this.linkedPoint, () => generation === this.linkedGeneration))
       this.linkedBuilding = false;
   }
-  async menu(text, x, y, pick) {
+  async menu(text, x, y, pick, { button, pointer, over } = {}) {
     this.closeMenu();
     const generation = this.menuGeneration,
-      root = this.menuRoot;
+      root = this.menuRoot,
+      c = button && this.component(button);
     root.onpointerdown = e => e.stopPropagation();
     root.onclick = e => {
       e.stopPropagation();
+      if (c?.val('Click_SFX')) this.game.audio.play(c.val('Click_SFX'));
       this.closeMenu();
       pick();
     };
-    return this.paintBox(root, text, { x, y }, () => generation === this.menuGeneration);
+    root.onpointerenter = () => {
+      if (c?.val('Mouse_Over_SFX')) this.game.audio.play(c.val('Mouse_Over_SFX'));
+    };
+    const live = () => generation === this.menuGeneration,
+      painted = await (c ? this.paintButton(root, c, text, { x, y }, live) : this.paintBox(root, text, { x, y }, live));
+    if (painted && pointer && live()) {
+      this.menuPointers = [root, ...(over || [])].map(el => {
+        const p = new Pointers(el);
+        p.set(pointer);
+        return p;
+      });
+    }
+    return painted;
   }
   closeMenu() {
     this.menuGeneration++;
+    for (const p of this.menuPointers || []) p.set(null);
+    this.menuPointers = null;
     if (!this.menuRoot.hidden) this.menuRoot.hidden = true;
+  }
+  async paintButton(root, c, text, point, live) {
+    const up = token(c, 'Icon_Texture_Name'),
+      hover = token(c, 'Mouse_Over_Texture_Name');
+    await this.warm([up, hover]);
+    if (!live()) return false;
+    const baseSize = dialogFontPixels(uiTextHeight(), c.num('Font_Point_Size', 7) || 7),
+      textScale = c.num('Scale', 1) || 1,
+      face = c.val('Font_Name') || 'Arial',
+      ink = pair(c, 'Text_Color', [255, 255, 255, 255]),
+      outline = yes(c.val('Text_Outline')),
+      bitmap = await loadComponentFont(face, baseSize);
+    await bitmap?.ensure(text);
+    if (!live()) return false;
+    const size = baseSize * textScale,
+      font = `${/bold/i.test(face) ? 'bold ' : ''}${size}px ${fontFamily(face)}`,
+      ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = font;
+    const pad = outline ? 2 : 0,
+      scale = this.game.overlayScale(),
+      w = Math.ceil((bitmap ? bitmap.measure(text) * textScale : ctx.measureText(text).width) + pad),
+      h = Math.ceil(Math.max((this.sprite(up)?.h || 0) * scale, (bitmap ? bitmap.height * textScale : size * 1.25) + pad)),
+      [ox, oy] = pair(c, 'Text_Offset', [0, 0]),
+      marginX = (8192 / innerWidth) * scale,
+      marginY = (18432 / innerHeight) * scale;
+    let left = point.x + marginX,
+      top = point.y + marginY;
+    if (left + w >= innerWidth) left = innerWidth - w;
+    if (top + h >= innerHeight) top = innerHeight - h;
+    root.replaceChildren();
+    Object.assign(root.style, { left: Math.max(0, left) + 'px', top: Math.max(0, top) + 'px', width: w + 'px', height: h + 'px' });
+    const art = document.createElement('img');
+    art.alt = '';
+    art.src = this.sprite(up)?.url || iconUrl(up) || '';
+    art.style.cssText = `position:absolute;inset:0;width:${w}px;height:${h}px`;
+    root.appendChild(art);
+    const hoverSrc = hover && (this.sprite(hover)?.url || iconUrl(hover));
+    if (hoverSrc) {
+      root.onpointerover = () => (art.src = hoverSrc);
+      root.onpointerout = () => (art.src = this.sprite(up)?.url || iconUrl(up) || '');
+    }
+    const tinted = (ink[3] ?? 255) > 0,
+      inkTop = tinted ? color(ink) : '#fff',
+      inkBottom = tinted ? inkTop : '#7f7f7f',
+      span = document.createElement('span');
+    span.textContent = text;
+    span.style.cssText = `position:absolute;left:${ox}px;top:${oy}px;width:${w}px;height:${h}px;display:flex;align-items:center;justify-content:center;white-space:pre;font:${font};font-kerning:none;line-height:${h}px;color:${inkTop}`;
+    root.appendChild(span);
+    if (bitmap)
+      paintNativeText(span, text, bitmap, { scaleX: 1 / textScale, scaleY: 1 / textScale, top: inkTop, bottom: inkBottom, outline });
+    root.hidden = false;
+    return true;
   }
   async paintBox(root, source, point, live) {
     await this.warm(this.frameNames('TOOLTIP_BACK'));

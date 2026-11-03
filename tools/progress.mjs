@@ -1223,7 +1223,7 @@ const GROUPS = [
       [
         'Selling in the planet view',
         D,
-        'galacticsell.js: a right click on a unit, company or structure of the player in the planet view opens the engine sell popup ( Sell name ($ refund) on the tooltip art) and a click sells it through a network order: GUI_Structure_Sold plays, the record is removed and half the type Build_Cost_Credits is paid back. As in the engine the default sell rule refuses heroes and Super category types (no game data sets another SellableType). Ours: the popup art and place are the tooltip box at the cursor, the per-object price field of the engine is not tracked'
+        'galacticsell.js: a right click on a unit, company or structure of the player in the planet view opens the engine sell button ( Sell name ($ refund) ) and a click sells it through a network order: GUI_Structure_Sold plays, the record is removed and half the type Build_Cost_Credits is paid back. As in the engine the default sell rule refuses heroes and Super category types (no game data sets another SellableType). The button is the g_ground_sell command bar component as the engine clones it: its Icon_Texture_Name and Mouse_Over_Texture_Name art at the art height, as wide as the text, its font, size, scale and outline, its click and mouse over sounds, placed 8192 by 18432 screen units right of and below the cursor like a popup; the pointer over the slot and the button is POINTER_TACTICAL_SELL. Its Text_Color has no alpha, which in the original leaves the white to grey text of the font (matched to a screenshot of the original, the text draw was not traced to the end). Ours: the per-object price field of the engine is not tracked'
       ],
       [
         'Galactic interface and droid log',

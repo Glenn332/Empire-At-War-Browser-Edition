@@ -201,11 +201,17 @@ export class PlanetOverview extends NativePanel {
       tip = game.galacticLog?.encyclopedia;
     if (!tip || !rec || !canSell(game.galaxy, rec, game.me)) return;
     const text = ` ${db.t('TEXT_BUTTON_SELL')} ${nameOf(rec.carries || rec.type)} ($ ${sellPrice(rec)}) `;
-    tip.menu(text, e.clientX, e.clientY, () => {
-      if (!canSell(game.galaxy, rec, game.me)) return;
-      game.audio.play('GUI_Structure_Sold');
-      game.order(orders.sell(game.galaxy, rec));
-    });
+    tip.menu(
+      text,
+      e.clientX,
+      e.clientY,
+      () => {
+        if (!canSell(game.galaxy, rec, game.me)) return;
+        game.audio.play('GUI_Structure_Sold');
+        game.order(orders.sell(game.galaxy, rec));
+      },
+      { button: 'g_ground_sell', pointer: 'POINTER_TACTICAL_SELL', over: [slot.el] }
+    );
   }
 
   emptyControl(slot) {
