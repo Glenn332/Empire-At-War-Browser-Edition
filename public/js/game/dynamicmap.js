@@ -405,7 +405,7 @@ export async function generateDynamicMap(name, opts = {}) {
   if (!d) throw new Error('not a dynamic map: ' + name);
   const v = await vocabulary();
   const K = v.kinds;
-  if (!v.donors.length || !K.field.length) throw new Error('This game data has no space maps to build a dynamic map from.');
+  if (!v.donors.length) throw new Error('This game data has no space maps to build a dynamic map from.');
   const instant = !!opts.instant;
   const k = Math.max(2, Math.min(10, opts.teams | 0 || 2));
   const R = random(d.seed ^ Math.imul(k, 0x9e3779b1) ^ (instant ? 0x51ed270b : 0));
@@ -608,6 +608,7 @@ export async function generateDynamicMap(name, opts = {}) {
   };
   const square = () => ({ x: range(-P, P), y: range(-P, P) });
   const blobs = (list, from, count, { open = true, flash = 0, shrink = 0.35 } = {}) => {
+    if (!list.length) return 0;
     let x = from.x,
       y = from.y,
       dir = R() * TAU,
@@ -730,7 +731,7 @@ export async function generateDynamicMap(name, opts = {}) {
       }
     }
   ].filter(p => p.ok);
-  pick(pieces).build();
+  pick(pieces)?.build();
   solids.push({ x: 0, y: 0, r: Rc * 1.1 });
 
   if (!instant) {
@@ -753,7 +754,7 @@ export async function generateDynamicMap(name, opts = {}) {
   }
 
   const themes = [
-    ['field', 7],
+    ['field', K.field.length ? 7 : 0],
     ['rocks', K.rock.length ? 1.5 : 0],
     ['nebula', K.nebula.length ? 2.5 : 0],
     ['ion', K.ion.length ? 1 : 0],
