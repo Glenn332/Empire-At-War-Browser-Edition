@@ -226,6 +226,11 @@ const GROUPS = [
         'a ship pushed against the edge and facing out was given a turn that leaves the battle area, was clamped back every step and never turned; a waypoint outside the battle area is now skipped and the ship steers for its destination'
       ],
       [
+        'Ships turn only toward an ordered target',
+        D,
+        'read from the engine: a ship turns its hull in place toward its target only when the target was set by an attack order, or when the ship has no hardpoints, or when GameConstants Auto_Rotate_For_Space_Targeting is on (off in the base game); idle, guarding or attack-moving ships with hardpoints keep their heading and their hardpoints fire at what is in arc. Ships with a space layer (unless Disregard_Space_Layer_For_Guard_Attack_Move) no longer chase on Idle_Chase_Range. Not done: the broadside offset the engine adds when a turn does happen'
+      ],
+      [
         'AI fleets travel to their target without stopping to fight',
         D,
         'read from the engine and the AI plans: space attack plans send task forces with Move_To or Attack_Move, and for ships with a space layer an attack move does not stop to engage (the engage test of the engine returns no for them), so ships fire at what comes in range while they keep going; only fighters shot by fighters break off to dogfight. Ours does the same. Squadrons launched by a ship that moves get a guard order on it at once, as in the engine, and attack enemies within their Guard_Chase_Range plus weapon reach of the carrier (checked on the battle worker)'
@@ -399,7 +404,11 @@ const GROUPS = [
       ['Hardpoint reticles', D],
       ['Order buttons', D],
       ['Control groups and hotkeys', D],
-      ['Ability buttons', D],
+      [
+        'Ability buttons',
+        D,
+        'the recharge clock is the Build_Texture_Name of the button cut as a fan from the middle: as the engine draws it, the covered part runs from the elapsed share of the turn clockwise round to twelve, so the edge sweeps like a clock hand and uncovers the icon; no clock while the ability runs or with nothing elapsed, and no countdown text. A disabled command bar button draws its Disabled_Texture_Name over the icon (not under it), shows no hover or pressed art and keeps the game pointer, as do all bar buttons. Pressing a targeted ability that no selected unit can use yet (recharging) no longer arms it, and an armed ability that no selected unit can use any more is dropped, so the targeting pointer cannot get stuck (seen with the tractor beam)'
+      ],
       ['Skirmish setup screen (players, factions, colours, teams, map, advanced options)', D],
       [
         'Map lists: official and custom maps',
@@ -411,7 +420,7 @@ const GROUPS = [
       [
         'Hero portraits bar',
         D,
-        'the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine'
+        'the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). The banner plate behind each row is placed from its own model, so the enemy banner on the left is no longer pushed off the screen edge. On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine'
       ],
       [
         'Build limits',

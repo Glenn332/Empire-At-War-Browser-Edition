@@ -1354,8 +1354,8 @@ export class CommandBar {
       );
       const cd = !active && !ready && def.recharge > 0 ? Math.min(...states.map(a => a.cooldown)) / def.recharge : 0;
       const left = Math.max(0, Math.min(1, cd));
-      b.firstChild.style.display = left > 0 ? '' : 'none';
-      b.firstChild.style.setProperty('--cd', 100 * left + '%');
+      b.firstChild.style.display = left > 0 && left < 1 ? '' : 'none';
+      b.firstChild.style.setProperty('--cd', 100 * (1 - left) + '%');
     }
     this.refreshQueue();
     this.refreshSidebar();
@@ -1502,10 +1502,6 @@ export class CommandBar {
         cv.width = Math.round(plate.rect.w * k);
         cv.height = Math.round(plate.rect.h * k);
         const c = cv.getContext('2d');
-        if (!good) {
-          c.translate(cv.width, 0);
-          c.scale(-1, 1);
-        }
         for (let i = 0; i + 1 < cols.length; i++)
           c.drawImage(
             t,
@@ -1518,7 +1514,7 @@ export class CommandBar {
             (xs[i + 1] - xs[i]) * k + 0.5,
             cv.height
           );
-        const near = good ? -(plate.rect.x + plate.rect.w) : 2 * plate.origin.x - (plate.rect.x + plate.rect.w);
+        const near = good ? -(plate.rect.x + plate.rect.w) : plate.rect.x;
         cv.style.cssText = `position:absolute;${edge}:${near}px;top:${-(plate.rect.y + plate.rect.h)}px;width:${plate.rect.w}px;height:${plate.rect.h}px`;
         bar.el.appendChild(cv);
       }

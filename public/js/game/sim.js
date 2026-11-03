@@ -393,6 +393,7 @@ export class Unit {
     this.isStructure = !this.isMobile;
     this.layer = layerMask(type);
     this.attackMoveStops = !type.str('Space_Layer').trim() || type.bool('Disregard_Space_Layer_For_Guard_Attack_Move', false);
+    this.facesAuto = null;
     this.asteroidDamage = beh.has('ASTEROID_FIELD_DAMAGE') && ASTEROID_LAYERS.has(this.layer);
     this.underConstruction = beh.has('TACTICAL_UNDER_CONSTRUCTION');
     this.selectable = beh.has('SELECTABLE') || this.isPad || type.has('Tactical_Buildable_Objects_Multiplayer');
@@ -3115,11 +3116,12 @@ export class World {
     let goal = null,
       stopAt = 12,
       faceOnly = null;
+    u.facesAuto ??= !u.hardpoints.length || db.constants.bool('Auto_Rotate_For_Space_Targeting');
     if (ord.kind === 'move' || ord.kind === 'attackmove') {
       goal = ord;
       if (ord.kind === 'attackmove' && u.attackMoveStops && u.target && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
         goal = null;
-        faceOnly = u.target;
+        if (u.facesAuto) faceOnly = u.target;
       }
     } else if (ord.kind === 'attack') {
       const t = this.resolveTarget(ord.target);
@@ -3154,7 +3156,7 @@ export class World {
         if (dist2(u, p) > keep * keep) {
           goal = p;
           stopAt = keep;
-        } else if (u.target) faceOnly = u.target;
+        } else if (u.target && u.facesAuto) faceOnly = u.target;
       }
     } else if (ord.kind === 'idle' && u.target && u.hasWeapons && !u.isStructure) {
       if (u.homeOf !== ord) {
@@ -3163,10 +3165,10 @@ export class World {
       }
       const t = u.target,
         chase = u.type.num('Idle_Chase_Range', 0) + (t.target === u ? u.type.num('Autonomous_Move_Extension_Vs_Attacker', 0) : 0);
-      if (chase > 0 && dist2(u, t) > (u.engageRange * 0.8) ** 2 && dist2(u.home, t) < (u.maxRange + chase) ** 2) {
+      if (chase > 0 && u.attackMoveStops && dist2(u, t) > (u.engageRange * 0.8) ** 2 && dist2(u.home, t) < (u.maxRange + chase) ** 2) {
         goal = t;
         stopAt = u.engageRange * 0.7;
-      } else faceOnly = t;
+      } else if (u.facesAuto) faceOnly = t;
     }
     if (ord.kind === 'idle' && u.isMobile && !u.isFighter) {
       if (u.homeOf !== ord) {

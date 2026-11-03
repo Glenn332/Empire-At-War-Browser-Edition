@@ -1112,7 +1112,8 @@ export class UI {
       const st = s.abilityState(kind);
       return !st.active && !(st.cooldown > 0);
     };
-    const turnOn = !anyActive || users.some(ready);
+    const turnOn = users.some(ready);
+    if (!anyActive && !turnOn) return;
     if (def.target !== 'none' && turnOn) {
       this.arm(this.armed === 'ability:' + kind ? null : 'ability:' + kind);
       return;
@@ -1644,6 +1645,16 @@ export class UI {
     )
       this.hover = prev;
     const pointers = (this.pointers ||= new Pointers(this.r.dom));
+    if (this.armed?.startsWith('ability:')) {
+      const kind = this.armed.slice(8);
+      if (
+        !this.mine().some(s => {
+          const st = s.abilityState(kind);
+          return st && !st.active && !(st.cooldown > 0);
+        })
+      )
+        this.arm(null);
+    }
     if (this.armed === 'special') {
       const mine = (this.world.specialWeapons || []).filter(w => w.player === this.player),
         sw = mine.find(w => w.charge >= 0.99) || mine[0];

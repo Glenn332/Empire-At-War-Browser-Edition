@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **92.1%** | 162 | 28 | 1 | 191 |
-| **Whole game** | **81.2%** | 226 | 115 | 8 | 349 |
+| **Space skirmish** | **92.2%** | 163 | 28 | 1 | 192 |
+| **Whole game** | **81.3%** | 227 | 115 | 8 | 350 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -21,7 +21,7 @@ Regenerate with `node tools/progress.mjs`.
 |---|---|---|---|---|---|
 | Data formats | space skirmish | 86.8% | 14 | 5 | 0 |
 | Rendering | space skirmish | 87.5% | 21 | 7 | 0 |
-| Space simulation | space skirmish | 95.6% | 32 | 1 | 1 |
+| Space simulation | space skirmish | 95.7% | 33 | 1 | 1 |
 | Abilities | space skirmish | 100.0% | 24 | 0 | 0 |
 | Skirmish AI | space skirmish | 87.5% | 15 | 5 | 0 |
 | Interface | space skirmish | 92.3% | 33 | 6 | 0 |
@@ -89,7 +89,7 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Space battle camera — *from TacticalCameras.xml Space_Mode (a mod has its own): start tilt, tilt range, field of view, start and nearest distance, a wheel notch moving the distance and narrowing the view as the game does, the zoom-tilt rule. Ours: it pulls back past Distance_Max to 9000, the distance is not smoothed (the game eases it over Distance_Smooth_Time), no tactical overview. The start yaw is the file Yaw_Default as a world angle, as the engine has it. Ours: C on a selected unit follows it with a free orbiting camera (HUD hidden, mouse orbits, wheel zooms, C or Escape leaves), moving to the next squad member when it dies; Alt+C (rebindable) follows the middle of the squad*
 - 🟡 Cinematic camera: letterbox, self-directed shots, cut to large ships dying — *own shot director; the authored glory camera scripts (.tec) are not used because their coordinate frame is unknown*
 
-### Space simulation — 95.6%
+### Space simulation — 95.7%
 
 - ✅ Capital ship movement and turning
 - ✅ Fighter and bomber squadrons — *flight by the engine fighter locomotor: roll before turn, loops, leader and formation, strafing runs at the ordered hardpoint (else the ship), dogfight pairing, idle passes over a spot at full speed, the look ahead that turns a craft away from ships and structures it is about to fly into (circles of hit radius where the engine has model boxes)*
@@ -111,6 +111,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Reinforcements cannot drop into asteroid fields, nebulae or ion storms — *read from the engine: the drop test sweeps the footprint of the unit against everything on the static object layer, where fields sit as a circle of their Space_Obstacle_Radius. Ours refuses a drop when the footprint of the unit (Custom_Soft_Footprint_Radius times Scale_Factor, else the extent of its model) overlaps a field, for the placement preview, the reinforce command and the AI drops*
 - ✅ Beams start at their bone wherever the ship is — *tractor beams and other bone beams took the bone from the bone world matrix, which is not updated for ships whose model is drawn apart from their scene object, so a tractor beam started near the centre of the map; the start point now comes from the position and heading of the ship and the offset of the bone in its model. The beam already lets go beyond the range of the ability*
 - ✅ Ships at the edge of the battle area turn back in — *a ship pushed against the edge and facing out was given a turn that leaves the battle area, was clamped back every step and never turned; a waypoint outside the battle area is now skipped and the ship steers for its destination*
+- ✅ Ships turn only toward an ordered target — *read from the engine: a ship turns its hull in place toward its target only when the target was set by an attack order, or when the ship has no hardpoints, or when GameConstants Auto_Rotate_For_Space_Targeting is on (off in the base game); idle, guarding or attack-moving ships with hardpoints keep their heading and their hardpoints fire at what is in arc. Ships with a space layer (unless Disregard_Space_Layer_For_Guard_Attack_Move) no longer chase on Idle_Chase_Range. Not done: the broadside offset the engine adds when a turn does happen*
 - ✅ AI fleets travel to their target without stopping to fight — *read from the engine and the AI plans: space attack plans send task forces with Move_To or Attack_Move, and for ships with a space layer an attack move does not stop to engage (the engage test of the engine returns no for them), so ships fire at what comes in range while they keep going; only fighters shot by fighters break off to dogfight. Ours does the same. Squadrons launched by a ship that moves get a guard order on it at once, as in the engine, and attack enemies within their Guard_Chase_Range plus weapon reach of the carrier (checked on the battle worker)*
 - ✅ Shots hit the models attached to hardpoints — *read from the engine: a hardpoint with a Model_To_Attach puts that model on its bone as part of the object, and the collision meshes of the attached model take projectile hits like the hull does (the shot then goes through the shields first, and a shot that was not aimed at another hardpoint damages the hardpoint it struck). Before, only the collision meshes of the base model were tested, so turrets and shield generators that sit outside the hull could not be hit: on the Rebel level 5 station the shield generator hangs 231 below the hull, every shot at it missed and the station regenerated its shields under the fire of three Star Destroyers. Three Star Destroyers ordered onto that generator now land 459 of 534 shots, take the 9000 shields down in about 18 seconds and destroy the generator a few seconds later; shots aimed at laser turrets went from 24 of 324 to 379 of 391 hits*
 - ✅ Nebulae stay drawn off the centre of the screen — *a nebula model is all see-through meshes (and some carry particle effects), so the model bounds, which leave see-through meshes out so glows do not grow hit boxes, came out as the one-unit fallback and the nebula was culled as soon as its centre left the view. Culling now uses a separate draw radius over every shown mesh and the reach of the attached particle effects (spawn volume, speed over the lifetime, acceleration and particle size), so any model drawn mostly by see-through meshes or particles is kept while part of it is on screen. Checked on Thrawn Revenge*
@@ -190,12 +191,12 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Hardpoint reticles
 - ✅ Order buttons
 - ✅ Control groups and hotkeys
-- ✅ Ability buttons
+- ✅ Ability buttons — *the recharge clock is the Build_Texture_Name of the button cut as a fan from the middle: as the engine draws it, the covered part runs from the elapsed share of the turn clockwise round to twelve, so the edge sweeps like a clock hand and uncovers the icon; no clock while the ability runs or with nothing elapsed, and no countdown text. A disabled command bar button draws its Disabled_Texture_Name over the icon (not under it), shows no hover or pressed art and keeps the game pointer, as do all bar buttons. Pressing a targeted ability that no selected unit can use yet (recharging) no longer arms it, and an armed ability that no selected unit can use any more is dropped, so the targeting pointer cannot get stuck (seen with the tractor beam)*
 - ✅ Skirmish setup screen (players, factions, colours, teams, map, advanced options)
 - ✅ Map lists: official and custom maps — *the engine list: every map file whose header is of the battle kind, made for two players or more, named by its text id; the Official and Custom Maps buttons switch between the maps flagged custom (header field 11) or not, the custom list also holding the flagged maps of the game Data/CustomMaps folder. Map kinds are labelled with the Space and Land game type names (mods repurpose the lobby list strings), and skirmish and multiplayer setup both show the preview embedded in the map file when there is no loose picture*
 - ✅ In-game menu: save, load, options (audio, video, game), quit
 - ✅ Game fonts
-- ✅ Hero portraits bar — *the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine*
+- ✅ Hero portraits bar — *the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). The banner plate behind each row is placed from its own model, so the enemy banner on the left is no longer pushed off the screen edge. On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine*
 - ✅ Build limits — *Build_Limit_Current_Per_Player, Build_Limit_Current_For_All_Allies (a team fields one Rogue Squadron), Build_Limit_Lifetime_Per_Player and _For_All_Allies; standing counts the field, the queues and the reinforcement pool; allies may field the same hero once each*
 - ✅ Waypoint button
 - ✅ Retreat button (disabled in skirmish, as in the original)

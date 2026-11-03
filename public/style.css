@@ -928,7 +928,7 @@ body:not(.original-hud) .heroframe {
 }
 .hb,
 .hab {
-  cursor: pointer;
+  cursor: inherit;
   background:
     var(--icon) center/100% 100% no-repeat,
     var(--blank) center/100% 100% no-repeat;
@@ -958,9 +958,6 @@ body:not(.original-hud) .heroframe {
     var(--icon) center/100% 100% no-repeat,
     var(--blank) center/100% 100% no-repeat;
 }
-.hb.dis {
-  cursor: default;
-}
 .hb.dis::after {
   background-image: var(--dis);
 }
@@ -977,12 +974,10 @@ body:not(.original-hud) .heroframe {
 .hb-native > .hb-art-dis {
   display: none;
 }
-.hb-native.sel > .hb-art-sel,
-.hb-native:hover:not(.dis) > .hb-art-over {
+.hb-native.sel:not(.dis) > .hb-art-sel,
+.hb-native:hover:not(.dis) > .hb-art-over,
+.hb-native.dis > .hb-art-dis {
   display: block;
-}
-.hb-native.dis > .hb-art-blank {
-  background-image: var(--dis), var(--blank) !important;
 }
 .hb-native.galactic-build.dis > .hb-art {
   filter: brightness(0.502);
@@ -1038,8 +1033,8 @@ body:not(.original-hud) .heroframe {
   position: absolute;
   inset: 0;
   background: var(--recharge) center/100% 100% no-repeat;
-  -webkit-mask-image: conic-gradient(#000 var(--cd, 0%), transparent 0);
-  mask-image: conic-gradient(#000 var(--cd, 0%), transparent 0);
+  -webkit-mask-image: conic-gradient(transparent var(--cd, 0%), #000 0);
+  mask-image: conic-gradient(transparent var(--cd, 0%), #000 0);
   pointer-events: none;
 }
 .hborder {
