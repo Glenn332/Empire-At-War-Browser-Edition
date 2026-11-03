@@ -40,10 +40,15 @@ export async function openLobby({
   const dlg = await openDialog('IDD_SKIRMISH_STAGING_DIALOG', { modal: false });
   if (!dlg) return false;
   const saved = loadSetup() || {};
+  const dynamic = maps.filter(isDynamic),
+    official = { space: maps.filter(m => !isDynamic(m)), land: landMaps };
+  const listFor = (custom, mode) =>
+    mode === 'space' ? liveMaps([...(custom ? customMaps.space : official.space), ...dynamic]) : (custom ? customMaps : official)[mode];
+  const onlyCustom = mode => !official[mode].length && !!customMaps[mode].length;
   const st = {
     preBuilt: typeof saved.preBuilt === 'boolean' ? saved.preBuilt : true,
     mode: 'space',
-    custom: !maps.length && !landMaps.length && !!(customMaps.space.length || customMaps.land.length),
+    custom: onlyCustom('space'),
     mapFile: init.mapFile,
     teamFactions: init.teamFactions.map((f, i) => (factions.includes(saved.teamFactions?.[i]) ? saved.teamFactions[i] : f)),
     credits: Number.isFinite(saved.credits) ? saved.credits : init.credits,
@@ -51,14 +56,14 @@ export async function openLobby({
     fog: typeof saved.fog === 'boolean' ? saved.fog : init.fog
   };
   const lastMap = { space: init.mapFile, land: landMaps.find(m => /TATOOINE/i.test(m)) || landMaps[0] };
-  const mapsOf = () => (st.custom ? customMaps : { space: liveMaps(maps), land: landMaps })[st.mode];
+  const mapsOf = () => listFor(st.custom, st.mode);
   const lastKey = () => (st.custom ? 'custom ' : '') + st.mode;
   if (
     (saved.mode === 'space' || saved.mode === 'land') &&
-    (saved.custom ? customMaps : { space: liveMaps(maps), land: landMaps })[saved.mode].includes(saved.mapFile)
+    listFor(!!saved.custom || onlyCustom(saved.mode), saved.mode).includes(saved.mapFile)
   ) {
     st.mode = saved.mode;
-    st.custom = !!saved.custom;
+    st.custom = !!saved.custom || onlyCustom(saved.mode);
     lastMap[lastKey()] = saved.mapFile;
   }
   const savedSlots =
@@ -210,6 +215,8 @@ export async function openLobby({
     return true;
   };
   const fillMaps = () => {
+    if (onlyCustom(st.mode)) st.custom = true;
+    dlg.enable('IDC_SELECT_OFFICIAL_MAPS', !!official[st.mode].length);
     const list = mapsOf();
     if (!list.includes(lastMap[lastKey()])) lastMap[lastKey()] = mapRows(list)[0]?.key;
     st.mapFile = lastMap[lastKey()] || null;
