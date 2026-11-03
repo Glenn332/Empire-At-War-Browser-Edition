@@ -68,7 +68,7 @@ function forceDefinition(def) {
         .split('|')
         .map(n => n.trim())
         .filter(Boolean),
-      types = names.map(n => db.type(n)).filter(Boolean);
+      types = [...new Set(names.flatMap(n => baseLevels(db.type(n))))];
     force.specs.push({
       types: types.length ? types : null,
       cats: types.length ? null : names.map(key),
@@ -79,6 +79,34 @@ function forceDefinition(def) {
     });
   }
   return force;
+}
+const BASE_LEVELS = [
+    ['DUMMY_STAR_BASE', 'MaximumStarbaseLevel'],
+    ['DUMMY_GROUND_BASE', 'MaximumGroundbaseLevel']
+  ],
+  baseLevelCache = new WeakMap();
+function baseLevels(type) {
+  if (!type) return [];
+  let out = baseLevelCache.get(type);
+  if (out) return out;
+  const behaviors = type.list('Behavior').map(key),
+    found = BASE_LEVELS.find(([behavior]) => behaviors.includes(behavior));
+  out = [type];
+  if (found) {
+    const [behavior, constant] = found,
+      top = Math.trunc(db.constants.num(constant, 5)),
+      candidates = [...db.types.values()].filter(t => t.list('Behavior').some(b => key(b) === behavior));
+    out = [];
+    for (const faction of db.factions.values())
+      for (let level = 0; level <= top; level++) {
+        const hit = candidates.find(
+          t => Math.trunc(t.num('Base_Level', 0)) === level && t.list('Affiliation').some(a => key(a) === key(faction.name))
+        );
+        if (hit && !out.includes(hit)) out.push(hit);
+      }
+  }
+  baseLevelCache.set(type, out);
+  return out;
 }
 function fits(type, spec) {
   return !spec.excluded.includes(type) && (spec.types ? spec.types.includes(type) : spec.cats.some(c => strategicCategories(type).has(c)));
@@ -1209,7 +1237,8 @@ export class GalacticPlanning {
     const g = this.game.galaxy,
       owner = force.inst.ai.player.faction;
     this.refreshLocations();
-    const groups = new Map();
+    const groups = new Map(),
+      mine = new Set(force.units);
     for (const record of records) {
       const at = this.locations.get(record);
       if (!at?.planet || at.fleet?.leg) continue;
@@ -1233,7 +1262,9 @@ export class GalacticPlanning {
         }
       }
       if (!units.length) continue;
-      let fleet = g.fleets.find(f => f.owner === owner && f.planet === planet.index && !f.leg && f.aiForce === force);
+      let fleet = g.fleets.find(
+        f => f.owner === owner && f.planet === planet.index && !f.leg && f.aiForce === force && f.units.every(u => mine.has(u))
+      );
       if (!fleet) {
         fleet = { owner, units: [], planet: planet.index, pos: null, path: [], dest: -1, leg: null, aiForce: force };
         g.fleets.push(fleet);

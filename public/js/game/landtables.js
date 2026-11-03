@@ -147,8 +147,8 @@ export async function loadLandTables() {
       return Number.isFinite(x) ? x : v;
     };
     t.tracks.set((d.attrs.name || '').toUpperCase(), {
-      width: n('width', 5),
-      segment: Math.max(2, n('segment_length', 7)),
+      width: n('width', 20),
+      segment: Math.max(0.25, n('segment_length', 10)),
       from: n('fade_begin_distance', 100),
       to: n('fade_end_distance', 150),
       rate: n('fade_distance_per_second', 10),

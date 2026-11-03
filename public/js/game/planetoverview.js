@@ -11,6 +11,7 @@ import { canViewBaseLayout } from './baselayoutdata.js';
 import { canOpenPlanetInfo } from './planetinfodata.js';
 import { dropOverviewUnits, pathfinderCell } from './fleetmanagement.js';
 import { orders } from './galacticnet.js';
+import { canSell, sellPrice } from './galacticsell.js';
 
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
@@ -171,6 +172,20 @@ export class PlanetOverview extends NativePanel {
       this.abilityLabel.hidden = true;
       this.abilityLabel.style.zIndex = '3';
     }
+    for (const slot of [...this.ground, ...this.structures, ...this.fleets.flatMap(f => f.slots)]) {
+      slot.record = null;
+      slot.el.addEventListener('pointerenter', e => (game.overviewTip = { slot, x: e.clientX, y: e.clientY }));
+      slot.el.addEventListener('pointermove', e => {
+        if (game.overviewTip?.slot === slot) Object.assign(game.overviewTip, { x: e.clientX, y: e.clientY });
+      });
+      slot.el.addEventListener('pointerleave', () => {
+        if (game.overviewTip?.slot === slot) game.overviewTip = null;
+      });
+      slot.el.oncontextmenu = e => {
+        e.preventDefault();
+        this.offerSale(slot, e);
+      };
+    }
     for (const slot of [...this.ground, ...this.fleets.flatMap(f => f.slots)]) {
       slot.el.style.zIndex = '1';
       slot.el.ondragstart = e => e.preventDefault();
@@ -180,7 +195,21 @@ export class PlanetOverview extends NativePanel {
     this.resize();
   }
 
+  offerSale(slot, e) {
+    const game = this.game,
+      rec = slot.record,
+      tip = game.galacticLog?.encyclopedia;
+    if (!tip || !rec || !canSell(game.galaxy, rec, game.me)) return;
+    const text = ` ${db.t('TEXT_BUTTON_SELL')} ${nameOf(rec.carries || rec.type)} ($ ${sellPrice(rec)}) `;
+    tip.menu(text, e.clientX, e.clientY, () => {
+      if (!canSell(game.galaxy, rec, game.me)) return;
+      game.audio.play('GUI_Structure_Sold');
+      game.order(orders.sell(game.galaxy, rec));
+    });
+  }
+
   emptyControl(slot) {
+    slot.record = null;
     slot.icon = '';
     slot.img.hidden = true;
     this.setText(slot.count, '');
@@ -191,6 +220,15 @@ export class PlanetOverview extends NativePanel {
     slot.el.removeAttribute('aria-label');
     slot.el.removeAttribute('role');
     slot.el.hidden = false;
+  }
+
+  covers(cx, cy) {
+    if (this.root.hidden) return false;
+    const x = (cx - parseFloat(this.root.style.left)) / this.scale,
+      y = -(cy - parseFloat(this.root.style.top)) / this.scale;
+    for (const [n, mesh] of this.shell)
+      if ((/^Q[123]_FRAME$/.test(n) || n.startsWith('LAND_ART_ALT')) && uiMeshDepthAt(mesh, x, y) > -Infinity) return true;
+    return false;
   }
 
   hitControl(e, mesh) {
@@ -402,7 +440,9 @@ export class PlanetOverview extends NativePanel {
       p = game.galaxy.planets[game.view.planet];
     const visible = !!p && !game.battle && !game.baseLayout?.open && game.view.zoom > 0.9;
     const opened = this.root.hidden && visible;
+    const closing = !this.root.hidden && !visible;
     this.root.hidden = !visible;
+    if (closing) this.game.galacticLog?.encyclopedia?.closeMenu();
     if (!visible) {
       if (this.dragging) this.cancelDrag();
       return;
@@ -446,6 +486,7 @@ export class PlanetOverview extends NativePanel {
       s.target = { kind: 'ground', planet: p.index };
       s.source = p.owner === game.me && record?.owner === game.me ? { kind: 'ground', planet: p.index, records: [record] } : null;
       this.put(s, units[i]);
+      this.track(s, record);
       if (!units[i] && state.open) this.emptyControl(s);
     });
     const count = Math.min(this.structures.length, state.capacity),
@@ -454,6 +495,7 @@ export class PlanetOverview extends NativePanel {
       const c = this.comps.get(s.name),
         blankName = c?.val('Blank_Texture_Name').trim().split(/\s+/)[0];
       this.put(s, built[i], { blank: state.open && i < count ? blankName : '', big: false });
+      this.track(s, built[i]?.unit);
     });
     this.fleets.forEach((f, i) => {
       const fleet = state.fleets[i]?.fleet,
@@ -486,9 +528,15 @@ export class PlanetOverview extends NativePanel {
           packed: packed.compact
         });
         if (anchor !== undefined) this.emptyControl(s);
+        this.track(s, record);
       });
     });
     this.paintChosen();
+  }
+
+  track(slot, record) {
+    slot.record = record || null;
+    if (slot.record) slot.el.removeAttribute('title');
   }
 
   paint(terrain, known) {

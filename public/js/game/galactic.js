@@ -48,6 +48,8 @@ import { slotFor, activateSlot, isHero, SLOTS } from './abilityslots.js';
 import { isRaidForce, raidCapable, RAID_SLOT } from './raid.js';
 import { relation, hidden } from './galacticrelation.js';
 import { TooltipGate } from './tooltipgate.js';
+import { Pointers } from './pointers.js';
+import { sellRecord } from './galacticsell.js';
 import { executeSlice } from './galacticslicer.js';
 import { galaxyWideUpgrades } from './planetabilities.js';
 import { CorruptionPanel, loadCorruptionAssets } from './corruptionpanel.js';
@@ -467,6 +469,7 @@ export class GalacticGame {
     this.ai?.dispose();
     this.storyDialog?.dispose();
     this.galacticLog?.dispose();
+    this.pointers?.set(null);
     this.audio?.speech?.clear(false);
     this.movies?.dispose();
     stageStart({ ...setup, players: [], teamFactions: [] });
@@ -1784,13 +1787,20 @@ export class GalacticGame {
       if (tips.popup) encyclopedia.moveLinked(build.x, build.y);
       return;
     }
+    const view = this.overviewTip,
+      shown = view?.slot.record;
+    if (shown && !view.slot.el.hidden && this.overview && !this.overview.root.hidden) {
+      const type = shown.carries || shown.type;
+      tips.hover({ id: 'overview:' + view.slot.name, key: 'overview:' + type.name, show: () => encyclopedia.showType(type, false) });
+      return;
+    }
     const idle = this.mouse.in !== false && !this.dragFleet && this.dragGround === undefined,
       at = idle ? this.pickCorruptionIcon(this.mouse.x, this.mouse.y) : null;
-    const stack =
-        idle && !at && !this.radar?.contains(this.mouse.x, this.mouse.y)
-          ? this.pickStack(this.lastSpots, this.mouse.x, this.mouse.y)
-          : null,
-      fleet = stack?.f ? this.fleetTip(stack) : null;
+    const free = idle && !at && !this.radar?.contains(this.mouse.x, this.mouse.y),
+      orbit = free ? this.pickStack(this.lastSpots, this.mouse.x, this.mouse.y) : null,
+      ground = free && !orbit?.f ? this.pickStack(this.lastSurfaceSpots, this.mouse.x, this.mouse.y) : null,
+      stack = orbit?.f ? orbit : ground && !ground.empty ? ground : null,
+      fleet = stack ? this.fleetTip(stack) : null;
     if (at) {
       const C = db.constants,
         split = n =>
@@ -1816,17 +1826,41 @@ export class GalacticGame {
       if (at.type === -1 && tips.popup) encyclopedia.moveLinked(this.mouse.x, this.mouse.y);
     } else if (fleet)
       tips.hover({
-        id: 'fleet:' + stack.p + ':' + stack.displaySlot + ':' + stack.f.owner,
+        id: stack.f ? 'fleet:' + stack.p + ':' + stack.displaySlot + ':' + stack.f.owner : 'army:' + stack.p,
         key: 'fleet:' + fleet.key,
         show: () => encyclopedia.showFleet(fleet)
       });
     else {
       const planet =
-        idle && !stack && this.hover >= 0 && !this.radar?.contains(this.mouse.x, this.mouse.y) ? this.planetTip(this.hover) : null;
+        idle &&
+        !orbit &&
+        !ground &&
+        this.hover >= 0 &&
+        !this.radar?.contains(this.mouse.x, this.mouse.y) &&
+        !this.overview?.covers(this.mouse.x, this.mouse.y)
+          ? this.planetTip(this.hover)
+          : null;
       tips.hover(
         planet ? { id: 'planet:' + planet.key, key: 'planet:' + planet.state, show: () => encyclopedia.showPlanet(planet) } : null
       );
     }
+  }
+
+  updatePointer() {
+    const dragging = !!this.dragFleet || this.dragGround !== undefined,
+      x = this.mouse.x,
+      y = this.mouse.y;
+    let grab = false;
+    if (!dragging && this.mouse.in !== false && !this.battle && !this.controlsLocked && !this.radar?.contains(x, y)) {
+      const spot = this.pickStack(this.lastSpots, x, y),
+        fleets = spot?.fleets || (spot?.f ? [spot.f] : []);
+      grab = fleets.some(f => f.owner === this.me && !f.leg && f.units.length);
+      if (!grab && !spot?.f) {
+        const ground = this.pickStack(this.lastSurfaceSpots, x, y);
+        grab = !!ground && this.galaxy.planets[ground.p].garrison.some(u => u.owner === this.me);
+      }
+    }
+    (this.pointers ||= new Pointers(this.renderer.domElement)).set(dragging ? 'POINTER_GRABBING' : grab ? 'POINTER_CAN_GRAB' : null);
   }
 
   planetTip(i) {
@@ -1870,10 +1904,12 @@ export class GalacticGame {
     const g = this.galaxy,
       planet = g.planets[spot.p],
       v = intelligence(g, planet),
-      friendly = f => relation(this.me, f.owner) === 0;
-    const here = g.fleets.filter(f => f.planet === spot.p && !f.leg && f.units.length);
-    const hostile = !friendly(spot.f),
-      listed = hostile ? here.filter(f => !friendly(f)) : here.filter(f => friendly(f) && (f.slot ?? 0) === (spot.f.slot ?? 0));
+      friendly = f => relation(this.me, f.owner) === 0,
+      army = !spot.f,
+      lead = army ? { owner: planet.owner, units: spot.units } : spot.f;
+    const here = army ? [lead] : g.fleets.filter(f => f.planet === spot.p && !f.leg && f.units.length);
+    const hostile = !friendly(lead),
+      listed = army ? here : hostile ? here.filter(f => !friendly(f)) : here.filter(f => friendly(f) && (f.slot ?? 0) === (lead.slot ?? 0));
     const stealthy = f => f.units.every(u => strategicStealth(u)),
       nodes = new Map();
     let reveal = !hostile,
@@ -1882,8 +1918,8 @@ export class GalacticGame {
     for (const f of listed) {
       if (hostile) {
         if (stealthy(f)) continue;
-        if (v?.fleetContents) reveal = true;
-        else if (v?.fleetOverlay) countOnly = true;
+        if (army ? v?.groundContents : v?.fleetContents) reveal = true;
+        else if (army ? v?.groundCount : v?.fleetOverlay) countOnly = true;
         else continue;
       }
       for (const u of f.units) {
@@ -1900,15 +1936,15 @@ export class GalacticGame {
       owner = faction(first.fleet.owner),
       C = db.constants;
     const titleKey =
-      owner === faction(C.str('Good_Side_Name'))
-        ? 'TEXT_GOOD_SPACE_FLEET'
+      (owner === faction(C.str('Good_Side_Name'))
+        ? 'TEXT_GOOD_'
         : owner === faction(C.str('Evil_Side_Name'))
-          ? 'TEXT_EVIL_SPACE_FLEET'
+          ? 'TEXT_EVIL_'
           : owner === faction(C.str('Corrupt_Side_Name'))
-            ? 'TEXT_CORRUPT_SPACE_FLEET'
-            : 'TEXT_PIRATE_SPACE_FLEET';
+            ? 'TEXT_CORRUPT_'
+            : 'TEXT_PIRATE_') + (army ? 'LAND_GARRISON' : 'SPACE_FLEET');
     const stealth = listed.every(stealthy),
-      raid = listed.every(f => isRaidForce(f));
+      raid = !army && listed.every(f => isRaidForce(f));
     const strongest =
       countOnly && !reveal && v && v.mask & VIS.MOST_POWERFUL
         ? list.reduce((b, n) => (!b || n.type.num('Damage', 0) > b.type.num('Damage', 0) ? n : b), null)
@@ -1919,7 +1955,8 @@ export class GalacticGame {
       label: n.count >= 2 ? 'x' + n.count : '',
       badge: known(n) && strategicStealth(n.unit)
     }));
-    const picture = this.stackPicture(spot.units || spot.f.units, spot.f.owner, this.fleetComp, false, (spot.units || spot.f.units).length);
+    const shown = spot.units || spot.f.units,
+      picture = this.stackPicture(shown, lead.owner, army ? this.groundComp : this.fleetComp, false, shown.length);
     if (!picture) return null;
     const pop = list.reduce((s, n) => s + n.type.num('Population_Value', 0) * n.count, 0),
       body = raid
@@ -1929,7 +1966,7 @@ export class GalacticGame {
           : '';
     const key = [
       spot.p,
-      spot.displaySlot,
+      army ? 'army' : spot.displaySlot,
       owner,
       pop,
       stealth,
@@ -2277,6 +2314,15 @@ export class GalacticGame {
   }
   activateHeroSlot(rec, p, owner) {
     return activateSlot(this, rec, p, owner);
+  }
+  sellRecord(rec, faction = this.me) {
+    if (!sellRecord(this.galaxy, rec, faction)) return false;
+    const object = this.story?.objectWrappers?.get(rec)?.__object;
+    if (object) object.dead = true;
+    this.galacticBattleChanged();
+    this.ui?.refresh();
+    this.overview?.refresh();
+    return true;
   }
 
   startBattle(p, attacker, defender, mode = 'space', options = {}) {
@@ -3245,6 +3291,8 @@ export class GalacticGame {
     if (this.renderer.endFrame) this.renderer.endFrame();
     this.drawNames(zoom);
     this.overview?.update();
+    this.corruptionTip();
+    this.updatePointer();
     this.radar?.drawFrame(real);
     this.radar?.refresh();
   }
@@ -3484,7 +3532,6 @@ export class GalacticGame {
       if (!s.f || s.f !== this.dragFleet) put(s.units || s.f?.units || [], s.f?.owner || this.me, this.fleetComp, s.x, s.y, !s.f, s.f);
     this.corruptionIcons = this.nextIcons || [];
     this.nextIcons = [];
-    this.corruptionTip();
     this.lastSpecialSpots = this.specialSpots(scale);
     this.lastSurfaceSpots = this.surfaceSpots(scale);
     for (const s of this.lastSurfaceSpots)

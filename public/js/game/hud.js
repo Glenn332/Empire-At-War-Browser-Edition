@@ -545,7 +545,7 @@ export class CommandBar {
     const pick = visible
       .filter(([n]) => altOf(n) < 0 || altOf(n) === alt)
       .map(([, m]) => m)
-      .sort((p, q) => q.rect.w * q.rect.h - p.rect.w * p.rect.h);
+      .sort((p, q) => (p.depth ?? 0) - (q.depth ?? 0) || q.rect.w * q.rect.h - p.rect.w * p.rect.h);
     const W = Math.max(BAR_W, ...pick.map(m => Math.ceil(m.rect.x + m.rect.w))),
       H = Math.max(BAR_H, ...pick.map(m => Math.ceil(m.rect.y + m.rect.h)));
     const k = Math.max(1, Math.min(3, Math.ceil(this.scale * (devicePixelRatio || 1)), Math.floor(Math.sqrt(12e6 / (W * H)))));

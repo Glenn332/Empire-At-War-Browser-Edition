@@ -56,7 +56,14 @@ export class GalacticEncyclopedia {
     this.linkedRoot.setAttribute('role', 'tooltip');
     this.linkedRoot.style.cssText = 'position:fixed;pointer-events:none;z-index:62';
     this.linkedTimer = null;
-    document.body.append(this.root, this.linkedRoot);
+    this.menuRoot = document.createElement('div');
+    this.menuRoot.hidden = true;
+    this.menuRoot.setAttribute('role', 'menuitem');
+    this.menuRoot.style.cssText = 'position:fixed;pointer-events:auto;z-index:63';
+    this.menuGeneration = 0;
+    this.onMenuAway = () => this.closeMenu();
+    addEventListener('pointerdown', this.onMenuAway);
+    document.body.append(this.root, this.linkedRoot, this.menuRoot);
     this.onResize = () => {
       this.hideLinked();
       if (!this.root.hidden) this.paint();
@@ -501,10 +508,30 @@ export class GalacticEncyclopedia {
   }
   async paintLinked(generation) {
     this.linkedBuilding = true;
+    if (await this.paintBox(this.linkedRoot, this.linkedSource, this.linkedPoint, () => generation === this.linkedGeneration))
+      this.linkedBuilding = false;
+  }
+  async menu(text, x, y, pick) {
+    this.closeMenu();
+    const generation = this.menuGeneration,
+      root = this.menuRoot;
+    root.onpointerdown = e => e.stopPropagation();
+    root.onclick = e => {
+      e.stopPropagation();
+      this.closeMenu();
+      pick();
+    };
+    return this.paintBox(root, text, { x, y }, () => generation === this.menuGeneration);
+  }
+  closeMenu() {
+    this.menuGeneration++;
+    if (!this.menuRoot.hidden) this.menuRoot.hidden = true;
+  }
+  async paintBox(root, source, point, live) {
     await this.warm(this.frameNames('TOOLTIP_BACK'));
-    if (generation !== this.linkedGeneration) return;
-    const { x, y } = this.linkedPoint,
-      text = typeof this.linkedSource === 'function' ? this.linkedSource() : this.linkedSource;
+    if (!live()) return false;
+    const { x, y } = point,
+      text = typeof source === 'function' ? source() : source;
     const c = this.component('TOOLTIP_LEFT_TEXT'),
       back = this.component('TOOLTIP_BACK'),
       ctx = document.createElement('canvas').getContext('2d'),
@@ -514,7 +541,7 @@ export class GalacticEncyclopedia {
       face = c?.val('Font_Name') || 'Arial';
     const bitmap = await loadComponentFont(face, baseSize);
     await bitmap?.ensure(text);
-    if (generation !== this.linkedGeneration) return;
+    if (!live()) return false;
     const font = `${/bold/i.test(face) ? 'bold ' : ''}${size}px ${fontFamily(face)}`;
     ctx.font = font;
     ctx.fontKerning = 'none';
@@ -532,7 +559,6 @@ export class GalacticEncyclopedia {
       top = y + marginY;
     if (left + w >= innerWidth) left = x - marginX - w;
     if (top + h >= innerHeight) top = y - h;
-    const root = this.linkedRoot;
     root.replaceChildren();
     Object.assign(root.style, { left: left + 'px', top: top + 'px', width: w + 'px', height: h + 'px' });
     for (const [name, inset] of [
@@ -561,7 +587,7 @@ export class GalacticEncyclopedia {
         });
     }
     root.hidden = false;
-    this.linkedBuilding = false;
+    return true;
   }
   moveLinked(x, y) {
     if (this.linkedTimer || this.linkedBuilding) this.linkedPoint = { x, y };
@@ -716,7 +742,10 @@ export class GalacticEncyclopedia {
   dispose() {
     this.hide();
     removeEventListener('resize', this.onResize);
+    this.closeMenu();
+    removeEventListener('pointerdown', this.onMenuAway);
     this.root.remove();
     this.linkedRoot.remove();
+    this.menuRoot.remove();
   }
 }

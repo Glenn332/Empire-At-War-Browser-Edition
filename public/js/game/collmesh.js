@@ -64,6 +64,43 @@ export function collisionOf(model) {
   return out;
 }
 
+const boxCache = new WeakMap();
+
+export function collisionBoxOf(model) {
+  if (!model) return null;
+  if (boxCache.has(model)) return boxCache.get(model);
+  const mesh = model.meshes.find(m => m.bbox && /^COLLISIONBOX$/i.test(m.name));
+  let out = null;
+  if (mesh) {
+    const m = restBones(model)[mesh.bone] || null,
+      b = mesh.bbox,
+      P = [];
+    for (let k = 0; k < 8; k++) {
+      const x = k & 1 ? b[3] : b[0],
+        y = k & 2 ? b[4] : b[1],
+        z = k & 4 ? b[5] : b[2];
+      P.push(
+        m
+          ? [m[0] * x + m[1] * y + m[2] * z + m[3], m[4] * x + m[5] * y + m[6] * z + m[7], m[8] * x + m[9] * y + m[10] * z + m[11]]
+          : [x, y, z]
+      );
+    }
+    const faces = [
+      [0, 1, 3, 2],
+      [4, 6, 7, 5],
+      [0, 4, 5, 1],
+      [2, 3, 7, 6],
+      [0, 2, 6, 4],
+      [1, 5, 7, 3]
+    ];
+    const tri = [];
+    for (const [a, b2, c, d] of faces) tri.push([...P[a], ...P[b2], ...P[c]], [...P[a], ...P[c], ...P[d]]);
+    out = build(tri);
+  }
+  boxCache.set(model, out);
+  return out;
+}
+
 function build(list) {
   const n = list.length,
     T = new Float32Array(n * 9),

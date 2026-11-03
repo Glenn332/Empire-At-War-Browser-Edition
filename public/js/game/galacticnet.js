@@ -126,7 +126,8 @@ export const orders = {
     }
     return null;
   },
-  slot: (g, rec, p) => ({ c: 'slot', rec: recordRef(g, rec), p })
+  slot: (g, rec, p) => ({ c: 'slot', rec: recordRef(g, rec), p }),
+  sell: (g, rec) => ({ c: 'sell', rec: recordRef(g, rec) })
 };
 
 export function runCommand(game, faction, cmd) {
@@ -186,6 +187,10 @@ export function runCommand(game, faction, cmd) {
         p = g.planets[cmd.p];
       if (rec && p && key(rec.owner ?? faction) === key(faction) && game.activateHeroSlot(rec, p, faction)) game.galacticBattleChanged();
       return {};
+    }
+    case 'sell': {
+      const rec = fromRecordRef(g, cmd.rec);
+      return rec && game.sellRecord(rec, faction) ? { ok: true } : {};
     }
     case 'battle':
       game.pendingBattle?.answer?.(faction, cmd.id, cmd.choice);

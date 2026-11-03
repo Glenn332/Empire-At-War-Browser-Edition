@@ -20,7 +20,7 @@ import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
 import { tickCollisions, resetCollideIds, collisionClass } from './landcollide.js';
 import { isSpawner } from './landgarrison.js';
-import { collisionOf, meshHit } from './collmesh.js';
+import { collisionOf, collisionBoxOf, meshHit } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
 import {
   CAT,
@@ -49,7 +49,8 @@ const _tilt = new THREE.Quaternion(),
   _up = new THREE.Vector3();
 const _paint = new THREE.Color();
 const _ms0 = new THREE.Vector3(),
-  _ms1 = new THREE.Vector3();
+  _ms1 = new THREE.Vector3(),
+  _msM = new THREE.Matrix4();
 const _ropeAt = new THREE.Vector3();
 const _q = new THREE.Quaternion(),
   _X = new THREE.Vector3(1, 0, 0),
@@ -1224,28 +1225,67 @@ export class LandWorld {
   }
 
   stamp(u) {
-    const n = this.n;
     if (/\b(WALL|LAND_OBSTACLE)\b/i.test(u.type.str('LandBehavior') + ' ' + u.type.str('Behavior')) && u.inst && u.inst.model) {
       u.footprint = [];
       this.blockObstacle({ type: u.type, pos: [u.x, u.y, u.z], rot: [0, 0, u.heading / DEG], scale: 1 }, u.inst.model, u.footprint);
     } else this.stampModel(u);
     this.groundChanged(u.footprint);
-    const apron = u.type.has('Terrain_Texture_Modifier_Material')
-      ? u.type.num('Terrain_Texture_Modifier_Material', -1)
-      : u.site && u.site.pad && u.site.pad.has('Terrain_Texture_Modifier_Material')
-        ? u.site.pad.num('Terrain_Texture_Modifier_Material', -1)
-        : -1;
-    if (apron >= 0 && u.footprint.length) {
-      const cells = new Set();
-      for (const i of u.footprint) {
-        const x = i % n,
-          y = (i / n) | 0;
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < n && y + dy < n) cells.add((y + dy) * n + x + dx);
-      }
-      paveTerrain(this.terrain, cells, apron);
-    }
+    this.resurface(u);
     if (u.footprint.length) this.reroute(u.footprint);
+  }
+
+  resurface(u) {
+    const t = u.type,
+      layer = t.num('Terrain_Texture_Modifier_Material', -1);
+    if (layer < 0 || !t.bool('Terrain_Texture_Modifier_Square', false)) return;
+    if (!/\bTERRAIN_TEXTURE_MODIFICATION\b/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior'))) return;
+    const C = u.inst && u.inst.model ? collisionOf(u.inst.model) : null,
+      B = C ? C.box : null,
+      s = t.num('Scale_Factor', 1),
+      w = t.num('Obstacle_Width', 0) || (B ? B[4] - B[1] : 2) * s,
+      h = t.num('Obstacle_Height', 0) || (B ? B[3] - B[0] : 2) * s,
+      ox = t.num('Obstacle_X_Offset', 0) || -w / 2,
+      oy = t.num('Obstacle_Y_Offset', 0) || -h / 2,
+      cells = new Set();
+    this.resurfaceRect(cells, u.x, u.y, u.heading, ox - 40, oy - 40, w + 80, h + 80);
+    const join = t.num('Terrain_Texture_Modifier_Join_Distance', 0);
+    if (join > 0)
+      for (const o of this.units) {
+        if (o.dead || !o.structure || o.type.num('Terrain_Texture_Modifier_Material', -1) !== layer) continue;
+        if (!/\bTERRAIN_TEXTURE_MODIFICATION\b/i.test(o.type.str('LandBehavior') + ' ' + o.type.str('Behavior'))) continue;
+        const dx = o.x - u.x,
+          dy = o.y - u.y;
+        if (dx * dx + dy * dy > join * join) continue;
+        const a = Math.max(60, Math.abs(dx)),
+          b = Math.max(60, Math.abs(dy));
+        this.resurfaceRect(cells, u.x + dx / 2, u.y + dy / 2, 0, -a / 2, -b / 2, a, b);
+      }
+    if (cells.size) paveTerrain(this.terrain, cells, layer);
+  }
+
+  resurfaceRect(cells, cx, cy, angle, x0, y0, w, h) {
+    const T = this.terrain,
+      n = this.n,
+      H = T.heights,
+      odds = Math.round(db.constants.num('Terrain_Resurface_Rand', 2)),
+      flat = 1 - db.constants.num('Terrain_Resurface_Tolerance', 0.03),
+      c = Math.cos(angle),
+      sn = Math.sin(angle);
+    let seed = (Math.imul(Math.round(cx), 73856093) ^ Math.imul(Math.round(cy), 19349663)) >>> 0;
+    for (let fx = 0; fx <= w; fx += 10)
+      for (let fy = 0; fy <= h; fy += 10) {
+        seed = (Math.imul(seed, 0x41c64e6d) + 0xbdf) >>> 0;
+        if (odds <= 1 || ((seed >>> 10) & 0x7fff) % odds === 0) continue;
+        const lx = fx + x0,
+          ly = fy + y0,
+          ix = Math.min(n - 1, Math.max(0, Math.floor((lx * c - ly * sn + cx) / CELL))),
+          iy = Math.min(n - 1, Math.max(0, Math.floor((ly * c + lx * sn + cy) / CELL))),
+          i = iy * n + ix;
+        if (cells.has(i)) continue;
+        const gx = (H[iy * n + Math.max(0, ix - 1)] - H[iy * n + Math.min(n - 1, ix + 1)]) / (2 * CELL),
+          gy = (H[Math.max(0, iy - 1) * n + ix] - H[Math.min(n - 1, iy + 1) * n + ix]) / (2 * CELL);
+        if (1 / Math.sqrt(gx * gx + gy * gy + 1) >= flat) cells.add(i);
+      }
   }
 
   stampModel(u) {
@@ -4775,9 +4815,11 @@ export class LandWorld {
         const C = this.meshOf(o),
           r = C ? o.collR : o.hitRadius,
           h = Math.max(r, o.aimZ * 0.6),
-          reach = r + step;
+          reach = Math.max(r, o.collBall || 0) + step;
         if ((o.x - s.x) ** 2 + (o.y - s.y) ** 2 > reach * reach) continue;
-        const tt = C ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z) : sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
+        if (C && (Math.max(z0, s.z) < o.holder.position.z + o.collLo - r || Math.min(z0, s.z) > o.holder.position.z + o.collHi + r)) continue;
+        let tt = C ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z) : sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
+        if (tt < 0 && o.collBall > 0) tt = sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z, 0, o.collBall, o.collBall, o.collBall);
         if (tt >= 0 && tt < ht) {
           ht = tt;
           hit = o;
@@ -4823,21 +4865,39 @@ export class LandWorld {
   }
 
   meshOf(o) {
-    if (o.coll !== undefined) return o.coll;
-    if (!o.structure) return (o.coll = null);
     const m = o.inst && o.inst.model;
-    if (!m) return null;
-    const C = (o.coll = collisionOf(m));
+    if (o.coll !== undefined && o.collModel === m) return o.coll;
+    if (!m || !o.holder) return null;
+    const C = (o.coll = collisionBoxOf(m) || collisionOf(m)),
+      k = (o.type._cbm ??= o.type.num('Collision_Box_Modifier', 1)),
+      bx = o.inst.box,
+      sc = o.holder.scale.x;
+    o.collModel = m;
+    o.collT = undefined;
+    o.collBall = k > 1 && bx && !bx.isEmpty() ? Math.max(bx.max.x - bx.min.x, bx.max.y - bx.min.y, bx.max.z - bx.min.z) * 0.5 * sc * k : 0;
     if (C) {
       const B = C.box;
-      o.holder.updateMatrixWorld(true);
-      o.collInv = new THREE.Matrix4().copy(o.inst.root.matrixWorld).invert();
-      o.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4])) * o.holder.scale.x;
-    }
+      o.collLo = B[2] * sc;
+      o.collHi = B[5] * sc;
+      o.collR = Math.max(Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4])) * sc, o.collBall);
+      if (o.structure) {
+        o.holder.updateMatrixWorld(true);
+        o.collInv = new THREE.Matrix4().copy(o.inst.root.matrixWorld).invert();
+      }
+    } else o.collR = o.collBall;
     return C;
   }
 
   meshStrike(o, x0, y0, z0, x1, y1, z1) {
+    if (!o.structure && o.collT !== this.time) {
+      const h = o.holder,
+        r = o.inst.root;
+      o.collT = this.time;
+      o.collInv ??= new THREE.Matrix4();
+      o.collInv.compose(h.position, h.quaternion, h.scale);
+      if (r !== h) o.collInv.multiply(_msM.compose(r.position, r.quaternion, r.scale));
+      o.collInv.invert();
+    }
     const a = _ms0.set(x0, y0, z0).applyMatrix4(o.collInv),
       b = _ms1.set(x1, y1, z1).applyMatrix4(o.collInv);
     return meshHit(o.coll, a.x, a.y, a.z, b.x - a.x, b.y - a.y, b.z - a.z);
@@ -7253,7 +7313,11 @@ export class LandWorld {
     let k = 0;
     if (this.shots.length) {
       let m = 0;
-      for (const u of this.units) if (!u.dead) m = Math.max(m, u.hitRadius, u.collR || 0);
+      for (const u of this.units)
+        if (!u.dead) {
+          this.meshOf(u);
+          m = Math.max(m, u.hitRadius, u.collR || 0);
+        }
       this.hitMax = m;
     }
     for (const s of this.shots) {

@@ -86,7 +86,7 @@ function newFleet(fleets, planet, owner) {
 export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new Set()) {
   const kind = forceKind(type),
     open = !p.destroyed && p.type.bool('Planet_Surface_Accessible', true);
-  if (seen.has(type) || (!open && ['skip', 'station', 'ground structure'].includes(kind))) return undefined;
+  if (seen.has(type) || (!open && ['skip', 'ground structure'].includes(kind)) || (p.destroyed && kind === 'station')) return undefined;
   seen.add(type);
   let record;
   if (kind === 'station') {

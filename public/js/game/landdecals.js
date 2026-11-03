@@ -188,7 +188,7 @@ export class Decals {
           const g = tabs.surface.get(name.toUpperCase());
           if (!g || ![...g.values()].some(e => e.track)) continue;
           const bones = (g.bones || []).map(b => u.inst.bone(b)).filter(Boolean);
-          u.tracks = { g, bones, gone: 0, S: { odo: 0, rate: 10 }, scale: u.holder.scale.x };
+          u.tracks = { g, bones, gone: 0, S: { odo: 0, rate: 10 } };
           this.trails.push(u.tracks.S);
           break;
         }
@@ -208,24 +208,32 @@ export class Decals {
         continue;
       }
       M.S.rate = def.rate;
-      if (M.gone < def.segment) continue;
+      const len = def.segment;
+      if (M.gone < len) continue;
       const tex =
           Math.max(
             0,
             STRIPS.findIndex(n => n.toUpperCase() === def.texture.toUpperCase())
           ) + 1,
-        len = M.gone;
-      M.gone = 0;
-      const lay = (x, y) =>
-        this.put(
-          x - (Math.cos(u.heading) * len) / 2,
-          y - (Math.sin(u.heading) * len) / 2,
-          len * 1.04,
-          def.width * M.scale,
-          u.heading,
-          { uv: [0, 0, 1, 1], strength: def.opacity, bump: def.bump, tex },
-          { trail: M.S, at: M.S.odo, from: def.from, to: def.to }
-        );
+        count = Math.min(8, Math.floor(M.gone / len)),
+        rest = M.gone - Math.floor(M.gone / len) * len,
+        cx = Math.cos(u.heading),
+        cy = Math.sin(u.heading);
+      M.gone = rest;
+      const lay = (x, y) => {
+        for (let k = 0; k < count; k++) {
+          const back = rest + len * (k + 0.5);
+          this.put(
+            x - cx * back,
+            y - cy * back,
+            len * 1.04,
+            def.width * 2,
+            u.heading,
+            { uv: [0, 0, 1, 1], strength: def.opacity, bump: def.bump, tex },
+            { trail: M.S, at: M.S.odo - rest - len * k, from: def.from, to: def.to }
+          );
+        }
+      };
       if (M.bones.length)
         for (const b of M.bones) {
           b.getWorldPosition(_v);

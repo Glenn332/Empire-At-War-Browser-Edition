@@ -597,7 +597,10 @@ export class GalacticMind extends Reason {
     }
     if (name === 'VARIABLE_SELF.HASUNIT') {
       if (!types.length) throw new UnknownPerception(variable + ' requires Parameter_Type');
-      const objects = this.ai.forces().objects.filter(u => key(u.owner) === key(c.player.faction) && typeSet.has(key(u.type.name))).length;
+      const held = t =>
+        +typeSet.has(key(t.name)) + [...t.list('Company_Units'), ...t.list('Squadron_Units')].filter(n => typeSet.has(key(n))).length;
+      let objects = 0;
+      for (const u of this.ai.forces().objects) if (key(u.owner) === key(c.player.faction)) objects += held(u.type);
       const queued =
         binding.complete > 0
           ? 0
@@ -606,7 +609,7 @@ export class GalacticMind extends Reason {
                 n +
                 Object.values(p.production || {})
                   .flat()
-                  .filter(q => key(q.owner) === key(c.player.faction) && types.includes(key(q.type.name))).length,
+                  .reduce((m, q) => m + (key(q.owner) === key(c.player.faction) ? held(q.type) : 0), 0),
               0
             );
       return +(objects + queued >= +binding.count);
@@ -636,7 +639,7 @@ export class GalacticMind extends Reason {
         MAXGROUNDBASELEVEL: Math.min(5, structureSlots) / db.constants.num('MaximumGroundbaseLevel', 5),
         MAXSTARBASELEVELUNNORMALIZED: p.type.num('Max_Space_Base', 5),
         MAXSTARBASELEVEL: p.type.num('Max_Space_Base', 5) / db.constants.num('MaximumStarbaseLevel', 5),
-        OPENSTRUCTURESLOTSUNNORMALIZED: ground > 0 ? structureSlots - p.groundStructures.filter(u => !u.dead).length : 0,
+        OPENSTRUCTURESLOTSUNNORMALIZED: structureSlots - p.groundStructures.filter(u => !u.dead).length,
         MAXSTRUCTURESLOTSUNNORMALIZED: structureSlots,
         MAXSTRUCTURESLOTS: structureSlots / db.constants.num('MaximumSpecialStructures', 5),
         OPENGROUNDCOMPANYSLOTS: db.constants.num('Max_Ground_Forces_On_Planet', 10) - p.garrison.length
