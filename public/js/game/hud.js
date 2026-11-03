@@ -297,6 +297,8 @@ export class CommandBar {
     this.queueSig = '';
     this.sideSig = '';
     this.reinSig = '';
+    this.buildScroll = 0;
+    this.buildKey = null;
     this.heroBars = {};
     for (const side of ['evil', 'good']) {
       const old = document.getElementById('hero_' + side);
@@ -390,6 +392,56 @@ export class CommandBar {
     node.style.width = r.w + pad * 2 + 'px';
     node.style.height = r.h + pad * 2 + 'px';
     return node;
+  }
+
+  scrollBar(names, onScroll) {
+    const rs = names.map(n => this.rect(n)).filter(Boolean);
+    if (!rs.length) return null;
+    const x0 = Math.min(...rs.map(r => r.x)),
+      x1 = Math.max(...rs.map(r => r.x + r.w)),
+      y1 = Math.max(...rs.map(r => r.y + r.h));
+    const track = el('hscroll', this.root),
+      thumb = el('hscroll-thumb', track);
+    track.style.cssText = `left:${x0}px;bottom:${y1 - 1}px;width:${x1 - x0}px;height:8px;display:none`;
+    const bar = { track, total: 0, visible: 0, offset: 0 };
+    const to = offset => {
+      const o = Math.max(0, Math.min(bar.total - bar.visible, Math.round(offset)));
+      if (o === bar.offset) return;
+      bar.offset = o;
+      onScroll(o);
+    };
+    track.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const box = track.getBoundingClientRect(),
+        at = x => ((x - box.left) / box.width) * bar.total - bar.visible / 2;
+      to(at(e.clientX));
+      const move = ev => to(at(ev.clientX)),
+        up = () => {
+          removeEventListener('pointermove', move);
+          removeEventListener('pointerup', up);
+        };
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+    });
+    bar.set = (total, visible, offset) => {
+      Object.assign(bar, { total, visible, offset });
+      track.style.display = total > visible ? '' : 'none';
+      thumb.style.left = (offset / Math.max(1, total)) * 100 + '%';
+      thumb.style.width = (visible / Math.max(1, total)) * 100 + '%';
+    };
+    bar.wheel = node =>
+      node.addEventListener(
+        'wheel',
+        e => {
+          if (bar.total <= bar.visible) return;
+          e.preventDefault();
+          e.stopPropagation();
+          to(bar.offset + Math.sign(e.deltaY || e.deltaX));
+        },
+        { passive: false }
+      );
+    return bar;
   }
 
   thin(node, name) {
@@ -798,6 +850,14 @@ export class CommandBar {
       s.onmouseleave = () => this.hideInfo();
       this.slots.push({ el: s, hp, sh, item: null });
     }
+    this.buildBar = this.scrollBar(
+      this.slots.map((_, i) => 's_select_' + String(i).padStart(2, '0')),
+      o => {
+        this.buildScroll = o;
+        this.ui.hudTimer = 0;
+      }
+    );
+    if (this.buildBar) for (const s of this.slots) this.buildBar.wheel(s.el);
     this.abilityLayer = el('hlayer', root);
     this.info = document.getElementById('encyc');
     this.info.className = 'hidden';
@@ -854,6 +914,7 @@ export class CommandBar {
     );
     const items = new Array(24).fill(null),
       columns = [];
+    this.buildBar?.set(0, 12, 0);
     if (units.length) {
       const groups = new Map();
       for (const s of units) {
@@ -901,9 +962,16 @@ export class CommandBar {
         }
         return true;
       });
-      opts.slice(0, 24).forEach((t, i) => {
+      const cols = Math.ceil(opts.length / 2);
+      if (this.buildKey !== b) {
+        this.buildKey = b;
+        this.buildScroll = 0;
+      }
+      this.buildScroll = Math.max(0, Math.min(cols - 12, this.buildScroll));
+      opts.slice(this.buildScroll * 2, this.buildScroll * 2 + 24).forEach((t, i) => {
         items[i] = { build: t, builder: b };
       });
+      this.buildBar?.set(cols, 12, this.buildScroll);
     }
     return { mode: 'build', items, columns };
   }

@@ -242,18 +242,16 @@ export class GalacticBar extends CommandBar {
       const cost = (b._cost = document.createElement('span'));
       this.positionCount(cost, name, true);
       b.appendChild(cost);
-      b.addEventListener(
-        'wheel',
-        e => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.page = Math.max(0, Math.min(Math.ceil(this.optionCount / this.slotCount) - 1, this.page + Math.sign(e.deltaY)));
-          this.refresh();
-        },
-        { passive: false }
-      );
       this.slots.push(b);
     }
+    this.buildBar = this.scrollBar(
+      this.slots.map((_, i) => 'b_Create_' + String(i).padStart(2, '0')),
+      o => {
+        this.page = o;
+        this.refresh();
+      }
+    );
+    if (this.buildBar) for (const b of this.slots) this.buildBar.wheel(b);
     this.queueSlots = [];
     for (let i = 0; i < 10; i++) {
       const name = 'queue' + String(i).padStart(2, '0'),
@@ -391,18 +389,18 @@ export class GalacticBar extends CommandBar {
   }
 
   layoutSlots(options) {
-    const out = new Array(this.slotCount).fill(null);
-    let odd = 1,
-      even = 0;
-    for (const t of options) {
-      if (t.num('GUI_Row', -1) === 0) {
-        if (odd < this.slotCount) out[odd] = t;
-        odd += 2;
-      } else {
-        if (even < this.slotCount) out[even] = t;
-        even += 2;
-      }
+    const out = new Array(this.slotCount).fill(null),
+      top = options.filter(t => t.num('GUI_Row', -1) === 0),
+      bottom = options.filter(t => t.num('GUI_Row', -1) !== 0),
+      visible = Math.ceil(this.slotCount / 2),
+      total = Math.max(top.length, bottom.length);
+    this.page = Math.max(0, Math.min(total - visible, this.page));
+    for (let c = 0; c < visible; c++) {
+      if (c * 2 < this.slotCount) out[c * 2] = bottom[c + this.page] || null;
+      if (c * 2 + 1 < this.slotCount) out[c * 2 + 1] = top[c + this.page] || null;
     }
+    this.buildBar?.set(total, visible, this.page);
+    this.buildBar?.track.classList.toggle('space', this.tab === 'space');
     return out;
   }
 
@@ -509,7 +507,6 @@ export class GalacticBar extends CommandBar {
     const context = p ? productionContext(g, p, game.me) : [];
     const queueRoom = (p?.production?.[this.tab]?.length || 0) < db.constants.num('Max_Build_Queue', 5);
     this.optionCount = options.length;
-    this.page = 0;
     const layout = this.layoutSlots(options),
       disabled = n => !!player?.disabledTypes?.some(d => String(d).toUpperCase() === String(n).toUpperCase());
     this.slots.forEach((b, i) => {

@@ -1158,6 +1158,29 @@ body:not(.original-hud) .heroframe {
   z-index: 6;
   user-select: none;
 }
+.hscroll {
+  position: absolute;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(240, 200, 90, 0.9);
+  border-radius: 3px;
+  box-sizing: border-box;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.hscroll.space {
+  border-color: rgba(90, 160, 255, 0.9);
+}
+.hscroll.space .hscroll-thumb {
+  background: rgba(70, 150, 255, 1);
+}
+.hscroll-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 215, 90, 1);
+  border-radius: 2px;
+}
 #hero_evil {
   left: 0;
   transform-origin: 0 0;
