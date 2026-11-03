@@ -62,7 +62,7 @@ function run() {
     } catch (e) {
       pts = null;
     }
-    postMessage({ rid: m.rid, id, pts, partial: !!(pts && pts.partial), time: core.world.time });
+    postMessage({ rid: m.rid, id, pts, time: core.world.time });
     if (waiting.size) {
       scheduled = true;
       setTimeout(run, 0);
@@ -89,7 +89,7 @@ function batch(m) {
       pts = null;
     }
     left -= core.statesUsed;
-    answers.push({ rid: f.rid, id: f.ship.id, pts, partial: !!(pts && pts.partial) });
+    answers.push({ rid: f.rid, id: f.ship.id, pts });
   }
   core.expBudget = Infinity;
   postMessage({ kind: 'batch', bid: m.bid, answers });

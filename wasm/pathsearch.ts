@@ -289,6 +289,7 @@ let v: f64 = 0,
   arcT: f64 = 0;
 let slow: f64 = 0,
   near: f64 = 0,
+  nearOff: f64 = 0,
   waitDist: f64 = 0,
   waitCost: f64 = 0,
   maxExp: f64 = 0,
@@ -340,18 +341,17 @@ function heapPop(): i32 {
 function add(n: i32, op: i32, x: f64, y: f64, h: f64, dt: f64, s: f64, mult: f64): void {
   if (<f64>pushed > maxExp || dt < 0) return;
   let cost = dt * mult;
+  const sx = f(NX, n),
+    sy = f(NY, n),
+    from = Math.sqrt((sx - ux) * (sx - ux) + (sy - uy) * (sy - uy));
   if (x < wminx || x > wmaxx || y < wminy || y > wmaxy) {
-    const dx = x - ux,
-      dy = y - uy;
-    if (mapped && Math.sqrt(dx * dx + dy * dy) > near) return;
+    if (mapped && (op == 4 || from > nearOff)) return;
     cost *= offMap;
   }
   const t0 = f(NT, n),
-    bits = sweep(f(NX, n), f(NY, n), x, y, t0, t0 + dt);
+    bits = sweep(sx, sy, x, y, t0, t0 + dt);
   if (bits & hardMask) {
-    const dx = x - ux,
-      dy = y - uy;
-    if (op == 4 || Math.sqrt(dx * dx + dy * dy) > near) {
+    if (op == 4 || from > near) {
       if (op == 4) op4hard++;
       return;
     }
@@ -446,6 +446,7 @@ export function search(): i32 {
     turn1 = f(P, 48),
     FRAME = f(P, 49),
     dist0 = f(P, 50);
+  nearOff = f(P, 51);
   const gcx = <i32>Math.floor((gx - ux) / cell),
     gcy = <i32>Math.floor((gy - uy) / cell);
   gen++;

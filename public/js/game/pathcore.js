@@ -98,9 +98,9 @@ export class PathCore {
         );
       return (o.pathExt = { ax: R, sd: R, r: R });
     }
-    const long = cx > 0 ? cx * s : b ? Math.max(Math.abs(b.max.y), Math.abs(b.min.y)) * s : o.halfLen || o.radius || 40;
-    const wide = cy > 0 ? cy * s : b ? Math.max(Math.abs(b.max.x), Math.abs(b.min.x)) * s : o.halfWid || o.radius || 40;
-    return (o.pathExt = { ax: Math.max(4, long), sd: Math.max(4, wide), r: Math.max(long, wide) });
+    const long = cx > 0 ? cx * s : b ? Math.abs(b.min.y) * s : 0;
+    const wide = cy > 0 ? cy * s : b ? Math.abs(b.max.x) * s : 0;
+    return (o.pathExt = { ax: long, sd: wide, r: Math.max(long, wide) });
   }
 
   sees(u, o) {
@@ -287,7 +287,7 @@ export class PathCore {
       filtered = false;
     for (let i = 0; i < list.length; i++) {
       const tr = list[i];
-      if (!filtered && (tr.o === u || (tr.layer & u.layer) !== u.layer || (this.mates && this.mates.has(tr.o)))) continue;
+      if (!filtered && (tr.o === u || (tr.layer & u.layer) !== u.layer)) continue;
       if (tr.maxx < minx || tr.minx > maxx || tr.maxy < miny || tr.miny > maxy) continue;
       this.at(tr, now + t0, p0);
       this.at(tr, now + t1, p1);
@@ -400,17 +400,8 @@ export class PathCore {
     const q = this.ext(u),
       v = Math.max(1, u.maxSpeed || 40),
       d = len(gx - u.x, gy - u.y);
-    const mates = new Set(),
-      p0 = {};
-    for (const tr of this.tracking()) {
-      if (tr.o === u || (tr.layer & u.layer) !== u.layer) continue;
-      this.at(tr, this.world.time, p0);
-      if (touch(q, Math.cos(u.heading), Math.sin(u.heading), u.x, u.y, u.x, u.y, tr.ext, p0.dx, p0.dy, p0.x, p0.y, p0.x, p0.y))
-        mates.add(tr.o);
-    }
-    this.mates = mates;
     this.candFor = u;
-    this.cand = this.tracking().filter(tr => tr.o !== u && (tr.layer & u.layer) === u.layer && !mates.has(tr.o));
+    this.cand = this.tracking().filter(tr => tr.o !== u && (tr.layer & u.layer) === u.layer);
     this.index(this.cand, Math.min(this.K.horizon, Math.max(30, (4 * d) / v)));
     this.sStill = this.still
       .filter(e => e.o !== u && this.sees(u, e.o))
@@ -434,9 +425,7 @@ export class PathCore {
         speed = v,
         cutoff = 0,
         wMult = 1,
-        progress = 0,
-        partial = null,
-        partialBest = Infinity;
+        progress = 0;
       const until = performance.now() + this.searchMs;
       this.statesUsed = 0;
       for (let k = 0; k < K.tries; k++) {
@@ -464,20 +453,11 @@ export class PathCore {
         });
         this.statesUsed += this.dbg.pushed || 0;
         if (pts) return pts;
-        if (!partial || this.dbg.best < partialBest) {
-          partial = this.partial;
-          partialBest = this.dbg.best;
-        }
         progress = Math.max(progress, d - this.dbg.best);
         if (performance.now() > until) break;
       }
-      if (partial && partial.length) {
-        partial.partial = true;
-        return partial;
-      }
-      return null;
+      return [];
     } finally {
-      this.mates = null;
       this.cand = null;
       this.candFor = null;
       this.wl = null;
@@ -631,7 +611,8 @@ export class PathCore {
       gx <= w.max.x &&
       gy >= w.min.y &&
       gy <= w.max.y;
-    const startS = u.speed >= v * 0.95 ? v : Math.min(u.speed, v);
+    const startS = u.speed >= v * 0.95 ? v : Math.min(u.speed, v),
+      nearOff = near + (v - startS) ** 2 / (2 * dec) + 100;
     const turns = [],
       run = Math.max(q.r, (v * v) / (2 * dec));
     for (const side of [1, -1])
@@ -698,7 +679,8 @@ export class PathCore {
       turns[0] || 0,
       turns[1] || 0,
       FRAME,
-      dist0
+      dist0,
+      nearOff
     ]);
     const found = ex.search();
     const R = new Float64Array(mem.buffer, L.P, 80);
@@ -718,12 +700,7 @@ export class PathCore {
         out.push({ x: NX[n], y: NY[n], speed: NS[n], t: now + NT[n], h: NH[n], turn: NOP[n] === 8 || NOP[n] === 9 });
       return out.reverse();
     };
-    const bestNode = R[63];
-    if (found < 0) {
-      this.partial = bestNode > 0 ? way(bestNode) : null;
-      return null;
-    }
-    return way(found);
+    return found < 0 ? null : way(found);
   }
 
   room(cap) {
@@ -837,8 +814,8 @@ export class PathCore {
       return top;
     };
     const dbg = (this.dbg = { pops: 0, op4: 0, op4hard: 0, best: Infinity, N: 0, D: 0 });
-    let bestNode = -1;
-    const startS = u.speed >= v * 0.95 ? v : Math.min(u.speed, v);
+    const startS = u.speed >= v * 0.95 ? v : Math.min(u.speed, v),
+      nearOff = near + (v - startS) ** 2 / (2 * dec) + 100;
     NX[0] = ux;
     NY[0] = uy;
     NH[0] = u.heading;
@@ -872,13 +849,14 @@ export class PathCore {
     const add = (n, op, x, y, h, dt, s, mult) => {
       if (pushed > maxExp || dt < 0) return;
       let cost = dt * mult;
+      const from = len(NX[n] - ux, NY[n] - uy);
       if (x < minX || x > maxX || y < minY || y > maxY) {
-        if (mapped && len(x - ux, y - uy) > near) return;
+        if (mapped && (op === 4 || from > nearOff)) return;
         cost *= offMap;
       }
       const t0 = NT[n],
         bits = this.sweep(u, q, NX[n], NY[n], x, y, t0, t0 + dt);
-      if (bits & hardMask && (op === 4 || len(x - ux, y - uy) > near)) {
+      if (bits & hardMask && (op === 4 || from > near)) {
         if (op === 4) dbg.op4hard++;
         return;
       }
@@ -929,10 +907,7 @@ export class PathCore {
         ns = NS[n],
         nop = NOP[n];
       const dGoal = len(gx - nx, gy - ny);
-      if (dGoal < dbg.best) {
-        dbg.best = dGoal;
-        bestNode = n;
-      }
+      if (dGoal < dbg.best) dbg.best = dGoal;
       if (nop === 4 && Math.floor((nx - ux) / cell) === gcx && Math.floor((ny - uy) / cell) === gcy) {
         found = n;
         break;
@@ -995,10 +970,6 @@ export class PathCore {
         out.push({ x: NX[n], y: NY[n], speed: NS[n], t: now + NT[n], h: NH[n], turn: NOP[n] === 8 || NOP[n] === 9 });
       return out.reverse();
     };
-    if (found < 0) {
-      this.partial = bestNode > 0 ? way(bestNode) : null;
-      return null;
-    }
-    return way(found);
+    return found < 0 ? null : way(found);
   }
 }

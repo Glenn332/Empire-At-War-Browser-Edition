@@ -26,6 +26,7 @@ const WORKER_MS = 60;
 const STEP_SEARCHES = 6;
 const BATCH_DELAY = 20;
 const BATCH_MAX = 8;
+const RETRY = 2;
 
 export class Pathfinder extends PathCore {
   constructor(world) {
@@ -207,8 +208,8 @@ export class Pathfinder extends PathCore {
     const u = a.u;
     if (u.dead) return;
     const t = this.world.time,
-      pts = m.pts;
-    if (pts && m.partial) pts.partial = true;
+      pts = m.pts,
+      failed = !!pts && !pts.length;
     const r = (u.route = {
       gx: a.gx,
       gy: a.gy,
@@ -216,8 +217,8 @@ export class Pathfinder extends PathCore {
       pts,
       i: 0,
       wp: { x: 0, y: 0, via: true, speed: undefined },
-      check: t + 1 + (u.id % 7) * 0.05,
-      again: t + 0.5
+      check: t + (failed ? RETRY : 1 + (u.id % 7) * 0.05),
+      again: t + (failed ? RETRY : 0.5)
     });
     if (pts) while (r.i < pts.length - 1 && !pts[r.i].turn && pts[r.i].t <= t) r.i++;
   }
@@ -375,7 +376,7 @@ export class Pathfinder extends PathCore {
     }
     const moved = r && (r.gx - goal.x) ** 2 + (r.gy - goal.y) ** 2 > 150 * 150;
     if (!r || r.ver !== this.version || (moved && t >= r.again) || t >= r.check) {
-      const keep = r && r.ver === this.version && !moved && this.stillGood(u, r, goal);
+      const keep = r && r.ver === this.version && !moved && !(r.pts && !r.pts.length) && this.stillGood(u, r, goal);
       if (this.stepAt !== t) {
         this.stepAt = t;
         this.spent = 0;
@@ -402,23 +403,27 @@ export class Pathfinder extends PathCore {
           };
           this.spent += this.fixed ? 1 : performance.now() - t0;
         }
-        r.check = t + 1 + (u.id % 7) * 0.05;
-        r.again = t + 0.5;
+        const failed = r.pts && !r.pts.length;
+        r.check = t + (failed ? RETRY : 1 + (u.id % 7) * 0.05);
+        r.again = t + (failed ? RETRY : 0.5);
       }
     }
     if (!r.pts) return null;
+    if (!r.pts.length) {
+      r.wp.x = u.x + Math.cos(u.heading) * 1000;
+      r.wp.y = u.y + Math.sin(u.heading) * 1000;
+      r.wp.speed = 0;
+      return r.wp;
+    }
     const near = Math.max(60, Math.min(u.radius * 0.7, 250));
-    const last = r.pts.partial ? r.pts.length : r.pts.length - 1;
+    const last = r.pts.length - 1;
     for (;;) {
       if (r.i >= last) break;
       const p = r.pts[r.i];
       if (p.turn ? Math.abs(wrap(u.heading - p.h)) < 0.09 : (u.x - p.x) ** 2 + (u.y - p.y) ** 2 < near * near) r.i++;
       else break;
     }
-    if (r.i >= last) {
-      if (r.pts.partial) r.ver = -1;
-      return null;
-    }
+    if (r.i >= last) return null;
     const p = r.pts[r.i];
     if (p.turn) {
       r.wp.x = u.x + Math.cos(p.h) * 1000;

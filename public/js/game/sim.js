@@ -58,6 +58,7 @@ const UNIT_CELL = 1024,
 const HIT_CELL = 256;
 const VIS_CELL = 512;
 const LOOP_OVER = (170 * Math.PI) / 180,
+  LOOP_KEEP = Math.PI / 2,
   DOG_CELL = 400,
   DOG_NEAR = 80000,
   PAIR_TIME = 10,
@@ -496,6 +497,8 @@ export class Unit {
     this.turnW = undefined;
     this.lastH = undefined;
     this.coll = undefined;
+    this.lookBox = undefined;
+    this.cull = undefined;
     this.hpColl = undefined;
     this.pathOff = undefined;
     this.visMask = 0;
@@ -630,6 +633,10 @@ export class Unit {
         this.hitL = (b.max.x + b.min.x) * 0.5 * s;
       }
       this.coll = collisionOf(data);
+      {
+        const cb = data && data.meshes ? data.meshes.find(m => m.bbox && /^COLLISIONBOX$/i.test(m.name)) : null;
+        this.lookBox = cb ? Float64Array.from(cb.bbox) : null;
+      }
       if (this.coll) {
         const B = this.coll.box;
         this.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4]), Math.max(-B[2], B[5])) * this.scale;
@@ -2201,7 +2208,10 @@ export class World {
     const grid = this.obstacleGrid || (this.obstacleGrid = new Map());
     for (const l of grid.values()) l.length = 0;
     for (const o of this.obstacles) {
-      const r = Math.max(o.radius || 0, o.hitRadius || 0, o.collR || 0) + PROBE_PAD;
+      const c = this.cullOf(o),
+        r =
+          Math.max(o.radius || 0, o.hitRadius || 0, o.collR || 0, c ? Math.hypot(c[0] - o.x, c[1] - o.y) + Math.hypot(c[3], c[4]) : 0) +
+          PROBE_PAD;
       if (r <= PROBE_PAD) continue;
       const x0 = Math.floor((o.x - r) / PROBE_CELL),
         x1 = Math.floor((o.x + r) / PROBE_CELL),
@@ -4132,7 +4142,99 @@ export class World {
     }
   }
 
-  meshStep(o, x0, y0, z0, x1, y1, z1) {
+  cullOf(o) {
+    const m = o.model;
+    if (!m || !m.box) return null;
+    const b = m.box,
+      s = o.scale || 1,
+      a = (o.heading || 0) + Math.PI / 2,
+      ca = Math.cos(a),
+      sa = Math.sin(a),
+      lx = (b.min.x + b.max.x) * 0.5 * s,
+      ly = (b.min.y + b.max.y) * 0.5 * s,
+      hx = (b.max.x - b.min.x) * 0.5 * s,
+      hy = (b.max.y - b.min.y) * 0.5 * s;
+    const c = (o.cull ||= new Float64Array(6));
+    c[0] = o.x + ca * lx - sa * ly;
+    c[1] = o.y + sa * lx + ca * ly;
+    c[2] = o.z + (b.min.z + b.max.z) * 0.5 * s;
+    c[3] = Math.abs(ca) * hx + Math.abs(sa) * hy;
+    c[4] = Math.abs(sa) * hx + Math.abs(ca) * hy;
+    c[5] = (b.max.z - b.min.z) * 0.5 * s;
+    return c;
+  }
+
+  lookStep(o, x0, y0, z0, x1, y1, z1) {
+    const B = o.lookBox;
+    if (!B) return o.coll ? this.meshStep(o, x0, y0, z0, x1, y1, z1, true) : -1;
+    this.toModel(o, x0, y0, z0, _ms0);
+    this.toModel(o, x1, y1, z1, _ms1);
+    const ox = _ms0.x,
+      oy = _ms0.y,
+      oz = _ms0.z;
+    if (ox >= B[0] && ox <= B[3] && oy >= B[1] && oy <= B[4] && oz >= B[2] && oz <= B[5]) return -2;
+    const dx = _ms1.x - ox,
+      dy = _ms1.y - oy,
+      dz = _ms1.z - oz;
+    let t0 = 0,
+      t1 = 1;
+    for (let k = 0; k < 3; k++) {
+      const p = k === 0 ? ox : k === 1 ? oy : oz,
+        d = k === 0 ? dx : k === 1 ? dy : dz;
+      if (Math.abs(d) < 1e-12) {
+        if (p < B[k] || p > B[k + 3]) return -1;
+        continue;
+      }
+      let a = (B[k] - p) / d,
+        c = (B[k + 3] - p) / d;
+      if (a > c) {
+        const w = a;
+        a = c;
+        c = w;
+      }
+      if (a > t0) t0 = a;
+      if (c < t1) t1 = c;
+      if (t0 > t1) return -1;
+    }
+    return t0 < 1 ? t0 : -1;
+  }
+
+  toModel(o, x, y, z, out) {
+    const k = 1 / (o.scale || 1),
+      a = -((o.heading || 0) + Math.PI / 2),
+      c = Math.cos(a),
+      s = Math.sin(a),
+      P = o.pitch || 0,
+      R = o.roll || 0;
+    x -= o.x;
+    y -= o.y;
+    z -= o.z;
+    let X = x * c - y * s,
+      Y = x * s + y * c,
+      Z = z;
+    if (P) {
+      const cp = Math.cos(P),
+        sp = Math.sin(P),
+        y2 = Y * cp - Z * sp,
+        z2 = Y * sp + Z * cp;
+      Y = y2;
+      Z = z2;
+    }
+    if (R) {
+      const cr = Math.cos(-R),
+        sr = Math.sin(-R),
+        x2 = X * cr + Z * sr,
+        z2 = -X * sr + Z * cr;
+      X = x2;
+      Z = z2;
+    }
+    out.x = X * k;
+    out.y = Y * k;
+    out.z = Z * k;
+    return out;
+  }
+
+  meshStep(o, x0, y0, z0, x1, y1, z1, bare = false) {
     const k = 1 / (o.scale || 1),
       a = -((o.heading || 0) + Math.PI / 2),
       c = Math.cos(a),
@@ -4171,7 +4273,7 @@ export class World {
       B = to(x1, y1, z1, _ms1);
     let best = o.coll ? meshHit(o.coll, A.x, A.y, A.z, B.x - A.x, B.y - A.y, B.z - A.z) : -1;
     this.hitPart = null;
-    if (o.hpColl)
+    if (o.hpColl && !bare)
       for (const part of o.hpColl) {
         if (!part.hp.alive && part.hp.destroyable) continue;
         const e = part.inv,
@@ -4512,14 +4614,8 @@ export class World {
     tx = clamp(tx, this.min.x, this.max.x);
     ty = clamp(ty, this.min.y, this.max.y);
     const err = wrapAngle(Math.atan2(ty - u.y, tx - u.x) - u.heading);
-    if (
-      !st.loop &&
-      over &&
-      F.lift > 0 &&
-      Math.abs(err) > LOOP_OVER &&
-      u.speed > u.minSpeed * 0.5 &&
-      (tx - u.x) ** 2 + (ty - u.y) ** 2 > 400
-    ) {
+    if (st.loop && Math.abs(err) < LOOP_KEEP) st.loop = undefined;
+    if (!st.loop && over && F.lift > 0 && Math.abs(err) > LOOP_OVER) {
       st.loop = Math.atan2(tz - u.z, Math.hypot(tx - u.x, ty - u.y)) - (u.pitch || 0) > 0 ? 1 : -1;
     }
     if (st.loop) {
@@ -4710,9 +4806,9 @@ export class World {
       gx = away.x;
       gy = away.y;
       gz = away.z;
-      want = top;
+      if (away.hit && low > 0) want = low;
     }
-    this.fly(u, gx, gy, gz, want, dt, k, !away && !(mode === 'idle' && !tgt));
+    this.fly(u, gx, gy, gz, want, dt, k, !(mode === 'idle' && !tgt));
     u.syncObj();
 
     const w = u.weapon;
@@ -4806,49 +4902,40 @@ export class World {
       ex = Math.cos(u.heading) * flat,
       ey = Math.sin(u.heading) * flat,
       ez = Math.sin(p);
+    const v = u.speed * (2 / Math.max(0.05, u.turnRate)) * (leader ? 2 : 1),
+      G = this.obstacleGrid;
+    let hit = null;
+    if (v >= 1 && G) {
+      const near = G.get(Math.floor(u.x / PROBE_CELL) * 65536 + Math.floor(u.y / PROBE_CELL));
+      if (near) {
+        const d = u.speed / LOGIC_FPS,
+          x1 = u.x + ex * v,
+          y1 = u.y + ey * v,
+          z1 = u.z + ez * v;
+        for (const o of near) {
+          const c = o.cull;
+          if (!c || Math.abs(u.x - c[0]) > c[3] + d || Math.abs(u.y - c[1]) > c[4] + d || Math.abs(u.z - c[2]) > c[5] + d) continue;
+          const t = this.lookStep(o, u.x, u.y, u.z, x1, y1, z1);
+          if (t === -2) break;
+          if (t >= 0) {
+            hit = o;
+            break;
+          }
+        }
+      }
+    }
+    if (hit) {
+      st.avoid = 15 / LOGIC_FPS;
+      const ax = u.x - hit.x,
+        ay = u.y - hit.y,
+        az = u.z - hit.z;
+      return ax || ay || az ? { x: u.x + ax, y: u.y + ay, z: u.z + az, hit: true } : { x: u.x + 1, y: u.y, z: u.z, hit: true };
+    }
     if (st.avoid > 0) {
       st.avoid -= dt;
       const k = (u.speed * 10) / LOGIC_FPS;
-      return { x: u.x + ex * k, y: u.y + ey * k, z: u.z + ez * k };
+      return { x: u.x + ex * k, y: u.y + ey * k, z: u.z + ez * k, hit: false };
     }
-    const v = u.speed * (2 / Math.max(0.05, u.turnRate)) * (leader ? 2 : 1);
-    if (v < 1) return null;
-    const x1 = u.x + ex * v,
-      y1 = u.y + ey * v,
-      z1 = u.z + ez * v;
-    const G = this.obstacleGrid,
-      k0 = Math.floor(u.x / PROBE_CELL) * 65536 + Math.floor(u.y / PROBE_CELL),
-      k1 = Math.floor(x1 / PROBE_CELL) * 65536 + Math.floor(y1 / PROBE_CELL),
-      near = v > PROBE_CELL / 2 ? this.obstacles : G ? (k0 === k1 ? G.get(k0) : [...(G.get(k0) || []), ...(G.get(k1) || [])]) : null;
-    if (!near) return null;
-    let hit = null,
-      best = 2;
-    for (const o of near) {
-      const R = Math.max(o.collR || 0, o.hitRadius || 0);
-      if (!R || !segNear(u.x, u.y, u.z, x1, y1, z1, o.x, o.y, o.z, R)) continue;
-      let t;
-      if (o.coll) t = this.meshStep(o, u.x, u.y, u.z, x1, y1, z1);
-      else {
-        const r = o.hitRadius || 0,
-          fx = u.x - o.x,
-          fy = u.y - o.y,
-          fz = u.z - o.z,
-          c = fx * fx + fy * fy + fz * fz - r * r;
-        if (c <= 0) continue;
-        const b = (fx * ex + fy * ey + fz * ez) * v,
-          q = b * b - v * v * c;
-        t = q < 0 || b > 0 ? -1 : (-b - Math.sqrt(q)) / (v * v);
-      }
-      if (t >= 0 && t < best) {
-        best = t;
-        hit = o;
-      }
-    }
-    if (!hit) return null;
-    st.avoid = 15 / LOGIC_FPS;
-    const ax = u.x - hit.x,
-      ay = u.y - hit.y,
-      az = u.z - hit.z;
-    return ax || ay || az ? { x: u.x + ax, y: u.y + ay, z: u.z + az } : { x: u.x + 1, y: u.y, z: u.z };
+    return null;
   }
 }

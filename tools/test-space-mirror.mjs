@@ -143,6 +143,7 @@ const rec = new SpaceRecorder(truth);
 const simOnly = {
   unit: [
     'capAff',
+    'cull',
     'energy',
     'enemies',
     'flip',
