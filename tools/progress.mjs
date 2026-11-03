@@ -619,12 +619,12 @@ const GROUPS = [
       [
         'Models, animations, textures, particles, maps, sounds, music, text',
         D,
-        'A texture is read by what is in the file, DDS or Targa (plain or run-length) or a bitmap, as mods ship .tga pictures where the base game has DDS. SpeechEvents and localized recordings follow the normal mod overlay; native Localize flags and language mappings drive sound effects and menu artwork'
+        'A texture is read by what is in the file, DDS or Targa (plain or run-length) or a bitmap, as mods ship .tga pictures where the base game has DDS. PNG pictures are read with their raw sample values, as the engine reads them: no colour profile or gamma chunk is applied, alpha is not premultiplied, 16-bit samples are cut to 8 bits (a Halo mod skybox with a linear ICC profile had turned its near-black stars field into blocky teal patches); the decoding runs in the texture workers. SpeechEvents and localized recordings follow the normal mod overlay; native Localize flags and language mappings drive sound effects and menu artwork'
       ],
       [
         'Shaders',
         P,
-        "a mod's compiled shaders are not run: a material goes to ours by what its shader's name says (bump, gloss, colorize, additive, alpha). Counted over the trial mod's 5,385 models, all but two of the shaders they name are the game's own; the two (MeshBumpSpecColorize, MeshAdditiveOffset) are drawn as bump-and-colorize with a gloss picture, and as additive. A gloss picture of its own (GlossTexture) is used wherever a material names one"
+        "a mod's compiled shaders are not run: a material goes to ours by what its shader's name says (bump, gloss, colorize, additive, alpha). Counted over the trial mod's 5,385 models, all but two of the shaders they name are the game's own; the two (MeshBumpSpecColorize, MeshAdditiveOffset) are drawn as bump-and-colorize with a gloss picture, and as additive. A gloss picture of its own (GlossTexture) is used wherever a material names one. Action point: a mod can replace a stock effect outright (one Halo mod ships MeshBumpColorize as a ps_3_0 physically based shader of over a thousand instructions with exposure, sky cube and lobe parameters, and a longer Planet); ours still draws such materials as the stock effect, so running the compiled shader would be needed to match it"
       ],
       ['Interface: dialogs, main menu picture, command bar parts', D, "from the mod's GUIDialogs.xml and command bar files"],
       ['Movies', T, 'Bink']

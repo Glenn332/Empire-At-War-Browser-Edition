@@ -4,6 +4,7 @@ import { fetchBinary } from './vfs.js';
 import { gfx } from './gfx.js';
 import { decodeDXT } from './ddsdecode.js';
 import { buildMips, mipsFit } from './ddsmips.js';
+import { decodePNG, isPNG } from './png.js';
 
 const FOURCC = s => s.charCodeAt(0) | (s.charCodeAt(1) << 8) | (s.charCodeAt(2) << 16) | (s.charCodeAt(3) << 24);
 const DXT1 = FOURCC('DXT1'),
@@ -182,8 +183,19 @@ const isPicture = buf => {
     (b[0] === 0x42 && b[1] === 0x4d)
   );
 };
-const pictureBitmap = buf => createImageBitmap(new Blob([buf]));
+const pictureBitmap = buf => createImageBitmap(new Blob([buf]), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
 async function parsePicture(buf) {
+  const png = isPNG(buf) ? (await pngElsewhere(buf)) || (await decodePNG(buf).catch(() => null)) : null;
+  if (png)
+    return {
+      width: png.width,
+      height: png.height,
+      format: THREE.RGBAFormat,
+      compressed: false,
+      mipmaps: [{ data: png.data, width: png.width, height: png.height }],
+      cube: false,
+      hasAlpha: png.alpha
+    };
   const bmp = await pictureBitmap(buf),
     w = bmp.width,
     h = bmp.height;
@@ -526,7 +538,7 @@ function startDecoder() {
   w.onerror = decodersFailed;
   decoders.push(w);
 }
-function decodeElsewhere(src, width, height, kind, rgba = false, mips = false) {
+function askDecoder(msg, copy) {
   if (decoders === null) {
     decoders = [];
     try {
@@ -541,9 +553,15 @@ function decodeElsewhere(src, width, height, kind, rgba = false, mips = false) {
   }
   if (!decoders.length) return Promise.resolve(null);
   return new Promise(done => {
-    const id = ++decodeSeq,
-      copy = src.slice();
+    const id = ++decodeSeq;
     decoding.set(id, done);
-    decoders[nextDecoder++ % decoders.length].postMessage({ id, src: copy, width, height, kind, rgba, mips }, [copy.buffer]);
+    decoders[nextDecoder++ % decoders.length].postMessage({ id, src: copy, ...msg }, [copy.buffer]);
   });
+}
+function decodeElsewhere(src, width, height, kind, rgba = false, mips = false) {
+  return askDecoder({ width, height, kind, rgba, mips }, src.slice());
+}
+async function pngElsewhere(buf) {
+  const r = await askDecoder({ png: true }, new Uint8Array(buf.slice(0)));
+  return r && r.png ? r.png : null;
 }

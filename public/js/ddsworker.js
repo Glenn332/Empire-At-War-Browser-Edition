@@ -1,7 +1,17 @@
 import { decodeDXT } from './ddsdecode.js';
 import { buildMips } from './ddsmips.js';
+import { decodePNG } from './png.js';
 
 onmessage = async ({ data: m }) => {
+  if (m.png) {
+    let png = null;
+    try {
+      png = await decodePNG(m.src.buffer);
+    } catch {}
+    if (png) postMessage({ id: m.id, png }, [png.data.buffer]);
+    else postMessage({ id: m.id });
+    return;
+  }
   if (m.mips) {
     let mips = null;
     try {
