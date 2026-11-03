@@ -633,7 +633,6 @@ export class LandSquad {
     this.craft = undefined;
     this.noAI = undefined;
     this.selectable = undefined;
-    this.standRetry = undefined;
     this.advance = undefined;
     this.spot = undefined;
     this.aimAt = undefined;
@@ -5901,150 +5900,22 @@ export class LandWorld {
     return false;
   }
 
-  tickStanding() {
-    const least = db.constants.num('MinimumStoppedVsStoppedOverlapCoefficient', 0.15),
-      now = this.time;
-    const teams = this.squads.filter(
-      q => q.box && !q.ext && !q.box.path.length && q.members.length && !q.structure && !q.members[0].inside && q.box.n
-    );
-    const busy = q => q.busy || q.pending || q.members.some(u => u.rooted || u.stunUntil > now);
-    const mark = q =>
-      (q.foe && q.foe.members.length ? q.foe.members[0] : (q.members.find(u => u.target && !u.target.dead) || {}).target) || null;
-    for (let i = 0; i < teams.length; i++)
-      for (let j = i + 1; j < teams.length; j++) {
-        const A = teams[i],
-          B = teams[j],
-          a = A.box,
-          b = B.box;
-        if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 > (a.rear + a.hw + b.rear + b.hw) ** 2) continue;
-        if (now < (A.standRetry || 0) || now < (B.standRetry || 0) || a.path.length || b.path.length) continue;
-        if (!(this.overlap(this.groundBox(A), this.groundBox(B)) > least)) continue;
-        A.standRetry = B.standRetry = now + 1;
-        const ba = busy(A),
-          bb = busy(B),
-          ta = mark(A),
-          tb = mark(B);
-        let M = null;
-        if (ba || bb) M = ba && bb ? null : ba ? B : A;
-        else if (ta || tb) M = ta && tb ? null : ta ? B : A;
-        else M = a.max > b.max ? A : b.max > a.max ? B : B;
-        if (!M) continue;
-        const O = M === A ? B : A,
-          m = M.box,
-          o = O.box,
-          t = M === A ? ta : tb;
-        let dir = t ? Math.atan2(t.y - m.y, t.x - m.x) : Math.atan2(m.y - o.y, m.x - o.x);
-        if (!t && (m.x - o.x) ** 2 + (m.y - o.y) ** 2 < 1) dir = m.heading + Math.PI / 2;
-        const need = Math.max(...M.members.map(u => u.need || 1)),
-          cap = Math.min(10, 1.5 * Math.max(m.rear, m.hw));
-        let spot = null;
-        for (let ring = 0, r = 0, step = 1; ring < 20 && !spot; ring++) {
-          r += step;
-          step = Math.min(cap, step + 0.8);
-          for (let k = 0; k < 9 && !spot; k++) {
-            const ang = dir + ((k & 1 ? 1 : -1) * Math.ceil(k / 2) * Math.PI) / 8,
-              x = m.x + Math.cos(ang) * r,
-              y = m.y + Math.sin(ang) * r;
-            if (this.isOpen(x, y, need) && !this.standingOn(M, x, y, 0)) spot = { x, y };
-          }
-        }
-        if (!spot) continue;
-        const way = this.route(m.x, m.y, spot.x, spot.y, need);
-        if (!way) continue;
-        m.path = way.slice();
-        m.face = m.heading;
-        m.stall = 0;
-        for (const u of M.members) u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
-        if (M.post) M.post = { x: spot.x, y: spot.y };
-      }
-    this.standSingles(least, now);
-  }
-
-  boxOverlap(a, b) {
-    const ext = u => [u.type.num('Custom_Hard_XExtent', 0) || u.body || 10, u.type.num('Custom_Hard_YExtent', 0) || u.body || 10],
-      [ax, ay] = ext(a),
-      [bx, by] = ext(b),
-      cx = b.x - a.x,
-      cy = b.y - a.y;
-    let least = 1;
-    for (const h of [a.heading, a.heading + Math.PI / 2, b.heading, b.heading + Math.PI / 2]) {
-      const nx = Math.cos(h),
-        ny = Math.sin(h),
-        half = (u, x, y) => x * Math.abs(Math.cos(u.heading) * nx + Math.sin(u.heading) * ny) + y * Math.abs(-Math.sin(u.heading) * nx + Math.cos(u.heading) * ny),
-        sum = half(a, ax, ay) + half(b, bx, by);
-      if (!(sum > 0)) continue;
-      least = Math.min(least, 1 - Math.abs(cx * nx + cy * ny) / sum);
+  standMove(b, way) {
+    if (b.q) {
+      const q = b.q,
+        m = q.box;
+      m.path = way;
+      m.face = m.heading;
+      m.stall = 0;
+      for (const u of q.members) u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
+      const end = way[way.length - 1];
+      if (q.post) q.post = { x: end.x, y: end.y };
+      return;
     }
-    return least;
-  }
-
-  standSingles(least, now) {
-    const solo = this.units.filter(
-      u =>
-        !u.dead &&
-        !u.structure &&
-        !u.flies &&
-        !u.inside &&
-        !u.path.length &&
-        u.speed > 0 &&
-        u.squad &&
-        !(u.squad.box && u.slot) &&
-        (u.ccls ??= collisionClass(u.type)) >= 5
-    );
-    const R = u => (u.standR ??= Math.hypot(u.type.num('Custom_Hard_XExtent', 0) || u.body || 10, u.type.num('Custom_Hard_YExtent', 0) || u.body || 10)),
-      fixed = u => !!(u.rooted || u.setup || (u.needsDeploy && u.deployed) || u.stunUntil > now || u.squad.busy || u.squad.pending);
-    for (let i = 0; i < solo.length; i++)
-      for (let j = i + 1; j < solo.length; j++) {
-        const a = solo[i],
-          b = solo[j],
-          ra = R(a),
-          rb = R(b),
-          d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d >= ra + rb || !(this.boxOverlap(a, b) > least)) continue;
-        if (now < (a.standRetry || 0) || now < (b.standRetry || 0)) continue;
-        if (a.target === b || b.target === a) continue;
-        a.standRetry = b.standRetry = now + 1;
-        const fa = fixed(a),
-          fb = fixed(b);
-        let M = null;
-        if (fa || fb) M = fa && fb ? null : fa ? b : a;
-        else if (a.ccls === 9 && b.ccls < 9) M = b;
-        else if (b.ccls === 9 && a.ccls < 9) M = a;
-        else {
-          const clear = (u, o) => (ra + rb - d) / Math.max(1, u.speed) + Math.abs(Math.atan2(Math.sin(Math.atan2(u.y - o.y, u.x - o.x) - u.heading), Math.cos(Math.atan2(u.y - o.y, u.x - o.x) - u.heading))) / Math.max(0.1, u.stopTurn || u.turn);
-          M = clear(a, b) <= clear(b, a) ? a : b;
-        }
-        if (!M) continue;
-        const O = M === a ? b : a,
-          rm = R(M),
-          dir = d < 1e-3 ? M.heading + Math.PI / 2 : Math.atan2(M.y - O.y, M.x - O.x),
-          need = M.need || 1,
-          cap = Math.min(10, 1.5 * rm);
-        let spot = null;
-        for (let ring = 0, r = 0, step = 1; ring < 20 && !spot; ring++) {
-          r += step;
-          step = Math.min(cap, step + 0.8);
-          const n = Math.max(ring ? 4 : 1, Math.floor((2 * Math.PI * r) / Math.max(1, rm)) + 1);
-          for (let k = 0; k < n && !spot; k++) {
-            const ang = dir + ((k & 1 ? 1 : -1) * Math.ceil(k / 2) * 2 * Math.PI) / n,
-              x = M.x + Math.cos(ang) * r,
-              y = M.y + Math.sin(ang) * r;
-            if (!this.isOpen(x, y, need)) continue;
-            if (solo.some(o => o !== M && Math.hypot(o.x - x, o.y - y) < R(o) + rm)) continue;
-            spot = { x, y };
-          }
-        }
-        if (!spot) continue;
-        const way = this.route(M.x, M.y, spot.x, spot.y, need);
-        if (way && way.length) M.path = way.slice();
-      }
+    b.u.path = way;
   }
 
   tickTeams(dt) {
-    if (this.time >= (this.standAt || 0)) {
-      this.standAt = this.time + db.constants.num('FramesPerCollisionCheck', 4) / LOGIC_FPS;
-      this.tickStanding();
-    }
     for (const q of this.squads) {
       const box = q.box === undefined ? this.teamOf(q) : q.box;
       if (!box) continue;

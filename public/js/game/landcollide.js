@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
+import { CELL } from './terrain.js';
 
 const FPS = 30;
 const CLASSES = {
@@ -18,6 +19,19 @@ export const collisionClass = t => CLASSES[t.str('UnitCollisionClass').trim().to
 
 const MM = { NONE: 0, PATH_AROUND: 1, SPEED_SLAVE: 2, PASS: 4, SPEED_ONLY: 6, THROUGH: 7, RESOLVED: 8, LATER: 10 };
 const MS = { NONE: 0, PATH_AROUND: 1, THROUGH: 4, RESOLVED: 5, LATER: 7, ATTACK: 8 };
+const SS = { START: 0, MOVING: 1, DONE: 2, GONE: 3, WAIT: 4 };
+
+const K = { least: 0.15, quota: 100, near: 20, past: 60, pad: 3, penalty: 15 };
+
+function readConstants() {
+  const c = db.constants;
+  K.least = c.num('MinimumStoppedVsStoppedOverlapCoefficient', 0.15);
+  K.quota = c.num('DynamicLandComplexityQuota', 100);
+  K.near = c.num('LandTemporaryDestinationProximity', 20);
+  K.past = c.num('LandDestinationProximity', 60);
+  K.pad = c.num('DynamicAvoidanceRectangleBound', 3);
+  K.penalty = c.num('DynamicObstacleOverlapPenalty', 15);
+}
 
 let BODY_ID = 0;
 export function resetCollideIds() {
@@ -40,11 +54,16 @@ function gather(W) {
         cls,
         hx: u.type.num('Custom_Hard_XExtent', 0) || u.body || 10,
         hy: u.type.num('Custom_Hard_YExtent', 0) || u.body || 10,
-        mpi: u.type.num('MovementPredictionInterval', 0)
+        r: 0,
+        mpi: u.type.num('MovementPredictionInterval', 0),
+        spacing: u.type.num('FormationSpacing', 0),
+        expand: u.type.num('MovementBoxExpansionFactor', 0),
+        turn: u.stopTurn || u.turn || 0
       });
     b.x = u.x;
     b.y = u.y;
     b.h = u.heading;
+    b.r ||= Math.hypot(b.hx, b.hy);
     b.path = u.path;
     b.side = u.side;
     b.v = (b.v ?? 0) * 0.75 + (u.v ?? 0) * 0.25;
@@ -67,7 +86,10 @@ function gather(W) {
         u: null,
         q,
         cls: 5,
-        mpi: u.type.num('MovementPredictionInterval', 0) || (q.type ? q.type.num('MovementPredictionInterval', 0) : 0)
+        mpi: u.type.num('MovementPredictionInterval', 0) || (q.type ? q.type.num('MovementPredictionInterval', 0) : 0),
+        spacing: u.type.num('FormationSpacing', 0),
+        expand: u.type.num('MovementBoxExpansionFactor', 0),
+        turn: u.stopTurn || u.turn || 0
       });
     b.x = box.x;
     b.y = box.y;
@@ -77,6 +99,7 @@ function gather(W) {
     b.v = box.speed || 0;
     b.hx = Math.max(4, box.rear || 4);
     b.hy = Math.max(4, box.hw || 4);
+    b.r = Math.hypot(b.hx, b.hy);
     b.max = q.formSpeed ? Math.min(box.max, q.formSpeed.v) : box.max;
     b.min = b.max * Math.min(1, (q.minFrac ??= u.type.num('Min_Speed', 0) / (u.type.num('Max_Speed', 0) || 1)));
     b.moving = !q.ext && b.path.length > 0;
@@ -96,7 +119,7 @@ function reach(b, dx, dy, h = b.h) {
     k = c * c;
   return (1 - k) * b.hy + k * b.hx;
 }
-const radius = b => Math.hypot(b.hx, b.hy);
+const radius = b => b.r;
 
 function crushes(W, a, b) {
   const A = unitOf(a),
@@ -225,52 +248,616 @@ function canPass(a, b) {
   return need <= left / a.max;
 }
 
-function wayRound(W, s, m, T) {
+const COS44 = Math.cos((44 * Math.PI) / 180);
+
+function boxOf(b, grow) {
+  return { x: b.x, y: b.y, c: Math.cos(b.h), s: Math.sin(b.h), hx: b.hx + grow, hy: b.hy + grow, o: b, motion: 0, outer: null };
+}
+
+function inBox(B, x, y) {
+  const dx = x - B.x,
+    dy = y - B.y;
+  return Math.abs(dx * B.c + dy * B.s) <= B.hx && Math.abs(-dx * B.s + dy * B.c) <= B.hy;
+}
+
+function segHitsBox(B, ax, ay, bx, by) {
+  const px = ax - B.x,
+    py = ay - B.y,
+    qx = bx - B.x,
+    qy = by - B.y;
+  const u0 = px * B.c + py * B.s,
+    u1 = qx * B.c + qy * B.s,
+    v0 = -px * B.s + py * B.c,
+    v1 = -qx * B.s + qy * B.c;
+  if (Math.max(u0, u1) < -B.hx || Math.min(u0, u1) > B.hx || Math.max(v0, v1) < -B.hy || Math.min(v0, v1) > B.hy) return false;
+  const nx = -(by - ay),
+    ny = bx - ax,
+    off = Math.abs(nx * (B.x - ax) + ny * (B.y - ay)),
+    span = B.hx * Math.abs(nx * B.c + ny * B.s) + B.hy * Math.abs(-nx * B.s + ny * B.c);
+  return off <= span;
+}
+
+function rayIntoBox(B, x, y, dx, dy) {
+  const px = x - B.x,
+    py = y - B.y,
+    p = [px * B.c + py * B.s, -px * B.s + py * B.c],
+    d = [dx * B.c + dy * B.s, -dx * B.s + dy * B.c],
+    h = [B.hx, B.hy];
+  let t0 = 0,
+    t1 = Infinity;
+  for (let k = 0; k < 2; k++) {
+    if (Math.abs(d[k]) < 1e-9) {
+      if (p[k] < -h[k] || p[k] > h[k]) return -1;
+      continue;
+    }
+    let a = (-h[k] - p[k]) / d[k],
+      b = (h[k] - p[k]) / d[k];
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    if (t0 > t1) return -1;
+  }
+  return t0;
+}
+
+function motionOf(o, s) {
+  if (!o.moving) return 0;
+  if (!(o.max > 0)) return 2;
+  const dot = Math.cos(o.h) * Math.cos(s.h) + Math.sin(o.h) * Math.sin(s.h);
+  if (dot > 0.5) return o.max < s.max ? 0x20 : 0x10;
+  const ahead = Math.cos(o.h) * (s.x - o.x) + Math.sin(o.h) * (s.y - o.y);
+  if (ahead > s.hx) return dot <= -0.5 ? 4 : 8;
+  return 0x10;
+}
+
+function pathLength(b) {
+  let x = b.x,
+    y = b.y,
+    len = 0;
+  for (const p of b.path) {
+    len += Math.hypot(p.x - x, p.y - y);
+    x = p.x;
+    y = p.y;
+  }
+  return len;
+}
+
+function pointOnPath(b, at) {
+  let x = b.x,
+    y = b.y,
+    gone = 0;
+  for (let i = 0; i < b.path.length; i++) {
+    const p = b.path[i],
+      d = Math.hypot(p.x - x, p.y - y);
+    if (gone + d >= at && d > 1e-6) {
+      const k = (at - gone) / d;
+      return { x: x + (p.x - x) * k, y: y + (p.y - y) * k, next: i };
+    }
+    gone += d;
+    x = p.x;
+    y = p.y;
+  }
+  return null;
+}
+
+function sweptBox(s, o, grow, T) {
+  const B = boxOf(o, 1),
+    motion = motionOf(o, s);
+  B.motion = motion;
+  if (motion && o.max > 0) {
+    const dx = o.x - s.x,
+      dy = o.y - s.y,
+      d = Math.hypot(dx, dy) || 1,
+      ux = dx / d,
+      uy = dy / d,
+      close = (s.moving ? s.max : 0) * (Math.cos(s.h) * ux + Math.sin(s.h) * uy) - o.max * (Math.cos(o.h) * ux + Math.sin(o.h) * uy);
+    const t = close > 0 ? Math.max(0, Math.min(T, (d - radius(s) - radius(o)) / close)) : T;
+    let far = t * o.max;
+    if (motion === 0x10 || motion === 0x20) far = Math.min(far, pathLength(o));
+    if (far > 1e-3) {
+      const e = along(o, 1, far),
+        ex = e.x - o.x,
+        ey = e.y - o.y,
+        el = Math.hypot(ex, ey);
+      if (el > 1e-3) {
+        const c = ex / el,
+          sn = ey / el;
+        let side = 0;
+        for (const p of o.path) {
+          const k = (p.x - o.x) * c + (p.y - o.y) * sn;
+          if (k > el) break;
+          side = Math.max(side, Math.abs(-(p.x - o.x) * sn + (p.y - o.y) * c));
+        }
+        B.x = o.x + ex / 2;
+        B.y = o.y + ey / 2;
+        B.c = c;
+        B.s = sn;
+        B.hx = reach(o, c, sn) + 1 + el / 2;
+        B.hy = reach(o, -sn, c) + 1 + side;
+      }
+    }
+  } else if (o.path.length === 2 && o.path[0].x === o.path[1].x && o.path[0].y === o.path[1].y) B.hx = B.hy = Math.max(B.hx, B.hy);
+  B.hx += grow;
+  B.hy += grow;
+  return B;
+}
+
+function spotNear(W, s, x, y, bodies, most) {
+  const R = radius(s),
+    half = R + s.spacing * 5,
+    cap = Math.min(10, R * 1.5 || 5),
+    close = bodies.filter(o => o !== s && Math.abs(o.x - x) <= most + half + o.r && Math.abs(o.y - y) <= most + half + o.r);
+  let r = 0,
+    step = 1;
+  for (let ring = 0; ring < 20 && r <= most; ring++) {
+    let n = Math.floor((r * 2 * Math.PI) / R) + 1;
+    if (ring && n < 4) n = 4;
+    for (let k = 0; k < n; k++) {
+      const th = (k / n) * 2 * Math.PI,
+        px = x + Math.cos(th + s.h) * r,
+        py = y + Math.sin(th + s.h) * r;
+      if (!W.isOpen(px, py, s.need)) continue;
+      if (close.some(o => Math.abs(o.x - px) <= half + o.r && Math.abs(o.y - py) <= half + o.r)) continue;
+      return { x: px, y: py };
+    }
+    r += step;
+    step = Math.min(cap, step + 0.8);
+  }
+  return null;
+}
+
+function rejoin(W, s, at, bodies) {
+  const len = pathLength(s),
+    near = K.near,
+    past = K.past;
+  while (at.s < len) {
+    const p = pointOnPath(s, at.s);
+    at.s += 10;
+    if (!p) break;
+    const f = spotNear(W, s, p.x, p.y, bodies, near);
+    if (f) return { x: f.x, y: f.y, next: p.next };
+  }
+  const end = s.path[s.path.length - 1],
+    prev = s.path.length > 1 ? s.path[s.path.length - 2] : s,
+    t = targetOf(s);
+  let dx = t ? t.x - end.x : end.x - prev.x,
+    dy = t ? t.y - end.y : end.y - prev.y;
+  const dl = Math.hypot(dx, dy);
+  if (dl < 1e-6) return null;
+  const most = t ? dl : past;
+  dx /= dl;
+  dy /= dl;
+  while (at.s - len <= most) {
+    const k = at.s - len;
+    at.s += 10;
+    const f = spotNear(W, s, end.x + dx * k, end.y + dy * k, bodies, near);
+    if (!f) continue;
+    const way = W.route(end.x, end.y, f.x, f.y, s.need);
+    if (!way) return null;
+    let wl = 0,
+      x = end.x,
+      y = end.y;
+    for (const q of way) {
+      wl += Math.hypot(q.x - x, q.y - y);
+      x = q.x;
+      y = q.y;
+    }
+    if (wl > 2 * Math.hypot(f.x - end.x, f.y - end.y) + 1e-6) return null;
+    return { x: f.x, y: f.y, next: s.path.length };
+  }
+  return null;
+}
+
+function cellWindow(W, s, goal, grow) {
+  const n = W.n,
+    cell = CELL,
+    pad = K.pad + (s.cls === 9 ? 2 : 0);
+  let x0 = Math.min(Math.round(s.x / cell), Math.round(goal.x / cell)) - pad,
+    x1 = Math.max(Math.round(s.x / cell), Math.round(goal.x / cell)) + pad,
+    y0 = Math.min(Math.round(s.y / cell), Math.round(goal.y / cell)) - pad,
+    y1 = Math.max(Math.round(s.y / cell), Math.round(goal.y / cell)) + pad;
+  const r = (x1 - x0 + 1) / (y1 - y0 + 1);
+  if (r > 1.5) {
+    const k = Math.trunc(r - 0.5);
+    y0 -= k;
+    y1 += k;
+  } else if (r < 2 / 3) {
+    const k = Math.trunc(1 / r - 0.5);
+    x0 -= k;
+    x1 += k;
+  }
+  x0 = Math.max(0, x0);
+  y0 = Math.max(0, y0);
+  x1 = Math.min(n - 1, x1);
+  y1 = Math.min(n - 1, y1);
+  if (x1 < x0 || y1 < y0) return null;
+  return { x0: x0 - grow * pad, y0: y0 - grow * pad, x1: x1 + grow * pad, y1: y1 + grow * pad };
+}
+
+function widenWindow(W, s, win, bodies) {
+  const cell = CELL,
+    half = Math.max(s.hx, s.hy);
+  const busy = (ax, ay, bx, by) =>
+    bodies.some(o => o !== s && o.x + radius(o) >= ax && o.x - radius(o) <= bx && o.y + radius(o) >= ay && o.y - radius(o) <= by);
+  for (;;) {
+    if (win.x1 - win.x0 + 1 >= 20 && win.y1 - win.y0 + 1 >= 20) return;
+    const X0 = win.x0 * cell,
+      X1 = win.x1 * cell,
+      Y0 = win.y0 * cell,
+      Y1 = win.y1 * cell;
+    if (busy(X0, Y0 - 10 - half, X1, Y0 - 10 + half)) win.y0--;
+    else if (busy(X0, Y1 + 10 - half, X1, Y1 + 10 + half)) win.y1++;
+    else if (busy(X0 - 10 - half, Y0, X0 - 10 + half, Y1)) win.x0--;
+    else if (busy(X1 + 10 - half, Y0, X1 + 10 + half, Y1)) win.x1++;
+    else return;
+  }
+}
+
+const NB = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1]
+];
+
+function terrainCorners(W, s, win, goal) {
+  const n = W.n,
+    room = W.rooms(s.need),
+    wide = s.need & 3,
+    w = win.x1 - win.x0 + 1,
+    h = win.y1 - win.y0 + 1,
+    W4 = w + 4,
+    ok = new Uint8Array(W4 * (h + 4)),
+    seen = new Uint8Array(W4 * (h + 4)),
+    at = (x, y) => (y - win.y0 + 2) * W4 + x - win.x0 + 2;
+  for (let y = Math.max(0, win.y0); y <= Math.min(n - 1, win.y1); y++)
+    for (let x = Math.max(0, win.x0); x <= Math.min(n - 1, win.x1); x++) if (room[y * n + x] >= wide) ok[at(x, y)] = 1;
+  const sx = Math.round(s.x / CELL),
+    sy = Math.round(s.y / CELL);
+  if (sx < win.x0 || sx > win.x1 || sy < win.y0 || sy > win.y1 || !ok[at(sx, sy)]) return null;
+  const stack = [at(sx, sy)],
+    step = [1, W4, -1, -W4];
+  seen[stack[0]] = 1;
+  while (stack.length) {
+    const i = stack.pop();
+    for (let k = 0; k < 4; k++) {
+      const j = i + step[k];
+      if (!ok[j] || seen[j]) continue;
+      seen[j] = 1;
+      stack.push(j);
+    }
+  }
+  const gx = Math.round(goal.x / CELL),
+    gy = Math.round(goal.y / CELL);
+  if (gx < win.x0 || gx > win.x1 || gy < win.y0 || gy > win.y1 || !seen[at(gx, gy)]) return null;
+  const nb = NB.map(([dx, dy]) => dy * W4 + dx),
+    masks = new Int16Array(W4 * (h + 4));
+  for (let y = win.y0 - 1; y <= win.y1 + 1; y++)
+    for (let x = win.x0 - 1; x <= win.x1 + 1; x++) {
+      const i = at(x, y);
+      let m = 0;
+      for (let k = 0; k < 8; k++) if (!ok[i + nb[k]]) m |= 1 << k;
+      masks[i] = m;
+    }
+  const isCorner = m =>
+    (m & 0xd0) === 0x80 ||
+    (m & 0x68) === 0x20 ||
+    (m & 0x0b) === 0x01 ||
+    (m & 0x16) === 0x04 ||
+    (m & 0x50) === 0x50 ||
+    (m & 0x48) === 0x48 ||
+    (m & 0x0a) === 0x0a ||
+    (m & 0x12) === 0x12;
+  const corner = i => seen[i] === 1 && isCorner(masks[i]);
+  const out = [];
+  for (let y = win.y0; y <= win.y1; y++)
+    for (let x = win.x0; x <= win.x1; x++) {
+      const i = at(x, y);
+      if (!corner(i)) continue;
+      const m = masks[i];
+      if ((m & 0xda) === 0x0a && corner(i + 1) && corner(i + W4)) continue;
+      if ((m & 0x7a) === 0x12 && corner(i + W4) && corner(i - 1)) continue;
+      if ((m & 0x5b) === 0x50 && corner(i - 1) && corner(i - W4)) continue;
+      if ((m & 0x5e) === 0x48 && corner(i - W4) && corner(i + 1)) continue;
+      if (m === 0x20 && (masks[i - 1 + W4] & 0x81) === 0x81) continue;
+      if (m === 1 && (masks[i - 1 - W4] & 0x24) === 0x24) continue;
+      if (m === 4 && (masks[i + 1 - W4] & 0x81) === 0x81) continue;
+      if (m === 0x80 && (masks[i + 1 + W4] & 0x24) === 0x24) continue;
+      out.push({ x: x * CELL, y: y * CELL, type: 4, o: null, dx: 0, dy: 0, edges: null, room: 0 });
+    }
+  return out;
+}
+
+function ignored(W, s, o, m, flags, linked) {
+  if (o === s) return true;
+  if (o === m) return false;
+  if (!o.moving) {
+    if (linked(o)) return false;
+    if (flags & 2) return true;
+    return !!(flags & 1) && W.enemy(unitOf(s), unitOf(o));
+  }
+  return motionOf(o, s) === 0x10 && !linked(o);
+}
+
+function astar(nodes, edgesOf, from, to, second) {
+  const N = nodes.length,
+    g = new Float64Array(N).fill(Infinity),
+    shut = new Uint8Array(N),
+    back = new Int32Array(N).fill(-1),
+    heap = [];
+  let pushed = 0;
+  const h = i => Math.hypot(nodes[i].x - nodes[to].x, nodes[i].y - nodes[to].y);
+  const push = (i, f) => {
+    heap.push([f, i]);
+    let k = heap.length - 1;
+    while (k) {
+      const p = (k - 1) >> 1;
+      if (heap[p][0] <= heap[k][0]) break;
+      [heap[p], heap[k]] = [heap[k], heap[p]];
+      k = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0],
+      last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let k = 0; ; ) {
+        const l = 2 * k + 1,
+          r = l + 1;
+        let m = k;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === k) break;
+        [heap[m], heap[k]] = [heap[k], heap[m]];
+        k = m;
+      }
+    }
+    return top[1];
+  };
+  g[from] = 0;
+  push(from, h(from));
+  while (heap.length) {
+    const i = pop();
+    if (shut[i]) continue;
+    if (i === to) {
+      const out = [];
+      for (let k = i; k >= 0; k = back[k]) out.push(k);
+      return out.reverse();
+    }
+    shut[i] = 1;
+    for (const e of edgesOf(i)) {
+      if (!second && e.flag) continue;
+      const j = e.to;
+      if (shut[j]) continue;
+      const g2 = g[i] + Math.hypot(nodes[j].x - nodes[i].x, nodes[j].y - nodes[i].y) * e.mult;
+      if (g2 < g[j]) {
+        if (++pushed > 3 * N) return null;
+        g[j] = g2;
+        back[j] = i;
+        push(j, g2 + h(j));
+      }
+    }
+  }
+  return null;
+}
+
+const isExit = p => p.type === 7 || p.type === 8;
+
+function linkNodes(W, s, nodes, boxes, from, exits) {
+  const penalty = K.penalty,
+    n = W.n,
+    N = nodes.length,
+    room = W.rooms(s.need),
+    wide = s.need & 3,
+    far = W.openness(room, wide),
+    pairs = new Map();
+  for (const p of nodes) {
+    p.edges = null;
+    const ix = Math.round(p.x / CELL),
+      iy = Math.round(p.y / CELL),
+      i = iy * n + ix;
+    p.room = ix >= 0 && iy >= 0 && ix < n && iy < n && room[i] >= wide && far[i] > 2 ? (far[i] - 2.01) * CELL : -1;
+  }
+  const link = (i, j) => {
+    const a = nodes[i],
+      b = nodes[j],
+      ex = b.x - a.x,
+      ey = b.y - a.y,
+      el = Math.hypot(ex, ey);
+    if (el < 1e-6) return 0;
+    const withStart = i === from || j === from;
+    if (exits && withStart && !isExit(i === from ? b : a)) return 0;
+    if (a.o && a.o === b.o) {
+      if (a.type < 4 && b.type < 4 && Math.abs(a.type - b.type) === 2) return 0;
+      if (isExit(a) || isExit(b)) return 0;
+    } else {
+      if (a.o && !isExit(a) && (ex * a.dx + ey * a.dy) / el >= COS44) return 0;
+      if (b.o && !isExit(b) && (-ex * b.dx - ey * b.dy) / el >= COS44) return 0;
+      if (isExit(b) && !withStart && !(-ex * b.dx - ey * b.dy < -0.001)) return 0;
+      if (isExit(a) && !withStart && !(ex * a.dx + ey * a.dy < -0.001)) return 0;
+    }
+    if (el > a.room && el > b.room && !W.clear(a.x, a.y, b.x, b.y, s.need)) return 0;
+    if (exits && withStart) return 1;
+    const lx = Math.min(a.x, b.x),
+      hx = Math.max(a.x, b.x),
+      ly = Math.min(a.y, b.y),
+      hy = Math.max(a.y, b.y);
+    for (const B of boxes) {
+      const O = B.outer;
+      if (O.x1 < lx || O.x0 > hx || O.y1 < ly || O.y0 > hy) continue;
+      if (B.o !== a.o && B.o !== b.o && segHitsBox(O, a.x, a.y, b.x, b.y)) return 2;
+    }
+    return 1;
+  };
+  return i => {
+    const p = nodes[i];
+    if (p.edges) return p.edges;
+    p.edges = [];
+    for (let j = 0; j < N; j++) {
+      if (j === i) continue;
+      const lo = Math.min(i, j),
+        hi = Math.max(i, j),
+        key = lo * N + hi;
+      let k = pairs.get(key);
+      if (k === undefined) pairs.set(key, (k = link(lo, hi)));
+      if (k) p.edges.push({ to: j, mult: k === 2 ? penalty : 1, flag: k === 2 });
+    }
+    return p.edges;
+  };
+}
+
+function goalBlocked(W, s, m, goal, flags, linked, grow, extra, T) {
+  for (const o of W.ccBodies) {
+    if (o === m) continue;
+    const r = o.r + (o.moving ? o.max * T : 0) + grow + extra + 2;
+    if (Math.abs(o.x - goal.x) > r || Math.abs(o.y - goal.y) > r || ignored(W, s, o, m, flags, linked)) continue;
+    const B = sweptBox(s, o, grow + extra, T);
+    if (inBox(B, goal.x, goal.y)) return true;
+  }
+  return false;
+}
+
+function goRound(W, c, s, m, near, flags, T) {
   for (let i = s.path.length - 1; i >= 0; i--) if (s.path[i].round && i < s.path.length - 1) s.path.splice(i, 1);
-  if (!s.path.length) return false;
-  const p0 = s.path[0],
-    fx0 = p0.x - s.x,
-    fy0 = p0.y - s.y,
-    fd = Math.hypot(fx0, fy0);
-  if (fd < 1e-6) return false;
-  const fx = fx0 / fd,
-    fy = fy0 / fd,
-    nx = -fy,
-    ny = fx;
-  const pts = [{ x: m.x, y: m.y }];
-  if (m.moving && m.max > 0) {
-    const e = along(m, m.max, T);
-    pts.push({ x: e.x, y: e.y });
+  if (!s.path.length || !(s.max > 0)) return false;
+  const bodies = W.ccBodies,
+    rm = radius(s),
+    ro = radius(m),
+    mb = boxOf(m, 0),
+    gap = Math.hypot(m.x - s.x, m.y - s.y);
+  let L = gap + rm + ro;
+  if (near) L = Math.max(gap, Math.hypot(m.x + mb.c * m.hx - s.x, m.y + mb.s * m.hx - s.y)) + rm + ro;
+  else {
+    const p0 = s.path[0],
+      dx = p0.x - s.x,
+      dy = p0.y - s.y,
+      d = Math.hypot(dx, dy),
+      t = d > 1e-6 ? rayIntoBox(mb, s.x, s.y, dx / d, dy / d) : -1;
+    if (t >= 0) L = t + rm;
   }
-  const room = radius(m) + Math.max(s.hx, s.hy) + 4;
-  let f0 = Infinity,
-    f1 = -Infinity,
-    l0 = Infinity,
-    l1 = -Infinity;
-  for (const p of pts) {
-    const a = (p.x - s.x) * fx + (p.y - s.y) * fy,
-      l = (p.x - s.x) * nx + (p.y - s.y) * ny;
-    f0 = Math.min(f0, a - room);
-    f1 = Math.max(f1, a + room);
-    l0 = Math.min(l0, l - room);
-    l1 = Math.max(l1, l + room);
-  }
-  if (f1 <= 0) return false;
-  const sides = Math.abs(l1) <= Math.abs(l0) ? [l1, l0] : [l0, l1];
-  let k = 0;
-  while (k < s.path.length - 1 && (s.path[k].x - s.x) * fx + (s.path[k].y - s.y) * fy < f1) k++;
-  const on = s.path[k],
-    need = s.need;
-  const others = (W.ccBodies || []).filter(o => o !== s && o !== m && !o.moving),
-    rs = radius(s),
-    taken = p => others.some(o => (o.x - p.x) ** 2 + (o.y - p.y) ** 2 < (radius(o) + rs) ** 2);
-  for (const lat of sides.flatMap(l => [l, l * 1.6, l * 2.2])) {
-    const a = { x: s.x + fx * Math.max(0, f0) + nx * lat, y: s.y + fy * Math.max(0, f0) + ny * lat };
-    const b = { x: s.x + fx * f1 + nx * lat, y: s.y + fy * f1 + ny * lat };
-    if (!W.isOpen(a.x, a.y, need) || !W.isOpen(b.x, b.y, need) || taken(a) || taken(b)) continue;
-    if (!W.clear(s.x, s.y, a.x, a.y, need) || !W.clear(a.x, a.y, b.x, b.y, need) || !W.clear(b.x, b.y, on.x, on.y, need)) continue;
-    a.round = b.round = true;
-    s.path.splice(0, k, a, b);
+  const linked = o => W.colls.some(k => k.kind !== 'ss' && ((k.a === s && k.b === o) || (k.b === s && k.a === o)));
+  const grow = Math.min(s.hx, s.hy) + 0.5,
+    extra = Math.max(0, s.expand);
+  const at = { s: Math.max(c.cursor || 0, L + 2) };
+  for (let tries = 0; tries < 11; tries++) {
+    const goal = rejoin(W, s, at, bodies);
+    if (!goal) return false;
+    c.cursor = at.s;
+    if (goalBlocked(W, s, m, goal, flags, linked, grow, extra, T)) continue;
+    let win = null,
+      corners = null;
+    for (let k = 0; k < 5 && !corners; k++) {
+      win = cellWindow(W, s, goal, k);
+      if (!win) break;
+      widenWindow(W, s, win, bodies);
+      corners = terrainCorners(W, s, win, goal);
+    }
+    if (!corners) continue;
+    const X0 = win.x0 * CELL,
+      X1 = win.x1 * CELL,
+      Y0 = win.y0 * CELL,
+      Y1 = win.y1 * CELL,
+      boxes = [];
+    for (const o of bodies) {
+      const r = radius(o) + (o.moving ? o.max * T : 0);
+      if (o.x + r < X0 || o.x - r > X1 || o.y + r < Y0 || o.y - r > Y1) continue;
+      if (ignored(W, s, o, m, flags, linked)) continue;
+      const B = sweptBox(s, o, grow, T);
+      const ox = B.hx + extra,
+        oy = B.hy + extra,
+        wx = ox * Math.abs(B.c) + oy * Math.abs(B.s),
+        wy = ox * Math.abs(B.s) + oy * Math.abs(B.c);
+      B.outer = { x: B.x, y: B.y, c: B.c, s: B.s, hx: ox, hy: oy, x0: B.x - wx, x1: B.x + wx, y0: B.y - wy, y1: B.y + wy };
+      boxes.push(B);
+    }
+    if (boxes.some(B => B.o !== m && inBox(B.outer, goal.x, goal.y))) continue;
+    const nodes = [];
+    let exits = false,
+      startIn = false,
+      goalIn = false;
+    for (const B of boxes) {
+      const O = B.outer;
+      if (inBox(O, s.x, s.y)) {
+        startIn = true;
+        if (B.motion === 0x10) {
+          const u = (s.x - B.x) * B.c + (s.y - B.y) * B.s;
+          for (const k of [1, -1])
+            nodes.push({ x: B.x + B.c * u - B.s * B.hy * k, y: B.y + B.s * u + B.c * B.hy * k, type: k > 0 ? 7 : 8, o: B.o, dx: B.s * k, dy: -B.c * k, edges: null, room: 0 });
+          exits = true;
+        }
+      }
+      if (inBox(O, goal.x, goal.y)) goalIn = true;
+      for (let t = 0; t < 4; t++) {
+        const sx = t < 2 ? -1 : 1,
+          sy = t === 0 || t === 3 ? 1 : -1,
+          x = B.x + B.c * B.hx * sx - B.s * B.hy * sy,
+          y = B.y + B.s * B.hx * sx + B.c * B.hy * sy,
+          ox = O.x + O.c * O.hx * sx - O.s * O.hy * sy,
+          oy = O.y + O.s * O.hx * sx + O.c * O.hy * sy;
+        if (!W.isOpen(ox, oy, s.need) || boxes.some(o => o !== B && inBox(o.outer, ox, oy))) continue;
+        const ix = -(B.c * sx - B.s * sy),
+          iy = -(B.s * sx + B.c * sy),
+          il = Math.hypot(ix, iy);
+        nodes.push({ x, y, type: t, o: B.o, dx: ix / il, dy: iy / il, edges: null, room: 0 });
+      }
+    }
+    for (const p of corners) if (!boxes.some(B => inBox(B.outer, p.x, p.y))) nodes.push(p);
+    let from = -1,
+      to = -1;
+    if (!startIn || exits) {
+      from = nodes.length;
+      nodes.push({ x: s.x, y: s.y, type: 5, o: null, dx: 0, dy: 0, edges: null, room: 0 });
+    }
+    if (!goalIn) {
+      to = nodes.length;
+      nodes.push({ x: goal.x, y: goal.y, type: 6, o: null, dx: 0, dy: 0, edges: null, room: 0 });
+    }
+    const nearest = (x, y) => {
+      let best = -1,
+        bd = Infinity;
+      for (let i = 0; i < nodes.length; i++) {
+        const d = (nodes[i].x - x) ** 2 + (nodes[i].y - y) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      return best;
+    };
+    if (from < 0) from = nearest(s.x, s.y);
+    if (to < 0) to = nearest(goal.x, goal.y);
+    if (from < 0 || to < 0 || from === to) continue;
+    const edgesOf = linkNodes(W, s, nodes, boxes, from, exits);
+    W.dynUsed += nodes.length;
+    const route = astar(nodes, edgesOf, from, to, false) || astar(nodes, edgesOf, from, to, true);
+    if (!route) continue;
+    const pts = route.map(i => ({ x: nodes[i].x, y: nodes[i].y, round: true }));
+    if (startIn && !exits) pts.unshift({ x: s.x, y: s.y, round: true });
+    if (goalIn && pts.length > 1) {
+      const l = pts[pts.length - 1],
+        p = pts[pts.length - 2],
+        d = Math.hypot(l.x - p.x, l.y - p.y) || 1;
+      pts.push({ x: l.x + (l.x - p.x) / d, y: l.y + (l.y - p.y) / d, round: true });
+    }
+    const nextWp = goal.next < s.path.length ? s.path[goal.next] : null;
+    if (pts.length > 2 && nextWp) {
+      const pen = pts[pts.length - 2];
+      let skip = false;
+      if (near) {
+        const fx = m.x + mb.c * (m.hx - s.hx - m.hx),
+          fy = m.y + mb.s * (m.hx - s.hx - m.hx);
+        skip = (pen.x - fx) * mb.c + (pen.y - fy) * mb.s <= 60;
+      }
+      if (!skip && W.clear(pen.x, pen.y, nextWp.x, nextWp.y, s.need)) pts.pop();
+    }
+    pts.shift();
+    if (!pts.length) continue;
+    s.path.splice(0, goal.next, ...pts);
     return true;
   }
   return false;
@@ -430,18 +1017,19 @@ function classifyMM(W, c, T) {
 
 function beginMM(W, c, T) {
   if (c.state === MM.PATH_AROUND) {
-    if (wayRound(W, c.slave, c.master, T)) return;
-    if (wayRound(W, c.master, c.slave, T)) {
-      const m = c.master;
-      c.master = c.slave;
-      c.slave = m;
-      return;
+    for (const flags of [0, 1]) {
+      if (goRound(W, c, c.slave, c.master, false, flags, T)) return;
+      if (goRound(W, c, c.master, c.slave, false, flags, T)) {
+        const m = c.master;
+        c.master = c.slave;
+        c.slave = m;
+        return;
+      }
     }
     c.state = MM.LATER;
     c.until = W.time + later();
-    c.failures = (c.failures || 0) + 1;
   } else if (c.state === MM.PASS) {
-    if (!wayRound(W, c.master, c.slave, T)) {
+    if (!goRound(W, c, c.master, c.slave, true, 0, T)) {
       c.state = MM.SPEED_ONLY;
       const m = c.master;
       c.master = c.slave;
@@ -458,7 +1046,7 @@ function classifyMS(W, c, bodies, T) {
   if (A.cls === 9 && !crush && standAside(W, A, B, bodies)) return;
   if (!crush) {
     if (endsOn(A, B) && !(A.cls >= 7 && B.cls <= 6) && stopShort(A, B)) return;
-    if (wayRound(W, A, B, T)) {
+    if (goRound(W, c, A, B, false, 0, T) || goRound(W, c, A, B, false, 4, T)) {
       c.state = MS.PATH_AROUND;
       return;
     }
@@ -477,14 +1065,190 @@ function classifyMS(W, c, bodies, T) {
     }
   }
   c.state = MS.LATER;
-  c.until = W.time + later();
-  c.failures = (c.failures || 0) + 1;
+}
+
+function overlapCoef(a, b) {
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    ca = Math.cos(a.h),
+    sa = Math.sin(a.h),
+    cb = Math.cos(b.h),
+    sb = Math.sin(b.h);
+  let least = 1;
+  for (let k = 0; k < 4; k++) {
+    const nx = k === 0 ? ca : k === 1 ? -sa : k === 2 ? cb : -sb,
+      ny = k === 0 ? sa : k === 1 ? ca : k === 2 ? sb : cb;
+    const sum =
+      a.hx * Math.abs(ca * nx + sa * ny) + a.hy * Math.abs(-sa * nx + ca * ny) + b.hx * Math.abs(cb * nx + sb * ny) + b.hy * Math.abs(-sb * nx + cb * ny);
+    const along = dx * nx + dy * ny;
+    if (sum === 0 || along > sum || along < -sum) return 0;
+    least = Math.min(least, 1 - Math.abs(along / sum));
+  }
+  return least;
+}
+
+function targetOf(b) {
+  if (b.q) {
+    const q = b.q;
+    for (const u of q.members) if (u.target && !u.target.dead) return u.target;
+    return q.foe && q.foe.members.length ? q.foe.members[0] : null;
+  }
+  const t = b.u.target;
+  return t && !t.dead ? t : null;
+}
+
+function cannotMove(b) {
+  const u = unitOf(b);
+  if (b.q && (b.q.busy || b.q.pending)) return true;
+  return !u || !!u.rooted || !!u.setup || !!(u.needsDeploy && u.deployed) || !(b.max > 0);
+}
+
+function awayHeading(M, O) {
+  const t = targetOf(M);
+  if (t) return Math.atan2(t.y - M.y, t.x - M.x);
+  if (M.cls >= 7 && M.cls < O.cls && Math.cos(M.h) * (M.x - O.x) + Math.sin(M.h) * (M.y - O.y) > 0) return M.h;
+  return Math.atan2(M.y - O.y, M.x - O.x);
+}
+
+function clearCost(M, O, H) {
+  const ux = Math.cos(H),
+    uy = Math.sin(H),
+    v = M.max / FPS,
+    R = radius(M) + radius(O),
+    dx = O.x - M.x,
+    dy = O.y - M.y,
+    d = Math.hypot(dx, dy),
+    along = v * (ux * dx + uy * dy),
+    lat = v * (uy * dx - ux * dy);
+  let t = -1;
+  if (along > 0) t = (d + R) / along;
+  else if (along < 0) t = R - d < 0 ? 0 : (R - d) / -along;
+  if (lat !== 0 && (t === -1 || R / lat < t)) t = R / lat;
+  if (t < 0) return 0;
+  const turn = Math.abs(Math.atan2(Math.sin(H - M.h), Math.cos(H - M.h))) / Math.max(1e-6, M.turn / FPS);
+  return turn + t;
+}
+
+function pickMover(A, B) {
+  const fa = cannotMove(A),
+    fb = cannotMove(B);
+  if (fa) return fb ? null : B;
+  if (fb) return A;
+  const ta = !!targetOf(A),
+    tb = !!targetOf(B);
+  if (!ta && tb) return A;
+  if (ta && !tb) return B;
+  if (A.cls === 5 && B.cls === 5 && ta && tb) return null;
+  if (A.cls < B.cls && B.cls === 9) return A;
+  if (A.cls > B.cls && A.cls === 9) return B;
+  return clearCost(B, A, awayHeading(B, A)) <= clearCost(A, B, awayHeading(A, B)) ? B : A;
+}
+
+function freeSpot(W, M, H, bodies) {
+  const R = radius(M),
+    cap = Math.min(10, R * 1.5 || 5),
+    half = R + M.spacing * 5,
+    cone = M.cls === 5 ? Math.PI : 2.3561945,
+    near = M.cls === 5 ? 1 : 0.75,
+    most = 20 * 10 + half,
+    close = bodies.filter(o => o !== M && Math.abs(o.x - M.x) <= most + o.r && Math.abs(o.y - M.y) <= most + o.r);
+  let r = 0,
+    step = 1;
+  for (let ring = 0; ring < 20; ring++) {
+    let n = Math.floor((r * 2 * Math.PI) / R) + 1;
+    if (ring && n < 4) n = 4;
+    for (let k = 0; k < n; k++) {
+      const th = (k / n) * 2 * Math.PI,
+        far = th > cone ? near : r,
+        x = M.x + Math.cos(th + H) * far,
+        y = M.y + Math.sin(th + H) * far;
+      if (!W.isOpen(x, y, M.need)) continue;
+      if (close.some(o => Math.abs(o.x - x) <= half + o.r && Math.abs(o.y - y) <= half + o.r)) continue;
+      return { x, y };
+    }
+    r += step;
+    step = Math.min(cap, step + 0.8);
+  }
+  return null;
+}
+
+function stoppedOverlap(a, b) {
+  return overlapCoef(a, b) > K.least;
+}
+
+function tickStopped(W, c, bodies) {
+  const A = c.a,
+    B = c.b;
+  if (c.state === SS.WAIT) {
+    if (W.time < c.clock) return;
+    c.clock = W.time + 1;
+    c.state = SS.START;
+  }
+  if (!W.isOpen(A.x, A.y, A.need) || !W.isOpen(B.x, B.y, B.need)) {
+    c.state = SS.GONE;
+    return;
+  }
+  if (c.state === SS.MOVING) {
+    const M = c.mover,
+      end = M.path[M.path.length - 1];
+    if (!M.moving) c.state = SS.DONE;
+    else if (!end || Math.abs(end.x - c.spot.x) > 1 || Math.abs(end.y - c.spot.y) > 1) c.state = SS.WAIT;
+    return;
+  }
+  const M = pickMover(A, B);
+  if (!M) {
+    c.state = SS.WAIT;
+    return;
+  }
+  const O = M === A ? B : A,
+    spot = freeSpot(W, M, awayHeading(M, O), bodies);
+  if (!spot || (spot.x === M.x && spot.y === M.y)) {
+    c.state = SS.WAIT;
+    return;
+  }
+  const way = W.route(M.x, M.y, spot.x, spot.y, M.need);
+  if (!way || !way.length) {
+    c.state = SS.WAIT;
+    return;
+  }
+  W.standMove(M, way.slice());
+  M.path = M.q ? M.q.box.path : M.u.path;
+  M.moving = true;
+  c.mover = M;
+  c.spot = way[way.length - 1];
+  c.state = SS.MOVING;
+}
+
+function timeLeft(W, c, bodies) {
+  if (!(W.time < c.recount)) {
+    c.recount = W.time + 1;
+    const mx = (c.a.x + c.b.x) / 2,
+      my = (c.a.y + c.b.y) / 2;
+    let n = 0;
+    for (const o of bodies) if (Math.abs(o.x - mx) <= 80 && Math.abs(o.y - my) <= 80) n++;
+    c.allowed = (n * 5) / FPS;
+  }
+  return c.allowed - (W.time - c.start);
+}
+
+function decide(W, c, bodies, T) {
+  if (W.dynUsed >= K.quota) {
+    c.pending = true;
+    return;
+  }
+  c.pending = false;
+  if (c.kind === 'mm') {
+    classifyMM(W, c, T);
+    if (c.state !== MM.RESOLVED) beginMM(W, c, T);
+  } else classifyMS(W, c, bodies, T);
 }
 
 export function tickCollisions(W) {
+  readConstants();
   const T = db.constants.num('MovingVsMovingLookAheadTime', 1.5),
     every = Math.max(1, db.constants.num('FramesPerCollisionCheck', 4));
   W.cframe = (W.cframe || 0) + 1;
+  if (!(W.dynUsed >= 0) || W.cframe % Math.max(1, db.constants.num('DynamicLandQuotaResetInterval', 5)) === 0) W.dynUsed = 0;
   for (const b of W.ccBodies || []) {
     if (b.u) b.u.ccCap = Infinity;
     else b.q.ccCap = Infinity;
@@ -493,20 +1257,24 @@ export function tickCollisions(W) {
   if (!W.colls) W.colls = [];
   for (const b of bodies) b.cap = Infinity;
   const live = [],
-    here = new Set(bodies);
+    here = new Set(bodies),
+    waiting = W.colls.filter(c => c.pending && here.has(c.a) && here.has(c.b));
+  if (waiting.length) {
+    for (const c of waiting) c.left = timeLeft(W, c, bodies);
+    waiting.sort((p, q) => p.left - q.left);
+    for (const c of waiting) decide(W, c, bodies, T);
+  }
   for (const c of W.colls) {
     if (!here.has(c.a) || !here.has(c.b)) continue;
+    if (c.pending) {
+      live.push(c);
+      continue;
+    }
     const look = (W.cframe + c.a.id) % every === 0;
     if (c.kind === 'mm') {
       const { master: M, slave: S } = c;
       if (c.state === MM.LATER) {
-        if (W.time >= c.until) {
-          if (c.failures >= 3) c.state = MM.THROUGH;
-          else {
-            classifyMM(W, c, T);
-            if (c.state !== MM.RESOLVED) beginMM(W, c, T);
-          }
-        }
+        if (W.time >= c.until) decide(W, c, bodies, T);
       } else {
         if (c.state === MM.PATH_AROUND) {
           if (!S.path.some(p => p.round) || Math.cos(M.h) * (S.x - M.x) + Math.sin(M.h) * (S.y - M.y) < -(radius(M) + radius(S))) continue;
@@ -524,14 +1292,17 @@ export function tickCollisions(W) {
           if (c.state === MM.RESOLVED) continue;
         }
       }
+    } else if (c.kind === 'ss') {
+      tickStopped(W, c, bodies);
+      if (c.state === SS.DONE || c.state === SS.GONE) continue;
     } else {
       const A = c.a,
         B = c.b;
       if (B.moving) continue;
       if (c.state === MS.LATER) {
-        if (W.time >= c.until) {
-          if (c.failures >= 3) c.state = MS.THROUGH;
-          else classifyMS(W, c, bodies, T);
+        if (W.time >= c.clock) {
+          c.clock = W.time + 1;
+          decide(W, c, bodies, T);
         }
       } else if (look) {
         const far = A.max * (Math.max(T, A.mpi) + (crushes(W, A, B) ? 1.5 : 0));
@@ -555,31 +1326,37 @@ export function tickCollisions(W) {
     inColl.add(c.b.id * 1e6 + c.a.id);
   }
   for (const a of bodies) {
-    if (!a.moving || (W.cframe + a.id) % every) continue;
+    if ((W.cframe + a.id) % every) continue;
     const gx = Math.floor(a.x / CELLS),
       gy = Math.floor(a.y / CELLS);
     for (let i = gx - 1; i <= gx + 1; i++)
       for (let j = gy - 1; j <= gy + 1; j++)
         for (const b of grid.get(i * 65536 + j) || []) {
           if (b === a || inColl.has(a.id * 1e6 + b.id)) continue;
-          if (a.cls <= 6 && b.cls <= 6) continue;
           const rb = radius(b);
           if (Math.abs(b.x - a.x) > 80 + rb || Math.abs(b.y - a.y) > 80 + rb) continue;
-          const crushEither = crushes(W, a, b) || crushes(W, b, a);
           let c = null;
-          if (b.moving) {
+          if (!a.moving) {
+            if (b.moving || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > (a.r + rb) ** 2 || !stoppedOverlap(a, b)) continue;
+            c = { kind: 'ss', a, b, state: SS.START, clock: W.time + 1, mover: null, spot: null };
+            tickStopped(W, c, bodies);
+            if (c.state === SS.DONE || c.state === SS.GONE) c = null;
+          } else if (a.cls <= 6 && b.cls <= 6) continue;
+          else if (b.moving) {
+            const crushEither = crushes(W, a, b) || crushes(W, b, a);
             if (willMeet(a, b, T + (crushEither ? 1.5 : 0))) {
-              c = { kind: 'mm', a, b };
+              c = { kind: 'mm', a, b, start: W.time, recount: 0, allowed: 0, left: 0, pending: false, cursor: 0 };
               classifyMM(W, c, T);
               if (c.state === MM.RESOLVED) c = null;
+              else if (W.dynUsed >= K.quota) c.pending = true;
               else beginMM(W, c, T);
             }
           } else {
             const far = a.max * (Math.max(T, a.mpi) + (crushes(W, a, b) ? 1.5 : 0));
             if (runsInto(a, b, far) >= 0) {
-              c = { kind: 'ms', a, b };
-              classifyMS(W, c, bodies, T);
-              if (c.state === MS.RESOLVED || c.state === MS.ATTACK) c = null;
+              c = { kind: 'ms', a, b, clock: W.time + 1, start: W.time, recount: 0, allowed: 0, left: 0, pending: false, cursor: 0 };
+              decide(W, c, bodies, T);
+              if (!c.pending && (c.state === MS.RESOLVED || c.state === MS.ATTACK)) c = null;
             }
           }
           if (c) {
