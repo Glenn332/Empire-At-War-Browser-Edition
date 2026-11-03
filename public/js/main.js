@@ -2896,7 +2896,7 @@ async function boot() {
     box.checked = on;
     window.clearShots = on;
     box.parentElement.title =
-      'In land battles, a unit whose shot would hit a hill moves to a spot from which it can hit its target. Off: it holds fire or picks another target. Not in multiplayer.';
+      'In land battles, a unit whose shot would hit a hill holds fire, picks a target it can hit or moves to a spot from which it can hit its target. Off: it fires into the hill as in the original. Not in multiplayer.';
     box.onchange = () => {
       window.clearShots = box.checked;
       try {

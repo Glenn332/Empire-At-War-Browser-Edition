@@ -2990,6 +2990,10 @@ export class LandWorld {
       }
       for (const h of u.heals || []) {
         if ((h.timer += dt) < h.every) continue;
+        if (u.noForce > this.time) {
+          h.timer = h.every;
+          continue;
+        }
         h.timer -= h.every;
         if (!(h.range > 0)) {
           if (u.health < u.maxHealth) u.health = Math.min(u.maxHealth, u.health + h.amount + u.maxHealth * h.percent);
@@ -4093,7 +4097,7 @@ export class LandWorld {
     if (among === this.units && u.x !== undefined) among = this.foesNear(u.x, u.y, reach);
     const w = gun || u.weapon,
       first = this.pickFoe(u, among, reach, gun, null);
-    if (!first || !w || !this.shotBlocked(u, first, w)) return first;
+    if (!first || !w || !this.clearShooting() || !this.shotBlocked(u, first, w)) return first;
     const skip = new Set([first]);
     for (let i = 0; i < 3; i++) {
       const t = this.pickFoe(u, among, reach, gun, skip);
@@ -4841,8 +4845,17 @@ export class LandWorld {
         }
       }
       const gz = heightAt(this.terrain, s.x, s.y);
-      const ga = z0 - heightAt(this.terrain, x0, y0);
-      if (s.z < gz && ga > 0) {
+      const ga = z0 - heightAt(this.terrain, x0, y0),
+        T = s.target,
+        closing =
+          cat === CAT.DEFAULT &&
+          !!T &&
+          !T.dead &&
+          T.x !== undefined &&
+          Math.sign(s.x - x0) === Math.sign(T.x - x0) &&
+          Math.sign(s.y - y0) === Math.sign(T.y - y0) &&
+          Math.sign(s.z - z0) === Math.sign(T.z + (T.aimZ || 0) - z0);
+      if (!closing && s.z < gz && ga > 0) {
         const gt = ga / (ga - (s.z - gz));
         if (!hit || gt < ht) {
           hit = null;
@@ -5036,7 +5049,7 @@ export class LandWorld {
         g.left = 0;
         continue;
       }
-      if (this.shotBlocked(u, t, g)) {
+      if (this.clearShooting() && this.shotBlocked(u, t, g)) {
         g.left = 0;
         g.target = null;
         if (!hidden) {
@@ -5171,7 +5184,7 @@ export class LandWorld {
         Math.abs(da - (Math.abs(da) <= step ? da : Math.sign(da) * step)) <= cone &&
         !(stance.ready && stance.kinds.has('ATTACKIDLE') && (u.animKind === 'idle' || u.animKind === 'move'));
     }
-    if (aimed && this.shotBlocked(u, t, w)) {
+    if (aimed && this.clearShooting() && this.shotBlocked(u, t, w)) {
       aimed = false;
       if (!D && this.time >= (u.scanAt || 0)) {
         u.scanAt = this.time + 0.5;
@@ -5202,8 +5215,12 @@ export class LandWorld {
     return true;
   }
 
+  clearShooting() {
+    return !!(this.clearShots && globalThis.clearShots);
+  }
+
   repositions(sq) {
-    return this.clearShots && globalThis.clearShots && !(this.time < (sq.clearFail || 0));
+    return this.clearShooting() && !(this.time < (sq.clearFail || 0));
   }
 
   shotBlocked(u, t, w) {
@@ -5295,7 +5312,7 @@ export class LandWorld {
     }
     if (t && u.minRange > 0 && Math.hypot(t.x - u.x, t.y - u.y) < u.minRange) t = null;
     u.target = t;
-    if (!t || this.shotBlocked(u, t, w)) {
+    if (!t || (this.clearShooting() && this.shotBlocked(u, t, w))) {
       w.left = 0;
       return;
     }

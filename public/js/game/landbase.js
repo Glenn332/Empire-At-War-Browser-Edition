@@ -227,10 +227,10 @@ function tickCages(world) {
       continue;
     const r = g.type.num('Disable_Force_Abilities_Range', 0);
     for (const u of world.units) {
-      if (u.dead || u.structure || !u.abilityKinds || Math.hypot(u.x - g.x, u.y - g.y) > r) continue;
-      if (!(u.usesForce ??= [...u.abilityKinds].some(k => FORCE.has(k)))) continue;
+      if (u.dead || Math.hypot(u.x - g.x, u.y - g.y) > r) continue;
+      if (!(u.usesForce ??= u.structure ? !!u.heals?.length : !!u.abilityKinds && [...u.abilityKinds].some(k => FORCE.has(k)))) continue;
       u.noForce = world.time + 0.6;
-      if (world.onFx && world.time >= (u.noForceFx || 0)) {
+      if (world.onFx && !u.structure && world.time >= (u.noForceFx || 0)) {
         u.noForceFx = world.time + 2.5;
         world.onFx('Ysalamiri_Force_Drain_Effect', u.x, u.y, u.z + (u.aimZ || 0));
       }
