@@ -9,7 +9,7 @@ export { overviewIcon } from './nativepanel.js';
 import { intelligence, VIS } from './galacticfog.js';
 import { canViewBaseLayout } from './baselayoutdata.js';
 import { canOpenPlanetInfo } from './planetinfodata.js';
-import { dropOverviewUnits } from './fleetmanagement.js';
+import { dropOverviewUnits, pathfinderCell } from './fleetmanagement.js';
 import { orders } from './galacticnet.js';
 
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
@@ -61,11 +61,16 @@ export function stableSlots(units, count, indices) {
   return slots;
 }
 
-export function packOverviewFleet(units, cells, indices, prefix = '') {
+export function packOverviewFleet(units, cells, indices, prefix = '', pf = '0000') {
   const groups = [],
     byType = new Map(),
     positions = new Map(cells.map((s, i) => [s.name.slice(-4), i]));
+  let lead = null;
   for (const unit of units) {
+    if (unit?.pathfinder && pf && positions.has(pf) && !lead) {
+      lead = { unit, count: 1 };
+      continue;
+    }
     const type = unit && (unit.carries || unit.type),
       key = type?.name,
       existing = key && byType.get(key);
@@ -79,7 +84,7 @@ export function packOverviewFleet(units, cells, indices, prefix = '') {
   }
   const attempt = (compact, preserve) => {
     const slots = Array(cells.length).fill(null);
-    if (positions.has('0000')) slots[positions.get('0000')] = { reserved: true };
+    if (pf && positions.has(pf)) slots[positions.get(pf)] = lead ? { ...lead } : { reserved: true };
     const place = (group, i) => {
       if (!Number.isInteger(i) || i < 0 || i >= cells.length) return false;
       const type = group.unit && (group.unit.carries || group.unit.type),
@@ -111,7 +116,7 @@ export function packOverviewFleet(units, cells, indices, prefix = '') {
     attempt(false, false) ||
     attempt(true, false) || {
       compact: true,
-      slots: [{ reserved: true }, ...groups].slice(0, cells.length)
+      slots: [lead ? { ...lead } : { reserved: true }, ...groups].slice(0, cells.length)
     }
   );
 }
@@ -453,7 +458,8 @@ export class PlanetOverview extends NativePanel {
     this.fleets.forEach((f, i) => {
       const fleet = state.fleets[i]?.fleet,
         units = state.fleets[i]?.units || [],
-        packed = packOverviewFleet(units, f.slots, this.fleetIndices, this.prefix);
+        pf = pathfinderCell(),
+        packed = packOverviewFleet(units, f.slots, this.fleetIndices, this.prefix, pf);
       const mark = this.fleetIcons[i],
         raid = !!fleet && isRaidForce(fleet),
         stealth = !!fleet && fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u)),
@@ -473,10 +479,10 @@ export class PlanetOverview extends NativePanel {
         const anchor = packed.slots[n]?.anchor,
           record = packed.slots[n]?.unit || packed.slots[anchor]?.unit;
         s.dragImage = anchor !== undefined ? f.slots[anchor].img : s.img;
-        s.target = { kind: 'fleet', planet: p.index, slot: i, fleet };
+        s.target = { kind: 'fleet', planet: p.index, slot: i, fleet, pf: !!pf && s.name.endsWith('_' + pf) };
         s.source = fleet?.owner === game.me && record ? { kind: 'fleet', planet: p.index, fleet, records: [record] } : null;
         this.put(s, packed.slots[n], {
-          blank: s.name.endsWith('_0000') ? this.comps.get(s.name)?.val('Blank_Texture_Name') : '',
+          blank: pf && s.name.endsWith('_' + pf) ? this.comps.get(s.name)?.val('Blank_Texture_Name') : '',
           packed: packed.compact
         });
         if (anchor !== undefined) this.emptyControl(s);

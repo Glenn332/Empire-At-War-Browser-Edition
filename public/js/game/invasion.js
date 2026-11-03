@@ -103,7 +103,9 @@ export function invasionForces(g, p, attacker) {
     f.planet === p && !f.leg && f.owner === attacker
       ? f.units.flatMap((u, ui) => {
           const type = carriedCompany(u);
-          return type && planetAllowsCompany(g.planets[p], type) ? [{ gid: fi + ':' + ui, type: type.name }] : [];
+          return type && planetAllowsCompany(g.planets[p], type)
+            ? [{ gid: fi + ':' + ui, type: type.name, ...(u.pathfinder ? { pathfinder: true } : {}) }]
+            : [];
         })
       : []
   );

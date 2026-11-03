@@ -1,4 +1,30 @@
 import { embarkGround, landFriendly } from './invasion.js';
+import { db } from '../gamedata.js';
+import { isHumanFaction } from './galaxy.js';
+
+export function pathfinderCell() {
+  const i = Math.trunc(db.constants?.num('Pathfinder_Slot_Index', 0) ?? 0);
+  return i < 0 ? null : String(Math.floor(i / 7)).padStart(2, '0') + String(i % 7).padStart(2, '0');
+}
+
+export function aiPathfinder(g, owner, records) {
+  if (!g.aiPathfinders || isHumanFaction(g, owner) || !records.length || records.some(u => u.pathfinder)) return null;
+  const up = s => String(s || '').toUpperCase(),
+    wanted = db.constants.list('Preferred_Pathfinder_Types').map(up),
+    types = u => [u.type, u.carries].filter(Boolean),
+    hero = u => types(u).some(t => t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => db.type(n)?.bool('Is_Named_Hero')));
+  for (const heroes of [false, true])
+    for (const name of wanted) {
+      const u = records.find(r => hero(r) === heroes && types(r).some(t => up(t.name) === name));
+      if (u) return u;
+    }
+  return null;
+}
+
+export function markPathfinder(fleet, record) {
+  for (const u of fleet.units) if (u.pathfinder && u !== record) delete u.pathfinder;
+  if (record && fleet.units.includes(record)) record.pathfinder = true;
+}
 
 export function dropOverviewUnits(game, source, target) {
   if (!source || !target || game.busy || game.over || game.controlsLocked) return false;
@@ -9,7 +35,10 @@ export function dropOverviewUnits(game, source, target) {
   if (target.kind === 'fleet') {
     if (source.kind === 'ground')
       return !!embarkGround(g, p.index, owner, { records: source.records, fleet: target.fleet, slot: target.slot });
-    return !!transferFleetUnits(g, source.fleet, owner, target.slot, source.records, target.fleet);
+    const fleet = transferFleetUnits(g, source.fleet, owner, target.slot, source.records, target.fleet);
+    if (fleet && target.pf && source.records?.length === 1 && pathfinderCell()) markPathfinder(fleet, source.records[0]);
+    else if (fleet) for (const u of source.records || []) delete u.pathfinder;
+    return !!fleet;
   }
   if (source.kind !== 'fleet' || source.fleet.owner !== owner) return false;
   if (p.owner === owner) return landFriendly(g, source.fleet, p.index, { records: source.records });

@@ -54,7 +54,11 @@ export function splitForCap(units, cap, linked = null) {
       (linked.pathfinder && ordinary.find(u => u.pathfinder));
     if (first)
       return { field: units.filter(u => u === first || isTacticalSuperweapon(u.type)), waiting: ordinary.filter(u => u !== first) };
-  }
+  } else if (units.some(u => u.pathfinder && !isTacticalSuperweapon(u.type)))
+    return {
+      field: units.filter(u => u.pathfinder || isTacticalSuperweapon(u.type)),
+      waiting: units.filter(u => !u.pathfinder && !isTacticalSuperweapon(u.type))
+    };
   const field = [],
     rest = [];
   let left = cap > 0 ? cap : Infinity;

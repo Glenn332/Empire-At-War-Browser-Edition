@@ -356,6 +356,9 @@ export class GalacticStoryHost extends StoryPlots {
     );
     vm.global('Is_Multiplayer_Mode', () => !!game.setup?.net);
     vm.global('Is_Campaign_Game', () => true);
+    vm.global('Enable_AI_Fleet_Pathfinders', on => {
+      if (game.galaxy) game.galaxy.aiPathfinders = !!on;
+    });
     vm.global('DiscreteDistribution', {
       __wrap: true,
       __name: 'DiscreteDistribution',

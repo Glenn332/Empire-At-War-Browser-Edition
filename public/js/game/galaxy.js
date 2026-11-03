@@ -225,6 +225,7 @@ export function startingGalaxy(data, campaign) {
     players,
     active: c.str('Starting_Active_Player'),
     autoReveal: c.has('Planet_Auto_Reveal') ? c.bool('Planet_Auto_Reveal') : undefined,
+    aiPathfinders: db.constants.bool('Initially_Enable_AI_Fleet_Pathfinder'),
     time: 0,
     fiscal: null
   };
@@ -255,6 +256,7 @@ export function snapshotGalaxy(g) {
     log: g.log ? structuredClone(g.log) : null,
     displayFilters: g.displayFilters || 0,
     autoReveal: g.autoReveal,
+    aiPathfinders: !!g.aiPathfinders,
     visibility: g.visibility
       ? {
           viewer: g.visibility.viewer,
@@ -362,6 +364,7 @@ export function snapshotGalaxy(g) {
         {
           checkContestedSpace: u.checkContestedSpace,
           ...(u.raiding ? { raiding: true } : {}),
+          ...(u.pathfinder ? { pathfinder: true } : {}),
           ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {})
         }
       ]),
@@ -391,6 +394,7 @@ export function applyGalaxy(g, s) {
   g.log = s.log ? structuredClone(s.log) : null;
   g.displayFilters = s.displayFilters || 0;
   if (Object.hasOwn(s, 'autoReveal')) g.autoReveal = s.autoReveal;
+  if (Object.hasOwn(s, 'aiPathfinders')) g.aiPathfinders = !!s.aiPathfinders;
   g.visibility = s.visibility
     ? { viewer: s.visibility.viewer, clock: s.visibility.clock || 0, planets: s.visibility.planets.map(v => ({ ...v })) }
     : null;

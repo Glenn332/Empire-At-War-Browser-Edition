@@ -34,7 +34,7 @@ import { STRATEGIC_FRAMES } from './galacticspeed.js';
 import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult, tacticalTransportType } from './invasion.js';
 import { orderMove, stepFleets, LOGIC_FPS, baseSpeed, blocks, bribeQuote, pullIn } from './fleets.js';
 import { canBribe } from './galacticbribe.js';
-import { reachableFleetPlanets, transferFleetUnits, dropOverviewUnits } from './fleetmanagement.js';
+import { reachableFleetPlanets, transferFleetUnits, dropOverviewUnits, aiPathfinder } from './fleetmanagement.js';
 import { humanReach } from './humanroute.js';
 import { iconCanvasRect, iconAtlas } from '../icons.js';
 import { loadHudAssets } from './hud.js';
@@ -1676,7 +1676,8 @@ export class GalacticGame {
     if (!leader) return -1;
     const is = r => r && [r.type, r.carries].some(t => t && (up(t.name) === leader || t.list('Company_Units').some(n => up(n) === leader)));
     const g = this.galaxy;
-    for (const p of g.planets) if (['garrison', 'groundStructures', 'orbitalStructures'].some(l => (p[l] || []).some(is))) return (this.leaderAt = p.index);
+    for (const p of g.planets)
+      if (['garrison', 'groundStructures', 'orbitalStructures'].some(l => (p[l] || []).some(is))) return (this.leaderAt = p.index);
     for (const f of g.fleets) if (f.planet >= 0 && f.units.some(is)) return (this.leaderAt = f.planet);
     return -1;
   }
@@ -2417,12 +2418,19 @@ export class GalacticGame {
       b = this.battle,
       pl = g.planets[b.p];
     if (b.mode === 'land') return this.landBattleSetup();
-    const units = owner =>
-      g.fleets.flatMap((f, fi) =>
-        f.planet === b.p && !f.leg && f.owner === owner
-          ? f.units.map((u, ui) => ({ gid: fi + ':' + ui, type: tacticalTransportType(u).name }))
+    const units = owner => {
+      const here = g.fleets.filter(f => f.planet === b.p && !f.leg && f.owner === owner),
+        lead = aiPathfinder(
+          g,
+          owner,
+          here.flatMap(f => f.units)
+        );
+      return g.fleets.flatMap((f, fi) =>
+        here.includes(f)
+          ? f.units.map((u, ui) => ({ gid: fi + ':' + ui, type: tacticalTransportType(u).name, pathfinder: !!u.pathfinder || u === lead }))
           : []
       );
+    };
     const myTeam = this.net && (b.humans || []).length ? 0 : b.attacker === this.me ? 0 : 1;
     const storyPlots = this.story?.startTactical(pl, true) || [];
     const snap = snapshotGalaxy(g);

@@ -16,6 +16,8 @@ export function pathfinder(units, authoredHero = '') {
         .some(n => n.toUpperCase() === String(authoredHero).toUpperCase())
   );
   if (selected) return selected;
+  const flagged = units.find(u => u.pathfinder);
+  if (flagged) return flagged;
   const hero = u => {
     const t = db.type(u.type);
     return t && (/hero/i.test(t.tag) || t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => /hero/i.test(db.type(n)?.tag || '')));

@@ -90,10 +90,10 @@ const refs = (g, list) => (list ? list.map(u => recordRef(g, u)) : null);
 const records = (g, list) => (Array.isArray(list) ? list.map(r => fromRecordRef(g, r)).filter(Boolean) : null);
 
 function sideRef(g, s) {
-  return s && { kind: s.kind, planet: s.planet, fleet: fleetRef(g, s.fleet), recs: refs(g, s.records), slot: s.slot };
+  return s && { kind: s.kind, planet: s.planet, fleet: fleetRef(g, s.fleet), recs: refs(g, s.records), slot: s.slot, pf: !!s.pf };
 }
 function sideOf(g, s) {
-  return s && { kind: s.kind, planet: s.planet, fleet: fleetOf(g, s.fleet), records: records(g, s.recs), slot: s.slot };
+  return s && { kind: s.kind, planet: s.planet, fleet: fleetOf(g, s.fleet), records: records(g, s.recs), slot: s.slot, pf: !!s.pf };
 }
 
 export const orders = {
