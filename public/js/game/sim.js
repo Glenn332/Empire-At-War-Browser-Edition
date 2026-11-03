@@ -3136,7 +3136,7 @@ export class World {
     u.facesAuto ??= !u.hardpoints.length || db.constants.bool('Auto_Rotate_For_Space_Targeting');
     if (ord.kind === 'move' || ord.kind === 'attackmove') {
       goal = ord;
-      if (ord.kind === 'attackmove' && u.attackMoveStops && u.target && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
+      if (ord.kind === 'attackmove' && u.target && !u.target.dead && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
         goal = null;
         if (u.facesAuto) faceOnly = u.target;
       }

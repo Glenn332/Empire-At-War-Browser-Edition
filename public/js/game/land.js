@@ -626,6 +626,8 @@ export class LandSquad {
     this.legs = undefined;
     this.march = undefined;
     this.marchStill = undefined;
+    this.marchFrom = undefined;
+    this.marchSkip = undefined;
     this.aiPlan = undefined;
     this.formSpeed = undefined;
     this.arriving = undefined;
@@ -2883,9 +2885,19 @@ export class LandWorld {
         continue;
       }
       if (q.march) {
+        const reach = q.members.reduce((r, m) => Math.max(r, m.range || 0, m.type.num('Attack_Move_Response_Range', 0)), 120);
+        if (q.foe && q.marchFrom && Math.hypot(lead.x - q.marchFrom.x, lead.y - q.marchFrom.y) > reach) {
+          q.marchSkip = { foe: q.foe, until: this.time + 10 };
+          q.foe = q.marchFrom = null;
+          for (const u of q.members) u.target = null;
+          this.order(q, q.march.x, q.march.y);
+          continue;
+        }
         if (!q.foe) {
-          const e = this.nearestFoe(lead, this.units, Math.max(lead.range, 120));
-          if (e) {
+          q.marchFrom = null;
+          const e = this.nearestFoe(lead, this.units, reach);
+          if (e && !(q.marchSkip && q.marchSkip.foe === e.squad && q.marchSkip.until > this.time)) {
+            q.marchFrom = { x: lead.x, y: lead.y };
             this.attack(q, e.squad);
             continue;
           }
@@ -3948,6 +3960,7 @@ export class LandWorld {
       reacts = /\bUNIT_AI\b/i.test(lb),
       f = Math.max(0, t.num('Idle_Chase_Range', 0)) + (reacts && /\bDAMAGE_TRACKING\b/i.test(lb) ? t.num('Autonomous_Move_Extension_Vs_Attacker', 0) : 0);
     if (q.march) {
+      q.marchFrom ||= { x: u.x, y: u.y };
       this.attack(q, from.squad);
       return;
     }
