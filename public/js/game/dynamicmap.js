@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { loadMap, skirmishMaps, registerDynamicMaps } from '../ted.js';
+import { loadALO } from '../alo.js';
 
 export const DYNAMIC_SIZES = [
   { key: 'small', label: 'Small', half: 5000, players: 3 },
@@ -216,6 +217,33 @@ const padBuilds = t =>
 
 let vocab = null;
 export const warmDynamicMaps = () => vocabulary().catch(() => null);
+const PROP_REACH = 1500;
+const propReach = new Map();
+async function measure(type) {
+  const model = type.str('Space_Model_Name');
+  const a = model && (await loadALO(model).catch(() => null));
+  if (!a || a.isParticle) return 0;
+  const at = i => {
+    let x = 0,
+      y = 0;
+    for (let b = a.bones[i], n = 0; b && n < 64; n++) {
+      x += b.matrix[3];
+      y += b.matrix[7];
+      if (!(b.parent >= 0) || b.parent === i) break;
+      i = b.parent;
+      b = a.bones[i];
+    }
+    return [x, y];
+  };
+  let r = 0;
+  for (const m of a.meshes) {
+    if (m.hidden || !m.bbox) continue;
+    const [bx, by] = m.bone >= 0 ? at(m.bone) : [0, 0],
+      [x0, y0, , x1, y1] = m.bbox;
+    r = Math.max(r, Math.hypot(bx + (x0 + x1) / 2, by + (y0 + y1) / 2) + Math.hypot(x1 - x0, y1 - y0) / 2);
+  }
+  return r * type.num('Scale_Factor', 1);
+}
 function vocabulary() {
   vocab ??= (async () => {
     const { space, custom } = await skirmishMaps();
@@ -225,13 +253,19 @@ function vocabulary() {
       const m = await loadMap(f).catch(() => null);
       if (m && !m.terrain) maps.push(m);
     }
+    const types = new Set();
+    for (const m of maps) for (const o of m.objects) if (!o.type.num('Space_Obstacle_Radius', 0)) types.add(o.type);
+    await Promise.all([...types].map(async t => propReach.set(t, await measure(t))));
     return classify(maps);
   })();
   return vocab;
 }
 
 function classify(maps) {
-  const seen = new Map();
+  const seen = new Map(),
+    uses = new Map();
+  for (const map of maps) for (const t of new Set(map.objects.map(o => o.type))) uses.set(t, (uses.get(t) || 0) + 1);
+  const oneOff = t => maps.length >= 4 && (uses.get(t) || 0) < 2;
   for (const map of maps)
     for (const o of map.objects) {
       let e = seen.get(o.type);
@@ -255,7 +289,13 @@ function classify(maps) {
     capture: [],
     hub: []
   };
-  const z = new Map();
+  const z = new Map(),
+    shipModels = new Set(
+      [...db.types.values()]
+        .filter(u => [...u.behaviors()].some(n => /LOCOMOTOR/.test(n)))
+        .map(u => u.str('Space_Model_Name').toUpperCase())
+        .filter(Boolean)
+    );
   for (const e of [...seen.values()].sort((a, b) => a.type.name.localeCompare(b.type.name))) {
     const t = e.type,
       b = t.behaviors(),
@@ -271,9 +311,11 @@ function classify(maps) {
     if (pad) (padBuilds(t).some(incomeOf) ? kinds.mine : kinds.pad).push(t);
     else if (b.has('CAPTURE_POINT')) (b.has('DUMMY_STAR_BASE') ? kinds.hub : kinds.capture).push(t);
     else if (b.has('SELECTABLE') || b.has('DUMMY_SPECIAL_WEAPON_SOURCE') || t.has('Tactical_Health')) continue;
+    else if (shipModels.has(model.toUpperCase()) || (!r && (propReach.get(t) || 0) > PROP_REACH)) continue;
     else if (t.bool('Is_Ion_Storm') && r > 0) kinds.ion.push(t);
     else if (t.bool('Is_Nebula') && r > 0) kinds.nebula.push(t);
     else if (t.bool('Is_Asteroid_Field') && r > 0) (scrap ? kinds.junk : kinds.field).push(t);
+    else if (!rocky && oneOff(t)) continue;
     else if (t.bool('Is_Decoration')) kinds.flash.push(t);
     else if (solid && rocky) kinds.rock.push(t);
     else if (solid) kinds.solidDeco.push(t);
@@ -282,7 +324,7 @@ function classify(maps) {
     else if (/_D\.ALO$/i.test(model) || /death|wreck|hulk/i.test(t.name)) kinds.wreck.push(t);
     else kinds.deco.push(t);
   }
-  const radius = t => t.num('Space_Obstacle_Radius', 0);
+  const radius = t => t.num('Space_Obstacle_Radius', 0) || (propReach.get(t) || 0) * 0.7;
   for (const k of ['field', 'junk', 'nebula', 'ion', 'rock'])
     kinds[k].sort((a, b) => radius(a) - radius(b) || a.name.localeCompare(b.name));
   const fields = new Set([...kinds.field, ...kinds.junk]),
@@ -413,7 +455,7 @@ export async function generateDynamicMap(name, opts = {}) {
   const range = (a, b) => a + (b - a) * R();
   const H = d.size.half,
     P = H - 400;
-  const radius = t => t.num('Space_Obstacle_Radius', 0);
+  const radius = t => t.num('Space_Obstacle_Radius', 0) || (propReach.get(t) || 0) * 0.7;
   const zOf = t => v.z.get(t) ?? 0;
 
   const objects = [],
@@ -671,7 +713,9 @@ export async function generateDynamicMap(name, opts = {}) {
         around(5 + Math.floor(R() * 4), 0.85, 1.25, p => blobs(sizedField(350, 800), p, 1 + Math.floor(R() * 3)));
         if (K.rock.length)
           around(3 + Math.floor(R() * 4), 1.2, 1.6, p => {
-            if (fitsOne(p.x, p.y, 200, 0)) once(pick(K.rock), p.x, p.y, 200, { tilt: tilted() });
+            const t = pick(K.rock),
+              r = Math.max(200, radius(t));
+            if (fitsOne(p.x, p.y, r, 0)) once(t, p.x, p.y, r, { tilt: tilted() });
           });
         deep(6 + Math.floor(R() * 6), { x: 0, y: 0 }, Rc * 1.3);
       }
@@ -714,18 +758,24 @@ export async function generateDynamicMap(name, opts = {}) {
       ok: K.solidDeco.length + K.deco.length > 0,
       build() {
         prize();
-        const parts = K.solidDeco.length ? K.solidDeco : K.deco;
+        const parts = K.solidDeco.length ? K.solidDeco : K.deco,
+          span = t => propReach.get(t) || 0;
         around(4 + Math.floor(R() * 4), 0.7, 1, (p, a) => {
-          if (!K.solidDeco.length || fitsOne(p.x, p.y, 160, 0))
-            once(pick(parts), p.x, p.y, K.solidDeco.length ? 160 : 0, { heading: a * DEG + 90 + range(-25, 25) });
+          const t = pick(parts),
+            r = Math.max(K.solidDeco.length ? 160 : 0, span(t));
+          if (!r || fitsOne(p.x, p.y, r, 0)) once(t, p.x, p.y, r, { heading: a * DEG + 90 + range(-25, 25) });
         });
         if (K.deco.length)
           around(2 + Math.floor(R() * 4), 1.1, 1.6, (p, a) => {
             const t = pick(K.deco),
               tan = a + Math.PI / 2 + range(-0.4, 0.4),
-              n = 2 + Math.floor(R() * 4);
-            for (let i = 0; i < n; i++)
-              once(t, p.x + Math.cos(tan) * (i - n / 2) * 110, p.y + Math.sin(tan) * (i - n / 2) * 110, 0, { heading: tan * DEG, z: -100 });
+              gap = Math.max(110, 2 * span(t)),
+              n = gap > 400 ? 1 : 2 + Math.floor(R() * 4);
+            for (let i = 0; i < n; i++) {
+              const x = p.x + Math.cos(tan) * (i - n / 2) * gap,
+                y = p.y + Math.sin(tan) * (i - n / 2) * gap;
+              if (span(t) <= 55 || fitsOne(x, y, span(t), 0)) once(t, x, y, span(t) > 55 ? span(t) : 0, { heading: tan * DEG, z: -100 });
+            }
           });
         deep(4 + Math.floor(R() * 4), { x: 0, y: 0 }, Rc * 0.7);
       }
@@ -776,7 +826,9 @@ export async function generateDynamicMap(name, opts = {}) {
       if (K.rock.length && R() < 0.5)
         for (let i = 0; i < 1 + Math.floor(R() * 3); i++) {
           const q = { x: p.x + range(-700, 700), y: p.y + range(-700, 700) };
-          if (fitsOne(q.x, q.y, 120, 30)) once(pick(K.rock), q.x, q.y, 120, { tilt: tilted() });
+          const t = pick(K.rock),
+            r = Math.max(120, radius(t));
+          if (fitsOne(q.x, q.y, r, 30)) once(t, q.x, q.y, r, { tilt: tilted() });
         }
       if (kind === 'junk' && K.scrap.length)
         for (let i = 0; i < 2 + Math.floor(R() * 3); i++) once(pick(K.scrap), p.x + range(-600, 600), p.y + range(-600, 600), 0);
@@ -861,7 +913,7 @@ export async function dynamicPreview(name, opts = {}, px = 512) {
   g.setLineDash([4, 6]);
   g.strokeRect(X(-P), Y(P), 2 * P * S, 2 * P * S);
   g.setLineDash([]);
-  const rad = t => t.num('Space_Obstacle_Radius', 0) * S;
+  const rad = t => (t.num('Space_Obstacle_Radius', 0) || (propReach.get(t) || 0) * 0.7) * S;
   const layers = [
     [is(K.ion), (x, y, t) => glow(g, x, y, rad(t) * 1.15, 'rgba(90,180,255,0.55)', 'rgba(40,90,200,0)')],
     [is(K.nebula), (x, y, t) => glow(g, x, y, rad(t) * 1.15, 'rgba(190,90,220,0.5)', 'rgba(110,40,160,0)')],
@@ -882,6 +934,15 @@ export async function dynamicPreview(name, opts = {}, px = 512) {
           g.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, 0.6 + R() * 1.4, 0, TAU);
           g.fill();
         }
+      }
+    ],
+    [
+      is(K.deepRock),
+      (x, y, t) => {
+        g.fillStyle = 'rgba(120,112,100,0.45)';
+        g.beginPath();
+        g.arc(x, y, Math.max(1.5, rad(t) * 0.9), 0, TAU);
+        g.fill();
       }
     ],
     [
