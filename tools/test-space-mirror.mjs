@@ -181,7 +181,21 @@ const simOnly = {
     'hyper.ty',
     'hyper.h'
   ],
-  squad: ['cell', 'goal', 'guardAt', 'guardOf', 'home', 'homeOf', 'idleFrom', 'loose', 'order.pace', 'scanTimer', 'tolerance', 'travel']
+  squad: [
+    'cell',
+    'goal',
+    'guardAt',
+    'guardOf',
+    'home',
+    'homeOf',
+    'idleFrom',
+    'loose',
+    'order.group',
+    'order.pace',
+    'scanTimer',
+    'tolerance',
+    'travel'
+  ]
 };
 const IGNORE = new Set([...simOnly.unit.flatMap(k => ['Unit.' + k, 'Fighter.' + k]), ...simOnly.squad.map(k => 'Squad.' + k)]);
 

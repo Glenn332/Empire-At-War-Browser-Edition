@@ -64,7 +64,42 @@ export function collisionOf(model) {
   return out;
 }
 
-const boxCache = new WeakMap();
+const boxCache = new WeakMap(),
+  extCache = new WeakMap();
+
+export function extentBoxOf(model) {
+  if (!model || !model.meshes) return null;
+  if (extCache.has(model)) return extCache.get(model);
+  const bones = restBones(model);
+  let x0 = Infinity,
+    y0 = Infinity,
+    z0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity,
+    z1 = -Infinity;
+  for (const mesh of model.meshes) {
+    const b = mesh.bbox;
+    if (!mesh.collision || !b) continue;
+    const m = bones[mesh.bone] || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+      cx = (b[0] + b[3]) * 0.5,
+      cy = (b[1] + b[4]) * 0.5,
+      cz = (b[2] + b[5]) * 0.5,
+      hx = Math.abs(b[3] - b[0]) * 0.5,
+      hy = Math.abs(b[4] - b[1]) * 0.5,
+      hz = Math.abs(b[5] - b[2]) * 0.5;
+    const c = [0, 1, 2].map(r => m[r * 4] * cx + m[r * 4 + 1] * cy + m[r * 4 + 2] * cz + m[r * 4 + 3]),
+      h = [0, 1, 2].map(r => Math.abs(m[r * 4]) * hx + Math.abs(m[r * 4 + 1]) * hy + Math.abs(m[r * 4 + 2]) * hz);
+    x0 = Math.min(x0, c[0] - h[0]);
+    y0 = Math.min(y0, c[1] - h[1]);
+    z0 = Math.min(z0, c[2] - h[2]);
+    x1 = Math.max(x1, c[0] + h[0]);
+    y1 = Math.max(y1, c[1] + h[1]);
+    z1 = Math.max(z1, c[2] + h[2]);
+  }
+  const out = x1 >= x0 ? [(x1 - x0) * 0.5, (y1 - y0) * 0.5, (z1 - z0) * 0.5] : [1, 1, 1];
+  extCache.set(model, out);
+  return out;
+}
 
 export function collisionBoxOf(model) {
   if (!model) return null;

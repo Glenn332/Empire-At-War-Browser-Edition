@@ -17,7 +17,7 @@ import {
   inRange
 } from './abilities.js';
 import { simRandom } from './simrandom.js';
-import { collisionOf, meshHit } from './collmesh.js';
+import { collisionOf, extentBoxOf, meshHit } from './collmesh.js';
 import {
   CAT,
   categoryOf,
@@ -207,6 +207,13 @@ const NEBULA_KEEPS = new Set([
 ]);
 
 const isFieldType = t => t.bool('Is_Asteroid_Field') || t.bool('Is_Nebula') || t.bool('Is_Ion_Storm');
+const LOOK_LAYERS = new Set(['CAPITAL', 'FRIGATE', 'CORVETTE', 'STATICOBJECT', 'SUPERCAPITAL']);
+const inLookTree = t =>
+  (t._look ??= t
+    .str('Space_Layer')
+    .toUpperCase()
+    .split(/[|,\s]+/)
+    .some(k => LOOK_LAYERS.has(k)));
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
 const shadowModels = new WeakMap();
@@ -498,6 +505,7 @@ export class Unit {
     this.lastH = undefined;
     this.coll = undefined;
     this.lookBox = undefined;
+    this.extBox = undefined;
     this.cull = undefined;
     this.hpColl = undefined;
     this.pathOff = undefined;
@@ -637,6 +645,7 @@ export class Unit {
         const cb = data && data.meshes ? data.meshes.find(m => m.bbox && /^COLLISIONBOX$/i.test(m.name)) : null;
         this.lookBox = cb ? Float64Array.from(cb.bbox) : null;
       }
+      this.extBox = extentBoxOf(data);
       if (this.coll) {
         const B = this.coll.box;
         this.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4]), Math.max(-B[2], B[5])) * this.scale;
@@ -2202,9 +2211,7 @@ export class World {
     const units = this.units;
     this.jammers.length = 0;
     this.interdictors.length = 0;
-    this.obstacles = units.filter(
-      o => !o.dead && !o.isFighter && !o.isPad && !o.hyper && (o.isMobile || o.isStructure) && !flownThrough(o)
-    );
+    this.obstacles = units.filter(o => !o.dead && !o.hyper && inLookTree(o.type));
     const grid = this.obstacleGrid || (this.obstacleGrid = new Map());
     for (const l of grid.values()) l.length = 0;
     for (const o of this.obstacles) {
@@ -4806,7 +4813,10 @@ export class World {
       gx = away.x;
       gy = away.y;
       gz = away.z;
-      if (away.hit && low > 0) want = low;
+      if (away.hit && low > 0) {
+        const o = s && s.order;
+        want = o && o.kind === 'guard' && o.target ? Math.min(low, top * 0.5) : low;
+      }
     }
     this.fly(u, gx, gy, gz, want, dt, k, !(mode === 'idle' && !tgt));
     u.syncObj();
@@ -4913,6 +4923,7 @@ export class World {
           y1 = u.y + ey * v,
           z1 = u.z + ez * v;
         for (const o of near) {
+          if (o === u) continue;
           const c = o.cull;
           if (!c || Math.abs(u.x - c[0]) > c[3] + d || Math.abs(u.y - c[1]) > c[4] + d || Math.abs(u.z - c[2]) > c[5] + d) continue;
           const t = this.lookStep(o, u.x, u.y, u.z, x1, y1, z1);

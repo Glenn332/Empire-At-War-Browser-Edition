@@ -98,8 +98,9 @@ export class PathCore {
         );
       return (o.pathExt = { ax: R, sd: R, r: R });
     }
-    const long = cx > 0 ? cx * s : b ? Math.abs(b.min.y) * s : 0;
-    const wide = cy > 0 ? cy * s : b ? Math.abs(b.max.x) * s : 0;
+    const E = o.extBox || (b ? [(b.max.x - b.min.x) * 0.5, (b.max.y - b.min.y) * 0.5] : null);
+    const long = cx > 0 ? cx * s : E ? E[0] * s : 0;
+    const wide = cy > 0 ? cy * s : E ? E[1] * s : 0;
     return (o.pathExt = { ax: long, sd: wide, r: Math.max(long, wide) });
   }
 
@@ -212,6 +213,11 @@ export class PathCore {
     return out;
   }
 
+  stillQ(q) {
+    const B = this.K.staticBonus || 0;
+    return B > 0 ? q.st || (q.st = { ax: q.ax, sd: q.sd + B, r: Math.max(q.ax, q.sd + B) }) : q;
+  }
+
   sweep(u, q, ax, ay, bx, by, t0, t1) {
     let bits = 0;
     let qdx = bx - ax,
@@ -224,7 +230,8 @@ export class PathCore {
       qdx = Math.cos(u.heading);
       qdy = Math.sin(u.heading);
     }
-    const pad = q.r;
+    const qs = this.stillQ(q);
+    const pad = Math.max(q.r, qs.r);
     const minx = Math.min(ax, bx) - pad,
       maxx = Math.max(ax, bx) + pad,
       miny = Math.min(ay, by) - pad,
@@ -234,7 +241,7 @@ export class PathCore {
         sl = ss.length;
       for (let i = 0; i < sl; i++) {
         const e = ss[i],
-          R = q.r + e.ext.r;
+          R = (e.field ? q.r : qs.r) + e.ext.r;
         const px = ax - e.x,
           py = ay - e.y,
           vx = bx - ax,
@@ -248,7 +255,7 @@ export class PathCore {
         if (
           e.field
             ? touch(q, qdx, qdy, ax, ay, bx, by, e.ext, 1, 0, e.x, e.y, e.x, e.y)
-            : touch(q, qdx, qdy, ax, ay, bx, by, e.ext, e.dx, e.dy, e.x, e.y, e.x, e.y)
+            : touch(qs, qdx, qdy, ax, ay, bx, by, e.ext, e.dx, e.dy, e.x, e.y, e.x, e.y)
         )
           bits |= e.field ? FIELD : STILL;
         if (bits & STILL) break;
@@ -264,7 +271,7 @@ export class PathCore {
           if (e.seen === seen) continue;
           e.seen = seen;
           if (e.o === u || !this.sees(u, e.o)) continue;
-          if (touch(q, qdx, qdy, ax, ay, bx, by, e.ext, e.dx, e.dy, e.x, e.y, e.x, e.y)) {
+          if (touch(qs, qdx, qdy, ax, ay, bx, by, e.ext, e.dx, e.dy, e.x, e.y, e.x, e.y)) {
             bits |= STILL;
             break;
           }
@@ -680,7 +687,9 @@ export class PathCore {
       turns[1] || 0,
       FRAME,
       dist0,
-      nearOff
+      nearOff,
+      this.stillQ(q).sd,
+      this.stillQ(q).r
     ]);
     const found = ex.search();
     const R = new Float64Array(mem.buffer, L.P, 80);

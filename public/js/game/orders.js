@@ -111,7 +111,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     const slots = formationSlots(from, x, y),
       speeds = formationSpeeds(from, { x, y });
     movers.forEach((e, i) => {
-      const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i] };
+      const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
       if (moving(e)) (e.queue ||= []).push(leg);
       else e.setOrder(leg);
     });
@@ -123,7 +123,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
       if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y);
     });
   const speeds = formationSpeeds(movers, { x, y });
-  movers.forEach((e, i) => e.setOrder({ kind, x: slots[i].x, y: slots[i].y, pace: speeds[i] }));
+  movers.forEach((e, i) => e.setOrder({ kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length }));
   return movers.length;
 }
 
@@ -131,7 +131,7 @@ export function orderPlaced(placed, face, attackMove = false) {
   const kind = attackMove ? 'attackmove' : 'move',
     movers = placed.map(o => o.e),
     speeds = formationSpeeds(movers, centreOf(placed));
-  placed.forEach((o, i) => o.e.setOrder({ kind, x: o.x, y: o.y, pace: speeds[i], ...(o.e.isSquad ? {} : { face }) }));
+  placed.forEach((o, i) => o.e.setOrder({ kind, x: o.x, y: o.y, pace: speeds[i], group: placed.length, ...(o.e.isSquad ? {} : { face }) }));
   return placed.length;
 }
 

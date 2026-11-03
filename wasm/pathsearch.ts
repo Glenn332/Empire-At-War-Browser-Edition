@@ -109,7 +109,9 @@ let ux: f64 = 0,
   uh: f64 = 0,
   qax: f64 = 0,
   qsd: f64 = 0,
-  qr: f64 = 0;
+  qr: f64 = 0,
+  sqsd: f64 = 0,
+  sqr: f64 = 0;
 let nStill: i32 = 0,
   nT: i32 = 0,
   S: i32 = 0,
@@ -183,15 +185,16 @@ function sweep(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64): i32 {
     qdx = jcos(uh);
     qdy = jsin(uh);
   }
-  const pad = qr;
+  const pad = Math.max(qr, sqr);
   const minx = Math.min(ax, bx) - pad,
     maxx = Math.max(ax, bx) + pad,
     miny = Math.min(ay, by) - pad,
     maxy = Math.max(ay, by) + pad;
   for (let i = 0; i < nStill; i++) {
+    const field = f(SF, i) != 0;
     const ex = f(SX, i),
       ey = f(SY, i),
-      R = qr + f(SR, i);
+      R = (field ? qr : sqr) + f(SR, i);
     const px = ax - ex,
       py = ay - ey,
       vx = bx - ax,
@@ -202,13 +205,15 @@ function sweep(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64): i32 {
     const cx = px + vx * k,
       cy = py + vy * k;
     if (cx * cx + cy * cy > R * R) continue;
-    const field = f(SF, i) != 0;
-    if (
-      field
-        ? touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), 1, 0, ex, ey, ex, ey)
-        : touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), f(SDX, i), f(SDY, i), ex, ey, ex, ey)
-    )
-      bits |= field ? FIELD : STILL;
+    let hit = false;
+    if (field) hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), 1, 0, ex, ey, ex, ey);
+    else {
+      const keep = qsd;
+      qsd = sqsd;
+      hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), f(SDX, i), f(SDY, i), ex, ey, ex, ey);
+      qsd = keep;
+    }
+    if (hit) bits |= field ? FIELD : STILL;
     if (bits & STILL) break;
   }
   const run = ++irun;
@@ -403,6 +408,8 @@ export function search(): i32 {
   qax = f(P, 5);
   qsd = f(P, 6);
   qr = f(P, 7);
+  sqsd = f(P, 52);
+  sqr = f(P, 53);
   nStill = <i32>f(P, 8);
   nT = <i32>f(P, 9);
   S = <i32>f(P, 10);
@@ -557,6 +564,8 @@ export function sweepOnly(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64):
   qax = f(P, 5);
   qsd = f(P, 6);
   qr = f(P, 7);
+  sqsd = f(P, 52);
+  sqr = f(P, 53);
   nStill = <i32>f(P, 8);
   nT = <i32>f(P, 9);
   S = <i32>f(P, 10);

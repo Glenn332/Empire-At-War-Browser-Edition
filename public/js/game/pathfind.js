@@ -45,6 +45,7 @@ export class Pathfinder extends PathCore {
         rotInc: n('SpacePathFailureRotationExpansionIncrement', 0.5),
         fwdInc: n('SpacePathFailureForwardExpansionIncrement', 0.5),
         occR: n('OccupationRadiusCoefficientSpace', 1.2),
+        staticBonus: n('SpaceStaticObstacleAvoidanceBonusDistance', 0),
         waitCost: n('WaitOperatorCostCoefficient', 0.8),
         waitDist: n('WaitOperatorBaseFrameTime', 100) * n('WaitOperatorSpeedCoefficient', 0.2),
         slowK: n('WaitOperatorSpeedCoefficient', 0.2),
@@ -210,6 +211,7 @@ export class Pathfinder extends PathCore {
     const t = this.world.time,
       pts = m.pts,
       failed = !!pts && !pts.length;
+    if (failed && this.holdOld(u, t)) return;
     const r = (u.route = {
       gx: a.gx,
       gy: a.gy,
@@ -391,21 +393,28 @@ export class Pathfinder extends PathCore {
         if (r) r.check = t + 0.05;
         else return null;
       } else {
+        let held = false;
         if (!keep) {
-          const t0 = this.fixed ? 0 : performance.now();
-          r = u.route = {
-            gx: goal.x,
-            gy: goal.y,
-            ver: this.version,
-            pts: this.find(u, goal.x, goal.y),
-            i: 0,
-            wp: { x: 0, y: 0, via: true, speed: undefined }
-          };
+          const t0 = this.fixed ? 0 : performance.now(),
+            pts = this.find(u, goal.x, goal.y);
           this.spent += this.fixed ? 1 : performance.now() - t0;
+          held = !!pts && !pts.length && this.holdOld(u, t);
+          if (held) r = u.route;
+          else
+            r = u.route = {
+              gx: goal.x,
+              gy: goal.y,
+              ver: this.version,
+              pts,
+              i: 0,
+              wp: { x: 0, y: 0, via: true, speed: undefined }
+            };
         }
-        const failed = r.pts && !r.pts.length;
-        r.check = t + (failed ? RETRY : 1 + (u.id % 7) * 0.05);
-        r.again = t + (failed ? RETRY : 0.5);
+        if (!held) {
+          const failed = r.pts && !r.pts.length;
+          r.check = t + (failed ? RETRY : 1 + (u.id % 7) * 0.05);
+          r.again = t + (failed ? RETRY : 0.5);
+        }
       }
     }
     if (!r.pts) return null;
@@ -435,6 +444,14 @@ export class Pathfinder extends PathCore {
       r.wp.speed = p.speed;
     }
     return r.wp;
+  }
+
+  holdOld(u, t) {
+    const r = u.route;
+    if (!r || !r.pts || !r.pts.length || !u.order || !(u.order.group > 1)) return false;
+    r.ver = this.version;
+    r.check = r.again = t + RETRY;
+    return true;
   }
 
   stillGood(u, r, goal) {
