@@ -259,7 +259,7 @@ function wholeTeamLost(e) {
   );
 }
 
-export function battleResult(w, book, cb, winnerTeam, { destroyed = false } = {}) {
+export function battleResult(w, book, cb, winnerTeam) {
   const alive = book.absent.slice();
   for (const [gid, e] of book.entity)
     if ((!e.dead || e.retreated) && !w.parentModeDeaths?.has(e) && !(wholeTeamLost(e) && !e.retreated)) alive.push(gid);
@@ -273,7 +273,7 @@ export function battleResult(w, book, cb, winnerTeam, { destroyed = false } = {}
       const n = u.type.name;
       if ((left.get(n) || 0) > 0) {
         left.set(n, left.get(n) - 1);
-        if (!destroyed || team === winnerTeam) alive.push(u.gid);
+        alive.push(u.gid);
         continue;
       }
       const e = book.called && book.called.get(team) && book.called.get(team).find(x => x.type === u.type && !called.has(x));

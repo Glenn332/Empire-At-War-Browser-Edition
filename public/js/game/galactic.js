@@ -2534,7 +2534,8 @@ export class GalacticGame {
       if (f.planet === r.planet && !f.leg) f.units = f.units.filter((u, ui) => alive.has(fi + ':' + ui) || !this.inBattle(f, r));
     });
     g.fleets = g.fleets.filter(f => f.units.length);
-    if (r.victoryType === 12 && r.sides) this.battles.retreat(r.planet, r.winner === 'attacker' ? r.sides[1] : r.sides[0]);
+    if ((r.victoryType === 11 || r.victoryType === 12) && r.sides)
+      this.battles.retreat(r.planet, r.winner === 'attacker' ? r.sides[1] : r.sides[0]);
     if (!r.station && pl.station) {
       pl.station = null;
       pl.spaceLevel = 0;

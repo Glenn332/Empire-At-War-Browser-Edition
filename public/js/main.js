@@ -1616,7 +1616,7 @@ class Game {
     if (!result) return;
     this.world.winner = result.team;
     this.campaignOutcome = {
-      ...battleResult(this.world, this.campaignBook, this.setup.campaign, result.team.id, { destroyed: result.type === 11 }),
+      ...battleResult(this.world, this.campaignBook, this.setup.campaign, result.team.id),
       ...this.tacticalCampaign?.result(this.campaignBook),
       sides: this.setup.teamFactions.slice(),
       victoryType: result.type
