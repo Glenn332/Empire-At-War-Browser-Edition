@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **92.0%** | 158 | 28 | 1 | 187 |
-| **Whole game** | **81.0%** | 221 | 115 | 8 | 344 |
+| **Space skirmish** | **92.1%** | 162 | 28 | 1 | 191 |
+| **Whole game** | **81.2%** | 225 | 115 | 8 | 348 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -21,7 +21,7 @@ Regenerate with `node tools/progress.mjs`.
 |---|---|---|---|---|---|
 | Data formats | space skirmish | 86.8% | 14 | 5 | 0 |
 | Rendering | space skirmish | 87.5% | 21 | 7 | 0 |
-| Space simulation | space skirmish | 95.0% | 28 | 1 | 1 |
+| Space simulation | space skirmish | 95.6% | 32 | 1 | 1 |
 | Abilities | space skirmish | 100.0% | 24 | 0 | 0 |
 | Skirmish AI | space skirmish | 87.5% | 15 | 5 | 0 |
 | Interface | space skirmish | 92.3% | 33 | 6 | 0 |
@@ -89,7 +89,7 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Space battle camera — *from TacticalCameras.xml Space_Mode (a mod has its own): start tilt, tilt range, field of view, start and nearest distance, a wheel notch moving the distance and narrowing the view as the game does, the zoom-tilt rule. Ours: it pulls back past Distance_Max to 9000, the distance is not smoothed (the game eases it over Distance_Smooth_Time), no tactical overview. The start yaw is the file Yaw_Default as a world angle, as the engine has it. Ours: C on a selected unit follows it with a free orbiting camera (HUD hidden, mouse orbits, wheel zooms, C or Escape leaves), moving to the next squad member when it dies; Alt+C (rebindable) follows the middle of the squad*
 - 🟡 Cinematic camera: letterbox, self-directed shots, cut to large ships dying — *own shot director; the authored glory camera scripts (.tec) are not used because their coordinate frame is unknown*
 
-### Space simulation — 95.0%
+### Space simulation — 95.6%
 
 - ✅ Capital ship movement and turning
 - ✅ Fighter and bomber squadrons — *flight by the engine fighter locomotor: roll before turn, loops, leader and formation, strafing runs at the ordered hardpoint (else the ship), dogfight pairing, idle passes over a spot at full speed, the look ahead that turns a craft away from ships and structures it is about to fly into (circles of hit radius where the engine has model boxes)*
@@ -108,6 +108,10 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Asteroid fields, nebulae, ion storms — *a nebula: no ability may be switched on inside or for Nebula_Ability_Disable_Time after (read from the engine); what is on is switched off once on the way in, except the kinds the engine ability table gives no nebula flag - hunt, lure, lucky shot, deploy troopers, self-destruct, sprint, ion cannon shot, S-foils, maximum firepower, stim pack (their flag is the table default, taken as off - the default was not found). UnitAbilityTypes.xml, which may change that table, is empty in the game and the trial mod and is not read*
 - ✅ Craft fly through asteroid fields, nebulae and ion storms — *the engine keeps those out of the tree its fighter look ahead asks; impassable asteroids are still avoided*
 - ✅ Nebula haze on ships inside (Nebula_Effect_Color)
+- ✅ Reinforcements cannot drop into asteroid fields, nebulae or ion storms — *read from the engine: the drop test sweeps the footprint of the unit against everything on the static object layer, where fields sit as a circle of their Space_Obstacle_Radius. Ours refuses a drop when the footprint of the unit (Custom_Soft_Footprint_Radius times Scale_Factor, else the extent of its model) overlaps a field, for the placement preview, the reinforce command and the AI drops*
+- ✅ Beams start at their bone wherever the ship is — *tractor beams and other bone beams took the bone from the bone world matrix, which is not updated for ships whose model is drawn apart from their scene object, so a tractor beam started near the centre of the map; the start point now comes from the position and heading of the ship and the offset of the bone in its model. The beam already lets go beyond the range of the ability*
+- ✅ Ships at the edge of the battle area turn back in — *a ship pushed against the edge and facing out was given a turn that leaves the battle area, was clamped back every step and never turned; a waypoint outside the battle area is now skipped and the ship steers for its destination*
+- ✅ AI fleets travel to their target without stopping to fight — *read from the engine and the AI plans: space attack plans send task forces with Move_To or Attack_Move, and for ships with a space layer an attack move does not stop to engage (the engage test of the engine returns no for them), so ships fire at what comes in range while they keep going; only fighters shot by fighters break off to dogfight. Ours does the same. Squadrons launched by a ship that moves get a guard order on it at once, as in the engine, and attack enemies within their Guard_Chase_Range plus weapon reach of the carrier (checked on the battle worker)*
 - ✅ Shots hit the models attached to hardpoints — *read from the engine: a hardpoint with a Model_To_Attach puts that model on its bone as part of the object, and the collision meshes of the attached model take projectile hits like the hull does (the shot then goes through the shields first, and a shot that was not aimed at another hardpoint damages the hardpoint it struck). Before, only the collision meshes of the base model were tested, so turrets and shield generators that sit outside the hull could not be hit: on the Rebel level 5 station the shield generator hangs 231 below the hull, every shot at it missed and the station regenerated its shields under the fire of three Star Destroyers. Three Star Destroyers ordered onto that generator now land 459 of 534 shots, take the 9000 shields down in about 18 seconds and destroy the generator a few seconds later; shots aimed at laser turrets went from 24 of 324 to 379 of 391 hits*
 - ✅ Nebulae stay drawn off the centre of the screen — *a nebula model is all see-through meshes (and some carry particle effects), so the model bounds, which leave see-through meshes out so glows do not grow hit boxes, came out as the one-unit fallback and the nebula was culled as soon as its centre left the view. Culling now uses a separate draw radius over every shown mesh and the reach of the attached particle effects (spawn volume, speed over the lifetime, acceleration and particle size), so any model drawn mostly by see-through meshes or particles is kept while part of it is on screen. Checked on Thrawn Revenge*
 - ✅ Visibility and stealth

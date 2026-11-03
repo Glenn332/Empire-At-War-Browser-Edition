@@ -211,6 +211,26 @@ const GROUPS = [
       ],
       ['Nebula haze on ships inside (Nebula_Effect_Color)', D],
       [
+        'Reinforcements cannot drop into asteroid fields, nebulae or ion storms',
+        D,
+        'read from the engine: the drop test sweeps the footprint of the unit against everything on the static object layer, where fields sit as a circle of their Space_Obstacle_Radius. Ours refuses a drop when the footprint of the unit (Custom_Soft_Footprint_Radius times Scale_Factor, else the extent of its model) overlaps a field, for the placement preview, the reinforce command and the AI drops'
+      ],
+      [
+        'Beams start at their bone wherever the ship is',
+        D,
+        'tractor beams and other bone beams took the bone from the bone world matrix, which is not updated for ships whose model is drawn apart from their scene object, so a tractor beam started near the centre of the map; the start point now comes from the position and heading of the ship and the offset of the bone in its model. The beam already lets go beyond the range of the ability'
+      ],
+      [
+        'Ships at the edge of the battle area turn back in',
+        D,
+        'a ship pushed against the edge and facing out was given a turn that leaves the battle area, was clamped back every step and never turned; a waypoint outside the battle area is now skipped and the ship steers for its destination'
+      ],
+      [
+        'AI fleets travel to their target without stopping to fight',
+        D,
+        'read from the engine and the AI plans: space attack plans send task forces with Move_To or Attack_Move, and for ships with a space layer an attack move does not stop to engage (the engage test of the engine returns no for them), so ships fire at what comes in range while they keep going; only fighters shot by fighters break off to dogfight. Ours does the same. Squadrons launched by a ship that moves get a guard order on it at once, as in the engine, and attack enemies within their Guard_Chase_Range plus weapon reach of the carrier (checked on the battle worker)'
+      ],
+      [
         'Shots hit the models attached to hardpoints',
         D,
         'read from the engine: a hardpoint with a Model_To_Attach puts that model on its bone as part of the object, and the collision meshes of the attached model take projectile hits like the hull does (the shot then goes through the shields first, and a shot that was not aimed at another hardpoint damages the hardpoint it struck). Before, only the collision meshes of the base model were tested, so turrets and shield generators that sit outside the hull could not be hit: on the Rebel level 5 station the shield generator hangs 231 below the hull, every shot at it missed and the station regenerated its shields under the fire of three Star Destroyers. Three Star Destroyers ordered onto that generator now land 459 of 534 shots, take the 9000 shields down in about 18 seconds and destroy the generator a few seconds later; shots aimed at laser turrets went from 24 of 324 to 379 of 391 hits'

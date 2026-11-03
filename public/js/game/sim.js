@@ -96,6 +96,21 @@ export function hiddenInJump(e) {
   return !!h && !h.shown;
 }
 
+export function footprintOf(type) {
+  if (type._footprint !== undefined) return type._footprint;
+  const scale = type.num('Scale_Factor', 1),
+    soft = type.num('Custom_Soft_Footprint_Radius', 0);
+  let r = soft > 0 ? soft * scale : 0;
+  if (!r) {
+    const data = getModelData(type.str('Space_Model_Name'));
+    for (const m of data ? data.meshes : [])
+      if (m.bbox && !m.hidden) r = Math.max(r, Math.hypot(Math.max(-m.bbox[0], m.bbox[3]), Math.max(-m.bbox[1], m.bbox[4])) * scale);
+    if (!data) r = type.has('Squadron_Units') ? 40 : 0;
+  }
+  if (r > 0 || !type.str('Space_Model_Name')) type._footprint = r || 40;
+  return r || 40;
+}
+
 export function buildListFor(type, factionName) {
   const out = [];
   let current = null;
@@ -1711,7 +1726,7 @@ export class World {
       const a = th + i * 0.6283185;
       const x = Math.min(this.max.x, Math.max(this.min.x, at.x - Math.cos(a) * st.r));
       const y = Math.min(this.max.y, Math.max(this.min.y, at.y - Math.sin(a) * st.r));
-      if (!this.cantReinforce(p, x, y)) {
+      if (!this.cantReinforce(p, x, y, footprintOf(type))) {
         pool.pop();
         const k = p.reinforcements.indexOf(type),
           j = p.aiPool ? p.aiPool.indexOf(entry) : -1;
@@ -1738,8 +1753,11 @@ export class World {
     return false;
   }
 
-  cantReinforce(player, x, y) {
+  cantReinforce(player, x, y, size = 0) {
     if (x < this.min.x || x > this.max.x || y < this.min.y || y > this.max.y) return 'Outside the battle area';
+    for (const f of this.fields)
+      if ((f.x - x) ** 2 + (f.y - y) ** 2 < (f.r + size) ** 2)
+        return f.ion ? 'Inside an ion storm' : f.nebula ? 'Inside a nebula' : 'Inside an asteroid field';
     let seen = !this.fog;
     for (const u of this.units) {
       if (u.dead || u.hyper) continue;
@@ -1760,7 +1778,7 @@ export class World {
   deployReinforcement(player, type, x, y, heading) {
     const i = player.reinforcements.indexOf(type);
     if (i < 0) return 'Not available';
-    const why = this.cantReinforce(player, x, y);
+    const why = this.cantReinforce(player, x, y, footprintOf(type));
     if (why) return why;
     player.reinforcements.splice(i, 1);
     const e = this.spawn(type, player, x, y, heading, { hyperspace: true });
@@ -3173,7 +3191,7 @@ export class World {
       legSpeed = Infinity;
     if (goal) {
       const wp = this.paths.next(u, goal, stopAt < 60 && (ord.kind === 'move' || ord.kind === 'attackmove'));
-      if (wp) {
+      if (wp && wp.x >= this.min.x && wp.x <= this.max.x && wp.y >= this.min.y && wp.y <= this.max.y) {
         goal = wp;
         via = !!wp.via;
         if (wp.speed !== undefined && wp.speed < u.maxSpeed * 0.99) legSpeed = (maxSpeed * wp.speed) / Math.max(1, u.maxSpeed);

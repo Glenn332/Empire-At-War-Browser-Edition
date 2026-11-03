@@ -136,7 +136,7 @@ export function execute(world, player, cmd) {
       if (!type) return {};
       const x = clampX(cmd.x),
         y = clampY(cmd.y);
-      const why = world.cantReinforce(player, x, y) || world.deployReinforcement(player, type, x, y, num(cmd.h));
+      const why = world.deployReinforcement(player, type, x, y, num(cmd.h));
       return why ? { why } : {};
     }
     case 'special': {

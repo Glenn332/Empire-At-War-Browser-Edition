@@ -451,6 +451,14 @@ class RingBatch {
   }
 }
 const _beamFrom = new THREE.Vector3();
+const boneLocals = new WeakMap();
+const boneLocal = (u, name, bone) => {
+  let m = boneLocals.get(u.model);
+  if (!m) boneLocals.set(u.model, (m = new Map()));
+  let l = m.get(name);
+  if (!l) m.set(name, (l = u.localOf(bone)));
+  return l;
+};
 const _sun = new THREE.Vector3(),
   _sunDir = new THREE.Vector3();
 const NO_TINT = new THREE.Vector4(1, 1, 1, 0);
@@ -1624,8 +1632,13 @@ export class Renderer {
         if (a.obj && !a.obj.visible) continue;
         const tz = (t.z ?? 0) + (t.type ? (t.type._rtz ??= t.type.num('Ranged_Target_Z_Adjust', 0)) : 0),
           bone = b.bone && a.model && a.model.bone ? a.model.bone(b.bone) : null,
-          from = bone
-            ? (bone.updateWorldMatrix(true, false), bone.getWorldPosition(_beamFrom))
+          l = bone && a.localOf ? boneLocal(a, b.bone, bone) : null,
+          from = l
+            ? _beamFrom.set(
+                a.x + Math.cos(a.heading || 0) * l.x - Math.sin(a.heading || 0) * l.y,
+                a.y + Math.sin(a.heading || 0) * l.x + Math.cos(a.heading || 0) * l.y,
+                (a.z ?? 0) + l.z
+              )
             : _beamFrom.set(a.x, a.y, (a.z ?? 0) + (b.bone ? 0 : (a.height || 0) * 0.3));
         if (b.kind === 'tractor') {
           pulls.push({ a, b: t, from: from.clone(), to: new THREE.Vector3(t.x, t.y, tz) });
