@@ -34,7 +34,7 @@ import { loadGameFonts } from './fonts.js';
 import { diag } from './diag.js';
 import './aidebug.js';
 import { BenchOverlay } from './benchoverlay.js';
-import { texturesReady, loadTexture, textureBytes, dxtSupported } from './dds.js';
+import { texturesReady, eachTextureReady, loadTexture, textureBytes, dxtSupported } from './dds.js';
 import { loadParticles } from './particles.js';
 import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
@@ -315,6 +315,8 @@ function benchFleet(faction, pads = false) {
   if (!pads || !ships.length || !wings.length) return draw(can, 10, []);
   return draw(wings, 4, draw(ships, 6, []));
 }
+
+const PREBUILD_SECONDS = 60;
 
 class Game {
   constructor(setup) {
@@ -805,16 +807,14 @@ class Game {
       } catch {}
     }
     progress('Preparing effects and shaders', 0.45);
-    const all = await texturesReady();
-    progress('Preparing effects and shaders', 0.7);
     this.artOnCard ||= new WeakSet();
-    for (const t of all)
-      if (t.image || t.mipmaps?.length) {
-        this.artOnCard.add(t);
-        try {
-          gl.initTexture(t);
-        } catch {}
-      }
+    await eachTextureReady(t => {
+      if (this.artOnCard.has(t) || !(t.image || t.mipmaps?.length)) return;
+      this.artOnCard.add(t);
+      try {
+        gl.initTexture(t);
+      } catch {}
+    });
     progress('Preparing effects and shaders', 0.8);
     R.scene.add(park);
     try {
@@ -844,8 +844,9 @@ class Game {
       for (const u of w.units) {
         if (u.dead || !u.garrison || !u.garrison.length || !u.player) continue;
         const color = u.player.id >= 0 ? u.player.color : null;
+        const soon = Math.ceil(PREBUILD_SECONDS / Math.max(1, u.type.num('Spawned_Squadron_Delay_Seconds', 5)));
         for (const g of u.garrison) {
-          const n = Math.max(0, (g.remaining >= 0 ? Math.min(g.want, g.remaining) : g.want) - g.live.length);
+          const n = Math.min(soon, Math.max(0, (g.remaining >= 0 ? Math.min(g.want, g.remaining) : g.want) - g.live.length));
           if (!n || !g.type) continue;
           for (const name of g.type.has('Squadron_Units') ? g.type.list('Squadron_Units') : [g.type.name]) {
             const data = getModelData(db.type(name)?.str('Space_Model_Name'));

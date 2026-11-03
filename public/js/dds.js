@@ -419,6 +419,18 @@ export async function texturesReady() {
   return [...textures.values()];
 }
 
+export async function eachTextureReady(fn) {
+  const seen = new Set();
+  for (let fresh; (fresh = [...textures.values()].filter(t => !seen.has(t))).length; )
+    await Promise.all(
+      fresh.map(t => {
+        seen.add(t);
+        return Promise.resolve(t.userData.ready).then(() => fn(t));
+      })
+    );
+  return [...textures.values()];
+}
+
 export function textureBytes() {
   let n = 0;
   for (const t of textures.values()) {

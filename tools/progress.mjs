@@ -721,7 +721,7 @@ const GROUPS = [
       [
         'Land: no stalls when new things come on',
         D,
-        'shaders are not asked whether they built (?shadercheck asks: it waited on the driver), and what is drawn with shaders not built yet waits a picture or two while they are built on the side; a unit that comes on has its own made first; the warm-up draws everything and readies every batch before the battle is shown; a big spawn is built a few milliseconds at a time in single player, at most 24 new units made ready a picture; a free store looks after each unit by a time of its own, spread over the round'
+        'shaders are not asked whether they built (?shadercheck asks: it waited on the driver), and what is drawn with shaders not built yet waits a picture or two while they are built on the side; a unit that comes on has its own made first; the warm-up draws everything and readies every batch before the battle is shown; a big spawn is built a few milliseconds at a time in single player, at most 24 new units made ready a picture; a free store looks after each unit by a time of its own, spread over the round; the warm up builds ahead only the garrison units a spawner can let out in its first minute (one per Spawned_Squadron_Delay_Seconds; ours), where it built all it wants (a Halo mod shipyard wants 9999 frigates each of three kinds, which ran the page out of memory), and puts each texture on the card as soon as it is read instead of holding every texture of the battle until the last one is in'
       ],
       [
         'Land: the 1 percent low of the mod benchmark at 60 frames a second, on screen',
