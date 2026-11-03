@@ -247,7 +247,7 @@ export function sideBeaten(w, team) {
   for (const u of w.units)
     if (!u.dead && u.player.team === team && u.player.id >= 0 && !u.isPad && spaceVictoryRelevant(u.type)) return false;
   for (const s of w.squads) if (!s.dead && s.player.team === team && s.player.id >= 0 && spaceVictoryRelevant(s.type)) return false;
-  return !team.players.some(p => p.reinforcements.some(spaceVictoryRelevant));
+  return true;
 }
 export const spaceVictoryRelevant = t => t.bool('Victory_Relevant', false) || t.bool('Space_Victory_Relevant', false);
 
@@ -259,7 +259,7 @@ function wholeTeamLost(e) {
   );
 }
 
-export function battleResult(w, book, cb, winnerTeam) {
+export function battleResult(w, book, cb, winnerTeam, { destroyed = false } = {}) {
   const alive = book.absent.slice();
   for (const [gid, e] of book.entity)
     if ((!e.dead || e.retreated) && !w.parentModeDeaths?.has(e) && !(wholeTeamLost(e) && !e.retreated)) alive.push(gid);
@@ -273,7 +273,7 @@ export function battleResult(w, book, cb, winnerTeam) {
       const n = u.type.name;
       if ((left.get(n) || 0) > 0) {
         left.set(n, left.get(n) - 1);
-        alive.push(u.gid);
+        if (!destroyed || team === winnerTeam) alive.push(u.gid);
         continue;
       }
       const e = book.called && book.called.get(team) && book.called.get(team).find(x => x.type === u.type && !called.has(x));

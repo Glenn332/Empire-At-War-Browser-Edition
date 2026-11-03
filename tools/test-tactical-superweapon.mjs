@@ -182,6 +182,9 @@ if (mod < 0) assert(!spaceVictoryRelevant(type), 'Native Death Star alone is not
 a.team.players = [{ reinforcements: [] }];
 assert(sideBeaten({ units: [{ type: fixture(), player: { team: a.team, id: 0 } }], squads: [] }, a.team));
 assert(!sideBeaten({ units: [{ type: fixture({ Space_Victory_Relevant: 'Yes' }), player: { team: a.team, id: 0 } }], squads: [] }, a.team));
+a.team.players = [{ reinforcements: [fixture({ Space_Victory_Relevant: 'Yes' })] }];
+assert(sideBeaten({ units: [], squads: [] }, a.team), 'ships still waiting as reinforcements do not keep a side in the battle');
+a.team.players = [{ reinforcements: [] }];
 const v = new TacticalVictory();
 let checks = 0;
 v.update(1, () => checks++);
