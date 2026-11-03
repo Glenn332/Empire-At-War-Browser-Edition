@@ -57,8 +57,17 @@ export function formationSlots(entities, x, y) {
         }
       } else {
         const step = Math.max(50, R * 0.25);
-        for (let t = 0; t < 30; t++, px += vx * step, py += vy * step) {
-          if (placed.every(q => Math.hypot(px - q.x, py - q.y) >= q.R + R)) break;
+        let clear = false;
+        for (let t = 0; t < 30 && !clear; t++) {
+          clear = placed.every(q => Math.hypot(px - q.x, py - q.y) >= q.R + R);
+          if (!clear) {
+            px += vx * step;
+            py += vy * step;
+          }
+        }
+        if (!clear) {
+          px = x;
+          py = y;
         }
       }
       placed.push({ x: px, y: py, R });
