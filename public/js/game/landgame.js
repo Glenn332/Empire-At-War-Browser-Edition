@@ -1487,6 +1487,7 @@ export class LandGame {
         n = v => new THREE.Vector3(...v).normalize();
       lighting.sunDir.value.copy(n(sun.dir));
       lighting.sunColor.value.setRGB(...sun.color.map(c => c * 1.6));
+      lighting.sunSpecular.value.setRGB(...(sun.specular || [1, 1, 1]).map(c => c * (sun.intensity ?? 1)));
       lighting.fillDir.value.copy(n(f1.dir).add(n(f2.dir)).normalize());
       lighting.fillColor.value.setRGB(...f1.color.map((c, i) => (c + f2.color[i]) * 0.8));
       lighting.fillColor2.value.setRGB(0, 0, 0);

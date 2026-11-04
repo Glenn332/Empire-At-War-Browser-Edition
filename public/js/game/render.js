@@ -936,6 +936,7 @@ export class Renderer {
     const n = v => new THREE.Vector3(...v).normalize();
     lighting.sunDir.value.copy(n(sun.nativeDir || sun.dir));
     lighting.sunColor.value.setRGB(...sun.color.map(c => c * 2));
+    lighting.sunSpecular.value.setRGB(...(sun.specular || [1, 1, 1]).map(c => c * (sun.intensity ?? 1)));
     lighting.fillDir.value.copy(n(f1.nativeDir || f1.dir));
     lighting.fillColor.value.setRGB(...f1.color.map(c => c * 2));
     lighting.fillDir2.value.copy(n(f2.nativeDir || f2.dir));

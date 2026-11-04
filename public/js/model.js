@@ -165,7 +165,7 @@ uniform sampler2D normalMap;
 #ifdef GLOSSMAP
 uniform sampler2D glossMap;
 #endif
-uniform vec3 sunDir, sunColor, fillDir, fillColor, fillDir2, fillColor2, ambient;
+uniform vec3 sunDir, sunColor, sunSpecular, fillDir, fillColor, fillDir2, fillColor2, ambient;
 uniform float fillWrap;
 float fillTerm(vec3 n, vec3 d) {
   float x = dot(n, d);
@@ -239,7 +239,7 @@ void main() {
   vec4 base = texture2D(map, vUv);
   vec3 albedo = base.rgb;
 #ifdef COLORIZE
-  albedo = mix(albedo, albedo * colorization.rgb * 1.25, base.a);
+  albedo = mix(albedo, albedo * colorization.rgb, base.a);
 #endif
 #ifdef UNLIT
   vec3 col = albedo * diffuse;
@@ -272,7 +272,7 @@ void main() {
   gloss = base.a;
   #endif
   #ifdef GLOSSMAP
-  { vec3 gm = texture2D(glossMap, vUv).rgb; gloss = max(gm.r, max(gm.g, gm.b)); }
+  gloss = texture2D(glossMap, vUv).r;
   #endif
   #ifdef DETAIL
   {
@@ -286,15 +286,19 @@ void main() {
   }
   #endif
   if (!gl_FrontFacing) n = -n;
+  vec3 gn = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
+  #ifdef DETAIL
+  gn = n;
+  #endif
   float sun = sunlit(vWorldPos, normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0));
-  vec3 light = ambient + sunColor * max(dot(n, sunDir), 0.0) * sun + fillColor * fillTerm(n, fillDir) + fillColor2 * fillTerm(n, fillDir2);
+  vec3 light = ambient + fillColor * fillTerm(gn, fillDir) + fillColor2 * fillTerm(gn, fillDir2) + sunColor * max(dot(n, sunDir), 0.0) * sun;
   vec3 v = normalize(cameraPosition - vWorldPos);
-  float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), max(shininess, 1.0)) * sun;
+  float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), 16.0) * sun;
   vec4 ls = objectTint(tint) * objectTint(vTint);
   #ifdef NATIVE_MESH_GLOSS_EMISSIVE
   vec3 col = albedo * emissive * 2.0;
   #else
-  vec3 col = albedo * (2.0 * emissive + diffuse * light * ls.rgb) + specular * sunColor * sp * gloss * 0.6;
+  vec3 col = albedo * (2.0 * emissive + diffuse * light * ls.rgb) + specular * sunSpecular * sp * gloss;
   #endif
   col = tinted(col, tint);
   col = tinted(col, vTint);
@@ -645,7 +649,7 @@ function makeMaterial(mat, format, teamColor) {
       colorization: { value: new THREE.Vector4(teamColor?.r ?? 1, teamColor?.g ?? 1, teamColor?.b ?? 1, 1) },
       emissive: { value: c3(p.Emissive, 0) },
       diffuse: { value: diffuse },
-      specular: { value: c3(p.Specular, 0.5) },
+      specular: { value: c3(p.Specular, 1) },
       shininess: { value: p.Shininess ?? 32 },
       opacity: { value: 1 },
       tint: { value: new THREE.Vector4(1, 1, 1, 0) },

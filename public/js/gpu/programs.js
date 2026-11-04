@@ -14,6 +14,7 @@ struct Pass {
   fogRange: vec2f, _d: vec2f,
   fillDir2: vec3f, fillWrap: f32,
   fillColor2: vec3f, _e: f32,
+  sunSpecular: vec3f, _f: f32,
 }
 @group(0) @binding(0) var<uniform> P: Pass;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
@@ -211,7 +212,7 @@ fn rock(p: vec3f) -> f32 {
   let fc = v.pos.xy;
   let base = textureSample(mapT, mapS, v.vUv);
   var albedo = base.rgb;
-  ${on('COLORIZE') ? 'albedo = mix(albedo, albedo * D.colorization.rgb * 1.25, base.a);' : ''}
+  ${on('COLORIZE') ? 'albedo = mix(albedo, albedo * D.colorization.rgb, base.a);' : ''}
 `);
   if (on('UNLIT')) {
     L.push(`
@@ -245,7 +246,7 @@ fn rock(p: vec3f) -> f32 {
       : ''
   }
   ${on('GLOSS') ? 'gloss = base.a;' : ''}
-  ${on('GLOSSMAP') ? '{ let gm = textureSample(glossT, glossS, v.vUv).rgb; gloss = max(gm.r, max(gm.g, gm.b)); }' : ''}
+  ${on('GLOSSMAP') ? 'gloss = textureSample(glossT, glossS, v.vUv).r;' : ''}
   ${
     on('DETAIL')
       ? `{
@@ -260,15 +261,16 @@ fn rock(p: vec3f) -> f32 {
       : ''
   }
   if (!front) { n = -n; }
+  let gn = ${on('DETAIL') ? 'n' : 'normalize(v.vNormal) * select(-1.0, 1.0, front)'};
   let sun = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
-  let light = P.ambient + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun + P.fillColor * fillTerm(n, P.fillDir) + P.fillColor2 * fillTerm(n, P.fillDir2);
+  let light = P.ambient + P.fillColor * fillTerm(gn, P.fillDir) + P.fillColor2 * fillTerm(gn, P.fillDir2) + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun;
   let vv = normalize(P.cameraPosition - v.vWorldPos);
-  let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), max(D.shininess, 1.0)) * sun;
+  let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), 16.0) * sun;
   let ls = objectTint(D.tint) * objectTint(v.vTint);
   ${
     on('NATIVE_MESH_GLOSS_EMISSIVE')
       ? 'var col = albedo * D.emissive * 2.0;'
-      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunColor * sp * gloss * 0.6;'
+      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunSpecular * sp * gloss;'
   }
   col = tinted(col, D.tint);
   col = tinted(col, v.vTint);
