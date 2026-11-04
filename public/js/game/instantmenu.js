@@ -98,6 +98,11 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     st.mapFile = mp.initial.st.mapFile;
     Object.assign(st, mp.initial.st);
     players = mp.initial.players;
+  } else if (mp?.resume) {
+    Object.assign(st, mp.resume.st);
+    players = mp.resume.players.map(p =>
+      p.kind === 'human' && p.peer !== 0 ? { ...p, kind: 'open', peer: undefined, was: p.name, name: '', ready: false } : p
+    );
   } else if (mp) {
     const [me, foe] = foes();
     players = [fresh('human', 0, me, { peer: 0, name: mp.name, ready: true }), fresh('open', 1, foe, { ready: false })];
@@ -438,133 +443,164 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           ? 'Open slot'
           : `${AI_KINDS.find(k => k[0] === p.kind)[1]} ${i}`;
 
-  const drawFleets = () => {
-    fleetList.replaceChildren();
-    players.forEach((p, i) => {
-      const roster = rosterOf(p),
-        spent = armyCost(roster, p.army),
-        edit = canEdit(p);
-      const row = el('div', 'ib-fleet' + (i === view.sel ? ' sel' : '') + (p.kind === 'open' ? ' open' : '') + (mine(p) ? ' mine' : ''));
-      row.style.setProperty('--pc', colorOf(p, i));
-      row.onclick = () => {
-        if (view.sel !== i) {
-          view.sel = i;
-          sound('GUI_Button_Press_2_SFX');
-          draw();
-        }
-      };
-      const top = el('div', 'ib-fleet-top');
-      const crest = el('div', 'ib-crest');
-      const icon = iconUrl(db.faction(p.faction)?.str('Icon_Name'));
-      if (icon) crest.style.backgroundImage = `url(${icon})`;
-      let who;
-      if (p.kind === 'you') who = el('div', 'ib-who', 'You');
-      else if (p.kind === 'human') {
-        who = el('div', 'ib-who' + (mine(p) ? '' : ' other'), p.name || 'Player');
-        if (p.peer === 0) who.title = 'Host';
-      } else if (host)
-        who = select(net ? [OPEN, ...AI_KINDS] : AI_KINDS, p.kind, v => {
-          p.kind = v;
-          if (v === 'open') p.army = [];
-          else if (!p.army.length) p.army = randomArmy(rosterOf(p), p.budget);
-          changed(null, true);
-        });
-      else who = el('div', 'ib-who other', p.kind === 'open' ? 'Open' : AI_KINDS.find(k => k[0] === p.kind)[1]);
-      const fac = select(
-        factions.map(f => [f, fLabel(f)]),
-        p.faction,
-        v => {
-          unify(p, v);
-          changed(
-            p,
-            players.some(q => q !== p && q.team === p.team)
-          );
-        }
-      );
-      const team = select(
-        Array.from({ length: INSTANT_MAX_TEAMS }, (_, t) => [t, `Team ${t + 1}`]),
-        p.team,
-        v => {
-          setTeam(p, +v);
-          changed(p);
-        },
-        'ib-team'
-      );
-      fac.disabled = team.disabled = !edit;
-      const color = el('input', 'ib-color');
-      color.type = 'color';
-      color.value = colorOf(p, i);
-      color.title = 'Fleet colour';
-      color.disabled = !edit;
-      color.onclick = e => e.stopPropagation();
-      color.oninput = () => {
-        p.color = color.value;
-        row.style.setProperty('--pc', color.value);
-      };
-      color.onchange = () => changed(p);
-      top.append(crest, who, fac, team, color);
-      const bottom = el('div', 'ib-fleet-bottom');
-      if (p.kind === 'open') {
-        bottom.append(el('div', 'ib-sum', 'Waiting for a player to join'));
-      } else {
-        const bar = el('div', 'ib-bar');
-        const fill = el('div', 'ib-bar-fill');
-        fill.style.width = Math.min(100, (100 * spent) / Math.max(1, p.budget)) + '%';
-        bar.append(fill);
-        const sum = el(
-          'div',
-          'ib-sum',
-          `${p.army.length} ${p.army.length === 1 ? 'unit' : 'units'} · ${money(spent)} / ${money(p.budget)}`
-        );
-        bottom.append(bar, sum);
-        if (net && p.kind === 'human') {
-          const ok = p.peer === 0 || p.ready;
-          bottom.append(el('div', 'ib-ready' + (ok ? ' on' : ''), p.peer === 0 ? 'Host' : ok ? 'Ready' : 'Not ready'));
-        }
+  const fleetRows = [];
+  const typing = e => document.activeElement === e;
+  const fleetRow = i => {
+    const P = () => players[i];
+    const p = P(),
+      edit = canEdit(p);
+    const row = el('div', 'ib-fleet' + (i === view.sel ? ' sel' : '') + (p.kind === 'open' ? ' open' : '') + (mine(p) ? ' mine' : ''));
+    row.style.setProperty('--pc', colorOf(p, i));
+    row.onclick = () => {
+      if (view.sel !== i) {
+        view.sel = i;
+        sound('GUI_Button_Press_2_SFX');
+        draw();
       }
-      const bud = el('input', 'ib-num ib-small');
-      bud.type = 'number';
-      bud.min = INSTANT_BUDGET_MIN;
-      bud.max = INSTANT_BUDGET_MAX;
-      bud.step = 500;
-      bud.value = p.budget;
-      bud.title = 'Budget for this fleet';
-      bud.disabled = !host;
-      bud.onclick = e => e.stopPropagation();
-      bud.onchange = () => {
-        p.budget = clampBudget(bud.value);
-        prune(p);
-        changed(p, p.kind === 'human' && !mine(p));
-      };
-      const dice = button(
-        '🎲',
-        () => {
-          p.army = randomArmy(roster, p.budget);
-          changed(p);
-        },
-        'ib-icon'
-      );
-      dice.title = 'Random fleet within the budget';
-      dice.disabled = !edit || p.kind === 'open';
-      const del = button(
-        '✕',
-        () => {
-          if (net && p.kind === 'human') net.kick(p.peer);
-          else {
-            players.splice(i, 1);
-            view.sel = Math.max(0, Math.min(view.sel, players.length - 1));
-            changed(null, true);
-          }
-        },
-        'ib-icon'
-      );
-      del.title = p.kind === 'human' ? 'Remove this player from the game' : 'Remove';
-      if (p.kind === 'you' || !host || mine(p)) del.style.visibility = 'hidden';
-      if (p.kind !== 'open') bottom.append(bud, dice, del);
-      else bottom.append(del);
-      row.append(top, bottom);
-      fleetList.appendChild(row);
+    };
+    const top = el('div', 'ib-fleet-top');
+    const crest = el('div', 'ib-crest');
+    const icon = iconUrl(db.faction(p.faction)?.str('Icon_Name'));
+    if (icon) crest.style.backgroundImage = `url(${icon})`;
+    let who;
+    if (p.kind === 'you') who = el('div', 'ib-who', 'You');
+    else if (p.kind === 'human') {
+      who = el('div', 'ib-who' + (mine(p) ? '' : ' other'), p.name || 'Player');
+      if (p.peer === 0) who.title = 'Host';
+    } else if (host)
+      who = select(net ? [OPEN, ...AI_KINDS] : AI_KINDS, p.kind, v => {
+        const q = P();
+        q.kind = v;
+        if (v === 'open') q.army = [];
+        else if (!q.army.length) q.army = randomArmy(rosterOf(q), q.budget);
+        changed(null, true);
+      });
+    else who = el('div', 'ib-who other', p.kind === 'open' ? 'Open' : AI_KINDS.find(k => k[0] === p.kind)[1]);
+    const fac = select(
+      factions.map(f => [f, fLabel(f)]),
+      p.faction,
+      v => {
+        const q = P();
+        unify(q, v);
+        changed(
+          q,
+          players.some(o => o !== q && o.team === q.team)
+        );
+      }
+    );
+    const team = select(
+      Array.from({ length: INSTANT_MAX_TEAMS }, (_, t) => [t, `Team ${t + 1}`]),
+      p.team,
+      v => {
+        const q = P();
+        setTeam(q, +v);
+        changed(q);
+      },
+      'ib-team'
+    );
+    fac.disabled = team.disabled = !edit;
+    const color = el('input', 'ib-color');
+    color.type = 'color';
+    color.value = colorOf(p, i);
+    color.title = 'Fleet colour';
+    color.disabled = !edit;
+    color.onclick = e => e.stopPropagation();
+    color.oninput = () => {
+      P().color = color.value;
+      row.style.setProperty('--pc', color.value);
+    };
+    color.onchange = () => changed(P());
+    top.append(crest, who, fac, team, color);
+    const bottom = el('div', 'ib-fleet-bottom');
+    const refs = { row };
+    if (p.kind === 'open') {
+      bottom.append(el('div', 'ib-sum', 'Waiting for a player to join'));
+    } else {
+      const bar = el('div', 'ib-bar');
+      refs.fill = el('div', 'ib-bar-fill');
+      bar.append(refs.fill);
+      refs.sum = el('div', 'ib-sum');
+      bottom.append(bar, refs.sum);
+      if (net && p.kind === 'human') {
+        refs.ready = el('div', 'ib-ready');
+        bottom.append(refs.ready);
+      }
+    }
+    const bud = el('input', 'ib-num ib-small');
+    refs.bud = bud;
+    bud.type = 'number';
+    bud.min = INSTANT_BUDGET_MIN;
+    bud.max = INSTANT_BUDGET_MAX;
+    bud.step = 500;
+    bud.value = p.budget;
+    bud.title = 'Budget for this fleet';
+    bud.disabled = !host;
+    bud.onclick = e => e.stopPropagation();
+    bud.onchange = () => {
+      const q = P();
+      q.budget = clampBudget(bud.value);
+      bud.value = q.budget;
+      prune(q);
+      changed(q, q.kind === 'human' && !mine(q));
+    };
+    const dice = button(
+      '🎲',
+      () => {
+        const q = P();
+        q.army = randomArmy(rosterOf(q), q.budget);
+        changed(q);
+      },
+      'ib-icon'
+    );
+    dice.title = 'Random fleet within the budget';
+    dice.disabled = !edit || p.kind === 'open';
+    const del = button(
+      '✕',
+      () => {
+        const q = P();
+        if (net && q.kind === 'human') net.kick(q.peer);
+        else {
+          players.splice(i, 1);
+          view.sel = Math.max(0, Math.min(view.sel, players.length - 1));
+          changed(null, true);
+        }
+      },
+      'ib-icon'
+    );
+    del.title = p.kind === 'human' ? 'Remove this player from the game' : 'Remove';
+    if (p.kind === 'you' || !host || mine(p)) del.style.visibility = 'hidden';
+    if (p.kind !== 'open') bottom.append(bud, dice, del);
+    else bottom.append(del);
+    row.append(top, bottom);
+    return refs;
+  };
+  const fillRow = (refs, p) => {
+    if (p.kind !== 'open') {
+      const spent = armyCost(rosterOf(p), p.army);
+      refs.fill.style.width = Math.min(100, (100 * spent) / Math.max(1, p.budget)) + '%';
+      refs.sum.textContent = `${p.army.length} ${p.army.length === 1 ? 'unit' : 'units'} · ${money(spent)} / ${money(p.budget)}`;
+      if (refs.ready) {
+        const ok = p.peer === 0 || p.ready;
+        refs.ready.className = 'ib-ready' + (ok ? ' on' : '');
+        refs.ready.textContent = p.peer === 0 ? 'Host' : ok ? 'Ready' : 'Not ready';
+      }
+    }
+    if (!typing(refs.bud)) refs.bud.value = p.budget;
+  };
+  const drawFleets = () => {
+    players.forEach((p, i) => {
+      const key = JSON.stringify([p.kind, p.peer, p.name, i === view.sel, mine(p), canEdit(p), host, p.faction, p.team, colorOf(p, i)]);
+      let f = fleetRows[i];
+      if (!f || f.key !== key) {
+        const refs = fleetRow(i);
+        refs.key = key;
+        if (f) f.row.replaceWith(refs.row);
+        else fleetList.appendChild(refs.row);
+        fleetRows[i] = f = refs;
+      }
+      fillRow(f, p);
     });
+    while (fleetRows.length > players.length) fleetRows.pop().row.remove();
     addBtn.disabled = !host;
     rollAll.disabled = !players.some(p => canEdit(p) && p.kind !== 'open');
     const used = teamsUsed();
@@ -575,6 +611,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     teamNote.classList.toggle('bad', used.length < 2);
   };
 
+  let armyKey = null;
   const drawArmy = () => {
     view.sel = Math.max(0, Math.min(view.sel, players.length - 1));
     const p = players[view.sel],
@@ -582,6 +619,9 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       roster = rosterOf(p),
       spent = armyCost(roster, p.army),
       edit = canEdit(p) && p.kind !== 'open';
+    const key = JSON.stringify([i, view.filter, p.kind, p.peer, p.faction, p.army, p.budget, edit, colorOf(p, i), nameOf(p, i)]);
+    if (key === armyKey) return;
+    armyKey = key;
     armyCol.style.setProperty('--pc', colorOf(p, i));
     armyTitle.textContent = `${nameOf(p, i)} — ${fLabel(p.faction)}`;
     rollOne.disabled = clearOne.disabled = !edit;
@@ -625,16 +665,20 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
         el('div', 'ib-unit-meta', `${money(r.cost)}${r.pop ? ` · pop ${r.pop}` : ''}${r.hero ? ' · unique' : ''}`)
       );
       const count = el('div', 'ib-count', n ? String(n) : '');
-      const remove = () => {
-        const k = p.army.lastIndexOf(r.name);
-        if (k < 0) return false;
-        p.army.splice(k, 1);
-        changed(p);
-        return true;
+      const remove = (e = null) => {
+        let gone = 0;
+        for (let k = e?.shiftKey ? 5 : 1; k > 0; k--) {
+          const at = p.army.lastIndexOf(r.name);
+          if (at < 0) break;
+          p.army.splice(at, 1);
+          gone++;
+        }
+        if (gone) changed(p);
+        return gone > 0;
       };
       const minus = button('−', remove, 'ib-icon');
       minus.disabled = !edit || !n;
-      const plus = button('+', () => add(r), 'ib-icon');
+      const plus = button('+', e => add(r, e?.shiftKey ? 5 : 1), 'ib-icon');
       plus.disabled = !edit || !canAdd(roster, p.army, p.budget, r);
       row.title = !edit
         ? 'Only this fleet’s owner can change it'
@@ -642,25 +686,26 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           ? r.hero && n
             ? 'Heroes are unique'
             : 'Not enough budget left'
-          : 'Click to add · right-click to remove';
-      row.onclick = () => {
+          : 'Click to add · right-click to remove · hold Shift for 5 at a time';
+      row.onclick = e => {
         if (!plus.disabled) {
           sound('GUI_Button_Press_2_SFX');
-          add(r);
+          add(r, e.shiftKey ? 5 : 1);
         }
       };
       row.oncontextmenu = e => {
         e.preventDefault();
-        if (edit && remove()) sound('GUI_Button_Press_2_SFX');
+        if (edit && remove(e)) sound('GUI_Button_Press_2_SFX');
       };
       row.append(ic, info, minus, count, plus);
       catalog.appendChild(row);
     }
     catalog.scrollTop = scroll;
-    function add(r) {
-      if (!canAdd(roster, p.army, p.budget, r)) return;
+    function add(r, times = 1) {
+      let put = 0;
+      for (; put < times && canAdd(roster, p.army, p.budget, r); put++) p.army.push(r.name);
+      if (!put) return;
       const order = new Map(roster.map((x, k) => [x.name, k]));
-      p.army.push(r.name);
       p.army.sort((a, b) => order.get(a) - order.get(b));
       changed(p);
     }
@@ -761,7 +806,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     for (const b of [applyAll, fogBtn, spinBtn, ...sizeBtns]) b.disabled = !host;
     seeds.update();
     budgetIn.disabled = !host;
-    budgetIn.value = st.budget;
+    if (!typing(budgetIn)) budgetIn.value = st.budget;
     if (!host) {
       const me = players.find(mine);
       go.textContent = me?.ready ? 'Not Ready' : 'Ready';
@@ -862,6 +907,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       setup.spaceWorker = !new URLSearchParams(location.search).has('nospaceworker');
       net.setListing(null);
       net.broadcast({ k: 'start', setup });
+      mp.started?.({ st: { ...st }, players: JSON.parse(JSON.stringify(players)) });
     }
     close(true);
     audio?.unlock?.();
@@ -884,14 +930,16 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
             return;
           }
           if (s) return;
-          const slot = players.find(p => p.kind === 'open');
+          const who = String(m.name || 'Player').slice(0, 24);
+          const slot = players.find(p => p.kind === 'open' && p.was === who) || players.find(p => p.kind === 'open');
           if (!slot) {
             net.send(from, { k: 'refuse', why: 'The game is full.' });
             setTimeout(() => net.kick(from), 300);
             return;
           }
-          Object.assign(slot, { kind: 'human', peer: from, name: String(m.name || 'Player').slice(0, 24), ready: false });
-          slot.army = randomArmy(rosterOf(slot), slot.budget);
+          const back = slot.was === who && slot.army.length;
+          Object.assign(slot, { kind: 'human', peer: from, name: who, ready: false });
+          if (!back) slot.army = randomArmy(rosterOf(slot), slot.budget);
           const text = `${slot.name} joined the game.`;
           say('', text);
           net.broadcast({ k: 'chat', name: '', text });

@@ -317,7 +317,8 @@ async function run(m) {
     ? new InstantRules(
         w,
         () => w.players.find(p => p.id === m.viewer) || w.viewer,
-        (...a) => events.push(['game', 'message', a.map(x => plain(x))])
+        (...a) => events.push(['game', 'message', a.map(x => plain(x))]),
+        !!m.net
       )
     : null;
   const entity = id => w.units.find(u => u.id === id) || w.squads.find(q => q.id === id) || null;

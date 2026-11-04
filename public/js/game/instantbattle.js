@@ -273,7 +273,8 @@ export class InstantBattle {
     this.rules = new InstantRules(
       game.world,
       () => game.human,
-      (text, cls) => game.message(text, cls)
+      (text, cls) => game.message(text, cls),
+      !!game.setup.net
     );
   }
 

@@ -2734,7 +2734,10 @@ export class LandGame {
         w.winner = this.teams[winner];
         this.end(w.winner === this.myTeam);
       }
-    } else if (!this.over && (w.beaten.has(this.myTeam) || w.winner !== undefined)) this.end(w.winner === this.myTeam);
+    } else if (!this.over && (w.beaten.has(this.myTeam) || w.winner !== undefined)) {
+      if (this.lock && w.winner === undefined) this.knockedOut();
+      else this.end(w.winner === this.myTeam);
+    }
   }
 
   frame(now) {
@@ -3703,6 +3706,15 @@ export class LandGame {
       }
       p.on = on;
     }
+  }
+
+  knockedOut() {
+    if (this.watching) return;
+    this.watching = true;
+    this.spectator = true;
+    this.reveal = true;
+    this.hudTimer = 0;
+    this.say('You are out of the battle. You are watching the rest of it with full vision.', 'bad');
   }
 
   end(won, { frames = 210, suppress = false } = {}) {

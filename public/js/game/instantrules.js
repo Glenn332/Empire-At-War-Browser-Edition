@@ -12,10 +12,11 @@ const teamName = team => {
 };
 
 export class InstantRules {
-  constructor(world, human, message) {
+  constructor(world, human, message, net = false) {
     this.world = world;
     this.human = human;
     this.message = message;
+    this.net = net;
     this.ended = false;
     this.wait = 0;
   }
@@ -48,7 +49,11 @@ export class InstantRules {
       const best = alive
         .map(t => ({ t, n: w.units.filter(u => !u.dead && u.player.team === t).length }))
         .sort((a, b) => b.n - a.n)[0].t;
-      this.end(best);
+      if (!this.net) this.end(best);
+      else if (!this.out) {
+        this.out = true;
+        w.onEvent('teamDefeated', { team: me.team, winner: best });
+      }
     }
   }
 }

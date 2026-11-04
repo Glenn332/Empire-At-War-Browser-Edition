@@ -391,7 +391,8 @@ export class SpaceMirror {
       }
     }
     const U = m.units,
-      seen = new Set();
+      seen = new Set(),
+      seeAll = this.game.reveal && w.viewer ? w.viewer.bit : 0;
     for (let o = 0; o < U.length; o += UNIT) {
       const e = this.byW.get(U[o]);
       if (!e) continue;
@@ -435,7 +436,7 @@ export class SpaceMirror {
       }
       e.cloaked = !!(flags & 8);
       if (flags & 32) e.flip = true;
-      e.seenBy = U[o + 13];
+      e.seenBy = U[o + 13] | seeAll;
       e.target = U[o + 14] >= 0 ? this.byW.get(U[o + 14]) || null : null;
       e.aim = Number.isNaN(U[o + 15]) ? undefined : U[o + 15];
     }
@@ -523,6 +524,7 @@ export class SpaceMirror {
       if (unlocked && (unlocked.length || p.unlockedTech)) p.unlockedTech = types(unlocked);
     }
     this.applyProps(m);
+    if (seeAll) w.reveal = true;
     this.game.advisor?.update(TICK);
     const held = new Set();
     for (const [wid, qs] of m.queues) {
@@ -593,7 +595,7 @@ export class SpaceMirror {
       p.vy = S[o + 5];
       p.vz = S[o + 6];
       p.age = S[o + 7];
-      p.hidden = S[o + 8] > 0;
+      p.hidden = S[o + 8] > 0 && !seeAll;
       now.push(p);
     }
     if (this.shots.size > now.length * 2 + 1024) {

@@ -1358,7 +1358,10 @@ class Game {
       if (e.player === me && !e.isSquad && e.visualRadius > 60) this.message(`${e.name} lost`, 'bad');
     } else if (kind === 'baseAttacked' && me && d.unit.player.team === me.team) this.message('Our space station is under attack!', 'bad');
     else if (kind === 'gameover') this.gameOver(d.winner, !!d.ready);
-    else if (kind === 'teamDefeated' && me && d.team === me.team && !this.over && !this.setup.net) this.gameOver(d.winner);
+    else if (kind === 'teamDefeated' && me && d.team === me.team && !this.over) {
+      if (this.setup.net) this.knockedOut();
+      else this.gameOver(d.winner);
+    }
     if (kind === 'built' && this.campaignBook && d.entity) {
       const m = this.campaignBook.called,
         t = d.player.team.id;
@@ -1660,6 +1663,15 @@ class Game {
       out[id] = { credits: Math.max(0, s.reserve + (delta > 0 ? delta * s.adjust : delta)), ai: true, delta, parts: s.parts };
     }
     return out;
+  }
+
+  knockedOut() {
+    if (this.watching) return;
+    this.watching = true;
+    this.spectator = true;
+    this.reveal = true;
+    this.ui?.select?.([]);
+    this.message('You are out of the battle. You are watching the rest of it with full vision.', 'bad');
   }
 
   gameOver(winner, ready = false) {
@@ -3005,6 +3017,7 @@ async function boot() {
       version: BUILD,
       launch,
       relaunch,
+      quit: () => leaveFor('multiplayer'),
       kind,
       back: () => leaveTo(location.pathname)
     }).catch(e => {
@@ -3119,6 +3132,7 @@ async function boot() {
       version: BUILD,
       launch,
       relaunch,
+      quit: () => leaveFor('multiplayer'),
       join: params.get('join'),
       kind: params.get('multiplayer') === 'lan' ? 'lan' : 'internet',
       back: () => leaveTo(location.pathname)

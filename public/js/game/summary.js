@@ -118,6 +118,16 @@ export async function showSummary(game, won, me) {
     if (game.campaignOutcome) game.returnToGalaxy();
     else game.toggleMenu();
   });
+  const rehost = !game.campaignOutcome && game.setup?.net?.rehost;
+  if (rehost) {
+    dlg.show('IDC_SAVE_REPLAY_BUTTON', true);
+    dlg.setText('IDC_SAVE_REPLAY_BUTTON', 'Back to Game Setup');
+    dlg.on('IDC_SAVE_REPLAY_BUTTON', () => {
+      dlg.close();
+      resume();
+      rehost();
+    });
+  }
   game.summary = dlg;
   return true;
 }

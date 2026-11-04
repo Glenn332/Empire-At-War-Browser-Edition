@@ -296,6 +296,7 @@ export async function openMultiplayer({
   audio,
   launch,
   relaunch,
+  quit,
   back,
   version,
   join: invited = null,
@@ -493,12 +494,13 @@ export async function openMultiplayer({
       data,
       launch,
       relaunch,
+      quit,
       K,
       kind,
       options,
       password,
       back: () => {
-        openMultiplayer({ maps, landMaps, customMaps, factions, audio, launch, relaunch, back, version, kind });
+        openMultiplayer({ maps, landMaps, customMaps, factions, audio, launch, relaunch, quit, back, version, kind });
       }
     });
     if (!ok) {
@@ -763,32 +765,66 @@ async function pickSave(type, tell) {
   });
 }
 
-async function openStaging({
-  net,
-  host,
-  name,
-  maps,
-  landMaps = [],
-  customMaps = { space: [], land: [] },
-  campaigns = [],
-  factions,
-  audio,
-  version,
-  data,
-  launch,
-  relaunch,
-  back,
-  K,
-  kind,
-  options = null,
-  password = ''
-}) {
-  const instant = (initial = null) =>
+async function openStaging(args) {
+  const {
+    net,
+    host,
+    name,
+    maps,
+    landMaps = [],
+    customMaps = { space: [], land: [] },
+    campaigns = [],
+    factions,
+    audio,
+    version,
+    data,
+    launch,
+    relaunch,
+    quit,
+    back,
+    K,
+    kind,
+    options = null,
+    resume = null
+  } = args;
+  let password = args.password || '';
+  const offs = [];
+  const track = (ev, fn) => {
+    const off = net.on(ev, fn);
+    offs.push(off);
+    return off;
+  };
+  let kept = null;
+  const again = state => {
+    if (host) net.broadcast({ k: 'rehost' });
+    quit();
+    openStaging({ ...args, resume: state }).then(ok => {
+      if (!ok) {
+        net.close();
+        back();
+      }
+    });
+  };
+  const netFor = () => {
+    const n = { session: net, me: net.id, relaunch };
+    if (!quit) return n;
+    if (host) n.rehost = () => again(kept);
+    else {
+      const off = net.on('message', (from, m) => {
+        if (m.k === 'rehost' && from === 0) {
+          off();
+          again(null);
+        }
+      });
+    }
+    return n;
+  };
+  const instant = (initial = null, resumed = null) =>
     openInstantBattle({
       maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m)), ...dynamicMaps()],
       factions,
       audio,
-      start: setup => launch({ ...setup, net: { session: net, me: net.id, relaunch } }),
+      start: setup => launch({ ...setup, net: netFor() }),
       mp: {
         session: net,
         host,
@@ -800,10 +836,14 @@ async function openStaging({
         password: host ? options?.password || '' : '',
         invite: host ? inviteLink(net.gameId, kind) : null,
         initial,
+        resume: resumed,
+        started: ib => {
+          kept = { ib };
+        },
         back
       }
     });
-  if (host && options?.type === 'instant') return instant();
+  if (host && (resume?.ib || (!resume && options?.type === 'instant'))) return instant(null, resume?.ib || null);
   const dlg = await openDialog(K.staging, { ...SCREEN, modal: false });
   if (host) password = options?.password || '';
   for (const id of K.stagingOff) dlg.enable(id, false);
@@ -855,6 +895,12 @@ async function openStaging({
     ready: false,
     faction: sidesOf(st.mapFile)[i % Math.max(1, sidesOf(st.mapFile).length)]
   }));
+  if (host && resume?.st) {
+    st = resume.st;
+    slots = resume.slots.map(x =>
+      x.kind === 'human' && x.peer !== 0 ? { ...x, kind: 'open', peer: null, was: x.name, name: '', ready: false } : { ...x, ready: false }
+    );
+  }
   const chat = [];
   let told = '';
   let left = false;
@@ -948,7 +994,7 @@ async function openStaging({
   const usedTeams = () => [...new Set(slots.filter(s => s.kind !== 'closed' && s.kind !== 'open').map(s => s.team))].sort((a, b) => a - b);
   const manyTeams = () => spaceTeams() && usedTeams().length > 2;
   if (host) {
-    net.on('message', (from, m) => {
+    track('message', (from, m) => {
       const i = slots.findIndex(s => s.kind === 'human' && s.peer === from);
       if (m.k === 'hello') {
         if (m.version !== version || m.data !== data) {
@@ -1004,7 +1050,7 @@ async function openStaging({
         }
       }
     });
-    net.on('leave', peer => {
+    track('leave', peer => {
       const s = slots.find(x => x.kind === 'human' && x.peer === peer);
       if (!s) return;
       addChat('', `${s.name} left the game.`);
@@ -1013,7 +1059,7 @@ async function openStaging({
       publish();
     });
   } else {
-    const offMessage = net.on('message', (from, m) => {
+    const offMessage = track('message', (from, m) => {
       if (m.k === 'state' && m.ib) {
         if (left) return;
         left = true;
@@ -1049,7 +1095,7 @@ async function openStaging({
     });
     net.send(0, { k: 'hello', name, version, data, ...(password ? { password } : {}) });
   }
-  const offClosed = net.on('closed', why => {
+  const offClosed = track('closed', why => {
     if (!started) leave(why === 'host left' ? 'The host closed the game.' : 'The connection to the game was lost (' + why + ').');
   });
 
@@ -1613,9 +1659,11 @@ async function openStaging({
     if (started) return;
     started = true;
     clearInterval(beat);
+    for (const off of offs) off();
     dlg.close();
     audio?.unlock?.();
-    launch({ ...setup, net: { session: net, me: net.id, relaunch } });
+    if (host && !campaign()) kept = { st: JSON.parse(JSON.stringify({ ...st, save: null })), slots: JSON.parse(JSON.stringify(slots)) };
+    launch({ ...setup, net: !campaign() ? netFor() : { session: net, me: net.id, relaunch } });
   };
 
   if (host) publish();

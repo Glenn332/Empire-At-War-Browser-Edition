@@ -127,9 +127,11 @@ export class Menus {
       g.setUIPause?.('menu', true);
     }
     dlg.enable('IDC_SAVE_GAME', !g.over && !g.setup.benchmark && !g.noSave && !(g.setup.net && g.setup.campaign));
-    dlg.enable('IDC_LOAD_GAME', !g.setup.net);
+    const rehost = g.setup.net?.rehost;
+    dlg.enable('IDC_LOAD_GAME', !g.setup.net || !!rehost);
+    if (rehost) dlg.setText('IDC_LOAD_GAME', 'Back to Game Setup');
     dlg.on('IDC_SAVE_GAME', () => this.save());
-    dlg.on('IDC_LOAD_GAME', () => this.load());
+    dlg.on('IDC_LOAD_GAME', () => (rehost ? this.confirm('Bring every player back to the game setup?', () => rehost()) : this.load()));
     dlg.on('IDC_INGAME_OPTIONS', () => this.options());
     dlg.on('IDC_GAME_OPTIONS_QUIT', () => this.confirm(T('TEXT_QUIT_SURE', 'Quit Current Game?'), () => toMainMenu()));
     dlg.on('IDC_GAME_OPTIONS_RESUME', () => this.pop());
