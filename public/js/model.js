@@ -291,7 +291,12 @@ void main() {
   gn = n;
   #endif
   float sun = sunlit(vWorldPos, normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0));
-  vec3 light = ambient + fillColor * fillTerm(gn, fillDir) + fillColor2 * fillTerm(gn, fillDir2) + sunColor * max(dot(n, sunDir), 0.0) * sun;
+  #ifdef BUMP
+  float sunTerm = max(dot(n, sunDir), 0.0);
+  #else
+  float sunTerm = fillTerm(gn, sunDir);
+  #endif
+  vec3 light = ambient + fillColor * fillTerm(gn, fillDir) + fillColor2 * fillTerm(gn, fillDir2) + sunColor * sunTerm * sun;
   vec3 v = normalize(cameraPosition - vWorldPos);
   float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), 16.0) * sun;
   vec4 ls = objectTint(tint) * objectTint(vTint);

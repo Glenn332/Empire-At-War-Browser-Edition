@@ -263,7 +263,8 @@ fn rock(p: vec3f) -> f32 {
   if (!front) { n = -n; }
   let gn = ${on('DETAIL') ? 'n' : 'normalize(v.vNormal) * select(-1.0, 1.0, front)'};
   let sun = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
-  let light = P.ambient + P.fillColor * fillTerm(gn, P.fillDir) + P.fillColor2 * fillTerm(gn, P.fillDir2) + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun;
+  let sunTerm = ${on('BUMP') ? 'max(dot(n, P.sunDir), 0.0)' : 'fillTerm(gn, P.sunDir)'};
+  let light = P.ambient + P.fillColor * fillTerm(gn, P.fillDir) + P.fillColor2 * fillTerm(gn, P.fillDir2) + P.sunColor * sunTerm * sun;
   let vv = normalize(P.cameraPosition - v.vWorldPos);
   let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), 16.0) * sun;
   let ls = objectTint(D.tint) * objectTint(v.vTint);
