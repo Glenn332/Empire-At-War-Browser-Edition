@@ -254,13 +254,24 @@ export class Instances {
       for (let i = 0; i < list.length; i++) {
         const e = list[i],
           m = e.mesh;
-        if (e.pool && (m.material !== e.mat || m.geometry !== e.pool.src)) {
+        if (e.pool && m.geometry !== e.pool.src) {
           m.layers.set(0);
           this.taken.delete(m);
           e.pool = null;
           e.skin = null;
         }
-        if (e.skin) {
+        const away = !!e.pool && m.material !== e.mat;
+        if (away !== !!e.away) {
+          e.away = away;
+          if (away) {
+            m.layers.set(0);
+            this.taken.delete(m);
+          } else if (!e.skin) {
+            this.taken.add(m);
+            m.layers.set(HIDDEN);
+          }
+        }
+        if (e.skin && !away) {
           const go = Instances.skins && !!this.gpu && e.pool.ready && !!e.skin.mats;
           if (go !== this.taken.has(m)) {
             if (go) {
@@ -276,7 +287,7 @@ export class Instances {
         while (o && o !== obj && o.visible) o = o.parent;
         if (o !== obj) continue;
         const p = e.pool,
-          pooled = !!p && !(e.skin && !this.taken.has(m)),
+          pooled = !!p && !away && !(e.skin && !this.taken.has(m)),
           defer = defer0 && pooled;
         if (!whole && !defer) m.matrixWorld.multiplyMatrices(world, e.local);
         if (!pooled) {

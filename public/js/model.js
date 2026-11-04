@@ -205,8 +205,7 @@ uniform vec3 emissive, diffuse, specular;
 uniform float shininess, opacity, glow;
 uniform vec4 tint;
 varying vec4 vTint;
-vec3 tinted(vec3 c, vec4 t) { return t.a < 0.0 ? c * t.rgb : mix(c, t.rgb, t.a); }
-bool faded(vec4 t) { return t.a < -1.0 && bayer4(gl_FragCoord.xy) < -1.0 - t.a; }
+vec3 tinted(vec3 c, vec4 t) { return t.a < 0.0 ? c : mix(c, t.rgb, t.a); }
 vec4 objectTint(vec4 t) { return t.a < 0.0 ? vec4(t.rgb, t.a + 2.0) : vec4(1.0); }
 varying vec2 vUv;
 varying vec3 vNormal, vTangent, vBinormal, vWorldPos;
@@ -291,14 +290,14 @@ void main() {
   vec3 light = ambient + sunColor * max(dot(n, sunDir), 0.0) * sun + fillColor * fillTerm(n, fillDir) + fillColor2 * fillTerm(n, fillDir2);
   vec3 v = normalize(cameraPosition - vWorldPos);
   float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), max(shininess, 1.0)) * sun;
+  vec4 ls = objectTint(tint) * objectTint(vTint);
   #ifdef NATIVE_MESH_GLOSS_EMISSIVE
   vec3 col = albedo * emissive * 2.0;
   #else
-  vec3 col = albedo * (2.0 * emissive + diffuse * light) + specular * sunColor * sp * gloss * 0.6;
+  vec3 col = albedo * (2.0 * emissive + diffuse * light * ls.rgb) + specular * sunColor * sp * gloss * 0.6;
   #endif
   col = tinted(col, tint);
   col = tinted(col, vTint);
-  if (faded(tint) || faded(vTint)) discard;
   if (ghost > 0.5 && mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;
   if (dissolve > 0.0 && bayer4(gl_FragCoord.xy) < dissolve) discard;
   #ifdef FOW_DIM
@@ -307,9 +306,9 @@ void main() {
   col = mix(fogTint, col, haze(vWorldPos));
   #ifdef ALPHA
   if (base.a * opacity <= alphaRef) discard;
-  gl_FragColor = vec4(col, base.a * opacity);
+  gl_FragColor = vec4(col, base.a * opacity * ls.a);
   #else
-  gl_FragColor = vec4(col, opacity);
+  gl_FragColor = vec4(col, opacity * ls.a);
   #endif
 #endif
 }`;

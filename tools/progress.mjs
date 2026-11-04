@@ -209,7 +209,7 @@ const GROUPS = [
         T,
         'the engine occupancy test marks fields with a category bit; how the space path finder uses that bit for a corvette is not traced; ours lets a ship through any field that does not hurt it'
       ],
-      ['Nebula effect on ships inside: Nebula_Effect_Color multiplies their colour and its alpha their opacity, faded in as the engine does', D],
+      ['Nebula effect on ships inside: Nebula_Effect_Color multiplies their sun and fill light and its alpha is their opacity, alpha blended as the stock shaders do, faded in as the engine does', D],
       [
         'Reinforcements cannot drop into asteroid fields, nebulae or ion storms',
         D,

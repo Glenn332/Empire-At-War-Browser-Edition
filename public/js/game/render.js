@@ -750,9 +750,39 @@ export class Renderer {
       v = h.v;
     if (v <= 0) {
       h.color.set(1, 1, 1, 0);
+      this.unfade(u);
       return;
     }
-    h.color.set(1 + (to[0] - 1) * v, 1 + (to[1] - 1) * v, 1 + (to[2] - 1) * v, -2 + (1 + (to[3] - 1) * v));
+    const opacity = 1 + (to[3] - 1) * v;
+    h.color.set(1 + (to[0] - 1) * v, 1 + (to[1] - 1) * v, 1 + (to[2] - 1) * v, opacity - 2);
+    if (opacity < 0.999) this.fade(u);
+    else this.unfade(u);
+  }
+
+  fade(u) {
+    if (u.fadeMats) return;
+    u.fadeMats = [];
+    u.obj.traverse(o => {
+      const m = o.material;
+      if (!o.isMesh || !m || !m.uniforms || !m.uniforms.tint || m.transparent) return;
+      const c = m.clone();
+      c.uniforms = { ...m.uniforms };
+      c.userData = m.userData;
+      c.transparent = true;
+      c.blending = THREE.NormalBlending;
+      c.depthWrite = true;
+      u.fadeMats.push([o, m, c]);
+      o.material = c;
+    });
+  }
+
+  unfade(u) {
+    if (!u.fadeMats) return;
+    for (const [o, m, c] of u.fadeMats) {
+      if (o.material === c) o.material = m;
+      c.dispose();
+    }
+    u.fadeMats = null;
   }
 
   updateShadows(world, r = this.renderer) {

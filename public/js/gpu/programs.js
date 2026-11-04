@@ -153,8 +153,7 @@ struct VOut {
 }
 fn bayer2(a0: vec2f) -> f32 { let a = floor(a0); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
 fn bayer4(a: vec2f) -> f32 { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
-fn tinted(c: vec3f, t: vec4f) -> vec3f { return select(mix(c, t.rgb, t.a), c * t.rgb, t.a < 0.0); }
-fn faded(t: vec4f, fc: vec2f) -> bool { return t.a < -1.0 && bayer4(fc) < -1.0 - t.a; }
+fn tinted(c: vec3f, t: vec4f) -> vec3f { return select(mix(c, t.rgb, t.a), c, t.a < 0.0); }
 fn objectTint(t: vec4f) -> vec4f { return select(vec4f(1.0), vec4f(t.rgb, t.a + 2.0), t.a < 0.0); }
 fn haze(at: vec3f) -> f32 { return select(1.0, clamp((P.fogRange.y - distance(P.cameraPosition, at)) / max(1.0, P.fogRange.y - P.fogRange.x), 0.0, 1.0), P.fogRange.y > 0.0); }
 `);
@@ -265,19 +264,19 @@ fn rock(p: vec3f) -> f32 {
   let light = P.ambient + P.sunColor * max(dot(n, P.sunDir), 0.0) * sun + P.fillColor * fillTerm(n, P.fillDir) + P.fillColor2 * fillTerm(n, P.fillDir2);
   let vv = normalize(P.cameraPosition - v.vWorldPos);
   let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), max(D.shininess, 1.0)) * sun;
+  let ls = objectTint(D.tint) * objectTint(v.vTint);
   ${
     on('NATIVE_MESH_GLOSS_EMISSIVE')
       ? 'var col = albedo * D.emissive * 2.0;'
-      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light) + D.specular * P.sunColor * sp * gloss * 0.6;'
+      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunColor * sp * gloss * 0.6;'
   }
   col = tinted(col, D.tint);
   col = tinted(col, v.vTint);
-  if (faded(D.tint, fc) || faded(v.vTint, fc)) { discard; }
   if (D.ghost > 0.5 && glMod(floor(fc.x) + floor(fc.y), 2.0) < 1.0) { discard; }
   if (D.dissolve > 0.0 && bayer4(fc) < D.dissolve) { discard; }
   ${on('FOW_DIM') ? 'if (P.fowSide > 0.0) { col *= mix(0.3, 1.0, textureSample(fowMap, fowS, v.vWorldPos.xy / P.fowSide).r); }' : ''}
   col = mix(P.fogTint, col, haze(v.vWorldPos));
-  ${on('ALPHA') ? 'return vec4f(col, base.a * D.opacity);' : 'return vec4f(col, D.opacity);'}
+  ${on('ALPHA') ? 'return vec4f(col, base.a * D.opacity * ls.a);' : 'return vec4f(col, D.opacity * ls.a);'}
 }`);
   return L.join('');
 }
