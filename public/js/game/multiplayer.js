@@ -295,6 +295,7 @@ export async function openMultiplayer({
   factions,
   audio,
   launch,
+  relaunch,
   back,
   version,
   join: invited = null,
@@ -491,12 +492,13 @@ export async function openMultiplayer({
       version,
       data,
       launch,
+      relaunch,
       K,
       kind,
       options,
       password,
       back: () => {
-        openMultiplayer({ maps, landMaps, customMaps, factions, audio, launch, back, version, kind });
+        openMultiplayer({ maps, landMaps, customMaps, factions, audio, launch, relaunch, back, version, kind });
       }
     });
     if (!ok) {
@@ -774,6 +776,7 @@ async function openStaging({
   version,
   data,
   launch,
+  relaunch,
   back,
   K,
   kind,
@@ -785,7 +788,7 @@ async function openStaging({
       maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m)), ...dynamicMaps()],
       factions,
       audio,
-      start: setup => launch({ ...setup, net: { session: net, me: net.id } }),
+      start: setup => launch({ ...setup, net: { session: net, me: net.id, relaunch } }),
       mp: {
         session: net,
         host,
@@ -1612,7 +1615,7 @@ async function openStaging({
     clearInterval(beat);
     dlg.close();
     audio?.unlock?.();
-    launch({ ...setup, net: { session: net, me: net.id } });
+    launch({ ...setup, net: { session: net, me: net.id, relaunch } });
   };
 
   if (host) publish();

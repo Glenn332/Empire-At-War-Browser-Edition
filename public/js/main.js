@@ -669,6 +669,7 @@ class Game {
     }
     rig.home = { x: rig.x, y: rig.y, dist: rig.dist, yaw: rig.yaw, pitch: rig.pitch, fovH: rig.fovH };
     if (loaded) restoreView(this, this.setup.restore, loaded.refs);
+    if (this.setup.keepView) Object.assign(rig, this.setup.keepView);
     const tracks = tag => {
       const t = human.faction.tuples(tag).find(t => t[0].toUpperCase() === 'SPACE');
       const ev = t && db.music.get(t[1].toUpperCase());
@@ -764,6 +765,9 @@ class Game {
     this.over = true;
     clearInterval(this.attractCycle);
     this.missTicker?.stop();
+    this.lock?.close();
+    if (this.mirror?.worker) this.mirror.stop();
+    this.world?.paths?.worker?.terminate();
     this.front?.dispose();
     this.cine?.stop();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();
@@ -2379,6 +2383,10 @@ async function boot() {
   const leaveFor = mode => {
     if (window.game) endGame(mode || 'space');
   };
+  const relaunch = setup => {
+    leaveFor(setup.mode === 'land' ? 'land' : 'space');
+    return launch(setup);
+  };
   const sel = $('pickMap');
   const quickSpace = maps.length ? maps : customMaps.space,
     quickLand = landMaps.length ? landMaps : customMaps.land;
@@ -2996,6 +3004,7 @@ async function boot() {
       audio,
       version: BUILD,
       launch,
+      relaunch,
       kind,
       back: () => leaveTo(location.pathname)
     }).catch(e => {
@@ -3109,6 +3118,7 @@ async function boot() {
       audio,
       version: BUILD,
       launch,
+      relaunch,
       join: params.get('join'),
       kind: params.get('multiplayer') === 'lan' ? 'lan' : 'internet',
       back: () => leaveTo(location.pathname)

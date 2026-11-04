@@ -69,6 +69,10 @@ export class SpaceMirror {
           if (m.save) s.res(m.save);
           else s.rej(new Error(m.error));
         }
+      } else if (m.k === 'diag') {
+        const s = this.saves.get('d' + m.id);
+        this.saves.delete('d' + m.id);
+        s?.res(m);
       } else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
       else if (m.k === 'vfs') this.answerFile(m);
       else if (m.k === 'spawnJobs') {
@@ -132,6 +136,14 @@ export class SpaceMirror {
     return new Promise((res, rej) => {
       this.saves.set(id, { res, rej });
       this.worker.postMessage({ k: 'save', id, name, view });
+    });
+  }
+
+  diag(step) {
+    const id = (this.saveIds = (this.saveIds || 0) + 1);
+    return new Promise((res, rej) => {
+      this.saves.set('d' + id, { res, rej });
+      this.worker.postMessage({ k: 'diag', id, step });
     });
   }
 

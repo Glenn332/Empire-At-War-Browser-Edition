@@ -1,6 +1,7 @@
 import { diag } from '../diag.js';
 import { db } from '../gamedata.js';
 import { PathCore, MOVING, STILL, SCELL, loadPathWasm } from './pathcore.js';
+import { unitHash } from './desyncreport.js';
 
 const LAYER_BITS = { CORVETTE: 1, FRIGATE: 2, CAPITAL: 4, SUPERCAPITAL: 8 };
 export const ASTEROID_LAYERS = new Set([2, 4, 8]);
@@ -116,8 +117,10 @@ export class Pathfinder extends PathCore {
         setTimeout(r, 10000);
       });
     wk.onmessage = e => {
-      if (e.data.kind === 'batch') this.arrived.set(e.data.bid, e.data.answers);
-      else if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
+      if (e.data.kind === 'batch') {
+        this.arrived.set(e.data.bid, e.data.answers);
+        this.onArrive?.();
+      } else if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
     };
     wk.onerror = e => console.error('route thread', e.message || e);
     wk.postMessage({ kind: 'fixed' });
@@ -230,7 +233,18 @@ export class Pathfinder extends PathCore {
       const bid = this.due.get(++this.stepNo);
       if (bid !== undefined) {
         this.due.delete(this.stepNo);
-        for (const m of this.arrived.get(bid) || []) this.answer(m);
+        for (const m of this.arrived.get(bid) || []) {
+          const L = (this.routeLog ||= []),
+            p = m.pts;
+          L.push([
+            this.stepNo,
+            m.id,
+            p ? p.length : -1,
+            p && p.length ? unitHash([p[p.length - 1].x, p[p.length - 1].y, p[0].x, p[0].y]) : 0
+          ]);
+          if (L.length > 400) L.splice(0, L.length - 300);
+          this.answer(m);
+        }
         this.arrived.delete(bid);
       }
     }

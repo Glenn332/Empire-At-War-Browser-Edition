@@ -1,13 +1,15 @@
 let a = 0,
   b = 0,
   c = 0,
-  d = 0;
+  d = 0,
+  draws = 0;
 
 export function simRandom() {
   a |= 0;
   b |= 0;
   c |= 0;
   d |= 0;
+  draws++;
   const t = (((a + b) | 0) + d) | 0;
   d = (d + 1) | 0;
   a = b ^ (b >>> 9);
@@ -23,9 +25,11 @@ export function seedSim(seed) {
   c = 0xb7e15162;
   d = seed >>> 0;
   for (let i = 0; i < 15; i++) simRandom();
+  draws = 0;
 }
 
 export const simRandomState = () => [a >>> 0, b >>> 0, c >>> 0, d >>> 0];
+export const simRandomDraws = () => draws;
 export function setSimRandomState(s) {
   [a, b, c, d] = s;
 }

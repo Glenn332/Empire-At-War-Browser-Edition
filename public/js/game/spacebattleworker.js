@@ -3,7 +3,8 @@ import * as THREE from '../../vendor/three/build/three.module.js';
 import { loadGameData, db } from '../gamedata.js';
 import { loadMap } from '../ted.js';
 import { World, Player, Team, Unit, Squad, modelsForType, resetEntityIds } from './sim.js';
-import { seedSim } from './simrandom.js';
+import { seedSim, simRandomState, simRandomDraws } from './simrandom.js';
+import { unitDetail } from './desyncreport.js';
 import { TacticalMarker } from './tacticalobjects.js';
 import { restore, snapshot } from './savegame.js';
 import { restoreBattleScripts } from './tacticalsave.js';
@@ -323,10 +324,17 @@ async function run(m) {
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
     steps = 0;
+  const hashLog = [];
   const said = new Set();
   const step = (cmds, wantHash) => {
     const s = performance.now();
-    const hash = wantHash ? stateHash(w) : undefined;
+    let hash;
+    if (wantHash) {
+      const keep = { step: steps, ids: [], hs: [] };
+      hash = stateHash(w, keep);
+      hashLog.push(keep);
+      if (hashLog.length > 6) hashLog.shift();
+    }
     for (const [pid, cmd] of cmds) {
       const player = w.players.find(p => p.id === pid);
       if (!player) continue;
@@ -361,6 +369,14 @@ async function run(m) {
     });
     if (steps % 30 === 0) stepMs = 0;
   };
+  const held = [];
+  const drain = () => {
+    while (held.length && (!w.paths || w.paths.ready())) {
+      const c = held.shift();
+      step(c.cmds, c.hash);
+    }
+  };
+  if (w.paths) w.paths.onArrive = drain;
   const commands = [];
   let speed = 1,
     paused = false,
@@ -375,8 +391,20 @@ async function run(m) {
         tick();
       }
     } else if (c.k === 'cmd') commands.push([w.viewer ? w.viewer.id : 0, c.cmd]);
-    else if (c.k === 'lockstep') step(c.cmds, c.hash);
-    else if (c.k === 'jobs') {
+    else if (c.k === 'diag') {
+      const record = hashLog.find(r => r.step === c.step) || null;
+      postMessage({
+        k: 'diag',
+        id: c.id,
+        rng: { draws: simRandomDraws(), state: simRandomState() },
+        record,
+        units: unitDetail(w),
+        routes: w.paths?.routeLog ? w.paths.routeLog.slice() : null
+      });
+    } else if (c.k === 'lockstep') {
+      held.push(c);
+      drain();
+    } else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
     } else if (c.k === 'pace') {
       speed = c.speed || 1;

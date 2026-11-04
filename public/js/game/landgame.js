@@ -115,6 +115,7 @@ import { resetLandIds, preloadLand } from './land.js';
 import { resetBrainIds } from './landbrain.js';
 import { executeLand } from './landcommands.js';
 import { Lockstep, TURN, CHAT_MAX, chatText } from './netgame.js';
+import { unitHash } from './desyncreport.js';
 import { ticker } from '../net.js';
 import { openDialog } from './dialogs.js';
 
@@ -294,6 +295,7 @@ export class LandGame {
     this.over = true;
     this.life.abort();
     this.missTicker?.stop();
+    this.lock?.close();
     this.cine?.stop?.();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();
     this.ui?.destroy?.();
@@ -370,7 +372,7 @@ export class LandGame {
       color: p.color
     });
   }
-  hashState() {
+  hashState(keep = null) {
     const w = this.world;
     let h = 0x811c9dc5 | 0;
     const f64 = new Float64Array(1),
@@ -389,14 +391,15 @@ export class LandGame {
     mixInt(w.units.length);
     mixInt(w.squads.length);
     mixInt(w.shots.length);
-    for (const u of w.units) {
+    for (let i = 0; i < w.units.length; i++) {
+      const u = w.units[i],
+        g = unitHash([u.x, u.y, u.heading, u.health, u.shield, u.dead ? 1 : 0]);
       mixInt(u.squad?.id || 0);
-      mix(u.x);
-      mix(u.y);
-      mix(u.heading);
-      mix(u.health);
-      mix(u.shield);
-      mixInt(u.dead ? 1 : 0);
+      mixInt(g);
+      if (keep) {
+        keep.ids.push(u.id ?? 'u' + i);
+        keep.hs.push(g);
+      }
     }
     return h >>> 0;
   }
@@ -523,6 +526,7 @@ export class LandGame {
         this.landRetreat?.step(LAND_TICK);
         this.stepCommanders(LAND_TICK);
         this.stepEnd(LAND_TICK);
+        this.scripts?.host.updateStory(LAND_TICK);
         lock.stepped();
         this.owed -= LAND_TICK;
         await nextTask();
@@ -2796,7 +2800,7 @@ export class LandGame {
       this.stepEnd(dt);
     }
     if (!w.interp) w.poseQueued();
-    this.scripts?.host.updateStory(dt);
+    if (!this.lock) this.scripts?.host.updateStory(dt);
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
     this.tacticalStory?.update();
     stepTacticalSpeech(this, real);
