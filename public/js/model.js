@@ -205,6 +205,9 @@ uniform vec3 emissive, diffuse, specular;
 uniform float shininess, opacity, glow;
 uniform vec4 tint;
 varying vec4 vTint;
+vec3 tinted(vec3 c, vec4 t) { return t.a < 0.0 ? c * t.rgb : mix(c, t.rgb, t.a); }
+bool faded(vec4 t) { return t.a < -1.0 && bayer4(gl_FragCoord.xy) < -1.0 - t.a; }
+vec4 objectTint(vec4 t) { return t.a < 0.0 ? vec4(t.rgb, t.a + 2.0) : vec4(1.0); }
 varying vec2 vUv;
 varying vec3 vNormal, vTangent, vBinormal, vWorldPos;
 #ifdef USE_VCOLOR
@@ -245,10 +248,13 @@ void main() {
   #ifdef USE_VCOLOR
   col *= vColor.rgb; a *= vColor.a;
   #endif
+  vec4 oc = objectTint(tint) * objectTint(vTint);
+  col *= oc.rgb;
+  a *= oc.a;
   #ifdef NEBULA
   gl_FragColor = vec4(albedo * vShade * opacity * glow * haze(vWorldPos), 1.0);
   #elif defined(NATIVE_MESH_ADDITIVE)
-  gl_FragColor = vec4(col * opacity * glow * haze(vWorldPos), 1.0);
+  gl_FragColor = vec4(col * oc.a * opacity * glow * haze(vWorldPos), 1.0);
   #elif defined(ADDITIVE)
   gl_FragColor = vec4(col * a * opacity * glow * haze(vWorldPos), 1.0);
   #else
@@ -290,8 +296,9 @@ void main() {
   #else
   vec3 col = albedo * (2.0 * emissive + diffuse * light) + specular * sunColor * sp * gloss * 0.6;
   #endif
-  col = mix(col, tint.rgb, tint.a);
-  col = mix(col, vTint.rgb, vTint.a);
+  col = tinted(col, tint);
+  col = tinted(col, vTint);
+  if (faded(tint) || faded(vTint)) discard;
   if (ghost > 0.5 && mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;
   if (dissolve > 0.0 && bayer4(gl_FragCoord.xy) < dissolve) discard;
   #ifdef FOW_DIM

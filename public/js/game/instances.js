@@ -232,7 +232,7 @@ export class Instances {
         tb = 0,
         ta = 0;
       if (u.hyper) ta = Math.max(0, Math.min(1, u.hyper.dark ?? 1));
-      else if (u.haze && u.haze.color.w > 0) {
+      else if (u.haze && u.haze.color.w !== 0) {
         const c = u.haze.color;
         tr = c.x;
         tg = c.y;

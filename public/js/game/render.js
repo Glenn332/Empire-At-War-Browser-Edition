@@ -705,8 +705,8 @@ export class Renderer {
       h = u.haze = {
         v: 0,
         vel: 0,
-        color: new THREE.Vector4((c[0] ?? 255) / 255, (c[1] ?? 255) / 255, (c[2] ?? 255) / 255, 0),
-        strength: (c[3] ?? 64) / 255,
+        color: new THREE.Vector4(1, 1, 1, 0),
+        to: [0, 1, 2, 3].map(i => Math.max(0, Math.min(1, (c[i] ?? (i < 3 ? 255 : 64)) / 255))),
         inside: false
       };
     }
@@ -719,14 +719,14 @@ export class Renderer {
           after = o.onAfterRender;
         o.onBeforeRender = function (...a) {
           before.apply(this, a);
-          if (h.color.w > 0) {
+          if (h.color.w !== 0) {
             this.material.uniforms.tint.value = h.color;
             this.material.uniformsNeedUpdate = true;
           }
         };
         o.onAfterRender = function (...a) {
           after.apply(this, a);
-          if (h.color.w > 0) {
+          if (h.color.w !== 0) {
             this.material.uniforms.tint.value = NO_TINT;
             this.material.uniformsNeedUpdate = true;
           }
@@ -746,7 +746,13 @@ export class Renderer {
       h.v = 0;
       h.vel = 0;
     }
-    h.color.w = h.v * h.strength;
+    const to = h.to,
+      v = h.v;
+    if (v <= 0) {
+      h.color.set(1, 1, 1, 0);
+      return;
+    }
+    h.color.set(1 + (to[0] - 1) * v, 1 + (to[1] - 1) * v, 1 + (to[2] - 1) * v, -2 + (1 + (to[3] - 1) * v));
   }
 
   updateShadows(world, r = this.renderer) {

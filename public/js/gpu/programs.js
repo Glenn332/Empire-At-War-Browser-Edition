@@ -153,6 +153,9 @@ struct VOut {
 }
 fn bayer2(a0: vec2f) -> f32 { let a = floor(a0); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
 fn bayer4(a: vec2f) -> f32 { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+fn tinted(c: vec3f, t: vec4f) -> vec3f { return select(mix(c, t.rgb, t.a), c * t.rgb, t.a < 0.0); }
+fn faded(t: vec4f, fc: vec2f) -> bool { return t.a < -1.0 && bayer4(fc) < -1.0 - t.a; }
+fn objectTint(t: vec4f) -> vec4f { return select(vec4f(1.0), vec4f(t.rgb, t.a + 2.0), t.a < 0.0); }
 fn haze(at: vec3f) -> f32 { return select(1.0, clamp((P.fogRange.y - distance(P.cameraPosition, at)) / max(1.0, P.fogRange.y - P.fogRange.x), 0.0, 1.0), P.fogRange.y > 0.0); }
 `);
   if (depth) {
@@ -216,11 +219,14 @@ fn rock(p: vec3f) -> f32 {
   var col = albedo * D.diffuse;
   var a = base.a;
   ${on('USE_VCOLOR') ? 'col *= v.vColor.rgb; a *= v.vColor.a;' : ''}
+  let oc = objectTint(D.tint) * objectTint(v.vTint);
+  col *= oc.rgb;
+  a *= oc.a;
   ${
     on('NEBULA')
       ? 'return vec4f(albedo * v.vShade * D.opacity * D.glow * haze(v.vWorldPos), 1.0);'
       : on('NATIVE_MESH_ADDITIVE')
-        ? 'return vec4f(col * D.opacity * D.glow * haze(v.vWorldPos), 1.0);'
+        ? 'return vec4f(col * oc.a * D.opacity * D.glow * haze(v.vWorldPos), 1.0);'
         : on('ADDITIVE')
           ? 'return vec4f(col * a * D.opacity * D.glow * haze(v.vWorldPos), 1.0);'
           : 'return vec4f(mix(P.fogTint, col, haze(v.vWorldPos)), a * D.opacity);'
@@ -264,8 +270,9 @@ fn rock(p: vec3f) -> f32 {
       ? 'var col = albedo * D.emissive * 2.0;'
       : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light) + D.specular * P.sunColor * sp * gloss * 0.6;'
   }
-  col = mix(col, D.tint.rgb, D.tint.a);
-  col = mix(col, v.vTint.rgb, v.vTint.a);
+  col = tinted(col, D.tint);
+  col = tinted(col, v.vTint);
+  if (faded(D.tint, fc) || faded(v.vTint, fc)) { discard; }
   if (D.ghost > 0.5 && glMod(floor(fc.x) + floor(fc.y), 2.0) < 1.0) { discard; }
   if (D.dissolve > 0.0 && bayer4(fc) < D.dissolve) { discard; }
   ${on('FOW_DIM') ? 'if (P.fowSide > 0.0) { col *= mix(0.3, 1.0, textureSample(fowMap, fowS, v.vWorldPos.xy / P.fowSide).r); }' : ''}
