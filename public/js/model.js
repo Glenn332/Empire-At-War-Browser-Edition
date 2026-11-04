@@ -431,54 +431,33 @@ attribute vec4 color;
 varying vec4 vColor;
 #endif
 varying vec2 vUv;
-varying vec3 vNormal, vWorldPos;
 varying float vNz;
 void main() {
   vUv = uv;
   vNz = normal.z;
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPos = wp.xyz;
-  vNormal = mat3(modelMatrix) * normal;
 #ifdef USE_VCOLOR
   vColor = color;
 #endif
-  gl_Position = projectionMatrix * viewMatrix * wp;
+  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
 }`;
 const SHIELD_FRAG = `
 uniform sampler2D map, waveMap, distortMap;
-uniform vec3 tint, hitPos;
-uniform float edgeBrightness, baseScale, waveScale, distortScale, baseScroll, waveScroll, distortScroll, time, flash, hitRadius, opacity, steady;
+uniform vec3 shieldColor;
+uniform float edgeBrightness, baseScale, waveScale, distortScale, baseScroll, waveScroll, distortScroll, time, opacity;
 varying vec2 vUv;
-varying vec3 vNormal, vWorldPos;
 varying float vNz;
 #ifdef USE_VCOLOR
 varying vec4 vColor;
 #endif
 void main() {
-  if (steady > 0.5) {
-    vec4 d = texture2D(distortMap, vec2(vUv.x * waveScale, vUv.y * waveScale + time * waveScroll));
-    vec4 b = texture2D(map, vec2(vUv.x * baseScale, vUv.y * baseScale + time * baseScroll) + d.xy * 0.25);
-    vec4 wv = texture2D(waveMap, vec2(vUv.x * distortScale, vUv.y * distortScale + time * distortScroll));
-    vec3 c = b.rgb * wv.rgb * tint * clamp(vNz + edgeBrightness, 0.0, 1.0);
+  vec4 d = texture2D(distortMap, vec2(vUv.x * waveScale, vUv.y * waveScale + time * waveScroll));
+  vec4 b = texture2D(map, vec2(vUv.x * baseScale, vUv.y * baseScale + time * baseScroll) + d.xy * 0.25);
+  vec4 wv = texture2D(waveMap, vec2(vUv.x * distortScale, vUv.y * distortScale + time * distortScroll));
+  vec3 c = b.rgb * wv.rgb * shieldColor * clamp(vNz + edgeBrightness, 0.0, 1.0);
 #ifdef USE_VCOLOR
-    c *= vColor.rgb;
+  c *= vColor.rgb;
 #endif
-    gl_FragColor = vec4(c * opacity, 1.0);
-    return;
-  }
-  vec2 ripple = texture2D(distortMap, vUv * distortScale + vec2(0.0, time * distortScroll)).rg * 2.0 - 1.0;
-  vec4 base = texture2D(map, vUv * baseScale + vec2(time * baseScroll, 0.0) + ripple * 0.08);
-  vec4 wave = texture2D(waveMap, vUv * waveScale + vec2(0.0, time * waveScroll) + ripple * 0.03);
-  vec3 n = normalize(vNormal), v = normalize(cameraPosition - vWorldPos);
-  float rim = pow(1.0 - abs(dot(n, v)), 2.0);
-  vec3 dp = vWorldPos - hitPos;
-  float near = 0.3 + 1.1 * exp(-dot(dp, dp) / (hitRadius * hitRadius));
-  float energy = max(wave.r, max(wave.g, wave.b)) * 0.9 + rim * (0.35 + edgeBrightness * 1.6) + 0.08;
-  vec3 col = base.rgb * tint * energy * near;
-#ifdef USE_VCOLOR
-  col *= vColor.rgb * vColor.a;
-#endif
-  gl_FragColor = vec4(col * flash * opacity, 1.0);
+  gl_FragColor = vec4(c * opacity, 1.0);
 }`;
 
 function makeShieldMaterial(p, format) {
@@ -494,20 +473,16 @@ function makeShieldMaterial(p, format) {
       map: { value: tex(p.BaseTexture, 'BaseSampler') },
       waveMap: { value: tex(p.WaveTexture) },
       distortMap: { value: tex(p.DistortionTexture) },
-      tint: { value: new THREE.Color(c[0], c[1], c[2]) },
-      edgeBrightness: { value: p.EdgeBrightness ?? 0.3 },
-      baseScale: { value: p.BaseUVScale ?? 8 },
+      shieldColor: { value: new THREE.Color(c[0], c[1], c[2]) },
+      edgeBrightness: { value: p.EdgeBrightness ?? 0.5 },
+      baseScale: { value: p.BaseUVScale ?? 20 },
       waveScale: { value: p.WaveUVScale ?? 1 },
       distortScale: { value: p.DistortUVScale ?? 1 },
-      baseScroll: { value: p.BaseUVScrollRate ?? -0.15 },
-      waveScroll: { value: p.WaveUVScrollRate ?? -0.15 },
-      distortScroll: { value: p.DistortUVScrollRate ?? -0.25 },
+      baseScroll: { value: p.BaseUVScrollRate ?? 1 },
+      waveScroll: { value: p.WaveUVScrollRate ?? 1 },
+      distortScroll: { value: p.DistortUVScrollRate ?? 1 },
       time: planetClock,
-      flash: { value: 0 },
-      hitPos: { value: new THREE.Vector3() },
-      hitRadius: { value: 100 },
-      opacity: { value: 1 },
-      steady: { value: 0 }
+      opacity: { value: 1 }
     },
     side: THREE.DoubleSide,
     transparent: true,

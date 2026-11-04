@@ -476,7 +476,6 @@ export class Unit {
     this.hasEngineFx = undefined;
     this.shieldMesh = undefined;
     this.shieldFlash = undefined;
-    this.shieldGlow = undefined;
     this.shieldAt = undefined;
     this.selectScale = undefined;
     this.hpDriven = undefined;
@@ -674,7 +673,6 @@ export class Unit {
     this.hasEngineFx = false;
     this.shieldMesh = null;
     this.shieldFlash = 0;
-    this.shieldGlow = 0;
     this.shieldAt = { x: 0, y: 0, z: 0 };
     if (this.model) {
       for (const [name, mesh] of this.model.meshByName) {
@@ -687,15 +685,6 @@ export class Unit {
           }
           this.shieldMesh = mesh;
           for (const m of mesh.children) {
-            m.onBeforeRender = () => {
-              const u = m.material.uniforms;
-              if (!u.flash) return;
-              if (u.steady) u.steady.value = 1;
-              u.flash.value = this.shieldGlow;
-              u.hitPos.value.set(this.shieldAt.x, this.shieldAt.y, this.shieldAt.z);
-              u.hitRadius.value = Math.max(40, this.visualRadius * 0.6);
-              m.material.uniformsNeedUpdate = true;
-            };
             m.renderOrder = 4;
           }
         }

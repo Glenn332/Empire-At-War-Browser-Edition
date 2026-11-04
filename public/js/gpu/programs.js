@@ -739,12 +739,11 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
 
 const shield = simple({
   name: 'shield',
-  match: m => m.isShaderMaterial && !!m.uniforms && !!m.uniforms.waveMap && !!m.uniforms.distortMap && !!m.uniforms.hitPos,
+  match: m => m.isShaderMaterial && !!m.uniforms && !!m.uniforms.waveMap && !!m.uniforms.distortMap && !!m.uniforms.shieldColor,
   variant: m => (m.defines && m.defines.USE_VCOLOR ? 'C' : ''),
   params: [
-    ['tint', 'c3'],
+    ['shieldColor', 'c3'],
     ['edgeBrightness', 'f'],
-    ['hitPos', 'c3'],
     ['baseScale', 'f'],
     ['waveScale', 'f'],
     ['distortScale', 'f'],
@@ -752,10 +751,7 @@ const shield = simple({
     ['waveScroll', 'f'],
     ['distortScroll', 'f'],
     ['time', 'f'],
-    ['flash', 'f'],
-    ['hitRadius', 'f'],
-    ['opacity', 'f'],
-    ['steady', 'f']
+    ['opacity', 'f']
   ],
   textures: ['map', 'waveMap', 'distortMap'],
   vertex: m => [['position', 3, 0], ['normal', 3, 1], ['uv', 2, 2], ...(m.defines && m.defines.USE_VCOLOR ? [['color', 4, 3]] : [])],
@@ -763,14 +759,12 @@ const shield = simple({
     const C = !!(m.defines && m.defines.USE_VCOLOR);
     return `
 struct VIn { @location(0) position: vec3f, @location(1) normal: vec3f, @location(2) uv: vec2f, ${C ? '@location(3) color: vec4f,' : ''} }
-struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vNormal: vec3f, @location(2) vWorldPos: vec3f, @location(4) vNz: f32, ${C ? '@location(3) vColor: vec4f,' : ''} }
+struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(4) vNz: f32, ${C ? '@location(3) vColor: vec4f,' : ''} }
 @vertex fn vs(i: VIn) -> VOut {
   var o: VOut;
   o.vUv = i.uv;
   o.vNz = i.normal.z;
   let wp = D.model * vec4f(i.position, 1.0);
-  o.vWorldPos = wp.xyz;
-  o.vNormal = mat3x3f(D.model[0].xyz, D.model[1].xyz, D.model[2].xyz) * i.normal;
   ${C ? 'o.vColor = i.color;' : ''}
   o.pos = glDepth(P.proj * P.view * wp);
   return o;
@@ -779,20 +773,9 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
   let sd = textureSample(distortMapT, distortMapS, vec2f(v.vUv.x * D.waveScale, v.vUv.y * D.waveScale + D.time * D.waveScroll));
   let sb = textureSample(mapT, mapS, vec2f(v.vUv.x * D.baseScale, v.vUv.y * D.baseScale + D.time * D.baseScroll) + sd.xy * 0.25);
   let sw = textureSample(waveMapT, waveMapS, vec2f(v.vUv.x * D.distortScale, v.vUv.y * D.distortScale + D.time * D.distortScroll));
-  var sc = sb.rgb * sw.rgb * D.tint * clamp(v.vNz + D.edgeBrightness, 0.0, 1.0);
+  var sc = sb.rgb * sw.rgb * D.shieldColor * clamp(v.vNz + D.edgeBrightness, 0.0, 1.0);
   ${C ? 'sc *= v.vColor.rgb;' : ''}
-  if (D.steady > 0.5) { return vec4f(sc * D.opacity, 1.0); }
-  let ripple = textureSample(distortMapT, distortMapS, v.vUv * D.distortScale + vec2f(0.0, D.time * D.distortScroll)).rg * 2.0 - 1.0;
-  let base = textureSample(mapT, mapS, v.vUv * D.baseScale + vec2f(D.time * D.baseScroll, 0.0) + ripple * 0.08);
-  let wave = textureSample(waveMapT, waveMapS, v.vUv * D.waveScale + vec2f(0.0, D.time * D.waveScroll) + ripple * 0.03);
-  let n = normalize(v.vNormal); let vv = normalize(P.cameraPosition - v.vWorldPos);
-  let rim = pow(1.0 - abs(dot(n, vv)), 2.0);
-  let dp = v.vWorldPos - D.hitPos;
-  let near = 0.3 + 1.1 * exp(-dot(dp, dp) / (D.hitRadius * D.hitRadius));
-  let energy = max(wave.r, max(wave.g, wave.b)) * 0.9 + rim * (0.35 + D.edgeBrightness * 1.6) + 0.08;
-  var col = base.rgb * D.tint * energy * near;
-  ${C ? 'col *= v.vColor.rgb * v.vColor.a;' : ''}
-  return vec4f(col * D.flash * D.opacity, 1.0);
+  return vec4f(sc * D.opacity, 1.0);
 }`;
   }
 });

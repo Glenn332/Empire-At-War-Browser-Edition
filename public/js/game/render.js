@@ -1640,7 +1640,6 @@ export class Renderer {
         if (u.shieldMesh) {
           const on = !!u.abilities?.some(s => s.active && s.def.kind === 'DEFEND');
           if (u.shieldMesh.visible !== on) u.shieldMesh.visible = on;
-          if (on) u.shieldGlow = 1;
         }
         if (u.hyper) this.darken(u);
         if (u.engineMeshes.length) {
