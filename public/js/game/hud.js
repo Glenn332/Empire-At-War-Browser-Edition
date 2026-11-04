@@ -3,7 +3,7 @@ import { fetchText, fetchBinary } from '../vfs.js';
 import { BinkPlayer } from '../bink.js';
 import { movieDefinitions } from './galacticmovies.js';
 import { parseXML } from '../xml.js';
-import { loadALO } from '../alo.js';
+import { loadALO, parseALO } from '../alo.js';
 import { loadTextureCanvas } from '../dds.js';
 import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl } from '../icons.js';
 import { fontFamily } from '../fonts.js';
@@ -13,6 +13,7 @@ import { abilityLocked } from './blackmarket.js';
 import { battlePlanetName } from './battleplanet.js';
 import { withKey, keysOf, keyName, onBindingsChange } from './keybinds.js';
 import { TooltipGate } from './tooltipgate.js';
+import { loadBarSkins, textureKey, decodeSkinIcons } from './barskins.js';
 
 const BAR_H = 330,
   BAR_W = 1080;
@@ -234,8 +235,85 @@ export function drawMesh(ctx, img, mesh, map) {
   }
 }
 
+async function tacticalShell(model, comps) {
+  const shell = uiMeshes(model);
+  const dsName = comps.get('DS_SHELL')?.val('Model_Name');
+  const ds = !shell.has('DEATHSTAR_SWITCH') && dsName ? await loadALO(dsName).catch(() => null) : null;
+  const matrices = uiBoneTransforms(model),
+    timer = model.bones.findIndex(b => b.name.toUpperCase() === 'DS_COUNTDOWN_TIMER'),
+    movieBone = model.bones.findIndex(b => b.name.toUpperCase() === 'MOVIE_TACTICAL');
+  return {
+    shell,
+    movieAt: movieBone < 0 ? null : { x: matrices[movieBone][3], y: matrices[movieBone][7] },
+    superweapon: {
+      shell: ds ? uiMeshes(ds) : shell,
+      centered: !!ds,
+      timer: timer < 0 ? null : { x: matrices[timer][3], y: matrices[timer][7] }
+    }
+  };
+}
+
+export async function loadFactionModel(base, faction, name) {
+  const file = base?.skins?.get(String(faction || '').toUpperCase())?.models.get(name.toUpperCase());
+  const buf = file ? await fetchBinary('Data/Art/Models/' + file, { keep: false }).catch(() => null) : null;
+  return buf ? parseALO(buf) : null;
+}
+
+const variants = new Map();
+export async function loadHudAssets(faction = '') {
+  const base = await loadBaseHud();
+  const key = String(faction || '').toUpperCase(),
+    skin = base?.skins?.get(key);
+  if (!skin || (!skin.models.size && !skin.xml.length)) return base;
+  if (!variants.has(key))
+    variants.set(
+      key,
+      (async () => {
+        const comps = new Map(base.comps);
+        for (const xml of await Promise.all(skin.xml.map(f => fetchText('Data/XML/' + f).catch(() => null))))
+          if (xml)
+            for (const top of parseXML(xml).children) for (const c of top.children) if (c.attrs.Name) comps.set(c.attrs.Name.toUpperCase(), c);
+        const named = [];
+        for (const c of comps.values())
+          for (const k of c.children) if (/Texture_Name|Overlay_Name/i.test(k.tag)) named.push(...k.text.trim().split(/\s+/));
+        await decodeSkinIcons(skin, named);
+        const [shell, reinforce] = await Promise.all([
+          loadFactionModel(base, key, 'I_TACTICAL_CONTROLS'),
+          loadFactionModel(base, key, 'I_MAIN_REINFORCE')
+        ]);
+        return {
+          ...base,
+          comps,
+          ...(shell ? await tacticalShell(shell, comps) : {}),
+          ...(reinforce ? { reinforce: uiMeshes(reinforce) } : {}),
+          faction: key
+        };
+      })().catch(e => {
+        console.warn('command bar of', faction, e);
+        return base;
+      })
+    );
+  return variants.get(key);
+}
+
+let pending = null;
+function loadBaseHud() {
+  if (!pending)
+    pending = buildBaseHud().then(
+      a => {
+        if (!a) pending = null;
+        return a;
+      },
+      e => {
+        pending = null;
+        throw e;
+      }
+    );
+  return pending;
+}
+
 let assets = null;
-export async function loadHudAssets() {
+async function buildBaseHud() {
   if (assets) return assets;
   const barFiles = await loadFileList('CommandBarComponentFiles.xml')
     .then(l => (l.length ? l : ['CommandBarComponents.xml']))
@@ -254,18 +332,7 @@ export async function loadHudAssets() {
     if (xml)
       for (const top of parseXML(xml).children) for (const c of top.children) if (c.attrs.Name) comps.set(c.attrs.Name.toUpperCase(), c);
   if (!shell || !reinforce || !comps.size) return null;
-  assets = { comps, shell: uiMeshes(shell), reinforce: uiMeshes(reinforce) };
-  const dsName = comps.get('DS_SHELL')?.val('Model_Name');
-  const ds = !assets.shell.has('DEATHSTAR_SWITCH') && dsName ? await loadALO(dsName).catch(() => null) : null;
-  const matrices = uiBoneTransforms(shell),
-    timer = shell.bones.findIndex(b => b.name.toUpperCase() === 'DS_COUNTDOWN_TIMER'),
-    movieBone = shell.bones.findIndex(b => b.name.toUpperCase() === 'MOVIE_TACTICAL');
-  assets.movieAt = movieBone < 0 ? null : { x: matrices[movieBone][3], y: matrices[movieBone][7] };
-  assets.superweapon = {
-    shell: ds ? uiMeshes(ds) : assets.shell,
-    centered: !!ds,
-    timer: timer < 0 ? null : { x: matrices[timer][3], y: matrices[timer][7] }
-  };
+  assets = { comps, reinforce: uiMeshes(reinforce), ...(await tacticalShell(shell, comps)) };
   if (evil && good && evilTex && goodTex)
     assets.heroes = { evil: { meshes: uiMeshes(evil), tex: evilTex }, good: { meshes: uiMeshes(good), tex: goodTex } };
   const names = [];
@@ -277,6 +344,7 @@ export async function loadHudAssets() {
   }
   for (const n of Object.values(ABILITY_ICONS)) names.push(n + '.tga');
   await warmIcons(names);
+  assets.skins = await loadBarSkins().catch(() => new Map());
   return assets;
 }
 
@@ -290,6 +358,7 @@ export class CommandBar {
     this.shell = data.shell;
     this.rshell = data.reinforce;
     this.heroShells = data.heroes || null;
+    this.skin = data.skins?.get(String(this.player?.factionName || '').toUpperCase()) || null;
     this.root = document.getElementById('cmdbar');
     this.root.replaceChildren();
     this.sig = '';
@@ -349,7 +418,14 @@ export class CommandBar {
     return list[Math.min(index, list.length - 1)] || '';
   }
   tex(name, prop, index = 0) {
-    return iconUrl(this.textureName(name, prop, index));
+    const n = this.textureName(name, prop, index);
+    return this.skinIcon(n) || iconUrl(n);
+  }
+  skinIcon(name) {
+    return (name && this.skin?.icons.get(textureKey(name))) || '';
+  }
+  skinTexture(name) {
+    return this.skin?.files.get(textureKey(name)) || name.replace(/\.tga$/i, '.dds');
   }
   rect(name) {
     const m = this.shell.get(name.toUpperCase());
@@ -531,13 +607,14 @@ export class CommandBar {
   }
 
   setButtonImage(button, kind, texture) {
-    button.style.setProperty('--' + kind, css(iconUrl(texture)));
+    const own = this.skinIcon(texture);
+    button.style.setProperty('--' + kind, css(own || iconUrl(texture)));
     const state = button._nativeButton,
-      image = iconCanvasRect(texture);
+      image = (own && this.skin.rects.get(textureKey(texture))) || iconCanvasRect(texture);
     if (!state?.mesh) return;
     const layer = state.layers.get(kind);
     if (layer) layer.hidden = !image;
-    if (layer?._additive) layer.style.backgroundImage = css(iconAdditiveUrl(texture));
+    if (layer?._additive) layer.style.backgroundImage = css(own || iconAdditiveUrl(texture));
     if (!image) return;
     const offset = kind === 'over' ? 'Mouse_Over_Offset' : kind === 'dis' ? 'Disabled_Offset' : kind === 'icon' ? 'Icon_Offset' : '';
     const r = commandButtonArt(
@@ -592,7 +669,9 @@ export class CommandBar {
       return m ? +m[1] : -1;
     };
     const visible = [...this.shell].filter(([n, m]) => !exclude.includes(n) && !m.hidden && m.texture && m.indices.length >= 3);
-    const mine = visible.find(([n]) => altOf(n) >= 0 && n.includes(f));
+    const mine =
+      (this.skin && visible.find(([n, m]) => altOf(n) >= 0 && this.skin.files.has(textureKey(m.texture)))) ||
+      visible.find(([n]) => altOf(n) >= 0 && n.includes(f));
     const alt = mine ? altOf(mine[0]) : Math.min(...visible.map(([n]) => altOf(n)).filter(n => n >= 0), 0);
     const pick = visible
       .filter(([n]) => altOf(n) < 0 || altOf(n) === alt)
@@ -609,7 +688,7 @@ export class CommandBar {
     const g = cv.getContext('2d', { willReadFrequently: false });
     g.imageSmoothingQuality = 'high';
     for (const mesh of pick) {
-      const img = await loadTextureCanvas(mesh.texture.replace(/\.tga$/i, '.dds')).catch(() => null);
+      const img = await loadTextureCanvas(this.skinTexture(mesh.texture)).catch(() => null);
       if (img) drawMesh(g, img, mesh, (x, y) => [x * k, (H - y) * k]);
     }
     const C = 4,
@@ -701,7 +780,7 @@ export class CommandBar {
     root.appendChild(mm);
     const scan = this.shell.get('RADAR');
     if (scan && scan.texture)
-      loadTextureCanvas(scan.texture.replace(/\.tga$/i, '.dds')).then(cv => {
+      loadTextureCanvas(this.skinTexture(scan.texture)).then(cv => {
         if (!cv) return;
         const o = this.place(el('scan', root), 'radar');
         o.style.backgroundImage = css(cv.toDataURL());

@@ -948,7 +948,7 @@ export class LandGame {
     this.menus = new Menus(this);
     this.buildHud();
     P('Command bar', 0.95);
-    const assets = await loadHudAssets().catch(e => {
+    const assets = await loadHudAssets(this.factions[this.me]).catch(e => {
       console.warn('command bar', e);
       return null;
     });

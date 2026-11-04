@@ -345,7 +345,7 @@ export class GalacticGame {
     await Promise.all(g.fleets.map(f => this.fleetView(f)));
 
     P('Galactic command bar', 0.98);
-    const hud = await loadGalacticHudAssets();
+    const hud = await loadGalacticHudAssets(this.me);
     if (hud) {
       this.human = { factionName: this.me };
       $('hud').classList.remove('hidden');

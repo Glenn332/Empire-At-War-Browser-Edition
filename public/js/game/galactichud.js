@@ -2,7 +2,7 @@ import { setComponentText } from './componenttext.js';
 import { db } from '../gamedata.js';
 import { loadALO } from '../alo.js';
 import { iconUrl, iconCanvasRect } from '../icons.js';
-import { CommandBar, loadHudAssets, uiMeshes } from './hud.js';
+import { CommandBar, loadHudAssets, loadFactionModel, uiMeshes } from './hud.js';
 import { displayIncome, intelligence } from './galacticfog.js';
 import { playerIncome, fiscalCycleSeconds, cycleNumber, incomeBreakdown, planetBreakdown } from './galacticeconomy.js';
 import { orders } from './galacticnet.js';
@@ -22,8 +22,9 @@ const label = t => db.t(t.str('Text_ID')) || t.name;
 const truth = value => /^(true|yes|1)$/i.test(value || '');
 const rounded = n => Math.sign(n) * Math.floor(Math.abs(n) + 0.5);
 
-export async function loadGalacticHudAssets() {
-  const [data, shell] = await Promise.all([loadHudAssets(), loadALO('i_galactic_controls.alo')]);
+export async function loadGalacticHudAssets(faction = '') {
+  const data = await loadHudAssets(faction);
+  const shell = (await loadFactionModel(data, faction, 'I_GALACTIC_CONTROLS')) || (await loadALO('i_galactic_controls.alo'));
   return data && shell ? { ...data, shell: uiMeshes(shell), model: shell } : null;
 }
 
@@ -185,6 +186,7 @@ export class GalacticBar extends CommandBar {
       img.alt = '';
       img.style.pointerEvents = 'none';
       img.hidden = true;
+      img.dataset.control = kind === 'ground' ? 'b_planet_tab' : 'b_space_tab';
       this.root.appendChild(img);
     }
     for (const [kind, name] of [

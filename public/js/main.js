@@ -621,7 +621,7 @@ class Game {
     await loadDialogs().catch(() => null);
     this.losses = new Map();
     this.renderer.setSelectionArt(human.faction);
-    this.hudAssets = await loadHudAssets().catch(e => {
+    this.hudAssets = await loadHudAssets(human.factionName).catch(e => {
       console.warn('command bar', e);
       return null;
     });

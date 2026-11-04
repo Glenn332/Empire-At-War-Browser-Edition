@@ -418,6 +418,11 @@ const GROUPS = [
       ['In-game menu: save, load, options (audio, video, game), quit', D],
       ['Game fonts', D],
       [
+        'Command bar per faction',
+        D,
+        'our own extension, not an engine feature: the engine has three command bar skins, the ALT0, ALT1 and ALT2 meshes of the tactical and galactic control models (Empire, Rebel, Underworld), and every other faction falls back to the first. A faction can have its own command bar, in tactical battles (space and land) and on the galaxy map. Data/Art/Models/CommandBar/<faction name>/ holds that faction i_tactical_controls, i_galactic_controls or i_main_reinforce model, so its whole layout can differ, the way a mod that replaces those models moves every element. Data/XML/CommandBar/<faction name>/ holds components in the CommandBarComponents format that replace the components of the same name. Those components may name textures that only the faction texture folder has, not the MT_CommandBar atlas. A texture under Data/Art/Textures/CommandBar/<faction name>/ replaces the texture of the same name on that faction bars only (.dds, .tga or .png): the faceplate and radar scan of the control models, and the command bar component textures named in CommandBarComponents.xml. A replaced faceplate texture also picks the skin whose meshes use it, so a fourth faction can take the Rebel or Underworld shape with its own art'
+      ],
+      [
         'Hero portraits bar',
         D,
         'the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). The banner plate behind each row is placed from its own model, so the enemy banner on the left is no longer pushed off the screen edge. On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine'

@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **92.2%** | 163 | 28 | 1 | 192 |
-| **Whole game** | **81.3%** | 228 | 115 | 8 | 351 |
+| **Space skirmish** | **92.2%** | 164 | 28 | 1 | 193 |
+| **Whole game** | **81.4%** | 229 | 115 | 8 | 352 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -24,7 +24,7 @@ Regenerate with `node tools/progress.mjs`.
 | Space simulation | space skirmish | 95.7% | 33 | 1 | 1 |
 | Abilities | space skirmish | 100.0% | 24 | 0 | 0 |
 | Skirmish AI | space skirmish | 87.5% | 15 | 5 | 0 |
-| Interface | space skirmish | 92.3% | 33 | 6 | 0 |
+| Interface | space skirmish | 92.5% | 34 | 6 | 0 |
 | Audio | space skirmish | 95.8% | 11 | 1 | 0 |
 | Platform | space skirmish | 90.0% | 12 | 3 | 0 |
 | What a mod can change | rest of the game | 71.9% | 8 | 7 | 1 |
@@ -177,7 +177,7 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Space AI: a task force moves as one formation order — *the ships of a force are sent through our group move; the engine reports the move done when every unit has arrived*
 - 🟡 Space AI: checked against logs of the original (a logging mod, re/ailog) — *three ten-minute runs of the original on Kuat (easy, medium) give its decisions, purchases and holdings; ours now matches the decision rhythm, the opening, the order of purchases, the pad grabs and captures, the time the merchant dock goes, the all-out attack time and the station levels to within seconds, and leaves the idle human alone as the original does. Still to compare: the Rebel and Underworld AI, other maps, the mod, allied AI, and a game where the human fights. A run on the 14th of October found ours buying no ships from the 2nd to the 9th minute; a probe run of the original showed it does the same against an idle human (see the force perceptions)*
 
-### Interface — 92.3%
+### Interface — 92.5%
 
 - ✅ Command bar from the original layout
 - ✅ Radar
@@ -196,6 +196,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Map lists: official and custom maps — *the engine list: every map file whose header is of the battle kind, made for two players or more, named by its text id; the Official and Custom Maps buttons switch between the maps flagged custom (header field 11) or not, the custom list also holding the flagged maps of the game Data/CustomMaps folder. Map kinds are labelled with the Space and Land game type names (mods repurpose the lobby list strings), and skirmish and multiplayer setup both show the preview embedded in the map file when there is no loose picture*
 - ✅ In-game menu: save, load, options (audio, video, game), quit
 - ✅ Game fonts
+- ✅ Command bar per faction — *our own extension, not an engine feature: the engine has three command bar skins, the ALT0, ALT1 and ALT2 meshes of the tactical and galactic control models (Empire, Rebel, Underworld), and every other faction falls back to the first. A faction can have its own command bar, in tactical battles (space and land) and on the galaxy map. Data/Art/Models/CommandBar/<faction name>/ holds that faction i_tactical_controls, i_galactic_controls or i_main_reinforce model, so its whole layout can differ, the way a mod that replaces those models moves every element. Data/XML/CommandBar/<faction name>/ holds components in the CommandBarComponents format that replace the components of the same name. Those components may name textures that only the faction texture folder has, not the MT_CommandBar atlas. A texture under Data/Art/Textures/CommandBar/<faction name>/ replaces the texture of the same name on that faction bars only (.dds, .tga or .png): the faceplate and radar scan of the control models, and the command bar component textures named in CommandBarComponents.xml. A replaced faceplate texture also picks the skin whose meshes use it, so a fourth faction can take the Rebel or Underworld shape with its own art*
 - ✅ Hero portraits bar — *the enemy team heroes in sight on the left, the player team on the right (the player own first, those clicked to select, then the allies). The banner plate behind each row is placed from its own model, so the enemy banner on the left is no longer pushed off the screen edge. On the galaxy map the right-hand frame lists the named heroes the player owns, in fleets (also in hyperspace) and on planets, without health bars; a click selects the planet the hero is at (or heading for) and centres the view on it. Ours: which heroes the galactic frame takes and in what order, and the click behaviour, were not read from the engine*
 - ✅ Build limits — *Build_Limit_Current_Per_Player, Build_Limit_Current_For_All_Allies (a team fields one Rogue Squadron), Build_Limit_Lifetime_Per_Player and _For_All_Allies; standing counts the field, the queues and the reinforcement pool; allies may field the same hero once each*
 - ✅ Waypoint button
