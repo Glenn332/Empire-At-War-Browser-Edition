@@ -90,6 +90,39 @@ export class Instances {
     return p;
   }
 
+  fadePool(base) {
+    const twins = (this.twins ||= new WeakMap());
+    let twin = twins.get(base.mat);
+    if (!twin) {
+      twin = base.mat.clone();
+      twin.uniforms = { ...base.mat.uniforms };
+      twin.userData = base.mat.userData;
+      twin.transparent = true;
+      twin.blending = THREE.NormalBlending;
+      twin.depthWrite = true;
+      twins.set(base.mat, twin);
+    }
+    const p = this.poolFor({ material: twin, geometry: base.src, renderOrder: base.order });
+    if (p.compiling === undefined) {
+      p.compiling = true;
+      p.ready = false;
+      const r = this.gpu || this.renderer,
+        im = p.im;
+      if (r && r.compileAsync) {
+        im.count = 1;
+        im.visible = true;
+        Promise.resolve(r.compileAsync(im, this.camera))
+          .catch(() => {})
+          .then(() => {
+            p.ready = true;
+          });
+        im.visible = false;
+        im.count = 0;
+      } else p.ready = true;
+    }
+    return p;
+  }
+
   size(p, cap) {
     const old = p.im,
       oldTint = p.tint;
@@ -239,6 +272,7 @@ export class Instances {
         tb = c.z;
         ta = c.w;
       }
+      const fading = ta < -1.001;
       const world = obj.matrixWorld;
       if (whole && pose >= 0) {
         _inv.copy(world).invert();
@@ -286,8 +320,12 @@ export class Instances {
         let o = m;
         while (o && o !== obj && o.visible) o = o.parent;
         if (o !== obj) continue;
-        const p = e.pool,
-          pooled = !!p && !away && !(e.skin && !this.taken.has(m)),
+        let p = e.pool;
+        if (fading && p && !e.skin && !p.mat.transparent) {
+          const f = (e.fpool ||= this.fadePool(p));
+          if (f.ready) p = f;
+        }
+        const pooled = !!p && !away && !(e.skin && !this.taken.has(m)),
           defer = defer0 && pooled;
         if (!whole && !defer) m.matrixWorld.multiplyMatrices(world, e.local);
         if (!pooled) {

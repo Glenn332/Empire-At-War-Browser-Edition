@@ -759,30 +759,48 @@ export class Renderer {
     else this.unfade(u);
   }
 
+  fadeTwin(o, m) {
+    const twins = (this.fadeTwins ||= new WeakMap());
+    let t = twins.get(m);
+    if (t) return t;
+    const c = m.clone();
+    c.uniforms = { ...m.uniforms };
+    c.userData = m.userData;
+    c.transparent = true;
+    c.blending = THREE.NormalBlending;
+    c.depthWrite = true;
+    t = { c, ready: false };
+    twins.set(m, t);
+    const r = this.renderer,
+      done = () => (t.ready = true);
+    if (r && r.compileAsync) r.compileAsync(new THREE.Mesh(o.geometry, c), this.camera, this.scene).then(done, done);
+    else done();
+    return t;
+  }
+
   fade(u) {
-    if (u.fadeMats) return;
-    u.fadeMats = [];
+    if (u.fadeDone) return;
+    const list = (u.fadeMats ||= []);
+    let all = true;
     u.obj.traverse(o => {
       const m = o.material;
-      if (!o.isMesh || !m || !m.uniforms || !m.uniforms.tint || m.transparent) return;
-      const c = m.clone();
-      c.uniforms = { ...m.uniforms };
-      c.userData = m.userData;
-      c.transparent = true;
-      c.blending = THREE.NormalBlending;
-      c.depthWrite = true;
-      u.fadeMats.push([o, m, c]);
-      o.material = c;
+      if (!o.isMesh || !m || !m.uniforms || !m.uniforms.tint || m.transparent || this.instances?.taken.has(o)) return;
+      const t = this.fadeTwin(o, m);
+      if (!t.ready) {
+        all = false;
+        return;
+      }
+      list.push([o, m, t.c]);
+      o.material = t.c;
     });
+    u.fadeDone = all;
   }
 
   unfade(u) {
     if (!u.fadeMats) return;
-    for (const [o, m, c] of u.fadeMats) {
-      if (o.material === c) o.material = m;
-      c.dispose();
-    }
+    for (const [o, m, c] of u.fadeMats) if (o.material === c) o.material = m;
     u.fadeMats = null;
+    u.fadeDone = false;
   }
 
   updateShadows(world, r = this.renderer) {
@@ -1762,6 +1780,7 @@ export class Renderer {
       for (const o of this.scene.children) if (!o.userData.ship) o.updateMatrixWorld();
       this.instances ||= new Instances(this.scene);
       this.instances.gpu = r === this.gpu ? r : null;
+      this.instances.renderer = r;
       this.instances.camera = cam;
       this.instances.collect(world.units, cam);
       this.instances.hidden = this.instances.put.length;
