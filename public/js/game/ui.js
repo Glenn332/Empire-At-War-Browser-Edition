@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { db } from '../gamedata.js';
 import { getModelData, buildModel } from '../model.js';
 import { BeaconView } from './beacons.js';
-import { iconUrl, iconCanvasRect, iconAtlas } from '../icons.js';
+import { iconUrl, iconCanvasRect, iconAtlas, iconOpaque } from '../icons.js';
 import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump } from './sim.js';
 import { ids } from './commands.js';
@@ -1974,6 +1974,9 @@ export class UI {
           blank: iconCanvasRect(tex('Blank_Texture_Name')),
           selected: iconCanvasRect(tex('Selected_Texture_Name')),
           over: iconCanvasRect(tex('Mouse_Over_Texture_Name')),
+          lit: new Set(
+            ['Blank_Texture_Name', 'Selected_Texture_Name', 'Mouse_Over_Texture_Name'].filter(k => iconOpaque(tex(k))).map(k => k[0])
+          ),
           scale: c.num('Scale', 1),
           alpha: rgba.length >= 4 && Number.isFinite(rgba[3]) ? rgba[3] / 255 : 1,
           health,
@@ -2042,8 +2045,16 @@ export class UI {
         c.drawImage(t, pad + inset, pad + inset, n, n);
       };
       c.globalAlpha = alpha * (bar ? bar.alpha : 1);
+      const lit = r => {
+        c.globalCompositeOperation = 'lighter';
+        art(r, pad, pad, size, size);
+        c.globalCompositeOperation = 'source-over';
+      };
       if (bar) {
-        if (bar.blank) tinted(bar.blank);
+        if (bar.blank) {
+          if (bar.lit.has('B')) lit(bar.blank);
+          else tinted(bar.blank);
+        }
         const inset = Math.round((size * 7) / 60);
         tinted(rect, inset);
       } else {
@@ -2058,7 +2069,8 @@ export class UI {
       }
       c.globalAlpha = 1;
       const top = bar && (mode === 2 ? bar.selected : mode === 1 ? bar.over : null);
-      if (top) art(top, pad, pad, size, size);
+      if (top && bar.lit.has(mode === 2 ? 'S' : 'M')) lit(top);
+      else if (top) art(top, pad, pad, size, size);
       else if (mode && !bar) {
         c.lineWidth = 3;
         c.strokeStyle = mode === 2 ? '#ffd421' : color;

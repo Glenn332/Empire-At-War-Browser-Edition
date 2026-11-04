@@ -881,6 +881,7 @@ export class Renderer {
     if (!env) return;
     for (const s of this.skydomes) this.bgScene.remove(s.root);
     this.skydomes = [];
+    this.skyFar = 0;
     this.sunMesh = undefined;
     setPlanetEnvironment(env);
     const [sun, f1, f2] = env.lights;
@@ -909,6 +910,14 @@ export class Renderer {
         o.material.depthTest = false;
         o.material.depthWrite = false;
         o.frustumCulled = false;
+      });
+      inst.root.updateMatrixWorld(true);
+      inst.root.traverse(o => {
+        if (!o.isMesh || !o.geometry) return;
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        const b = o.geometry.boundingSphere;
+        const at = b.center.clone().applyMatrix4(o.matrixWorld).length();
+        this.skyFar = Math.max(this.skyFar, (at + b.radius * o.matrixWorld.getMaxScaleOnAxis()) * 1.05);
       });
       this.bgScene.add(inst.root);
       this.skydomes.push(inst);
@@ -1710,7 +1719,14 @@ export class Renderer {
     post.r = r;
     const offscreen = post.begin();
     r.clear();
-    r.render(this.bgScene, cam);
+    if (this.skyFar > cam.far) {
+      const far = cam.far;
+      cam.far = this.skyFar;
+      cam.updateProjectionMatrix();
+      r.render(this.bgScene, cam);
+      cam.far = far;
+      cam.updateProjectionMatrix();
+    } else r.render(this.bgScene, cam);
     r.clearDepth();
     if (world && !NO_INSTANCING) {
       for (const o of this.scene.children) if (!o.userData.ship) o.updateMatrixWorld();

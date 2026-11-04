@@ -129,6 +129,19 @@ export function iconAdditiveUrl(name, tint = null) {
   return url;
 }
 
+const opaque = new Map();
+export function iconOpaque(name) {
+  const key = name ? name.trim().toUpperCase() : '';
+  if (opaque.has(key)) return opaque.get(key);
+  const r = rects.get(key);
+  if (!r || !pixels) return false;
+  let solid = 0;
+  for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (pixels.data[((r.y + y) * pixels.width + r.x + x) * 4 + 3] >= 250) solid++;
+  const all = solid >= r.w * r.h * 0.8;
+  opaque.set(key, all);
+  return all;
+}
+
 export function iconCanvasRect(name) {
   return name ? rects.get(name.trim().toUpperCase()) : null;
 }
