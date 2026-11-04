@@ -398,6 +398,15 @@ export class PathCore {
   }
 
   find(u, gx, gy) {
+    const pts = this.findOnce(u, gx, gy, 0);
+    if (!pts || pts.length) return pts;
+    const used = this.statesUsed || 0,
+      again = this.findOnce(u, gx, gy, 600);
+    this.statesUsed = used + (this.statesUsed || 0);
+    return again;
+  }
+
+  findOnce(u, gx, gy, loose) {
     if (this.note) this.note('path search');
     const free = this.slot(u, gx, gy);
     if (free) {
@@ -410,8 +419,12 @@ export class PathCore {
     this.candFor = u;
     this.cand = this.tracking().filter(tr => tr.o !== u && (tr.layer & u.layer) === u.layer);
     this.index(this.cand, Math.min(this.K.horizon, Math.max(30, (4 * d) / v)));
+    const inside = e => {
+      const R = (e.ext?.r || 0) + q.r;
+      return (e.x - u.x) ** 2 + (e.y - u.y) ** 2 < (R + loose) ** 2 || (e.x - gx) ** 2 + (e.y - gy) ** 2 < R * R;
+    };
     this.sStill = this.still
-      .filter(e => e.o !== u && this.sees(u, e.o))
+      .filter(e => e.o !== u && this.sees(u, e.o) && !inside(e))
       .concat(
         this.world.fields
           .filter(f => this.world.hazardous(f, u))
