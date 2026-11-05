@@ -72,7 +72,7 @@ game.showStoryDialog = request => storyDialogs.push(request);
 const screenTexts = [],
   movies = [];
 const speechCalls = [];
-game.audio = { speech: { replace: name => speechCalls.push(name), stopActive: () => speechCalls.push('STOP_ACTIVE') } };
+game.audio = { play: () => {}, speech: { replace: name => speechCalls.push(name), stopActive: () => speechCalls.push('STOP_ACTIVE') } };
 game.showScreenText = request => screenTexts.push(request);
 game.movies = { play: (name, loop) => movies.push({ name, loop }), stop: () => movies.push({ stop: true }) };
 scriptUI.click = (name, forced) => {
