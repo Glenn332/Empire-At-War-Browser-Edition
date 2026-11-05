@@ -18,7 +18,7 @@ import { strategicStealth } from './galacticfog.js';
 import { battleStory, battleClassSummary, destroyStory, destroyBaseStory, conquerStory, scoringCall } from './galacticbattleevents.js';
 import { strategicPower } from './galacticforces.js';
 import { groundActivated } from './planetdestruction.js';
-import { orderMove } from './fleets.js';
+import { orderMove, pullIn } from './fleets.js';
 import { scheduleHeroRespawn, forceHeroRespawn } from './galacticherorespawn.js';
 import { sabotageReward } from './galacticsabotage.js';
 import { galacticBounty, ownerCorruption } from './galacticbounty.js';
@@ -854,6 +854,66 @@ export class GalacticStoryHost extends StoryPlots {
     if (record) return this.object(record, planet, owner.__faction).__object;
     return undefined;
   }
+  spawnReward(p, owner) {
+    const g = this.game.galaxy,
+      type = db.type(String(p[0] || '').trim());
+    if (!type) return false;
+    const real = g.planets.filter(q => !q.background);
+    let named = null;
+    if (String(p[1] || '').trim()) {
+      named = real.find(q => key(q.type.name) === key(p[1])) || real.find(q => key(q.owner) === key(owner)) || null;
+      if (!named) return false;
+    }
+    if (!named) return false;
+    const held = q => key(q.owner) === key(owner),
+      orbitOwner = q => {
+        if (q.station && (q.spaceLevel || 0) > 0) return q.stationOwner || q.owner;
+        const here = g.fleets.filter(f => f.planet === q.index && f.units.length);
+        return (here.find(f => !f.leg) || here[0])?.owner ?? null;
+      },
+      clear = q => {
+        const o = orbitOwner(q);
+        return !o || key(o) === key(owner);
+      },
+      nearest = test => {
+        let best = null,
+          d = Infinity;
+        for (const q of real) {
+          if (!test(q)) continue;
+          const dd = q.pos.reduce((s, n, k) => s + (n - named.pos[k]) ** 2, 0);
+          if (dd < d) [best, d] = [q, dd];
+        }
+        return best;
+      };
+    let at = held(named) ? named : nearest(held);
+    if (!at) return false;
+    const o = orbitOwner(at);
+    if (o && key(o) !== key(owner)) {
+      const alt = held(named) && clear(named) ? named : nearest(q => held(q) && clear(q));
+      if (alt) at = alt;
+    }
+    const count = String(p[2] ?? '').trim() ? parseInt(p[2], 10) || 0 : 1;
+    if (count < 1) return false;
+    const fleets = g.fleets,
+      first = fleets.length;
+    let made = 0;
+    for (let i = 0; i < count; i++) {
+      const record = placeStartingForce(at, owner, type, fleets);
+      if (!record) continue;
+      made++;
+      this.game.victory?.heroSpawned(type, owner);
+    }
+    for (let i = first; i < fleets.length; i++) this.game.fleetView?.(fleets[i])?.catch?.(() => {});
+    const orbit = fleets.find(f => f.planet === at.index && !f.leg && f.units.length);
+    if (orbit) {
+      this.fleetEntered(orbit, at);
+      for (const pulled of pullIn(g, at.index, orbit)) this.fleetEntered(pulled, at);
+      this.game.battles?.arrive(orbit, at.index);
+    }
+    this.objectCache = null;
+    this.reasonCache.clear();
+    return made > 0;
+  }
   createGeneric(type, where, owner) {
     const t = type?.__type || db.type(String(type || '')),
       planet = where?.__planet || where?.__object?.planet;
@@ -1481,6 +1541,9 @@ export class GalacticStoryHost extends StoryPlots {
         break;
       }
       case 'UNIQUE_UNIT':
+      case 'SPAWN_HERO':
+        this.spawnReward(p, e.plot.owner || game.me);
+        break;
       case 'LOCK_UNIT':
       case 'ENABLE_BUILDABLE':
       case 'DISABLE_BUILDABLE': {
@@ -1498,10 +1561,7 @@ export class GalacticStoryHost extends StoryPlots {
               add = list => {
                 if (!has(list)) player[list].push(n);
               };
-            if (e.reward === 'UNIQUE_UNIT') {
-              drop('lockedTypes');
-              add('unlockedTypes');
-            } else if (e.reward === 'LOCK_UNIT') add('lockedTypes');
+            if (e.reward === 'LOCK_UNIT') add('lockedTypes');
             else if (e.reward === 'DISABLE_BUILDABLE') add('disabledTypes');
             else drop('disabledTypes');
           }
@@ -1518,11 +1578,6 @@ export class GalacticStoryHost extends StoryPlots {
             game.galacticBattleChanged?.();
           }
         }
-        break;
-      }
-      case 'SPAWN_HERO': {
-        const planet = game.galaxy.planets.find(location => key(location.name) === key(p[1]));
-        this.spawn(db.type(p[0]) && this.type(db.type(p[0])), this.planet(planet), this.player(e.plot.owner || game.me));
         break;
       }
       case 'SET_TUTORIAL_PLAYER':
