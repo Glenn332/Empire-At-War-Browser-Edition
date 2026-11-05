@@ -5,6 +5,7 @@ import { changeController } from './galacticpolitics.js';
 import { scheduleHeroRespawn } from './galacticherorespawn.js';
 import { intelligence } from './galacticfog.js';
 import { vigilant } from './galacticslicer.js';
+import { raiseGround } from './invasion.js';
 
 const key = s =>
   String(s || '')
@@ -149,7 +150,9 @@ function revolt(game, planet) {
     neutral = [...db.factions.values()].find(f => f.bool('Is_Neutral'));
   if (!neutral) return;
   const old = planet.owner;
-  for (const owner of new Set(g.fleets.filter(f => f.planet === planet.index && !f.leg).map(f => f.owner)))
+  for (const owner of new Set(planet.garrison.filter(u => !u.dead && u.owner !== neutral.name).map(u => u.owner)))
+    raiseGround(g, planet, owner);
+  for (const owner of new Set(g.fleets.filter(f => f.planet === planet.index && !f.leg && f.owner !== neutral.name).map(f => f.owner)))
     game.battles?.retreat?.(planet.index, owner);
   const keep = u => {
     if (u.owner === neutral.name) return true;
@@ -290,8 +293,10 @@ export function executeCorruption(game, actor, planet, choice) {
   const mission = choice.map && choice.mode && player.ai === null && !game.setup?.noCorruptionMission;
   if (mission) {
     if (!queueMission(game, actor, planet, choice)) return false;
-  } else begin(game, player, planet, choice.type);
-  game.story?.abilityLanded?.(planet, actor);
+  } else {
+    begin(game, player, planet, choice.type);
+    game.story?.abilityLanded?.(planet, actor);
+  }
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.story?.despawn?.(actor);
   return true;

@@ -4,6 +4,14 @@ import { parseXML } from '../xml.js';
 import { advisorHintFlags } from './advisorhints.js';
 import { retreatDisabledList, setRetreatDisabledList } from './retreat.js';
 
+let orbitListener = null;
+export function onOrbit(fn) {
+  orbitListener = fn;
+}
+export function enteredOrbit(planet, owner, units, raid = false) {
+  if (planet && units?.length) orbitListener?.(planet, owner, units, raid);
+}
+
 const XML = 'Data/XML/';
 
 async function readNamed(files) {
@@ -106,8 +114,14 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
     const orbit = units.some(u => u.bool('Always_Spawn_In_Orbit'));
     if (open && !orbit && p.garrison.length < db.constants.num('Max_Ground_Forces_On_Planet', 10))
       p.garrison.push((record = { type, owner }));
-    else newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type: transport || type, carries: type }));
-  } else if (kind === 'squadron' || kind === 'starship') newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type }));
+    else {
+      newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type: transport || type, carries: type }));
+      enteredOrbit(p, owner, [record]);
+    }
+  } else if (kind === 'squadron' || kind === 'starship') {
+    newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type }));
+    enteredOrbit(p, owner, [record]);
+  }
   const extra = db.type(type.str('Create_Additional_Object'));
   if (extra) placeStartingForce(p, owner, extra, fleets, depth + 1, seen);
   return record;

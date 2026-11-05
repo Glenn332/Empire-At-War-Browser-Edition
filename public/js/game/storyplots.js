@@ -140,8 +140,9 @@ export class StoryPlots {
   }
 
   plotWrapper(name) {
-    const owner = (this.currentStoryPlot?.() || this.current?.plot)?.owner;
-    const plot = [...this.plots.values()].find(p => key(p.name) === key(name) && (owner === undefined || key(p.owner) === key(owner)));
+    const owner = (this.currentStoryPlot?.() || this.current?.plot)?.owner,
+      named = [...this.plots.values()].filter(p => key(p.name) === key(name));
+    const plot = named.find(p => owner === undefined || key(p.owner) === key(owner)) || named[0];
     if (!plot) return undefined;
     return this.plotWrapperOf(plot);
   }
@@ -310,8 +311,8 @@ export class StoryPlots {
       this.fire(e);
     }
   }
-  signalHeroMove(hero, planet) {
-    for (const e of this.eventTypes.get('STORY_MOVE') || []) {
+  signalHero(type, hero, planet) {
+    for (const e of this.eventTypes.get(type) || []) {
       if (wantedNames(e.params[0]).has(key(hero)) && wantedNames(e.params[1]).has(key(planet.type.name))) this.fire(e);
     }
   }

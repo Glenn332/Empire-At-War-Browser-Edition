@@ -2,6 +2,7 @@ import { retreatDestination } from './fleetretreat.js';
 import { db } from '../gamedata.js';
 import { autoCombatant, resolveAutoBattle, overrunSide, landBomber } from './galacticautoresolve.js';
 import { carriedCompany, canLand, invasionForces, applyInvasionResult } from './invasion.js';
+import { enteredOrbit } from './galaxy.js';
 import { retreatFleet } from './fleets.js';
 import { enemy, hidden, conflictAt } from './galacticrelation.js';
 import { groundLevel } from './galacticproduction.js';
@@ -218,6 +219,7 @@ export class GalacticBattles {
         u.type = db.type(u.type.list('Company_Transport_Unit')[0]);
       }
       g.fleets.push({ owner: defender, units: escaping, planet: p, pos: null, path: [], dest: -1, leg: null });
+      enteredOrbit(planet, defender, escaping);
       this.retreat(p, defender);
     }
     if (result.winner !== 0) this.retreat(p, attacker);

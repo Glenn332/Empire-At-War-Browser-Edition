@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { forceKind } from './galaxy.js';
+import { forceKind, enteredOrbit } from './galaxy.js';
 import { ownerCorruption } from './galacticbounty.js';
 import { groundLevel } from './galacticproduction.js';
 import { changeController } from './galacticpolitics.js';
@@ -65,6 +65,22 @@ export function embarkGround(g, p, owner, { records = null, fleet = null, slot, 
   }
   const moved = new Set(troops);
   pl.garrison = pl.garrison.filter(u => !moved.has(u));
+  enteredOrbit(pl, owner, troops);
+  return fleet;
+}
+
+export function raiseGround(g, pl, owner) {
+  const units = pl.garrison.filter(u => !u.dead && u.owner === owner && companyTransport(carriedCompany(u)));
+  if (!units.length) return null;
+  for (const u of units) {
+    u.carries = carriedCompany(u);
+    u.type = companyTransport(u.carries);
+  }
+  const moved = new Set(units);
+  pl.garrison = pl.garrison.filter(u => !moved.has(u));
+  const fleet = { owner, units, planet: pl.index, pos: null, path: [], dest: -1, leg: null };
+  g.fleets.push(fleet);
+  enteredOrbit(pl, owner, units);
   return fleet;
 }
 
@@ -174,6 +190,7 @@ export function applyInvasionResult(g, r) {
         u.carries = u.type;
         u.type = companyTransport(u.type) || u.type;
         fleet.units.push(u);
+        enteredOrbit(pl, attacker, [u]);
       }
     }
     if (pl.station && (pl.stationOwner || oldOwner) !== attacker) {

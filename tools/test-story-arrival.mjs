@@ -115,4 +115,52 @@ assert.deepEqual(fired, ['land']);
 fired = [];
 host([ev('land', 'STORY_LAND_ON', P, 'FILTER_ENEMY_ONLY')]).abilityLanded(planet, { owner: me, record: { type: company } });
 assert.deepEqual(fired, ['land'], 'an ability landing has no object, so the filter is not checked');
+if (hero) {
+  fired = [];
+  const hd = host([ev('deploy', 'STORY_DEPLOY', hero.name, P), ev('nowhere', 'STORY_DEPLOY', hero.name, '')]);
+  hd.unitLanded(planet, { type: hero, owner: me });
+  assert.deepEqual(fired, ['deploy'], 'STORY_DEPLOY needs the hero and the planet, like STORY_MOVE');
+}
+const { placeStartingForce, onOrbit, forceKind } = await import('../public/js/game/galaxy.js');
+const starship = [...db.types.values()].find(t => forceKind(t) === 'starship');
+const { embarkGround, raiseGround, onLanded } = await import('../public/js/game/invasion.js');
+const orbit = [];
+onOrbit((pl, owner, units) => orbit.push([pl.name, owner, units.length]));
+const fleets = [];
+placeStartingForce(planet, me, starship, fleets);
+assert.deepEqual(orbit.at(-1), [planet.name, me, 1], 'a ship placed in orbit enters it');
+const ground = { ...planet, owner: me, garrison: [{ type: company, owner: me }] };
+const gal = { planets: [ground], fleets: [] };
+orbit.length = 0;
+embarkGround(gal, 0, me, {});
+assert.deepEqual(orbit, [[planet.name, me, 1]], 'a launch puts the company into orbit');
+ground.garrison.push({ type: company, owner: them });
+orbit.length = 0;
+raiseGround(gal, ground, them);
+assert.deepEqual(orbit, [[planet.name, them, 1]]);
+assert.equal(ground.garrison.length, 0);
+const { setCorruptionNow } = await import('../public/js/game/galacticcorruption.js');
+const rp = {
+  ...planet,
+  owner: me,
+  garrison: [{ type: company, owner: me }],
+  groundStructures: [],
+  orbitalStructures: [],
+  currentCorruption: -1
+};
+const retreats = [];
+const rg = {
+  galaxy: { planets: [rp], fleets: [], players: [], routes: [], time: 0 },
+  battles: { retreat: (p, o) => retreats.push(o) },
+  notify() {}
+};
+orbit.length = 0;
+setCorruptionNow(rg, rp, 4);
+setCorruptionNow(rg, rp, -1);
+assert.equal(rp.owner, neutral, 'the revolt hands the planet to the neutral faction');
+assert(!rp.garrison.some(u => u.owner === me), 'the old ground forces leave the surface');
+assert.deepEqual(orbit, [[planet.name, me, 1]], 'they go up into orbit');
+assert.deepEqual(retreats, [me], 'and their fleets retreat');
+onOrbit(null);
+onLanded(null);
 console.log('ok', me, 'against', them, 'neutral', neutral, 'on', P);

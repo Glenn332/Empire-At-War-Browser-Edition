@@ -25,7 +25,7 @@ import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
-import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction } from './galaxy.js';
+import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
@@ -371,6 +371,9 @@ export class GalacticGame {
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
+    onOrbit((planet, owner, units, raid) => {
+      if (this.galaxy.planets.includes(planet)) this.story?.fleetEntered?.({ owner, units, raid: raid ? planet.index : undefined }, planet);
+    });
     onLanded((g, planet, unit) => {
       if (g === this.galaxy) this.story?.unitLanded?.(planet, unit);
     });
@@ -3239,7 +3242,8 @@ export class GalacticGame {
           this.story?.fleetEntered?.({ ...f, raid: raid ? p : undefined }, this.galaxy.planets[p]);
           delete f.raid;
           if (raid) for (const u of raid) u.raiding = true;
-          if (!raid && blocks(this.galaxy, p, f.owner, f)) pullIn(this.galaxy, p, f);
+          if (!raid && blocks(this.galaxy, p, f.owner, f))
+            for (const o of pullIn(this.galaxy, p, f)) this.story?.fleetEntered?.(o, this.galaxy.planets[p]);
           this.mergeFleets();
           const there = this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg) || f;
           this.checkConflict(there, p);

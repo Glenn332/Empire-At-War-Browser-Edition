@@ -1,6 +1,6 @@
 import { retreatDestination } from './fleetretreat.js';
 import { db, autoColors } from '../gamedata.js';
-import { snapshotGalaxy } from './galaxy.js';
+import { snapshotGalaxy, enteredOrbit } from './galaxy.js';
 import { carriedCompany } from './invasion.js';
 import { destroyPlanet } from './planetdestruction.js';
 import { StoryFlags } from './storyflags.js';
@@ -190,6 +190,7 @@ function retreatGround(game, p, owner, forced = false) {
   const g = game.galaxy,
     fleet = { owner, planet: p.index, units, path: [], dest: -1, leg: null, pos: null };
   g.fleets.push(fleet);
+  enteredOrbit(p, owner, units);
   const dest = retreatDestination(g, p, owner, true, forced);
   if (dest !== p) orderMove(g, fleet, dest.index, null, 0, { free: true });
   return true;

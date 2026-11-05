@@ -1015,10 +1015,10 @@ export class GalacticStoryHost extends StoryPlots {
     this.signalArrival('STORY_ENTER', planet, { owner: fleet.owner, types, count: live.length, raid: fleet.raid === planet.index });
     for (const u of live) {
       const type = u.carries || u.type;
-      if (type.bool('Is_Named_Hero')) this.signalHeroMove(type.name, planet);
+      if (type.bool('Is_Named_Hero')) this.signalHero('STORY_MOVE', type.name, planet);
       for (const n of [...type.list('Company_Units'), ...type.list('Squadron_Units')]) {
         const member = db.type(n);
-        if (member && (member.bool('Is_Named_Hero') || member.bool('Is_Generic_Hero'))) this.signalHeroMove(member.name, planet);
+        if (member && (member.bool('Is_Named_Hero') || member.bool('Is_Generic_Hero'))) this.signalHero('STORY_MOVE', member.name, planet);
       }
     }
   }
@@ -1027,12 +1027,12 @@ export class GalacticStoryHost extends StoryPlots {
     addTypes(types, unit);
     this.signalArrival('STORY_LAND_ON', planet, { owner: unit.owner, types, count: 1, raid: false });
     const type = unit.carries || unit.type;
-    if (type.bool('Is_Named_Hero')) this.signal('STORY_DEPLOY', type.name);
+    if (type.bool('Is_Named_Hero')) this.signalHero('STORY_DEPLOY', type.name, planet);
   }
   abilityLanded(planet, actor) {
     const record = actor.record || actor;
     this.signalArrival('STORY_LAND_ON', planet);
-    this.signal('STORY_DEPLOY', (record.carries || record.type)?.name);
+    this.signalHero('STORY_DEPLOY', (record.carries || record.type)?.name, planet);
   }
   activate(object, filter) {
     return groundActivated(this.game, object, filter, (actor, ability) => this.neutralize(actor, ability));
