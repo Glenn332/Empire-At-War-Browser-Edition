@@ -31,7 +31,7 @@ import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
 import { openDialog } from './dialogs.js';
 import { STRATEGIC_FRAMES } from './galacticspeed.js';
-import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult, tacticalTransportType } from './invasion.js';
+import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult, tacticalTransportType, onLanded } from './invasion.js';
 import { orderMove, stepFleets, LOGIC_FPS, baseSpeed, blocks, bribeQuote, pullIn } from './fleets.js';
 import { canBribe } from './galacticbribe.js';
 import { reachableFleetPlanets, transferFleetUnits, dropOverviewUnits, aiPathfinder } from './fleetmanagement.js';
@@ -371,6 +371,9 @@ export class GalacticGame {
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
+    onLanded((g, planet, unit) => {
+      if (g === this.galaxy) this.story?.unitLanded?.(planet, unit);
+    });
     onControllerChange((planet, old, now, bonus) => {
       if (!this.over) this.planetChangedHands(planet, old, now, bonus);
     });
@@ -3233,6 +3236,7 @@ export class GalacticGame {
         }
         stepFleets(this.galaxy, dt * LOGIC_FPS, (f, p) => {
           const raid = f.raid === p && isRaidForce(f) ? [...f.units] : null;
+          this.story?.fleetEntered?.({ ...f, raid: raid ? p : undefined }, this.galaxy.planets[p]);
           delete f.raid;
           if (raid) for (const u of raid) u.raiding = true;
           if (!raid && blocks(this.galaxy, p, f.owner, f)) pullIn(this.galaxy, p, f);

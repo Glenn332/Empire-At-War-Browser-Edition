@@ -1,4 +1,5 @@
 import { parseXML } from '../xml.js';
+import { db } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
 import { resetCombatEvent } from './galacticbattleevents.js';
 import { ObjectiveList, objectiveReward } from './objectives.js';
@@ -18,6 +19,16 @@ const prereqNames = s =>
     .split(/[\s,]+/)
     .filter(Boolean);
 const nameSets = new Map();
+const FILTERS = [
+  'FILTER_NONE',
+  'FILTER_FRIENDLY_ONLY',
+  'FILTER_NEUTRAL_ONLY',
+  'FILTER_ENEMY_ONLY',
+  'FILTER_FRIENDLY_AND_NEUTRAL',
+  'FILTER_ENEMY_AND_NEUTRAL',
+  'FILTER_FRIENDLY_AND_ENEMY'
+];
+const flag = s => (parseInt(String(s ?? '').trim(), 10) || 0) !== 0;
 const wantedNames = s => {
   let set = nameSets.get(s);
   if (!set) {
@@ -258,6 +269,50 @@ export class StoryPlots {
       const wanted = type === 'STORY_AI_NOTIFICATION' ? e.params[1] || e.params[0] : e.params[0];
       if (type === 'STORY_VICTORY' && !wanted) continue;
       if (!wanted || wantedNames(wanted).has(target)) this.fire(e);
+    }
+  }
+  plotOwner(e) {
+    return e.plot?.owner || this.game?.me;
+  }
+  storyFilter(name, owner, plotOwner) {
+    const code = Math.max(0, FILTERS.indexOf(key(name))),
+      same = key(owner) === key(plotOwner),
+      neutral = !!db.faction(owner)?.bool('Is_Neutral');
+    if (code === 1) return same;
+    if (code === 2) return neutral;
+    if (code === 3) return !same && !neutral;
+    if (code === 4) return neutral || same;
+    if (code === 5) return neutral || !same;
+    if (code === 6) return !neutral;
+    return true;
+  }
+  signalArrival(type, planet, object = null) {
+    for (const e of this.eventTypes.get(type) || []) {
+      const p = e.params,
+        planets = split(p[0]).map(key);
+      if (!planets.length) {
+        this.fire(e);
+        continue;
+      }
+      if (!planets.includes(key(planet.type.name))) continue;
+      if (object && !this.storyFilter(p[1], object.owner, this.plotOwner(e))) continue;
+      if (object) {
+        const need = split(p[2]).map(key);
+        if (flag(p[6])) {
+          if (!object.raid) continue;
+        } else if (need.length) {
+          if (!need.every(n => object.types.has(n))) continue;
+          if (flag(p[5]) && object.count !== need.length) continue;
+        }
+      }
+      const present = split(p[3]).map(key);
+      if (present.length && !present.some(n => this.presentTypes?.(planet).has(n))) continue;
+      this.fire(e);
+    }
+  }
+  signalHeroMove(hero, planet) {
+    for (const e of this.eventTypes.get('STORY_MOVE') || []) {
+      if (wantedNames(e.params[0]).has(key(hero)) && wantedNames(e.params[1]).has(key(planet.type.name))) this.fire(e);
     }
   }
   signalCorruption(type, planet, value) {

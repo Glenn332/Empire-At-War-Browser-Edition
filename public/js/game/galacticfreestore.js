@@ -1,6 +1,6 @@
 import { db } from '../gamedata.js';
 import { orderMove } from './fleets.js';
-import { embarkGround, planetAllowsCompany } from './invasion.js';
+import { embarkGround, planetAllowsCompany, landedOnSurface } from './invasion.js';
 import { factionRelated, orbitBlockaded } from './galacticforces.js';
 import { aidebug as D, who, nameOf } from '../aidebug.js';
 
@@ -347,6 +347,7 @@ export class GalacticFreeStore {
     record.carries = null;
     record.owner = this.owner;
     p.garrison.push(record);
+    landedOnSurface(this.galaxy, p, record);
     if (!fleet.units.length) this.galaxy.fleets = this.galaxy.fleets.filter(f => f !== fleet);
     this.plans.locationTime = -Infinity;
   }

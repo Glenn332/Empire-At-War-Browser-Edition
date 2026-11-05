@@ -19,7 +19,15 @@ import { adjustCredits } from './galacticeconomy.js';
 import { orderMove, blocks, LOGIC_FPS } from './fleets.js';
 import { isRaidForce } from './raid.js';
 import { statusOf, reachList } from './airoute.js';
-import { canLand, landFriendly, carriedCompany, planetAllowsCompany, applyInvasionResult, invasionForces } from './invasion.js';
+import {
+  canLand,
+  landFriendly,
+  carriedCompany,
+  planetAllowsCompany,
+  applyInvasionResult,
+  invasionForces,
+  landedOnSurface
+} from './invasion.js';
 import { strategicCategories, strategicPower, factionRelated, orbitBlockaded } from './galacticforces.js';
 import { GalacticNetwork } from './galacticnetwork.js';
 import { GalacticBudget } from './galacticbudget.js';
@@ -1493,6 +1501,7 @@ export class GalacticPlanning {
       u.carries = null;
       u.owner = owner;
       at.planet.garrison.push(u);
+      landedOnSurface(g, at.planet, u);
       changed = true;
       this.tally('landings');
       if (D.on) this.dbg('reinforce', force.inst, 'landed ' + nameOf(u) + ' on ' + at.planet.name);

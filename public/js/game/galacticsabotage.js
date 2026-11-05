@@ -240,7 +240,7 @@ export function activateSabotage(game, actor, planet, ability) {
             ? structureOutcome(game, actor, planet, ability)
             : haltIncome(game, actor, planet, ability);
   if (done) {
-    game.story?.signal?.('STORY_LAND_ON', planet.type.name);
+    game.story?.abilityLanded?.(planet, actor);
     scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   }
   return done;

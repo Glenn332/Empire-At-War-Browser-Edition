@@ -68,6 +68,7 @@ const game = (planets, credits = 30000) => ({
   message: t => messages.push(t),
   story: {
     signal: (...a) => story.push(a),
+    abilityLanded: p => story.push(['STORY_LAND_ON', p.type.name]),
     despawn: u => {
       u.dead = true;
     },

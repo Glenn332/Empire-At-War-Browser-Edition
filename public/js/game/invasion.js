@@ -16,6 +16,14 @@ const hostile = (owner, other) =>
     .some(n => n.toUpperCase() === other.toUpperCase());
 const restrictions = new WeakMap(),
   masks = new WeakMap();
+let landListener = null;
+export function onLanded(fn) {
+  landListener = fn;
+}
+export function landedOnSurface(g, pl, u) {
+  landListener?.(g, pl, u);
+}
+
 export function planetAllowsCompany(pl, type) {
   let r = restrictions.get(pl.type);
   if (!r) {
@@ -90,6 +98,7 @@ export function landFriendly(g, fleet, p, { records = null, raid = false } = {})
     u.carries = null;
     u.owner = fleet.owner;
     pl.garrison.push(u);
+    landedOnSurface(g, pl, u);
     room--;
     landed = true;
     return false;
@@ -153,8 +162,10 @@ export function applyInvasionResult(g, r) {
     ownerCorruption(pl, oldOwner, attacker, g);
     const capacity = db.constants.num('Max_Ground_Forces_On_Planet', 10);
     for (const u of landed) {
-      if (pl.garrison.length < capacity) pl.garrison.push(u);
-      else {
+      if (pl.garrison.length < capacity) {
+        pl.garrison.push(u);
+        landedOnSurface(g, pl, u);
+      } else {
         let fleet = g.fleets.find(f => f.planet === r.planet && !f.leg && f.owner === attacker);
         if (!fleet) {
           fleet = { owner: attacker, units: [], planet: r.planet, pos: null, path: [], dest: -1, leg: null };

@@ -61,11 +61,7 @@ export function activateSpy(game, actor, planet, ability, type) {
       ? g.planets.filter(p => !p.background && p.pos.reduce((s, n, k) => s + (n - planet.pos[k]) ** 2, 0) < range * range)
       : [planet];
   for (const p of targets) (p.visibilityModifiers ||= []).push({ owner: actor.owner, source, mask, expires });
-  if (key(ability.val('Activation_Style')) === 'GROUND_ACTIVATED') {
-    const record = actor.record || actor;
-    game.story?.signal?.('STORY_LAND_ON', planet.type.name);
-    game.story?.signal?.('STORY_DEPLOY', (record.carries || record.type)?.name);
-  }
+  if (key(ability.val('Activation_Style')) === 'GROUND_ACTIVATED') game.story?.abilityLanded?.(planet, actor);
   game.audio?.play(ability.val('SFXEvent_Activate', ''));
   if (yes(ability.val('Causes_Despawn'))) scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.galacticBattleChanged?.();

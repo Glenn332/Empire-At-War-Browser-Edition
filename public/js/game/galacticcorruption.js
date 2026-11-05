@@ -291,6 +291,7 @@ export function executeCorruption(game, actor, planet, choice) {
   if (mission) {
     if (!queueMission(game, actor, planet, choice)) return false;
   } else begin(game, player, planet, choice.type);
+  game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.story?.despawn?.(actor);
   return true;
@@ -374,6 +375,7 @@ export function activateRemoval(game, actor, planet, ability) {
   if (cost > 0) adjustCredits(g, player.faction, -cost);
   if (same(actor.owner, game.me))
     game.notify?.(String(db.t('TEXT_REMOVE_CORRUPTION_BEGIN')).replace('%s', planetName(planet)), actor.owner);
+  game.story?.abilityLanded?.(planet, actor);
   return true;
 }
 
@@ -399,6 +401,7 @@ export function activateSiphon(game, actor, planet, ability) {
   planet.creditSiphonAmount = 0;
   planet.creditSiphonFound = false;
   planet.creditSiphonEnd = (g.time || 0) + cycles * db.constants.num('Fiscal_Cycle_Time_In_Secs', 45);
+  game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   if (same(actor.owner, game.me)) game.notify?.(String(db.t('TEXT_SIPHON_BEGIN')).replace('%s', planetName(planet)).trim(), owner);
   return true;

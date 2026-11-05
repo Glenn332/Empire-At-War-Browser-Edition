@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { carriedCompany, canLand, planetAllowsCompany } from './invasion.js';
+import { carriedCompany, canLand, planetAllowsCompany, landedOnSurface } from './invasion.js';
 import { intelligence } from './galacticfog.js';
 
 const normalized = s => s.toUpperCase().replace(/[_\s]+/g, ' ');
@@ -167,7 +167,9 @@ export function landLayoutCompany(g, p, owner, entry, target) {
     entry.fleet.units.push({ type: transport, carries: old.type, markerId: old.markerId ?? -1 });
     p.garrison.splice(p.garrison.indexOf(old), 1);
   }
-  p.garrison.push({ type: entry.type, owner, markerId: target.marker.id });
+  const landed = { type: entry.type, owner, markerId: target.marker.id };
+  p.garrison.push(landed);
+  landedOnSurface(g, p, landed);
   g.fleets = g.fleets.filter(f => f.units.length);
   return true;
 }

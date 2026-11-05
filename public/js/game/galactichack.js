@@ -41,6 +41,7 @@ export function executeHack(game, actor, planet) {
     return false;
   }
   adjustCredits(g, player.faction, -cost);
+  game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.story?.despawn?.(actor);
   for (const f of g.fleets)
