@@ -5,6 +5,7 @@ import { canCorrupt, canRemove } from './galacticcorruption.js';
 import { canSlice } from './galacticslicer.js';
 import { canBlackMarket } from './blackmarket.js';
 import { canSabotageWith } from './galacticsabotage.js';
+import { canSpy } from './galacticspy.js';
 
 const key = s =>
   String(s || '')
@@ -50,7 +51,13 @@ export const SLOTS = [
     can: (g, a, p, ability) =>
       !p.sabotageRestricted && g.galaxy.sabotageOff !== true && (p.currentCorruption ?? -1) !== -1 && canSabotageWith(g, a, p, ability)
   },
-  { code: 3, text: 'TEXT_ABILITY_SLOT_SPY', names: 'Activated_System_Spy_Ability_Names', tag: 'SYSTEM_SPY_ABILITY', can: () => true },
+  {
+    code: 3,
+    text: 'TEXT_ABILITY_SLOT_SPY',
+    names: 'Activated_System_Spy_Ability_Names',
+    tag: 'SYSTEM_SPY_ABILITY',
+    can: (g, a, p) => canSpy(g, a, p)
+  },
   {
     code: 4,
     text: 'TEXT_ABILITY_SLOT_NEUTRALIZE_HERO',

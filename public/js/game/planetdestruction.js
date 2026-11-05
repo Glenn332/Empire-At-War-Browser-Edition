@@ -7,6 +7,7 @@ import { activateCorruption, activateRemoval, activateSiphon } from './galacticc
 import { activateSlicer } from './galacticslicer.js';
 import { activateSabotage } from './galacticsabotage.js';
 import { activateHack } from './galactichack.js';
+import { activateSpy } from './galacticspy.js';
 const key = x => String(x || '').toUpperCase(),
   list = x =>
     String(x || '')
@@ -176,6 +177,7 @@ export function groundActivated(game, actor, filter, neutralize) {
       else if (key(ability.tag) === 'SIPHON_CREDITS_ABILITY') fired = activateSiphon(game, actor, p, ability);
       else if (key(ability.tag) === 'SLICER_ABILITY') fired = activateSlicer(game, actor, p, ability);
       else if (key(ability.tag) === 'HACK_SUPER_WEAPON_ABILITY') fired = activateHack(game, actor, p, ability);
+      else if (key(ability.tag) === 'SYSTEM_SPY_ABILITY') fired = activateSpy(game, actor, p, ability, type);
       else if (key(ability.tag) === 'GALACTIC_SABOTAGE_ABILITY')
         fired = !p.sabotageRestricted && game.galaxy.sabotageOff !== true && activateSabotage(game, actor, p, ability);
       if (fired && /^(yes|true|1)$/i.test(ability.val('Causes_Despawn'))) game.story?.despawn(actor);

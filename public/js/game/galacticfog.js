@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { planetIncome } from './galacticeconomy.js';
+import { spyMask } from './galacticspy.js';
 
 export const VIS = Object.freeze({
   OWNER: 1,
@@ -40,18 +41,7 @@ function effects(type, depth = 0) {
     if (/^Galactic_Stealth_Ability$/i.test(a.tag) && yes(a.val('Initially_Enabled'))) result.stealth = true;
     if (!yes(a.val('Initially_Enabled')) || !/^Galactic_Automatic$/i.test(a.val('Activation_Style'))) continue;
     if (!/^System_Spy_Ability$/i.test(a.tag) || a.num('Duration_In_Secs', 30) >= 0) continue;
-    let mask = 0;
-    for (const [tag, bits] of [
-      ['See_Base_Levels', 6],
-      ['See_Credit_Income', 8],
-      ['See_Num_Fleets', 0x30],
-      ['See_Most_Powerful_Ship', 0x10000],
-      ['See_Fleet_Contents', 0x70],
-      ['See_Num_Ground_Companies', 0x80],
-      ['See_Ground_Company_Contents', 0x180],
-      ['See_Special_Structures', 0x200]
-    ])
-      if (yes(a.val(tag))) mask |= bits;
+    const mask = spyMask(a);
     if (mask) result.spies.push({ mask, range: type.num('Galactic_Influence_Range', 0) });
   }
   const members = [];
