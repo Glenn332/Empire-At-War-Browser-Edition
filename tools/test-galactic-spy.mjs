@@ -59,8 +59,9 @@ const company = [...db.types.values()].find(t => t.list('Company_Units').some(n 
 const record = { type: company, owner: me };
 const fleet = { owner: me, planet: target.index, units: [record], path: [], dest: -1, leg: null, pos: target.pos.slice() };
 g.fleets.push(fleet);
-const despawned = [];
-const game = { galaxy: g, me, audio: { play() {} }, story: { despawn: a => despawned.push(a) } };
+const despawned = [],
+  signals = [];
+const game = { galaxy: g, me, audio: { play() {} }, story: { despawn: a => despawned.push(a), signal: (t, v) => signals.push([t, v]) } };
 const actor = { owner: me, record, type: company, planet: target, dead: false };
 assert.equal(canSpy(game, actor, target), true, 'an enemy planet can be spied on');
 assert.equal(canSpy(game, actor, { ...target, owner: me }), false, 'not your own planet');
@@ -73,6 +74,14 @@ g.fleets = [];
 stepVisibility(g, me);
 assert.equal(intelligence(g, target).mask & mask, mask, 'the planet shows what the spy sees');
 assert(intelligence(g, target).mask !== before);
+assert.deepEqual(
+  signals,
+  [
+    ['STORY_LAND_ON', target.type.name],
+    ['STORY_DEPLOY', company.name]
+  ],
+  'the story hears the landing and the hero deployed'
+);
 if (yes('Causes_Despawn')) {
   assert.equal(despawned.length, 1, 'the spy leaves the map');
   assert.equal(
