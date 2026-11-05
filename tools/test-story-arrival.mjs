@@ -90,6 +90,18 @@ assert.deepEqual(
 );
 assert.deepEqual(run([ev('raid', 'STORY_ENTER', P, '', '', '', '', '', '1')], fleet(me, [{ type: ship }])), [], 'raid fleets only');
 assert.deepEqual(run([ev('raid', 'STORY_ENTER', P, '', '', '', '', '', '1')], fleet(me, [{ type: ship }], { raid: 0 })), ['raid']);
+assert.deepEqual(
+  run(
+    [
+      ev('own', 'STORY_ENTER', P, 'FILTER_FRIENDLY_ONLY'),
+      ev('enemy', 'STORY_ENTER', P, 'FILTER_ENEMY_ONLY'),
+      ev('unit', 'STORY_ENTER', P, '', company.name)
+    ],
+    fleet(me, [])
+  ),
+  ['own'],
+  'an empty new fleet passes on its owner but holds no listed unit'
+);
 const there = fleet(them, [{ type: ship }]);
 assert.deepEqual(
   run([ev('present', 'STORY_ENTER', P, '', '', ship.name)], fleet(me, [carried]), [there]),
@@ -128,12 +140,17 @@ const orbit = [];
 onOrbit((pl, owner, units) => orbit.push([pl.name, owner, units.length]));
 const fleets = [];
 placeStartingForce(planet, me, starship, fleets);
-assert.deepEqual(orbit.at(-1), [planet.name, me, 1], 'a ship placed in orbit enters it');
+assert.deepEqual(orbit.at(-1), [planet.name, me, 0], 'a ship built in orbit: its new fleet enters before the ship is added');
 const ground = { ...planet, owner: me, garrison: [{ type: company, owner: me }] };
 const gal = { planets: [ground], fleets: [] };
 orbit.length = 0;
-embarkGround(gal, 0, me, {});
-assert.deepEqual(orbit, [[planet.name, me, 1]], 'a launch puts the company into orbit');
+embarkGround(gal, 0, me, { fresh: true });
+assert.deepEqual(orbit, [[planet.name, me, 0]], 'a launch into a new fleet: the empty fleet enters first');
+ground.garrison.push({ type: company, owner: me });
+orbit.length = 0;
+embarkGround(gal, 0, me, { fleet: gal.fleets[0] });
+assert.deepEqual(orbit, [], 'a launch into a fleet already in orbit enters nothing');
+assert.equal(gal.fleets[0].units.length, 2);
 ground.garrison.push({ type: company, owner: them });
 orbit.length = 0;
 raiseGround(gal, ground, them);

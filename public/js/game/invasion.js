@@ -57,6 +57,7 @@ export function embarkGround(g, p, owner, { records = null, fleet = null, slot, 
     fleet = { owner, units: [], planet: p, pos: null, path: [], dest: -1, leg: null };
     if (slot !== undefined) fleet.slot = slot;
     g.fleets.push(fleet);
+    enteredOrbit(pl, owner, []);
   }
   for (const u of troops) {
     u.carries = carriedCompany(u);
@@ -65,7 +66,6 @@ export function embarkGround(g, p, owner, { records = null, fleet = null, slot, 
   }
   const moved = new Set(troops);
   pl.garrison = pl.garrison.filter(u => !moved.has(u));
-  enteredOrbit(pl, owner, troops);
   return fleet;
 }
 

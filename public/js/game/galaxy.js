@@ -9,7 +9,7 @@ export function onOrbit(fn) {
   orbitListener = fn;
 }
 export function enteredOrbit(planet, owner, units, raid = false) {
-  if (planet && units?.length) orbitListener?.(planet, owner, units, raid);
+  if (planet) orbitListener?.(planet, owner, units || [], raid);
 }
 
 const XML = 'Data/XML/';
@@ -119,8 +119,8 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
       enteredOrbit(p, owner, [record]);
     }
   } else if (kind === 'squadron' || kind === 'starship') {
+    enteredOrbit(p, owner, []);
     newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type }));
-    enteredOrbit(p, owner, [record]);
   }
   const extra = db.type(type.str('Create_Additional_Object'));
   if (extra) placeStartingForce(p, owner, extra, fleets, depth + 1, seen);

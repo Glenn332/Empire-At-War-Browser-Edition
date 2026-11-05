@@ -1009,7 +1009,6 @@ export class GalacticStoryHost extends StoryPlots {
   }
   fleetEntered(fleet, planet) {
     const live = fleet.units.filter(u => !u.dead);
-    if (!live.length) return;
     const types = new Set();
     for (const u of live) addTypes(types, u);
     this.signalArrival('STORY_ENTER', planet, { owner: fleet.owner, types, count: live.length, raid: fleet.raid === planet.index });
