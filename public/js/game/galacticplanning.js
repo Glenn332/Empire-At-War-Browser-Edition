@@ -20,7 +20,7 @@ import { orderMove, blocks, LOGIC_FPS } from './fleets.js';
 import { isRaidForce } from './raid.js';
 import { statusOf, reachList } from './airoute.js';
 import { canLand, landFriendly, carriedCompany, planetAllowsCompany, applyInvasionResult, invasionForces } from './invasion.js';
-import { strategicCategories, strategicPower, factionRelated } from './galacticforces.js';
+import { strategicCategories, strategicPower, factionRelated, orbitBlockaded } from './galacticforces.js';
 import { GalacticNetwork } from './galacticnetwork.js';
 import { GalacticBudget } from './galacticbudget.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
@@ -1254,7 +1254,7 @@ export class GalacticPlanning {
           units.push(e.record);
         } else {
           const transport = db.type(e.type.list('Company_Transport_Unit')[0]);
-          if (!transport || this.blockaded(owner, planet)) continue;
+          if (!transport || orbitBlockaded(this.game.galaxy, planet)) continue;
           planet.garrison = planet.garrison.filter(u => u !== e.record);
           e.record.carries = e.type;
           e.record.type = transport;
@@ -1426,7 +1426,7 @@ export class GalacticPlanning {
         if (
           this.alive(force).some(u => {
             const at = this.where(u);
-            return !at.fleet && this.blockaded(owner, at.planet);
+            return !at.fleet && orbitBlockaded(this.game.galaxy, at.planet);
           })
         )
           return undefined;

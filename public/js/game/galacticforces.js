@@ -97,6 +97,14 @@ export function factionRelated(owner, other, friendly) {
   }
   return !!(r & (friendly ? 1 : 2));
 }
+export function orbitBlockaded(g, p) {
+  if (!p) return false;
+  for (const f of g.fleets) {
+    if (f.planet !== p.index || f.leg || !f.units.some(u => !u.dead)) continue;
+    return !f.owner || !p.owner || !factionRelated(p.owner, f.owner, true);
+  }
+  return false;
+}
 export class GalacticForces {
   constructor(game) {
     this.game = game;

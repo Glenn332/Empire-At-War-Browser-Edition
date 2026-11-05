@@ -1,7 +1,7 @@
 import { db } from '../gamedata.js';
 import { orderMove } from './fleets.js';
 import { embarkGround, planetAllowsCompany } from './invasion.js';
-import { factionRelated } from './galacticforces.js';
+import { factionRelated, orbitBlockaded } from './galacticforces.js';
 import { aidebug as D, who, nameOf } from '../aidebug.js';
 
 const key = x => String(x || '').toUpperCase(),
@@ -281,7 +281,7 @@ export class GalacticFreeStore {
     if (from === to) return true;
     let fleet = at.fleet;
     if (!fleet) {
-      if (this.plans.blockaded(this.owner, from)) return false;
+      if (orbitBlockaded(g, from)) return false;
       fleet = embarkGround(g, from.index, this.owner, { records: [record], fresh: true });
       if (!fleet) return false;
       this.game.fleetView?.(fleet)?.catch?.(() => {});
