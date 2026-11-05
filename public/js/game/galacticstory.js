@@ -1415,6 +1415,21 @@ export class GalacticStoryHost extends StoryPlots {
                 (player.lockedTypes ||= []).push(n);
               }
             }
+        if (player && key(player.faction) === 'REBEL' && player.tech < player.maxTech) {
+          const unlocked = new Set((player.unlockedTypes || []).map(key)),
+            left = [...db.types.values()].some(
+              t =>
+                t.list('Affiliation').some(n => key(n) === key(player.faction)) &&
+                t.num('Tech_Level', 0) <= player.tech &&
+                t.bool('Build_Initially_Locked') &&
+                t.bool('Build_Can_Be_Unlocked_By_Slicer') &&
+                !unlocked.has(key(t.name))
+            );
+          if (!left) {
+            player.tech += 1;
+            this.signalTech(player.faction, player.tech);
+          }
+        }
         break;
       }
       case 'UNIQUE_UNIT':
