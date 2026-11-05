@@ -178,6 +178,8 @@ function typeName(type) {
   return db.t(id) || type.name.replace(/_/g, ' ');
 }
 
+const ICON_LIFT = 0.048;
+
 export class UI {
   constructor(game) {
     this.game = game;
@@ -1130,90 +1132,141 @@ export class UI {
 
   screenOf(s, out = {}) {
     const a = this.iconAt(s);
-    return this.r.project(a.x, a.y, s.isSquad ? 40 : s.z, out);
+    if (!s.isSquad) return this.r.project(a.x, a.y, s.z, out);
+    this.r.project(a.x, a.y, a.z, out);
+    out.y -= ICON_LIFT * this.r.height;
+    return out;
   }
 
   layoutDogfights() {
     const w = this.world,
-      C = 400,
-      ox = w.min.x,
-      oy = w.min.y;
-    const at = (this.dfAt ||= new WeakMap()),
-      cells = (this.dfCells ||= new Map()),
       want = (this.dfWant ||= new Map());
-    for (const l of cells.values()) l.list.length = 0;
     want.clear();
-    for (const s of w.squads) {
-      const t = s.target;
-      if (s.dead || s.hyper || !t || t.dead) {
-        at.delete(s);
-        continue;
-      }
-      let k = at.get(s);
-      if (k && (s.x - k.x) ** 2 + (s.y - k.y) ** 2 > 80000) k = null;
-      if (!k) {
-        const r = Math.floor((t.y - oy) / C),
-          sh = ((r & 1) * C) / 2,
-          c = Math.floor((t.x - ox - sh) / C);
-        k = { key: r * 65536 + c, x: ox + (c + 0.5) * C + sh, y: oy + (r + 0.5) * C };
-        if ((s.x - k.x) ** 2 + (s.y - k.y) ** 2 > 80000) {
-          at.delete(s);
-          continue;
-        }
-        at.set(s, k);
-      }
-      let l = cells.get(k.key);
-      if (!l) cells.set(k.key, (l = { x: k.x, y: k.y, list: [] }));
-      l.list.push(s);
-    }
+    const g = w.dogs;
+    if (!g) return;
     const P = (30 * this.r.height) / 768,
-      c = (this._dfc ||= {});
-    for (const [key, l] of cells) {
-      const n = l.list.length;
-      if (!n) {
-        cells.delete(key);
-        continue;
-      }
-      this.r.project(l.x, l.y, 40, c);
+      c = (this._dfc ||= {}),
+      m = (this._dfm ||= { x: 0, y: 0 }),
+      me = this.player;
+    for (const [key, l] of g.cells) {
+      const n = l.length;
+      if (!n) continue;
+      w.dogCentre(key, m);
+      this.r.project(m.x, m.y, l[0].type.num('Layer_Z_Adjust', 0), c);
       if (c.behind) continue;
       const cols = Math.ceil(Math.sqrt(n)),
         x0 = c.x - (Math.min(n, cols) * P) / 2;
-      l.list.sort((a, b) => a.id - b.id);
-      l.list.forEach((s, i) => want.set(s, this.r.pickGround(x0 + (i % cols) * P, c.y - Math.floor(i / cols) * P, {}, 40)));
+      let x = x0,
+        y = c.y,
+        k = 0;
+      for (const s of l) {
+        if (s.dead || s.player !== me || !s.fighters.length) continue;
+        const z = this.boxCentre(s, (this._bc ||= {})).z,
+          q = this.r.pickGround(x, y + ICON_LIFT * this.r.height, {}, z);
+        q.z = z;
+        want.set(s, q);
+        x += P;
+        if (++k % cols === 0) {
+          x = x0;
+          y += P;
+        }
+      }
     }
+  }
+
+  boxCentre(s, out) {
+    let x0 = Infinity,
+      y0 = Infinity,
+      z0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity,
+      z1 = -Infinity;
+    for (const f of s.fighters) {
+      if (f.dead) continue;
+      if (f.x < x0) x0 = f.x;
+      if (f.x > x1) x1 = f.x;
+      if (f.y < y0) y0 = f.y;
+      if (f.y > y1) y1 = f.y;
+      if (f.z < z0) z0 = f.z;
+      if (f.z > z1) z1 = f.z;
+    }
+    if (x0 === Infinity) {
+      out.x = s.x;
+      out.y = s.y;
+      out.z = s.type.num('Layer_Z_Adjust', 0);
+    } else {
+      out.x = (x0 + x1) / 2;
+      out.y = (y0 + y1) / 2;
+      out.z = (z0 + z1) / 2;
+    }
+    return out;
   }
 
   iconAt(s) {
     if (!s.isSquad) return s;
-    const want = this.dfWant?.get(s) || (s.mode === 'idle' && s.about?.cell ? s.about : s),
-      now = this.world.time;
-    const m = (this.icons ||= new WeakMap());
+    const m = (this.icons ||= new WeakMap()),
+      f = this.overlayFrame,
+      parked = s.mode === 'idle' && s.about && s.about.cell;
     let p = m.get(s);
     if (!p) {
-      m.set(s, (p = { x: want.x, y: want.y, t: now }));
-      return p;
-    }
-    if (s.hyper) {
-      p.x = s.x;
-      p.y = s.y;
-      p.t = now;
-      return p;
-    }
-    const dt = now - p.t;
-    if (dt > 0) {
-      p.t = now;
-      const dx = want.x - p.x,
-        dy = want.y - p.y,
-        d = Math.hypot(dx, dy);
-      const lead = s.fighters && s.fighters[0],
-        step = 2 * Math.max(100, (lead && lead.maxSpeed) || 0) * dt;
-      if (d <= step || dt > 2) {
-        p.x = want.x;
-        p.y = want.y;
-      } else {
-        p.x += (dx / d) * step;
-        p.y += (dy / d) * step;
+      const c = this.boxCentre(s, {});
+      if (parked) {
+        c.x = s.about.x;
+        c.y = s.about.y;
+        c.z = s.type.num('Layer_Z_Adjust', 0);
       }
+      m.set(s, (p = { x: c.x, y: c.y, z: c.z, tx: c.x, ty: c.y, tz: c.z, v: 0, f, docked: false }));
+      return p;
+    }
+    if (p.f === f) return p;
+    p.f = f;
+    if (s.hyper) {
+      const c = this.boxCentre(s, (this._bc ||= {}));
+      p.x = p.tx = c.x;
+      p.y = p.ty = c.y;
+      p.z = p.tz = c.z;
+      p.v = 0;
+      return p;
+    }
+    if (!(s.mode === 'combat' && s.target && s.target.isSquad)) p.docked = false;
+    const slot = this.dfWant && this.dfWant.get(s);
+    if (slot) {
+      p.tx = slot.x;
+      p.ty = slot.y;
+      p.tz = slot.z;
+      if (p.docked) {
+        p.x = slot.x;
+        p.y = slot.y;
+        p.z = slot.z;
+        return p;
+      }
+    } else if (!parked) {
+      const c = this.boxCentre(s, (this._bc ||= {}));
+      p.tx = c.x;
+      p.ty = c.y;
+      p.tz = c.z;
+    }
+    const lead = s.fighters[0],
+      a = lead ? lead.type.num('Max_Thrust', 0) : 0;
+    let top = 0;
+    for (const u of s.fighters) if (u.speed > top) top = u.speed;
+    top /= 30;
+    const dx = p.tx - p.x,
+      dy = p.ty - p.y,
+      dz = p.tz - p.z,
+      d = Math.hypot(dx, dy, dz);
+    if ((slot || parked) && a > 0 && (p.v * p.v) / (2 * a) >= d) p.v -= a;
+    else p.v += a;
+    p.v = Math.max(0, Math.min(p.v, top));
+    if (d < p.v || d < 1e-3) {
+      p.x = p.tx;
+      p.y = p.ty;
+      p.z = p.tz;
+      if (slot) p.docked = true;
+    } else {
+      p.x += (dx / d) * p.v;
+      p.y += (dy / d) * p.v;
+      p.z += (dz / d) * p.v;
     }
     return p;
   }
@@ -1221,7 +1274,7 @@ export class UI {
   screenRadius(s, sp) {
     const a = this.iconAt(s),
       c = this.r.camera.position;
-    const d = Math.hypot(c.x - a.x, c.y - a.y, c.z - (s.isSquad ? 40 : s.z));
+    const d = Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z);
     const k = this.r.height / (2 * Math.tan((this.r.camera.fov * Math.PI) / 360) * d);
     return Math.max(12, (s.isSquad ? 80 : s.visualRadius) * k);
   }
@@ -1522,7 +1575,7 @@ export class UI {
     for (const u of this.selection) {
       const o = u.order;
       if (u.dead || u.player !== this.player || !o || (o.kind !== 'move' && o.kind !== 'attackmove') || o.x === undefined) continue;
-      const z = u.isSquad ? 40 : u.z || 0,
+      const z = u.isSquad ? this.iconAt(u).z : u.z || 0,
         pts = [
           { x: u.x, y: u.y, z, start: true },
           { x: o.x, y: o.y, z: 0 }

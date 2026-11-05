@@ -68,7 +68,8 @@ export class SpaceRecorder {
         (q.queue || []).map(order).filter(Boolean),
         q.mode || null,
         q.about ? [q.about.x, q.about.y, q.about.cell ? 1 : 0] : null,
-        q.target && !q.target.dead ? q.target.id : -1
+        q.target && !q.target.dead ? q.target.id : -1,
+        q.dogKey
       ]);
     }
     if (this.sent.size > seen.size * 2 + 256) for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
@@ -78,7 +79,8 @@ export class SpaceRecorder {
       (w.reveals || []).map(r => [w.teams.indexOf(r.team), r.x, r.y, r.r, r.until === Infinity ? -1 : r.until]),
       w.reveal ? 1 : 0,
       w.fogLifted || 0,
-      (w.specialWeapons || []).map(sw => [sw.firedAt, sw.readyAt, sw.left])
+      (w.specialWeapons || []).map(sw => [sw.firedAt, sw.readyAt, sw.left]),
+      w.dogs ? [...w.dogs.cells].filter(c => c[1].length).map(([k, l]) => [k, l.map(q => q.id)]) : []
     ];
   }
 

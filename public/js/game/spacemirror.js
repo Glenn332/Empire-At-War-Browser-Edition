@@ -305,6 +305,7 @@ export class SpaceMirror {
         e.mode = v[4] || undefined;
         e.about = v[5] ? { x: v[5][0], y: v[5][1], cell: !!v[5][2] } : undefined;
         e.target = v[6] >= 0 ? this.byW.get(v[6]) || null : null;
+        e.dogKey = v[7] ?? -1;
         continue;
       }
       if (e.player !== pl) {
@@ -342,6 +343,12 @@ export class SpaceMirror {
         .filter(r => r.team);
       w.reveal = !!st[2];
       w.fogLifted = st[3];
+      const cells = w.dogGrid().cells;
+      cells.clear();
+      for (const [k, ids] of st[5] || []) {
+        const l = ids.map(id => this.byW.get(id)).filter(q => q && !q.dead);
+        cells.set(k, l);
+      }
       (st[4] || []).forEach(([firedAt, readyAt, left], i) => {
         const sw = w.specialWeapons && w.specialWeapons[i];
         if (!sw) return;

@@ -62,9 +62,12 @@ const LOOP_OVER = (170 * Math.PI) / 180,
   DOG_CELL = 400,
   DOG_NEAR = 80000,
   PAIR_TIME = 10,
+  PAIR_CONE = Math.PI / 2,
+  RUN_CONE = Math.PI / 4,
   IDLE_NEAR = 90,
   IDLE_CELL = 120;
 const DEG = Math.PI / 180;
+const _dc = { x: 0, y: 0 };
 const TAU = Math.PI * 2;
 export const SHIELD_FLASH = 0.1,
   SHIELD_FADE = 0.28;
@@ -568,6 +571,8 @@ export class Unit {
     this.slot = undefined;
     this.member = undefined;
     this.fstate = undefined;
+    this.fireCone = undefined;
+    this.fireIdle = undefined;
     this.flyBy = undefined;
     this.flyTimer = undefined;
     this.spawnDelay = undefined;
@@ -720,13 +725,14 @@ export class Unit {
       }
       this.weapons = t.list('Projectile_Types').map(n => {
         const proj = db.type(n);
+        const recharge = proj ? fireNum(t, proj, 'Projectile_Fire_Recharge_Seconds', 2) : 0;
         return proj
           ? {
               proj,
               pulses: Math.max(1, fireNum(t, proj, 'Projectile_Fire_Pulse_Count', 1)),
               pulseDelay: fireNum(t, proj, 'Projectile_Fire_Pulse_Delay_Seconds', 0.1),
-              recharge: fireNum(t, proj, 'Projectile_Fire_Recharge_Seconds', 2),
-              cooldown: rand(0, 1.5),
+              recharge,
+              cooldown: Math.floor(rand(0, recharge * LOGIC_FPS + 1)) / LOGIC_FPS,
               pulsesLeft: 0,
               pulseTimer: 0,
               range: Math.min(this.attackRange, proj.num('Projectile_Max_Flight_Distance', 600)),
@@ -1200,13 +1206,20 @@ export class Squad {
     this.about = undefined;
     this.mode = undefined;
     this.tolerance = undefined;
-    this.loose = undefined;
+    this.err = undefined;
+    this.alone = false;
+    this.route = undefined;
+    this.routed = false;
     this.goal = undefined;
     this.aim = undefined;
     this.aimHp = undefined;
     this.approach = undefined;
     this.runIn = undefined;
-    this.cell = undefined;
+    this.dogKey = -1;
+    this.chase = undefined;
+    this.fireTarget = undefined;
+    this.pickHp = undefined;
+    this.pickOf = undefined;
     this.hyper = undefined;
     this.px = undefined;
     this.py = undefined;
@@ -1260,12 +1273,11 @@ export class Squad {
         timer: 0,
         breakHeading: 0,
         target: null,
-        snap: null,
         loop: undefined,
         avoid: undefined,
-        taken: undefined,
         partner: undefined,
-        until: undefined
+        lock: undefined,
+        dog: undefined
       };
       this.fighters.push(u);
       world.units.push(u);
@@ -1332,6 +1344,7 @@ export class Squad {
     this.order = order;
     if (!keepQueue) this.queue = null;
     this.target = order.kind === 'attack' ? order.target || null : null;
+    this.alone = false;
   }
   get abilities() {
     return this.fighters[0] ? this.fighters[0].abilities : [];
@@ -2158,6 +2171,7 @@ export class World {
       this.collectBounty(u, u, attacker);
       if (!s.fighters.length) {
         s.dead = true;
+        this.dogRemove(s);
         this.onEvent('died', { entity: s });
         this.collectBounty(s, u, attacker);
       }
@@ -2661,8 +2675,9 @@ export class World {
       g.spawned = (g.spawned || 0) + 1;
       const bay = u.hardpoints.find(h => h.kind === 'HARD_POINT_FIGHTER_BAY');
       const p = bay ? bay.worldPos({}) : { x: u.x, y: u.y };
-      const out = u.heading;
-      const s = this.spawn(g.type, u.player, p.x + Math.cos(out) * u.radius, p.y + Math.sin(out) * u.radius, out);
+      const out = u.heading,
+        fly = parseFloat(u.type.list('Spawned_Squadron_Location_Flyout_Distances')[0]) || u.radius;
+      const s = this.spawn(g.type, u.player, p.x, p.y, out);
       if (s) {
         s.carrier = u;
         this.recountPop();
@@ -2674,6 +2689,12 @@ export class World {
             f.launchZ = 1;
           }
         if (s.isSquad && u.isMobile) s.setOrder({ kind: 'guard', target: u });
+        else if (s.isSquad)
+          s.setOrder({
+            kind: 'move',
+            x: clamp(p.x + Math.cos(out) * fly, this.min.x, this.max.x),
+            y: clamp(p.y + Math.sin(out) * fly, this.min.y, this.max.y)
+          });
       }
       u.spawnTimer = u.spawnDelay;
       return;
@@ -3344,7 +3365,10 @@ export class World {
   arrived(e) {
     const next = e.queue && e.queue.shift();
     if (next) e.setOrder(next, true);
-    else e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
+    else {
+      e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
+      if (e.isSquad) e.alone = true;
+    }
   }
 
   repairHardpoint(player, u, index) {
@@ -3645,6 +3669,10 @@ export class World {
         break;
       }
     const aim = aimsOff(cat) ? { x: lead.x + off.x, y: lead.y + off.y, z: lead.z + off.z } : { x: lead.x, y: lead.y, z: lead.z };
+    if (opts && opts.cone && opts.forward === undefined && cat !== CAT.BOMB) {
+      if (!aim.x && !aim.y && !aim.z) return false;
+      if (!this.inConeFrom(shooter, x, y, z, aim.x, aim.y, aim.z, opts.cone.yaw, opts.cone.pitch, Infinity)) return false;
+    }
     let dx = aim.x - x,
       dy = aim.y - y,
       dz = aim.z - z;
@@ -3724,6 +3752,7 @@ export class World {
     shot.hidden = this.shotHidden(shot);
     if (made && this.fx.made && !this.viewFogged(x, y)) this.fx.made(made, x, y, z);
     if (shooter.revealsFiring && !shooter.isSpecialWeapon) this.firedOn(shooter, target);
+    return true;
   }
 
   firedOn(u, target) {
@@ -4312,25 +4341,268 @@ export class World {
     }
   }
 
-  closing(lead, tgt, ord) {
+  closing(s, lead, tgt) {
     if (lead.attackPositioning || lead.type.bool('Keep_Moving_In_Battle')) return false;
-    const T = tgt.isSquad ? tgt.fighters[0] || tgt : tgt,
-      range = lead.type.num('Targeting_Max_Attack_Distance', 0) || lead.maxRange || 0,
-      reach = range + (T.hitRadius || 0);
-    if (!ord.sent) {
-      ord.sent = { x: T.x, y: T.y };
-      ord.chaseAt = this.time + 1;
-      ord.engaged = false;
-    } else if (this.time >= ord.chaseAt) {
-      ord.chaseAt = this.time + 1;
-      if (dist2(ord.sent, T) > (range / 2) ** 2) {
-        ord.sent.x = T.x;
-        ord.sent.y = T.y;
-        ord.engaged = false;
+    const T = this.posOf(tgt),
+      range = lead.type.num('Targeting_Max_Attack_Distance', 0) || lead.maxRange || 0;
+    let c = s.chase;
+    if (!c || c.of !== tgt) c = s.chase = { of: tgt, x: T.x, y: T.y, at: this.time + 1, done: false };
+    else if (this.time >= c.at) {
+      c.at = this.time + 1;
+      if ((c.x - T.x) ** 2 + (c.y - T.y) ** 2 > (range / 2) ** 2) {
+        c.x = T.x;
+        c.y = T.y;
+        c.done = false;
       }
     }
-    if (dist2(lead, T) <= reach * reach) ord.engaged = true;
-    return !ord.engaged;
+    return this.squadRoute(s, lead, c.x, c.y, c);
+  }
+
+  squadRoute(s, lead, gx, gy, key) {
+    let r = s.route;
+    if (!r || r.key !== key || r.gx !== gx || r.gy !== gy) {
+      const dx = gx - lead.x,
+        dy = gy - lead.y,
+        d = Math.hypot(dx, dy);
+      r = s.route = {
+        key,
+        gx,
+        gy,
+        dx: d ? dx / d : Math.cos(lead.heading),
+        dy: d ? dy / d : Math.sin(lead.heading),
+        done: d < 40
+      };
+    }
+    if (!r.done && r.dx * (lead.x - gx) + r.dy * (lead.y - gy) >= -0.001) r.done = true;
+    return !r.done;
+  }
+
+  matchSpeed(u, s, lead, v, lo, hi, F) {
+    const tol = (s.tolerance ??= s.type.num('Squadron_Formation_Error_Tolerance', 0));
+    if (Math.abs(s.err || 0) <= tol) return v;
+    const l0 = Math.min(lo, hi),
+      h0 = Math.max(l0, hi),
+      p = lead.pitch || 0,
+      c = Math.cos(lead.heading),
+      sn = Math.sin(lead.heading),
+      dz = s.stacked && u.slot && lead.slot ? lead.slot.z - u.slot.z : 0;
+    const along =
+      Math.cos(p) * (c * (u.x - lead.x) + sn * (u.y - lead.y) + lead.slot.x - u.slot.x) + Math.sin(p) * (u.z - lead.z + dz);
+    const sp = u.speed,
+      thr = F.thrust || u.accel;
+    if (along > tol) {
+      const a = Math.min(l0, sp),
+        dDec = (v * v - a * a) / (2 * thr);
+      if (dDec <= 0) return l0;
+      const k = clamp(along / dDec, 0, 1);
+      return (1 - k) * lead.speed + k * l0;
+    }
+    if (along < -tol) {
+      const b = Math.max(h0, sp),
+        dAcc = (b * b - v * v) / (2 * thr);
+      if (dAcc <= 0) return h0;
+      const k = Math.max(-along / dAcc, 0);
+      return (1 - k) * lead.speed + k * h0;
+    }
+    return v;
+  }
+
+  hurtBy(v, o) {
+    const by = o.squad || o;
+    for (const u of v.isSquad ? v.fighters : [v]) {
+      const m = u.hurtBy;
+      if (!m) continue;
+      for (const k of m.keys()) if (k === by || (k.squad && k.squad === by)) return true;
+    }
+    return false;
+  }
+
+  squadPick(s, lead, cur) {
+    const ord = s.order,
+      kind = ord.kind,
+      lt = s.type;
+    const range =
+      kind === 'guard'
+        ? lt.num('Guard_Chase_Range', 0)
+        : kind === 'attackmove'
+          ? lt.num('Attack_Move_Response_Range', 0)
+          : kind === 'idle' && s.alone
+            ? lt.num('Idle_Chase_Range', 0)
+            : -1;
+    const ext = lt.num('Autonomous_Move_Extension_Vs_Attacker', 0);
+    const guarded = kind === 'guard' && ord.target && !ord.target.dead ? ord.target : null;
+    const anchor = kind === 'guard' ? (guarded ? this.posOf(guarded) : ord) : kind === 'idle' && s.home ? s.home : lead;
+    const reach = lead.type.num('Targeting_Max_Attack_Distance', 0) || lead.maxRange || 400;
+    const inWeapon = o => dist2(lead, o) <= (reach + o.hitRadius) ** 2;
+    const respond = (o, start = true) => {
+      if (range < 0) return false;
+      const f = range + (ext && (this.hurtBy(s, o) || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
+      if (start && kind !== 'attackmove' && dist2(lead, anchor) > f * f) return false;
+      return dist2(anchor, o) <= (f + reach + o.hitRadius) ** 2;
+    };
+    const set = setOf(lead),
+      rate = o => (set ? priorityOf(set, o.type) : 1),
+      low = db.constants.num('Health_Low_Percent_Threshold', 0.33);
+    let keep = cur && !cur.dead ? (cur.isSquad ? cur.fighters[0] : cur) : null;
+    if (keep && !respond(keep, false)) keep = null;
+    const was = s.fireTarget && !s.fireTarget.dead ? (s.fireTarget.isSquad ? s.fireTarget.fighters[0] : s.fireTarget) : null;
+    const wp = !!lead.weapon;
+    let best = null,
+      br = 0,
+      bp;
+    if (was && (inWeapon(was) || respond(was)) && rate(was) >= 0) {
+      const left = (was.health + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
+      if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
+    }
+    if (!best) {
+      for (const o of this.units) {
+        if (o.dead || o.player.team === s.player.team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & s.player.bit))
+          continue;
+        if (!inWeapon(o) && !respond(o)) continue;
+        const r = rate(o);
+        if (r < 0) continue;
+        if (!best) {
+          best = o;
+          br = r;
+          continue;
+        }
+        const lo = o.healthFrac <= low,
+          lb = best.healthFrac <= low;
+        let take,
+          po;
+        if (lo !== lb) take = lo;
+        else if (r < br) take = true;
+        else if (wp && (bp ??= this.canFire(lead, best)) !== (po = this.canFire(lead, o))) take = po;
+        else take = dist2(lead, o) < dist2(lead, best);
+        if (take) {
+          best = o;
+          br = r;
+          bp = po;
+        }
+      }
+    }
+    s.fireTarget = best ? best.squad || best : null;
+    if (best && kind !== 'move' && respond(best)) return best.squad || best;
+    return keep ? cur : null;
+  }
+
+  dogGrid() {
+    const mn = this.map.playMin,
+      mx = this.map.playMax;
+    return (this.dogs ||= {
+      ox: mn[0],
+      oy: mn[1],
+      nx: Math.max(1, Math.floor((mx[0] - mn[0]) / DOG_CELL)),
+      ny: Math.max(1, Math.floor((mx[1] - mn[1]) / DOG_CELL)),
+      cells: new Map()
+    });
+  }
+
+  dogCentre(key, out) {
+    const g = this.dogGrid(),
+      c = key % 4096,
+      r = (key - c) / 4096;
+    out.x = g.ox + c * DOG_CELL + DOG_CELL / 2 + (r & 1 ? DOG_CELL / 2 : 0);
+    out.y = g.oy + r * DOG_CELL + DOG_CELL / 2;
+    return out;
+  }
+
+  dogChoose(x, y) {
+    const g = this.dogGrid(),
+      r0 = clamp(Math.floor((y - g.oy) / DOG_CELL), 0, g.ny - 1),
+      c0 = clamp(Math.floor((x - g.ox - (r0 & 1 ? DOG_CELL / 2 : 0)) / DOG_CELL), 0, g.nx - 1);
+    let best = r0 * 4096 + c0,
+      bd = Infinity;
+    for (let r = Math.max(0, r0 - 1); r <= Math.min(g.ny - 1, r0 + 1); r++)
+      for (let c = Math.max(0, c0 - 1); c <= Math.min(g.nx - 1, c0 + 1); c++) {
+        const k = r * 4096 + c,
+          l = g.cells.get(k);
+        let d = 0;
+        if (!l || !l.length) {
+          this.dogCentre(k, _dc);
+          d = (_dc.x - x) ** 2 + (_dc.y - y) ** 2;
+        }
+        if (d < bd) {
+          bd = d;
+          best = k;
+        }
+      }
+    return best;
+  }
+
+  dogRemove(s) {
+    if (s.dogKey < 0) return;
+    const l = this.dogGrid().cells.get(s.dogKey);
+    if (l) {
+      const i = l.indexOf(s);
+      if (i >= 0) l.splice(i, 1);
+    }
+    s.dogKey = -1;
+  }
+
+  dogAdd(s, key) {
+    const cells = this.dogGrid().cells;
+    let l = cells.get(key);
+    if (!l) cells.set(key, (l = []));
+    if (!l.includes(s)) l.push(s);
+    s.dogKey = key;
+  }
+
+  dogJoin(s, key) {
+    if (s.dogKey === key) {
+      const l = this.dogGrid().cells.get(key);
+      if (l && l.includes(s)) return;
+    }
+    this.dogRemove(s);
+    this.dogAdd(s, key);
+  }
+
+  dogEnemy(s) {
+    const l = this.dogGrid().cells.get(s.dogKey);
+    if (l) for (const e of l) if (!e.dead && e.fighters.length && e.player.team !== s.player.team) return e;
+    return null;
+  }
+
+  dogAnswer(t, by) {
+    if (!t.fighters[0] || t.mode === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
+    const tt = t.target || t.fireTarget;
+    if (tt && !tt.dead && tt.isSquad) return;
+    t.setOrder({ kind: 'attack', target: by });
+  }
+
+  inCone(u, x, y, z, yaw, pitch, r2) {
+    return this.inConeFrom(u, u.x, u.y, u.z, x, y, z, yaw, pitch, r2);
+  }
+
+  inConeFrom(u, ox, oy, oz, x, y, z, yaw, pitch, r2) {
+    const dx = x - ox,
+      dy = y - oy,
+      dz = z - oz;
+    if (dx * dx + dy * dy + dz * dz > r2) return false;
+    const c = Math.cos(u.heading),
+      s = Math.sin(u.heading),
+      p = u.pitch || 0,
+      cp = Math.cos(p),
+      sp = Math.sin(p);
+    const f = c * dx + s * dy,
+      l = c * dy - s * dx,
+      fx = f * cp + dz * sp,
+      fz = dz * cp - f * sp;
+    return Math.abs(Math.atan2(l, fx)) <= yaw && Math.abs(Math.atan2(fz, Math.hypot(fx, l))) <= pitch;
+  }
+
+  nearestOf(t, u) {
+    let best = null,
+      bd = Infinity;
+    for (const f of t.fighters) {
+      if (f.dead) continue;
+      const d = (f.x - u.x) ** 2 + (f.y - u.y) ** 2 + (f.z - u.z) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = f;
+      }
+    }
+    return best;
   }
 
   updateSquad(s, dt) {
@@ -4358,72 +4630,44 @@ export class World {
     if (s.direct) {
       s.mode = 'idle';
       s.target = null;
+      this.dogRemove(s);
       this.centerSquad(s);
       return;
     }
     this.updateHunt(s, dt);
-    const ord = s.order;
+    let ord = s.order;
     s.scanTimer -= dt;
     let tgt = s.target && !s.target.dead ? s.target : null;
-    if (ord.kind === 'attack') {
-      tgt = ord.target && !ord.target.dead ? ord.target : null;
-      if (!tgt) s.setOrder({ kind: 'idle' });
-    } else if (s.scanTimer <= 0) {
-      s.scanTimer = 0.7;
-      const lead = s.fighters[0];
+    if (ord.kind === 'attack') tgt = ord.target && !ord.target.dead ? ord.target : null;
+    if (!tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
+      const e = this.dogEnemy(s);
+      if (e) {
+        s.setOrder({ kind: 'attack', target: e });
+        ord = s.order;
+        tgt = e;
+      }
+    }
+    if (ord.kind === 'attack' && !tgt) {
+      s.setOrder({ kind: 'idle' });
+      ord = s.order;
+    }
+    const lead = s.fighters[0];
+    if (ord.kind === 'attack') s.fireTarget = tgt;
+    else if (s.scanTimer <= 0 && lead) {
+      s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
         s.homeOf = ord;
         s.home = { x: s.x, y: s.y };
       }
-      const lt = s.type,
-        kind = ord.kind;
-      const range =
-        kind === 'guard'
-          ? lt.num('Guard_Chase_Range', 0)
-          : kind === 'attackmove'
-            ? lt.num('Attack_Move_Response_Range', 0)
-            : lt.num('Idle_Chase_Range', 0);
-      const ext = lt.num('Autonomous_Move_Extension_Vs_Attacker', 0);
-      const anchor = kind === 'guard' ? (ord.target ? this.posOf(ord.target) : ord) : kind === 'idle' && s.home ? s.home : s;
-      const reach = (lead && lead.weapon ? lead.weapon.range : lead && lead.maxRange) || 400;
-      const attacking = o => {
-        const t = o.squad ? o.squad.target : o.target;
-        return t === s || (t && t.squad === s);
-      };
-      const within = o => {
-        if (range < 0) return false;
-        const r = range + (attacking(o) ? ext : 0) + reach;
-        return dist2(anchor, this.posOf(o)) <= r * r;
-      };
-      const chase2 = Math.max(range + ext + reach, 1) ** 2;
-      if (tgt && !within(tgt)) tgt = null;
-      if (!tgt && lead && ord.kind !== 'move') {
-        let best = null,
-          bs = Infinity;
-        const set = setOf(lead);
-        for (const o of this.units) {
-          if (o.dead || o.player.team === s.player.team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & s.player.bit))
-            continue;
-          if (!within(o)) continue;
-          let d = dist2(anchor, o);
-          if (set) {
-            const p = priorityOf(set, o.type);
-            if (p < 0) continue;
-            d += (p === Infinity ? 20 : p) * chase2 * 2;
-          } else if (s.isBomber === o.isFighter) d += chase2;
-          if (o.isStructure) d += chase2 * 0.5;
-          if (d < bs) {
-            bs = d;
-            best = o;
-          }
-        }
-        tgt = best ? best.squad || best : null;
-      }
+      tgt = this.squadPick(s, lead, tgt);
     }
+    if (s.fireTarget && (s.fireTarget.dead || (s.fireTarget.isSquad && !s.fireTarget.fighters.length))) s.fireTarget = null;
     s.target = tgt;
 
-    const lead = s.fighters[0];
-    if (!lead) return;
+    if (!lead) {
+      this.dogRemove(s);
+      return;
+    }
     s.x = lead.x;
     s.y = lead.y;
     s.heading = lead.heading;
@@ -4432,53 +4676,79 @@ export class World {
     s.speed = top;
     let mode = 'idle',
       about = null;
-    if (tgt && ord.kind === 'attack' && this.closing(lead, tgt, ord)) {
-      mode = 'move';
-      s.goal = ord.sent;
-    } else if (tgt) {
-      mode = 'combat';
+    s.approach = false;
+    s.routed = false;
+    if (tgt) {
+      const aim = (s.aim ||= { x: 0, y: 0, z: 0 });
+      let hp = null;
       if (tgt.isSquad) {
-        const tl = tgt.fighters[0] || tgt,
-          row = Math.floor(tl.y / DOG_CELL),
-          off = row & 1 ? DOG_CELL / 2 : 0;
-        (s.cell ||= { x: 0, y: 0 }).x = (Math.floor((tl.x - off) / DOG_CELL) + 0.5) * DOG_CELL + off;
-        s.cell.y = (row + 0.5) * DOG_CELL;
-        if (!tgt.target && tgt.order.kind !== 'move' && tgt.order.kind !== 'attack') tgt.target = s;
+        const T = this.posOf(tgt);
+        aim.x = T.x;
+        aim.y = T.y;
+        aim.z = T.z;
       } else {
-        const hp = ord.kind === 'attack' && ord.target === tgt && ord.hp && ord.hp.alive ? ord.hp : null;
-        const aim = (s.aim = hp ? hp.worldPos(s.aim || {}) : { x: tgt.x, y: tgt.y, z: tgt.z });
-        s.aimHp = hp;
-        const R = this.flight(lead).strafe + tgt.hitRadius,
-          dx = aim.x - lead.x,
-          dy = aim.y - lead.y;
-        s.approach = dx * dx + dy * dy > R * R;
-        s.runIn = Math.abs(wrapAngle(Math.atan2(dy, dx) - lead.heading)) <= Math.PI / 4;
+        hp = ord.kind === 'attack' && ord.target === tgt && ord.hp && ord.hp.alive ? ord.hp : null;
+        if (!hp && tgt.hpDriven) {
+          if (s.pickOf !== tgt || !s.pickHp || !s.pickHp.alive) {
+            s.pickHp = this.pickHardpoint(tgt, lead.x, lead.y, lead);
+            s.pickOf = tgt;
+          }
+          hp = s.pickHp;
+        }
+        if (hp) hp.worldPos(aim);
+        else {
+          aim.x = tgt.x;
+          aim.y = tgt.y;
+          aim.z = tgt.z;
+        }
       }
-    } else if (ord.kind === 'move' || ord.kind === 'attackmove') {
-      if (dist2(lead, ord) > IDLE_NEAR * IDLE_NEAR) {
-        mode = 'move';
-        s.goal = ord;
-      } else {
-        about = { x: ord.x, y: ord.y };
-        this.arrived(s);
-      }
-    } else if (ord.kind === 'guard') {
-      if (ord.target && ord.target.dead) {
-        const t = this.posOf(ord.target);
-        s.setOrder({ kind: 'move', x: t.x, y: t.y });
-      } else {
-        const p = this.guardSpot(s, ord),
-          keep = 150 + (ord.target ? ord.target.radius || 0 : 0);
-        if (dist2(lead, p) > keep * keep) {
+      s.aimHp = hp;
+      const R = this.flight(lead).strafe + (tgt.isSquad ? tgt.radius : tgt.hitRadius),
+        dx = aim.x - lead.x,
+        dy = aim.y - lead.y,
+        same = tgt.isSquad && s.dogKey >= 0 && s.dogKey === tgt.dogKey;
+      mode = 'combat';
+      if (!same && dx * dx + dy * dy > R * R) {
+        this.dogRemove(s);
+        if (this.closing(s, lead, tgt)) {
           mode = 'move';
-          s.goal = p;
-        } else about = p;
+          s.goal = s.chase;
+          s.routed = true;
+        } else s.approach = true;
+      } else if (!tgt.isSquad) {
+        this.dogRemove(s);
+        s.runIn = this.inCone(lead, aim.x, aim.y, aim.z, RUN_CONE, RUN_CONE, R * R);
       }
-    } else if (ord.kind === 'idle' && s.home) {
-      if (dist2(lead, s.home) > IDLE_NEAR * IDLE_NEAR * 4) {
-        mode = 'move';
-        s.goal = s.home;
-      } else about = s.home;
+    } else {
+      this.dogRemove(s);
+      s.chase = null;
+      if (ord.kind === 'move' || ord.kind === 'attackmove') {
+        if (this.squadRoute(s, lead, ord.x, ord.y, ord)) {
+          mode = 'move';
+          s.goal = ord;
+          s.routed = true;
+        } else {
+          about = { x: ord.x, y: ord.y };
+          this.arrived(s);
+        }
+      } else if (ord.kind === 'guard') {
+        if (ord.target && ord.target.dead) {
+          const t = this.posOf(ord.target);
+          s.setOrder({ kind: 'move', x: t.x, y: t.y });
+        } else {
+          const p = this.guardSpot(s, ord),
+            keep = 150 + (ord.target ? ord.target.radius || 0 : 0);
+          if (dist2(lead, p) > keep * keep) {
+            mode = 'move';
+            s.goal = p;
+          } else about = p;
+        }
+      } else if (ord.kind === 'idle' && s.home) {
+        if (dist2(lead, s.home) > IDLE_NEAR * IDLE_NEAR * 4) {
+          mode = 'move';
+          s.goal = s.home;
+        } else about = s.home;
+      }
     }
     if (mode === 'idle') {
       const from = about || (s.mode !== 'idle' || !s.about ? lead : null),
@@ -4491,21 +4761,22 @@ export class World {
     s.mode = mode;
     let worst = 0;
     const c = Math.cos(lead.heading),
-      sn = Math.sin(lead.heading);
+      sn = Math.sin(lead.heading),
+      cp = Math.cos(lead.pitch || 0),
+      sp = Math.sin(lead.pitch || 0);
     for (let i = 1; i < s.fighters.length; i++) {
       const f = s.fighters[i],
-        ox = f.slot.x - lead.slot.x,
-        oy = f.slot.y - lead.slot.y;
-      const e = (lead.x + c * ox - sn * oy - f.x) ** 2 + (lead.y + sn * ox + c * oy - f.y) ** 2;
-      if (e > worst) worst = e;
+        dz = s.stacked && f.slot && lead.slot ? lead.slot.z - f.slot.z : 0;
+      const e = cp * (c * (f.x - lead.x) + sn * (f.y - lead.y) + lead.slot.x - f.slot.x) + sp * (f.z - lead.z + dz);
+      if (Math.abs(e) > Math.abs(worst)) worst = e;
     }
-    s.loose = worst > (s.tolerance ??= s.type.num('Squadron_Formation_Error_Tolerance', 0)) ** 2;
+    s.err = worst;
   }
 
   idleCell(s, p) {
     const C = IDLE_CELL,
-      mn = this.map.min,
-      mx = this.map.max,
+      mn = this.map.playMin,
+      mx = this.map.playMax,
       ox = mn[0],
       oy = mn[1];
     const cols = Math.max(1, Math.floor((mx[0] - ox) / C)),
@@ -4646,6 +4917,68 @@ export class World {
     else u.z += (tz - u.z) * Math.min(1, dt * 0.8);
   }
 
+  dogfight(u, s, t, lead, top, low, st) {
+    const out = (st.dog ||= { x: 0, y: 0, z: 0, v: 0 }),
+      key = t.dogKey;
+    if (key < 0) {
+      if (u !== lead) return null;
+      this.dogRemove(s);
+      const T = this.posOf(t);
+      s.dogKey = this.dogChoose(T.x, T.y);
+      out.x = T.x;
+      out.y = T.y;
+      out.z = T.z;
+      out.v = top;
+      return out;
+    }
+    const c = this.dogCentre(key, _dc);
+    if ((u.x - c.x) ** 2 + (u.y - c.y) ** 2 <= DOG_NEAR) {
+      this.dogJoin(s, key);
+      this.dogAnswer(t, s);
+      let p = st.partner;
+      if (p && p.dead) p = st.partner = null;
+      const rr = u.attackRange * u.attackRange;
+      if (p && this.time < (st.lock || 0)) {
+        if (this.inCone(u, p.x, p.y, p.z, PAIR_CONE, PAIR_CONE, rr)) return this.tail(u, p, low, out);
+        out.x = p.x;
+        out.y = p.y;
+        out.z = p.z;
+        out.v = top;
+        return out;
+      }
+      if (this.time >= (st.lock || 0)) {
+        const l = this.dogGrid().cells.get(key);
+        if (l)
+          for (const e of l) {
+            if (e.dead || e.player.team === s.player.team) continue;
+            for (const o of e.fighters) {
+              if (o.dead || this.time < (o.fstate.lock || 0) || !this.inCone(u, o.x, o.y, o.z, PAIR_CONE, PAIR_CONE, rr)) continue;
+              st.partner = o;
+              st.lock = this.time + PAIR_TIME;
+              o.fstate.partner = null;
+              o.fstate.lock = this.time + PAIR_TIME;
+              return this.tail(u, o, low, out);
+            }
+          }
+      }
+    } else this.dogJoin(s, key);
+    if (u !== lead) return null;
+    out.x = c.x;
+    out.y = c.y;
+    out.z = NaN;
+    out.v = top;
+    return out;
+  }
+
+  tail(u, o, low, out) {
+    const mf = this.flight(u).follow;
+    out.x = o.x;
+    out.y = o.y;
+    out.z = o.z;
+    out.v = (o.x - u.x) ** 2 + (o.y - u.y) ** 2 + (o.z - u.z) ** 2 < mf * mf ? low : o.speed;
+    return out;
+  }
+
   updateFighter(u, dt) {
     const s = u.squad,
       st = u.fstate,
@@ -4658,58 +4991,51 @@ export class World {
     const tgt = mode === 'combat' && s.target && !s.target.dead ? s.target : null;
     let gx = 0,
       gy = 0,
+      gz = NaN,
       want = top,
       k = 1,
       form = lead !== u,
       fireAt = null;
-    st.snap = null;
-    if (tgt && tgt.isSquad) {
-      const cell = s.cell || lead;
-      let p = st.partner;
-      if (p && (p.dead || p.squad !== tgt || this.time >= st.until)) p = st.partner = null;
-      if (!p && this.time >= (st.taken || 0) && dist2(lead, cell) <= DOG_NEAR) {
-        const reach = ((u.weapon ? u.weapon.range : u.maxRange) || 400) ** 2;
-        for (const e of tgt.fighters) {
-          const dx = e.x - u.x,
-            dy = e.y - u.y;
-          if (e.dead || dx * dx + dy * dy > reach || Math.abs(wrapAngle(Math.atan2(dy, dx) - u.heading)) > Math.PI / 2) continue;
-          p = st.partner = e;
-          st.until = this.time + PAIR_TIME;
-          if (e.fstate) {
-            e.fstate.taken = this.time + PAIR_TIME;
-            e.fstate.partner = null;
-          }
-          break;
-        }
-      }
-      if (p) {
+    if (tgt && s.approach) {
+      form = false;
+      gx = s.aim.x;
+      gy = s.aim.y;
+      gz = s.aim.z;
+      fireAt = tgt;
+    } else if (tgt && tgt.isSquad) {
+      fireAt = tgt;
+      const d = this.dogfight(u, s, tgt, lead, top, low, st);
+      if (d) {
         form = false;
-        gx = p.x;
-        gy = p.y;
-        want = dist2(u, p) < F.follow * F.follow ? low : clamp(p.speed, low, top);
-        fireAt = p;
-      } else {
-        fireAt = tgt.fighters.length ? tgt.fighters[u.member % tgt.fighters.length] : null;
-        if (!form) {
-          gx = cell.x;
-          gy = cell.y;
-        }
+        gx = d.x;
+        gy = d.y;
+        gz = d.z;
+        want = d.v;
       }
     } else if (tgt) {
       fireAt = tgt;
-      const aim = s.aim || tgt;
-      if (s.approach || (!form && s.runIn)) {
-        form = false;
-        gx = aim.x;
-        gy = aim.y;
-      } else if (!form) {
-        gx = u.x + Math.cos(u.heading) * 300;
-        gy = u.y + Math.sin(u.heading) * 300;
+      const aim = s.aim;
+      gz = aim.z + (lead !== u && s.stacked && u.slot ? u.slot.z - lead.slot.z : 0);
+      if (!form) {
+        if (s.runIn) {
+          gx = aim.x;
+          gy = aim.y;
+        } else {
+          const a = u.speed / Math.max(0.1, u.turnRate);
+          gx = u.x + Math.cos(u.heading) * a;
+          gy = u.y + Math.sin(u.heading) * a;
+        }
       }
     } else if (mode === 'move' && !form) {
-      gx = s.goal.x;
-      gy = s.goal.y;
       want = top * (s.order.pace ?? 1);
+      if (s.routed && s.route) {
+        const R = Math.max(want, u.speed) / Math.max(0.1, u.turnRate);
+        gx = u.x + s.route.dx * R;
+        gy = u.y + s.route.dy * R;
+      } else {
+        gx = s.goal.x;
+        gy = s.goal.y;
+      }
     } else if (mode === 'idle' && !form) {
       const c = s ? s.about || u : u,
         d = Math.hypot(u.x - c.x, u.y - c.y);
@@ -4758,18 +5084,15 @@ export class World {
         sh = Math.sin(lead.heading),
         ox = u.slot.x - lead.slot.x,
         oy = u.slot.y - lead.slot.y;
+      const v = s.travel ?? top,
+        vm = this.matchSpeed(u, s, lead, v, v * 0.5, v * 1.5, F);
+      want = vm;
+      if (vm > top && top > 0) k = vm / top;
       const px = lead.x + ch * ox - sh * oy,
         py = lead.y + sh * ox + ch * oy,
-        ahead = lead.speed / Math.max(0.1, lead.turnRate);
+        ahead = Math.max(vm, u.speed) / Math.max(0.1, u.turnRate);
       gx = px + ch * ahead;
       gy = py + sh * ahead;
-      want = s.travel ?? top;
-      if (s.loose) {
-        const behind = (px - u.x) * ch + (py - u.y) * sh,
-          room = Math.max(4, (want * 0.5) ** 2 / (2 * (F.thrust || u.accel)));
-        k = 1 + 0.5 * clamp(behind / room, -1, 1);
-        want *= k;
-      }
     } else if (s && lead === u) s.travel = want;
     const D = s ? s.direct : u.direct;
     if (D) {
@@ -4792,12 +5115,12 @@ export class World {
         want = pace * (1 + 0.5 * clamp(behind / 60, -1, 1));
       }
       fireAt = D.firing && D.target && !D.target.dead ? D.target : null;
-    } else if (!tgt && u.enemies.length) {
-      st.snap = u.enemies.find(e => !e.dead && e.isFighter) || null;
+    } else if (!fireAt && s && s.fireTarget && !s.fireTarget.dead) {
+      if (s.mode !== 'idle' || s.order.kind !== 'idle' || (u.fireIdle ??= u.type.bool('Can_Fighter_Fire_When_Idle'))) fireAt = s.fireTarget;
     }
     st.mode = tgt ? 'attack' : 'form';
     const away = this.probe(u, st, lead === u, dt);
-    let gz = u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50);
+    if (gz !== gz) gz = u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50);
     if (away) {
       gx = away.x;
       gy = away.y;
@@ -4812,30 +5135,57 @@ export class World {
 
     const w = u.weapon;
     if (u.cloaked) return;
-    if (!D) fireAt ||= st.snap;
     if (!w) {
-      if (u.hasWeapons) this.updateFighterHardpoints(u, dt, fireAt, st);
+      if (u.hasWeapons) this.updateFighterHardpoints(u, dt, fireAt && fireAt.isSquad ? this.nearestOf(fireAt, u) : fireAt, st);
       return;
     }
     if (w.pulsesLeft > 0) {
       w.pulseTimer -= dt;
-      if (w.pulseTimer <= 0) {
-        if (fireAt && !fireAt.dead) this.fireFighter(u, w, fireAt);
-        w.pulsesLeft--;
-        w.pulseTimer = w.pulseDelay;
-        if (!w.pulsesLeft) w.cooldown = w.recharge * rand(0.85, 1.15) * u.mods.weaponDelay;
+      if (w.pulseTimer > 0) return;
+      if (!fireAt || fireAt.dead || (fireAt.isSquad && !fireAt.fighters.length)) {
+        w.pulsesLeft = 0;
+        return;
       }
+      if (this.fireFighter(u, w, fireAt, false)) this.pulseDone(u, w);
       return;
     }
     w.cooldown -= dt;
     if (w.cooldown > 0 || !fireAt || st.mode === 'break') return;
-    const dx = fireAt.x - u.x,
-      dy = fireAt.y - u.y;
-    const reach = w.range + fireAt.hitRadius;
-    if (!fireAt.free && dx * dx + dy * dy > reach * reach) return;
-    if (Math.abs(wrapAngle(Math.atan2(dy, dx) - u.heading)) > 0.5) return;
+    const near = fireAt.isSquad ? this.nearestOf(fireAt, u) : fireAt;
+    if (!near) return;
+    const dx = near.x - u.x,
+      dy = near.y - u.y;
+    const reach = w.range + near.hitRadius;
+    if (!near.free && dx * dx + dy * dy > reach * reach) return;
     w.pulsesLeft = w.pulses;
-    w.pulseTimer = 0;
+    if (this.fireFighter(u, w, fireAt, true)) this.pulseDone(u, w);
+    else w.pulsesLeft = 0;
+  }
+
+  pulseDone(u, w) {
+    w.pulsesLeft--;
+    if (w.pulsesLeft > 0) w.pulseTimer = w.pulseDelay;
+    else w.cooldown = (w.recharge + Math.floor(simRandom() * 11) / LOGIC_FPS) * u.mods.weaponDelay;
+  }
+
+  fireConeOf(u) {
+    return (u.fireCone ||= {
+      yaw: u.type.num('Turret_Rotate_Extent_Degrees', 360) * DEG,
+      pitch: u.type.bool('Turret_XY_Only') ? Infinity : u.type.num('Turret_Elevate_Extent_Degrees', 180) * DEG
+    });
+  }
+
+  canFire(u, o) {
+    const w = u.weapon;
+    if (o.cloaked && o.player !== u.player) return false;
+    if ((w.forward ??= u.type.bool('Fires_Forward'))) return true;
+    const speed = w.proj.num('Max_Speed', 20) * LOGIC_FPS;
+    if (!(speed > 0)) return false;
+    const tv = velocityOf(o, _p5),
+      L = leadTurning(_p3, u.x, u.y, u.z, o.x, o.y, o.z, tv.x, tv.y, tv.z, o.turnW || 0, speed),
+      cone = this.fireConeOf(u);
+    if (!L.x && !L.y && !L.z) return false;
+    return this.inCone(u, L.x, L.y, L.z, cone.yaw, cone.pitch, Infinity);
   }
 
   updateFighterHardpoints(u, dt, target, st) {
@@ -4866,20 +5216,37 @@ export class World {
     }
   }
 
-  fireFighter(u, w, target) {
+  fireFighter(u, w, target, first) {
     const m = (w.fixed >= 0 ? w.muzzles[w.fixed] : w.muzzles.length ? w.muzzles[w.muzzleIndex++ % w.muzzles.length] : null) || {
       x: 8,
       y: 0,
       z: 0
     };
     const c = Math.cos(u.heading),
-      s = Math.sin(u.heading);
-    const x = u.x + c * m.x - s * m.y,
-      y = u.y + s * m.x + c * m.y,
-      z = u.z + m.z;
+      s = Math.sin(u.heading),
+      p = u.pitch || 0,
+      fx = m.x * Math.cos(p) - m.z * Math.sin(p),
+      fz = m.x * Math.sin(p) + m.z * Math.cos(p);
+    const x = u.x + c * fx - s * m.y,
+      y = u.y + s * fx + c * m.y,
+      z = u.z + fz;
+    if (target.isSquad) {
+      let best = null,
+        bd = Infinity;
+      for (const f of target.fighters) {
+        if (f.dead) continue;
+        const d = (f.x - x) ** 2 + (f.y - y) ** 2 + (f.z - z) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = f;
+        }
+      }
+      if (!best) return false;
+      target = best;
+    }
     const sq = u.squad,
       hp = sq && sq.aimHp && sq.target === target && sq.aimHp.alive ? sq.aimHp : null;
-    this.launch(
+    const ok = this.launch(
       w.proj,
       u,
       target,
@@ -4889,10 +5256,12 @@ export class World {
       z,
       w.damageType,
       w.inaccuracy,
-      (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
+      (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range, cone: this.fireConeOf(u) }
     );
+    if (!ok) return false;
     const sfx = fireSound(u.type, w.proj);
-    if (sfx && w.pulsesLeft === w.pulses && this.viewerSees(u)) this.audio.play(sfx, x, y);
+    if (sfx && first && this.viewerSees(u)) this.audio.play(sfx, x, y);
+    return true;
   }
 
   probe(u, st, leader, dt) {
