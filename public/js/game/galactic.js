@@ -3204,7 +3204,12 @@ export class GalacticGame {
         const payments = stepIncome(this.galaxy, dt);
         this.ai?.income(payments);
         stepCorruption(this);
-        stepPolitics(this.galaxy, dt);
+        stepPolitics(this.galaxy, dt, (planet, old) => {
+          if (this.story) this.story.planetCaptured(planet, old);
+          else this.victory?.ownershipChanged();
+          this.ai?.invalidate();
+          this.galacticBattleChanged?.();
+        });
         this.ai?.update(dt);
         const completed = stepProduction(
           this.galaxy,

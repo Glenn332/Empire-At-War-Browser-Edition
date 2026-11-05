@@ -151,11 +151,19 @@ function revolt(game, planet) {
   const old = planet.owner;
   for (const owner of new Set(g.fleets.filter(f => f.planet === planet.index && !f.leg).map(f => f.owner)))
     game.battles?.retreat?.(planet.index, owner);
-  planet.garrison = planet.garrison.filter(u => {
+  const keep = u => {
     if (u.owner === neutral.name) return true;
     u.dead = true;
     return false;
-  });
+  };
+  planet.garrison = planet.garrison.filter(keep);
+  planet.groundStructures = planet.groundStructures.filter(keep);
+  planet.orbitalStructures = planet.orbitalStructures.filter(keep);
+  if (planet.station) {
+    planet.station = null;
+    planet.stationOwner = null;
+    planet.spaceLevel = 0;
+  }
   if (intelligence(g, planet)?.discovered) game.notify?.(String(db.t('TEXT_PLANETARY_REVOLT')).replace('%s', planetName(planet)), old);
   changeController(planet, neutral.name, g);
   game.story?.planetCaptured?.(planet, old);
