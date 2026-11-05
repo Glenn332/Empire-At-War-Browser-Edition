@@ -161,7 +161,10 @@ export function executeSlice(game, actor, planet, row, only, respawn, random = s
   if (success) {
     adjustCredits(g, player.faction, -row.cost);
     if (!(player.unlockedTypes ||= []).some(n => same(n, row.type.name))) player.unlockedTypes.push(row.type.name);
-    if (only) game.story?.signalTech?.(player.faction, setTechLevel(g, player.faction, (player.tech || 0) + 1));
+    if (only) {
+      const level = setTechLevel(g, player.faction, (player.tech || 0) + 1);
+      game.story?.signalTech?.(player.faction, level);
+    }
     const sfx = db.faction(player.faction)?.str('SFXEvent_Slice_Success').trim();
     if (sfx && same(player.faction, game.me)) game.audio?.play(sfx);
     if (same(player.faction, game.me))
