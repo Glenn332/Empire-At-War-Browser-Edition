@@ -229,6 +229,16 @@ function planetPoint(game, planet, kind, slot) {
   }
 }
 
+export function flashSpawned(game, planet, fleet) {
+  if (!game.overlayPoint) return;
+  const at = fleet
+    ? () => {
+        const s = (game.lastSpots || []).find(s => s.f === fleet);
+        return s ? [s.x, s.y] : null;
+      }
+    : planetPoint(game, planet, 'TROOPS', -1);
+  if (at) tutorialFx(game).flashElement(floating(game, at), '', {});
+}
 function floating(game, at) {
   const el = document.createElement('div'),
     s = () => game.overlayScale?.() || 1;

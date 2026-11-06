@@ -77,6 +77,34 @@ assert.equal(
   'an enemy fleet over the planet: the nearest held planet with a clear orbit'
 );
 assert.equal(host.spawnReward(['No_Such_Type', home.type.name], me), false);
+({ g, host, me, them } = fresh());
+const added = [],
+  flashes = [];
+host.game.me = me;
+host.game.radar = { flash: (p, on, d) => flashes.push([p, on, d]) };
+host.game.ai = {
+  freeStores: new Map([
+    [key(them), { add: r => added.push(['them', r.type.name]) }],
+    [key(me), { add: r => added.push(['me', r.type.name]) }]
+  ])
+};
+const theirShip =
+  [...db.types.values()].find(t => forceKind(t) === 'starship' && t.list('Affiliation').some(a => key(a) === key(them))) || ship;
+const theirHome = g.planets.find(p => !p.background && p.owner === them);
+host.spawnReward([theirShip.name, theirHome.type.name, '2'], them);
+assert.deepEqual(
+  added,
+  [
+    ['them', theirShip.name],
+    ['them', theirShip.name]
+  ],
+  'each new unit goes to its owner free store at once'
+);
+assert.deepEqual(flashes, [], 'no flash for another player');
+added.length = 0;
+const myHome = g.planets.find(p => !p.background && p.owner === me);
+host.spawnReward([ship.name, myHome.type.name], me);
+assert.deepEqual(flashes, [[myHome.index, true, 1.5]], 'the local player sees the planet radar blip flash for 1.5 seconds');
 console.log(
   'ok',
   campaign.name,

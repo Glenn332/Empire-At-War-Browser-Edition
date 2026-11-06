@@ -28,6 +28,7 @@ import { installPersistence, saveStory, restoreStory } from './galacticstorysave
 import { playScriptMusic, startStrategicMusic } from './galacticmusic.js';
 import { galacticStoryReward } from './storyrewards.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
+import { flashSpawned } from './tutorialrewards.js';
 
 const key = s =>
   String(s || '')
@@ -902,6 +903,11 @@ export class GalacticStoryHost extends StoryPlots {
       if (!record) continue;
       made++;
       this.game.victory?.heroSpawned(type, owner);
+      this.game.ai?.freeStores?.get(key(owner))?.add(record);
+      if (key(owner) === key(this.game.me)) {
+        flashSpawned(this.game, at, fleets.find(f => f.units.includes(record)) || null);
+        this.game.radar?.flash(at.index, true, 1.5);
+      }
     }
     for (let i = first; i < fleets.length; i++) this.game.fleetView?.(fleets[i])?.catch?.(() => {});
     const orbit = fleets.find(f => f.planet === at.index && !f.leg && f.units.length);
