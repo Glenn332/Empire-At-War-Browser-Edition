@@ -69,6 +69,15 @@ for (let i = 0; i < seconds / dt; i++) {
     game.battles.arrive(f, p);
   });
   game.battles.update();
+  for (const p of galaxy.planets)
+    for (const q of Object.values(p.production).flat()) {
+      if (!q.ai) continue;
+      const job = ai.plans.queueJobs.get(q);
+      assert(
+        job && ai.plans.jobs.has(job) && job.queue === q,
+        'Every computer build in a queue is tracked by its job: ' + q.type.name + ' at ' + p.name
+      );
+    }
   for (const e of ai.plans.history)
     if (!seen.has(e)) {
       seen.add(e);

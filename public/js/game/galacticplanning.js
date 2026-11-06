@@ -1570,7 +1570,7 @@ export class GalacticPlanning {
       now = g.time;
     if (now - this.lastDispatch <= 1) return;
     this.lastDispatch = now;
-    const pending = [...this.jobs].filter(j => !j.complete && j.entry.production && !j.queue);
+    const pending = [...this.jobs].filter(j => !j.complete && j.entry.production && !j.queue && !j.record);
     for (const p of g.planets)
       for (const kind of ['space', 'ground']) {
         if (p.production[kind].length) continue;
