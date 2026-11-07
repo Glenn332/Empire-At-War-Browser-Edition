@@ -3597,6 +3597,10 @@ export class LandGame {
       units: s => mine(s).filter(u => !u.structure),
       everything: mine,
       blocker: s => (mine(s).some(u => hasRetreatPrevention(u.type)) ? 4 : 0),
+      retreatReachable: s =>
+        w.points.some(p => p.side >= 0 && w.ally(p.side, s) && p.type?.num('Reinforcement_Enabling_Radius', 0) > 0) ||
+        w.units.some(u => !u.dead && w.ally(u.side, s) && u.type.num('Reinforcement_Enabling_Radius', 0) > 0),
+      keptAnyway: u => !!u.type?.behaviors?.().has('TRANSPORT'),
       blockaded: s => (cb.orbitOwners || []).some(o => String(o).toUpperCase() !== String(this.factions[s]).toUpperCase()),
       isLocal: s => (this.setup.net ? !!this.players[s]?.human : s === this.me),
       begin: state => {

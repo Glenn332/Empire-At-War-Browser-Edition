@@ -339,8 +339,9 @@ export class RetreatCoordinator {
     }
     const enemy = a.players().find(p => p !== player && a.isSide(p) && a.teamOf(p) !== a.teamOf(player));
     a.end(enemy, player);
-    const keep = new Set(going);
-    for (const e of a.everything(player)) a.remove(e, !keep.has(e));
+    const reached = a.retreatReachable ? a.retreatReachable(player) : true,
+      keep = new Set(reached ? going : []);
+    for (const e of a.everything(player)) a.remove(e, !keep.has(e) && !(a.keptAnyway?.(e) ?? false));
     a.flightEnd?.(this.state);
     this.state = null;
   }
