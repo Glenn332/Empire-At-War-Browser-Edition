@@ -11,6 +11,7 @@ import { namedSet } from './priorities.js';
 import { aidebug as D, who, group, targetOf, nameOf } from '../aidebug.js';
 import { installBattlePersistence } from './tacticalsave.js';
 import { tacticalPower } from './galacticforces.js';
+import { SpecialWeapon } from './superweapon.js';
 
 const settable = (o, k) => {
   for (let p = o; p; p = Object.getPrototypeOf(p)) {
@@ -1095,6 +1096,19 @@ export class ScriptHost {
             node.userData.scriptHid = off;
           }
       }
+    });
+    vm.global('Spawn_Special_Weapon', (name, player) => {
+      const t = db.type(String(name ?? '')),
+        p = playerOf(player);
+      if (this.land || !w.specialWeapons || !t || !t.bool('Is_Special_Weapon_In_Space') || t.num('Special_Weapon_Index', -1) < 0 || !p)
+        return undefined;
+      let source = null;
+      for (const list of w.mapObjects?.values() || [])
+        for (const o of list) if (!source && o?.type?.behaviors?.().has('DUMMY_SPECIAL_WEAPON_SOURCE')) source = o;
+      if (!source) return undefined;
+      const weapon = new SpecialWeapon(w, t, p, source.x, source.y, source.z || 0);
+      w.specialWeapons.push(weapon);
+      return this.wrap(weapon);
     });
     vm.global('Get_Game_Mode', () => (this.land ? 'Land' : 'Space'));
     vm.global('Set_New_Environment', n => {

@@ -122,6 +122,22 @@ const rgb = s => {
   return v.length >= 3 ? [v[0] / 255, v[1] / 255, v[2] / 255] : [0.5, 0.5, 0.5];
 };
 
+function scrollVelocity(v, tx, ty, accel, decel) {
+  if (tx || ty) {
+    for (const [key, t] of [
+      ['x', tx],
+      ['y', ty]
+    ]) {
+      const n = v[key] + accel * t;
+      v[key] = t >= 0 ? Math.min(n, t) : Math.max(n, t);
+    }
+    return;
+  }
+  v.x /= decel;
+  v.y /= decel;
+  if (Math.abs(v.x) < 0.1 && Math.abs(v.y) < 0.1) v.x = v.y = 0;
+}
+
 export class GalacticGame {
   constructor(setup, { audio, progress }) {
     this.setup = setup;
@@ -3076,6 +3092,10 @@ export class GalacticGame {
     return k;
   }
 
+  get scroll() {
+    return (this._scroll ||= { x: 0, y: 0 });
+  }
+
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
@@ -3112,20 +3132,23 @@ export class GalacticGame {
       !this.storyDialog?.opened &&
       !this.galacticLog?.opened
     ) {
-      const edge = 6,
+      const c = db.constants,
+        region = c.num('Strategic_Edge_Scroll_Region', 2),
+        lo = c.num('Strategic_Min_Scroll_Speed', 80),
+        hi = c.num('Strategic_Max_Scroll_Speed', 400),
         m = this.mouse,
-        sp = (v.pull ?? this.cam.pull) * 0.9 * real;
-      const r =
-        (held(k, 'SCROLL_RIGHT') || (m.in && m.x >= innerWidth - edge) ? 1 : 0) - (held(k, 'SCROLL_LEFT') || (m.in && m.x <= edge) ? 1 : 0);
-      const f =
-        (held(k, 'SCROLL_UP') || (m.in && m.y <= edge) ? 1 : 0) - (held(k, 'SCROLL_DOWN') || (m.in && m.y >= innerHeight - edge) ? 1 : 0);
+        speed = lo + (hi - lo) / 2,
+        side = (key, depth) => (held(k, key) || (m.in && depth > 0) ? speed : 0),
+        dt = Math.min(1, elapsed);
+      const r = side('SCROLL_RIGHT', m.x - (innerWidth - region - 1)) - side('SCROLL_LEFT', region - m.x),
+        f = (side('SCROLL_UP', region - m.y) - side('SCROLL_DOWN', m.y - (innerHeight - region - 1))) * 1.2;
+      scrollVelocity(this.scroll, r * dt, f * dt, c.num('Scroll_Acceleration_Factor', 0.08), c.num('Scroll_Deceleration_Factor', 1.5));
+    } else scrollVelocity(this.scroll, 0, 0, 0, db.constants.num('Scroll_Deceleration_Factor', 1.5));
+    {
       const c = Math.cos(v.yaw || 0),
-        s = Math.sin(v.yaw || 0);
-      if (r || f) this.panBy((r * c - f * s) * sp, (r * s + f * c) * sp);
-    }
-    if (!this.controlsLocked && !this.scriptUI?.modal && !this.menus?.open && !this.planetInfo.open && !this.battle) {
-      const t = (held(k, 'ROTATE_RIGHT') ? 1 : 0) - (held(k, 'ROTATE_LEFT') ? 1 : 0);
-      if (t) v.yaw = ((v.yaw || 0) + t * 1.2 * real) % (Math.PI * 2);
+        s = Math.sin(v.yaw || 0),
+        { x, y } = this.scroll;
+      if ((x || y) && this.panFree() && !this.scrollLocked) this.panBy(x * c - y * s, x * s + y * c);
     }
     if (v.pullTo !== undefined && v.pull !== v.pullTo) {
       v.pull += (v.pullTo - v.pull) * Math.min(1, real * 10);
