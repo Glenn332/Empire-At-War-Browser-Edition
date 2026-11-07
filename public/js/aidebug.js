@@ -170,15 +170,26 @@ function reveal(g, on) {
     return;
   }
   if (g.lookAt) {
-    if (!!g.reveal !== on) {
-      g.reveal = on;
+    if (on && !g.reveal) {
+      g.reveal = true;
+      revealed.add(g);
+      g.hudTimer = 0;
+    } else if (!on && revealed.has(g)) {
+      revealed.delete(g);
+      g.reveal = false;
       g.hudTimer = 0;
     }
     return;
   }
   const w = g.world;
-  if (w && w.reveal !== undefined && w.reveal !== on) {
-    w.reveal = on;
+  if (!w || w.reveal === undefined) return;
+  if (on && !w.reveal) {
+    w.reveal = true;
+    revealed.add(w);
+    w.updateVisibility();
+  } else if (!on && revealed.has(w)) {
+    revealed.delete(w);
+    w.reveal = false;
     w.updateVisibility();
   }
 }
