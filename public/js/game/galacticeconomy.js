@@ -177,12 +177,14 @@ export function creditCap(g, owner) {
   return perPlanet < 0 ? Infinity : Math.max(1, g.planets.filter(p => p.owner === owner && !p.background).length) * perPlanet;
 }
 
-export function adjustCredits(g, owner, amount) {
+export function adjustCredits(g, owner, amount, notify = false) {
   const p = g.players.find(p => p.faction === owner);
   if (p) {
     if (amount > 0) amount *= p.creditMultiplier ?? 1;
+    const before = p.credits;
     p.credits = Math.max(0, Math.min(creditCap(g, owner), Math.fround(p.credits + amount)));
     g.victoryCreditChange?.(owner);
+    if (notify) g.budgetCreditChange?.(owner, p.credits - before);
   }
 }
 

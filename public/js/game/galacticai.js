@@ -1367,6 +1367,10 @@ export class GalacticAI {
     }
     return this.plans.target(other.at(-1).planet);
   }
+  creditChange(owner, amount) {
+    const c = this.controllers.get(key(owner));
+    if (c && c.budget.initialized && amount) c.budget.creditChange(amount);
+  }
   income(payments) {
     for (const payment of payments || []) {
       const c = this.controllers.get(key(payment.owner));

@@ -589,7 +589,7 @@ export class GalacticStoryHost extends StoryPlots {
       Give_Money: n => {
         const p = data();
         if (p) {
-          adjustCredits(this.game.galaxy, p.faction, +n || 0);
+          adjustCredits(this.game.galaxy, p.faction, +n || 0, true);
           if (D.on)
             this.dbg(
               'changes',

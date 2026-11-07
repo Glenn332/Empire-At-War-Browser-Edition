@@ -23,7 +23,7 @@ export function galacticStoryReward(host, e) {
   switch (e.reward) {
     case 'CREDITS': {
       const q = player(owner);
-      if (q) adjustCredits(g, q.faction, parseFloat(p[0]) || 0);
+      if (q) adjustCredits(g, q.faction, parseFloat(p[0]) || 0, true);
       return true;
     }
     case 'REVEAL_PLANET': {

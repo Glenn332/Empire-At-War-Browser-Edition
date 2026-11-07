@@ -175,6 +175,9 @@ export class GalacticBudget {
     this.dirty = false;
     this.service();
   }
+  creditChange(amount) {
+    for (const c of this.categories.values()) c.total = f(amount * c.weight + c.total);
+  }
   release(r) {
     if (!r || r.released) return;
     r.released = true;
