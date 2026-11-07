@@ -130,6 +130,9 @@ export function galacticStoryReward(host, e) {
       if (q) advisorHints(q).Galactic = atoi(p[0]) !== 0;
       return true;
     }
+    case 'ENABLE_CAMPAIGN_VICTORY_MOVIE':
+      g.victoryMovies = present(p[0]) ? atoi(p[0]) !== 0 : true;
+      return true;
     case 'DISABLE_MOVIES':
       game.moviesDisabled = atoi(p[0]) !== 0;
       return true;

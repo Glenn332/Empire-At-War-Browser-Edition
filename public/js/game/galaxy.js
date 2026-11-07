@@ -258,6 +258,7 @@ export function snapshotGalaxy(g) {
     ...(g.humans ? { humans: g.humans.slice() } : {}),
     time: g.time || 0,
     sabotageOff: !!g.sabotageOff,
+    victoryMovies: !!g.victoryMovies,
     fiscal: g.fiscal ? { ...g.fiscal } : null,
     ai: g.aiSnapshot?.() ?? g.aiSaved ?? null,
     story: g.storySnapshot?.() ?? g.storySaved ?? null,
@@ -396,6 +397,7 @@ export function applyGalaxy(g, s) {
     list = l => l.map(([n, owner, markerId = -1, flags = {}]) => ({ type: t(n), owner, markerId, ...flags })).filter(x => x.type);
   g.time = s.time || 0;
   g.sabotageOff = !!s.sabotageOff;
+  g.victoryMovies = !!s.victoryMovies;
   if (s.humans) g.humans = s.humans.slice();
   g.aiSaved = s.ai || null;
   g.storySaved = s.story || null;

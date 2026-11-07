@@ -3,16 +3,19 @@ import { fetchBinary } from '../vfs.js';
 import { BinkPlayer } from '../bink.js';
 import { TacticalCrawl } from './tacticalcrawl.js';
 import { movieDefinitions } from './galacticmovies.js';
+import { CreditsRoll } from './creditsroll.js';
 const yes = value => /^(yes|true|1)$/i.test(value || '');
 export class TacticalMovies {
   constructor(game, scripts, { createCrawl = name => TacticalCrawl.create(name) } = {}) {
     this.createCrawl = createCrawl;
     this.crawl = null;
+    this.credits = null;
     this.game = game;
     this.scripts = scripts;
     this.active = false;
     this.pausesMode = false;
     this.onFinish = null;
+    this.afterCredits = null;
     this.generation = 0;
     this.movie = null;
     this.frame = 0;
@@ -28,14 +31,14 @@ export class TacticalMovies {
       }
     });
   }
-  play(name) {
+  play(name, { loop = false } = {}) {
     this.stop();
     const generation = this.generation;
     this.active = true;
-    this.open(name, generation);
+    this.open(name, generation, loop);
     return { __wrap: true, __name: 'BinkMovieBlockStatus', Is_Valid: () => true, IsFinished: () => !this.active, Result: () => true };
   }
-  async open(name, generation) {
+  async open(name, generation, loop = false) {
     try {
       const movie = (await movieDefinitions()).get(String(name || '').toUpperCase());
       if (generation !== this.generation) return;
@@ -57,14 +60,24 @@ export class TacticalMovies {
         }
         this.crawl = crawl;
       }
-      if (yes(movie.val('Has_Credits'))) this.scripts.missing.set('Movie.Credits', 1);
+      if (yes(movie.val('Has_Credits'))) {
+        const credits = await CreditsRoll.create(this.game).catch(error => {
+          console.warn('Credits', error);
+          return null;
+        });
+        if (generation !== this.generation) {
+          credits?.dispose();
+          return;
+        }
+        this.credits = credits;
+      }
       const buffer = await fetchBinary(movie.val('Movie_File'));
       if (generation !== this.generation) return;
       if (!buffer) {
         this.finish();
         return;
       }
-      await this.player.play(buffer, { alpha: yes(movie.val('Alpha')), startFrame: movie.num('Movie_Start_Frame', 0) });
+      await this.player.play(buffer, { loop, alpha: yes(movie.val('Alpha')), startFrame: movie.num('Movie_Start_Frame', 0) });
       if (generation !== this.generation) return;
       this.frame = 0;
       this.canvas.hidden = false;
@@ -79,6 +92,16 @@ export class TacticalMovies {
     if (!this.active) return;
     this.player.setPaused(paused);
     this.player.update(dt);
+    if (this.credits) {
+      this.credits.update(dt, paused);
+      if (this.credits.done) {
+        const after = this.afterCredits;
+        this.afterCredits = null;
+        this.stop();
+        after?.();
+        return;
+      }
+    }
     if (!this.active || this.player.frame < 0) return;
     this.crawl?.update(this.player.frame + 1 - this.movie.num('Text_Crawl_Start_Frame', 0));
     const frame = this.player.frame + 1,
@@ -110,6 +133,8 @@ export class TacticalMovies {
     this.onFinish = null;
     this.crawl?.dispose();
     this.crawl = null;
+    this.credits?.dispose();
+    this.credits = null;
     this.active = false;
     this.pausesMode = false;
     this.movie = null;

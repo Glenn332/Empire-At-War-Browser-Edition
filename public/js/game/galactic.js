@@ -590,6 +590,28 @@ export class GalacticGame {
     this.names.hidden = true;
     this.paused = true;
     await campaignScore(this, result);
+    this.victoryMovieChain(result);
+  }
+  victoryMovieChain(result) {
+    if (this.net) return;
+    const faction = db.faction(result.player),
+      pick = name => (this.galaxy.victoryMovies && faction ? faction.str(name, '').trim() : ''),
+      win = pick([3, 6, 7].includes(result.type) ? 'Superweapon_Win_Movie' : 'Generic_Win_Movie'),
+      finale = pick('Finale_Movie'),
+      second = pick('Finale_Movie_2'),
+      post = pick('Post_Credits_Movie');
+    const m = (this.storyMovie ||= new TacticalMovies(this, { missing: new Map() }));
+    m.canvas.style.zIndex = '70';
+    const play = (name, next) => {
+      if (!name) return next();
+      m.play(name);
+      m.onFinish = next;
+    };
+    const credits = () => {
+      m.play('Credits', { loop: true });
+      m.afterCredits = post ? () => m.play(post) : null;
+    };
+    play(win, () => play(finale, () => play(second, credits)));
   }
   async planetDestroyed(p) {
     const pv = this.planetViews[p.index];
@@ -3061,11 +3083,11 @@ export class GalacticGame {
       real = Math.min(0.1, elapsed);
     if (this.bench) this.bench.tick(now - this.last, now);
     this.last = now;
+    this.storyMovie?.update(elapsed, !!this.menus?.open);
     if (this.over) return;
     this.screenText?.update(elapsed);
     this.audio?.speech?.update();
     this.movies?.update(elapsed);
-    this.storyMovie?.update(elapsed, !!this.menus?.open);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);
@@ -3204,6 +3226,7 @@ export class GalacticGame {
   playStoryMovie(name, done) {
     if (this.net) return false;
     this.storyMovie ||= new TacticalMovies(this, { missing: new Map() });
+    this.storyMovie.canvas.style.zIndex = '70';
     this.storyMovie.play(name);
     this.storyMovie.onFinish = () => {
       done();
