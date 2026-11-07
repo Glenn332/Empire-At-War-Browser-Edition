@@ -270,6 +270,7 @@ export function savePlans(plans, live, rowIndex) {
   });
   const entryOf = e => ({
     prod: !!e.production,
+    ...(e.magic ? { magic: true } : {}),
     type: e.type.name,
     rec: e.record ? rec(e.record) : null,
     force: e.force,
@@ -411,6 +412,7 @@ export function restorePlans(plans, data, rowsOf) {
           n,
           list.map(e => ({
             production: e.prod,
+            magic: !!e.magic,
             type: db.type(e.type),
             record: place(e.rec),
             force: e.force,
