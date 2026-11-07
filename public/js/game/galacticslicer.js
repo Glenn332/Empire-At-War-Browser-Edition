@@ -2,7 +2,7 @@ import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { scheduleHeroRespawn } from './galacticherorespawn.js';
-import { setTechLevel } from './galacticproduction.js';
+import { setTechLevel, groundLevel } from './galacticproduction.js';
 
 const key = s =>
   String(s || '')
@@ -54,10 +54,15 @@ export function pool(g, player) {
   return out;
 }
 
-const baseLevelOf = type =>
-  type.num('Build_Cost_Credits', 0) > 0 && (type.num('Base_Level', 0) || type.num('Required_Ground_Base_Level', 0)) > 0
-    ? type.num('Base_Level', 0) || type.num('Required_Ground_Base_Level', 0)
-    : null;
+const behaves = (type, name) => type.list('Behavior').some(b => same(b, name));
+const baseLevelOf = (type, planet) => {
+  if (!(type.num('Build_Cost_Credits', 0) > 0)) return null;
+  if (type.num('Required_Star_Base_Level', 0) > 0 || (behaves(type, 'DUMMY_STAR_BASE') && type.num('Base_Level', 0) === 1))
+    return planet.station ? planet.spaceLevel || 0 : 0;
+  if (type.num('Required_Ground_Base_Level', 0) > 0 || behaves(type, 'DUMMY_GROUND_STRUCTURE'))
+    return planet.groundStructures ? groundLevel(planet, planet.owner) : 0;
+  return null;
+};
 
 export function options(game, actorOwner, planet, ability, types) {
   const priceMod = 1,
@@ -72,7 +77,7 @@ export function options(game, actorOwner, planet, ability, types) {
     chanceAff = ability.num('Chance_Affinity_Modifier', 0);
   return types.map(type => {
     const liked = affinity.some(n => same(n, type.name)),
-      base = baseLevelOf(type);
+      base = baseLevelOf(type, planet);
     const cost = Math.max(
       0,
       (costMult(planet.type.num('Planet_Tech_Availability_Rating', 0)) + (liked ? costAff : 0)) *
