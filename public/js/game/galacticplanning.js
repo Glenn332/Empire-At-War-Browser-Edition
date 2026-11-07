@@ -548,6 +548,7 @@ export class GalacticPlanning {
           freeStore: v('AllowFreeStoreUnits') !== false,
           engaged: v('AllowEngagedUnits') !== false,
           magic: v('MagicPlan') === true,
+          stealing: v('MagicPlanStealing') === true,
           ignoreTarget: v('IgnoreTarget') === true,
           min: num(this.vm, inst.env, 'MinContrastScale', 1),
           max: num(this.vm, inst.env, 'MaxContrastScale', 1.2),
@@ -1372,6 +1373,17 @@ export class GalacticPlanning {
       job.complete = true;
       if (!at) continue;
       for (const p of g.planets) if (p.killedHeroes) p.killedHeroes = p.killedHeroes.filter(e => key(e.type) !== key(job.type.name));
+      if (force.inst.def?.stealing || job.type.bool('Is_Named_Hero')) {
+        const named = job.type.bool('Is_Named_Hero'),
+          same = u => !u.dead && (u.carries || u.type) === job.type,
+          here = [];
+        for (const p of g.planets)
+          for (const u of [...p.garrison, ...p.groundStructures, ...p.orbitalStructures])
+            if (u.owner === owner && same(u)) here.push([u, p]);
+        for (const f of g.fleets) if (f.owner === owner) for (const u of f.units) if (same(u)) here.push([u, f.leg ? null : g.planets[f.planet]]);
+        const old = here.find(([, p]) => named || p !== at);
+        if (old) this.host.despawn(old[0]);
+      }
       const count = g.fleets.length,
         record = placeStartingForce(at, owner, job.type, g.fleets);
       if (!record) continue;
