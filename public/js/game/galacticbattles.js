@@ -6,6 +6,7 @@ import { enteredOrbit } from './galaxy.js';
 import { retreatFleet } from './fleets.js';
 import { enemy, hidden, conflictAt } from './galacticrelation.js';
 import { groundLevel } from './galacticproduction.js';
+import { galacticBounty } from './galacticbounty.js';
 
 const key = x => String(x || '').toUpperCase();
 export const battleHostile = (owner, other) => enemy(owner, other);
@@ -128,6 +129,8 @@ export class GalacticBattles {
       for (const u of sides[i]) {
         if (u.station) {
           const type = result.sides[i].stations.get(u);
+          if (!type && planet.station && this.game.story)
+            galacticBounty(this.game, { type: planet.station }, planet, planet.stationOwner || planet.owner, [attacker, defender][1 - i]);
           this.game.story?.stationChanged(planet, planet.station, type || null, [attacker, defender][1 - i]);
           planet.station = type || null;
           planet.spaceLevel = type?.num('Base_Level', 0) || 0;
