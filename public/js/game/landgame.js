@@ -177,18 +177,15 @@ async function spawnMapLoadTables(game, world, map) {
       .list('Affiliation')
       .map(f => f.trim().toUpperCase())
       .filter(Boolean);
-    let side = -1,
-      neutral = false;
-    const first = affil.find(f => db.faction(f));
-    if (first) {
-      side = world.factions.findIndex(f => String(f).toUpperCase() === first);
-      if (side < 0) {
-        neutral = !!db.faction(first).bool('Is_Neutral') || first === 'NEUTRAL';
-        side = neutral ? -1 : world.wild;
-      }
-    } else {
+    let side = -1;
+    const present = f => world.factions.findIndex(x => String(x).toUpperCase() === f),
+      neutral = f => !!db.faction(f)?.bool('Is_Neutral') || f === 'NEUTRAL',
+      owned = affil.find(f => present(f) >= 0 || neutral(f) || f === 'HOSTILE');
+    if (owned) side = present(owned) >= 0 ? present(owned) : neutral(owned) ? -1 : world.wild;
+    else {
       const owner = o.owner >= 0 ? [...db.factions.values()][o.owner]?.name : null;
-      side = owner ? world.factions.findIndex(f => String(f).toUpperCase() === owner.toUpperCase()) : -1;
+      side = owner ? present(owner.toUpperCase()) : -1;
+      if (side < 0 && owner) side = db.faction(owner)?.bool('Is_Neutral') ? -1 : world.wild;
     }
     const at = { type: t, pos: o.pos, rot: o.rot, scale: 1 };
     let made = null;
@@ -204,6 +201,9 @@ async function spawnMapLoadTables(game, world, map) {
           q.native = true;
           for (const m of q.members) m.captures = false;
         }
+        made = q?.members?.[0] || null;
+      } else if (t.str('Lua_Script') && !t.str('Behavior').trim() && !t.str('LandBehavior').trim()) {
+        const q = await world.spawn(t.name, o.pos[0], o.pos[1], o.rot[2] * DEG, side);
         made = q?.members?.[0] || null;
       } else if (t.str('Land_Model_Name')) {
         const site = {

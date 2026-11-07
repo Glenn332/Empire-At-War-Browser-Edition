@@ -11,9 +11,13 @@ import { SILENT, bribeCost } from './landabilities.js';
 const $ = id => document.getElementById(id);
 const up = n => String(n).toUpperCase();
 
-function playerOf(world, side, factionName) {
+function playerOf(world, side, factionName, game = null) {
   return {
     id: side,
+    get human() {
+      const p = game?.players?.[side];
+      return p && 'human' in p ? !!p.human : side === game?.me;
+    },
     team:
       (world.teamTags ||= new Map()).get(world.team[side]) ||
       world.teamTags.set(world.team[side], { id: world.team[side] }).get(world.team[side]),
@@ -116,7 +120,7 @@ export class LandUI {
     this.mouse = { x: 0, y: 0, inside: false };
     this.r = { rig: game.view };
     this.pads = new Map();
-    w.sidePlayers = game.factions.map((f, side) => playerOf(w, side, f));
+    w.sidePlayers = game.factions.map((f, side) => playerOf(w, side, f, game));
     this.player = w.sidePlayers[me];
     w.sidePlayers[w.wild] = {
       id: -1,

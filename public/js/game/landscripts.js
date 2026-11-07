@@ -237,7 +237,7 @@ class LandView {
   get units() {
     if (this.at !== this.w.time) {
       this.at = this.w.time;
-      this.list = this.w.squads.filter(q => q.members.length && !q.arriving && q.side >= 0);
+      this.list = this.w.squads.filter(q => q.members.length && !q.arriving && (q.side >= 0 || !!q.type?.str?.('Lua_Script')));
     }
     return this.list;
   }
