@@ -146,7 +146,7 @@ const player = probe.players.find(p => p.faction === item.owner),
 assert(cancelProduction(probe, planet.index, item.owner, item));
 assert.equal(
   player.credits,
-  Math.fround(credits + (item.paid || 0)),
+  Math.fround(credits + (item.paid || 0) * (player.creditMultiplier ?? 1)),
   'AI cancellation refunds paid installments with native float32 credit arithmetic'
 );
 ai.dispose();

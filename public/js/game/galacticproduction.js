@@ -508,24 +508,36 @@ export function cancelProduction(g, planet, owner, item) {
   return false;
 }
 
+const ORBITAL_PRODUCT = ['FLEET', 'DUMMY_SPACE_FIGHTER_SQUADRON', 'DUMMY_ORBITAL_STRUCTURE', 'DUMMY_STARSHIP'];
 export function stepProduction(g, seconds, ai = null, conflictAt = null) {
   const completed = [];
-  for (const p of g.planets)
-    for (const list of Object.values(p.production)) {
+  for (const p of g.planets) {
+    const starbaseOwner = p.station ? p.stationOwner || p.owner : null;
+    for (const list of Object.values(p.production))
       for (let i = list.length - 1; i >= 0; i--) {
         const q = list[i];
         const player = playerOf(g, q.owner);
-        const stationLevel = p.station && (p.stationOwner || p.owner) === q.owner ? p.spaceLevel : 0;
-        const ownBase =
-          groundLevel(p, q.owner) >= q.type.num('Required_Ground_Base_Level', 0) &&
-          stationLevel >= q.type.num('Required_Star_Base_Level', 0);
-        if (p.owner !== q.owner || !player || !ownBase || !hasStructures(p, q.owner, q.type) || !hasOrbiting(g, p, q.owner, q.type)) {
+        if (
+          p.owner !== q.owner ||
+          !player ||
+          groundLevel(p, q.owner) < q.type.num('Required_Ground_Base_Level', 0) ||
+          !hasStructures(p, q.owner, q.type) ||
+          !hasOrbiting(g, p, q.owner, q.type)
+        ) {
           list.splice(i, 1);
           if (q.ai) ai?.failed(q);
         }
       }
-      let q = list[0];
+    let halted = false;
+    for (const list of Object.values(p.production)) {
+      const q = list[0];
       if (!q) continue;
+      if (ORBITAL_PRODUCT.some(b => hasBehavior(q.type, b)) && starbaseOwner !== q.owner) {
+        list.shift();
+        if (q.ai) ai?.failed(q);
+        halted = true;
+        break;
+      }
       if (
         hasBehavior(q.type, 'DUMMY_STAR_BASE') &&
         !conflictAt?.(p.index) &&
@@ -537,9 +549,14 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
         list.shift();
         if (q.ai) ai?.failed(q);
         (completed.interrupted ||= []).push({ planet: p, owner: q.owner, type: q.type });
-        q = list[0];
-        if (!q) continue;
+        halted = true;
+        break;
       }
+    }
+    if (halted) continue;
+    for (const list of Object.values(p.production)) {
+      const q = list[0];
+      if (!q) continue;
       const next = Math.max(0, q.left - seconds);
       if (q.payg) {
         const amount = q.total > 0 ? ((q.left - next) / q.total) * q.cost : q.cost - (q.paid || 0);
@@ -568,5 +585,6 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
       });
       if (q.ai) ai?.complete(q, record);
     }
+  }
   return completed;
 }
