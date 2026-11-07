@@ -1619,9 +1619,15 @@ class Game {
       return;
     }
     if (this.paused) this.togglePause();
-    const { winner, doomed } = resolveTactical(spaceRosters(w, cb), cb, { space: true });
+    const rosters = spaceRosters(w, cb),
+      { winner, doomed } = resolveTactical(rosters, cb, { space: true });
     for (const e of doomed) if (!e.dead) w.kill(e, null);
     const [won, lost] = winner === 0 ? [cb.attacker.team, cb.defender.team] : [cb.defender.team, cb.attacker.team];
+    const loser = w.players.find(p => p.id >= 0 && p.team === w.teams[lost]);
+    if (loser && this.retreat.canRetreat(loser) !== 0) {
+      for (const c of rosters[1 - winner]) if (!c.entity.dead) w.kill(c.entity, null);
+      return;
+    }
     if (!sideBeaten(w, w.teams[lost])) this.tacticalVictory.request(w.teams[won], 12, 210);
   }
 
