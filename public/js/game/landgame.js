@@ -703,6 +703,13 @@ export class LandGame {
               );
           } else if (
             authoredMapOwner(setup, o) &&
+            !this.factions.some(f => String(f).toUpperCase() === String(authoredMapOwner(setup, o)).toUpperCase()) &&
+            db.faction(authoredMapOwner(setup, o))?.bool('Can_Control_Planets') &&
+            o.type.bool('Is_Branched_Map_Discardable', true) &&
+            !o.type.bool('Is_Marker')
+          ) {
+          } else if (
+            authoredMapOwner(setup, o) &&
             missionMapActor(setup, o) &&
             /structure$/i.test(o.type.tag) &&
             !beh(o.type).has('WALK_LOCOMOTOR')
