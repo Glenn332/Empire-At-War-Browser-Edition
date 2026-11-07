@@ -1219,8 +1219,9 @@ export class UI {
       return p;
     }
     if (p.f === f) return p;
+    const stale = f - p.f > 1;
     p.f = f;
-    if (s.hyper) {
+    if (s.hyper || stale) {
       const c = this.boxCentre(s, (this._bc ||= {}));
       p.x = p.tx = c.x;
       p.y = p.ty = c.y;
