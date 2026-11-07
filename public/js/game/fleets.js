@@ -156,6 +156,7 @@ export function orderMove(galaxy, fleet, to, canEnter = null, slot = null, optio
   piracyTariff(galaxy, fleet, from);
   startLeg(galaxy, fleet, from, path[0]);
   fleet.planet = -1;
+  galaxy.onDepart?.(fleet);
   return true;
 }
 
@@ -183,9 +184,15 @@ function startLeg(galaxy, fleet, a, b) {
     from: A.map((x, i) => x + u[i] * rA),
     to: B.map((x, i) => x - u[i] * rB),
     dir: u,
-    speed: baseSpeed(fleet) * legFactor(galaxy, a, b, fleet.owner)
+    speed: baseSpeed(fleet) * legFactor(galaxy, a, b, fleet.owner),
+    t: 0
   };
   fleet.pos = fleet.leg.from.slice();
+}
+
+function legFrames(L) {
+  const len = Math.hypot(L.to[0] - L.from[0], L.to[1] - L.from[1], L.to[2] - L.from[2]);
+  return Math.max(1, Math.floor(len / L.speed - 2) + 1);
 }
 
 export function stepFleets(galaxy, frames, arrive) {
@@ -193,15 +200,17 @@ export function stepFleets(galaxy, frames, arrive) {
     if (!f.leg) continue;
     let left = frames;
     while (f.leg && left > 0) {
-      const L = f.leg,
-        rem = Math.hypot(L.to[0] - f.pos[0], L.to[1] - f.pos[1], L.to[2] - f.pos[2]);
-      const step = L.speed * left;
-      if (rem > step) {
-        for (let i = 0; i < 3; i++) f.pos[i] += L.dir[i] * step;
+      const L = f.leg;
+      if (L.t === undefined) L.t = Math.hypot(f.pos[0] - L.from[0], f.pos[1] - L.from[1], f.pos[2] - L.from[2]) / L.speed;
+      const need = legFrames(L) - L.t;
+      if (need > left) {
+        L.t += left;
+        for (let i = 0; i < 3; i++) f.pos[i] = L.from[i] + L.dir[i] * L.speed * L.t;
         left = 0;
         break;
       }
-      left -= rem / L.speed;
+      left -= Math.max(0, need);
+      f.pos = L.to.slice();
       const p = L.b;
       f.path.shift();
       const stop =

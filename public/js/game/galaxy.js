@@ -290,6 +290,7 @@ export function snapshotGalaxy(g) {
       tech: p.tech,
       maxTech: p.maxTech,
       bribeMultiplier: p.bribeMultiplier,
+      creditMultiplier: p.creditMultiplier,
       tutorial: !!p.tutorial,
       bounty: p.bounty || 0,
       captureRewards: (p.captureRewards || []).slice(),
@@ -384,7 +385,7 @@ export function snapshotGalaxy(g) {
       ]),
       path: f.path.slice(),
       dest: f.dest,
-      leg: f.leg ? { a: f.leg.a, b: f.leg.b, from: f.leg.from, to: f.leg.to, dir: f.leg.dir, speed: f.leg.speed } : null,
+      leg: f.leg ? { a: f.leg.a, b: f.leg.b, from: f.leg.from, to: f.leg.to, dir: f.leg.dir, speed: f.leg.speed, t: f.leg.t } : null,
       pos: f.pos ? f.pos.slice() : null
     }))
   };
@@ -428,6 +429,7 @@ export function applyGalaxy(g, s) {
         player.tech = saved.tech;
       }
       if (saved.bribeMultiplier !== undefined) player.bribeMultiplier = saved.bribeMultiplier;
+      if (saved.creditMultiplier !== undefined) player.creditMultiplier = saved.creditMultiplier;
       player.tutorial = !!saved.tutorial;
       player.bounty = saved.bounty || 0;
       player.unlockedTypes = (saved.unlockedTypes || []).slice();
