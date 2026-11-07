@@ -103,6 +103,7 @@ import { snapNativeText } from '../nativefont.js';
 import { stageStart } from './transit.js';
 import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
+import { TacticalMovies } from './tacticalmovies.js';
 import { pressed, held } from './keybinds.js';
 
 const $ = id => document.getElementById(id);
@@ -218,6 +219,9 @@ export class GalacticGame {
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     if (this.setup.net) this.multiplayerGalaxy(g);
+    g.onDepart = f => {
+      if (visibleTransit(g, f, this.me)) this.audio?.play?.('Galactic_Fleet_Hyperspace');
+    };
     this.victory = new GalacticVictory(this);
     this.me = this.setup.net ? this.localFaction : db.faction(g.active)?.name || g.players[0]?.faction;
     stepVisibility(g, this.me);
@@ -478,6 +482,7 @@ export class GalacticGame {
     this.pointers?.set(null);
     this.audio?.speech?.clear(false);
     this.movies?.dispose();
+    this.storyMovie?.dispose();
     stageStart({ ...setup, players: [], teamFactions: [] });
   }
 
@@ -570,6 +575,7 @@ export class GalacticGame {
     this.scriptUI?.dispose();
     this.audio?.speech?.clear(false);
     this.movies?.stop();
+    this.storyMovie?.stop();
     this.screenText?.dispose();
     this.keys.clear();
     this.mouse.in = false;
@@ -2784,7 +2790,6 @@ export class GalacticGame {
       })
     )
       return false;
-    if (f.owner === this.me && this.audio && this.audio.play) this.audio.play('Galactic_Fleet_Hyperspace');
     if (f.owner === this.me) this.story?.generic('start_hyperspace');
     return true;
   }
@@ -3060,6 +3065,7 @@ export class GalacticGame {
     this.screenText?.update(elapsed);
     this.audio?.speech?.update();
     this.movies?.update(elapsed);
+    this.storyMovie?.update(elapsed, !!this.menus?.open);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);
@@ -3131,11 +3137,11 @@ export class GalacticGame {
     if (this.battle && !this.net && this.advanceBattle(real)) return;
     if (this.net) this.net.pump();
     else if (!this.over) {
-      this.story?.update(this.paused ? 0 : real * this.rate, false, real);
+      this.story?.update(this.paused || this.storyMovie?.pausesMode ? 0 : real * this.rate, false, real);
       storyMoviesDone(this.story);
     }
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
-    if (!this.paused && !this.over) {
+    if (!this.paused && !this.over && !this.storyMovie?.pausesMode) {
       for (const a of this.idlers) a.step(real);
       planetClock.value += real;
       if (!this.battle && !this.net) {
@@ -3193,6 +3199,17 @@ export class GalacticGame {
       stageStart(this.battleSetup());
     }
     return false;
+  }
+
+  playStoryMovie(name, done) {
+    if (this.net) return false;
+    this.storyMovie ||= new TacticalMovies(this, { missing: new Map() });
+    this.storyMovie.play(name);
+    this.storyMovie.onFinish = () => {
+      done();
+      if (!this.over) startStrategicMusic(this);
+    };
+    return true;
   }
 
   netStep(dt) {

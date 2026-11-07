@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { changeController } from './galacticpolitics.js';
 import { VIS } from './galacticfog.js';
+import { adjustCredits } from './galacticeconomy.js';
 import { advisorHints } from './advisorhints.js';
 import { tutorialReward } from './tutorialrewards.js';
 
@@ -22,7 +23,7 @@ export function galacticStoryReward(host, e) {
   switch (e.reward) {
     case 'CREDITS': {
       const q = player(owner);
-      if (q) q.credits = Math.max(0, q.credits + (parseFloat(p[0]) || 0));
+      if (q) adjustCredits(g, q.faction, parseFloat(p[0]) || 0);
       return true;
     }
     case 'REVEAL_PLANET': {
@@ -133,7 +134,11 @@ export function galacticStoryReward(host, e) {
       game.moviesDisabled = atoi(p[0]) !== 0;
       return true;
     case 'START_MOVIE':
-      if (!game.moviesDisabled) (host.moviesPlaying ||= []).push({ name: String(p[0] || ''), at: (host.serviceTime || 0) + 1 / 30 });
+      if (!game.moviesDisabled) {
+        const name = String(p[0] || ''),
+          done = (wait = 0) => (host.moviesPlaying ||= []).push({ name, at: (host.serviceTime || 0) + wait });
+        if (!game.playStoryMovie?.(name, () => done())) done(1 / 30);
+      }
       return true;
     case 'START_CINEMATIC_MODE':
       game.controlsLocked = true;

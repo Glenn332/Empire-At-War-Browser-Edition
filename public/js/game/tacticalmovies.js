@@ -12,6 +12,7 @@ export class TacticalMovies {
     this.scripts = scripts;
     this.active = false;
     this.pausesMode = false;
+    this.onFinish = null;
     this.generation = 0;
     this.movie = null;
     this.frame = 0;
@@ -105,12 +106,15 @@ export class TacticalMovies {
     }
   }
   finish() {
+    const done = this.onFinish;
+    this.onFinish = null;
     this.crawl?.dispose();
     this.crawl = null;
     this.active = false;
     this.pausesMode = false;
     this.movie = null;
     this.canvas.hidden = true;
+    done?.();
   }
   stop() {
     this.generation++;

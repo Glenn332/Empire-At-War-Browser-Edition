@@ -11,7 +11,7 @@ import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
 import { placeStartingForce, forceKind } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
-import { planetIncome, playerIncome } from './galacticeconomy.js';
+import { planetIncome, playerIncome, adjustCredits } from './galacticeconomy.js';
 import { groundLevel } from './galacticproduction.js';
 import { advisorHints } from './galacticlogdata.js';
 import { strategicStealth } from './galacticfog.js';
@@ -588,8 +588,7 @@ export class GalacticStoryHost extends StoryPlots {
       Give_Money: n => {
         const p = data();
         if (p) {
-          p.credits += +n || 0;
-          this.game.galaxy.victoryCreditChange?.(p.faction);
+          adjustCredits(this.game.galaxy, p.faction, +n || 0);
           if (D.on)
             this.dbg(
               'changes',
@@ -599,6 +598,12 @@ export class GalacticStoryHost extends StoryPlots {
         }
       },
       Get_Tech_Level: () => data()?.tech || 0,
+      Set_Tech_Level: level => {
+        const p = data();
+        if (!p || typeof level !== 'number') return;
+        p.tech = Math.max(0, Math.min(p.maxTech, Math.trunc(level)));
+        this.signalTech(p.faction, p.tech);
+      },
       Get_Difficulty: () => ({ easy: 'Easy', medium: 'Normal', hard: 'Hard' })[this.game.setup?.difficulty] || 'Normal',
       Lock_Tech: type => this.tech(faction.name, type?.__type, false),
       Unlock_Tech: type => this.tech(faction.name, type?.__type, true),
