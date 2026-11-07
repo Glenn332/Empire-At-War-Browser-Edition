@@ -1137,10 +1137,19 @@ export class Unit {
   }
 
   setOrder(order, keepQueue = false) {
+    order = onMap(this.world, order);
     this.order = order;
     if (!keepQueue) this.queue = null;
     if (order.kind !== 'attack') this.targetHp = null;
   }
+}
+
+const MAP_EDGE = 100;
+function onMap(w, o) {
+  if (!w?.min || !w.max || (o.kind !== 'move' && o.kind !== 'attackmove') || !Number.isFinite(o.x) || !Number.isFinite(o.y)) return o;
+  const x = clamp(o.x, w.min.x + MAP_EDGE, w.max.x - MAP_EDGE),
+    y = clamp(o.y, w.min.y + MAP_EDGE, w.max.y - MAP_EDGE);
+  return x === o.x && y === o.y ? o : { ...o, x, y };
 }
 
 const _Z = new THREE.Vector3(0, 0, 1),
@@ -1341,6 +1350,7 @@ export class Squad {
     return 70;
   }
   setOrder(order, keepQueue = false) {
+    order = onMap(this.world, order);
     this.order = order;
     if (!keepQueue) this.queue = null;
     this.target = order.kind === 'attack' ? order.target || null : null;
