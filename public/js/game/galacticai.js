@@ -772,6 +772,7 @@ export class GalacticAI {
       c.difficulty = difficulty;
       c.adjustment = await difficultyAdjustment(c.player.faction, difficulty, c.type);
       c.player.bribeMultiplier = c.adjustment?.bribe ?? 1;
+      c.player.creditMultiplier = c.adjustment?.credit ?? 1;
     }
   }
   static async create(game) {
@@ -888,6 +889,7 @@ export class GalacticAI {
         if (this.disposed) return;
         if (key(galacticControllerName(this.game, player)) !== key(name)) continue;
         player.bribeMultiplier = adjustment?.bribe ?? 1;
+        player.creditMultiplier = adjustment?.credit ?? 1;
         const budget = this.budgets.get(id) || new GalacticBudget();
         this.budgets.set(id, budget);
         this.controllers.set(id, { player, name, brain: profile.brain, type: profile.type, difficulty, adjustment, budget });

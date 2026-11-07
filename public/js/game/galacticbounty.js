@@ -30,7 +30,7 @@ export function galacticBounty(game, record, planet, owner, killer) {
   if (!paid) return 0;
   const n = roundAway(value),
     player = g.players.find(p => key(p.faction) === key(killer));
-  adjustCredits(g, killer, n * (player?.adjust?.credit ?? 1));
+  adjustCredits(g, killer, n);
   player.bounty = (player.bounty || 0) + n;
   return n;
 }

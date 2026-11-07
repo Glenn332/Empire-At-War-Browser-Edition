@@ -180,6 +180,7 @@ export function creditCap(g, owner) {
 export function adjustCredits(g, owner, amount) {
   const p = g.players.find(p => p.faction === owner);
   if (p) {
+    if (amount > 0) amount *= p.creditMultiplier ?? 1;
     p.credits = Math.max(0, Math.min(creditCap(g, owner), Math.fround(p.credits + amount)));
     g.victoryCreditChange?.(owner);
   }
