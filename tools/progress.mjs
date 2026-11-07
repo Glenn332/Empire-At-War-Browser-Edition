@@ -1133,7 +1133,7 @@ const GROUPS = [
       [
         'Bounty hunters',
         P,
-        'the Neutralize Hero ability as NeutralizeHeroAbilityClass: heroes of other owners at the planet, companies opened up, the major and minor rules of the ability and the target, the price with base level, hero protection, earlier neutralizations and corruption, Vigilance, respawn of both, the generic trigger hero_neutralized and the scoring event; a computer player picks at random. Ours: the computer hero acts when its plan leaves it over the planet (when the engine fires it is not read); the per-part tooltip lines and the neutralize messages are not in the game strings'
+        'the Neutralize Hero ability as NeutralizeHeroAbilityClass: heroes of other owners at the planet, companies opened up, the major and minor rules of the ability and the target, the price with base level, hero protection, earlier neutralizations and corruption, Vigilance, respawn of both, the generic trigger hero_neutralized and the scoring event; a computer player picks at random. Read: the computer hero fires the Ground_Activated ability when its plan lands it (LandUnits deploys a hero, as the plan scripts note), and the engine picks among the valid targets it can afford with equal weights, as the port does; the per-part tooltip lines and the neutralize messages are not in the game strings'
       ],
       [
         'Spies, probe droids, fog of the galaxy',
