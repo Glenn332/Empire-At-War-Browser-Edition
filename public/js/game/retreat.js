@@ -72,6 +72,13 @@ export class RetreatCoordinator {
     return this.request(player) === 0;
   }
 
+  requestByScript(faction) {
+    const a = this.a,
+      player = a.players().find(p => a.isSide(p) && key(a.factionOf(p)) === key(faction));
+    if (player === undefined || this.active || this.canRetreat(player)) return false;
+    return this.request(player) === 0;
+  }
+
   mitigation(player) {
     const best = new Map();
     for (const e of this.a.everything?.(player) || []) {

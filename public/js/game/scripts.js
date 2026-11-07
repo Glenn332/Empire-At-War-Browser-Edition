@@ -456,7 +456,7 @@ export class ScriptHost {
         const foe = w.players.find(x => !neutral(x) && !neutral(p) && x !== p && x.team !== p.team);
         return foe ? this.player(foe) : undefined;
       },
-      Retreat: () => !!w.retreat?.requestByFaction(p.factionName),
+      Retreat: () => !!w.retreat?.requestByScript(p.factionName),
       Lock_Tech: o => {
         const t = o && o.__type;
         if (t) {

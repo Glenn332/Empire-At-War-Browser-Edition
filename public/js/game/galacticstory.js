@@ -1,4 +1,5 @@
 import { simRandom } from './simrandom.js';
+import { pool as slicePool } from './galacticslicer.js';
 import { db } from '../gamedata.js';
 import { activeLanguage } from '../language.js';
 import { changeController } from './galacticpolitics.js';
@@ -598,6 +599,7 @@ export class GalacticStoryHost extends StoryPlots {
         }
       },
       Get_Tech_Level: () => data()?.tech || 0,
+      Give_Random_Sliceable_Tech: () => this.randomSliceableTech(data()),
       Set_Tech_Level: level => {
         const p = data();
         if (!p || typeof level !== 'number') return;
@@ -613,6 +615,36 @@ export class GalacticStoryHost extends StoryPlots {
     };
     this.players.set(id, f);
     return f;
+  }
+
+  randomSliceableTech(player) {
+    if (!player) return null;
+    const rows = [];
+    let total = 0;
+    for (const type of slicePool(this.game.galaxy, player)) {
+      const weight = 1 / type.num('Slice_Cost_Credits', 0);
+      if (!(weight > 0) || !Number.isFinite(weight)) continue;
+      total += weight;
+      rows.push([type, total]);
+    }
+    if (!rows.length) {
+      if ((player.tech || 0) !== 0 || player.maxTech <= 0) return null;
+      player.tech = 1;
+      this.signalTech(player.faction, player.tech);
+      return this.randomSliceableTech(player);
+    }
+    const r = simRandom() * total,
+      pick = (rows.find(([, at]) => r <= at) || rows[rows.length - 1])[0];
+    if (rows.length === 1) {
+      if (player.tech < player.maxTech) {
+        player.tech += 1;
+        this.signalTech(player.faction, player.tech);
+      }
+    } else if (!(player.unlockedTypes ||= []).some(n => key(n) === key(pick.name))) {
+      player.lockedTypes = (player.lockedTypes || []).filter(n => key(n) !== key(pick.name));
+      player.unlockedTypes.push(pick.name);
+    }
+    return this.type(pick);
   }
 
   position(x, y, z = 0) {
