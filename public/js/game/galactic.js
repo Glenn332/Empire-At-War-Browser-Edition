@@ -339,6 +339,8 @@ export class GalacticGame {
         P(`Placing the planets (${++done}/${g.planets.length})`, 0.1 + (0.8 * done) / g.planets.length);
       })
     );
+    this.bounds = this.planetBounds();
+    this.clampPan();
     this.marker = await loadModel('w_planet_select_neutral.alo').catch(() => null);
     if (this.marker) {
       this.marker.root.visible = false;
@@ -822,11 +824,24 @@ export class GalacticGame {
       x1 = -Infinity,
       y0 = Infinity,
       y1 = -Infinity;
+    const box = new THREE.Box3(),
+      part = new THREE.Box3();
     for (const p of ps) {
-      x0 = Math.min(x0, p.pos[0]);
-      x1 = Math.max(x1, p.pos[0]);
-      y0 = Math.min(y0, p.pos[1]);
-      y1 = Math.max(y1, p.pos[1]);
+      const root = this.planetViews?.[p.index]?.inst?.root;
+      box.makeEmpty();
+      if (root) {
+        root.updateWorldMatrix(true, true);
+        root.traverseVisible(o => {
+          if (!o.isMesh || !o.geometry) return;
+          if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+          box.union(part.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+        });
+      }
+      if (box.isEmpty()) box.min.set(p.pos[0], p.pos[1], 0), box.max.set(p.pos[0], p.pos[1], 0);
+      x0 = Math.min(x0, box.min.x);
+      x1 = Math.max(x1, box.max.x);
+      y0 = Math.min(y0, box.min.y);
+      y1 = Math.max(y1, box.max.y);
     }
     const mx = ((x1 - x0) / 2) * 0.15,
       my = ((y1 - y0) / 2) * 0.15;
