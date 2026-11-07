@@ -1,6 +1,6 @@
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
-import { forceKind } from './galaxy.js';
+import { forceKind, placeStartingForce } from './galaxy.js';
 import {
   aiProductionBlock,
   aiTypeBlocked,
@@ -139,6 +139,28 @@ function linesOf(def, type) {
     byType.set(type, out);
   }
   return out;
+}
+const behaves = (type, name) => type.behaviors?.().has(name) ?? type.list('Behavior').some(b => key(b) === name);
+function magicEligible(g, player, type) {
+  if (type.num('Tech_Level', 0) > 5 || strategicCategories(type).has('SUPER')) return false;
+  if (!type.bool('Is_Named_Hero') && !(type.num('Build_Cost_Credits', 0) >= 1)) return false;
+  if (['TRANSPORT', 'DUMMY_STAR_BASE', 'DUMMY_GROUND_BASE'].some(b => behaves(type, b))) return false;
+  const named = n => key(n) === key(type.name);
+  if ((player.lockedTypes || []).some(named)) return false;
+  if (type.bool('Build_Initially_Locked') && !(player.unlockedTypes || []).some(named)) return false;
+  if (type.list('Required_Planets').length || type.list('Required_Orbiting_Units').length) return false;
+  if (
+    !type.bool('Hyperspace') &&
+    !type.list('Company_Units').length &&
+    !behaves(type, 'DUMMY_GROUND_STRUCTURE') &&
+    !behaves(type, 'DUMMY_ORBITAL_STRUCTURE')
+  )
+    return false;
+  if (type.bool('Is_Named_Hero'))
+    for (const p of g.planets)
+      if ([...p.garrison, ...p.groundStructures, ...p.orbitalStructures].some(u => !u.dead && (u.carries || u.type) === type)) return false;
+  if (type.bool('Is_Named_Hero') && g.fleets.some(f => f.units.some(u => !u.dead && (u.carries || u.type) === type))) return false;
+  return true;
 }
 function producibleFor(def, types) {
   let byList = producible.get(def);
@@ -844,7 +866,7 @@ export class GalacticPlanning {
       g = this.game.galaxy,
       goal = controller.brain.defs.get(key(options.goal)),
       cache = this.pool(controller);
-    if (!def || def.magic || (controller.planSwitches?.get(name) ?? -1) < 0) return null;
+    if (!def || (controller.planSwitches?.get(name) ?? -1) < 0) return null;
     const reach = goal?.reach || 'ENEMY_DESTINATION',
       stages = this.reach(controller, target, reach),
       forceStages = new Map(),
@@ -865,7 +887,11 @@ export class GalacticPlanning {
         force.specs.map(spec => ({ force, spec, n: 0, fit: 0, escort: force.flags.has('ESCORTFORCE') }))
       ),
       candidates = [];
-    const existing = def.freeStore ? cache.entries.filter(e => !this.reservations.has(e.record) || options.all) : [];
+    const existing = def.magic
+      ? cache.entries.filter(e => e.type.bool('Is_Named_Hero') && (!this.reservations.has(e.record) || options.all))
+      : def.freeStore
+        ? cache.entries.filter(e => !this.reservations.has(e.record) || options.all)
+        : [];
     for (const e of existing) {
       if (!def.engaged && (this.game.battle?.p === e.planet.index || this.game.pendingBattle?.request?.p === e.planet.index)) continue;
       const matches = linesOf(def, e.type)
@@ -877,7 +903,18 @@ export class GalacticPlanning {
         candidates.push({ ...e, production: false, lines: matches, power: strategicPower(e.type), cats: strategicCategories(e.type) });
     }
     const ownedCost = t => productionCost(g, g.planets[0], controller.player.faction, t, []);
-    for (const [type, idx] of producibleFor(def, cache.types)) {
+    if (def.magic)
+      for (const [type, idx] of producibleFor(def, cache.types))
+        if (magicEligible(g, controller.player, type))
+          candidates.push({
+            type,
+            production: true,
+            magic: true,
+            lines: idx.map(i => lines[i]),
+            power: strategicPower(type),
+            cats: strategicCategories(type)
+          });
+    for (const [type, idx] of def.magic ? [] : producibleFor(def, cache.types)) {
       const matches = idx.map(i => lines[i]);
       const factories = new Map();
       for (const l of matches) {
@@ -992,8 +1029,12 @@ export class GalacticPlanning {
           open = e.lines.filter(l => room(l) && (!escort || l.escort === role));
         if (!open.length) continue;
         if (!first.has(e.type)) first.set(e.type, Math.floor(simRandom() * 8));
-        const l = open[first.get(e.type) % open.length],
-          factory = e.production ? this.factory(controller, e.type, forceStages.get(l.force.name), target, reach, cache, queues) : null,
+        const l = open[first.get(e.type) % open.length];
+        if (e.magic) {
+          available.push({ e, l, score: (l.spec.percent ? 1 : 1 - l.n / l.spec.max) + simRandom(), selected: -1, weight: 0, T: null, factory: null, price: 0 });
+          continue;
+        }
+        const factory = e.production ? this.factory(controller, e.type, forceStages.get(l.force.name), target, reach, cache, queues) : null,
           price = e.production ? factory.base : 0;
         if (e.production) {
           if (
@@ -1053,7 +1094,7 @@ export class GalacticPlanning {
       const { e, l, T, factory, price } = best,
         entry = { ...e, factory, force: l.force.name };
       if (!e.production) taken.add(e);
-      else {
+      else if (!e.magic) {
         cost += price;
         pop += e.type.num('Population_Value', 0);
         const kind = strategicProductionKind(e.type),
@@ -1085,7 +1126,7 @@ export class GalacticPlanning {
       return null;
     for (const T of [main, escort])
       if (T && picked.length && (!sat(T) || [...T.domains].some(d => T.total[d] > 0 && T.left[d] / T.total[d] > threshold))) return null;
-    if (!controller.budget.admits(category, cost, horizon, limit)) return null;
+    if (!def.magic && !controller.budget.admits(category, cost, horizon, limit)) return null;
     return { def, goal, groups, stages: forceStages, cost, horizon, limit };
   }
   staffable(controller, goal, target, options = {}) {
@@ -1229,11 +1270,12 @@ export class GalacticPlanning {
         complete: false,
         failed: false,
         orphan: false,
-        allocated: entry.production ? entry.factory.base : 0,
+        allocated: entry.production && !entry.magic ? entry.factory.base : 0,
         created: this.game.galaxy.time
       };
     force.jobs.push(job);
     this.jobs.add(job);
+    if (entry.magic) return job;
     if (entry.production) inst.ai.budget.allocate(inst.budget, job.allocated);
     else {
       if (!force.units.includes(entry.record)) force.units.push(entry.record);
@@ -1306,6 +1348,7 @@ export class GalacticPlanning {
     if (!force.produced) {
       force.produced = true;
       for (const entry of force.entries) this.queueJob(force, entry, stage);
+      this.magicSpawn(force, stage || force.inst.thing || null);
     }
     for (const job of force.jobs)
       if (!job.entry.production && !job.complete) {
@@ -1319,6 +1362,36 @@ export class GalacticPlanning {
         } else job.complete = true;
       }
     return this.block({ k: 'assemble', force });
+  }
+  magicSpawn(force, at) {
+    const g = this.game.galaxy,
+      owner = force.inst.ai.player.faction,
+      game = this.game;
+    for (const job of force.jobs) {
+      if (!job.entry.magic || job.complete) continue;
+      job.complete = true;
+      if (!at) continue;
+      for (const p of g.planets) if (p.killedHeroes) p.killedHeroes = p.killedHeroes.filter(e => key(e.type) !== key(job.type.name));
+      const count = g.fleets.length,
+        record = placeStartingForce(at, owner, job.type, g.fleets);
+      if (!record) continue;
+      job.record = record;
+      for (const fleet of g.fleets.slice(count)) {
+        game.fleetView?.(fleet);
+        game.battles?.arrive?.(fleet, at.index);
+      }
+      if (force.inst.state === 'run') {
+        this.reservations.set(record, force.inst);
+        force.units.push(record);
+        force.had = true;
+        this.host.object(record, at, owner);
+      }
+    }
+    if (force.jobs.some(j => j.entry.magic)) {
+      game.mergeFleets?.();
+      this.ai.invalidate();
+      this.refreshLocations();
+    }
   }
   where(record) {
     return this.locations.get(record) || this.standing?.get(record);
