@@ -61,7 +61,7 @@ export class TacticalMovies {
         this.crawl = crawl;
       }
       if (yes(movie.val('Has_Credits'))) {
-        const credits = await CreditsRoll.create(this.game).catch(error => {
+        const credits = await CreditsRoll.create(this.game, { zIndex: (+this.canvas.style.zIndex || 9) + 1 }).catch(error => {
           console.warn('Credits', error);
           return null;
         });

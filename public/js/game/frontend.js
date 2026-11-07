@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { MenuArtwork } from './menuartwork.js';
 import { openCampaignMenu } from './campaignmenu.js';
 import { openMainCampaignMenu, suggestTutorial, tutorialSuggested, markTutorialSuggested } from './storycampaignmenu.js';
+import { TacticalMovies } from './tacticalmovies.js';
 
 const PANEL = { cls: 'front', stretch: true };
 
@@ -44,8 +45,42 @@ export class FrontEnd {
   async screen(id, hide = []) {
     const dlg = await this.menus.push(id, PANEL);
     if (!dlg) return null;
-    for (const c of ['IDC_MENU_CREDITS', 'IDC_MENU_PETRO_LOGO', ...hide]) dlg.show(c, false);
+    for (const c of ['IDC_MENU_PETRO_LOGO', ...hide]) dlg.show(c, false);
+    dlg.on('IDC_MENU_CREDITS', () => this.credits(dlg));
     return dlg;
+  }
+
+  credits(dlg) {
+    if (this.rolling) return;
+    const g = this.game,
+      overlay = document.getElementById('frontOverlay'),
+      show = on => {
+        for (const d of this.menus.stack) d.veil.style.display = on ? '' : 'none';
+        if (overlay) overlay.style.display = on ? '' : 'none';
+      };
+    g.audio?.unlock?.();
+    show(false);
+    g.audio?.stopMusic?.();
+    const movies = (g.tacticalMovies ||= new TacticalMovies(g, { missing: new Map() }));
+    movies.canvas.style.zIndex = '90';
+    this.rolling = true;
+    const back = () => {
+      removeEventListener('keydown', skip, true);
+      this.rolling = false;
+      show(true);
+      if (g.music) {
+        g.music.mode = '';
+        g.setMusic?.('ambient');
+      }
+    };
+    const skip = e => {
+      if (e.code !== 'Escape') return;
+      e.stopPropagation();
+      movies.stop();
+    };
+    addEventListener('keydown', skip, true);
+    movies.play('Credits', { loop: true });
+    movies.onFinish = back;
   }
 
   async main() {

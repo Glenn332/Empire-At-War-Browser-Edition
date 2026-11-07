@@ -59,13 +59,13 @@ export function creditsFade(y, margin) {
 }
 
 export class CreditsRoll {
-  static async create(game, { width = innerWidth, height = innerHeight } = {}) {
+  static async create(game, { width = innerWidth, height = innerHeight, zIndex = 71 } = {}) {
     const c = db.constants,
       lines = await creditsText(),
       font = await loadNativeFont(c.str('Credits_Font', 'Arial').trim(), fontPixels(height, c.num('Credits_Font_Size', 14)), 1, true).catch(
         () => null
       );
-    const roll = new CreditsRoll(game, width, height);
+    const roll = new CreditsRoll(game, width, height, zIndex);
     const normal = [color('Credits_Top_Color', [1, 1, 1]), color('Credits_Bottom_Color', [1, 1, 1])],
       header = [color('Credits_Header_Top_Color', [1, 1, 1]), color('Credits_Header_Bottom_Color', [1, 1, 1])];
     const step = Math.floor(c.num('Credits_Spacing', 0.04) * height);
@@ -98,7 +98,7 @@ export class CreditsRoll {
     return roll;
   }
 
-  constructor(game, width, height) {
+  constructor(game, width, height, zIndex = 71) {
     this.game = game;
     this.width = width;
     this.height = height;
@@ -110,7 +110,7 @@ export class CreditsRoll {
     this.canvas = document.createElement('canvas');
     this.canvas.width = width;
     this.canvas.height = height;
-    this.canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:71';
+    this.canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:' + zIndex;
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
     this.draw();
