@@ -272,7 +272,7 @@ export class InstantBattle {
     this.fleets = fleets;
     this.rules = new InstantRules(
       game.world,
-      () => game.human,
+      () => (game.observer ? null : game.human),
       (text, cls) => game.message(text, cls),
       !!game.setup.net
     );

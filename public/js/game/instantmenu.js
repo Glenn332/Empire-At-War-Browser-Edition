@@ -15,6 +15,8 @@ import {
   randomArmy,
   entryPoints
 } from './instantbattle.js';
+import { SPECTATOR_TEAM } from './lobby.js';
+import { paintCrest } from './spectator.js';
 
 const KEY = 'swr-instant-setup';
 const AI_KINDS = [
@@ -35,6 +37,8 @@ const money = n => '$' + Math.round(n).toLocaleString();
 const clampBudget = n => Math.max(INSTANT_BUDGET_MIN, Math.min(INSTANT_BUDGET_MAX, Math.round(+n || 0)));
 const sound = name => window.game?.audio?.play(name);
 const isAI = k => AI_KINDS.some(a => a[0] === k);
+const watching = p => p.team === SPECTATOR_TEAM;
+const SPECTATOR_COLOR = '#c3ab02';
 
 const load = () => {
   try {
@@ -111,7 +115,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     if (Array.isArray(saved.players) && saved.players.length && saved.players[0]?.kind === 'you')
       players = saved.players.map((p, i) => ({
         kind: i === 0 ? 'you' : isAI(p.kind) ? p.kind : 'medium',
-        team: Math.max(0, Math.min(INSTANT_MAX_TEAMS - 1, p.team | 0)),
+        team: i === 0 && p.team === SPECTATOR_TEAM ? SPECTATOR_TEAM : Math.max(0, Math.min(INSTANT_MAX_TEAMS - 1, p.team | 0)),
         faction: factions.includes(p.faction) ? p.faction : factions[0],
         budget: clampBudget(p.budget ?? st.budget),
         army: Array.isArray(p.army) ? p.army.filter(n => typeof n === 'string') : [],
@@ -125,6 +129,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   }
   const setTeam = (p, team) => {
     p.team = team;
+    if (watching(p)) return;
     const mate = players.find(q => q !== p && q.team === p.team);
     if (mate && mate.faction !== p.faction) {
       p.faction = mate.faction;
@@ -133,7 +138,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   };
   const unify = (from, faction) => {
     for (const p of players)
-      if (p.team === from.team && p.faction !== faction) {
+      if (!watching(from) && p.team === from.team && p.faction !== faction) {
         p.faction = faction;
         prune(p);
       }
@@ -143,7 +148,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   if (host)
     for (const p of players) {
       const mate = players.find(q => q.team === p.team);
-      if (mate !== p) p.faction = mate.faction;
+      if (mate !== p && !watching(p)) p.faction = mate.faction;
       prune(p);
     }
   view.sel = Math.max(0, players.findIndex(mine));
@@ -158,6 +163,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     const used = players.filter(q => q.color).map(q => q.color.toLowerCase());
     const free = c => !used.some(u => near(u, c));
     return players.map(p => {
+      if (watching(p)) return SPECTATOR_COLOR;
       if (p.color) return p.color;
       const own = factionColor(p.faction);
       const c = (own && free(own) ? own : PALETTE.find(free) || PALETTE.find(x => !used.includes(x)) || PALETTE[0]).toLowerCase();
@@ -310,7 +316,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     changed(null, true);
   });
   const rollAll = button('Randomize All', () => {
-    for (const p of players) if (canEdit(p) && p.kind !== 'open') p.army = randomArmy(rosterOf(p), p.budget);
+    for (const p of players) if (canEdit(p) && p.kind !== 'open' && !watching(p)) p.army = randomArmy(rosterOf(p), p.budget);
     changed(null, false);
   });
   fleetTools.append(addBtn, rollAll);
@@ -429,11 +435,15 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     sizeBtns.forEach((b, i) => b.classList.toggle('on', dyn && dynamicSize(st.mapFile).key === DYNAMIC_SIZES[i].key));
   };
 
-  const filled = () => players.filter(p => p.kind !== 'open');
+  const filled = () => players.filter(p => p.kind !== 'open' && !watching(p));
   const entryTurn = () => (isDynamic(st.mapFile) ? dynamicTurn(st.mapFile, teamsUsed().length, st.turn) : st.turn);
   const teamsUsed = () => [...new Set(filled().map(p => p.team))].sort((a, b) => a - b);
   const nameOf = (p, i) =>
-    p.kind === 'you'
+    watching(p)
+      ? p.kind === 'you' || mine(p)
+        ? 'You'
+        : p.name || 'Player'
+      : p.kind === 'you'
       ? 'Your fleet'
       : p.kind === 'human'
         ? mine(p)
@@ -449,7 +459,10 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     const P = () => players[i];
     const p = P(),
       edit = canEdit(p);
-    const row = el('div', 'ib-fleet' + (i === view.sel ? ' sel' : '') + (p.kind === 'open' ? ' open' : '') + (mine(p) ? ' mine' : ''));
+    const row = el(
+      'div',
+      'ib-fleet' + (i === view.sel ? ' sel' : '') + (p.kind === 'open' ? ' open' : '') + (mine(p) ? ' mine' : '') + (watching(p) ? ' watch' : '')
+    );
     row.style.setProperty('--pc', colorOf(p, i));
     row.onclick = () => {
       if (view.sel !== i) {
@@ -460,8 +473,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     };
     const top = el('div', 'ib-fleet-top');
     const crest = el('div', 'ib-crest');
-    const icon = iconUrl(db.faction(p.faction)?.str('Icon_Name'));
-    if (icon) crest.style.backgroundImage = `url(${icon})`;
+    if (!watching(p)) paintCrest(crest, p.faction);
     let who;
     if (p.kind === 'you') who = el('div', 'ib-who', 'You');
     else if (p.kind === 'human') {
@@ -489,12 +501,16 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       }
     );
     const team = select(
-      Array.from({ length: INSTANT_MAX_TEAMS }, (_, t) => [t, `Team ${t + 1}`]),
+      [
+        ...(p.kind === 'you' || p.kind === 'human' ? [[SPECTATOR_TEAM, 'Spectator']] : []),
+        ...Array.from({ length: INSTANT_MAX_TEAMS }, (_, t) => [t, `Team ${t + 1}`])
+      ],
       p.team,
       v => {
         const q = P();
+        const was = watching(q);
         setTeam(q, +v);
-        changed(q);
+        changed(q, was !== watching(q));
       },
       'ib-team'
     );
@@ -510,11 +526,18 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       row.style.setProperty('--pc', color.value);
     };
     color.onchange = () => changed(P());
-    top.append(crest, who, fac, team, color);
+    if (watching(p)) top.append(crest, who, team);
+    else top.append(crest, who, fac, team, color);
     const bottom = el('div', 'ib-fleet-bottom');
     const refs = { row };
     if (p.kind === 'open') {
       bottom.append(el('div', 'ib-sum', 'Waiting for a player to join'));
+    } else if (watching(p)) {
+      bottom.append(el('div', 'ib-sum', 'Spectating · no fleet of their own'));
+      if (net) {
+        refs.ready = el('div', 'ib-ready');
+        bottom.append(refs.ready);
+      }
     } else {
       const bar = el('div', 'ib-bar');
       refs.fill = el('div', 'ib-bar-fill');
@@ -553,7 +576,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       'ib-icon'
     );
     dice.title = 'Random fleet within the budget';
-    dice.disabled = !edit || p.kind === 'open';
+    dice.disabled = !edit || p.kind === 'open' || watching(p);
     const del = button(
       '✕',
       () => {
@@ -569,12 +592,21 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     );
     del.title = p.kind === 'human' ? 'Remove this player from the game' : 'Remove';
     if (p.kind === 'you' || !host || mine(p)) del.style.visibility = 'hidden';
-    if (p.kind !== 'open') bottom.append(bud, dice, del);
+    if (watching(p)) bottom.append(del);
+    else if (p.kind !== 'open') bottom.append(bud, dice, del);
     else bottom.append(del);
     row.append(top, bottom);
     return refs;
   };
   const fillRow = (refs, p) => {
+    if (watching(p)) {
+      if (refs.ready) {
+        const ok = p.peer === 0 || p.ready;
+        refs.ready.className = 'ib-ready' + (ok ? ' on' : '');
+        refs.ready.textContent = p.peer === 0 ? 'Host' : ok ? 'Ready' : 'Not ready';
+      }
+      return;
+    }
     if (p.kind !== 'open') {
       const spent = armyCost(rosterOf(p), p.army);
       refs.fill.style.width = Math.min(100, (100 * spent) / Math.max(1, p.budget)) + '%';
@@ -602,12 +634,14 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     });
     while (fleetRows.length > players.length) fleetRows.pop().row.remove();
     addBtn.disabled = !host;
-    rollAll.disabled = !players.some(p => canEdit(p) && p.kind !== 'open');
-    const used = teamsUsed();
+    rollAll.disabled = !players.some(p => canEdit(p) && p.kind !== 'open' && !watching(p));
+    const used = teamsUsed(),
+      watchers = players.filter(watching).length;
     teamNote.textContent =
-      used.length < 2
+      (used.length < 2
         ? 'Put at least two teams on the field.'
-        : `${filled().length} ${filled().length === 1 ? 'fleet' : 'fleets'} on ${used.length} teams · players on one team share a faction`;
+        : `${filled().length} ${filled().length === 1 ? 'fleet' : 'fleets'} on ${used.length} teams · players on one team share a faction`) +
+      (watchers ? ` · ${watchers} ${watchers === 1 ? 'spectator' : 'spectators'}` : '');
     teamNote.classList.toggle('bad', used.length < 2);
   };
 
@@ -619,10 +653,30 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       roster = rosterOf(p),
       spent = armyCost(roster, p.army),
       edit = canEdit(p) && p.kind !== 'open';
-    const key = JSON.stringify([i, view.filter, p.kind, p.peer, p.faction, p.army, p.budget, edit, colorOf(p, i), nameOf(p, i)]);
+    const key = JSON.stringify([i, view.filter, p.kind, p.peer, p.team, p.faction, p.army, p.budget, edit, colorOf(p, i), nameOf(p, i)]);
     if (key === armyKey) return;
     armyKey = key;
     armyCol.style.setProperty('--pc', colorOf(p, i));
+    armyCol.classList.toggle('watch', watching(p));
+    if (watching(p)) {
+      armyTitle.textContent = `${nameOf(p, i)} — Spectator`;
+      rollOne.disabled = clearOne.disabled = true;
+      meterFill.style.width = '0%';
+      meterText.textContent = 'No fleet · no budget';
+      chips.replaceChildren();
+      const info = el('div', 'ib-watch');
+      info.append(
+        el('div', 'ib-watch-head', 'Spectator seat'),
+        el(
+          'p',
+          '',
+          'This seat brings no ships. It watches the whole battle with the spectator overlay: follow any team, see its credits and combat power, read the battle log, and turn the fog of war on or off.'
+        ),
+        el('p', '', 'Pick a team number instead to fight with a fleet of your own.')
+      );
+      catalog.replaceChildren(info);
+      return;
+    }
     armyTitle.textContent = `${nameOf(p, i)} — ${fLabel(p.faction)}`;
     rollOne.disabled = clearOne.disabled = !edit;
     meterFill.style.width = Math.min(100, (100 * spent) / Math.max(1, p.budget)) + '%';
@@ -856,7 +910,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   function toggleReady() {
     const me = players.find(mine);
     if (!me) return;
-    if (!me.ready && !me.army.length) {
+    if (!me.ready && !me.army.length && !watching(me)) {
       error.textContent = 'Add some ships to your fleet first.';
       return;
     }
@@ -870,7 +924,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       error.textContent = 'At least two teams are needed for a battle.';
       return;
     }
-    const empty = players.findIndex(p => p.kind !== 'open' && !p.army.length);
+    const empty = players.findIndex(p => p.kind !== 'open' && !watching(p) && !p.army.length);
     if (empty >= 0) {
       view.sel = empty;
       draw();
@@ -884,7 +938,8 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     const index = new Map(used.map((t, k) => [t, k]));
     const teamFactions = used.map(t => players.find(p => p.team === t && p.kind !== 'open').faction);
     const all = colors();
-    const fleets = players.map((p, i) => ({ p, color: all[i] })).filter(({ p }) => p.kind !== 'open');
+    const fleets = players.map((p, i) => ({ p, color: all[i] })).filter(({ p }) => p.kind !== 'open' && !watching(p));
+    const watchers = players.filter(p => p.kind === 'human' && watching(p));
     const setup = {
       mode: 'space',
       type: 'instant',
@@ -900,7 +955,9 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
             ? { human: true, peer: p.peer, name: p.name, team: index.get(p.team), color, auto: false }
             : { human: false, team: index.get(p.team), difficulty: p.kind, color, auto: false }
       ),
-      instant: { turn: entryTurn(), armies: fleets.map(({ p }) => p.army.slice()) }
+      instant: { turn: entryTurn(), armies: fleets.map(({ p }) => p.army.slice()) },
+      ...(players.some(p => p.kind === 'you' && watching(p)) ? { spectate: true } : {}),
+      ...(watchers.length ? { spectators: watchers.map(p => p.peer), spectatorNames: watchers.map(p => p.name) } : {})
     };
     if (net) {
       setup.seed = crypto.getRandomValues(new Uint32Array(1))[0];
@@ -948,7 +1005,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
         } else if (!s) return;
         else if (m.k === 'fleet' && m.fleet) {
           const f = m.fleet;
-          if (Number.isInteger(f.team) && f.team >= 0 && f.team < INSTANT_MAX_TEAMS && f.team !== s.team) setTeam(s, f.team);
+          if (Number.isInteger(f.team) && f.team >= SPECTATOR_TEAM && f.team < INSTANT_MAX_TEAMS && f.team !== s.team) setTeam(s, f.team);
           if (typeof f.faction === 'string' && factions.includes(f.faction) && f.faction !== s.faction) unify(s, f.faction);
           if (f.color === null || (typeof f.color === 'string' && /^#[0-9a-f]{6}$/i.test(f.color))) s.color = f.color;
           if (Array.isArray(f.army)) {
@@ -959,7 +1016,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           publish();
           draw();
         } else if (m.k === 'ready') {
-          s.ready = !!m.on && s.army.length > 0;
+          s.ready = !!m.on && (s.army.length > 0 || watching(s));
           publish();
           draw();
         } else if (m.k === 'chat') {

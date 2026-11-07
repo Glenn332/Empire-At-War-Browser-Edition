@@ -3,7 +3,7 @@ import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
 import { openDialog } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
-import { advancedOptions } from './lobby.js';
+import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { loadCampaignData } from './galaxy.js';
@@ -824,7 +824,7 @@ async function openStaging(args) {
       maps: [...maps, ...customMaps.space.filter(m => !maps.includes(m)), ...dynamicMaps()],
       factions,
       audio,
-      start: setup => launch({ ...setup, net: netFor() }),
+      start: setup => launch({ ...setup, net: setup.spectators ? { ...netFor(), spectators: setup.spectators } : netFor() }),
       mp: {
         session: net,
         host,
@@ -977,8 +977,9 @@ async function openStaging(args) {
       addChat('', 'Battles with more than two teams are played on a Dynamic Map.');
     }
     together();
+    for (const s of slots) if (s.team === SPECTATOR_TEAM && (campaign() || s.kind !== 'human')) s.team = 0;
     autoColors(
-      slots.filter(s => s.kind !== 'closed' && s.kind !== 'open'),
+      slots.filter(s => s.kind !== 'closed' && s.kind !== 'open' && s.team !== SPECTATOR_TEAM),
       st.teamFactions,
       PALETTE
     );
@@ -991,7 +992,10 @@ async function openStaging(args) {
   };
   const spaceTeams = () => !campaign() && !isLand(st.mapFile);
   const teamCount = () => (spaceTeams() ? MAX_TEAMS : 2);
-  const usedTeams = () => [...new Set(slots.filter(s => s.kind !== 'closed' && s.kind !== 'open').map(s => s.team))].sort((a, b) => a - b);
+  const usedTeams = () =>
+    [...new Set(slots.filter(s => s.kind !== 'closed' && s.kind !== 'open' && s.team !== SPECTATOR_TEAM).map(s => s.team))].sort(
+      (a, b) => a - b
+    );
   const manyTeams = () => spaceTeams() && usedTeams().length > 2;
   if (host) {
     track('message', (from, m) => {
@@ -1029,7 +1033,8 @@ async function openStaging(args) {
       } else if (m.k === 'mine') {
         const s = slots[i];
         if (s.saved) return;
-        if (Number.isInteger(m.team) && m.team >= 0 && m.team < teamCount()) s.team = m.team;
+        if (Number.isInteger(m.team) && ((m.team >= 0 && m.team < teamCount()) || (m.team === SPECTATOR_TEAM && !campaign())))
+          s.team = m.team;
         if (typeof m.faction === 'string' && campaign() && menuEntry()) {
         } else if (typeof m.faction === 'string' && campaign() && sidesOf(st.mapFile).includes(m.faction)) s.faction = m.faction;
         else if (typeof m.faction === 'string' && factions.includes(m.faction)) st.teamFactions[s.team] = m.faction;
@@ -1344,7 +1349,7 @@ async function openStaging(args) {
   const render = () => {
     const me = mine();
     autoColors(
-      slots.filter(s => s.kind !== 'closed' && s.kind !== 'open'),
+      slots.filter(s => s.kind !== 'closed' && s.kind !== 'open' && s.team !== SPECTATOR_TEAM),
       st.teamFactions,
       PALETTE
     );
@@ -1428,11 +1433,15 @@ async function openStaging(args) {
       );
       dlg.combo(
         `IDC_PLAYER_TEAM_${r}`,
-        [...Array(teamCount()).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
+        [
+          ...(s.kind === 'human' && !campaign() ? [{ value: SPECTATOR_TEAM, label: T('TEXT_SPECTATOR', 'Spectator') }] : []),
+          ...[...Array(teamCount()).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` }))
+        ],
         s.team,
         v => change('team', v)
       );
       for (const k of ['FACTION', 'COLOR', 'TEAM']) dlg.enable(`IDC_PLAYER_${k}_${r}`, filled && editable && !s.saved);
+      for (const k of ['FACTION', 'COLOR']) dlg.show(`IDC_PLAYER_${k}_${r}`, s.team !== SPECTATOR_TEAM);
       if (menuEntry() && s.kind === 'human' && s.peer !== 0) dlg.enable(`IDC_PLAYER_FACTION_${r}`, false);
       if (campaign()) dlg.show(`IDC_PLAYER_TEAM_${r}`, false);
       const mark = dlg.ctl(`IDC_ACCEPT_PLAYER_${r}`);
@@ -1621,7 +1630,9 @@ async function openStaging(args) {
       begin(setup);
       return;
     }
-    const used = [...new Set(players.map(p => p.team))].sort((a, b) => a - b);
+    const watchers = players.filter(s => s.kind === 'human' && s.team === SPECTATOR_TEAM);
+    const fighters = players.filter(s => !watchers.includes(s));
+    const used = [...new Set(fighters.map(p => p.team))].sort((a, b) => a - b);
     if (used.length < 2 || (!spaceTeams() && used.some(t => t > 1))) {
       note.textContent = 'At least two teams need a player.';
       return;
@@ -1643,11 +1654,12 @@ async function openStaging(args) {
       teamFactions: used.map(t => st.teamFactions[t]),
       seed,
       spaceWorker: !new URLSearchParams(location.search).has('nospaceworker'),
-      players: players.map(s =>
+      players: fighters.map(s =>
         s.kind === 'human'
           ? { human: true, peer: s.peer, name: s.name, team: used.indexOf(s.team), color: s.color, auto: false }
           : { human: false, team: used.indexOf(s.team), difficulty: s.kind, color: s.color, auto: false }
-      )
+      ),
+      ...(watchers.length ? { spectators: watchers.map(s => s.peer), spectatorNames: watchers.map(s => s.name) } : {})
     };
     net.setListing(null);
     net.broadcast({ k: 'start', setup });
@@ -1663,7 +1675,9 @@ async function openStaging(args) {
     dlg.close();
     audio?.unlock?.();
     if (host && !campaign()) kept = { st: JSON.parse(JSON.stringify({ ...st, save: null })), slots: JSON.parse(JSON.stringify(slots)) };
-    launch({ ...setup, net: !campaign() ? netFor() : { session: net, me: net.id, relaunch } });
+    const link = !campaign() ? netFor() : { session: net, me: net.id, relaunch };
+    if (setup.spectators) link.spectators = setup.spectators;
+    launch({ ...setup, net: link });
   };
 
   if (host) publish();

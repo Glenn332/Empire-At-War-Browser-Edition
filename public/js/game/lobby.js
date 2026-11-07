@@ -13,6 +13,7 @@ const POP_MAX = 10000,
   SETUP_KEY = 'swr-skirmish-setup';
 const KINDS = ['you', 'closed', 'easy', 'medium', 'hard'];
 const MAX_TEAMS = 10;
+export const SPECTATOR_TEAM = -1;
 
 const loadSetup = () => {
   try {
@@ -69,7 +70,13 @@ export async function openLobby({
   const savedSlots =
     Array.isArray(saved.slots) &&
     saved.slots.filter(s => s?.kind === 'you').length === 1 &&
-    saved.slots.every(s => KINDS.includes(s?.kind) && Number.isInteger(s.team) && s.team >= 0 && s.team < MAX_TEAMS)
+    saved.slots.every(
+      s =>
+        KINDS.includes(s?.kind) &&
+        Number.isInteger(s.team) &&
+        (s.team >= 0 || (s.kind === 'you' && s.team === SPECTATOR_TEAM)) &&
+        s.team < MAX_TEAMS
+    )
       ? saved.slots
       : null;
   const slots = [];
@@ -88,7 +95,8 @@ export async function openLobby({
   const fLabel = f => T(db.faction(f).str('Text_ID'), f);
   const mapName = mapTitle;
   let note = null;
-  const teamsUsed = () => [...new Set(slots.filter(s => s.kind !== 'closed').map(s => s.team))].sort((a, b) => a - b);
+  const playing = s => s.kind !== 'closed' && s.team !== SPECTATOR_TEAM;
+  const teamsUsed = () => [...new Set(slots.filter(playing).map(s => s.team))].sort((a, b) => a - b);
   const mapOpts = () => ({ teams: Math.max(2, teamsUsed().length) });
   const viewKey = m => (isDynamic(m) ? `${m}|${mapOpts().teams}` : m);
 
@@ -285,6 +293,11 @@ export async function openLobby({
     const s = slots[win.off + r];
     for (const k of ['NAME', 'FACTION', 'COLOR', 'TEAM']) dlg.show(`IDC_PLAYER_${k}_${r}`, !!s);
     if (!s) return;
+    const watching = s.team === SPECTATOR_TEAM;
+    const teamOptions = [
+      ...(s.kind === 'you' ? [{ value: SPECTATOR_TEAM, label: T('TEXT_SPECTATOR', 'Spectator') }] : []),
+      ...[...Array(st.mode === 'space' ? MAX_TEAMS : 2).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` }))
+    ];
     if (s.kind === 'you') dlg.combo(`IDC_PLAYER_NAME_${r}`, [{ value: 'you', label: T('TEXT_PLAYER', 'Player') }], 'you', () => {});
     else
       dlg.combo(
@@ -296,36 +309,34 @@ export async function openLobby({
           refresh();
         }
       );
-    dlg.combo(
-      `IDC_PLAYER_FACTION_${r}`,
-      factions.map(f => ({ value: f, label: fLabel(f) })),
-      st.teamFactions[s.team],
-      v => {
-        st.teamFactions[s.team] = v;
-        refresh();
-      }
-    );
-    colours(r, s);
-    dlg.combo(
-      `IDC_PLAYER_TEAM_${r}`,
-      [...Array(st.mode === 'space' ? MAX_TEAMS : 2).keys()].map(t => ({ value: t, label: `${T('TEXT_TEAM', 'Team')} ${t + 1}` })),
-      s.team,
-      v => {
-        s.team = +v;
-        refresh();
-      }
-    );
+    if (!watching) {
+      dlg.combo(
+        `IDC_PLAYER_FACTION_${r}`,
+        factions.map(f => ({ value: f, label: fLabel(f) })),
+        st.teamFactions[s.team],
+        v => {
+          st.teamFactions[s.team] = v;
+          refresh();
+        }
+      );
+      colours(r, s);
+    }
+    dlg.combo(`IDC_PLAYER_TEAM_${r}`, teamOptions, s.team, v => {
+      s.team = +v;
+      refresh();
+    });
     const open = s.kind !== 'closed';
     dlg.enable(`IDC_PLAYER_NAME_${r}`, true);
     for (const k of ['FACTION', 'COLOR', 'TEAM']) dlg.enable(`IDC_PLAYER_${k}_${r}`, open);
+    for (const k of ['FACTION', 'COLOR']) dlg.show(`IDC_PLAYER_${k}_${r}`, !watching);
   };
   const rows = () => {
     for (let r = 0; r < win.rows; r++) row(r);
   };
   const refresh = () => {
-    if (st.mode !== 'space') for (const s of slots) s.team = Math.min(1, s.team);
+    if (st.mode !== 'space') for (const s of slots) if (s.team !== SPECTATOR_TEAM) s.team = Math.max(0, Math.min(1, s.team));
     autoColors(
-      slots.filter(s => s.kind !== 'closed'),
+      slots.filter(playing),
       st.teamFactions,
       PALETTE
     );
@@ -394,8 +405,9 @@ export async function openLobby({
     } else leaveTo('./');
   });
   dlg.on('IDC_SKIRMISH_START_GAME_BUTTON', () => {
+    const spectate = slots.some(s => s.kind === 'you' && s.team === SPECTATOR_TEAM);
     const players = slots
-      .filter(s => s.kind !== 'closed')
+      .filter(playing)
       .map(s =>
         s.kind === 'you'
           ? { human: true, team: s.team, color: s.color, auto: false }
@@ -422,7 +434,8 @@ export async function openLobby({
       popCap: st.popCap,
       fog: st.fog,
       teamFactions: used.map(t => st.teamFactions[t]),
-      players
+      players,
+      ...(spectate ? { spectate: true } : {})
     });
   });
   return true;

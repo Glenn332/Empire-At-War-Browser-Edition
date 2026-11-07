@@ -7,8 +7,10 @@ export const TURN = 3;
 export const CHAT_MAX = 160;
 
 export function chatText(from, text, team) {
-  return `${from.name}${db.t(team ? 'TEXT_CHAT_MESSAGE_TEAM' : 'TEXT_CHAT_MESSAGE_ALL') || (team ? '(Team)' : '(All)')}: ${text}`;
+  const where = team && from.spectator ? '(Spectators)' : db.t(team ? 'TEXT_CHAT_MESSAGE_TEAM' : 'TEXT_CHAT_MESSAGE_ALL') || (team ? '(Team)' : '(All)');
+  return `${from.name}${where}: ${text}`;
 }
+const SPECTATOR_COLOR = '#c3ab02';
 const DELAY = 2;
 const MAX_AHEAD = 8;
 const HASH_EVERY = 10;
@@ -75,7 +77,10 @@ export class Lockstep {
     );
     this.peers = [...new Set([...this.playerOf.keys(), ...(net.spectators || [])])].filter(p => p !== 0);
     this.gone = new Set(net.gone || []);
-    this.hostPlayer = this.playerOf.get(0);
+    this.hostPlayer = this.playerOf.get(0) ?? -1;
+    this.watchers = (net.spectators || []).filter(p => !this.playerOf.has(p));
+    this.watcherNames = new Map(this.watchers.map((p, i) => [p, game.setup.spectatorNames?.[i] || 'Spectator']));
+    this.myChat = this.chatId(this.me);
     this.resumed = -1;
     this.pausedAt = -1;
     this.onMessage = this.session.on('message', (from, m) => this.receive(from, m));
@@ -191,7 +196,7 @@ export class Lockstep {
   }
 
   command(cmd) {
-    if (this.host) this.collected.push([this.playerOf.get(0), cmd]);
+    if (this.host) this.collected.push([this.hostPlayer, cmd]);
     else this.tx(0, { k: 'cmd', cmd });
   }
 
@@ -234,7 +239,7 @@ export class Lockstep {
         this.loaded.add(from);
         if (this.started) this.tx(from, { k: 'go' });
         else this.checkLoaded();
-      } else if (m.k === 'chat' && pid !== undefined) this.chat(pid, m.text, !!m.team);
+      } else if (m.k === 'chat' && this.chatId(from) !== undefined) this.chat(this.chatId(from), m.text, !!m.team);
       else if (m.k === 'ack') {
         this.ackOf.set(from, m.n);
         if (m.h !== undefined) {
@@ -251,7 +256,7 @@ export class Lockstep {
       else if (m.k === 'go') this.begin();
       else if (m.k === 'desync') this.desync(m.n);
       else if (m.k === 'resume') this.lift(m.n);
-      else if (m.k === 'chat') this.game.chatLine?.(this.player(m.from), m.text, m.team, m.from === this.playerOf.get(this.me));
+      else if (m.k === 'chat') this.game.chatLine?.(this.speaker(m.from), m.text, m.team, m.from === this.myChat);
     }
   }
 
@@ -298,20 +303,31 @@ export class Lockstep {
       else this.session.send(0, { k: 'stallq' });
       return;
     }
-    if (this.host) this.chat(this.hostPlayer, text, team);
+    if (this.host) this.chat(this.myChat, text, team);
     else this.session.send(0, { k: 'chat', text, team });
+  }
+  chatId(peer) {
+    if (this.playerOf.has(peer)) return this.playerOf.get(peer);
+    return this.watchers.includes(peer) ? 's' + peer : undefined;
+  }
+  speaker(id) {
+    if (typeof id !== 'string') return this.player(id);
+    const peer = +id.slice(1);
+    if (!this.watcherNames.has(peer)) return null;
+    return { name: this.watcherNames.get(peer), spectator: true, team: undefined, color: SPECTATOR_COLOR };
   }
   chat(pid, text, team) {
     text = String(text || '')
       .slice(0, CHAT_MAX)
       .trim();
-    const from = this.player(pid);
+    const from = this.speaker(pid);
     if (!text || !from) return;
-    for (const [peer, id] of this.playerOf) {
+    const to = [...this.playerOf, ...this.watchers.map(p => [p, 's' + p])];
+    for (const [peer, id] of to) {
       if (this.gone.has(peer)) continue;
-      const to = this.player(id);
-      if (team && to.team !== from.team) continue;
-      if (peer === 0) this.game.chatLine?.(from, text, team, pid === this.hostPlayer);
+      const watching = typeof id === 'string';
+      if (team && (from.spectator ? !watching : watching || this.player(id)?.team !== from.team)) continue;
+      if (peer === 0) this.game.chatLine?.(from, text, team, pid === this.myChat);
       else this.session.send(peer, { k: 'chat', from: pid, text, team });
     }
   }
@@ -553,7 +569,7 @@ export class Lockstep {
           continue;
         }
         const player = this.player(pid);
-        if (!player) continue;
+        if (!player && pid !== this.hostPlayer) continue;
         if (cmd.c === 'pause') {
           if (pid === this.hostPlayer && n > this.resumed) {
             this.pausedAt = n;
@@ -568,6 +584,7 @@ export class Lockstep {
           }
           continue;
         }
+        if (!player) continue;
         if (cmd.c === 'left') {
           if (player.left) continue;
           const ai = this.game.takeOver(player, pid);

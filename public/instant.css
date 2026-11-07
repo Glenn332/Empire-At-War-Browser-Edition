@@ -844,3 +844,32 @@
   padding: 0;
   font: 13px/1 'Segoe UI Symbol', 'Segoe UI', sans-serif;
 }
+#instantBattle .ib-fleet.watch {
+  background: repeating-linear-gradient(135deg, rgba(195, 171, 2, 0.07) 0 8px, rgba(0, 0, 0, 0.35) 8px 16px);
+}
+#instantBattle .ib-fleet.watch .ib-crest {
+  background: center / 22px no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f0d64a' stroke-width='1.8'%3E%3Cpath d='M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z'/%3E%3Ccircle cx='12' cy='12' r='3.2'/%3E%3C/svg%3E");
+}
+#instantBattle .ib-fleet.watch .ib-team {
+  flex: 0 0 116px;
+}
+#instantBattle .ib-watch {
+  margin: 18px 10px;
+  padding: 16px 18px;
+  border: 1px solid rgba(195, 171, 2, 0.35);
+  background: linear-gradient(180deg, rgba(195, 171, 2, 0.1), rgba(0, 0, 0, 0.35));
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#instantBattle .ib-watch-head {
+  color: var(--gold-hi);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+#instantBattle .ib-watch p {
+  margin: 6px 0 0;
+}

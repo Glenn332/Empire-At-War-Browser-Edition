@@ -1296,7 +1296,7 @@ export class UI {
     }
     if (best) return best;
     for (const s of all) {
-      if (!this.world.canSee(this.player, s)) continue;
+      if (!this.sees(s)) continue;
       this.screenOf(s, p);
       if (p.behind) continue;
       const r = this.screenRadius(s);
@@ -1422,7 +1422,7 @@ export class UI {
   }
 
   systemUnder(unit, x, y) {
-    if (!unit || unit.dead || unit.isSquad || !unit.hpDriven || !this.world.canSee(this.player, unit)) return null;
+    if (!unit || unit.dead || unit.isSquad || !unit.hpDriven || !this.sees(unit)) return null;
     return this.hardpointAt(unit, x, y) ? unit : null;
   }
 
@@ -1693,7 +1693,7 @@ export class UI {
       !prev.isSquad &&
       prev.hpDriven &&
       m.inside &&
-      this.world.canSee(this.player, prev) &&
+      this.sees(prev) &&
       this.amongHardpoints(prev, m.x, m.y)
     )
       this.hover = prev;
@@ -1788,6 +1788,10 @@ export class UI {
     g.stroke();
   }
 
+  sees(s) {
+    return this.game.observer ? this.world.viewerSees(s) : this.world.canSee(this.player, s);
+  }
+
   drawOverlay(g) {
     if (this.game.endScreen) return;
     this.layoutDogfights();
@@ -1801,7 +1805,7 @@ export class UI {
     this.overlayFrame = (this.overlayFrame || 0) + 1;
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
       const enemy = s.player.team !== me.team && s.player.id >= 0;
-      if (enemy && !this.world.canSee(me, s)) continue;
+      if (enemy && !this.sees(s)) continue;
       if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
@@ -1969,7 +1973,7 @@ export class UI {
         g.fillText(label, p.x, p.y - s / 2 - 7);
       }
     };
-    if (hv && !hv.isSquad && hv.hpDriven && this.world.canSee(me, hv)) {
+    if (hv && !hv.isSquad && hv.hpDriven && this.sees(hv)) {
       const hostile = hv.player.team !== me.team && hv.player.id >= 0;
       const focus = this.hardpointAt(hv, this.mouse.x, this.mouse.y);
       for (const h of hv.hardpoints) if (h.alive && h.targetable && h.destroyable && h !== focus) drawHp(h, false, hostile, tracked.has(h));

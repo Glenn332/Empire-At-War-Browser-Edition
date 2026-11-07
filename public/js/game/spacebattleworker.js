@@ -316,7 +316,7 @@ async function run(m) {
   const rules = m.setup?.instant
     ? new InstantRules(
         w,
-        () => w.players.find(p => p.id === m.viewer) || w.viewer,
+        () => (m.observer ? null : w.players.find(p => p.id === m.viewer) || w.viewer),
         (...a) => events.push(['game', 'message', a.map(x => plain(x))]),
         !!m.net
       )
@@ -405,6 +405,8 @@ async function run(m) {
     } else if (c.k === 'lockstep') {
       held.push(c);
       drain();
+    } else if (c.k === 'viewer') {
+      w.viewer = w.players.find(p => p.id === c.id) || null;
     } else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
     } else if (c.k === 'pace') {

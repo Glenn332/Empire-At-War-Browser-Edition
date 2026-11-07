@@ -60,7 +60,9 @@ export class MpBattles {
       b.setup.seed = (Math.imul((game.setup.seed >>> 0) ^ 0x9e3779b9, 31) + b.id * 0x85ebca6b) >>> 0;
       b.tag = 'b' + b.id;
       const fighting = new Set(b.setup.players.flatMap(p => p.peers || []));
-      b.setup.spectators = game.setup.players.filter(p => p.human && !p.left && !fighting.has(p.peer)).map(p => p.peer);
+      const watching = game.setup.players.filter(p => p.human && !p.left && !fighting.has(p.peer));
+      b.setup.spectators = watching.map(p => p.peer);
+      b.setup.spectatorNames = watching.map(p => p.name);
       b.spectator = b.setup.spectators.includes(net.me);
       b.local = b.local || b.spectator;
       if (b.local) b.setup.net = { session: channel(net.session, b.tag), me: net.me, spectators: b.setup.spectators };

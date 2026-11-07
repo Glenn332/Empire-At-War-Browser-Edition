@@ -846,6 +846,7 @@ export class LandWorld {
     this.beaten = new Set();
     this.mods = factions.map(() => ({ build: 1, credit: 1, damage: 1, health: 1 }));
     this.credits = factions.map(() => credits);
+    this.earned = factions.map(() => 0);
     this.bounty = new BountyBook();
     this.collected = factions.map(() => 0);
     this.ready = factions.map(() => []);
@@ -2996,8 +2997,11 @@ export class LandWorld {
       if (!u.structure || u.dead || u.side < 0) continue;
       if (u.income && !(u.income.skirmish && this.campaign) && (u.income.timer += dt) >= u.income.every) {
         u.income.timer -= u.income.every;
-        for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side])
-          this.credits[s] += u.income.value * this.incomeMod(u, s) * this.mods[s].credit;
+        for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side]) {
+          const g = u.income.value * this.incomeMod(u, s) * this.mods[s].credit;
+          this.credits[s] += g;
+          if (this.earned) this.earned[s] += g;
+        }
       }
       for (const h of u.heals || []) {
         if ((h.timer += dt) < h.every) continue;

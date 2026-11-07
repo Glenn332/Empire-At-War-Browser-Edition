@@ -80,7 +80,41 @@ export function battleTime(seconds) {
   return `${db.t('TEXT_BATTLE_TIME') || 'Battle Time:'} ${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
 }
 
+function spectatorReport(game, losses) {
+  const au = game.audio,
+    hush = au ? au.menuOnly : false;
+  if (au) {
+    au.menuOnly = true;
+    au.stopLoops?.();
+  }
+  game.endScreen = true;
+  const resume = () => {
+    if (au) au.menuOnly = hush;
+    game.endScreen = false;
+  };
+  const rehost = game.setup?.net?.rehost;
+  game.summary = game.spectatorView.report({
+    losses,
+    planet: game.setup?.campaign ? battlePlanetName(game) : '',
+    onExit: () => {
+      resume();
+      game.toggleMenu();
+    },
+    rehost: rehost
+      ? () => {
+          resume();
+          rehost();
+        }
+      : null
+  });
+  return true;
+}
+
 export async function showSummary(game, won, me) {
+  if (game.spectatorView?.report) {
+    const scored = game.scripts && game.scripts.losses ? game.scripts.losses() : null;
+    return spectatorReport(game, scored && [...scored.values()].some(m => m.size) ? scored : game.losses);
+  }
   const dlg = await openSummary();
   if (!dlg) return false;
   const t = game.world.time;
@@ -89,7 +123,9 @@ export async function showSummary(game, won, me) {
   const foe = new Map();
   for (const [team, m] of losses) if (team !== me) for (const [ty, n] of m) foe.set(ty, (foe.get(ty) || 0) + n);
   fillSummary(dlg, {
-    title: db.t(won ? 'TEXT_WIN_BATTLE' : 'TEXT_LOST_BATTLE') || (won ? 'Victory!' : 'Defeat!'),
+    title: game.spectatorView
+      ? game.spectatorView.winnerTitle(me)
+      : db.t(won ? 'TEXT_WIN_BATTLE' : 'TEXT_LOST_BATTLE') || (won ? 'Victory!' : 'Defeat!'),
     time: battleTime(t),
     planet: game.setup?.campaign ? battlePlanetName(game) : '',
     yours: losses.get(me),

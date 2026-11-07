@@ -156,6 +156,10 @@ export class SpaceMirror {
     this.worker.postMessage({ k: 'cmd', cmd: this.ours(cmd) });
   }
 
+  setViewer(p) {
+    this.worker?.postMessage({ k: 'viewer', id: p ? p.id : -1 });
+  }
+
   ours(cmd) {
     const page = new Map();
     for (const u of this.world.units) page.set(u.id, u);

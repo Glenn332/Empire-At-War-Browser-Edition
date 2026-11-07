@@ -109,6 +109,7 @@ export class LandUI {
     const w = (this.world = game.world),
       me = (this.me = game.me);
     this.selection = [];
+    this.seeAll = false;
     this.hover = null;
     this.armed = null;
     this.placing = null;
@@ -131,11 +132,11 @@ export class LandUI {
     };
 
     const siteFor = (b, uc) => {
-      if (b.isPad) return w.siteOptions(b.site, me).includes(uc) ? b.site : null;
+      if (b.isPad) return w.siteOptions(b.site, this.me).includes(uc) ? b.site : null;
       let best = null,
         bd = Infinity;
       for (const s of w.sites) {
-        if (!s.base || !w.siteOptions(s, me).includes(uc)) continue;
+        if (!s.base || !w.siteOptions(s, this.me).includes(uc)) continue;
         const d = Math.hypot(s.x - b.x, s.y - b.y);
         if (d < bd) {
           bd = d;
@@ -167,37 +168,37 @@ export class LandUI {
       tacticalPop: t => (t.has('Land_Override_Population_Value') ? t.num('Land_Override_Population_Value', 0) : undefined),
       abilityBlocked: (q, kind) => (q.abilityState ? w.abilityBlocked(q, kind) : null),
       buildOptions: b => {
-        if (b.isPad) return w.siteOptions(b.site, me);
+        if (b.isPad) return w.siteOptions(b.site, this.me);
         const u = b.members[0],
           out = [];
         if (!u) return out;
         return out.concat(u.builds);
       },
       cantBuild: (b, t) => {
-        if (siteFor(b, t)) return w.credits[me] < costOf(t) ? 'Not enough credits' : null;
+        if (siteFor(b, t)) return w.credits[this.me] < costOf(t) ? 'Not enough credits' : null;
         const u = b.members[0];
-        return u ? w.cantBuy(u, t, me) : 'Cannot be built there';
+        return u ? w.cantBuy(u, t, this.me) : 'Cannot be built there';
       },
       startBuild: (b, t) => {
         const s = siteFor(b, t);
-        if (s) return w.startSite(s, t, me);
+        if (s) return w.startSite(s, t, this.me);
         const u = b.members[0];
-        return u ? w.buy(u, t, me) : 'Cannot be built there';
+        return u ? w.buy(u, t, this.me) : 'Cannot be built there';
       },
       queuesOf: b => {
         if (b.isPad) return b.buildQueues;
         if (b.player !== this.player) return NONE;
         const m = new Map(),
-          qs = w.queues[me];
+          qs = w.queues[this.me];
         if (qs.units.length) m.set('units', qs.units);
         if (qs.upgrades.length) m.set('upgrades', qs.upgrades);
         w.sites.forEach((s, i) => {
-          if (s.building && s.building.side === me) m.set('site' + i, [s.building]);
+          if (s.building && s.building.side === this.me) m.set('site' + i, [s.building]);
         });
         return m;
       },
       cancelBuild: (b, name, index) => {
-        if (name === 'units' || name === 'upgrades') w.cancel(me, w.queues[me][name], index);
+        if (name === 'units' || name === 'upgrades') w.cancel(this.me, w.queues[this.me][name], index);
         else w.cancelSite(w.sites[+name.slice(4)]);
       }
     };
@@ -550,14 +551,14 @@ export class LandUI {
       }
       const fog = this.fogShown,
         F = 2 * CELL;
-      if (fog) g.drawImage(fog, lo[0] / F, fog.height - 1 - hi[1] / F, spanX / F, spanY / F, 0, 0, W, H);
+      if (fog && !this.seeAll) g.drawImage(fog, lo[0] / F, fog.height - 1 - hi[1] / F, spanX / F, spanY / F, 0, 0, W, H);
     }
     if (R.landBackdrop) g.drawImage(R.grid(W, H, R.landBackdrop), 0, 0);
     const tone = s => {
       const c = s >= 0 && w.colors?.[s];
       return c ? R.tone([Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)]) : R.tone([127, 149, 171]);
     };
-    const radar = this.radarOn(me),
+    const radar = this.seeAll || this.radarOn(me),
       done = new Set();
     const draw = (t, x, y, heading, s) => {
       const c = tone(s);
@@ -590,7 +591,7 @@ export class LandUI {
         const own = u.side === me || (u.side >= 0 && w.ally(u.side, me)),
           enemy = !own && u.side >= 0;
         if (enemy && (!t.enemy || u.cloaked || (!radar && !u.captures))) continue;
-        if (!own && u.seen === false && !t.fogged) continue;
+        if (!own && !this.seeAll && u.seen === false && !t.fogged) continue;
         if (many) done.add(q);
         draw(t, u.x, u.y, u.heading || 0, u.side);
       }

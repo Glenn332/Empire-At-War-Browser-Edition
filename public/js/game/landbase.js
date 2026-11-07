@@ -1087,6 +1087,7 @@ export function tickCapturables(world) {
       pt.locked = true;
       if (script === 'SECONDARYMININGFACILITY') {
         world.credits[pt.side] += 800;
+        if (world.earned) world.earned[pt.side] += 800;
         u.doomAt = world.time + 3;
       } else u.doomAt = world.time + 45;
     }

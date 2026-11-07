@@ -92,6 +92,7 @@ import { stepDualFlash } from './game/tutorialrewards.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
 import { Beacons, beaconType } from './game/beacons.js';
+import { SpectatorView } from './game/spectator.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
@@ -520,6 +521,11 @@ class Game {
       }
       if (cfg.human && this.setup.net) p.autofire = !!cfg.autofire;
     });
+    if (this.setup.spectate || (!this.setup.campaign && this.setup.net?.spectators?.includes(this.setup.net.me))) {
+      this.observer = true;
+      this.spectator = true;
+      this.human = world.players[0];
+    }
     await Promise.all(
       world.players
         .filter(p => !p.human)
@@ -728,11 +734,13 @@ class Game {
       if (loaded.missing.length)
         this.message(`${loaded.missing.length} saved item(s) no longer exist in the game data and were left out`, 'bad');
     } else if (this.setup.attract) this.startAttract();
+    else if (this.observer) this.message(`${db.t(map.textId) || map.planet} — you are spectating this battle`, 'good');
     else if (this.world.skirmish) this.message(`${db.t(map.textId) || map.planet} — destroy the enemy space station`);
     else if (this.instant) {
       this.message(`${db.t(map.textId) || map.planet} — the last fleet standing wins`);
       this.instant.intro();
     } else if (this.campaignBook && !this.setup.linkedTactical && !this.setup.tacticalStoryPlot) campaignIntro(this);
+    if (this.observer) this.spectatorView = new SpectatorView(this);
     this.last = performance.now();
     requestAnimationFrame(this.frame);
     window.game = this;
@@ -772,6 +780,8 @@ class Game {
     this.cine?.stop();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();
     this.ui?.destroy();
+    this.spectatorView?.destroy();
+    this.spectatorView = null;
     this.bench?.dispose();
     this.bench = null;
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
@@ -1309,8 +1319,17 @@ class Game {
       );
   }
 
+  noteDeath(e) {
+    this.cine.onDeath(e);
+    if (e.player.id >= 0 && (e.isSquad || !e.squad) && !e.isPad) {
+      const m = this.losses.get(e.player.team) || this.losses.set(e.player.team, new Map()).get(e.player.team);
+      m.set(e.type, (m.get(e.type) || 0) + 1);
+    }
+  }
+
   onEvent(kind, d) {
     const me = this.human;
+    this.spectatorView?.event(kind, d);
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))
       this.ui.radar.event('Default_Unit_Die', d.unit.x, d.unit.y);
     if (kind === 'beacon' && this.mirror && d.beacon.owner) (this.world.beacons ||= new Beacons()).add(d.beacon, this.world.time);
@@ -1322,6 +1341,11 @@ class Game {
     if (kind === 'interdict' && this.ui?.radar) {
       if (d.on) this.ui.radar.event('Interdict_Activated', d.unit.x, d.unit.y, d.unit);
       else this.ui.radar.remove(d.unit);
+    }
+    if (this.observer) {
+      if (kind === 'gameover') this.gameOver(d.winner, !!d.ready);
+      else if (kind === 'died') this.noteDeath(d.entity);
+      return;
     }
     if (kind === 'reinforcementReady' && d.player === me)
       this.message(`${db.t(d.type.str('Text_ID')) || d.type.name} ready — drag it from Reinforcements onto the map`, 'good');
@@ -1350,15 +1374,11 @@ class Game {
       if (d.player === me) this.message(`${d.pad.name} under your control`, 'good');
     } else if (kind === 'died') {
       const e = d.entity;
-      this.cine.onDeath(e);
-      if (e.player.id >= 0 && (e.isSquad || !e.squad) && !e.isPad) {
-        const m = this.losses.get(e.player.team) || this.losses.set(e.player.team, new Map()).get(e.player.team);
-        m.set(e.type, (m.get(e.type) || 0) + 1);
-      }
+      this.noteDeath(e);
       if (e.player === me && !e.isSquad && e.visualRadius > 60) this.message(`${e.name} lost`, 'bad');
     } else if (kind === 'baseAttacked' && me && d.unit.player.team === me.team) this.message('Our space station is under attack!', 'bad');
     else if (kind === 'gameover') this.gameOver(d.winner, !!d.ready);
-    else if (kind === 'teamDefeated' && me && d.team === me.team && !this.over) {
+    else if (kind === 'teamDefeated' && me && d.team === me.team && !this.over && !this.observer) {
       if (this.setup.net) this.knockedOut();
       else this.gameOver(d.winner);
     }
@@ -1676,6 +1696,21 @@ class Game {
 
   gameOver(winner, ready = false) {
     this.over = true;
+    if (this.observer) {
+      const t = this.world.time;
+      $('menuTitle').textContent = this.spectatorView ? this.spectatorView.winnerTitle(winner) : 'Battle over';
+      $('menuBody').innerHTML = `<p class="hint">Time ${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}</p>`;
+      $('resumeBtn').textContent = 'Keep watching';
+      this.spectatorView?.finished(winner);
+      setTimeout(
+        () =>
+          showSummary(this, true, winner).then(shown => {
+            if (!shown) this.toggleMenu();
+          }),
+        ready ? 0 : 2500
+      );
+      return;
+    }
     const won = winner === this.human.team;
     const s = this.human.stats,
       t = this.world.time;
@@ -1784,6 +1819,7 @@ class Game {
   }
 
   command(cmd) {
+    if (this.observer) return null;
     if (this.spectator) {
       this.message('You are watching this battle.', 'bad');
       return null;
@@ -1848,6 +1884,7 @@ class Game {
     this.chatOpening = false;
     if (!dlg) return;
     this.chatDlg = dlg;
+    this.spectatorView?.placeChat(dlg);
     let team = !!this.chatTeam;
     dlg.check('IDC_TEAM_MEMBERS_ONLY', team, v => {
       team = this.chatTeam = v;
@@ -1879,7 +1916,7 @@ class Game {
 
   chatLine(from, text, team, mine) {
     if (!from) return;
-    this.message(chatText(from, text, team), 'chat', '#' + from.color.getHexString());
+    this.message(chatText(from, text, team), 'chat', from.color?.getHexString ? '#' + from.color.getHexString() : from.color || '');
     if (!mine) this.audio.play('GUI_Common_Chat_Receive');
   }
 
@@ -2467,7 +2504,11 @@ async function boot() {
 
   const PALETTE = SLOT_COLORS;
   const MAX_PLAYERS = MAX_SLOTS;
-  const players = [{ human: true, team: 0, color: PALETTE[0], auto: true }];
+  const players = [
+    params.has('spectate')
+      ? { human: false, team: 0, difficulty: params.get('difficulty') || 'medium', color: PALETTE[0], auto: true }
+      : { human: true, team: 0, color: PALETTE[0], auto: true }
+  ];
   const addBot = (team, difficulty = params.get('difficulty') || 'medium') => {
     if (players.length >= MAX_PLAYERS) return;
     const color = PALETTE.find(c => !players.some(p => p.color === c)) || PALETTE[players.length % PALETTE.length];
@@ -2737,7 +2778,8 @@ async function boot() {
         popCap: lbench ? 9999 : getPop(),
         fog: lbench ? false : getFog(),
         teamFactions: [getTeam1(), getTeam2()],
-        players: all
+        players: all,
+        ...(params.has('spectate') ? { spectate: true } : {})
       });
       return;
     }
@@ -2755,7 +2797,8 @@ async function boot() {
       popCap: bench ? 9999 : getPop(),
       fog: bench ? false : getFog(),
       teamFactions: [getTeam1(), getTeam2()],
-      players: players.map(p => ({ ...p, ...(mptest && p.human ? { peer: 0, name: 'Test' } : {}) }))
+      players: players.map(p => ({ ...p, ...(mptest && p.human ? { peer: 0, name: 'Test' } : {}) })),
+      ...(params.has('spectate') ? { spectate: true } : {})
     })
       .start()
       .catch(e => {

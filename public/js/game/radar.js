@@ -22,6 +22,7 @@ const yes = (t, k, def) => {
 export class Radar {
   constructor() {
     this.events = [];
+    this.seeAll = false;
     this.icons = new Map();
     this.info = new Map();
     this.ready = this.load().catch(e => console.warn('radar', e));
@@ -439,7 +440,7 @@ export class Radar {
     if (w.radarFields?.length) g.drawImage(this.fieldLayer(w, W, H, X, Y, sx, sy, S), 0, 0, W, H);
     if (this.backdrop) g.drawImage(this.grid(W, H), 0, 0);
     const bit = player.bit,
-      radar = this.radarOn(w, player),
+      radar = this.seeAll || this.radarOn(w, player),
       sel = this.selColor && this.tone(this.selColor);
     let fill = null;
     for (let pass = 0; pass < 2; pass++)
@@ -450,7 +451,7 @@ export class Radar {
         const own = u.player.team === player.team,
           isEnemy = !own && u.player.id >= 0;
         if (isEnemy && (!t.enemy || u.cloaked || (!radar && !u.capture))) continue;
-        if (!own && w.fog && !(u.seenBy & bit) && !t.fogged) continue;
+        if (!own && w.fog && !this.seeAll && !(u.seenBy & bit) && !t.fogged) continue;
         if (u.isPad && u.padChild) continue;
         const owner = u.isPad || u.capture ? u.padOwner || (u.player.id >= 0 ? u.player : null) : u.player.id >= 0 ? u.player : null;
         const selected = sel && (u.selected || (u.squad && u.squad.selected));

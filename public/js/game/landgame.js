@@ -123,6 +123,7 @@ import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
 import { pressed, held, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
 import { beaconType } from './beacons.js';
+import { SpectatorView } from './spectator.js';
 
 const LAND_TICK = 1 / 30;
 const ARMED_ORDERS = new Set(['guard', 'attack', 'move', 'attackmove']);
@@ -269,7 +270,8 @@ export class LandGame {
       (setup.net && setup.players.find(p => p.human && (p.peer === setup.net.me || p.peers?.includes(setup.net.me)))) ||
       setup.players.find(p => p.human) ||
       setup.players[0];
-    this.spectator = !!setup.net?.spectators?.includes(setup.net.me);
+    this.observer = !!setup.spectate || (!setup.campaign && !!setup.net?.spectators?.includes(setup.net.me));
+    this.spectator = this.observer || !!setup.net?.spectators?.includes(setup.net.me);
     this.players = setup.players;
     this.me = setup.players.indexOf(human);
     this.teams = setup.players.map(p => p.team);
@@ -299,6 +301,8 @@ export class LandGame {
     this.cine?.stop?.();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();
     this.ui?.destroy?.();
+    this.spectatorView?.destroy();
+    this.spectatorView = null;
     this.bench?.dispose?.();
     const R = this.renderer;
     if (R?.isMirror) R.dispose?.();
@@ -328,6 +332,7 @@ export class LandGame {
   }
 
   command(cmd) {
+    if (this.observer) return null;
     if (this.spectator) {
       this.message?.('You are watching this battle.', 'bad');
       return null;
@@ -435,6 +440,7 @@ export class LandGame {
     this.chatOpening = false;
     if (!dlg) return;
     this.chatDlg = dlg;
+    this.spectatorView?.placeChat(dlg);
     let team = !!this.chatTeam;
     const box = dlg.edit('IDC_IME_EDITBOX');
     dlg.check('IDC_TEAM_MEMBERS_ONLY', team, v => {
@@ -605,7 +611,7 @@ export class LandGame {
     world.campaign = !!setup.campaign;
     world.clearShots = !setup.net;
     world.fowOn = setup.fog !== false;
-    world.autofireSides = new Set(!setup.net && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
+    world.autofireSides = new Set(!setup.net && !this.observer && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
     world.isHumanSide = s => !!this.players?.[s]?.human;
     const treasury = setup.campaign?.treasury;
     if (treasury)
@@ -899,6 +905,7 @@ export class LandGame {
     this.losses = new Map();
     world.onDeath = u => {
       if (this.invasionBook) invasionStructureDeath(world, this.invasionBook, u);
+      this.spectatorView?.landDeath(u);
       if (world.companyLost(u)) {
         const lk = this.teams[u.side] ?? 'w' + u.side,
           ty = u.squad?.type || u.type;
@@ -1072,6 +1079,7 @@ export class LandGame {
     if (setup.net) await this.prepareLockstep();
     this.fit();
     this.listen('resize', () => this.fit());
+    if (this.observer) this.spectatorView = new SpectatorView(this, 'land');
     window.game = this;
     if (this.setup.benchmark) await this.startBenchmark(this.setup.benchmark);
     if (this.scripts && !setup.net && !q.has('nowarm') && !this.savedScripts)
@@ -1113,6 +1121,7 @@ export class LandGame {
         credits: s.credits,
         popCap: s.popCap,
         fog: s.fog,
+        ...(s.spectate ? { spectate: true } : {}),
         teamFactions: s.teamFactions.slice(),
         players: s.players.map(p => ({ human: !!p.human, team: p.team, color: p.color, difficulty: p.difficulty }))
       },
@@ -2735,6 +2744,12 @@ export class LandGame {
         w.winner = this.teams[winner];
         this.end(w.winner === this.myTeam);
       }
+    } else if (this.observer) {
+      if (!this.over && w.winner !== undefined) {
+        this.spectatorView?.followTeam(w.winner);
+        this.spectatorView?.finished(w.winner);
+        this.end(true);
+      }
     } else if (!this.over && (w.beaten.has(this.myTeam) || w.winner !== undefined)) {
       if (this.lock && w.winner === undefined) this.knockedOut();
       else this.end(w.winner === this.myTeam);
@@ -3752,9 +3767,11 @@ export class LandGame {
     this.over = !this.invasionBook;
     const d = document.createElement('div');
     d.id = 'landend';
-    d.textContent = won
-      ? db.t('TEXT_WIN_TACTICAL') || db.t('TEXT_VICTORY') || 'Victory'
-      : db.t('TEXT_LOSE_TACTICAL') || db.t('TEXT_DEFEAT') || 'Defeat';
+    d.textContent = this.observer
+      ? this.spectatorView?.winnerTitle(this.tacticalWinner) || 'Battle over'
+      : won
+        ? db.t('TEXT_WIN_TACTICAL') || db.t('TEXT_VICTORY') || 'Victory'
+        : db.t('TEXT_LOSE_TACTICAL') || db.t('TEXT_DEFEAT') || 'Defeat';
     if (!suppress) document.body.appendChild(d);
     const f = db.faction(this.factions[this.me]);
     if (!suppress) this.audio.play(f.str(won ? 'SFXEvent_HUD_Won_Land_Battle' : 'SFXEvent_HUD_Lost_Land_Battle'));

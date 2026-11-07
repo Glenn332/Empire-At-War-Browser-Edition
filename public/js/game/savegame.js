@@ -243,6 +243,7 @@ function spaceSnapshot(game, name) {
       credits: setup.credits,
       popCap: setup.popCap,
       fog: setup.fog,
+      ...(setup.spectate ? { spectate: true } : {}),
       teamFactions: setup.teamFactions.slice(),
       players: setup.players.map(p => ({ human: !!p.human, team: p.team, color: p.color, difficulty: p.difficulty }))
     },

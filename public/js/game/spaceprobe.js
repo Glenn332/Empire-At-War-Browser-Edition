@@ -89,6 +89,7 @@ export function battleSnapshot(game, save = null, refs = null) {
     hyper,
     holdHyperspace: !!w.holdHyperspace,
     viewer: game.human ? game.human.id : null,
+    observer: !!game.observer,
     at: w.time,
     ai: !(game.setup.benchmark || game.setup.attract),
     switches: ['oldai', 'nofreestore', 'noscripts', 'noplans'].filter(k => new URLSearchParams(location.search).has(k))
