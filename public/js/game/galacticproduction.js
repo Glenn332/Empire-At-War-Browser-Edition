@@ -502,12 +502,13 @@ export function cancelProduction(g, planet, owner, item) {
     const at = list.indexOf(item);
     if (at < 0) continue;
     list.splice(at, 1);
-    adjustCredits(g, owner, item.ai || item.payg ? item.paid || 0 : item.cost);
+    adjustCredits(g, owner, item.ai || item.payg ? item.paid || 0 : item.cost, true);
     return true;
   }
   return false;
 }
 
+const PLACED_ELSEWHERE = ['DUMMY_STAR_BASE', 'DUMMY_GROUND_BASE', 'DUMMY_ORBITAL_STRUCTURE', 'DUMMY_GROUND_STRUCTURE'];
 const ORBITAL_PRODUCT = ['FLEET', 'DUMMY_SPACE_FIGHTER_SQUADRON', 'DUMMY_ORBITAL_STRUCTURE', 'DUMMY_STARSHIP'];
 export function stepProduction(g, seconds, ai = null, conflictAt = null) {
   const completed = [];
@@ -574,6 +575,8 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
       list.shift();
       const advance = techAdvance(q.type);
       const record = advance > 0 ? null : placeStartingForce(p, q.owner, q.type, g.fleets);
+      if (!advance && !record && !PLACED_ELSEWHERE.some(b => hasBehavior(q.type, b)))
+        adjustCredits(g, q.owner, q.ai || q.payg ? q.paid || 0 : q.cost, true);
       const player = playerOf(g, q.owner),
         counts = player.builtCounts || (player.builtCounts = {});
       counts[q.type.name] = (counts[q.type.name] || 0) + 1;
