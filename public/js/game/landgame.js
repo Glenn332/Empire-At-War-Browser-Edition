@@ -2844,7 +2844,10 @@ export class LandGame {
         for (const p of this.props || []) p.grp.visible = !p.scriptHidden;
       } else {
         w.viewSide = undefined;
-        for (const u of w.units) u.holder.visible = !u.inside && !u.scriptHidden;
+        for (const u of w.units) {
+          u.seen = true;
+          u.holder.visible = !u.inside && !u.scriptHidden;
+        }
         for (const prop of this.props || []) prop.grp.visible = !prop.scriptHidden;
         paintFog(this.terrain, null, false);
       }
