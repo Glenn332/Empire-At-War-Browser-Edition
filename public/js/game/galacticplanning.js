@@ -888,11 +888,9 @@ export class GalacticPlanning {
         force.specs.map(spec => ({ force, spec, n: 0, fit: 0, escort: force.flags.has('ESCORTFORCE') }))
       ),
       candidates = [];
-    const existing = def.magic
-      ? cache.entries.filter(e => e.type.bool('Is_Named_Hero') && (!this.reservations.has(e.record) || options.all))
-      : def.freeStore
-        ? cache.entries.filter(e => !this.reservations.has(e.record) || options.all)
-        : [];
+    const existing = cache.entries.filter(
+      e => (e.type.bool('Is_Named_Hero') || (def.freeStore && !def.magic)) && (!this.reservations.has(e.record) || options.all)
+    );
     for (const e of existing) {
       if (!def.engaged && (this.game.battle?.p === e.planet.index || this.game.pendingBattle?.request?.p === e.planet.index)) continue;
       const matches = linesOf(def, e.type)
