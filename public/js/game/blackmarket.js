@@ -107,7 +107,7 @@ export function buyItem(g, player, row) {
 }
 
 export function aiChoice(rows, credits, random = simRandom) {
-  const can = rows.filter(r => !r.bought && r.price <= credits && r.price > 0),
+  const can = rows.filter(r => r.item && r.price <= credits && r.price > 0),
     total = can.reduce((n, r) => n + r.price, 0);
   if (!can.length) return null;
   let at = random() * total;

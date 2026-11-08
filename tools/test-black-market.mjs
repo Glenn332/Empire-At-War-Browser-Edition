@@ -61,9 +61,9 @@ assert.equal(
   bm.aiChoice(
     again.filter(r => r.bought),
     1e9
-  ),
-  null,
-  'the computer player does not pick what it has'
+  )?.bought,
+  true,
+  'the computer pick does not look at the bought mark, as in the engine'
 );
 assert.equal(bm.aiChoice(rows, 0), null, 'nothing affordable: no purchase');
 const cheap = [
