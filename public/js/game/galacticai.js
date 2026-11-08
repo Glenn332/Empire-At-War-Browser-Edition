@@ -9,7 +9,7 @@ import { GalacticPlanning } from './galacticplanning.js';
 import { GalacticBudget } from './galacticbudget.js';
 import { GalacticForces, strategicPower } from './galacticforces.js';
 import { GalacticFreeStore } from './galacticfreestore.js';
-import { groundLevel } from './galacticproduction.js';
+import { groundLevel, aiProductionBlock } from './galacticproduction.js';
 import { planetIncome, playerIncome, fiscalCycleSeconds, orbitFleets } from './galacticeconomy.js';
 import { relation } from './galacticrelation.js';
 import { blackMarketItems } from './blackmarket.js';
@@ -427,16 +427,20 @@ export class GalacticMind extends Reason {
     }
     if (name === 'VARIABLE_SELF.BUDGETALLOCATION') return categories?.length ? c.budget.category(categories[0])?.weight || 0 : 0;
     if (name === 'VARIABLE_SELF.CANADVANCETECH') {
-      const pl = c.player;
-      return +(
-        pl.tech < pl.maxTech &&
-        [...db.types.values()].some(
+      const pl = c.player,
+        item = [...db.types.values()].find(
           t =>
-            t.num('Build_Advances_Tech_Level', 0) > pl.tech &&
-            t.num('Tech_Level', 0) <= pl.tech &&
+            t.num('Build_Advances_Tech_Level', 0) === pl.tech + 1 &&
+            t.num('Tech_Level', 0) === pl.tech &&
             t.list('Affiliation').some(a => key(a) === key(pl.faction))
-        )
-      );
+        );
+      if (!item) return 0;
+      for (const world of g.planets) {
+        if (key(world.owner) !== key(pl.faction)) continue;
+        for (const q of Object.values(world.production || {})) if (q.slice(0, 2).some(job => job.type === item)) return 1;
+        if (!aiProductionBlock(g, world.index, pl.faction, item)) return 1;
+      }
+      return 0;
     }
     if (name === 'VARIABLE_SELF.HASTECHTOPRODUCE') {
       if (!types.length) throw new UnknownPerception(variable + ' requires Parameter_Type');

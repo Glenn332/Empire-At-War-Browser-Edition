@@ -540,7 +540,7 @@ export class PlanetOverview extends NativePanel {
       const mark = this.fleetIcons[i],
         raid = !!fleet && isRaidForce(fleet),
         stealth = !!fleet && fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u)),
-        pick = raid ? 1 : stealth ? 0 : -1;
+        pick = stealth ? 0 : raid ? 1 : -1;
       if (mark) {
         const name = mark.alternates[pick],
           rect = name && iconCanvasRect(name);

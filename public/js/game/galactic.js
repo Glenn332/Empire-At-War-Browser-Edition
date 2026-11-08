@@ -1524,6 +1524,7 @@ export class GalacticGame {
       if (this.stackDown && !this.stackMoved && Math.hypot(e.clientX - this.stackDown.x, e.clientY - this.stackDown.y) > 12) {
         this.stackMoved = true;
         this.story?.generic(this.dragFleet ? 'start_fleet_drag' : this.dragGround !== undefined ? 'start_land_drag' : '');
+        if (this.dragFleet) this.mergeDraggedStack();
       }
       if (!this.dragFleet && this.dragGround === undefined) this.tips?.moved();
       if (this.drag && this.panFree()) {
@@ -1561,18 +1562,6 @@ export class GalacticGame {
         return;
       }
       const spot = this.pickStack(this.lastSpots, e.clientX, e.clientY);
-      if (spot?.fleets?.length > 1 && this.fleetCombine !== false) {
-        const mine = spot.fleets.filter(x => x.owner === this.me && !x.leg);
-        if (mine.length > 1) {
-          for (const o of mine.slice(1)) {
-            mine[0].units.push(...o.units);
-            o.units = [];
-          }
-          this.galaxy.fleets = this.galaxy.fleets.filter(x => x.units.length);
-          this.galacticBattleChanged();
-          this.story?.generic('merge_fleets');
-        }
-      }
       const f = spot?.fleets ? spot.fleets.find(x => x.owner === this.me && !x.leg && x.units.length) || spot.f : spot?.f || null;
       if (f && f.owner === this.me && !f.leg) {
         this.dragFleet = f;
@@ -2074,12 +2063,36 @@ export class GalacticGame {
     return (this.lastSpecialSpots || []).find(s => Math.abs(s.x - x) <= hw && Math.abs(s.y - y) <= hh) || null;
   }
 
+  mergeDraggedStack() {
+    const f = this.dragFleet,
+      planet = this.galaxy.planets[f.planet];
+    if (!planet || f.leg || this.fleetCombine === false) return;
+    const slot = f.slot ?? 0,
+      own = this.galaxy.fleets.filter(x => x.owner === this.me && x.planet === f.planet && !x.leg && x.units.length),
+      group =
+        slot === 0
+          ? own.filter(x => (x.slot ?? 0) === 0)
+          : slot === 2 && planet.owner !== this.me
+            ? own.filter(x => [0, 2].includes(x.slot ?? 0))
+            : [];
+    if (group.length < 2) return;
+    const target = (slot === 2 && group.find(x => x.slot === 2)) || group[0];
+    for (const o of group) {
+      if (o === target) continue;
+      target.units.push(...o.units);
+      o.units = [];
+    }
+    this.galaxy.fleets = this.galaxy.fleets.filter(x => x.units.length || x.leg);
+    this.dragFleet = target;
+    this.galacticBattleChanged();
+    this.story?.generic('merge_fleets');
+  }
+
   specialSpots(ui) {
     const f = this.dragFleet,
       out = [];
     if (!f || f.owner !== this.me) return out;
-    const rank = u => (u.carries || u.type).num('Ranking_In_Category', 0),
-      record = f.units.reduce((best, u) => (best === null || rank(u) < rank(best) ? u : best), null);
+    const record = f.units[0] || null;
     const hero = record && isHero(record);
     for (const p of this.galaxy.planets) {
       if (p.background || !(p.index === f.planet || this.dragReach?.has(p.index)) || !intelligence(this.galaxy, p)?.discovered) continue;

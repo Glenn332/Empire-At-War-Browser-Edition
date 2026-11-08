@@ -141,10 +141,7 @@ export function setSandboxObjectives(host, game, plot, constants) {
           .trim()
           .split(/\s+/)
           .filter(Boolean);
-      const at = Math.max(
-          0,
-          [...db.factions.keys()].findIndex(k => key(k) === me)
-        ),
+      const at = key(me) === 'REBEL' ? 0 : key(me) === 'UNDERWORLD' ? 2 : 1,
         text = texts.length ? texts[Math.min(at, texts.length - 1)] : '';
       if (!text) continue;
       const hostile = !friendly;
