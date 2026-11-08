@@ -121,3 +121,30 @@ const { galacticStoryReward } = await import('../public/js/game/storyrewards.js'
   assert.equal(game.galaxy.autoReveal, true);
 }
 console.log('ok maps');
+
+{
+  const T = n => ({ name: n });
+  const units = [
+    { type: T('Tank'), health: 100, maxHealth: 100 },
+    { type: T('Tank'), health: 100, maxHealth: 100 },
+    { def: T('Tank'), health: 50, maxHealth: 200 },
+    { type: T('Shield_Gen'), dome: { on: true } }
+  ];
+  const game = { world: { units }, paused: false, togglePause() { this.paused = !this.paused; } };
+  const errors = new Map();
+  const run = (reward, ...rewards) => tutorialReward({ game, errors }, { name: reward, reward, rewards });
+  run('SET_HEALTH', 'tank', '40');
+  assert.deepEqual(units.slice(0, 3).map(u => u.health), [40, 100, 50], 'one object by default');
+  run('SET_HEALTH', 'TANK', '25', '0');
+  assert.deepEqual(units.slice(0, 3).map(u => u.health), [25, 25, 50], 'zero means every object of the type');
+  run('DISABLE_SPECIAL_STRUCTURE', 'Shield_Gen', '1');
+  assert.equal(units[3].dome.storyOff, true);
+  run('DISABLE_SPECIAL_STRUCTURE', 'Shield_Gen', '0');
+  assert.equal(units[3].dome.storyOff, false);
+  run('PAUSE_GAME');
+  run('PAUSE_GAME');
+  assert.equal(game.paused, true, 'PAUSE_GAME pauses, it does not toggle back');
+  run('SET_WEATHER');
+  assert.ok(errors.has('SET_WEATHER'));
+}
+console.log('ok tactical');

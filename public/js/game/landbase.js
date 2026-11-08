@@ -459,7 +459,7 @@ export function shieldsUp(world) {
   const out = [];
   for (const u of world.units) {
     if (!u.dome || u.dead) continue;
-    u.dome.on = !u.dome.powered || world.units.some(x => x.power && !x.dead && world.ally(x.side, u.side));
+    u.dome.on = !u.dome.storyOff && (!u.dome.powered || world.units.some(x => x.power && !x.dead && world.ally(x.side, u.side)));
     u.dome.strong = world.teamSides(u.side).some(s =>
       [...world.owned[s]].some(n => {
         const t = db.type(n);

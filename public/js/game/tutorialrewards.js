@@ -181,6 +181,32 @@ export function tutorialReward(host, e) {
       if (!present(p[0]) || !present(p[1])) host.errors?.set(e.name, 'Set spawn failed due to incomplete parameters');
       else if (game.world?.units) activateSpawners(game.world, p[0], parseFloat(p[1]) || 0);
       return true;
+    case 'SET_WEATHER':
+      if (!present(p[0])) host.errors?.set(e.name, 'Set weather failed due to incomplete parameters');
+      return true;
+    case 'PAUSE_GAME':
+      if (!game.paused) game.togglePause?.();
+      return true;
+    case 'SET_HEALTH': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      const pct = atoi(p[1]),
+        list = (game.world?.units || []).filter(u => !u.dead && key((u.type || u.def)?.name) === key(p[0]));
+      if (!list.length) {
+        host.errors?.set(e.name, "Can't find type " + key(p[0]));
+        return true;
+      }
+      let n = present(p[2]) ? atoi(p[2]) : 1;
+      if (n === 0) n = list.length;
+      for (const u of list.slice(0, Math.max(0, n))) if (u.maxHealth > 0) u.health = (u.maxHealth * pct) / 100;
+      return true;
+    }
+    case 'DISABLE_SPECIAL_STRUCTURE': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      const u = (game.world?.units || []).find(x => !x.dead && key((x.type || x.def)?.name) === key(p[0]));
+      if (!u) host.errors?.set(e.name, 'Invalid structure ' + p[0] + ' in DISABLE_SPECIAL_STRUCTURE');
+      else if (u.dome) u.dome.storyOff = atoi(p[1]) !== 0;
+      return true;
+    }
     case 'SET_PLANET_SPAWN': {
       if (!present(p[0]) || !present(p[1]) || !present(p[2])) {
         host.errors?.set(e.name, 'Set planet spawn failed due to incomplete parameters');
