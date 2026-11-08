@@ -125,6 +125,11 @@ function spaceSnapshot(game, name) {
       if (t) out.target = t;
       else if (o.kind === 'attack' || o.kind === 'guard') out.kind = 'idle';
     }
+    if (o.auto) {
+      out.auto = 1;
+      if (o.resume) out.resume = order(o.resume);
+      if (o.wasAlone) out.wasAlone = 1;
+    }
     return out;
   };
   const abilities = u =>
@@ -187,6 +192,7 @@ function spaceSnapshot(game, name) {
       order: order(s.order),
       f: s.fighters.map(body)
     };
+    if (s.alone) o.alone = 1;
     if (s.queue && s.queue.length) o.way = s.queue.map(order);
     if (s.target) {
       const t = ref(s.target);
@@ -474,6 +480,11 @@ export function restore(game, save) {
       out.target = get(o.target);
       if (!out.target && (o.kind === 'attack' || o.kind === 'guard')) return { kind: 'idle' };
     }
+    if (o.auto) {
+      out.auto = true;
+      if (o.resume) out.resume = order(o.resume);
+      if (o.wasAlone) out.wasAlone = true;
+    }
     return out;
   };
   const queues = (u, list) => {
@@ -495,6 +506,7 @@ export function restore(game, save) {
     const e = made[i];
     if (!e) return;
     e.setOrder(order(o.order));
+    if (o.alone) e.alone = true;
     if (o.way) e.queue = o.way.map(order);
     const t = get(o.target);
     if (t) e.target = e.isSquad ? t : t.isSquad ? t.fighters[0] || null : t;

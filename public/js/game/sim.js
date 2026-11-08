@@ -1492,7 +1492,10 @@ export class World {
       u.obj.scale.setScalar(1e-4);
       u.obj.updateMatrix();
     }
-    if (e.isSquad) e.hyper = HYPER.frames / LOGIC_FPS;
+    if (e.isSquad) {
+      e.hyper = HYPER.frames / LOGIC_FPS;
+      e.alone = true;
+    }
   }
 
   removeUnit(u) {
@@ -4436,9 +4439,10 @@ export class World {
         ? lt.num('Guard_Chase_Range', 0)
         : kind === 'attackmove'
           ? lt.num('Attack_Move_Response_Range', 0)
-          : kind === 'idle' && s.alone
+          : kind === 'idle'
             ? lt.num('Idle_Chase_Range', 0)
             : -1;
+    const parked = kind === 'idle' && !s.alone;
     const ext = lt.num('Autonomous_Move_Extension_Vs_Attacker', 0);
     const guarded = kind === 'guard' && ord.target && !ord.target.dead ? ord.target : null;
     const anchor = kind === 'guard' ? (guarded ? this.posOf(guarded) : ord) : kind === 'idle' && s.home ? s.home : lead;
@@ -4446,7 +4450,9 @@ export class World {
     const inWeapon = o => dist2(lead, o) <= (reach + o.hitRadius) ** 2;
     const respond = (o, start = true) => {
       if (range < 0) return false;
-      const f = range + (ext && (this.hurtBy(s, o) || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
+      const hurt = (ext || parked) && this.hurtBy(s, o);
+      if (parked && !hurt) return false;
+      const f = range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
       if (start && kind !== 'attackmove' && dist2(lead, anchor) > f * f) return false;
       return dist2(anchor, o) <= (f + reach + o.hitRadius) ** 2;
     };
@@ -4577,7 +4583,23 @@ export class World {
     if (!t.fighters[0] || t.mode === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
     const tt = t.target || t.fireTarget;
     if (tt && !tt.dead && tt.isSquad) return;
-    t.setOrder({ kind: 'attack', target: by });
+    this.autoAttack(t, by);
+  }
+
+  autoAttack(s, e) {
+    const o = s.order,
+      on = o.kind === 'attack';
+    s.setOrder({ kind: 'attack', target: e, auto: true, resume: on ? o.resume : o, wasAlone: on ? o.wasAlone : s.alone }, true);
+  }
+
+  attackOver(s) {
+    const o = s.order,
+      r = o.auto ? o.resume : null;
+    s.scanTimer = 0;
+    s.homeOf = null;
+    if (!r || r.kind === 'attack') return this.arrived(s);
+    s.setOrder(r, true);
+    s.alone = r.kind === 'idle' || !!o.wasAlone;
   }
 
   inCone(u, x, y, z, yaw, pitch, r2) {
@@ -4648,17 +4670,22 @@ export class World {
     let ord = s.order;
     s.scanTimer -= dt;
     let tgt = s.target && !s.target.dead ? s.target : null;
+    if (s.target && !tgt) {
+      s.scanTimer = 0;
+      s.homeOf = null;
+    }
     if (ord.kind === 'attack') tgt = ord.target && !ord.target.dead ? ord.target : null;
     if (!tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
-        s.setOrder({ kind: 'attack', target: e });
+        if (ord.kind === 'attack') s.setOrder({ ...ord, target: e }, true);
+        else s.target = e;
         ord = s.order;
         tgt = e;
       }
     }
     if (ord.kind === 'attack' && !tgt) {
-      s.setOrder({ kind: 'idle' });
+      this.attackOver(s);
       ord = s.order;
     }
     const lead = s.fighters[0];
