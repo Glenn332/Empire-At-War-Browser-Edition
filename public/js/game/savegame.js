@@ -278,6 +278,33 @@ function spaceSnapshot(game, name) {
       groups: [...game.ui.groups].map(([n, list]) => [n, list.map(ref).filter(Boolean)]).filter(([, l]) => l.length),
       selection: game.ui.selection.map(ref).filter(Boolean),
       storyBlips: [...(w.storyBlips || new Map())].map(([n, b]) => (b.obj ? [n, ref(b.obj)] : [n, null, r1(b.x), r1(b.y)])),
+      superweapons: w.tacticalSuperweapons
+        ? {
+            depth: w.tacticalSuperweapons.disableDepth,
+            destroyed: !!w.tacticalSuperweapons.destroyed,
+            frame: w.tacticalSuperweapons.frame,
+            records: w.tacticalSuperweapons.units.flatMap(u => {
+              const r = w.tacticalSuperweapons.record(u),
+                id = ref(u);
+              if (!r || !id) return [];
+              return [
+                {
+                  unit: id,
+                  state: r.state,
+                  initialized: r.initialized,
+                  target: r.target ? ref(r.target) : null,
+                  at: r.target ? [r.target.x, r.target.y, r.target.z] : null,
+                  targetType: r.targetType?.name || null,
+                  speed: r.speed,
+                  acceleration: r.acceleration,
+                  left: r.left,
+                  previousDistance: r.previousDistance,
+                  transform: r.transform ? { ...r.transform, rotation: r.transform.rotation.slice() } : null
+                }
+              ];
+            })
+          }
+        : null,
       specialWeapons: (w.specialWeapons || []).map(sw => ({
         type: sw.type.name,
         player: w.players.indexOf(sw.player),
@@ -573,6 +600,38 @@ export function restore(game, save) {
       const obj = r ? get(r) : null;
       if (obj) w.storyBlips.set(n, { obj });
       else if (!r) w.storyBlips.set(n, { x, y });
+    }
+  }
+  if (snap.superweapons && w.tacticalSuperweapons) {
+    const t = w.tacticalSuperweapons,
+      o = snap.superweapons;
+    t.disableDepth = o.depth || 0;
+    t.destroyed = !!o.destroyed;
+    t.frame = o.frame || 0;
+    for (const saved of o.records || []) {
+      const unit = get(saved.unit);
+      if (!unit) continue;
+      t.add(unit);
+      const r = t.record(unit);
+      if (!r) continue;
+      const type = saved.targetType ? db.type(saved.targetType) : null;
+      let target = saved.target ? get(saved.target) : null;
+      if (!target && saved.at && type)
+        target =
+          t.targets
+            .filter(x => x.type === type || x.type?.name === type.name)
+            .sort((a, b) => Math.hypot(a.x - saved.at[0], a.y - saved.at[1]) - Math.hypot(b.x - saved.at[0], b.y - saved.at[1]))[0] || null;
+      Object.assign(r, {
+        state: saved.state,
+        initialized: !!saved.initialized,
+        target,
+        targetType: type,
+        speed: saved.speed || 0,
+        acceleration: saved.acceleration || 0,
+        left: saved.left || 0,
+        previousDistance: saved.previousDistance || 0,
+        transform: saved.transform || null
+      });
     }
   }
   if (Array.isArray(snap.specialWeapons))

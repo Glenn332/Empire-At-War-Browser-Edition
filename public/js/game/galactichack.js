@@ -18,29 +18,32 @@ function target(game, actor, planet) {
   return null;
 }
 
+const humanHacker = (game, player) => !!player && (player.ai === null || key(player.faction) === key(game.me));
+
 export function canHack(game, actor, planet) {
-  return !!target(game, actor, planet) && (playerOf(game.galaxy, actor.owner)?.credits ?? 0) >= hackCost();
+  const player = playerOf(game.galaxy, actor.owner);
+  return !!target(game, actor, planet) && (!humanHacker(game, player) || (player?.credits ?? 0) >= hackCost());
 }
 
 export function activateHack(game, actor, planet, ability) {
   const player = playerOf(game.galaxy, actor.owner);
   if (!player || !target(game, actor, planet)) return false;
-  if (player.ai === null || key(player.faction) === key(game.me)) {
+  if (humanHacker(game, player)) {
     game.openHackDialog?.({ actor, planet });
     return false;
   }
-  return executeHack(game, actor, planet);
+  return executeHack(game, actor, planet, true);
 }
 
-export function executeHack(game, actor, planet) {
+export function executeHack(game, actor, planet, free = false) {
   const g = game.galaxy,
     player = playerOf(g, actor.owner),
-    cost = hackCost();
+    cost = free ? 0 : hackCost();
   if (!player || actor.dead || !target(game, actor, planet) || player.credits < cost) {
     if (key(actor.owner) === key(game.me)) game.audio?.play('GUI_Bad_Sound');
     return false;
   }
-  adjustCredits(g, player.faction, -cost);
+  if (cost) adjustCredits(g, player.faction, -cost);
   game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.story?.despawn?.(actor);
