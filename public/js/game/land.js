@@ -4398,7 +4398,7 @@ export class LandWorld {
           !this.units.some(x => x !== u && x.structure && !x.dead && this.ally(x.side, u.side) && x.site && x.site.base && x.relevant)
         ) {
           this.beaten.add(this.team[u.side]);
-          const left = [...new Set(this.team)].filter(t => !this.beaten.has(t));
+          const left = [...new Set(this.team.slice(0, this.playerSides ?? this.team.length))].filter(t => !this.beaten.has(t));
           if (left.length <= 1) {
             this.loser = this.team[u.side];
             this.winner = left[0] ?? -1;

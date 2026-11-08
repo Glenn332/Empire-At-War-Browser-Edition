@@ -561,6 +561,18 @@ export class LandGame {
     if (!setup.attract && (await showLoadScreen({ setup, map, land: true }))) hideSplash();
     this.teams = this.players.map(p => p.team);
     this.factions = this.players.map(p => setup.teamFactions[p.team]);
+    if (setup.linkedTactical) {
+      let team = Math.max(-1, ...this.teams) + 1;
+      for (const o of map.objects || []) {
+        const owner = o.type && authoredMapOwner(setup, o),
+          faction = owner && db.faction(owner);
+        if (!faction || faction.bool('Is_Neutral') || /^(NEUTRAL|HOSTILE)$/i.test(faction.name) || !missionMapActor(setup, o)) continue;
+        if (faction.bool('Can_Control_Planets') && o.type.bool('Is_Branched_Map_Discardable', true) && !o.type.bool('Is_Marker')) continue;
+        if (this.factions.some(f => String(f).toUpperCase() === faction.name.toUpperCase())) continue;
+        this.factions.push(faction.name);
+        this.teams.push(team++);
+      }
+    }
     while (this.ai.length < this.players.length) this.ai.push({ timer: 4, wait: null, sleep: 0 });
     const t = (this.terrain = map.terrain);
     if (!t) throw new Error('not a land map: ' + setup.mapFile);
@@ -610,6 +622,7 @@ export class LandGame {
       popCap: setup.popCap
     }));
     world.campaign = !!setup.campaign;
+    world.playerSides = this.players.length;
     world.clearShots = !setup.net;
     world.fowOn = setup.fog !== false;
     world.autofireSides = new Set(!setup.net && !this.observer && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
@@ -627,7 +640,12 @@ export class LandGame {
         return { ai: true, reserve: Math.max(0, t.credits - t.share), released: 0, adjust: t.adjust ?? 1, parts: t.parts || [] };
       });
     world.viewer = this.me;
-    world.colors = this.players.map(p => (p.color ? new THREE.Color(p.color) : null));
+    world.colors = this.factions.map((f, i) => {
+      const p = this.players[i];
+      if (p) return p.color ? new THREE.Color(p.color) : null;
+      const c = db.faction(f)?.vec('Color', null);
+      return c ? new THREE.Color(c[0] / 255, c[1] / 255, c[2] / 255) : null;
+    });
     world.tables = await loadLandTables().catch(() => null);
     await loadBlobMaterials().catch(() => null);
     await loadPrioritySets().catch(e => console.warn('targeting priorities not loaded', e));
@@ -704,7 +722,7 @@ export class LandGame {
               );
           } else if (
             authoredMapOwner(setup, o) &&
-            !this.factions.some(f => String(f).toUpperCase() === String(authoredMapOwner(setup, o)).toUpperCase()) &&
+            !this.factions.slice(0, this.players.length).some(f => String(f).toUpperCase() === String(authoredMapOwner(setup, o)).toUpperCase()) &&
             db.faction(authoredMapOwner(setup, o))?.bool('Can_Control_Planets') &&
             o.type.bool('Is_Branched_Map_Discardable', true) &&
             !o.type.bool('Is_Marker')
