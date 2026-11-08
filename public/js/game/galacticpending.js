@@ -436,7 +436,7 @@ export class PendingBattle {
       for (const p of game.galaxy.players) p.bounty = 0;
       const outcome = game.battles.resolveFor(request);
       if (!outcome) return this.fight(request);
-      if ([request.attacker, request.defender].some(f => key(f) === key(game.me)))
+      if ([request.attacker, request.defender].some(f => key(f) === key(game.localFaction ?? game.me)))
         this.present(request, outcome, silent).catch(error => console.error(error));
       game.ui?.refresh();
       game.overview?.refresh();
@@ -465,7 +465,7 @@ export class PendingBattle {
   }
 
   losses({ sides, result }, attacker, defender) {
-    const me = this.game.me,
+    const me = this.game.localFaction ?? this.game.me,
       lost = [new Map(), new Map()],
       dead = [[], []];
     for (let i = 0; i < 2; i++)
@@ -489,7 +489,7 @@ export class PendingBattle {
     const space = mode === 'space',
       planetName = db.t(planet.type.str('Text_ID')) || planet.name;
     const { yours, enemy, mine, theirs } = this.losses(outcome, attacker, defender);
-    const me = game.me,
+    const me = game.localFaction ?? game.me,
       winnerIndex = outcome.result.winner,
       won =
         key([attacker, defender][winnerIndex]) === key(me) ||
