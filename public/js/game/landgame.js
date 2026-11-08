@@ -30,7 +30,7 @@ import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
 import { Decals, scorch } from './landdecals.js';
-import { addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf } from './landbase.js';
+import { activateSpawners, addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf } from './landbase.js';
 import { loadLandTables } from './landtables.js';
 import { loadClashes } from './landclash.js';
 import { LandCinematic } from './landcine.js';
@@ -835,6 +835,7 @@ export class LandGame {
     });
     if (setup.campaign?.tech) world.campaignTech = this.factions.map(f => setup.campaign.tech[f]);
     if (setup.campaign) world.planetCorruption = setup.campaign.corruption ?? -1;
+    for (const [name, f] of Object.entries(setup.campaign?.spawn || {})) activateSpawners(world, name, f);
     if (setup.campaign)
       this.factions.forEach((f, i) =>
         giveFreeUpgrades(
@@ -1176,7 +1177,7 @@ export class LandGame {
           .map(u => ({ pt: w.points.indexOf(u.capturable), hp: r1(u.health), sh: r1(u.shield) })),
         houses: w.units
           .filter(u => u.house && !u.dead)
-          .map(u => ({ x: Math.round(u.x), y: Math.round(u.y), hp: r1(u.health), timer: r1(u.house.timer) })),
+          .map(u => ({ x: Math.round(u.x), y: Math.round(u.y), hp: r1(u.health), timer: r1(u.house.timer), on: u.house.state })),
         queues: w.queues.map(q => ({
           units: q.units.map(x => [x.type.name, r1(x.left)]),
           upgrades: q.upgrades.map(x => [x.type.name, r1(x.left)])
@@ -1469,6 +1470,7 @@ export class LandGame {
         else {
           u.health = Math.min(u.maxHealth, sv.hp);
           u.house.timer = sv.timer ?? u.house.timer;
+          if (sv.on !== undefined) u.house.state = sv.on;
         }
       }
     if (b.weather && w.weather.phases.length) {

@@ -3,6 +3,7 @@ import { MenuArtwork } from './menuartwork.js';
 import { openCampaignMenu } from './campaignmenu.js';
 import { openMainCampaignMenu, suggestTutorial, tutorialSuggested, markTutorialSuggested } from './storycampaignmenu.js';
 import { TacticalMovies } from './tacticalmovies.js';
+import { tutorialFinished } from './tutorialprofile.js';
 
 const PANEL = { cls: 'front', stretch: true };
 
@@ -189,6 +190,7 @@ export class FrontEnd {
     show(false);
     const ok = await openCampaignMenu({
       tutorial,
+      isTutorialComplete: c => tutorialFinished(c.name),
       audio: this.game.audio,
       cancel: () => show(true),
       start: setup => {

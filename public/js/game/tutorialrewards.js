@@ -2,6 +2,8 @@ import { db } from '../gamedata.js';
 import { openDialog } from './dialogs.js';
 import { toMainMenu } from './transit.js';
 import { TutorialFx } from './tutorialfx.js';
+import { activateSpawners } from './landbase.js';
+import { finishTutorial } from './tutorialprofile.js';
 
 const key = s =>
   String(s || '')
@@ -163,6 +165,31 @@ export function tutorialReward(host, e) {
     case 'HIDE_STEAL_SLOT':
       if (game.forcedSlots) delete game.forcedSlots[SLOT_KINDS[e.reward]];
       return true;
+    case 'SKIRMISH_RULES':
+      if (!present(p[0])) host.errors?.set(e.name, 'SKIRMISH_RULES takes one parameter, and param = 0 or 1');
+      else game.skirmishRules = atoi(p[0]) !== 0;
+      return true;
+    case 'FINISHED_TUTORIAL':
+      if (!present(p[0])) host.errors?.set(e.name, 'FINISHED_TUTORIAL takes one parameter, name of the tutorial');
+      else finishTutorial(p[0]);
+      return true;
+    case 'BOMBARD_DELAY':
+      if (!present(p[0])) host.errors?.set(e.name, 'BOMBARD_DELAY takes one parameter');
+      else if (game.world) game.world.bombardDelay = parseFloat(p[0]) || 0;
+      return true;
+    case 'SET_SPAWN':
+      if (!present(p[0]) || !present(p[1])) host.errors?.set(e.name, 'Set spawn failed due to incomplete parameters');
+      else if (game.world?.units) activateSpawners(game.world, p[0], parseFloat(p[1]) || 0);
+      return true;
+    case 'SET_PLANET_SPAWN': {
+      if (!present(p[0]) || !present(p[1]) || !present(p[2])) {
+        host.errors?.set(e.name, 'Set planet spawn failed due to incomplete parameters');
+        return true;
+      }
+      const planet = g?.planets.find(q => key(q.type.name) === key(p[0]));
+      if (planet) (planet.spawnOverrides ||= {})[key(p[1])] = parseFloat(p[2]) || 0;
+      return true;
+    }
     default:
       return false;
   }

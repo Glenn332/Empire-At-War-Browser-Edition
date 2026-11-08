@@ -697,7 +697,10 @@ export function orbitalBombard(world, side, x, y) {
         .map(n => db.type(n))
         .find(Boolean)
     : null;
-  const shotDelay = F.num('Bombardment_Shot_Delay', 0.2);
+  const shotDelay = F.num('Bombardment_Shot_Delay', 0.2),
+    initial = F.num('Bombardment_Initial_Delay', 1),
+    delay = world.bombardDelay > 0 ? world.bombardDelay : initial,
+    cue = Math.max(0, delay - initial);
   const run = {
     side,
     x,
@@ -708,7 +711,8 @@ export function orbitalBombard(world, side, x, y) {
     per: Math.max(1, F.num('Bombardment_Shots_Per_Salvo', 1)),
     shotDelay,
     salvoDelay: F.num('Bombardment_Salvo_Delay', 1),
-    next: world.time + F.num('Bombardment_Initial_Delay', 1) + shotDelay,
+    next: world.time + delay + shotDelay,
+    cueAt: cue > 0 ? world.time + cue : 0,
     dist: dist.length ? dist : [0, 1, 2, 3],
     di: Math.floor(simRandom() * Math.max(1, dist.length)),
     height: off[2] || 600,
@@ -718,10 +722,16 @@ export function orbitalBombard(world, side, x, y) {
     projs,
     particles: listOf(F, 'Bombardment_Particle')
   };
+  run.incoming = ship ? ship.str('SFXEvent_Bombard_Incoming') : '';
   bombardOf(world, side).run = run;
-  if (run.particles[0] && world.onFx) world.onFx(run.particles[0], x, y, world.groundZ(x, y) + 3);
-  if (ship && world.onSound) world.onSound(ship.str('SFXEvent_Bombard_Incoming'), x, y);
+  if (!run.cueAt) bombardCue(world, run);
   return null;
+}
+
+function bombardCue(world, run) {
+  run.cueAt = 0;
+  if (run.particles[0] && world.onFx) world.onFx(run.particles[0], run.x, run.y, world.groundZ(run.x, run.y) + 3);
+  if (run.incoming && world.onSound) world.onSound(run.incoming, run.x, run.y);
 }
 
 function bombardShot(world, run) {
@@ -792,6 +802,7 @@ function tickBombard(world) {
     if (!r) continue;
     const run = r.run;
     if (run) {
+      if (run.cueAt && world.time >= run.cueAt) bombardCue(world, run);
       while (r.run && world.time >= run.next) {
         bombardShot(world, run);
         if (++run.shot < run.per) {
@@ -966,7 +977,7 @@ export async function addHouse(world, o) {
     first = db.type(t.list('Spawned_Indigenous_Units_Type')[0]);
   let aff = t.str('Affiliation').toUpperCase();
   if ((!aff || aff.includes('NEUTRAL')) && first) aff = first.str('Affiliation').toUpperCase();
-  if (!aff || aff.includes('NEUTRAL') || simRandom() >= t.num('Spawn_Indigenous_Units_Chance', 1)) return null;
+  if (!aff || aff.includes('NEUTRAL')) return null;
   let side = world.factions.findIndex(f => aff.includes(f.toUpperCase()));
   if (side < 0) side = world.wild;
   if (world.planetCorruption === 4 && first?.bool('Is_Indigenous_Unit_Corruptible', true)) {
@@ -998,9 +1009,32 @@ export async function addHouse(world, o) {
     radius: t.num('Spawn_Indigenous_Units_Radius', 80),
     out: [],
     busy: false,
-    leash: t.num('Max_Distance_From_Spawner', 0)
+    leash: t.num('Max_Distance_From_Spawner', 0),
+    state: -1
   };
   return u;
+}
+
+export function activateSpawners(world, name, f) {
+  const all = world.units.filter(u => u.house && !u.dead && u.type.name.toUpperCase() === String(name).toUpperCase());
+  if (!all.length) return false;
+  const on = [],
+    off = [];
+  for (const u of all) {
+    if (u.house.state === 1) on.push(u);
+    else {
+      u.house.state = 0;
+      off.push(u);
+    }
+  }
+  if (f < 0) f = all[0].type.num('Spawn_Indigenous_Units_Chance', 1);
+  f = Math.max(0, f);
+  if (f > 1) f = Math.min(1, Math.max(0, f * 0.01));
+  const want = Math.trunc(all.length * f),
+    pick = list => list.splice(Math.min(list.length - 1, Math.floor(simRandom() * list.length)), 1)[0];
+  for (let n = want - on.length; n > 0; n--) pick(off).house.state = 1;
+  for (let n = on.length - want; n > 0; n--) pick(on).house.state = 0;
+  return true;
 }
 
 function tickHouses(world, dt) {
@@ -1020,7 +1054,8 @@ function tickHouses(world, dt) {
           }
         } else if (lead && q.homing && Math.hypot(lead.x - u.x, lead.y - u.y) < h.leash) q.homing = false;
       }
-    if (!h || u.dead || h.busy || (h.timer -= dt) > 0) continue;
+    if (h && !u.dead && h.state === -1) activateSpawners(world, u.type.name, -1);
+    if (!h || u.dead || h.state !== 1 || h.busy || (h.timer -= dt) > 0) continue;
     h.timer = h.every;
     h.out = h.out.filter(q => q.members.length);
     if (h.out.reduce((a, q) => a + q.members.length, 0) >= h.most) continue;

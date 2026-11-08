@@ -2626,6 +2626,7 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
+        spawn: pl.spawnOverrides ? { ...pl.spawnOverrides } : null,
         upgrades: battleUpgrades(this.galaxy, pl),
         planetOwner: pl.owner,
         planetWeapons: (pl.groundStructures || [])
@@ -2868,6 +2869,7 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
+        spawn: pl.spawnOverrides ? { ...pl.spawnOverrides } : null,
         upgrades: battleUpgrades(this.galaxy, pl),
         attacker: {
           side: myTeam === 0 ? 0 : 1,
