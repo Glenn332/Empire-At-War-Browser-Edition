@@ -1053,6 +1053,8 @@ export class GalacticGame {
       ground: last(comps?.get('G_GROUND_ICON'), 'Default_Offset', [34, -26])[1],
       hero: icon('G_HERO'),
       build: icon('G_BUILD'),
+      smuggler: icon('G_SMUGGLER'),
+      smuggled: icon('G_SMUGGLED'),
       corruption: icon('G_CORRUPTION_ICON')
     };
     this.pipStyles = ['G_SPACE_LEVEL_PIPS', 'G_GROUND_LEVEL_PIPS'].map(n => {
@@ -3424,6 +3426,11 @@ export class GalacticGame {
       });
     if (up(p.owner) === me && (p.production?.space?.some(q => up(q.owner) === me) || p.production?.ground?.some(q => up(q.owner) === me)))
       out.push({ name: s.build.textures[0], scale: s.build.scale });
+    const siphon = p.creditSiphonOwner;
+    if (siphon && siphon !== -1) {
+      const style = up(siphon) === me ? s.smuggler : s.smuggled;
+      if (style?.textures[0]) out.push({ name: style.textures[0], scale: style.scale });
+    }
     const type = p.currentCorruption ?? -1,
       icons = db.constants.str('Corruption_Planet_Icon').split(/\s+/).filter(Boolean);
     const corrupt = type === -1 ? db.faction(this.me)?.bool('Benefits_From_Corruption') && icons[8] : this.filters & 4 && icons[type];
