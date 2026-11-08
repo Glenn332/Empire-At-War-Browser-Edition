@@ -244,6 +244,32 @@ export class TacticalStoryHost extends StoryPlots {
     this.pollEvents();
     this.pollDestroyed();
     this.pollProximity();
+    this.pollFogReveal();
+  }
+  pollFogReveal() {
+    const objects = (this.eventTypes.get('STORY_FOG_OBJECT_REVEAL') || []).filter(e => this.waiting(e)),
+      points = (this.eventTypes.get('STORY_FOG_POSITION_REVEAL') || []).filter(e => this.waiting(e));
+    if (!objects.length && !points.length) return;
+    const game = this.game,
+      w = this.scripts?.world || game.world;
+    if (!w?.viewFogged) return;
+    const me = key(game.human?.factionName || this.factionOf({ side: game.me })),
+      lead = u => (u?.isSquad ? u.fighters?.[0] : u) || u,
+      typeName = u => key((u.scriptType || u.type || lead(u)?.type)?.name);
+    for (const e of points) {
+      if (e.plot?.owner && key(e.plot.owner) !== me) continue;
+      if (!w.viewFogged(parseFloat(e.params[0]) || 0, parseFloat(e.params[1]) || 0)) this.fire(e);
+    }
+    if (!objects.length) return;
+    const all = [...(w.selectables?.() || []), ...(w.units || [])].filter(u => u && !u.dead);
+    for (const e of objects) {
+      if (e.plot?.owner && key(e.plot.owner) !== me) continue;
+      const wanted = String(e.params[0] || '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map(key);
+      if (all.some(u => wanted.includes(typeName(u)) && !w.viewFogged(lead(u).x, lead(u).y))) this.fire(e);
+    }
   }
   selected(list) {
     for (const s of list || []) if (s?.type?.name) this.signal('STORY_SELECT_UNIT', s.type.name);

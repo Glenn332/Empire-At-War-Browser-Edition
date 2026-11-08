@@ -38,6 +38,29 @@ assert.deepEqual(run(['', 'Story_Trigger_Zone_00', '180'], [unit(them, 900)]), [
 assert.deepEqual(run(['Darth_Vader', 'Story_Trigger_Zone_00', '180'], [unit(me, 900, 'Stormtrooper')]), [], 'the unit type filter');
 assert.deepEqual(run(['Darth_Vader', 'Story_Trigger_Zone_00', '180'], [unit(me, 900)]), ['near']);
 assert.deepEqual(run(['', 'Story_Trigger_Zone_00', '180'], [unit(me, 900)], 'Rebel'), [], 'only plots of the local player');
+{
+  const fog = (events, units, clear) => {
+    const h = Object.create(TacticalStoryHost.prototype),
+      fired = [];
+    h.eventTypes = new Map();
+    for (const e of events) (h.eventTypes.get(e.type) || h.eventTypes.set(e.type, []).get(e.type)).push({ plot: { owner: 'Empire' }, prereqs: [], ...e });
+    h.waiting = () => true;
+    h.game = { human: me, world: {} };
+    h.scripts = { world: { selectables: () => units, viewFogged: (x, y) => !clear(x, y) } };
+    h.fire = ev => fired.push(ev.name);
+    h.pollFogReveal();
+    return fired;
+  };
+  const near = (x, y) => x < 500;
+  assert.deepEqual(fog([{ name: 'pt', type: 'STORY_FOG_POSITION_REVEAL', params: ['100', '0', '0'] }], [], near), ['pt'], 'a revealed position fires');
+  assert.deepEqual(fog([{ name: 'pt', type: 'STORY_FOG_POSITION_REVEAL', params: ['900', '0', '0'] }], [], near), [], 'a fogged one does not');
+  assert.deepEqual(
+    fog([{ name: 'obj', type: 'STORY_FOG_OBJECT_REVEAL', params: ['Darth_Vader'] }], [unit(them, 900), unit(them, 100)], near),
+    ['obj'],
+    'any object of the type out of the fog fires'
+  );
+  assert.deepEqual(fog([{ name: 'obj', type: 'STORY_FOG_OBJECT_REVEAL', params: ['Darth_Vader'] }], [unit(them, 900)], near), []);
+}
 assert.deepEqual(run(['', 'Story_Trigger_Zone_00, Other_Zone', '180'], [unit(me, 900)]), ['near'], 'a list of targets');
 {
   const { StoryPlots } = await import('../public/js/game/storyplots.js');
