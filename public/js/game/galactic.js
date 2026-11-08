@@ -236,6 +236,8 @@ export class GalacticGame {
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     if (this.setup.net) this.multiplayerGalaxy(g);
     g.budgetCreditChange = (owner, amount) => this.ai?.creditChange?.(owner, amount);
+    g.storyEntry = (fleet, planet) => !!this.story?.entryAllowed?.(fleet, planet);
+    g.onBounce = (fleet, to) => this.story?.fleetBounced?.(fleet, g.planets[to]);
     g.onDepart = f => {
       if (visibleTransit(g, f, this.me)) this.audio?.play?.('Galactic_Fleet_Hyperspace');
     };

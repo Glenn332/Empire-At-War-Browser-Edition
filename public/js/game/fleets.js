@@ -126,9 +126,21 @@ export function arrivalSlot(galaxy, fleet, p) {
   return 0;
 }
 
+function barred(galaxy, fleet, to) {
+  const planet = galaxy.planets[to];
+  if (!planet?.restricted) return false;
+  const owner = galaxy.players.find(p => p.faction === fleet.owner);
+  return !!owner && !owner.ai && !galaxy.storyEntry?.(fleet, planet);
+}
+
 export function orderMove(galaxy, fleet, to, canEnter = null, slot = null, options = {}) {
   const from = fleet.planet;
   if (from < 0 || from === to) return false;
+  const order = options.human !== undefined;
+  if (order && barred(galaxy, fleet, to)) {
+    galaxy.onBounce?.(fleet, to);
+    return false;
+  }
   const ai = options.status !== undefined && !options.human;
   const path = findPath(
     galaxy,
@@ -148,6 +160,7 @@ export function orderMove(galaxy, fleet, to, canEnter = null, slot = null, optio
   }
   fleet.aiStatus = ai ? options.status : undefined;
   fleet.humanOrder = !!(options.human || options.free);
+  fleet.playerOrder = order;
   fleet.path = path;
   fleet.dest = to;
   fleet.departSlot = fleet.slot ?? 0;
@@ -213,6 +226,17 @@ export function stepFleets(galaxy, frames, arrive) {
       f.pos = L.to.slice();
       const p = L.b;
       f.path.shift();
+      if (f.playerOrder && p === f.dest && barred(galaxy, f, p)) {
+        galaxy.onBounce?.(f, p);
+        f.path = [L.a];
+        f.dest = L.a;
+        startLeg(galaxy, f, p, L.a);
+        continue;
+      }
+      if (f.playerOrder && f.path.length && f.path[0] === f.dest && barred(galaxy, f, f.dest)) {
+        galaxy.onBounce?.(f, f.dest);
+        f.path = [];
+      }
       const stop =
         !f.path.length || (blocks(galaxy, p, f.owner, f) && (!canBribe(f.owner) || (!f.humanOrder && !passByBribe(galaxy, f, p))));
       if (stop) {

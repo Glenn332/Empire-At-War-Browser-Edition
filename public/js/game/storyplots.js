@@ -287,34 +287,38 @@ export class StoryPlots {
     if (code === 6) return !neutral;
     return true;
   }
-  signalArrival(type, planet, object = null) {
+  arrivalMatches(e, planet, object = null) {
+    const p = e.params,
+      planets = split(p[0]).map(key);
+    if (!planets.length) return true;
+    if (!planets.includes(key(planet.type.name))) return false;
+    if (object && !this.storyFilter(p[1], object.owner, this.plotOwner(e))) return false;
+    if (object) {
+      const need = split(p[2]).map(key);
+      if (flag(p[6])) {
+        if (!object.raid) return false;
+      } else if (need.length) {
+        if (!need.every(n => object.types.has(n))) return false;
+        if (flag(p[5]) && object.count !== need.length) return false;
+      }
+    }
+    const present = split(p[3]).map(key);
+    return !present.length || present.some(n => this.presentTypes?.(planet).has(n));
+  }
+  signalArrival(type, planet, object = null, owner = null) {
     for (const e of this.eventTypes.get(type) || []) {
-      const p = e.params,
-        planets = split(p[0]).map(key);
-      if (!planets.length) {
-        this.fire(e);
-        continue;
-      }
-      if (!planets.includes(key(planet.type.name))) continue;
-      if (object && !this.storyFilter(p[1], object.owner, this.plotOwner(e))) continue;
-      if (object) {
-        const need = split(p[2]).map(key);
-        if (flag(p[6])) {
-          if (!object.raid) continue;
-        } else if (need.length) {
-          if (!need.every(n => object.types.has(n))) continue;
-          if (flag(p[5]) && object.count !== need.length) continue;
-        }
-      }
-      const present = split(p[3]).map(key);
-      if (present.length && !present.some(n => this.presentTypes?.(planet).has(n))) continue;
-      this.fire(e);
+      if (owner && key(e.plot?.owner) !== key(owner)) continue;
+      if (this.arrivalMatches(e, planet, object)) this.fire(e);
     }
   }
+  heroMatches(e, hero, planet) {
+    return wantedNames(e.params[0]).has(key(hero)) && wantedNames(e.params[1]).has(key(planet.type.name));
+  }
   signalHero(type, hero, planet) {
-    for (const e of this.eventTypes.get(type) || []) {
-      if (wantedNames(e.params[0]).has(key(hero)) && wantedNames(e.params[1]).has(key(planet.type.name))) this.fire(e);
-    }
+    for (const e of this.eventTypes.get(type) || []) if (this.heroMatches(e, hero, planet)) this.fire(e);
+  }
+  waiting(e) {
+    return !e.disabled && !e.completed && !!(e.active ?? this.prerequisites(e)) && e.plot?.active !== false;
   }
   signalCorruption(type, planet, value) {
     for (const e of this.eventTypes.get(type) || []) {

@@ -180,4 +180,92 @@ assert.deepEqual(orbit, [[planet.name, me, 1]], 'they go up into orbit');
 assert.deepEqual(retreats, [me], 'and their fleets retreat');
 onOrbit(null);
 onLanded(null);
+{
+  const hero = [...db.types.values()].find(t => t.bool('Is_Named_Hero') && !t.list('Company_Units').length);
+  const waitingEv = (name, type, ...params) => ({ ...ev(name, type, ...params), plot: { owner: me }, prereqs: [] });
+  const allowed = (events, f) => host(events).entryAllowed(f, planet);
+  assert.equal(allowed([], fleet(me, [{ type: ship }])), false, 'nothing waits for it');
+  assert.equal(allowed([waitingEv('in', 'STORY_ENTER', P)], fleet(me, [{ type: ship }])), true, 'a waiting STORY_ENTER lets it in');
+  assert.equal(
+    allowed([{ ...waitingEv('done', 'STORY_ENTER', P), completed: true }], fleet(me, [{ type: ship }])),
+    false,
+    'not a completed one'
+  );
+  assert.equal(allowed([{ ...waitingEv('off', 'STORY_ENTER', P), disabled: true }], fleet(me, [{ type: ship }])), false);
+  assert.equal(
+    allowed([waitingEv('need', 'STORY_ENTER', P, '', hero.name)], fleet(me, [{ type: ship }])),
+    false,
+    'its unit filter still applies'
+  );
+  assert.equal(
+    allowed([waitingEv('mv', 'STORY_MOVE', hero.name, P)], fleet(me, [{ type: hero }])),
+    true,
+    'a waiting hero move lets the hero in'
+  );
+  assert.equal(allowed([waitingEv('mv', 'STORY_MOVE', hero.name, P)], fleet(me, [{ type: ship }])), false);
+  assert.equal(
+    allowed([waitingEv('land', 'STORY_LAND_ON', P)], fleet(me, [{ type: ship }])),
+    false,
+    'landing counts only with troops aboard'
+  );
+  assert.equal(allowed([waitingEv('land', 'STORY_LAND_ON', P)], fleet(me, [{ type: ship, carries: company }])), true);
+  fired = [];
+  host([ev('bounce', 'STORY_FLEET_BOUNCED', P), { ...ev('theirs', 'STORY_FLEET_BOUNCED'), plot: { owner: them } }]).fleetBounced(
+    fleet(me, [{ type: ship }]),
+    planet
+  );
+  assert.deepEqual(fired, ['bounce'], 'the bounce goes to the plots of the fleet owner');
+
+  const F = await import('../public/js/game/fleets.js');
+  const node = (index, x) => ({
+    index,
+    name: 'P' + index,
+    type: planetType,
+    pos: [x, 0, 0],
+    radius: 0,
+    garrison: [],
+    groundStructures: [],
+    orbitalStructures: []
+  });
+  const planets = [node(0, 0), node(1, 100), node(2, 200)];
+  const bounced = [];
+  let open = false;
+  const g = {
+    planets,
+    links: [
+      [{ to: 1, cost: 1 }],
+      [
+        { to: 0, cost: 1 },
+        { to: 2, cost: 1 }
+      ],
+      [{ to: 1, cost: 1 }]
+    ],
+    fleets: [],
+    routes: [],
+    players: [
+      { faction: me, ai: null },
+      { faction: them, ai: 'Easy' }
+    ],
+    storyEntry: () => open,
+    onBounce: (f, to) => bounced.push(to)
+  };
+  planets[2].restricted = true;
+  const mine = fleet(me, [{ type: ship }]);
+  assert.equal(F.orderMove(g, mine, 2, null, null, { human: true }), false, 'an order into a restricted planet is turned down');
+  assert.deepEqual(bounced, [2], 'and tells the bounce');
+  const theirs = fleet(them, [{ type: ship }]);
+  F.orderMove(g, theirs, 2, null, null, { human: false });
+  assert.deepEqual(bounced, [2], 'a computer fleet is not checked here');
+  open = true;
+  bounced.length = 0;
+  const go = fleet(me, [{ type: ship }]);
+  g.fleets.push(go);
+  assert(F.orderMove(g, go, 2, null, null, { human: true }), 'an open planet takes the order');
+  {
+    open = false;
+    F.stepFleets(g, 1e6, () => {});
+    assert.deepEqual(bounced, [2], 'closed while under way: bounced before the last hop');
+    assert.equal(go.planet, 1, 'it stops one planet short');
+  }
+}
 console.log('ok', me, 'against', them, 'neutral', neutral, 'on', P);

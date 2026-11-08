@@ -1110,19 +1110,39 @@ export class GalacticStoryHost extends StoryPlots {
     if (planet.station) out.add(key(planet.station.name));
     return out;
   }
-  fleetEntered(fleet, planet) {
+  fleetArrival(fleet, planet) {
     const live = fleet.units.filter(u => !u.dead);
     const types = new Set();
     for (const u of live) addTypes(types, u);
-    this.signalArrival('STORY_ENTER', planet, { owner: fleet.owner, types, count: live.length, raid: fleet.raid === planet.index });
+    return { live, object: { owner: fleet.owner, types, count: live.length, raid: fleet.raid === planet.index } };
+  }
+  fleetHeroes(live) {
+    const out = [];
     for (const u of live) {
       const type = u.carries || u.type;
-      if (type.bool('Is_Named_Hero')) this.signalHero('STORY_MOVE', type.name, planet);
+      if (type.bool('Is_Named_Hero')) out.push(type.name);
       for (const n of [...type.list('Company_Units'), ...type.list('Squadron_Units')]) {
         const member = db.type(n);
-        if (member && (member.bool('Is_Named_Hero') || member.bool('Is_Generic_Hero'))) this.signalHero('STORY_MOVE', member.name, planet);
+        if (member && (member.bool('Is_Named_Hero') || member.bool('Is_Generic_Hero'))) out.push(member.name);
       }
     }
+    return out;
+  }
+  fleetEntered(fleet, planet) {
+    const { live, object } = this.fleetArrival(fleet, planet);
+    this.signalArrival('STORY_ENTER', planet, object);
+    for (const hero of this.fleetHeroes(live)) this.signalHero('STORY_MOVE', hero, planet);
+  }
+  entryAllowed(fleet, planet) {
+    const { live, object } = this.fleetArrival(fleet, planet),
+      waiting = type => (this.eventTypes.get(type) || []).filter(e => this.waiting(e));
+    if (waiting('STORY_ENTER').some(e => this.arrivalMatches(e, planet, object))) return true;
+    const heroes = this.fleetHeroes(live);
+    if (heroes.length && waiting('STORY_MOVE').some(e => heroes.some(h => this.heroMatches(e, h, planet)))) return true;
+    return live.some(u => u.carries) && waiting('STORY_LAND_ON').some(e => this.arrivalMatches(e, planet, object));
+  }
+  fleetBounced(fleet, planet) {
+    this.signalArrival('STORY_FLEET_BOUNCED', planet, this.fleetArrival(fleet, planet).object, fleet.owner);
   }
   unitLanded(planet, unit) {
     const types = new Set();
