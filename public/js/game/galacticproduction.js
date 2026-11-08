@@ -50,10 +50,18 @@ export function productionSnapshot(g, owner) {
   for (const q of jobs) add(queuedNames, q.type);
   return { owned, queued: queuedNames, jobs };
 }
+export function currentCount(g, owner, type, snap, seen = new Set()) {
+  if (!type || seen.has(type)) return 0;
+  seen.add(type);
+  const own = snap ? snap.owned.get(upperName(type)) || 0 : ownedCount(g, owner, type);
+  const related = [...type.list('Company_Units'), ...type.list('Company_Transport_Unit').slice(0, 1), ...type.list('Squadron_Units')];
+  let most = 0;
+  for (const n of related) most = Math.max(most, currentCount(g, owner, db.type(n), snap, seen));
+  seen.delete(type);
+  return own + most;
+}
 const limitCount = (g, owner, type, snap) =>
-  snap
-    ? (snap.owned.get(upperName(type)) || 0) + (snap.queued.get(upperName(type)) || 0)
-    : ownedCount(g, owner, type) + queuedCount(g, owner, type);
+  currentCount(g, owner, type, snap) + (snap ? snap.queued.get(upperName(type)) || 0 : queuedCount(g, owner, type));
 function queuedCount(g, owner, type) {
   const name = upperName(type);
   let n = 0;
@@ -172,9 +180,7 @@ function hasStructures(p, owner, type) {
 function hasOrbiting(g, p, owner, type) {
   const needed = requirements(type, 'Required_Orbiting_Units');
   if (!needed.length) return true;
-  return needed.every(n =>
-    g.fleets.some(f => f.owner === owner && f.planet === p.index && !f.leg && f.units.some(u => upperName(u.carries || u.type) === n))
-  );
+  return needed.every(n => g.fleets.some(f => f.planet === p.index && !f.leg && f.units.some(u => !u.dead && upperName(u.type) === n)));
 }
 
 const abilityLists = new WeakMap();
