@@ -24,10 +24,6 @@ export class GalacticBattles {
     this.game = game;
     this.dirty = new Set(game.galaxy.planets.map(p => p.index));
     this.attackers = new Map();
-    this.orbits = new Map();
-    this.recordIds = new WeakMap();
-    this.nextId = 0;
-    this.nextScan = 0;
     this.history = [];
   }
   arrive(fleet, p) {
@@ -37,22 +33,6 @@ export class GalacticBattles {
       owners.push(fleet.owner);
       this.attackers.set(p, owners);
     }
-  }
-  signature(p) {
-    const g = this.game.galaxy,
-      planet = g.planets[p],
-      records = [];
-    for (const fleet of g.fleets)
-      if (fleet.planet === p && !fleet.leg)
-        for (const u of fleet.units) {
-          let id = this.recordIds.get(u);
-          if (!id) {
-            id = ++this.nextId;
-            this.recordIds.set(u, id);
-          }
-          records.push(id + ':' + fleet.owner + ':' + u.type.name + ':' + (u.carries?.name || ''));
-        }
-    return (planet.station?.name || '') + ':' + (planet.stationOwner || planet.owner) + ':' + records.sort().join('|');
   }
   roster(p, owner, space, records = null) {
     const g = this.game.galaxy,
@@ -285,11 +265,6 @@ export class GalacticBattles {
       g = game.galaxy;
     if (game.paused || game.battle) return;
     if (!game.busy) for (const f of g.fleets) for (const u of f.units) if (u.raiding) delete u.raiding;
-    if (g.time >= this.nextScan) {
-      this.nextScan = g.time + 1;
-      for (const p of new Set(g.fleets.filter(f => f.planet >= 0 && !f.leg).map(f => f.planet)))
-        if (this.orbits.get(p) !== this.signature(p)) this.dirty.add(p);
-    }
     for (const p of [...this.dirty]) {
       this.dirty.delete(p);
       const planet = g.planets[p];
@@ -315,12 +290,14 @@ export class GalacticBattles {
         }
         if (!pair) break;
         if (pair.some(f => game.isHuman(f))) {
-          this.engage(p, ...pair);
+          if (!this.engage(p, ...pair)) {
+            this.dirty.add(p);
+            if (preferred) this.attackers.set(p, [preferred, ...owners]);
+          }
           return;
         }
         this.space(p, ...pair);
       }
-      this.orbits.set(p, this.signature(p));
     }
   }
 }
