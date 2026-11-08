@@ -1,7 +1,8 @@
 import { db } from '../gamedata.js';
 import { allied, targetOwner, currentOwner, campaignPlanet } from './galacticvictory.js';
 import { strategicStealth } from './galacticfog.js';
-import { scheduleHeroRespawn } from './galacticherorespawn.js';
+import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
+import { addPoliticalEffect } from './galacticpolitics.js';
 import { activateBlackMarket } from './blackmarket.js';
 import { activateCorruption, activateRemoval, activateSiphon, clearSiphon } from './galacticcorruption.js';
 import { activateSlicer } from './galacticslicer.js';
@@ -136,6 +137,23 @@ export function activatePlanetDestruction(game, actor, p, ability) {
   return true;
 }
 
+function activatePolitical(game, actor, p, ability) {
+  const g = game.galaxy,
+    sabotage = key(ability.tag) === 'SABOTAGE_POLITICAL_CONTROL_ABILITY',
+    owner = p.politicalOwner ?? p.owner,
+    mine = key(owner) === key(actor.owner) || allied(actor.owner, owner);
+  if (p.destroyed || p.background || (sabotage ? mine : key(owner) !== key(actor.owner))) return false;
+  if (sabotage && p.type.bool('Planet_Vigilance') && (actor.type || (actor.record || actor).type)?.bool?.('Is_Generic_Hero')) {
+    if (key(actor.owner) === key(game.me)) game.notify?.(db.t('TEXT_POLITICAL_CONTROL_FAILURE_VIGILANCE'), actor.owner);
+    return false;
+  }
+  if (!addPoliticalEffect(g, p, ability, actor, sabotage ? 14 : 3, sabotage ? -1 : 1)) return false;
+  game.story?.abilityLanded?.(p, actor);
+  if (/^(yes|true|1)$/i.test(ability.val('Causes_Despawn')))
+    scheduleHeroRespawn(game, actor.record || actor, p, actor.owner, null, abilityRespawnTime(ability), true);
+  return true;
+}
+
 export function groundActivated(game, actor, filter, neutralize) {
   if (!actor || actor.dead || !actor.planet) return false;
   const p = actor.planet,
@@ -178,6 +196,8 @@ export function groundActivated(game, actor, filter, neutralize) {
       else if (key(ability.tag) === 'SLICER_ABILITY') fired = activateSlicer(game, actor, p, ability);
       else if (key(ability.tag) === 'HACK_SUPER_WEAPON_ABILITY') fired = activateHack(game, actor, p, ability);
       else if (key(ability.tag) === 'SYSTEM_SPY_ABILITY') fired = activateSpy(game, actor, p, ability, type);
+      else if (key(ability.tag) === 'POLITICAL_CONTROL_BONUS_ABILITY' || key(ability.tag) === 'SABOTAGE_POLITICAL_CONTROL_ABILITY')
+        fired = activatePolitical(game, actor, p, ability);
       else if (key(ability.tag) === 'GALACTIC_SABOTAGE_ABILITY')
         fired = !p.sabotageRestricted && game.galaxy.sabotageOff !== true && activateSabotage(game, actor, p, ability);
       if (fired && /^(yes|true|1)$/i.test(ability.val('Causes_Despawn'))) game.story?.despawn(actor);

@@ -103,4 +103,40 @@ p = planet(a, { groundStructures: [office(0.25, 0), office(0.5, 0), office(0.1, 
 const goal = politicalGoal(galaxy(p), p),
   align = politicalGoal(galaxy(planet(a)), planet(a)).rate;
 assert(Math.abs(goal.rate - align * 0.25 * 0.1) < 1e-9, 'the smallest of each category, then multiplied: ' + goal.rate);
+{
+  const { addPoliticalEffect, politicalGroups, factionPoliticalMax } = await import('../public/js/game/galacticpolitics.js');
+  assert.equal(factionPoliticalMax(type, a), 5, 'no Planet_Max_Political_Control_For_Faction entry: 5');
+  const capped = {
+    ...type,
+    tuples: k => (k === 'Planet_Max_Political_Control_For_Faction' ? [[a, '2']] : []),
+    num: type.num.bind(type),
+    bool: type.bool.bind(type),
+    str: type.str.bind(type),
+    list: type.list.bind(type),
+    sub: type.sub.bind(type),
+    name: type.name
+  };
+  assert.equal(factionPoliticalMax(capped, a), 2, 'the planet type caps the faction');
+  const p1 = planet(a, { groundStructures: [{ owner: a, type: { num: () => 3, bool: () => false, sub: () => [] } }] }),
+    g1 = galaxy(p1);
+  p1.type = capped;
+  assert(politicalGoal(g1, p1, [], 'base').target <= 2, 'the target stays under the planet cap for its faction');
+  const ab = (n, extra = {}) => ({
+    attrs: { Name: n },
+    num: (k, d) => ({ Political_Change: 2, Change_Duration_In_Seconds: 10, ...extra })[k] ?? d,
+    val: () => ''
+  });
+  const p2 = planet(a),
+    g2 = galaxy(p2);
+  g2.time = 5;
+  assert(addPoliticalEffect(g2, p2, ab('Bonus'), { owner: a }, 3, 1));
+  assert.equal(politicalGroups(g2, p2, []).get(3), 2, 'the bonus enters group 3');
+  assert(addPoliticalEffect(g2, p2, ab('Sab'), { owner: b }, 14, -1));
+  assert.equal(addPoliticalEffect(g2, p2, ab('Sab2'), { owner: b }, 14, -1), false, 'only one sabotage at a time');
+  assert.equal(politicalGroups(g2, p2, []).get(14), -2, 'the sabotage enters group 14 as a loss');
+  g2.time = 16;
+  assert.equal(politicalGroups(g2, p2, []).size, 0, 'both end after Change_Duration_In_Seconds');
+  const neutralOwned = planet(a, { garrison: [] });
+  assert.equal(politicalGoal(galaxy(neutralOwned), neutralOwned, [], 'neutral').target, 0, 'no floor of 1 without a presence controller');
+}
 console.log('ok', a, b, 'change time', change, 'target', p.politicalTarget ?? goal.target);

@@ -328,6 +328,7 @@ export function snapshotGalaxy(g) {
       },
       siphon: { pct: p.creditSiphonPct || 0, end: p.creditSiphonEnd || 0, amount: p.creditSiphonAmount || 0, found: !!p.creditSiphonFound, type: p.creditSiphonType || null },
       piracy: p.piracy || 0,
+      ...(p.politicalEffects?.length ? { politicalEffects: p.politicalEffects.map(e => ({ ...e })) } : {}),
       sabotageCount: p.sabotageCount || 0,
       incomeHaltUntil: p.incomeHaltUntil || 0,
       incomeMult: p.incomeMult ?? 1,
@@ -486,6 +487,7 @@ export function applyGalaxy(g, s) {
     p.creditSiphonFound = !!sp.siphon?.found;
     p.creditSiphonType = sp.siphon?.type || null;
     p.piracy = sp.piracy || 0;
+    p.politicalEffects = (sp.politicalEffects || []).map(e => ({ ...e }));
     p.sabotageCount = sp.sabotageCount || 0;
     p.incomeHaltUntil = sp.incomeHaltUntil || 0;
     p.incomeMult = sp.incomeMult ?? 1;

@@ -97,7 +97,7 @@ import { placeGalacticModel, renderGalacticScenes } from './galacticscenes.js';
 import { GalacticModelFade } from './galacticfade.js';
 import { strategicIndex, strategicMultiplier } from './galacticspeed.js';
 import { FleetLines } from './fleetlines.js';
-import { stepPolitics, onControllerChange } from './galacticpolitics.js';
+import { stepPolitics, onControllerChange, politicalGroups } from './galacticpolitics.js';
 import { setComponentText } from './componenttext.js';
 import { snapNativeText } from '../nativefont.js';
 import { stageStart } from './transit.js';
@@ -1055,6 +1055,7 @@ export class GalacticGame {
       build: icon('G_BUILD'),
       smuggler: icon('G_SMUGGLER'),
       smuggled: icon('G_SMUGGLED'),
+      hunter: icon('G_BOUNTY_HUNTER'),
       corruption: icon('G_CORRUPTION_ICON')
     };
     this.pipStyles = ['G_SPACE_LEVEL_PIPS', 'G_GROUND_LEVEL_PIPS'].map(n => {
@@ -3430,6 +3431,10 @@ export class GalacticGame {
     if (siphon && siphon !== -1) {
       const style = up(siphon) === me ? s.smuggler : s.smuggled;
       if (style?.textures[0]) out.push({ name: style.textures[0], scale: style.scale });
+    }
+    if (s.hunter?.textures[0] && up(p.owner) !== me) {
+      const orbit = this.galaxy.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length);
+      if (politicalGroups(this.galaxy, p, orbit).has(14)) out.push({ name: s.hunter.textures[0], scale: s.hunter.scale });
     }
     const type = p.currentCorruption ?? -1,
       icons = db.constants.str('Corruption_Planet_Icon').split(/\s+/).filter(Boolean);

@@ -36,8 +36,7 @@ export function presenceController(g, p, orbit) {
     const q = p.production?.[k]?.[0];
     if (q?.owner) return { owner: q.owner, by: 'production' };
   }
-  if (!surfaceReachable(p))
-    for (const f of orbit || []) if (f.owner && live(f.units)) return { owner: f.owner, by: 'orbit' };
+  if (!surfaceReachable(p)) for (const f of orbit || []) if (f.owner && live(f.units)) return { owner: f.owner, by: 'orbit' };
   if (!p.destroyed && p.type.bool('Planet_Retains_Residual_Influence') && p.owner) return { owner: p.owner, by: 'residual' };
   const leaning = Math.max(0, Math.min(5, p.type.num('Political_Control', 0))),
     faction = db.faction(p.type.str('Political_Faction').trim());
@@ -45,9 +44,74 @@ export function presenceController(g, p, orbit) {
   return { owner: neutralFaction(), by: 'neutral' };
 }
 
+const yes = v => /^(yes|true|1)$/i.test(String(v ?? '').trim());
+const groundActivated = a => /^ground_activated$/i.test(String(a.val('Activation_Style', '')).trim());
+
+export function factionPoliticalMax(type, owner) {
+  for (const [f, n] of type.tuples('Planet_Max_Political_Control_For_Faction')) if (key(f) === key(owner)) return parseInt(n, 10) || 0;
+  return 5;
+}
+
+export function politicalEffects(g, p) {
+  const now = g.time || 0;
+  p.politicalEffects = (p.politicalEffects || []).filter(e => e.until < 0 || e.until >= now);
+  return p.politicalEffects;
+}
+
+function heroesAt(g, p, orbit) {
+  const out = [];
+  for (const u of p.garrison) if (!u.dead) out.push({ owner: u.owner, type: u.carries || u.type });
+  for (const f of orbit || []) for (const u of f.units) if (!u.dead) out.push({ owner: f.owner, type: u.carries || u.type });
+  return out;
+}
+
+function automaticEffects(g, p, orbit) {
+  const out = [];
+  for (const { owner, type } of heroesAt(g, p, orbit)) {
+    const members = [
+      type,
+      ...(type.list ? type : { list: () => [] })
+        .list('Company_Units')
+        .map(n => db.type(n))
+        .filter(Boolean)
+    ];
+    for (const t of members) {
+      for (const a of ability(t, 'Political_Control_Bonus_Ability'))
+        if (yes(a.val('Initially_Enabled', 'Yes')) && !groundActivated(a) && key(owner) === key(p.owner))
+          out.push({ group: 3, value: a.num('Political_Change', 1), source: key(a.attrs?.Name || t.name) });
+      for (const a of ability(t, 'Sabotage_Political_Control_Ability'))
+        if (yes(a.val('Initially_Enabled', 'Yes')) && !groundActivated(a) && key(owner) !== key(p.owner))
+          out.push({ group: 14, value: -Math.max(1, a.num('Political_Change', 1)), source: key(a.attrs?.Name || t.name) });
+    }
+  }
+  return out;
+}
+
+export function politicalGroups(g, p, orbit) {
+  const groups = new Map();
+  for (const e of [...politicalEffects(g, p), ...automaticEffects(g, p, orbit)]) {
+    groups.set(e.group, Math.max(groups.get(e.group) ?? -Infinity, e.value));
+  }
+  return groups;
+}
+
+export function addPoliticalEffect(g, p, ability, actor, group, sign) {
+  const effects = politicalEffects(g, p);
+  if (group === 14 && effects.some(e => e.group === 14)) return false;
+  const value = sign < 0 ? -Math.max(1, ability.num('Political_Change', 1)) : ability.num('Political_Change', 1),
+    duration = ability.num('Change_Duration_In_Seconds', -1),
+    source = key(ability.attrs?.Name || actor?.type?.name);
+  const until = duration > 0 ? (g.time || 0) + duration : -1;
+  const old = effects.find(e => e.group === group && e.source === source);
+  if (old) Object.assign(old, { value, until });
+  else effects.push({ group, value, until, source });
+  p.politicalChecked = -1;
+  return true;
+}
+
 export function politicalGoal(g, p, orbit, by = null) {
   const owner = p.owner,
-    have = !!owner && !db.faction(owner)?.bool('Is_Neutral');
+    have = by ? !['leaning', 'neutral'].includes(by) : !!owner && !db.faction(owner)?.bool('Is_Neutral');
   if (!owner) return { target: 0, rate: 1, protect: false };
   const here = presence(p, owner, orbit),
     top = maxControl();
@@ -79,8 +143,11 @@ export function politicalGoal(g, p, orbit, by = null) {
       const other = g.planets[r.a === p.index ? r.b : r.a];
       if ((p.politicalValue ?? top) >= 1 && (other.politicalValue ?? top) >= 1 && key(other.owner) === key(owner)) sum += gain;
     }
-  const ceiling = Math.min(5, db.constants.num('Planet_Max_Political_Control_For_Faction', top) || top);
-  const target = Math.max(have ? 1 : 0, Math.min(ceiling, sum));
+  for (const v of politicalGroups(g, p, orbit).values()) sum += v;
+  const floor = have ? 1 : 0;
+  let ceiling = have ? factionPoliticalMax(p.type, owner) : 5;
+  if (ceiling < floor) ceiling = 5;
+  const target = Math.max(floor, Math.min(ceiling, sum));
   let rate = aligned(owner, p),
     protect = false;
   const byCategory = new Map();
