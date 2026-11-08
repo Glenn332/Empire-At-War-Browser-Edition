@@ -2246,7 +2246,9 @@ export class GalacticGame {
     } finally {
       this.actingPid = undefined;
     }
+    if (r.layout) this.mergeFleets();
     this.syncFleetViews();
+    if ((r.layout || cmd.c === 'marker') && this.baseLayout?.open) this.baseLayout.refresh();
     return r;
   }
   hashState() {
@@ -3017,6 +3019,11 @@ export class GalacticGame {
   async openBaseLayout() {
     const i = this.view.planet;
     if (i < 0 || this.view.zoom < 1 || this.battle || this.baseLayout?.open) return false;
+    if (
+      [this.marketPanel, this.sabotagePanel, this.slicePanel, this.hackPanel, this.corruptionPanel].some(panel => panel?.open) ||
+      this.neutralizePopup?.opened
+    )
+      return false;
     if (!this.baseLayout) {
       this.baseLayoutLoading ||= loadBaseLayoutAssets().then(data => (data ? new BaseLayout(this, data) : null));
       this.baseLayout = await this.baseLayoutLoading;

@@ -131,6 +131,17 @@ assert(
   })
 );
 assert.equal(p.groundStructures[0].markerId, empty.marker.id);
+{
+  const { runCommand, recordRef } = await import('../public/js/game/galacticnet.js');
+  const before = p.garrison[0].markerId,
+    other = p.garrison[1].markerId;
+  const game = { galaxy: g };
+  assert(runCommand(game, owner, { c: 'marker', p: p.index, rec: recordRef(g, p.garrison[0]), id: other }).ok, 'a marker move runs as a network command');
+  assert.equal(p.garrison[0].markerId, other);
+  const foe = g.players.find(q => q.faction !== owner).faction;
+  assert(!runCommand(game, foe, { c: 'marker', p: p.index, rec: recordRef(g, p.garrison[0]), id: before }).ok, 'never on a planet of another player');
+  p.garrison[0].markerId = before;
+}
 const selected = map.objects.find(o => o.id === p.groundStructures[0].markerId);
 const unitAt = savedCompanyMarker(map, p.garrison[0].markerId),
   unitObject = map.objects.find(o => o.id === p.garrison[0].markerId);

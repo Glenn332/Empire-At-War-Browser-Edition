@@ -153,6 +153,15 @@ export class PlanetOverview extends NativePanel {
     this.baseButton = this.button('advanced_planetary', '', () => game.openBaseLayout());
     this.baseButton?.setAttribute('aria-label', db.t('TEXT_BASE_LAYOUT'));
     this.baseLabel = this.text('Text_Land_Fleet', () => db.t('TEXT_BASE_LAYOUT'));
+    this.baseLabel2 = this.text('Text_Land_Fleet', '');
+    if (this.baseLabel2) {
+      const o = this.origins?.get('TEXT_LAND_FLEET'),
+        off = this.comps.get('TEXT_LAND_FLEET')?.val('Text_Offset2').trim().split(/\s+/).map(Number) || [0, 0];
+      if (o) {
+        this.baseLabel2.style.top = -o.y - (off[1] || 0) + 'px';
+        this.baseLabel2.style.left = o.x + (off[0] || 0) + 'px';
+      }
+    }
     this.infoButton = this.button('planet_info', '', () => game.openPlanetInfo());
     this.infoButton?.setAttribute('aria-label', db.t('TEXT_BUTTON_PLANET_INFO'));
     this.infoLabel = this.text('planet_info', () => db.t('TEXT_BUTTON_PLANET_INFO'));
@@ -481,9 +490,13 @@ export class PlanetOverview extends NativePanel {
     }
     if (this.baseButton) {
       this.baseButton.hidden = !!p.destroyed;
-      this.baseButton.disabled = !canViewBaseLayout(game.galaxy, p, game.me);
+      this.baseButton.disabled = false;
     }
     if (this.baseLabel) this.baseLabel.hidden = !!p.destroyed;
+    if (this.baseLabel2) {
+      this.baseLabel2.hidden = !!p.destroyed;
+      this.setText(this.baseLabel2, p.destroyed || canViewBaseLayout(game.galaxy, p, game.me) ? '' : db.t('TEXT_UNKNOWN'));
+    }
     const terrain = p.destroyed ? 8 : Math.max(0, p.type.num('Zoomed_Terrain_Index', 0));
     this.paint(terrain, state.known);
     const units = stableSlots(state.ground, this.ground.length, this.indices);

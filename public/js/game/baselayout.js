@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { recordRef } from './galacticnet.js';
 import { cycleNumber } from './galacticeconomy.js';
 import { loadTextureCanvas } from '../dds.js';
 import { loadMapLayoutHeader } from '../ted.js';
@@ -198,8 +199,8 @@ export class BaseLayout extends NativePanel {
     const putText = (name, value) => {
       if (this.labels[name]) this.setText(this.labels[name], value);
     };
-    putText('unit_cap_number', p.garrison.length + ' / ' + this.game.overview.ground.length);
-    putText('building_cap_number', p.groundStructures.length + ' / ' + p.type.num('Special_Structures_Land', 3));
+    putText('unit_cap_number', p.garrison.length + '/' + this.game.overview.ground.length);
+    putText('building_cap_number', p.groundStructures.length + '/' + (p.structureSlots ?? p.type.num('Special_Structures_Land', 3)));
     putText('Planet_name_text', title(p.type));
     putText('Planetary_Income_number', String(Math.round(displayIncome(g, p))));
     putText('Day_Counter_text', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));
@@ -361,7 +362,8 @@ export class BaseLayout extends NativePanel {
       document.body.appendChild(this.ghost);
       this.onMove = event => {
         if (!this.dragging) return;
-        this.dragging.moved ||= Math.hypot(event.clientX - this.dragging.x, event.clientY - this.dragging.y) > 3;
+        this.dragging.moved ||=
+          Math.max(Math.abs(event.clientX - this.dragging.x), Math.abs(event.clientY - this.dragging.y)) > db.constants.num('MinimumDragDistance', 4);
         this.ghost.hidden = !this.dragging.moved;
         Object.assign(this.ghost.style, {
           left: event.clientX + 'px',
@@ -384,6 +386,29 @@ export class BaseLayout extends NativePanel {
       g = this.game.galaxy,
       p = g.planets[this.planet];
     let changed = false;
+    if (moved && target && this.game.net) {
+      const ref = u => recordRef(g, u);
+      if (from.kind === target.kind && ['building', 'unit'].includes(from.kind)) {
+        const a = from.slot.record,
+          b = target.slot.record;
+        if (p.owner === this.game.me && from !== target && !from.slot.fixed && !target.slot.fixed && a) {
+          this.game.order({ c: 'marker', p: p.index, rec: ref(a), id: target.slot.marker.id });
+          if (b) this.game.order({ c: 'marker', p: p.index, rec: ref(b), id: from.slot.marker.id });
+        }
+      } else if (from.kind === 'unit' && target.kind === 'palette')
+        this.game.order({ c: 'layoutEmbark', p: p.index, rec: ref(from.slot.record) });
+      else if (from.kind === 'palette' && target.kind === 'unit')
+        this.game.order({
+          c: 'layoutLand',
+          p: p.index,
+          f: g.fleets.indexOf(from.entry.fleet),
+          unit: ref(from.entry.unit),
+          id: target.slot.marker.id,
+          marker: target.slot.marker.type.name
+        });
+      this.cancelDrag();
+      return;
+    }
     if (moved && target) {
       if (from.kind === target.kind && ['building', 'unit'].includes(from.kind))
         changed = swapLayoutMarkers(p, this.layout, from.slot, target.slot, this.game.me);

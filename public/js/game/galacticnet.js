@@ -2,6 +2,8 @@ import { Lockstep, TURN } from './netgame.js';
 import { ticker } from '../net.js';
 import { simRandomState } from './simrandom.js';
 import { db } from '../gamedata.js';
+import { embarkLayoutCompany, landLayoutCompany } from './baselayoutdata.js';
+import { carriedCompany } from './invasion.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -187,6 +189,27 @@ export function runCommand(game, faction, cmd) {
         p = g.planets[cmd.p];
       if (rec && p && key(rec.owner ?? faction) === key(faction) && game.activateHeroSlot(rec, p, faction)) game.galacticBattleChanged();
       return {};
+    }
+    case 'marker': {
+      const rec = fromRecordRef(g, cmd.rec),
+        p = g.planets[cmd.p];
+      if (!rec || !p || key(p.owner) !== key(faction) || key(rec.owner ?? faction) !== key(faction) || !Number.isInteger(cmd.id)) return {};
+      rec.markerId = cmd.id;
+      return { ok: true };
+    }
+    case 'layoutEmbark': {
+      const p = g.planets[cmd.p];
+      return p && embarkLayoutCompany(g, p, faction, fromRecordRef(g, cmd.rec)) ? { ok: true, layout: true } : {};
+    }
+    case 'layoutLand': {
+      const p = g.planets[cmd.p],
+        fleet = fleetOf(g, cmd.f),
+        unit = fromRecordRef(g, cmd.unit),
+        type = unit && carriedCompany(unit),
+        marker = { id: cmd.id, type: { name: String(cmd.marker || '') } };
+      if (!p || !fleet || !unit || !type) return {};
+      const target = { marker, record: p.garrison.find(u => u.markerId === cmd.id) || null };
+      return landLayoutCompany(g, p, faction, { fleet, unit, type }, target) ? { ok: true, layout: true } : {};
     }
     case 'sell': {
       const rec = fromRecordRef(g, cmd.rec);
