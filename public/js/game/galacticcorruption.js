@@ -222,6 +222,28 @@ const holds = (record, types) => {
   return types.some(x => members.includes(key(x.name)));
 };
 
+export function playHologram(game, speechName, hologram) {
+  const speech = game.audio?.speech,
+    record = speech?.replace?.(speechName);
+  if (!record) return;
+  if (hologram) game.movies?.play(hologram);
+  const id = 'TEXT_SPEECH_' + record.name;
+  const offStart = speech.on('start', r => {
+      if (r !== record || !r.textId) return;
+      game.screenText?.show({ id, textId: r.textId, duration: -1 });
+    }),
+    end = r => {
+      if (r !== record) return;
+      offStart();
+      offDone();
+      offStory();
+      game.screenText?.show({ id, remove: true });
+      if (hologram) game.movies?.stop?.();
+    },
+    offDone = speech.on('done', end),
+    offStory = speech.on('storydone', end);
+}
+
 export function requirements(game, player, choice) {
   const g = game.galaxy;
   const credits = choice.cost <= 0 || choice.cost <= player.credits;
@@ -324,7 +346,7 @@ function begin(game, player, planet, type, choice = null) {
   (player.corruptionMissions ||= Array(8).fill(0))[type]++;
   const c = choice || choiceOfType(planet.type, type);
   if (c?.successSpeech && same(player.faction, game.me) && planet.showCorruptionHologram !== false)
-    game.audio?.speech?.replace?.(c.successSpeech);
+    playHologram(game, c.successSpeech, c.successHologram);
   if (same(player.faction, game.me)) game.notify?.(String(db.t('TEXT_CORRUPTION_BEGIN')).replace('%s', planetName(planet)), player.faction);
 }
 
@@ -366,7 +388,7 @@ export function missionResult(game, request, won) {
     game.story?.signalCorruption?.('STORY_CORRUPTION_TACTICAL_COMPLETE', planet, type);
   } else {
     if (choice?.failureSpeech && same(player.faction, game.me) && planet.showCorruptionHologram !== false)
-      game.audio?.speech?.replace?.(choice.failureSpeech);
+      playHologram(game, choice.failureSpeech, choice.failureHologram);
     game.story?.signalCorruption?.('STORY_CORRUPTION_TACTICAL_FAILED', planet, type);
   }
 }
