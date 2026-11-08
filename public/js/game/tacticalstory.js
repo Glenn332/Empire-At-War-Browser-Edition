@@ -243,6 +243,89 @@ export class TacticalStoryHost extends StoryPlots {
     this.time = this.game.world.time;
     this.pollEvents();
     this.pollDestroyed();
+    this.pollProximity();
+  }
+  selected(list) {
+    for (const s of list || []) if (s?.type?.name) this.signal('STORY_SELECT_UNIT', s.type.name);
+  }
+  command(world, cmd) {
+    const all = [...(world?.units || []), ...(world?.squads || [])],
+      find = id => (id ? all.find(u => u.id === id && !u.dead) : null),
+      units = (Array.isArray(cmd?.u) ? cmd.u : []).map(find).filter(Boolean);
+    if (cmd?.c === 'move' && !cmd.t && cmd.x !== undefined)
+      for (const u of units) this.commanded(u.type?.name, { x: +cmd.x || 0, y: +cmd.y || 0, z: +cmd.z || 0 });
+    else if (cmd?.c === 'formmove')
+      for (const [id, x, y] of Array.isArray(cmd.p) ? cmd.p : []) this.commanded(find(id)?.type?.name, { x: +x || 0, y: +y || 0, z: 0 });
+    else if (cmd?.c === 'guard' && cmd.t) {
+      const target = find(cmd.t);
+      if (target) for (const u of units) this.guarded(u.type?.name, target.type?.name);
+    }
+  }
+  storyNames(s) {
+    return String(s || '')
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map(key);
+  }
+  storyObjects(names) {
+    const w = this.scripts?.world || this.game.world,
+      all = [...(w.selectables?.() || []), ...[...(this.game.world?.mapObjects?.values() || [])].flat()];
+    return all.filter(u => u && !u.dead && names.includes(key((u.scriptType || u.type)?.name)));
+  }
+  commanded(type, at) {
+    if (!type) return;
+    for (const e of this.eventTypes.get('STORY_COMMAND_UNIT') || []) {
+      if (!this.waiting(e) || !this.storyNames(e.params[0]).includes(key(type))) continue;
+      const targets = this.storyNames(e.params[1]),
+        range = parseFloat(e.params[2]) || 0;
+      if (!targets.length || range === 0) {
+        this.fire(e);
+        continue;
+      }
+      if (this.storyObjects(targets).some(t => Math.hypot((t.x || 0) - at.x, (t.y || 0) - at.y, (t.z || 0) - at.z) < range)) this.fire(e);
+    }
+  }
+  guarded(type, target) {
+    if (!type || !target) return;
+    for (const e of this.eventTypes.get('STORY_GUARD_UNIT') || []) {
+      if (!this.waiting(e)) continue;
+      const units = this.storyNames(e.params[0]),
+        guards = this.storyNames(e.params[1]),
+        i = units.indexOf(key(type));
+      if (i >= 0 && guards[i] === key(target)) this.fire(e);
+    }
+  }
+  pollProximity() {
+    const list = (this.eventTypes.get('STORY_UNIT_PROXIMITY') || []).filter(e => this.waiting(e));
+    if (!list.length) return;
+    const game = this.game,
+      w = this.scripts?.world || game.world,
+      me = key(game.human?.factionName || this.factionOf({ side: game.me })),
+      lead = u => (u?.isSquad ? u.fighters?.[0] : u) || u,
+      typeName = u => key((u.scriptType || u.type || lead(u)?.type)?.name),
+      all = [...(w.selectables?.() || []), ...[...(game.world.mapObjects?.values() || [])].flat()].filter(u => u && !u.dead),
+      mine = all.filter(u => !u.mapMarker && key(this.factionOf(u)) === me && !u.container && !u.inside);
+    const names = s =>
+      String(s || '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map(key);
+    for (const e of list) {
+      if (e.plot?.owner && key(e.plot.owner) !== me) continue;
+      const want = names(e.params[0]),
+        targets = all.filter(u => names(e.params[1]).includes(typeName(u))),
+        range = parseFloat(e.params[2]) || 0;
+      if (!targets.length) continue;
+      const near = mine.some(u => {
+        if (want.length && !want.includes(typeName(u))) return false;
+        const a = lead(u);
+        return targets.some(t => {
+          const b = lead(t);
+          return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0), (b.z || 0) - (a.z || 0)) < range;
+        });
+      });
+      if (near) this.fire(e);
+    }
   }
   factionOf(u) {
     return u?.player?.factionName ?? this.game.factions?.[u?.side] ?? '';

@@ -341,6 +341,7 @@ export class LandGame {
       this.lock.command(cmd);
       return null;
     }
+    this.tacticalStory?.command?.(this.world, cmd);
     const r = executeLand(this, this.me, cmd);
     this.commandResult(cmd, r);
     return r;

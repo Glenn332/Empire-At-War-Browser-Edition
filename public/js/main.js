@@ -1838,6 +1838,7 @@ class Game {
       this.mirror.command(cmd);
       return null;
     }
+    this.tacticalStory?.command?.(this.world, cmd);
     const r = execute(this.world, this.human, cmd);
     this.commandResult(cmd, r);
     return r;

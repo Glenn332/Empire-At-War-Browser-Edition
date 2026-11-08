@@ -1488,9 +1488,11 @@ export class UI {
   select(list, add) {
     if (!add) for (const s of this.selection) s.selected = false;
     const next = add ? this.selection.slice() : [];
+    const fresh = list.filter(s => !next.includes(s));
     for (const s of list) if (!next.includes(s)) next.push(s);
     this.selection = next;
     for (const s of next) s.selected = true;
+    this.game.tacticalStory?.selected?.(fresh);
     if (list.length && list[0].player === this.player) {
       const t = list[0].isSquad ? (list[0].fighters[0] ? list[0].fighters[0].type : list[0].type) : list[0].type;
       this.game.audio.play(t.str('SFXEvent_Select'));

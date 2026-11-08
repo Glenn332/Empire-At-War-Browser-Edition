@@ -264,6 +264,29 @@ export class StoryPlots {
       this.fire(e);
     }
   }
+  signalCredits(owner, credits) {
+    const value = Math.trunc(credits);
+    for (const e of this.eventTypes.get('STORY_ACCUMULATE') || []) {
+      if (e.plot?.owner && key(e.plot.owner) !== key(owner)) continue;
+      const want = parseInt(e.params[0], 10) || 0,
+        mode = ['', 'GREATER_THAN', 'LESS_THAN', 'EQUAL_TO', 'NOT_EQUAL_TO', 'GREATER_THAN_EQUAL_TO', 'LESS_THAN_EQUAL_TO'].indexOf(
+          key(e.params[1])
+        );
+      const hit =
+        mode <= 1
+          ? value > want
+          : mode === 2
+            ? value < want
+            : mode === 3
+              ? value === want
+              : mode === 5
+                ? value >= want
+                : mode === 6
+                  ? value <= want
+                  : false;
+      if (hit) this.fire(e);
+    }
+  }
   signal(type, value) {
     const target = key(value);
     for (const e of this.eventTypes.get(type) || []) {

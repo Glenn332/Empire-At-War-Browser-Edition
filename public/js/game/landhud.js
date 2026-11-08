@@ -267,10 +267,12 @@ export class LandUI {
   }
 
   select(list, add = false) {
-    const next = add ? [...new Set([...this.selection, ...list])] : list.slice();
+    const next = add ? [...new Set([...this.selection, ...list])] : list.slice(),
+      before = add ? this.selection.slice() : [];
     for (const s of this.selection) s.selected = false;
     this.selection = next.filter(s => s && !s.dead && s.selectable !== false);
     for (const s of this.selection) s.selected = true;
+    this.game.tacticalStory?.selected?.(this.selection.filter(s => !before.includes(s)));
     this.game.hudTimer = 0;
   }
   mine() {

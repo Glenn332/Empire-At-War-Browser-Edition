@@ -1902,6 +1902,12 @@ export class GalacticStoryHost extends StoryPlots {
         this.techPending = false;
         for (const p of this.game.galaxy.players) this.signalTech(p.faction, p.tech);
       }
+      const seen = (this.creditsSeen ||= new Map());
+      for (const p of this.game.galaxy?.players || []) {
+        const was = seen.get(p.faction);
+        seen.set(p.faction, p.credits);
+        if (was !== undefined && was !== p.credits) this.signalCredits(p.faction, p.credits);
+      }
       this.pollEvents(!service);
     } finally {
       this.running = false;
