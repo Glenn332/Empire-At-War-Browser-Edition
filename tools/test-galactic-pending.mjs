@@ -267,5 +267,6 @@ const defending = pending.losses(
   b,
   a
 );
-assert.equal(defending.yours.get(unit), 1, 'The player is the defender here: its losses are the second roster'.length ? 1 : 0);
+assert.equal(defending.yours.get(unit), undefined, 'losses are split by owner, not by roster side');
+assert.equal(defending.enemy.get(unit), 1);
 console.log(JSON.stringify({ mod: mod >= 0, status: 'PASS' }));

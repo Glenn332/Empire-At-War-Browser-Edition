@@ -1,3 +1,4 @@
+import { allied as routeAllied } from './humanroute.js';
 import { db } from '../gamedata.js';
 import { setComponentText } from './componenttext.js';
 import { snapNativeText } from '../nativefont.js';
@@ -29,7 +30,7 @@ export class PendingBattle {
   }
 
   get busy() {
-    return !!(this.request || this.resolution);
+    return !!(this.request || this.resolution || this.deferred);
   }
 
   disable(planet, on) {
@@ -66,7 +67,13 @@ export class PendingBattle {
     return !this.restricted(request.p) && !this.forbidden(request);
   }
   single(request) {
-    return db.constants.bool('AlwaysBypassAutoResolve') || this.restricted(request.p) || this.forbidden(request) || this.tutorial();
+    return (
+      db.constants.bool('AlwaysBypassAutoResolve') ||
+      this.restricted(request.p) ||
+      this.forbidden(request) ||
+      this.tutorial() ||
+      !!this.game.pendingLinkedTactical
+    );
   }
   tutorial() {
     return !!this.game.galaxy?.players?.find(p => key(p.faction) === key(this.game.me))?.tutorial;
@@ -76,6 +83,10 @@ export class PendingBattle {
     const game = this.game;
     if (this.busy) return false;
     if (game.net) return this.netBegin(request);
+    if (game.controlsLocked || game.storyMovie) {
+      this.deferred = request;
+      return true;
+    }
     if (!db.constants.bool('Strategic_Queue_Tactical_Battles', true)) return this.fight(request);
     if (game.autoResolveOption) return this.resolve(request);
     if (!this.restricted(request.p) && game.battles.overrun(request)) return this.resolve(request, false, true);
@@ -101,6 +112,11 @@ export class PendingBattle {
   }
 
   tick() {
+    if (this.deferred && !this.game.controlsLocked && !this.game.storyMovie) {
+      const waiting = this.deferred;
+      this.deferred = null;
+      this.begin(waiting);
+    }
     const r = this.request;
     if (!r?.voters) return;
     if (this.game.held) return;
@@ -457,11 +473,13 @@ export class PendingBattle {
         if (u.groundBase) continue;
         const kept = u.station ? result.sides[i].stations.has(u) && result.sides[i].stations.get(u) : result.sides[i].alive.has(u);
         if (kept) continue;
-        lost[i].set(u.original, (lost[i].get(u.original) || 0) + 1);
-        dead[i].push(u.original);
+        const owner = u.owner ?? [attacker, defender][i],
+          at = key(owner) === key(me) ? 0 : !routeAllied(owner, me) ? 1 : -1;
+        if (at < 0) continue;
+        lost[at].set(u.original, (lost[at].get(u.original) || 0) + 1);
+        dead[at].push(u.original);
       }
-    const mine = key([attacker, defender][0]) === key(me) ? 0 : 1;
-    return { yours: lost[mine], enemy: lost[1 - mine], mine: dead[mine], theirs: dead[1 - mine] };
+    return { yours: lost[0], enemy: lost[1], mine: dead[0], theirs: dead[1] };
   }
 
   async present(request, outcome, silent) {

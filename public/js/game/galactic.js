@@ -3248,6 +3248,7 @@ export class GalacticGame {
     else if (!this.over) {
       this.story?.update(this.paused || this.storyMovie?.pausesMode ? 0 : real * this.rate, false, real);
       storyMoviesDone(this.story);
+      this.pendingBattle?.tick?.();
     }
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
     if (!this.paused && !this.over && !this.storyMovie?.pausesMode) {

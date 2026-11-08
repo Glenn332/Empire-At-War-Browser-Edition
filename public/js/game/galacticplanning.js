@@ -1463,6 +1463,7 @@ export class GalacticPlanning {
       __move: (target, raid) => {
         const to = target?.__planet;
         if (!to || !this.alive(force).length) return undefined;
+        if (this.game.galaxy.fleets.some(f => f.leg && f.units.some(u => force.units.includes(u)))) return undefined;
         const fleets = this.detach(force, null),
           mode = inst.gdef?.reach || 'ENEMY_DESTINATION';
         let ordered = false;
