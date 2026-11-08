@@ -24,7 +24,7 @@ import { scheduleHeroRespawn, forceHeroRespawn } from './galacticherorespawn.js'
 import { sabotageReward } from './galacticsabotage.js';
 import { galacticBounty, ownerCorruption } from './galacticbounty.js';
 import { blackMarketItems } from './blackmarket.js';
-import { startRemoval } from './galacticcorruption.js';
+import { startRemoval, clearSiphon } from './galacticcorruption.js';
 import { installPersistence, saveStory, restoreStory } from './galacticstorysave.js';
 import { playScriptMusic, startStrategicMusic } from './galacticmusic.js';
 import { galacticStoryReward } from './storyrewards.js';
@@ -1198,6 +1198,34 @@ export class GalacticStoryHost extends StoryPlots {
         rows.push({ object: o, type, major, valid, cost: Math.round(this.neutralizeCost(ability, planet, o, type, major)) });
       }
     }
+    const siphoner = planet.creditSiphonOwner,
+      siphonType = planet.creditSiphonType && db.type(planet.creditSiphonType);
+    if (
+      siphoner &&
+      siphoner !== -1 &&
+      siphonType &&
+      !(
+        key(siphoner) === key(object.owner) ||
+        db
+          .faction(siphoner)
+          ?.list('Allies')
+          .some(n => key(n) === key(object.owner))
+      )
+    ) {
+      const major = siphonType.bool('Is_Named_Hero'),
+        valid =
+          yes(ability.val(major ? 'Can_Neutralize_Major_Heroes' : 'Can_Neutralize_Minor_Heroes', 'No')) &&
+          siphonType.bool(hunterMajor ? 'Can_Be_Neutralized_By_Major_Heroes' : 'Can_Be_Neutralized_By_Minor_Heroes', true),
+        target = { owner: siphoner, type: siphonType };
+      rows.push({
+        object: target,
+        siphon: true,
+        type: siphonType,
+        major,
+        valid,
+        cost: Math.round(this.neutralizeCost(ability, planet, target, siphonType, major))
+      });
+    }
     return rows;
   }
   neutralizeCost(ability, planet, target, type, major) {
@@ -1241,7 +1269,10 @@ export class GalacticStoryHost extends StoryPlots {
     const g = this.game.galaxy,
       owner = g.players.find(p => key(p.faction) === key(object.owner)),
       human = key(object.owner) === key(this.game.me);
-    if (!row || !row.valid || !owner || owner.credits < row.cost || row.object.dead || object.dead) {
+    const gone = row?.siphon
+      ? key(planet.creditSiphonOwner) !== key(row.object.owner) || planet.creditSiphonType !== row.type.name
+      : row?.object.dead;
+    if (!row || !row.valid || !owner || owner.credits < row.cost || gone || object.dead) {
       if (human) this.game.audio?.play('GUI_Bad_Sound');
       return false;
     }
@@ -1260,9 +1291,12 @@ export class GalacticStoryHost extends StoryPlots {
       this.despawn(object);
       return true;
     }
-    const target = row.object.record || row.object;
-    this.despawn(row.object);
-    scheduleHeroRespawn(this.game, target, planet, row.object.owner, object.owner, roll('Target_Respawn_Time_In_Secs'), true);
+    if (row.siphon) clearSiphon(planet);
+    else {
+      const target = row.object.record || row.object;
+      this.despawn(row.object);
+      scheduleHeroRespawn(this.game, target, planet, row.object.owner, object.owner, roll('Target_Respawn_Time_In_Secs'), true);
+    }
     owner.credits -= row.cost;
     (this.neutralized ||= new Map()).set(key(row.type.name), (this.neutralized.get(key(row.type.name)) || 0) + 1);
     this.signal('STORY_GENERIC', 'hero_neutralized');

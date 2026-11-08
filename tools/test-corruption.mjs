@@ -270,4 +270,53 @@ const remover = [...db.types.values()].find(t =>
   assert(income >= ship.num('Piracy_Value_Credits'));
   assert.equal(p.piracy, 0, 'paid once');
 }
+{
+  const { GalacticStoryHost } = await import('../public/js/game/galacticstory.js');
+  const abilityOf = (t, tag) =>
+    t
+      .sub('Abilities')
+      .flatMap(n => n.children)
+      .find(a => a.tag.toUpperCase() === tag);
+  const siphoner = [...db.types.values()].find(
+    t => abilityOf(t, 'SIPHON_CREDITS_ABILITY') && (t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero'))
+  );
+  const hunter = [...db.types.values()].find(t => {
+    const a = abilityOf(t, 'NEUTRALIZE_HERO_ABILITY');
+    return a && /^yes/i.test(a.val(siphoner?.bool('Is_Named_Hero') ? 'Can_Neutralize_Major_Heroes' : 'Can_Neutralize_Minor_Heroes', 'No'));
+  });
+  assert(mod >= 0 || (siphoner && hunter), 'base data has a siphoner and a neutralizer');
+  if (siphoner && hunter) {
+    const p = mk(plan, A.name),
+      game = world(p),
+      g = game.galaxy,
+      thief = { owner: B.name, type: siphoner, record: { type: siphoner, owner: B.name }, dead: false, planet: p };
+    g.time = 0;
+    assert(C.activateSiphon(game, thief, p, abilityOf(siphoner, 'SIPHON_CREDITS_ABILITY'), siphoner));
+    assert.equal(p.creditSiphonType, siphoner.name, 'the siphon keeps its hero type');
+    const host = Object.create(GalacticStoryHost.prototype);
+    Object.assign(host, {
+      game,
+      objects: () => [],
+      despawn: noop,
+      signal: noop,
+      callback: noop,
+      object: o => o,
+      type: t => t,
+      abilityLanded: noop,
+      neutralizeNotice: noop
+    });
+    const ally = { owner: B.name, type: hunter, record: { type: hunter, owner: B.name }, planet: p },
+      foe = { owner: A.name, type: hunter, record: { type: hunter, owner: A.name }, planet: p },
+      ability = abilityOf(hunter, 'NEUTRALIZE_HERO_ABILITY');
+    assert.equal(host.neutralizeRows(ally, ability, p).length, 0, 'the siphoner own side cannot target it');
+    const rows = host.neutralizeRows(foe, ability, p);
+    assert.equal(rows.length, 1, 'the hidden siphoner is a target');
+    assert(rows[0].siphon && rows[0].type === siphoner);
+    g.players[0].credits = 1e6;
+    assert(host.neutralizeExecute(foe, ability, p, rows[0]));
+    assert.equal(p.creditSiphonOwner, -1, 'neutralizing the siphoner ends the siphon');
+    assert.equal(p.creditSiphonType, null);
+    assert.equal(host.neutralizeExecute(foe, ability, p, rows[0]), false, 'it cannot be neutralized twice');
+  }
+}
 console.log('ok', planetTypes.length, 'planets with offers,', uw.name, 'benefits');

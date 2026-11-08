@@ -3,7 +3,7 @@ import { allied, targetOwner, currentOwner, campaignPlanet } from './galacticvic
 import { strategicStealth } from './galacticfog.js';
 import { scheduleHeroRespawn } from './galacticherorespawn.js';
 import { activateBlackMarket } from './blackmarket.js';
-import { activateCorruption, activateRemoval, activateSiphon } from './galacticcorruption.js';
+import { activateCorruption, activateRemoval, activateSiphon, clearSiphon } from './galacticcorruption.js';
 import { activateSlicer } from './galacticslicer.js';
 import { activateSabotage } from './galacticsabotage.js';
 import { activateHack } from './galactichack.js';
@@ -106,7 +106,7 @@ export function destroyPlanet(game, p, notify = true) {
   p.tacticalStructures = [];
   p.groundLevel = 0;
   p.currentCorruption = -1;
-  p.creditSiphonOwner = -1;
+  clearSiphon(p);
   p.corruptionOwner = -1;
   p.destroyed = true;
   if (game.battle?.p === p.index) {
@@ -174,7 +174,7 @@ export function groundActivated(game, actor, filter, neutralize) {
       else if (key(ability.tag) === 'BLACK_MARKET_ABILITY') fired = activateBlackMarket(game, actor, p, ability);
       else if (key(ability.tag) === 'CORRUPTION_ABILITY') fired = activateCorruption(game, actor, p, ability);
       else if (key(ability.tag) === 'REMOVE_CORRUPTION_ABILITY') fired = activateRemoval(game, actor, p, ability);
-      else if (key(ability.tag) === 'SIPHON_CREDITS_ABILITY') fired = activateSiphon(game, actor, p, ability);
+      else if (key(ability.tag) === 'SIPHON_CREDITS_ABILITY') fired = activateSiphon(game, actor, p, ability, type);
       else if (key(ability.tag) === 'SLICER_ABILITY') fired = activateSlicer(game, actor, p, ability);
       else if (key(ability.tag) === 'HACK_SUPER_WEAPON_ABILITY') fired = activateHack(game, actor, p, ability);
       else if (key(ability.tag) === 'SYSTEM_SPY_ABILITY') fired = activateSpy(game, actor, p, ability, type);

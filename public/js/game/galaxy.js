@@ -326,7 +326,7 @@ export function snapshotGalaxy(g) {
         abilities: !!p.abilitiesRestricted,
         sabotage: !!p.sabotageRestricted
       },
-      siphon: { pct: p.creditSiphonPct || 0, end: p.creditSiphonEnd || 0, amount: p.creditSiphonAmount || 0, found: !!p.creditSiphonFound },
+      siphon: { pct: p.creditSiphonPct || 0, end: p.creditSiphonEnd || 0, amount: p.creditSiphonAmount || 0, found: !!p.creditSiphonFound, type: p.creditSiphonType || null },
       piracy: p.piracy || 0,
       sabotageCount: p.sabotageCount || 0,
       incomeHaltUntil: p.incomeHaltUntil || 0,
@@ -483,6 +483,7 @@ export function applyGalaxy(g, s) {
     p.creditSiphonEnd = sp.siphon?.end || 0;
     p.creditSiphonAmount = sp.siphon?.amount || 0;
     p.creditSiphonFound = !!sp.siphon?.found;
+    p.creditSiphonType = sp.siphon?.type || null;
     p.piracy = sp.piracy || 0;
     p.sabotageCount = sp.sabotageCount || 0;
     p.incomeHaltUntil = sp.incomeHaltUntil || 0;

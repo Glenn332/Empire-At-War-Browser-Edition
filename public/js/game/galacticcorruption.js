@@ -193,6 +193,7 @@ export function clearSiphon(planet) {
   planet.creditSiphonEnd = 0;
   planet.creditSiphonAmount = 0;
   planet.creditSiphonFound = false;
+  planet.creditSiphonType = null;
 }
 
 export function canCorrupt(game, actor, planet) {
@@ -384,7 +385,7 @@ export function activateRemoval(game, actor, planet, ability) {
   return true;
 }
 
-export function activateSiphon(game, actor, planet, ability) {
+export function activateSiphon(game, actor, planet, ability, type = actor.type) {
   const g = game.galaxy,
     owner = planet.politicalOwner ?? planet.owner;
   const main = f => ['REBEL', 'EMPIRE', 'UNDERWORLD'].includes(key(f));
@@ -405,6 +406,7 @@ export function activateSiphon(game, actor, planet, ability) {
   planet.creditSiphonPct = lo + simRandom() * (hi - lo);
   planet.creditSiphonAmount = 0;
   planet.creditSiphonFound = false;
+  planet.creditSiphonType = type?.name || null;
   planet.creditSiphonEnd = (g.time || 0) + cycles * db.constants.num('Fiscal_Cycle_Time_In_Secs', 45);
   game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, abilityRespawnTime(ability), true);

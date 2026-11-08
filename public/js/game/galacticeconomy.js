@@ -94,6 +94,7 @@ export function netIncome(g, p, owner = p.owner, orbit = null) {
     p.creditSiphonOwner = -1;
     p.creditSiphonPct = 0;
     p.creditSiphonAmount = 0;
+    p.creditSiphonType = null;
     return gross;
   }
   const pct = p.creditSiphonPct ?? 0;
