@@ -854,7 +854,8 @@ export class Menus {
             g.setSpeed(strategicMultiplier(i));
             saveStrategicIndex(i);
           },
-          STRATEGIC_FRAMES.length
+          STRATEGIC_FRAMES.length,
+          !g.speedLocked?.()
         );
       else
         dlg.slider('IDC_GAME_SPEED_SLIDER', toV(tacticalSpeed()), v => {

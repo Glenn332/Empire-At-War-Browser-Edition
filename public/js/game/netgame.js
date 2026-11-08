@@ -192,7 +192,7 @@ export class Lockstep {
     this.started = true;
     clearInterval(this.loadedTimer);
     this.go?.();
-    if (this.host && this.net.speed && this.net.speed !== 1) this.setSpeed(this.net.speed);
+    if (this.host && this.net.speed && this.net.speed !== 1 && this.net.sessionSpeed === undefined) this.setSpeed(this.net.speed);
   }
 
   command(cmd) {
@@ -580,7 +580,7 @@ export class Lockstep {
         if (cmd.c === 'speed') {
           if ((pid === this.hostPlayer || this.game.anyoneSetsSpeed) && (this.game.speeds || [0.5, 1, 2, 4]).includes(+cmd.s)) {
             this.game.speed = +cmd.s;
-            this.game.speedChanged?.(player);
+            this.game.speedChanged?.(player, pid);
           }
           continue;
         }

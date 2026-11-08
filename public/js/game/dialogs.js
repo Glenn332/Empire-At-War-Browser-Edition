@@ -1282,9 +1282,16 @@ export async function openDialog(
       const c = ctls.get(cid);
       if (c) c.classList.toggle('off', !on);
     },
-    slider(cid, value, change, steps = 0) {
+    slider(cid, value, change, steps = 0, enabled = true) {
       const c = ctls.get(cid);
       if (!c || !c._tab) return;
+      for (const part of [c._track, c._tab, c._minus, c._plus]) {
+        if (!part) continue;
+        part.style.pointerEvents = enabled ? '' : 'none';
+        part.style.opacity = enabled ? '' : '0.5';
+      }
+      if (c._minus) c._minus.disabled = !enabled;
+      if (c._plus) c._plus.disabled = !enabled;
       let v = value;
       const set = (n, tell = true) => {
         v = Math.max(0, Math.min(1, n));

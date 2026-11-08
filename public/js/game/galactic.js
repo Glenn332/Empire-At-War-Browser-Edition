@@ -767,10 +767,7 @@ export class GalacticGame {
     pauseGalactic(this, on);
   }
   setUserPaused(on) {
-    if (this.net) {
-      this.net.lock.togglePause();
-      return;
-    }
+    if (this.net) return;
     this.setFastForward(false);
     userPauseGalactic(this, on);
   }
@@ -2123,9 +2120,18 @@ export class GalacticGame {
   get anyoneSetsSpeed() {
     return true;
   }
-  speedChanged(player) {
+  speedChanged(player, pid) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    (this.speedChanges ||= []).push(now);
+    if (this.setup.net) this.setup.net.sessionSpeed = this.speed;
     this.message(`${player?.name || ''}: ${db.t('TEXT_GAME_SPEED_CHANGED') || 'Game speed changed'}`);
-    this.audio?.play('GUI_Chat_Message_SFX');
+    if (pid !== this.localPid) this.audio?.play('GUI_Common_Chat_Receive');
+  }
+  speedLocked() {
+    if (!this.net) return false;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.speedChanges = (this.speedChanges || []).filter(t => now - t < 45000);
+    return this.speedChanges.length > 1;
   }
 
   multiplayerGalaxy(g) {
@@ -2175,7 +2181,7 @@ export class GalacticGame {
 
   async startNet() {
     this.mpBattles = new MpBattles(this);
-    this.speed = 1;
+    this.speed = this.setup.net.sessionSpeed ?? 1;
     this.net = new GalacticNet(this, this.setup.net);
     this.message('Waiting for the other players...');
     await this.net.ready();
