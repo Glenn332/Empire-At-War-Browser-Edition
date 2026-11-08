@@ -83,60 +83,184 @@ export function splitForCap(units, cap, linked = null) {
   return { field, waiting: rest };
 }
 
+const extents = new Map();
+function extentOf(t) {
+  if (extents.has(t)) return extents.get(t);
+  let e = { along: 30, across: 30 };
+  const m = getModelData(t.str('Space_Model_Name'));
+  if (m) {
+    const box = buildModel(m, { headless: true }).box,
+      k = t.num('Scale_Factor', 1);
+    e = { along: box.max.x * k, across: box.max.y * k };
+  }
+  extents.set(t, e);
+  return e;
+}
+function groupSize(list) {
+  let a = 0,
+    b = 0;
+  for (const u of list) {
+    const t = u.type,
+      members = t.has('Space_Model_Name') ? [] : t.list('Squadron_Units');
+    if (!members.length) {
+      const e = extentOf(t);
+      b = Math.max(b, e.along);
+      a = Math.max(a, e.across);
+      continue;
+    }
+    const offsets = t.tuples('Squadron_Offsets').map(o => o.map(parseFloat));
+    let x0 = 0,
+      x1 = 0,
+      y0 = 0,
+      y1 = 0;
+    members.forEach((n, i) => {
+      const f = db.type(n);
+      if (!f) return;
+      const e = extentOf(f),
+        o = offsets[i] || [0, 0];
+      x0 = Math.min(x0, o[0] - e.across);
+      x1 = Math.max(x1, o[0] + e.across);
+      y0 = Math.min(y0, (o[1] || 0) - e.along);
+      y1 = Math.max(y1, (o[1] || 0) + e.along);
+    });
+    b = Math.max(b, (x1 - x0) / 2);
+    a = Math.max(a, (y1 - y0) / 2);
+  }
+  return [a * 2, b * 2, 0];
+}
+
+export function smallCraftOrder(list) {
+  const f = list.filter(u => shipClass(u.type) === 0),
+    b = list.filter(u => shipClass(u.type) === 1);
+  if (!f.length || !b.length) return list;
+  const out = [];
+  if (f.length < b.length) {
+    const k = Math.trunc((b.length - f.length) / 2);
+    out.push(...b.slice(0, k));
+    f.forEach((u, i) => out.push(b[k + i], u));
+    out.push(...b.slice(k + f.length));
+  } else {
+    const h = Math.trunc(b.length / 2),
+      extra = f.length - b.length;
+    for (let i = 0; i < h; i++) out.push(b[i], f[i]);
+    out.push(...f.slice(h, h + extra));
+    for (let j = 0; j < b.length - h; j++) out.push(b[h + j], f[h + extra + j]);
+  }
+  return out;
+}
+
 const gridRows = n => (n < 3 ? 1 : n < 7 ? 2 : n < 10 ? 3 : n < 17 ? 4 : n <= 25 ? 5 : 6);
+const EXTRA = {
+  3: { 1: [1], 2: [0, 2] },
+  4: { 1: [0], 2: [0, 2], 3: [0, 1, 2] },
+  5: { 1: [0], 2: [1, 3], 3: [0, 2, 4], 4: [0, 1, 2, 3] },
+  6: { 1: [0], 2: [2, 3], 3: [1, 3, 5], 4: [1, 2, 3, 4], 5: [0, 1, 2, 3, 4] }
+};
 
 export function arrange(units, at, facing) {
   const out = [],
     fx = Math.cos(facing),
     fy = Math.sin(facing);
-  const put = (u, a, b) => out.push({ u, x: at.x + fx * a - fy * b, y: at.y + fy * a + fx * b });
-  const grid = (list, back) => {
-    if (!list.length) return 0;
-    const cell = 2 * Math.max(...list.map(u => halfSize(u.type))),
-      rows = gridRows(list.length),
-      per = Math.ceil(list.length / rows);
-    list.forEach((u, i) => {
-      const r = Math.floor(i / per),
-        c = i % per,
-        stagger = r % 2 ? cell / 2 : 0;
-      put(u, -back - r * cell, (c - (per - 1) / 2) * cell + stagger);
-    });
-    return rows * cell;
-  };
-  const arc = (list, radius, span, from) => {
-    if (!list.length) return;
-    list.forEach((u, i) => {
-      const t = from + (list.length > 1 ? i / (list.length - 1) : 0.5) * span;
-      put(u, Math.cos(t) * radius, Math.sin(t) * radius);
-    });
-  };
-  const cls = u => shipClass(u.type);
-  const supers = units.filter(u => cls(u) === 6),
-    caps = units.filter(u => cls(u) === 5),
-    mid = units.filter(u => cls(u) === 3 || cls(u) === 4);
-  const small = units.filter(u => cls(u) <= 1),
-    carriers = units.filter(u => cls(u) === 2);
-  let depth = grid(supers, 0);
-  const rows = [caps, mid, small].filter(r => r.length);
-  const screen = supers.length ? 0 : 1;
-  let radius = depth / 2;
-  rows.forEach((row, k) => {
-    const rd = 2 * Math.max(...row.map(u => halfSize(u.type)));
-    if (k === 0 && !supers.length) {
-      depth = grid(row, 0);
-      radius = depth / 2;
-      return;
+  const put = (u, along, left) => out.push({ u, x: at.x + fx * along - fy * left, y: at.y + fy * along + fx * left });
+  const grid = (list, size) => {
+    if (!list.length) return size;
+    const n = list.length,
+      rows = gridRows(n),
+      per = Math.trunc(n / rows),
+      counts = Array(rows).fill(per),
+      extra = n - rows * per;
+    if (extra > 0) {
+      const add = rows < 3 ? [...Array(extra).keys()] : EXTRA[rows]?.[extra] || [...Array(extra).keys()];
+      for (const r of add) counts[r]++;
     }
-    radius += rd / 2;
-    if (k === screen) arc(row, radius, (225 * Math.PI) / 180, (-112.5 * Math.PI) / 180);
-    else arc(row, radius, (130 * Math.PI) / 180, (25 * Math.PI) / 180);
-    radius += rd / 2;
-  });
-  carriers.forEach((u, i) => {
-    const per = Math.max(1, Math.ceil(Math.sqrt(carriers.length))),
-      s = 2 * halfSize(u.type) + 20;
-    put(u, -depth - 200 - Math.floor(i / per) * s, ((i % per) - (per - 1) / 2) * s);
-  });
+    let y = rows * size[1] * 0.5 - size[1] * 0.5,
+      k = 0,
+      prev = 0,
+      shifted = false;
+    for (const cnt of counts) {
+      let x0 = size[0] * 0.5 - (cnt * size[0]) / 2;
+      if (prev) {
+        if (prev === cnt) {
+          shifted = !shifted;
+          if (shifted) x0 += size[0];
+        } else if (shifted) {
+          x0 -= size[0];
+          shifted = false;
+        }
+      }
+      for (let c = 0; c < cnt; c++) put(list[k++], y, -(size[0] * c + x0));
+      prev = cnt;
+      y -= size[1];
+    }
+    const last = Math.max(...counts) - 1,
+      v = last === 0 ? size[0] * 0.5 : last * 0.5 * size[0];
+    return [v, v, size[2]];
+  };
+  const ring = (list, start, arc, sizeFactor, perRing) => {
+    const g = groupSize(list),
+      s = Math.hypot(g[0], g[1], g[2]),
+      counts = [];
+    let r = start + s * 0.5,
+      left = list.length;
+    const r0 = r;
+    while (left > 0) {
+      const n = Math.min(left, perRing(s, r));
+      counts.push(n);
+      left -= n;
+      r += s * sizeFactor;
+    }
+    let k = 0,
+      radius = r0;
+    for (const n of counts) {
+      const first = n === 1 ? 90 : arc.first,
+        step = n === 1 ? 90 : arc.span / (n - 1);
+      for (let i = 0; i < n; i++) {
+        const t = ((first + i * step + 270) * Math.PI) / 180;
+        put(list[k++], Math.cos(t) * radius, Math.sin(t) * radius);
+      }
+      radius += s;
+    }
+    return arc.returns === 'count' ? r : radius;
+  };
+  const screen = (list, start) =>
+    ring(list, start, { first: 337.5, span: 225, returns: 'count' }, 0.5, (s, r) => Math.trunc(Math.max(s * 3, r * 3.926991) / (s * 0.5)));
+  const lead = (list, start) =>
+    ring(list, start, { first: 25, span: 130, returns: 'place' }, 1, (s, r) => Math.trunc(Math.max(s * 2, r * 2) / s) + 1);
+  const cls = u => shipClass(u.type);
+  const groups = [
+    units.filter(u => cls(u) === 5),
+    units.filter(u => cls(u) === 3 || cls(u) === 4),
+    [],
+    smallCraftOrder(units.filter(u => cls(u) <= 1))
+  ];
+  const transports = units.filter(u => cls(u) === 2);
+  grid(
+    units.filter(u => cls(u) === 6),
+    [0, 0, 0]
+  );
+  let base = [0, 0, 0];
+  const first = groups.findIndex(g => g.length);
+  if (first < 0) grid(transports, groupSize(transports));
+  else {
+    base = grid(groups[first], groupSize(groups[first]));
+    let radius = Math.hypot(base[0], base[1], base[2]);
+    if (first + 1 < 4) {
+      if (groups[first + 1].length) radius = screen(groups[first + 1], radius);
+      for (let i = first + 2; i < 4; i++) if (groups[i].length) radius = lead(groups[i], radius);
+    }
+    if (transports.length) {
+      const g = groupSize(transports),
+        per = Math.max(2, Math.trunc(Math.sqrt(transports.length) + 0.99));
+      let y = -base[1] - 200,
+        k = 0;
+      while (k < transports.length) {
+        const cnt = Math.min(per, transports.length - k),
+          x0 = g[0] * 0.5 - (cnt * g[0] + (cnt - 1) * 20) / 2;
+        for (let c = 0; c < cnt; c++) put(transports[k++], y, -(c * (g[0] + 20) + x0));
+        y -= g[1] + 20;
+      }
+    }
+  }
   return out;
 }
 
