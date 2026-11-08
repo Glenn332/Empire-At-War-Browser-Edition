@@ -295,6 +295,38 @@ assert(
   'Every created crawl is disposed exactly once, including abandoned asynchronous opens'
 );
 assert(binkHeader(header.buffer.slice(header.byteOffset, header.byteOffset + header.byteLength)).frames === 120);
+{
+  const keys = [];
+  globalThis.addEventListener = (type, fn) => keys.push(fn);
+  globalThis.removeEventListener = (type, fn) => keys.splice(keys.indexOf(fn), 1);
+  const skipper = new TacticalMovies(game, scripts, { createCrawl });
+  const press = code => {
+    const e = { code, stopped: false, preventDefault() {}, stopPropagation() { this.stopped = true; } };
+    for (const fn of keys.slice()) fn(e);
+    return e;
+  };
+  let ended = 0;
+  skipper.play('Star_Wars_Intro_Short', { skippable: true });
+  skipper.onFinish = () => ended++;
+  await new Promise(r => setTimeout(r, 20));
+  assert(press('KeyA').stopped === false && skipper.active, 'another key does nothing');
+  assert(press('Space').stopped && !skipper.active && ended === 1, 'Space skips a skippable movie and runs its end');
+  skipper.play('Star_Wars_Intro_Short', { skippable: true });
+  await new Promise(r => setTimeout(r, 20));
+  assert(press('Escape').stopped && !skipper.active, 'Escape skips it too');
+  skipper.play('Star_Wars_Intro_Short');
+  await new Promise(r => setTimeout(r, 20));
+  assert(!press('Escape').stopped && skipper.active, 'a movie started as not skippable plays on');
+  const locked = definitions.get('UNDERWORLD_WIN_STORY_CAMPAIGN');
+  if (locked) {
+    overrides.set(moviePath(locked), archive.read(archive.resolve(moviePath(short))).subarray(0, 44));
+    skipper.play('Underworld_Win_Story_Campaign', { skippable: true });
+    await new Promise(r => setTimeout(r, 20));
+    assert(!press('Escape').stopped && skipper.active, 'Cannot_Skip keeps it playing');
+  }
+  skipper.dispose();
+  assert.equal(keys.length, 0, 'the key handler goes with the player');
+}
 console.log(
   JSON.stringify({
     checks:

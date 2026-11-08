@@ -625,12 +625,12 @@ export class GalacticGame {
     m.canvas.style.zIndex = '70';
     const play = (name, next) => {
       if (!name) return next();
-      m.play(name);
+      m.play(name, { skippable: true });
       m.onFinish = next;
     };
     const credits = () => {
-      m.play('Credits', { loop: true });
-      m.afterCredits = post ? () => m.play(post) : null;
+      m.play('Credits', { loop: true, skippable: true });
+      m.afterCredits = post ? () => m.play(post, { skippable: true }) : null;
     };
     play(win, () => play(finale, () => play(second, credits)));
   }
@@ -3270,7 +3270,7 @@ export class GalacticGame {
     if (this.net) return false;
     this.storyMovie ||= new TacticalMovies(this, { missing: new Map() });
     this.storyMovie.canvas.style.zIndex = '70';
-    this.storyMovie.play(name);
+    this.storyMovie.play(name, { skippable: true });
     this.storyMovie.onFinish = () => {
       done();
       if (!this.over) startStrategicMusic(this);

@@ -460,6 +460,12 @@ export class GalacticStoryHost extends StoryPlots {
       return result;
     });
     vm.global('Create_Position', (x, y, z = 0) => this.position(x, y, z));
+    vm.global('Add_Radar_Blip', planet => {
+      if (planet?.__planet) game.radar?.flash(planet.__planet.index, true, -1);
+    });
+    vm.global('Remove_Radar_Blip', planet => {
+      if (planet?.__planet) game.radar?.flash(planet.__planet.index, false);
+    });
     vm.global('Lock_Controls', on => {
       game.controlsLocked = on !== false && on !== 0;
     });

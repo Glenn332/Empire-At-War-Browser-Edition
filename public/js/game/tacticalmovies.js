@@ -31,10 +31,21 @@ export class TacticalMovies {
       }
     });
   }
-  play(name, { loop = false } = {}) {
+  play(name, { loop = false, skippable = false } = {}) {
     this.stop();
     const generation = this.generation;
     this.active = true;
+    this.skippable = skippable;
+    if (skippable && !this.skipKey) {
+      this.skipKey = e => {
+        if (!this.active || !this.skippable || (e.code !== 'Escape' && e.code !== 'Space')) return;
+        if (yes(this.movie?.val('Cannot_Skip'))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.stop();
+      };
+      addEventListener('keydown', this.skipKey, true);
+    }
     this.open(name, generation, loop);
     return { __wrap: true, __name: 'BinkMovieBlockStatus', Is_Valid: () => true, IsFinished: () => !this.active, Result: () => true };
   }
@@ -136,6 +147,7 @@ export class TacticalMovies {
     this.credits?.dispose();
     this.credits = null;
     this.active = false;
+    this.skippable = false;
     this.pausesMode = false;
     this.movie = null;
     this.canvas.hidden = true;
@@ -147,6 +159,8 @@ export class TacticalMovies {
     this.finish();
   }
   dispose() {
+    if (this.skipKey) removeEventListener('keydown', this.skipKey, true);
+    this.skipKey = null;
     this.stop();
     this.player.dispose();
     this.canvas.remove();

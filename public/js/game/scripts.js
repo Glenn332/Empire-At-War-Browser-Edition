@@ -1108,6 +1108,16 @@ export class ScriptHost {
       w.specialWeapons.push(weapon);
       return this.wrap(weapon);
     });
+    vm.global('Add_Radar_Blip', (where, name) => {
+      const at = this.at(where),
+        world = this.game.world;
+      if (!at || typeof name !== 'string' || !world) return;
+      const obj = this.of(where);
+      (world.storyBlips ||= new Map()).set(name, obj ? { obj } : { x: at.x, y: at.y });
+    });
+    vm.global('Remove_Radar_Blip', name => {
+      if (typeof name === 'string') this.game.world?.storyBlips?.delete(name);
+    });
     vm.global('Get_Game_Mode', () => (this.land ? 'Land' : 'Space'));
     vm.global('Set_New_Environment', n => {
       this.game.setEnvironmentIndex?.(Number(n) || 0);

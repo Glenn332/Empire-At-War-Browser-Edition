@@ -65,7 +65,6 @@ export class FrontEnd {
     movies.canvas.style.zIndex = '90';
     this.rolling = true;
     const back = () => {
-      removeEventListener('keydown', skip, true);
       this.rolling = false;
       show(true);
       if (g.music) {
@@ -73,13 +72,7 @@ export class FrontEnd {
         g.setMusic?.('ambient');
       }
     };
-    const skip = e => {
-      if (e.code !== 'Escape') return;
-      e.stopPropagation();
-      movies.stop();
-    };
-    addEventListener('keydown', skip, true);
-    movies.play('Credits', { loop: true });
+    movies.play('Credits', { loop: true, skippable: true });
     movies.onFinish = back;
   }
 

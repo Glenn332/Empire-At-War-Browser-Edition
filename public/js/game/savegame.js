@@ -277,6 +277,7 @@ function spaceSnapshot(game, name) {
       map,
       groups: [...game.ui.groups].map(([n, list]) => [n, list.map(ref).filter(Boolean)]).filter(([, l]) => l.length),
       selection: game.ui.selection.map(ref).filter(Boolean),
+      storyBlips: [...(w.storyBlips || new Map())].map(([n, b]) => (b.obj ? [n, ref(b.obj)] : [n, null, r1(b.x), r1(b.y)])),
       specialWeapons: (w.specialWeapons || []).map(sw => ({
         type: sw.type.name,
         player: w.players.indexOf(sw.player),
@@ -566,6 +567,14 @@ export function restore(game, save) {
     p.reinforcements = (ps.reinforcements || []).map(n => db.type(n)).filter(Boolean);
     if (!p.human) p.aiPool = p.reinforcements.map(type => ({ type, owner: null }));
   });
+  if (Array.isArray(snap.storyBlips)) {
+    w.storyBlips = new Map();
+    for (const [n, r, x, y] of snap.storyBlips) {
+      const obj = r ? get(r) : null;
+      if (obj) w.storyBlips.set(n, { obj });
+      else if (!r) w.storyBlips.set(n, { x, y });
+    }
+  }
   if (Array.isArray(snap.specialWeapons))
     w.specialWeapons = snap.specialWeapons.flatMap(o => {
       const t = db.type(o.type),
