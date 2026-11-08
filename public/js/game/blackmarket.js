@@ -138,7 +138,6 @@ export function activateBlackMarket(game, actor, planet, ability) {
     player = g.players.find(p => key(p.faction) === key(owner));
   const seller = planet.politicalOwner ?? planet.owner;
   if (
-    planet.marketRestricted ||
     !player ||
     (planet.currentCorruption ?? -1) !== 6 ||
     !db.faction(planet.owner)?.bool('Is_Playable') ||
