@@ -407,8 +407,14 @@ export class GalacticMind extends Reason {
         for (const q of Object.values(world.production || {})) {
           const head = q[0];
           if (!head || head.type !== type || key(head.owner) !== key(c.player.faction)) continue;
-          need = Math.min(need, head.total > 0 ? (head.left / head.total) * head.cost : 0);
-          time = Math.min(time, head.left);
+          const job = head.ai ? this.ai.plans.queueJobs?.get(head) : null;
+          if (!job) return 0;
+          if (job.orphan) continue;
+          const budget = job.inst.ai.budget,
+            row = job.inst.budget;
+          need =
+            Math.min(need, head.total > 0 ? (head.left / head.total) * head.cost : 0, row?.allocated ?? Infinity) - (budget?.spendable(row) ?? 0);
+          time = Math.min(time, head.left, Math.max(row?.horizon ?? 0, 0));
           building = true;
         }
       }

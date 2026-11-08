@@ -284,11 +284,27 @@ export function executeCorruption(game, actor, planet, choice) {
   const r = requirements(game, player, choice);
   if (!r.units) return false;
   if (choice.unitCount > 0 && choice.units.length) {
-    const type = choice.units.find(t => groupsOf(g, player.faction).some(u => holds(u, [t]))) || choice.units[0];
+    const everyone = [
+      ...g.fleets.flatMap(f => f.units.map(u => ({ u, fleet: f }))),
+      ...g.planets.flatMap(q => q.garrison.map(u => ({ u, planet: q })))
+    ].filter(x => !x.u.dead);
+    const type = choice.units.find(t => everyone.some(x => holds(x.u, [t]))) || choice.units[0];
     if (type.bool('Destroy_When_Used_As_Corruption_Prereq', true)) {
-      const pool = groupsOf(g, player.faction).filter(u => holds(u, [type]) && u !== (actor.record || actor));
-      for (let i = 0; i < choice.unitCount && pool.length; i++)
-        game.story?.despawn?.(pool.splice(Math.floor(simRandom() * pool.length), 1)[0]);
+      if (type.bool('Is_Named_Hero')) {
+        const hero = everyone.find(x => holds(x.u, [type]));
+        if (hero) {
+          scheduleHeroRespawn(game, hero.u, planet, hero.u.owner || hero.fleet?.owner, null, 0, true);
+          game.story?.despawn?.(hero.u);
+          hero.u.dead = true;
+          if (hero.fleet) hero.fleet.units = hero.fleet.units.filter(u => u !== hero.u);
+          if (hero.planet) hero.planet.garrison = hero.planet.garrison.filter(u => u !== hero.u);
+          g.fleets = g.fleets.filter(f => f.units.length || f.leg);
+        }
+      } else {
+        const pool = groupsOf(g, player.faction).filter(u => holds(u, [type]) && u !== (actor.record || actor));
+        for (let i = 0; i < choice.unitCount && pool.length; i++)
+          game.story?.despawn?.(pool.splice(Math.floor(simRandom() * pool.length), 1)[0]);
+      }
     }
   }
   const mission = choice.map && choice.mode && player.ai === null && !game.setup?.noCorruptionMission;
