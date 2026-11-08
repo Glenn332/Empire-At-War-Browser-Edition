@@ -4,6 +4,7 @@ import { fetchText } from '../vfs.js';
 import { parseXML } from '../xml.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { scheduleHeroRespawn } from './galacticherorespawn.js';
+import { techFactor } from './planetabilities.js';
 
 const key = s =>
   String(s || '')
@@ -53,15 +54,22 @@ export const abilityLocked = (campaign, def, bought) => marketLocked(campaign, d
 
 const techOf = p => (p?.tech ?? 0) + (db.faction(p?.faction)?.num('Displayed_Tech_Level_Adjustment', 0) || 0);
 export function itemPrice(g, item, planet, ability, buyer = null) {
-  let price = (item.cost + planet.type.num('Planet_Black_Market_Modifier', 0)) * (ability?.num?.('Price_Modifier', 1) ?? 1);
+  const tutorial = !!buyer?.tutorial,
+    tech = tutorial ? item.tutorialTech : item.tech;
+  let price = tutorial ? item.tutorialCost : item.cost;
+  if (!tutorial)
+    price =
+      (price + planet.type.num('Planet_Black_Market_Modifier', 0)) *
+      (ability?.num?.('Price_Modifier', 1) ?? 1) *
+      (buyer && g.planets ? techFactor(g, buyer.faction) : 1);
   if (g.humans && buyer && g.humans.includes(key(buyer.faction))) {
     const highest = g.players.reduce((n, p) => (p === buyer ? n : Math.max(n, techOf(p))), -1);
-    if (highest < item.tech) price *= item.uncommon;
+    if (highest < tech) price *= item.uncommon;
   } else {
     const owner = g.players.find(p => key(p.faction) === key(item.faction));
-    if (owner && techOf(owner) < item.tech) price *= item.uncommon;
+    if (owner && techOf(owner) < tech) price *= item.uncommon;
   }
-  return Math.round(price);
+  return Math.max(0, Math.round(price));
 }
 
 export const displayedTech = (g, faction) =>

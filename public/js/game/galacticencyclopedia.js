@@ -164,7 +164,9 @@ export class GalacticEncyclopedia {
       })
     );
     if (cost !== undefined)
-      items.push(...this.text('$ ' + Math.round(cost), 'ENCYCLOPEDIA_COST_TEXT', { x: this.headerX(C.num('Encyclopedia_Cost_Offset', 250)) }));
+      items.push(
+        ...this.text('$ ' + Math.round(cost), 'ENCYCLOPEDIA_COST_TEXT', { x: this.headerX(C.num('Encyclopedia_Cost_Offset', 250)) })
+      );
     items.push(
       ...this.text(db.t(type.str('Encyclopedia_Unit_Class')), 'ENCYCLOPEDIA_TEXT', {
         x: C.num('Encyclopedia_Name_Offset', 68) + shift,
@@ -219,17 +221,14 @@ export class GalacticEncyclopedia {
   }
   async showItem(item) {
     const generation = ++this.generation,
-      units = item.units
-        .map(n => db.type(n))
-        .filter(Boolean)
-        .slice(0, 3);
+      units = item.units.slice(0, 3).map(n => db.type(n) || null);
     await this.warm([
       'e_topbar2.tga',
       'e_line.tga',
       'e_line2.tga',
       'e_against_frame.tga',
       item.icon,
-      ...units.map(t => t.str('Icon_Name'))
+      ...units.filter(Boolean).map(t => t.str('Icon_Name'))
     ]);
     if (generation !== this.generation) return;
     const C = db.constants,
@@ -252,7 +251,7 @@ export class GalacticEncyclopedia {
     );
     items.push(this.image('e_line.tga', width / 2 - padding, 0, { end: true }));
     items.push(...this.text(db.t(item.description)));
-    if (units.length) {
+    {
       items.push(this.image('e_line2.tga', Math.trunc(width / 2 - padding) - padding, 0, { end: true }));
       const frame = this.sprite('e_against_frame.tga');
       if (frame) {
@@ -260,7 +259,7 @@ export class GalacticEncyclopedia {
           half = Math.trunc(step / 2);
         items.push(this.image('e_against_frame.tga', Math.trunc(frame.w / 2) - padding, 0));
         units.forEach((t, i) => {
-          const icon = this.image(t.str('Icon_Name'), i * step + half - padding);
+          const icon = t && this.image(t.str('Icon_Name'), i * step + half - padding);
           if (icon) items.push(icon);
         });
         items.push({ text: '', kind: 'ENCYCLOPEDIA_TEXT', x: 0, y: 0, h: 0, end: true });

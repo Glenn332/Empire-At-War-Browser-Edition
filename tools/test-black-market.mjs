@@ -48,6 +48,40 @@ if (item.tech - level > 0)
     'below it: the uncommon multiplier'
   );
 
+{
+  const maw = [...db.types.values()].find(
+    t =>
+      t.tag.toLowerCase() === 'planet' &&
+      t
+        .sub('Abilities')
+        .flatMap(n => n.children)
+        .some(a => a.tag.toUpperCase() === 'REDUCE_TECHNOLOGY_PRICE_ABILITY')
+  );
+  assert(maw || process.argv.includes('--mod'), 'The Maw carries the ability');
+  if (maw) {
+    const buyer = { faction: item.faction, tech: 9 },
+      cut = maw
+        .sub('Abilities')
+        .flatMap(n => n.children)
+        .find(a => a.tag.toUpperCase() === 'REDUCE_TECHNOLOGY_PRICE_ABILITY')
+        .num('Price_Reduction_Percentage', 0);
+    const galaxy = {
+      players: [buyer],
+      planets: [{ owner: item.faction, type: maw, garrison: [], groundStructures: [], orbitalStructures: [] }]
+    };
+    assert.equal(
+      bm.itemPrice(galaxy, item, planet, abilityNode, buyer),
+      Math.round((item.cost + 100) * 2 * Math.max(0.0001, 1 - cut)),
+      'the reduce technology price planet also lowers the black market price, as one buyer modifier list carries both'
+    );
+    const tutor = { faction: item.faction, tech: 9, tutorial: true };
+    assert.equal(
+      bm.itemPrice({ players: [tutor] }, item, planet, abilityNode, tutor),
+      Math.round(item.tutorialCost),
+      'a tutorial player pays the tutorial cost without modifiers'
+    );
+  }
+}
 const player = { faction: item.faction, credits: 1e6, tech: 9, blackMarket: [] };
 const g = { players: [player] };
 const rows = bm.offers(g, player, planet, abilityNode);
