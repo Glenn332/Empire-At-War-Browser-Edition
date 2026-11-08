@@ -1117,8 +1117,8 @@ const GROUPS = [
       ],
       [
         'Credits and planetary income',
-        P,
-        'the engine fiscal scheduler pays once when the simulation reaches its next payday, first after one full Fiscal_Cycle_Time_In_Secs interval: base 45 seconds, trial mod 40. Planet_Credit_Value, force-alignment bonuses and penalties from Force_Strength and MaxCreditIncomeAlignmentBonus / Penalty, positive Political_Income_Curve adjustments, additive Planet_Income_Bonus_Ability contributions and positive Credit_Gain_Factor route bonuses are summed for the object owner; mining colonies apply Additional_Multiplier_On_Mining_Colonies. Each route endpoint uses its own planet base value. Balances retain fractional credits; negative planet income offsets positive income and only the final balance floors at zero. The normal credit ceiling is max(1, owned planets) times Credit_Cap_Per_Planet, and manual refunds and capture rewards use the same credit adjustment. Fiscal schedule persists across tactical battles; pause and battles stop galactic simulation. A fleet in orbit never stops the income: the engine skips a planet payout only while a timed halt from a sabotage hero is live, the only thing that adds one. Read and done: every credit gain of a computer player is multiplied by the Credit_Multiplier of its difficulty (Easy 0.5, Normal 1, Hard 1.2) inside the one credit add the engine uses, so fiscal income, bounty, Lua Give_Money and the CREDITS reward all take it, before the cap. Action points: black market, gambling, siphons, ledger bounds and ability lifecycle, read and done: the notified credit changes reach the computer budget at once (every category gets the applied change times its weight, as the engine credit add does when asked to tell the budget): Lua Give_Money, the CREDITS reward, the refund of a cancelled queue item and the refund of a finished product that could not be placed (not star bases, ground bases or structures; the item still counts as built); the remaining notifying callers are tactical build queues and player teardown, session conditions that disable the cap; faction Credits_Accumulation_Factor is not in the traced ordinary payout chain and is not applied'
+        D,
+        'the engine fiscal scheduler pays once when the simulation reaches its next payday, first after one full Fiscal_Cycle_Time_In_Secs interval: base 45 seconds, trial mod 40. Planet_Credit_Value, force-alignment bonuses and penalties from Force_Strength and MaxCreditIncomeAlignmentBonus / Penalty, positive Political_Income_Curve adjustments, additive Planet_Income_Bonus_Ability contributions and positive Credit_Gain_Factor route bonuses are summed for the object owner; mining colonies apply Additional_Multiplier_On_Mining_Colonies. Each route endpoint uses its own planet base value. Balances retain fractional credits; negative planet income offsets positive income and only the final balance floors at zero. The normal credit ceiling is max(1, owned planets) times Credit_Cap_Per_Planet, and manual refunds and capture rewards use the same credit adjustment. Fiscal schedule persists across tactical battles; pause and battles stop galactic simulation. A fleet in orbit never stops the income: the engine skips a planet payout only while a timed halt from a sabotage hero is live, the only thing that adds one. Read and done: every credit gain of a computer player is multiplied by the Credit_Multiplier of its difficulty (Easy 0.5, Normal 1, Hard 1.2) inside the one credit add the engine uses, so fiscal income, bounty, Lua Give_Money and the CREDITS reward all take it, before the cap. Read and done: black market prices, gambling, siphons and the ledger bounds (see their entries); the notified credit changes reach the computer budget at once (every category gets the applied change times its weight, as the engine credit add does when asked to tell the budget): Lua Give_Money, the CREDITS reward, the refund of a cancelled queue item and the refund of a finished product that could not be placed (not star bases, ground bases or structures; the item still counts as built); the remaining notifying callers are tactical build queues and player teardown, session conditions that disable the cap; faction Credits_Accumulation_Factor has no reader in the engine (the only reads at its place are interface components), so it is not applied. Action points: none known'
       ],
       [
         'Unit upkeep and population',
@@ -1162,8 +1162,8 @@ const GROUPS = [
       ],
       [
         'Black market',
-        P,
-        'the purchase logic, the human panel, the computer player buying, the story rewards and the ability gates are in (see Black-market purchases of abilities); the market only appears where a planet has corruption type 6, which needs the corruption missions'
+        D,
+        'the purchase logic, the human panel, the computer player buying, the story rewards and the ability gates are in (see Black-market purchases of abilities); the market only appears where a planet has corruption type 6, which needs the corruption missions (see Corruption missions). Action points: none known'
       ],
       [
         'Slicer (R2-D2)',
@@ -1272,8 +1272,8 @@ const GROUPS = [
       ],
       [
         'Encyclopedia cards on the command bar',
-        P,
-        'galacticencyclopedia.js follows: the type rows, abilities and weather of the hovered object, wrapped by character count as the engine wraps them; checked on the base game only'
+        D,
+        'galacticencyclopedia.js follows: the type rows, abilities and weather of the hovered object, wrapped by character count as the engine wraps them; read from data, so mods follow the same path (checked live on the base game). Action points: none known'
       ],
       [
         'Fleet management drag and drop',
