@@ -1967,7 +1967,8 @@ export class LandWorld {
     if (this.campaign && side !== this.campaignAttacker) return db.constants.num('Max_Ground_Forces_On_Planet', 10);
     if (this.campaign) {
       const base = db.faction(this.factions[side])?.num('Base_Population_Capacity', 0) || 0;
-      const capacity = this.points.reduce((n, p) => n + (p.side >= 0 && this.ally(p.side, side) && p.reinforce ? p.cap : 0), base);
+      let capacity = this.points.reduce((n, p) => n + (p.side === side ? p.cap : 0), base);
+      for (const u of this.units) if (!u.dead && u.side === side) capacity += u.type.num('Additional_Population_Capacity', 0);
       return Math.min(db.constants.num('Max_Ground_Forces_On_Planet', 10), capacity);
     }
     return Math.min(

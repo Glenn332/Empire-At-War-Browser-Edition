@@ -226,16 +226,12 @@ export function stepFleets(galaxy, frames, arrive) {
       f.pos = L.to.slice();
       const p = L.b;
       f.path.shift();
-      if (f.playerOrder && p === f.dest && barred(galaxy, f, p)) {
+      if (f.playerOrder && barred(galaxy, f, p)) {
         galaxy.onBounce?.(f, p);
         f.path = [L.a];
         f.dest = L.a;
         startLeg(galaxy, f, p, L.a);
         continue;
-      }
-      if (f.playerOrder && f.path.length && f.path[0] === f.dest && barred(galaxy, f, f.dest)) {
-        galaxy.onBounce?.(f, f.dest);
-        f.path = [];
       }
       const stop =
         !f.path.length || (blocks(galaxy, p, f.owner, f) && (!canBribe(f.owner) || (!f.humanOrder && !passByBribe(galaxy, f, p))));

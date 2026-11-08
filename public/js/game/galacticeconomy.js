@@ -185,6 +185,7 @@ export function adjustCredits(g, owner, amount, notify = false) {
     const before = p.credits;
     p.credits = Math.max(0, Math.min(creditCap(g, owner), Math.fround(p.credits + amount)));
     g.victoryCreditChange?.(owner);
+    g.storyCreditChange?.(owner, Math.trunc(p.credits));
     if (notify) g.budgetCreditChange?.(owner, p.credits - before);
   }
 }
