@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { iconCanvasRect, iconUrl } from '../icons.js';
 import { NativePanel, loadNativePanelAssets, tintShell } from './nativepanel.js';
 import { encyclopediaLines } from './galacticencyclopedia.js';
+import { componentLines } from './componenttext.js';
 
 const css = url => (url ? `url("${url}")` : 'none');
 export const loadSliceAssets = () => loadNativePanelAssets('target_type_back', 'i_neutralize_hero.alo');
@@ -156,12 +157,12 @@ export class SlicePanel extends NativePanel {
       slot.img.style.width = (r?.w || 43) + 'px';
       slot.img.style.height = (r?.h || 43) + 'px';
       const name = db.t(row.type.str('Text_ID')) || row.type.name,
-        [first, ...rest] = encyclopediaLines(name, 20);
+        [first, second] = componentLines(this.comps.get('H_NAME_' + String(i).padStart(2, '0')), name, this.scale);
       const price = Math.trunc(row.cost + 0.5),
         usable = credits >= price,
         color = usable ? [255, 255, 255, 255] : [128, 128, 128, 255];
       this.setText(this.names[i], first || '');
-      this.setText(this.names2[i], rest.join(' '));
+      this.setText(this.names2[i], second || '');
       this.setText(this.prices[i], `$ ${price}`);
       tint(this.names[i], color);
       tint(this.names2[i], color);

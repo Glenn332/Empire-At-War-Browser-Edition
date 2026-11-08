@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { iconCanvasRect, iconUrl } from '../icons.js';
 import { NativePanel, loadNativePanelAssets, tintShell } from './nativepanel.js';
 import { encyclopediaLines } from './galacticencyclopedia.js';
+import { componentLines } from './componenttext.js';
 
 const css = url => (url ? `url("${url}")` : 'none');
 export const loadSabotageAssets = () => loadNativePanelAssets('bm_frame', 'i_sabotage.alo');
@@ -148,14 +149,14 @@ export class SabotagePanel extends NativePanel {
       slot.img.style.width = (r?.w || 43) + 'px';
       slot.img.style.height = (r?.h || 43) + 'px';
       const name = db.t(type.str('Text_ID')) || type.name,
-        [first, ...rest] = encyclopediaLines(name, 20);
+        [first, second] = componentLines(this.comps.get('H_NAME_' + String(i).padStart(2, '0')), name, this.scale);
       const price = Math.trunc(row.price + 0.5),
         usable = credits >= price;
       const grey = [128, 128, 128, 255],
         white = [255, 255, 255, 255],
         red = [255, 64, 64, 255];
       this.setText(this.names[i], first || '');
-      this.setText(this.names2[i], rest.join(' '));
+      this.setText(this.names2[i], second || '');
       this.setText(this.prices[i], `$ ${price}`);
       tint(this.names[i], usable ? white : grey);
       tint(this.names2[i], usable ? white : grey);

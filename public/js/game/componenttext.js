@@ -3,10 +3,37 @@ import { fontFamily } from '../fonts.js';
 import { db } from '../gamedata.js';
 import { dialogFontPixels, uiTextHeight } from './dialogtext.js';
 import { languageRevision } from '../language.js';
+import { wrapScreenText } from './galacticscreentext.js';
 
 const yes = s => /^(true|yes|1)$/i.test(s || '');
 export const componentTextAlign = (c, left = null) =>
   left === true || yes(c?.val('Left_Justified')) ? 'left' : yes(c?.val('Right_Justified')) ? 'right' : 'center';
+
+let measureContext = null;
+export function componentTextWidth(c, text, scale = 1) {
+  text = String(text ?? '');
+  const fallbackPoint = Math.trunc(db.constants?.num('Text_Button_Default_Font_Size', 7) ?? 7),
+    ownFace = c?.val('Font_Name').trim(),
+    face = ownFace || db.constants?.str('Text_Button_Default_Font_Name') || 'EmpireAtWar-Medium',
+    point = ownFace ? Math.trunc(c?.num('Font_Point_Size', fallbackPoint) ?? fallbackPoint) : fallbackPoint,
+    textScale = c?.num('Scale', 1) ?? 1,
+    pixels = dialogFontPixels(uiTextHeight(), point),
+    font = componentFont(face, pixels);
+  if (font?.has(text)) return (font.measure(text) / scale) * textScale;
+  if (typeof document === 'undefined') return text.length * pixels * 0.5;
+  measureContext ||= document.createElement('canvas').getContext('2d');
+  measureContext.font = `700 ${pixels}px ${fontFamily(face)}`;
+  return (measureContext.measureText(text).width / scale) * textScale;
+}
+
+export function componentLines(c, text, scale = 1) {
+  const size = String(c?.val('Size') || '')
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  if (!(size[0] > 0 && size[1] > 0)) return [String(text ?? '')];
+  return wrapScreenText(String(text ?? ''), size[0] * size[1], t => componentTextWidth(c, t, scale));
+}
 
 export function setComponentText(
   el,
