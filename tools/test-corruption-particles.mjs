@@ -17,7 +17,7 @@ if (!funnel || !glow) {
   console.log('no corruption particles in this data: skipped');
   process.exit(0);
 }
-assert.equal(FRAME, 21);
+assert.equal(FRAME, 22);
 
 const sim = new ParticleSim();
 sim.defs.set('F', funnel);
@@ -25,7 +25,7 @@ const line = { x: 100, y: 200, z: 0, rot: 0, scale: 1, vx: 0, vy: 0, dx: 1, dy: 
 sim.create(1, 'F', line, {});
 const frame = () => {
   const a = new Float32Array(FRAME);
-  a.set([1, line.x, line.y, line.z, 0, 0, 1, 0, 0, 1, 1, 1, 0, line.bright, line.dx, line.dy, line.dz, line.lr, line.ll, line.lt, 0]);
+  a.set([1, line.x, line.y, line.z, 0, 0, 1, 0, 0, 1, 1, 1, 0, line.bright, line.dx, line.dy, line.dz, line.lr, line.ll, line.lt, 0, 1]);
   return a;
 };
 for (let i = 0; i < 40; i++) sim.step(0.1, frame());

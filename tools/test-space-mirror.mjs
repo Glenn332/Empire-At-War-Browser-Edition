@@ -135,7 +135,7 @@ truth.onEvent = (kind, data) => {
 };
 const page = build(null);
 page.onEvent = (kind, data) => heard.push([kind, data]);
-const game = new Proxy({ world: page, advisor: undefined, lock: undefined }, { get: (t, k) => (k in t ? t[k] : nothing) });
+const game = new Proxy({ world: page, advisor: undefined, lock: undefined, reveal: false }, { get: (t, k) => (k in t ? t[k] : nothing) });
 const mirror = SpaceMirror.headless(game);
 for (const e of [...page.units, ...page.squads, ...page.squads.flatMap(q => q.fighters)]) mirror.match(e.id, e);
 const rec = new SpaceRecorder(truth);

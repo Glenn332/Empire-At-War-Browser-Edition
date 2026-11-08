@@ -85,6 +85,7 @@ const stepNow = async game => {
     game.battles.arrive(f, p);
   });
   game.battles.update();
+  if (galaxy.visibility) stepVisibility(galaxy, galaxy.visibility.viewer, dt * 30);
 };
 const run = async (game, s) => {
   for (let i = 0; i < s / dt; i++) await step(game);
@@ -229,6 +230,18 @@ for (let i = 0; i < after / dt; i++) {
 assert(sb === sa, 'after the same time the plans are the same');
 const wa = world(A),
   wb = world(B);
+if (wa !== wb) {
+  const first = (x, y, path) => {
+    if (JSON.stringify(x) === JSON.stringify(y)) return false;
+    if (x && y && typeof x === 'object' && typeof y === 'object') {
+      for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) if (first(x[k], y[k], path + '.' + k)) return true;
+      return true;
+    }
+    console.log(' galaxy differs at', path, 'A', JSON.stringify(x), 'B', JSON.stringify(y));
+    return true;
+  };
+  first(JSON.parse(wa), JSON.parse(wb), '');
+}
 assert.equal(wb, wa, 'and so is the galaxy');
 assert(
   A.ai.plans.history.some(e => e.status === 'move' || e.status === 'built' || e.status === 'production'),
