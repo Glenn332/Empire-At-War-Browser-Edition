@@ -51,11 +51,16 @@ export function marketLocked(campaign, mustBuy, name, bought) {
 
 export const abilityLocked = (campaign, def, bought) => marketLocked(campaign, def.mustBuy, def.gui, bought);
 
-export function itemPrice(g, item, planet, ability) {
-  const owner = g.players.find(p => key(p.faction) === key(item.faction));
-  const level = (owner?.tech ?? 0) + (db.faction(item.faction)?.num('Displayed_Tech_Level_Adjustment', 0) || 0);
+const techOf = p => (p?.tech ?? 0) + (db.faction(p?.faction)?.num('Displayed_Tech_Level_Adjustment', 0) || 0);
+export function itemPrice(g, item, planet, ability, buyer = null) {
   let price = (item.cost + planet.type.num('Planet_Black_Market_Modifier', 0)) * (ability?.num?.('Price_Modifier', 1) ?? 1);
-  if (owner && level < item.tech) price *= item.uncommon;
+  if (g.humans && buyer && g.humans.includes(key(buyer.faction))) {
+    const highest = g.players.reduce((n, p) => (p === buyer ? n : Math.max(n, techOf(p))), -1);
+    if (highest < item.tech) price *= item.uncommon;
+  } else {
+    const owner = g.players.find(p => key(p.faction) === key(item.faction));
+    if (owner && techOf(owner) < item.tech) price *= item.uncommon;
+  }
   return Math.round(price);
 }
 
@@ -67,7 +72,7 @@ export function offers(g, player, planet, ability) {
     .filter(i => key(i.faction) === key(planet.owner))
     .map(item => ({
       item,
-      price: itemPrice(g, item, planet, ability),
+      price: itemPrice(g, item, planet, ability, player),
       bought: (player.blackMarket || []).some(n => key(n) === key(item.name))
     }));
 }
