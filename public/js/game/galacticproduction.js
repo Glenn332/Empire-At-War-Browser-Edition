@@ -65,10 +65,19 @@ function queuedCount(g, owner, type) {
 
 export function populationCap(g, owner) {
   if (g.popCapOverride) return g.popCapOverride;
-  return ownedTypes(g, owner).reduce(
-    (n, t) => n + t.num('Additional_Population_Capacity', 0),
-    db.faction(owner)?.num('Base_Population_Capacity', 0) || 0
-  );
+  const capacity = (n, t) => n + t.num('Additional_Population_Capacity', 0);
+  let cap = ownedTypes(g, owner).reduce(capacity, db.faction(owner)?.num('Base_Population_Capacity', 0) || 0);
+  if (g.humans?.length)
+    for (const p of g.players || [])
+      if (
+        !same(p.faction, owner) &&
+        db
+          .faction(p.faction)
+          ?.list('Allies')
+          .some(n => same(n, owner))
+      )
+        cap = ownedTypes(g, p.faction).reduce(capacity, cap);
+  return cap;
 }
 
 export function populationUsed(g, owner) {

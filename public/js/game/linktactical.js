@@ -95,6 +95,11 @@ export function linkedTacticalSetup(game, request) {
     if (space) {
       defender.station = p.station?.name || null;
       defender.orbital = p.orbitalStructures.filter(u => u.owner === game.me).map(u => u.type.name);
+      defender.weapons = (p.groundStructures || [])
+        .filter(
+          u => !u.dead && u.owner === game.me && u.type.bool('Is_Special_Weapon_In_Space') && u.type.num('Special_Weapon_Index', -1) >= 0
+        )
+        .map(u => u.type.name);
     } else {
       defender.structures = p.groundStructures.flatMap((u, i) => (u.owner === game.me ? [add('s:' + i, u, game.me, 'structure')] : []));
       defender.tacticalStructures = (p.tacticalStructures || [])
@@ -123,6 +128,8 @@ export function linkedTacticalSetup(game, request) {
       sides: owners,
       storyPlots,
       linked: request,
+      planetOwner: defender.weapons?.length ? game.me : null,
+      planetWeapons: defender.weapons || [],
       attacker,
       defender
     }

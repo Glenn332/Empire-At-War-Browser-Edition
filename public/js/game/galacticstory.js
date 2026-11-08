@@ -1215,7 +1215,15 @@ export class GalacticStoryHost extends StoryPlots {
         const valid =
           yes(ability.val(major ? 'Can_Neutralize_Major_Heroes' : 'Can_Neutralize_Minor_Heroes', 'No')) &&
           type.bool(hunterMajor ? 'Can_Be_Neutralized_By_Major_Heroes' : 'Can_Be_Neutralized_By_Minor_Heroes', true);
-        rows.push({ object: o, type, major, valid, cost: Math.round(this.neutralizeCost(ability, planet, o, type, major)) });
+        rows.push({
+          object: o,
+          type,
+          major,
+          valid,
+          ownerTime: this.respawnRoll(ability, 'Owner_Respawn_Time_In_Secs'),
+          targetTime: this.respawnRoll(ability, 'Target_Respawn_Time_In_Secs'),
+          cost: Math.round(this.neutralizeCost(ability, planet, o, type, major))
+        });
       }
     }
     const siphoner = planet.creditSiphonOwner,
@@ -1243,10 +1251,22 @@ export class GalacticStoryHost extends StoryPlots {
         type: siphonType,
         major,
         valid,
+        ownerTime: this.respawnRoll(ability, 'Owner_Respawn_Time_In_Secs'),
+        targetTime: this.respawnRoll(ability, 'Target_Respawn_Time_In_Secs'),
         cost: Math.round(this.neutralizeCost(ability, planet, target, siphonType, major))
       });
     }
     return rows;
+  }
+  respawnRoll(ability, tag) {
+    const [lo, hi = lo] = String(ability.val(tag, '') || '')
+      .split(/[\s,]+/)
+      .map(parseFloat)
+      .filter(Number.isFinite);
+    if (!(lo > 0) || !(hi > 0)) return 0;
+    const a = Math.min(lo, hi),
+      b = Math.max(lo, hi);
+    return Math.fround((b - a) * (Math.floor(simRandom() * 32768) / 32767) + a);
   }
   neutralizeCost(ability, planet, target, type, major) {
     const curve = (tag, x) => {
@@ -1296,13 +1316,6 @@ export class GalacticStoryHost extends StoryPlots {
       if (human) this.game.audio?.play('GUI_Bad_Sound');
       return false;
     }
-    const roll = tag => {
-      const [lo, hi = lo] = String(ability.val(tag, '') || '')
-        .split(/[\s,]+/)
-        .map(parseFloat)
-        .filter(Number.isFinite);
-      return lo === undefined ? 0 : lo + simRandom() * (hi - lo);
-    };
     const mine = object.record || object;
     if (planet.type.bool('Planet_Vigilance') && this.heroTypes(object.type).some(t => t.bool('Is_Generic_Hero'))) {
       if (human) this.game.notify?.(db.t('TEXT_NEUTRALIZE_HERO_FAILURE_VIGILANCE'), object.owner);
@@ -1315,7 +1328,7 @@ export class GalacticStoryHost extends StoryPlots {
     else {
       const target = row.object.record || row.object;
       this.despawn(row.object);
-      scheduleHeroRespawn(this.game, target, planet, row.object.owner, object.owner, roll('Target_Respawn_Time_In_Secs'), true);
+      scheduleHeroRespawn(this.game, target, planet, row.object.owner, object.owner, row.targetTime ?? 0, true);
     }
     owner.credits -= row.cost;
     (this.neutralized ||= new Map()).set(key(row.type.name), (this.neutralized.get(key(row.type.name)) || 0) + 1);
@@ -1325,7 +1338,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.neutralizeNotice(object, row, planet);
     this.abilityLanded(planet, object);
     this.despawn(object);
-    scheduleHeroRespawn(this.game, mine, planet, object.owner, null, roll('Owner_Respawn_Time_In_Secs'), true);
+    scheduleHeroRespawn(this.game, mine, planet, object.owner, null, row.ownerTime ?? 0, true);
     return true;
   }
 

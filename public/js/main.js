@@ -72,7 +72,7 @@ import {
 import { watchForResume, pendingResume, forgetResume } from './game/resume.js';
 import { restoreBattleScripts } from './game/tacticalsave.js';
 import { orderMove } from './game/orders.js';
-import { placeSpecialWeapons, placeCampaignSpecialWeapons } from './game/superweapon.js';
+import { placeSpecialWeapons, placeCampaignSpecialWeapons, specialWeaponSource } from './game/superweapon.js';
 import { placeCampaignBattle, sideBeaten, battleResult, campaignIntro } from './game/campaignbattle.js';
 import { storyTypes } from './game/storyart.js';
 import { openRetreatDialog, resolveTactical, spaceRosters } from './game/tacticalautoresolve.js';
@@ -1151,6 +1151,7 @@ class Game {
       if (!p.spawnPoints.length) p.spawnPoints.push({ x: p.station.x + 500, y: p.station.y, heading: 0 });
       for (const sp of p.spawnPoints) sp.heading = Math.atan2(-sp.y, -sp.x);
     }
+    w.specialWeaponSource = specialWeaponSource(map.objects);
     if (w.skirmish) placeSpecialWeapons(w, map.objects);
     if (w.skirmish)
       w.players.forEach((pl, k) => {

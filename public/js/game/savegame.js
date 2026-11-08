@@ -5,6 +5,7 @@ import { BUILD } from '../build.js';
 import { expansion } from '../edition.js';
 import { snapshotGalaxy } from './galaxy.js';
 import { saveBattleScripts } from './tacticalsave.js';
+import { SpecialWeapon } from './superweapon.js';
 
 export const SAVE_VERSION = 2;
 export const MODES = ['space', 'land', 'galactic'];
@@ -276,6 +277,18 @@ function spaceSnapshot(game, name) {
       map,
       groups: [...game.ui.groups].map(([n, list]) => [n, list.map(ref).filter(Boolean)]).filter(([, l]) => l.length),
       selection: game.ui.selection.map(ref).filter(Boolean),
+      specialWeapons: (w.specialWeapons || []).map(sw => ({
+        type: sw.type.name,
+        player: w.players.indexOf(sw.player),
+        at: [sw.x, sw.y, sw.z],
+        firedAt: sw.firedAt,
+        readyAt: sw.readyAt,
+        left: sw.left,
+        nextAt: sw.nextAt,
+        delay: sw.delay || 0,
+        proj: sw.proj?.name || null,
+        target: sw.left > 0 ? ref(sw.target) : null
+      })),
       ...(game.retreat ? { retreat: game.retreat.snapshot(thingRef) } : {}),
       ...(scripts ? { scripts } : {})
     }
@@ -553,6 +566,22 @@ export function restore(game, save) {
     p.reinforcements = (ps.reinforcements || []).map(n => db.type(n)).filter(Boolean);
     if (!p.human) p.aiPool = p.reinforcements.map(type => ({ type, owner: null }));
   });
+  if (Array.isArray(snap.specialWeapons))
+    w.specialWeapons = snap.specialWeapons.flatMap(o => {
+      const t = db.type(o.type),
+        p = w.players[o.player];
+      if (!t || !p) return [];
+      const sw = new SpecialWeapon(w, t, p, o.at[0], o.at[1], o.at[2]);
+      sw.firedAt = o.firedAt || 0;
+      sw.readyAt = o.readyAt || 0;
+      sw.left = o.left || 0;
+      sw.nextAt = o.nextAt || 0;
+      sw.delay = o.delay || 0;
+      sw.proj = o.proj ? db.type(o.proj) : null;
+      sw.target = get(o.target);
+      if (sw.left > 0 && (!sw.proj || !sw.target)) sw.left = 0;
+      return [sw];
+    });
   w.time = snap.time || 0;
   w.recountPop();
   w.updateVisibility();

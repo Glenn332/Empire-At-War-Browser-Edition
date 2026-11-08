@@ -114,6 +114,26 @@ assert.equal(session.setup.tacticalStoryPlot, params[6]);
 session = linkedTacticalSetup(game, { ...request, sandbox: true });
 assert.equal(session.participants.size, 2);
 assert.equal(session.setup.campaign.defender.units.length, 0, 'Sandbox excludes AI strategic units');
+{
+  const gun = db.type('Ground_Ion_Cannon');
+  if (gun) {
+    const saved = p.groundStructures;
+    p.groundStructures = [{ type: gun, owner: me }];
+    const defended = linkedTacticalSetup(game, { ...request, attacker: enemy, defender: me, sandbox: true });
+    assert.deepEqual(
+      defended.setup.campaign.planetWeapons,
+      [gun.name],
+      'the planet weapon of the defending player goes into the sandbox space battle'
+    );
+    assert.equal(defended.setup.campaign.planetOwner, me);
+    assert.deepEqual(
+      linkedTacticalSetup(game, { ...request, attacker: enemy, defender: me, sandbox: false }).setup.campaign.planetWeapons,
+      [],
+      'not into a map-only mission'
+    );
+    p.groundStructures = saved;
+  }
+}
 const roster = [
   { type: ship, gid: 'a' },
   { type: ship, gid: 'b' },

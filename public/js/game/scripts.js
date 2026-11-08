@@ -1102,9 +1102,7 @@ export class ScriptHost {
         p = playerOf(player);
       if (this.land || !w.specialWeapons || !t || !t.bool('Is_Special_Weapon_In_Space') || t.num('Special_Weapon_Index', -1) < 0 || !p)
         return undefined;
-      let source = null;
-      for (const list of w.mapObjects?.values() || [])
-        for (const o of list) if (!source && o?.type?.behaviors?.().has('DUMMY_SPECIAL_WEAPON_SOURCE')) source = o;
+      const source = w.specialWeaponSource;
       if (!source) return undefined;
       const weapon = new SpecialWeapon(w, t, p, source.x, source.y, source.z || 0);
       w.specialWeapons.push(weapon);

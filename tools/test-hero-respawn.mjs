@@ -38,4 +38,20 @@ assert.equal(forceHeroRespawn(game, plain.name), true);
 assert.equal(planet.killedHeroes[0].dueFrame, base);
 assert.equal(game.galaxy.heroRespawnNext, 0);
 assert.equal(forceHeroRespawn(game, 'No_Such_Hero'), false);
+{
+  const { GalacticStoryHost } = await import('../public/js/game/galacticstory.js');
+  const { seedSim } = await import('../public/js/game/simrandom.js');
+  const roll = v => GalacticStoryHost.prototype.respawnRoll({ val: () => v }, 'Target_Respawn_Time_In_Secs');
+  seedSim(7);
+  for (let i = 0; i < 50; i++) {
+    const t = roll('240.0, 300.0');
+    assert(t >= 240 && t <= 300, 'inside the range');
+  }
+  assert.equal(roll('0, 300'), 0, 'a range end at zero or less: the default respawn time');
+  assert.equal(roll('120, -1'), 0);
+  assert.equal(roll(''), 0, 'no range: the default');
+  const r = roll('300, 240');
+  assert(r >= 240 && r <= 300, 'ends in either order');
+  assert.equal(roll('90, 90'), 90);
+}
 console.log('ok, default', deflt);

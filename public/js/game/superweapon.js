@@ -117,10 +117,11 @@ export function useUpgrades(p) {
   return out;
 }
 
-const weaponSource = mapObjects => {
-  const src = mapObjects.find(o => o.type && o.type.behaviors().has('DUMMY_SPECIAL_WEAPON_SOURCE'));
-  return src ? { x: src.pos[0], y: src.pos[1], z: src.pos[2] || 0 } : { x: 0, y: 0, z: 0 };
-};
+export function specialWeaponSource(mapObjects) {
+  const src = (mapObjects || []).find(o => o.type && o.type.behaviors().has('DUMMY_SPECIAL_WEAPON_SOURCE'));
+  return src ? { x: src.pos[0], y: src.pos[1], z: src.pos[2] || 0 } : null;
+}
+const weaponSource = mapObjects => specialWeaponSource(mapObjects) || { x: 0, y: 0, z: 0 };
 
 export function placeCampaignSpecialWeapons(world, mapObjects, campaign) {
   const names = campaign.planetWeapons || [];
