@@ -4,6 +4,11 @@ import { simRandomState } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { embarkLayoutCompany, landLayoutCompany } from './baselayoutdata.js';
 import { carriedCompany } from './invasion.js';
+import { choicesOf, executeCorruption } from './galacticcorruption.js';
+import { executeSlice } from './galacticslicer.js';
+import { executeHack } from './galactichack.js';
+import { sabotageStructure } from './galacticsabotage.js';
+import { blackMarketItems, completePurchase } from './blackmarket.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -210,6 +215,32 @@ export function runCommand(game, faction, cmd) {
       if (!p || !fleet || !unit || !type) return {};
       const target = { marker, record: p.garrison.find(u => u.markerId === cmd.id) || null };
       return landLayoutCompany(g, p, faction, { fleet, unit, type }, target) ? { ok: true, layout: true } : {};
+    }
+    case 'panel': {
+      const rec = fromRecordRef(g, cmd.rec),
+        planet = g.planets[cmd.p];
+      if (!rec || !planet || key(rec.owner ?? faction) !== key(faction)) return {};
+      const actor = game.story?.object?.(rec, planet, faction)?.__object || { owner: faction, record: rec, type: rec.carries || rec.type };
+      let done = false;
+      if (cmd.kind === 'corruption') {
+        const choice = choicesOf(planet.type).find(c => c.slot === cmd.slot);
+        done = !!choice && executeCorruption(game, actor, planet, choice);
+      } else if (cmd.kind === 'slice') {
+        const type = db.type(cmd.type);
+        done = !!type && executeSlice(game, actor, planet, { type, cost: +cmd.cost || 0, chance: cmd.chance ?? undefined }, !!cmd.only, +cmd.respawn || 0);
+      } else if (cmd.kind === 'hack') done = executeHack(game, actor, planet);
+      else if (cmd.kind === 'sabotage') {
+        const structure = fromRecordRef(g, cmd.s);
+        done = !!structure && sabotageStructure(game, actor, planet, structure, +cmd.price || 0);
+      } else if (cmd.kind === 'market') {
+        const item = blackMarketItems().find(i => key(i.name) === key(cmd.item));
+        if (item) {
+          game.story?.signal?.('STORY_BUY_BLACK_MARKET', item.name);
+          done = completePurchase(game, actor, planet, { item, price: +cmd.price || 0 }, +cmd.respawn || 0);
+        }
+      }
+      if (done) game.galacticBattleChanged?.();
+      return done ? { ok: true } : {};
     }
     case 'sell': {
       const rec = fromRecordRef(g, cmd.rec);

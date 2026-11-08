@@ -1,5 +1,5 @@
 import { readLinkedTactical } from './linktactical.js';
-import { loadBlackMarket } from './blackmarket.js';
+import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { galacticLight } from './galacticlighting.js';
 import { pauseGalactic, userPauseGalactic } from './galacticpause.js';
@@ -26,7 +26,7 @@ import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
 import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
-import { GalacticNet, orders, runCommand, galaxyHash } from './galacticnet.js';
+import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
 import { openDialog } from './dialogs.js';
@@ -3023,7 +3023,13 @@ export class GalacticGame {
     }
     return !!this.corruptionPanel && this.corruptionPanel.show(request);
   }
+  panelOrder(kind, actor, planet, data = {}) {
+    const record = actor?.record || actor;
+    this.order({ c: 'panel', kind, rec: recordRef(this.galaxy, record), p: planet.index, ...data });
+    return true;
+  }
   executeCorruptionChoice(actor, planet, choice) {
+    if (this.net) return this.panelOrder('corruption', actor, planet, { slot: choice.slot });
     return executeCorruption(this, actor, planet, choice);
   }
 
@@ -3036,6 +3042,8 @@ export class GalacticGame {
     return !!this.slicePanel && this.slicePanel.show(request);
   }
   executeSliceChoice(actor, planet, row, only, respawn) {
+    if (this.net)
+      return this.panelOrder('slice', actor, planet, { type: row.type.name, cost: row.cost, chance: row.chance ?? null, only: !!only, respawn });
     return executeSlice(this, actor, planet, row, only, respawn);
   }
 
@@ -3048,6 +3056,7 @@ export class GalacticGame {
     return !!this.hackPanel && this.hackPanel.show(request);
   }
   executeHackChoice(actor, planet) {
+    if (this.net) return this.panelOrder('hack', actor, planet);
     return executeHack(this, actor, planet);
   }
 
@@ -3060,7 +3069,13 @@ export class GalacticGame {
     return !!this.sabotagePanel && this.sabotagePanel.show(request);
   }
   executeSabotageChoice(actor, planet, ability, row) {
+    if (this.net) return this.panelOrder('sabotage', actor, planet, { s: recordRef(this.galaxy, row.structure), price: row.price });
     return sabotageStructure(this, actor, planet, row.structure, row.price);
+  }
+  executeMarketChoice(actor, planet, row, respawn) {
+    if (this.net) return this.panelOrder('market', actor, planet, { item: row.item.name, price: row.price, respawn });
+    this.story?.signal('STORY_BUY_BLACK_MARKET', row.item.name);
+    return completePurchase(this, actor, planet, row, respawn);
   }
 
   async openBaseLayout() {

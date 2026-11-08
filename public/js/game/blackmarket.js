@@ -1,3 +1,4 @@
+import { panelSide } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
@@ -169,8 +170,9 @@ export function activateBlackMarket(game, actor, planet, ability) {
     return false;
   const respawn = rollRespawn(g, player, ability),
     rows = offers(g, player, planet, ability);
-  if (player.ai === null || player.faction === game.me) {
-    if (rows.length) game.openBlackMarket?.({ actor, planet, rows, respawn });
+  const side = panelSide(game, player.faction, player);
+  if (side !== 'ai') {
+    if (side === 'local' && rows.length) game.openBlackMarket?.({ actor, planet, rows, respawn });
     return false;
   }
   const row = aiChoice(rows, player.credits);

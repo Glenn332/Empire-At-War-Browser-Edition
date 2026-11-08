@@ -1,3 +1,4 @@
+import { panelSide } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -188,8 +189,9 @@ function haltIncome(game, actor, planet, ability) {
 function structureOutcome(game, actor, planet, ability) {
   const g = game.galaxy,
     player = playerOf(g, actor.owner),
-    human = player?.ai === null || same(actor.owner, game.me);
-  if (human) {
+    side = panelSide(game, actor.owner, player);
+  if (side !== 'ai') {
+    if (side === 'remote') return false;
     const rows = structuresOf(planet).map(structure => ({
       structure,
       price: sabotagePrice(ability, planet, structure, !!player?.tutorial)

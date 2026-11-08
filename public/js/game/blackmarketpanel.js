@@ -2,7 +2,7 @@ import { db } from '../gamedata.js';
 import { iconCanvasRect, iconUrl } from '../icons.js';
 import { NativePanel, loadNativePanelAssets, tintShell } from './nativepanel.js';
 import { GalacticEncyclopedia } from './galacticencyclopedia.js';
-import { completePurchase, displayedTech } from './blackmarket.js';
+import { displayedTech } from './blackmarket.js';
 
 const css = url => (url ? `url("${url}")` : 'none');
 const key = s => String(s || '').toUpperCase();
@@ -97,9 +97,8 @@ export class MarketPanel extends NativePanel {
   buy(row) {
     const { actor, planet, respawn } = this.state,
       game = this.game;
-    game.story?.signal('STORY_BUY_BLACK_MARKET', row.item.name);
     this.close();
-    if (!completePurchase(game, actor, planet, row, respawn)) return;
+    if (!game.executeMarketChoice(actor, planet, row, respawn)) return;
     const f = db.faction(actor.owner);
     if (key(actor.owner) === key(game.me))
       for (const tag of ['SFXEvent_New_Construction_Options_Available', 'SFXEvent_Slice_Success']) {

@@ -1,3 +1,4 @@
+import { panelSide } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -137,8 +138,9 @@ export function activateSlicer(game, actor, planet, ability) {
   if (!types.length) return false;
   const rows = options(game, actor.owner, planet, ability, types),
     respawn = respawnRoll(player, ability);
-  if (player.ai === null || same(player.faction, game.me)) {
-    game.openSliceDialog?.({ actor, planet, rows, respawn, only: rows.length === 1 });
+  const side = panelSide(game, player.faction, player);
+  if (side !== 'ai') {
+    if (side === 'local') game.openSliceDialog?.({ actor, planet, rows, respawn, only: rows.length === 1 });
     return false;
   }
   const can = rows.filter(r => r.cost <= player.credits);

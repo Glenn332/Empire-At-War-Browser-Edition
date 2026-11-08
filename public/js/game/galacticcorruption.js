@@ -1,3 +1,4 @@
+import { panelSide } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -288,8 +289,9 @@ export function activateCorruption(game, actor, planet, ability = null) {
     player = playerOf(g, actor.owner),
     choices = choicesOf(planet.type);
   if (!player || !choices.length) return false;
-  if (player.ai === null || same(player.faction, game.me)) {
-    game.openCorruptionDialog?.({ actor, planet, choices });
+  const side = panelSide(game, player.faction, player);
+  if (side !== 'ai') {
+    if (side === 'local') game.openCorruptionDialog?.({ actor, planet, choices });
     game.story?.signal?.('STORY_OPEN_CORRUPTION', planet.type.name);
     return false;
   }
@@ -329,7 +331,7 @@ export function executeCorruption(game, actor, planet, choice) {
       }
     }
   }
-  const mission = choice.map && choice.mode && player.ai === null && !game.setup?.noCorruptionMission;
+  const mission = choice.map && choice.mode && panelSide(game, player.faction, player) !== 'ai' && !game.setup?.noCorruptionMission;
   if (mission) {
     if (!queueMission(game, actor, planet, choice)) return false;
   } else {

@@ -1,3 +1,4 @@
+import { panelSide } from './panelside.js';
 import { startRemoval } from './galacticcorruption.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -19,7 +20,7 @@ function target(game, actor, planet) {
   return null;
 }
 
-const humanHacker = (game, player) => !!player && (player.ai === null || key(player.faction) === key(game.me));
+const humanHacker = (game, player) => !!player && panelSide(game, player.faction, player) !== 'ai';
 
 export function canHack(game, actor, planet) {
   const player = playerOf(game.galaxy, actor.owner);
@@ -30,7 +31,7 @@ export function activateHack(game, actor, planet, ability) {
   const player = playerOf(game.galaxy, actor.owner);
   if (!player || !target(game, actor, planet)) return false;
   if (humanHacker(game, player)) {
-    game.openHackDialog?.({ actor, planet });
+    if (panelSide(game, player.faction, player) === 'local') game.openHackDialog?.({ actor, planet });
     return false;
   }
   return executeHack(game, actor, planet, true);
