@@ -1,3 +1,4 @@
+import { abilityEnabled } from './abilityoverride.js';
 import { galacticAbilityLocked } from './blackmarket.js';
 import { db } from '../gamedata.js';
 import { canHack } from './galactichack.js';
@@ -141,7 +142,7 @@ export const isHero = record => {
 export function slotFor(game, record, planet, owner = record.owner) {
   if (!record || !planet || planet.abilitiesRestricted) return null;
   const actor = { owner, record, planet };
-  const abilities = abilitiesOf(record).filter(a => yes(a.val('Initially_Enabled', 'Yes')));
+  const abilities = abilitiesOf(record).filter(a => abilityEnabled(game.galaxy, owner, record.carries || record.type, a));
   for (const slot of SLOTS) {
     if (slot.restrict && planet[slot.restrict]) continue;
     const names = list(slot.names);

@@ -1,3 +1,4 @@
+import { setAbilityOverride } from './abilityoverride.js';
 import { db } from '../gamedata.js';
 import { changeController } from './galacticpolitics.js';
 import { obliterate } from './galacticobliterate.js';
@@ -177,12 +178,7 @@ export function galacticStoryReward(host, e) {
     case 'REMOVE_POWER_FROM_ALL': {
       const q = player(owner);
       if (!q || !present(p[0]) || !present(p[1])) return true;
-      const powers = (q.storyPowers ||= []),
-        entry = { type: key(p[0]), ability: key(p[1]) };
-      const at = powers.findIndex(x => x.type === entry.type && x.ability === entry.ability);
-      if (e.reward === 'NEW_POWER_FOR_ALL') {
-        if (at < 0) powers.push(entry);
-      } else if (at >= 0) powers.splice(at, 1);
+      setAbilityOverride(q, p[0], p[1], e.reward === 'REMOVE_POWER_FROM_ALL');
       return true;
     }
     case 'MOVE_FLEET': {

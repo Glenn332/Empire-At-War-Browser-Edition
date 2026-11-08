@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+const { setAbilityOverride, abilityEnabled } = await import('../public/js/game/abilityoverride.js');
+const ability = (name, initially) => ({ attrs: { Name: name }, val: (k, d) => (k === 'Initially_Enabled' ? initially ?? d : d) });
+const g = { players: [{ faction: 'Empire' }, { faction: 'Rebel' }] };
+const type = { name: 'Boba_Fett' };
+assert.equal(abilityEnabled(g, 'Empire', type, ability('X', 'No')), false, 'no override: Initially_Enabled decides');
+assert.equal(setAbilityOverride(g.players[0], 'boba_fett', 'x', false), true, 'NEW_POWER_FOR_ALL enables for that player');
+assert.equal(abilityEnabled(g, 'Empire', type, ability('X', 'No')), true);
+assert.equal(abilityEnabled(g, 'Rebel', type, ability('X', 'No')), false, 'only for that player');
+assert.equal(setAbilityOverride(g.players[0], 'Boba_Fett', 'X', false), false, 'already granted');
+setAbilityOverride(g.players[0], 'Boba_Fett', 'X', true);
+assert.equal(abilityEnabled(g, 'Empire', type, ability('X', 'Yes')), false, 'REMOVE_POWER_FROM_ALL disables even an initially enabled ability');
+console.log('ok');

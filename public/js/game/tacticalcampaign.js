@@ -43,9 +43,10 @@ export class TacticalCampaign {
     return match;
   }
   result(book) {
-    const manager = this.game.world.tacticalSuperweapons,
-      weapons = [];
-    for (const [gid, unit] of book.entity) if (manager.record(unit)) weapons.push({ gid, owner: unit.player.factionName });
+    const attackers = new Set((this.game.setup.campaign?.attacker?.units || []).map(u => u.gid)),
+      supers = [...book.entity].filter(([, unit]) => unit?.type?.list?.('CategoryMask').some(m => /^super$/i.test(m))),
+      chosen = supers.filter(([gid]) => attackers.has(gid)).at(-1) || supers.at(-1),
+      weapons = chosen ? [{ gid: chosen[0], owner: chosen[1].player.factionName }] : [];
     const galaxy = snapshotGalaxy(this.galaxy),
       view = this.game.setup.campaign?.galaxy?.view;
     if (view) galaxy.view = { ...view };

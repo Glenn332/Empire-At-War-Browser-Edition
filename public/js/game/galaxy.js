@@ -334,6 +334,7 @@ export function snapshotGalaxy(g) {
       disabledTypes: (p.disabledTypes || []).slice(),
       builtCounts: { ...p.builtCounts },
       blackMarket: (p.blackMarket || []).slice(),
+      ...(p.abilityOverrides ? { abilityOverrides: { ...p.abilityOverrides } } : {}),
       corruptionMissions: (p.corruptionMissions || Array(8).fill(0)).slice()
     })),
     planets: g.planets.map(p => ({
@@ -472,6 +473,8 @@ export function applyGalaxy(g, s) {
       player.disabledTypes = (saved.disabledTypes || []).slice();
       player.builtCounts = { ...saved.builtCounts };
       player.blackMarket = (saved.blackMarket || []).slice();
+      if (saved.abilityOverrides) player.abilityOverrides = { ...saved.abilityOverrides };
+      else delete player.abilityOverrides;
       player.corruptionMissions = (saved.corruptionMissions || Array(8).fill(0)).slice();
     }
   }

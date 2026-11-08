@@ -1,6 +1,7 @@
+import { abilityEnabled } from './abilityoverride.js';
 import { galacticAbilityLocked } from './blackmarket.js';
 import { db } from '../gamedata.js';
-import { allied, targetOwner, currentOwner, campaignPlanet } from './galacticvictory.js';
+import { allied, targetOwner, campaignPlanet } from './galacticvictory.js';
 import { strategicStealth } from './galacticfog.js';
 import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
 import { addPoliticalEffect } from './galacticpolitics.js';
@@ -130,8 +131,13 @@ export function activatePlanetDestruction(game, actor, p, ability) {
     if (key(actor.owner) === key(game.me)) game.audio?.play('GUI_Bad_Sound');
     return false;
   }
-  const leader = db.faction(currentOwner(p))?.str('Faction_Leader');
-  if (leader && p.garrison.some(u => containsType(u.type, [key(leader)]))) game.victory?.declareCondition(7, actor.owner, 30);
+  const leader = db.faction(p.owner)?.str('Faction_Leader').trim();
+  if (
+    leader &&
+    game.victory?.registered?.(7, actor.owner) &&
+    p.garrison.some(u => !u.dead && (u.carries || u.type).list('Company_Units').some(n => key(n) === key(leader)))
+  )
+    game.victory.declareCondition(7, actor.owner, 30);
   if (!destroyPlanet(game, p)) return false;
   game.audio?.play(ability.val('SFXEvent_Target_Affected'));
   game.planetAbilityEffect?.(p, ability.val('Target_Particle_Effect'), ability.val('Target_Particle_Bone_Name'));
@@ -183,7 +189,7 @@ export function groundActivated(game, actor, filter, neutralize) {
         : '';
       if (
         key(ability.val('Activation_Style', defaultStyle)) !== 'GROUND_ACTIVATED' ||
-        /^(no|false|0)$/i.test(ability.val('Initially_Enabled', 'Yes'))
+        !abilityEnabled(game.galaxy, actor.owner, type, ability)
       )
         continue;
       if (actor.abilitiesDisabled || record.abilitiesDisabled || game.abilitiesDisabled) continue;
