@@ -180,6 +180,7 @@ export function startRandomStory(host) {
   const name = 'Random_Plot_' + state.count++;
   const plot = { name, scriptName: '', owner: local, events: new Map(), instance: null, generated: true };
   host.plots.set(key(name), plot);
+  host.hashPlot?.(key(name), plot);
   const ctx = { host, s, l, g, local, script: [] };
   const n = rand(1, s.max);
   const dialog = (e, chapter) => {
@@ -258,6 +259,7 @@ export const generatedPlotSave = plot =>
 export function restoreGeneratedPlot(host, sp) {
   const plot = { name: sp.name, scriptName: '', owner: sp.owner, events: new Map(), instance: null, generated: true, script: sp.generated.script };
   host.plots.set(key(sp.name), plot);
+  host.hashPlot?.(key(sp.name), plot);
   for (const d of sp.generated.events) {
     const e = host.addEvent(plot, { name: d.name, type: d.type, prereqs: d.prereqs || [] });
     Object.assign(e, { chapter: d.chapter, tag: d.tag, dialog: d.dialog, popup: d.popup });
@@ -270,6 +272,7 @@ export function cancelRandomStory(host, name) {
   const plot = host.plots.get(key(name));
   if (plot) {
     host.plots.delete(key(name));
+    host.unhashPlot?.(key(name));
     for (const e of plot.events.values()) host.dropEvent?.(e);
   }
   dropStoryScript(name);

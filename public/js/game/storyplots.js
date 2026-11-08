@@ -1,4 +1,5 @@
 import { parseXML } from '../xml.js';
+import { EngineHash, crc32 } from './enginehash.js';
 import { db } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
 import { resetCombatEvent } from './galacticbattleevents.js';
@@ -48,6 +49,7 @@ export class StoryPlots {
     const id = this.plots.has(key(name)) ? key(name) + '|' + key(owner) : key(name);
     const plot = { name, scriptName, owner, events: new Map(), instance: null };
     this.plots.set(id, plot);
+    this.hashPlot(id, plot);
     const src = await fetchText(xmlPath(name));
     if (!src) {
       this.errors.set(name, 'Story plot file was not found');
@@ -101,6 +103,7 @@ export class StoryPlots {
           event.dependents = [];
           this.dropEvent(plot.events.get(key(event.name)));
           plot.events.set(key(event.name), event);
+          (plot.eventHash ||= new EngineHash()).add(key(event.name), crc32(key(event.name)));
           const list = this.eventTypes.get(event.type) || [];
           list.push(event);
           this.eventTypes.set(event.type, list);
@@ -108,11 +111,54 @@ export class StoryPlots {
         }
       }
     }
-    for (const event of plot.events.values())
-      for (const name of new Set(event.prereqs.flat().map(key))) {
-        plot.events.get(name)?.dependents.push(event);
-      }
+    this.orderPlot(plot);
     return plot;
+  }
+
+  hashPlot(id, plot) {
+    (this.plotHash ||= new EngineHash()).add(id, crc32(String(plot.name || '').trim()));
+    this.orderPlots();
+  }
+  unhashPlot(id) {
+    this.plotHash?.delete(id);
+    this.orderPlots();
+  }
+  orderPlots() {
+    const hash = this.plotHash;
+    if (!hash) return;
+    const ids = [...hash.order().filter(id => this.plots.has(id)), ...[...this.plots.keys()].filter(id => !hash.ids.has(id))];
+    const entries = ids.map(id => [id, this.plots.get(id)]);
+    this.plots.clear();
+    entries.forEach(([id, p], i) => {
+      p.rank = i;
+      this.plots.set(id, p);
+    });
+    this.sortTypeLists();
+  }
+  orderPlot(plot) {
+    const hash = plot.eventHash;
+    if (hash) {
+      const ids = [...hash.order().filter(id => plot.events.has(id)), ...[...plot.events.keys()].filter(id => !hash.ids.has(id))];
+      const entries = ids.map(id => [id, plot.events.get(id)]);
+      plot.events.clear();
+      entries.forEach(([id, e], i) => {
+        e.rank = i;
+        plot.events.set(id, e);
+      });
+    }
+    for (const e of plot.events.values()) e.dependents = [];
+    for (const e of plot.events.values())
+      for (const name of new Set(e.prereqs.flat().map(key))) {
+        const list = plot.events.get(name)?.dependents;
+        if (list && !list.includes(e)) list.push(e);
+      }
+    this.sortTypeLists();
+  }
+  storyRank(e) {
+    return (e.plot?.rank ?? 1e6) * 1e6 + (e.rank ?? 1e5);
+  }
+  sortTypeLists() {
+    for (const list of this.eventTypes.values()) list.sort((a, b) => this.storyRank(a) - this.storyRank(b));
   }
 
   replaceEventParameter(from, to) {
@@ -460,10 +506,11 @@ export class StoryPlots {
     };
     this.dropEvent(plot.events.get(key(name)));
     plot.events.set(key(name), event);
+    (plot.eventHash ||= new EngineHash()).add(key(name), crc32(key(name)));
     const list = this.eventTypes.get(event.type) || [];
     list.push(event);
     this.eventTypes.set(event.type, list);
-    for (const n of new Set(prereqs.flat().map(key))) plot.events.get(n)?.dependents.push(event);
+    this.orderPlot(plot);
     return event;
   }
   get objectives() {
@@ -544,17 +591,22 @@ export class StoryPlots {
     return requests;
   }
 
-  pollEvents(flagsOnly = false) {
-    for (const e of this.timedEvents) {
-      if (e.disabled || e.completed || !e.active || e.plot?.active === false || e.plot?.instance?.state === 'new') continue;
+  pollEvents(flagsOnly = false, phase = 'all') {
+    const ordered = [...this.timedEvents].sort((a, b) => this.storyRank(a) - this.storyRank(b)),
+      kinds = phase === 'elapsed' ? ['STORY_ELAPSED'] : phase === 'late' ? ['STORY_FLAG', 'STORY_OBJECTIVE_TIMEOUT'] : ['STORY_ELAPSED', 'STORY_FLAG', 'STORY_OBJECTIVE_TIMEOUT'];
+    for (const kind of kinds) for (const e of ordered) if (e.type === kind) this.pollEvent(e, flagsOnly);
+  }
+  pollEvent(e, flagsOnly) {
+    {
+      if (e.disabled || e.completed || !e.active || e.plot?.active === false || e.plot?.instance?.state === 'new') return;
       if (e.type === 'STORY_ELAPSED') {
-        if (flagsOnly) continue;
+        if (flagsOnly) return;
         if (e.elapsedFrom === null) e.elapsedFrom = this.time;
         if (this.time - e.elapsedFrom >= (+e.params[0] || 0)) this.fire(e);
       } else if (e.type === 'STORY_OBJECTIVE_TIMEOUT') {
-        if (flagsOnly) continue;
+        if (flagsOnly) return;
         if (e.elapsedFrom === null || e.elapsedFrom === undefined) e.elapsedFrom = this.time;
-        if (this.time - e.elapsedFrom < (parseFloat(e.params[0]) || 0)) continue;
+        if (this.time - e.elapsedFrom < (parseFloat(e.params[0]) || 0)) return;
         const objective = this.objectives.items.find(o => o.id === String(e.params[1] ?? '').trim());
         if (objective && objective.state === 0) this.fire(e);
         else e.disabled = true;

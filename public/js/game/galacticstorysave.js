@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { LuaPersist } from '../luapersist.js';
 import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
+import { EngineHash } from './enginehash.js';
 
 const key = s =>
   String(s || '')
@@ -190,6 +191,7 @@ export function saveStory(host) {
       pos: o.pos.slice(),
       dead: !!o.dead
     })),
+    plotBuckets: host.plotHash?.buckets || 8,
     plots: [...host.plots.values()].map(p => ({
       name: p.name,
       owner: p.owner,
@@ -228,6 +230,8 @@ export async function restoreStory(host, data) {
   host.lastLogicTick = data.lastLogicTick;
   host.storyGoalId = data.storyGoalId;
   host.plots.clear();
+  host.plotHash = new EngineHash();
+  host.plotHash.buckets = data.plotBuckets || 8;
   host.eventTypes.clear();
   host.timedEvents.clear();
   host.storyScripts.clear();
@@ -235,6 +239,14 @@ export async function restoreStory(host, data) {
     if (sp.generated) restoreGeneratedPlot(host, sp);
     else await host.readPlot(sp.name, sp.scriptName, sp.owner);
   }
+  host.plotHash = new EngineHash();
+  host.plotHash.buckets = data.plotBuckets || 8;
+  const ids = [...host.plots.entries()];
+  for (const sp of data.plots) {
+    const hit = ids.find(([, p]) => key(p.name) === key(sp.name) && key(p.owner) === key(sp.owner));
+    if (hit) host.hashPlot(hit[0], hit[1]);
+  }
+  for (const [id, p] of ids) host.hashPlot(id, p);
   host.instances.length = 0;
   for (const si of data.instances) {
     const inst = {

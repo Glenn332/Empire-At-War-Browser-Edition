@@ -83,6 +83,7 @@ export class GalacticStoryHost extends StoryPlots {
           for (const inst of host.instances) host.drop(inst);
           host.instances.length = 0;
           host.plots.clear();
+          host.plotHash = null;
           host.eventTypes.clear();
           host.timedEvents.clear();
           host.storyScripts.clear();
@@ -1943,6 +1944,7 @@ export class GalacticStoryHost extends StoryPlots {
       this.reasonCache.clear();
     }
     try {
+      if (service) this.pollEvents(false, 'elapsed');
       if (service && !this.suspended)
         for (const inst of this.instances) {
           if (inst.state === 'new') {
@@ -1960,7 +1962,7 @@ export class GalacticStoryHost extends StoryPlots {
         for (const p of this.game.galaxy.players) this.signalTech(p.faction, p.tech);
       }
       if (this.game.galaxy) this.game.galaxy.storyCreditChange = this.creditHook ||= (owner, credits) => this.signalCredits(owner, credits);
-      this.pollEvents(!service);
+      this.pollEvents(!service, 'late');
     } finally {
       this.running = false;
     }
