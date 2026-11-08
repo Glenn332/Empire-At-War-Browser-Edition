@@ -39,8 +39,8 @@ const mk = (corruption, nal = null) => ({
       { faction: foe, credits: 100 }
     ],
     planets: [
-      { type: { name: 'Kuat' }, owner: foe, currentCorruption: corruption, index: 0 },
-      ...(nal ? [{ type: { name: 'NalHutta' }, owner: nal, index: 1 }] : [])
+      { type: db.type('Kuat'), name: 'Kuat', owner: foe, currentCorruption: corruption, index: 0 },
+      ...(nal ? [{ type: db.type('NalHutta'), name: 'NalHutta', owner: nal, index: 1, currentCorruption: -1 }] : [])
     ]
   },
   story: {}
@@ -58,8 +58,19 @@ assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, uw), 0);
 game = mk(3);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], uw, uw), 0);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, null), 0);
+const nalShare = db
+  .type('NalHutta_Planetary_Advantage')
+  .sub('Abilities')
+  .flatMap(x => x.all('Bounty_On_Faction_Ability'))[0]
+  .num('Bounty_Percentage_Amount', 0);
 game = mk(-1, foe);
-assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], uw, foe), Math.round(value));
+assert.equal(
+  galacticBounty(game, rec, game.galaxy.planets[0], uw, foe),
+  Math.max(1, Math.round(value * nalShare)),
+  'Nal Hutta pays the share its NalHutta_Planetary_Advantage bounty ability names'
+);
+game = mk(5);
+assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, uw), 0, 'a corruption upgrade without a bounty ability pays nothing');
 game = mk(-1, uw);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], uw, foe), 0, 'only for the owner of Nal Hutta');
 const planet = { currentCorruption: -1 },

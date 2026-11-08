@@ -45,6 +45,24 @@ export function galaxyWideUpgrades(g) {
   return out;
 }
 
+export function corruptionUpgrade(faction, corruption) {
+  if (!(corruption >= 0)) return null;
+  const name = (db.faction(faction)?.list('Automatic_Planetary_Corruption_Upgrade_Type') || [])[corruption];
+  return name ? db.type(String(name).trim()) || null : null;
+}
+
+export function battleUpgrades(g, planet) {
+  const out = galaxyWideUpgrades(g);
+  for (const p of g.players || []) {
+    const t = corruptionUpgrade(p.faction, planet?.currentCorruption ?? -1);
+    if (!t) continue;
+    const own = (out[p.faction] ||= { space: [], land: [] });
+    own.space.push(t.name);
+    own.land.push(t.name);
+  }
+  return out;
+}
+
 export function giveFreeUpgrades(names, faction, has, give) {
   for (const name of names || []) {
     const head = db.type(name);

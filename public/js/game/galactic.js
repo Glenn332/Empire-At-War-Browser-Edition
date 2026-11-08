@@ -51,7 +51,7 @@ import { TooltipGate } from './tooltipgate.js';
 import { Pointers } from './pointers.js';
 import { sellRecord } from './galacticsell.js';
 import { executeSlice } from './galacticslicer.js';
-import { galaxyWideUpgrades } from './planetabilities.js';
+import { battleUpgrades } from './planetabilities.js';
 import { CorruptionPanel, loadCorruptionAssets } from './corruptionpanel.js';
 import { SlicePanel, loadSliceAssets } from './slicepanel.js';
 import { HackPanel, loadHackAssets } from './hackpanel.js';
@@ -2571,7 +2571,7 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
-        upgrades: galaxyWideUpgrades(this.galaxy),
+        upgrades: battleUpgrades(this.galaxy, pl),
         planetOwner: pl.owner,
         planetWeapons: (pl.groundStructures || [])
           .filter(u => !u.dead && u.type.bool('Is_Special_Weapon_In_Space') && u.type.num('Special_Weapon_Index', -1) >= 0)
@@ -2810,7 +2810,7 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
-        upgrades: galaxyWideUpgrades(this.galaxy),
+        upgrades: battleUpgrades(this.galaxy, pl),
         attacker: {
           side: myTeam === 0 ? 0 : 1,
           units: invasionForces(g, b.p, b.attacker).filter(u => !b.invasionIds || b.invasionIds.includes(u.gid))
