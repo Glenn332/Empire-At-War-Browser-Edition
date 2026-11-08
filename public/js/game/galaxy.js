@@ -380,6 +380,7 @@ export function snapshotGalaxy(g) {
       ...(f.playerOrder ? { playerOrder: true } : {}),
       ...(f.aiStatus !== undefined ? { aiStatus: f.aiStatus } : {}),
       ...(f.raid !== undefined ? { raid: f.raid } : {}),
+      ...(f.landOn !== undefined ? { landOn: f.landOn } : {}),
       ...(f.departSlot !== undefined ? { departSlot: f.departSlot } : {}),
       units: f.units.map(u => [
         u.type.name,
@@ -519,6 +520,7 @@ export function applyGalaxy(g, s) {
       ...(f.playerOrder ? { playerOrder: true } : {}),
       ...(f.aiStatus !== undefined ? { aiStatus: f.aiStatus } : {}),
       ...(f.raid !== undefined ? { raid: f.raid } : {}),
+      ...(f.landOn !== undefined ? { landOn: f.landOn } : {}),
       ...(f.departSlot !== undefined ? { departSlot: f.departSlot } : {}),
       units: f.units
         .map(([a, b, markerId = -1, flags = {}]) => ({ type: t(a), carries: t(b) || undefined, markerId, ...flags }))

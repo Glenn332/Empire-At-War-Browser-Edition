@@ -12,28 +12,36 @@ import { canOpenPlanetInfo } from './planetinfodata.js';
 import { dropOverviewUnits, pathfinderCell } from './fleetmanagement.js';
 import { orders } from './galacticnet.js';
 import { canSell, sellPrice } from './galacticsell.js';
+import { allied } from './humanroute.js';
 
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
 export function overviewContents(g, p) {
   const v = p && intelligence(g, p),
-    open = !!p && p.type.bool('Planet_Surface_Accessible', true);
-  const ground = open && v?.groundCount ? p.garrison.filter(u => u.owner === p.owner).map(u => (v.groundContents ? u : null)) : [];
+    open = !!p && p.type.bool('Planet_Surface_Accessible', true),
+    viewer = g.visibility?.viewer;
+  const ground = open && v?.groundCount ? p.garrison.filter(u => allied(u.owner, p.owner)).map(u => (v.groundContents ? u : null)) : [];
   const structures = open && v?.groundLevel ? p.groundStructures.map(u => (v.mask & VIS.SPECIAL ? u : null)) : [];
-  const visibleFleets = p
-    ? g.fleets
-        .filter(f => f.planet === p.index && !f.leg && (f.owner === g.visibility?.viewer || v?.fleetOverlay))
-        .slice(0, 3)
-        .map(f => ({
-          fleet: f,
-          units: f.owner === g.visibility?.viewer || v?.fleetContents ? f.units : v?.fleetCount ? f.units.map(() => null) : [null]
-        }))
-    : [];
+  const here = p ? g.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length) : [];
   const fleets = [];
-  for (const row of visibleFleets) {
-    let slot = row.fleet.slot ?? 0;
+  for (const f of here.filter(f => f.owner === viewer)) {
+    let slot = f.slot ?? 0;
     if (fleets[slot]) slot = [0, 1, 2].find(i => !fleets[i]);
-    if (slot !== undefined) fleets[slot] = row;
+    if (slot !== undefined) fleets[slot] = { fleet: f, units: f.units };
+  }
+  const others = here.filter(
+    f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u))))
+  );
+  if (others.length) {
+    const all = others.flatMap(f => f.units),
+      order = [];
+    for (const u of all) if (!order.includes(u.type)) order.push(u.type);
+    const grouped = order.flatMap(t => all.filter(u => u.type === t)),
+      known = others.some(f => allied(f.owner, viewer)) || v?.fleetContents,
+      strongest = grouped.reduce((best, u) => (!best || u.type.num('AI_Combat_Power', 0) > best.type.num('AI_Combat_Power', 0) ? u : best), null);
+    const units = known ? grouped : v?.fleetCount ? grouped.map(u => (u === strongest ? u : null)) : [strongest];
+    const slot = fleets[0] ? [0, 1, 2].find(i => !fleets[i]) : 0;
+    if (slot !== undefined) fleets[slot] = { fleet: others[0], units, foreign: true };
   }
   return {
     open,

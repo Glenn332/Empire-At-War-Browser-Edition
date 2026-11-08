@@ -158,7 +158,7 @@ export function runCommand(game, faction, cmd) {
       if (tf && !own(tf)) return {};
       if (cmd.fresh) {
         const f = game.embarkFresh(cmd.p, cmd.slot);
-        if (f && g.planets[cmd.to]) game.moveFleet(f, cmd.to, cmd.slot);
+        if (f && g.planets[cmd.to] && game.moveFleet(f, cmd.to, cmd.slot) && cmd.landOn) f.landOn = cmd.to;
       } else game.embark(cmd.p, { records: records(g, cmd.recs), fleet: tf, slot: cmd.slot });
       return {};
     }

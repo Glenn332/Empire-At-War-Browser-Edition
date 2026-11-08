@@ -35,7 +35,7 @@ import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResul
 import { orderMove, stepFleets, LOGIC_FPS, baseSpeed, blocks, bribeQuote, pullIn } from './fleets.js';
 import { canBribe } from './galacticbribe.js';
 import { reachableFleetPlanets, transferFleetUnits, dropOverviewUnits, aiPathfinder } from './fleetmanagement.js';
-import { humanReach } from './humanroute.js';
+import { humanReach, allied as routeAllied } from './humanroute.js';
 import { iconCanvasRect, iconAtlas } from '../icons.js';
 import { loadHudAssets } from './hud.js';
 import { GalacticBar, loadGalacticHudAssets } from './galactichud.js';
@@ -1552,7 +1552,8 @@ export class GalacticGame {
       }
       if (e.button !== 0 || this.busy) return;
       const ground = this.pickStack(this.lastSurfaceSpots, e.clientX, e.clientY);
-      if (ground && this.galaxy.planets[ground.p].garrison.some(u => u.owner === this.me)) {
+      if (ground && !routeAllied(this.galaxy.planets[ground.p].owner, this.me)) this.audio?.play('GUI_Bad_Sound');
+      else if (ground) {
         this.dragGround = ground.p;
         this.dragReach = reachableFleetPlanets(this.galaxy, ground.p);
         this.stackDown = { x: e.clientX, y: e.clientY };
@@ -1602,7 +1603,19 @@ export class GalacticGame {
         this.dragReach = null;
         const click = !!this.stackDown && !this.stackMoved && Math.hypot(e.clientX - this.stackDown.x, e.clientY - this.stackDown.y) <= 12;
         this.stackDown = null;
+        const surfaceTo = !target && !this.radar?.contains(e.clientX, e.clientY) && this.pickStack(this.lastSurfaceSpots, e.clientX, e.clientY);
+        const combine = this.fleetCombine !== false;
         if (click) this.select(p);
+        else if (surfaceTo && surfaceTo.p !== p) {
+          if (this.net) this.order({ ...orders.embark(this.galaxy, p, { fresh: true, to: surfaceTo.p }), landOn: true });
+          else {
+            const f = embarkGround(this.galaxy, p, this.me, { fresh: true });
+            if (f) {
+              this.fleetView(f);
+              if (this.moveFleet(f, surfaceTo.p)) f.landOn = surfaceTo.p;
+            }
+          }
+        } else if (target && target.p === p && !combine) this.audio?.play('GUI_Bad_Sound');
         else if (this.net) {
           if (target && (!target.f || target.f.owner === this.me))
             this.order(
@@ -1636,13 +1649,19 @@ export class GalacticGame {
         this.dragReach = null;
         const click = !!this.stackDown && !this.stackMoved && Math.hypot(e.clientX - this.stackDown.x, e.clientY - this.stackDown.y) <= 12;
         this.stackDown = null;
+        const combine = this.fleetCombine !== false,
+          ownSurface = !overRadar && surface && f.planet === surface.p && routeAllied(this.galaxy.planets[surface.p].owner, f.owner),
+          sameOrbit = !overRadar && orbit && f.planet === orbit.p && !!orbit.f && orbit.f !== f;
         if (click) this.select(f.planet);
+        else if (!combine && !special && (ownSurface || sameOrbit)) this.audio?.play('GUI_Bad_Sound');
         else if (this.net) {
           const g = this.galaxy;
           if (special)
             this.order(
               special.raid
-                ? orders.move(g, f, special.p, null, { raid: true })
+                ? f.planet === special.p
+                  ? orders.land(g, f, special.p)
+                  : orders.move(g, f, special.p, null, { raid: true })
                 : f.planet === special.p
                   ? orders.slot(g, special.record, special.p)
                   : orders.move(g, f, special.p, null, { ability: special.record })
@@ -1656,7 +1675,8 @@ export class GalacticGame {
           else if (to >= 0) this.order(orders.move(g, f, to));
         } else if (special) {
           if (special.raid) {
-            if (this.moveFleet(f, special.p)) f.raid = special.p;
+            if (f.planet === special.p) this.land(f, special.p, { raid: true });
+            else if (this.moveFleet(f, special.p)) f.raid = special.p;
           } else if (f.planet === special.p) {
             if (activateSlot(this, special.record, this.galaxy.planets[special.p], f.owner)) {
               this.galacticBattleChanged();
@@ -3348,6 +3368,12 @@ export class GalacticGame {
           const there = this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg) || f;
           this.checkConflict(there, p);
           this.fireArrival(there, p);
+          if (f.landOn === p) {
+            delete f.landOn;
+            const planet = this.galaxy.planets[p];
+            if (!this.busy && planet && routeAllied(planet.owner, f.owner) && !blocks(this.galaxy, p, f.owner, f) && there.units.length)
+              this.land(there, p);
+          }
           if (raid) this.raidLanding(raid, p);
         });
         this.warnApproaching();
