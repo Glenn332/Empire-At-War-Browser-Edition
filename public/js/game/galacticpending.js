@@ -48,7 +48,19 @@ export class PendingBattle {
       mode = request.mode === 'land' ? 'LAND' : 'SPACE',
       list = campaign.list('Autoresolve_Exclusion_Locations');
     for (let i = 0; i + 1 < list.length; i += 2) if (key(list[i]) === name && key(list[i + 1]) === mode) return true;
-    return false;
+    return mode === 'SPACE' && this.storyLocked(request);
+  }
+  storyLocked(request) {
+    const g = this.game.galaxy,
+      p = g?.planets[request.p];
+    if (!p) return false;
+    const sides = new Set([key(request.attacker), key(request.defender)]),
+      flagged = t => !!t?.bool?.('Prevents_Story_Campaign_Autoresolve');
+    for (const f of g.fleets || [])
+      if (f.planet === p.index && !f.leg && sides.has(key(f.owner)))
+        for (const u of f.units) if (!u.dead && (flagged(u.type) || flagged(u.carries))) return true;
+    for (const u of p.orbitalStructures || []) if (!u.dead && sides.has(key(u.owner)) && flagged(u.type)) return true;
+    return !!p.station && sides.has(key(p.owner)) && flagged(p.station);
   }
   allowed(request) {
     return !this.restricted(request.p) && !this.forbidden(request);

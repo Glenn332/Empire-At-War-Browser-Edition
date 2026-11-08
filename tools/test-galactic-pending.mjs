@@ -106,6 +106,22 @@ assert.equal(pending.single(request), false, 'Fondor is excluded on the ground o
 assert.equal(pending.single({ ...request, mode: 'land' }), true, 'a story campaign excludes the planet and mode pair');
 game.galaxy.campaign = campaign({ Is_Story_Campaign: false }, exclusions);
 assert.equal(pending.single({ ...request, mode: 'land' }), false, 'the exclusions are for story campaigns only');
+{
+  const ds = db.type('Death_Star'),
+    saved = game.galaxy.fleets;
+  if (ds) {
+    game.galaxy.fleets = [{ owner: 'Empire', planet: 0, leg: null, units: [{ type: ds }] }];
+    game.galaxy.campaign = campaign({ Is_Story_Campaign: true });
+    assert.equal(pending.single(request), true, 'a Prevents_Story_Campaign_Autoresolve unit in the space conflict: Begin only');
+    assert.equal(pending.single({ ...request, mode: 'land' }), false, 'not for a land conflict');
+    game.galaxy.campaign = campaign({});
+    assert.equal(pending.single(request), false, 'only in a story campaign');
+    game.galaxy.campaign = campaign({ Is_Story_Campaign: true });
+    game.galaxy.fleets = [{ owner: 'Pirates', planet: 0, leg: null, units: [{ type: ds }] }];
+    assert.equal(pending.single(request), false, 'only the two sides of the conflict');
+  }
+  game.galaxy.fleets = saved;
+}
 delete game.galaxy.campaign;
 {
   const { loadCampaignData } = await import('../public/js/game/galaxy.js');
