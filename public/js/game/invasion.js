@@ -3,6 +3,8 @@ import { forceKind, enteredOrbit } from './galaxy.js';
 import { ownerCorruption } from './galacticbounty.js';
 import { groundLevel } from './galacticproduction.js';
 import { changeController } from './galacticpolitics.js';
+import { retreatDestination } from './fleetretreat.js';
+import { orderMove } from './fleets.js';
 
 export const carriedCompany = u => u.carries || (forceKind(u.type) === 'company' ? u.type : null);
 export const companyTransport = type => type && db.type(type.list('Company_Transport_Unit')[0]);
@@ -170,7 +172,23 @@ export function applyInvasionResult(g, r) {
     if (!keep) u.dead = true;
     return keep;
   };
-  pl.garrison = pl.garrison.filter((u, i) => retain(u, 'g:' + i));
+  const garrisonIds = new Map(pl.garrison.map((u, i) => [u, 'g:' + i]));
+  const evacuees = won
+    ? pl.garrison.filter((u, i) => u.owner === defender && !u.dead && alive.has('g:' + i) && companyTransport(u.type))
+    : [];
+  pl.garrison = pl.garrison.filter(u => !evacuees.includes(u));
+  if (evacuees.length) {
+    for (const u of evacuees) {
+      u.carries = u.type;
+      u.type = companyTransport(u.type);
+    }
+    const fleet = { owner: defender, planet: r.planet, units: evacuees, path: [], dest: -1, leg: null, pos: null };
+    g.fleets.push(fleet);
+    enteredOrbit(pl, defender, evacuees);
+    const dest = retreatDestination(g, pl, defender, true, false);
+    if (dest && dest !== pl) orderMove(g, fleet, dest.index, null, 0, { free: true });
+  }
+  pl.garrison = pl.garrison.filter(u => retain(u, garrisonIds.get(u)));
   pl.groundStructures = pl.groundStructures.filter((u, i) => retain(u, 's:' + i));
   if (won) {
     const oldOwner = pl.owner;

@@ -1421,6 +1421,8 @@ class Game {
           !e.isPad &&
           !e.isStation &&
           !e.underConstruction &&
+          !e.hyper &&
+          (e.type?.bool('Hyperspace') || !!e.squad?.type?.bool('Hyperspace')) &&
           !(
             e.hardpoints &&
             e.hardpoints.some(h => h.kind === 'HARD_POINT_ENGINE') &&
@@ -1535,7 +1537,7 @@ class Game {
       },
       released: e => {
         const u = e.fighters?.[0] || e,
-          sfx = e.player?.faction?.str('SFXEvent_Exit_Into_Hyperspace').trim();
+          sfx = e.type?.str('SFXEvent_Retreat_Engines_Jump').trim() || e.player?.faction?.str('SFXEvent_Exit_Into_Hyperspace').trim();
         if (sfx) game.audio.play(sfx, u.x, u.y);
       },
       explode: p => {

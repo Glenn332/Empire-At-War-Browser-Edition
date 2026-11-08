@@ -79,8 +79,14 @@ const seconds = db.faction(a).num('Space_Retreat_Countdown_Seconds', 10);
 c.step(seconds - 1);
 assert(c.active && !ended.length);
 block = 6;
+sounds.length = 0;
 c.step(0.1);
 assert(!c.active, 'a refusal during the countdown cancels it');
+assert.deepEqual(
+  sounds.map(x => x[0]),
+  [db.faction(a).str('Space_Retreat_Cancel_SFXEvent')],
+  'an automatic cancel plays only the faction cancel sound'
+);
 block = 0;
 c.request(players[0]);
 c.step(seconds + 0.5);

@@ -247,6 +247,22 @@ assert.equal(
   2,
   'Overflow remains in orbit'
 );
+{
+  const ev = G(),
+    ep = ev.planets[own.index],
+    ef = embarkGround(ev, ep.index, ep.owner),
+    ecargo = ef.units.find(u => u.carries),
+    ctypeOwner = ep.owner,
+    ctype = ecargo.carries;
+  ep.owner = foe;
+  ep.garrison = [{ type: ctype, owner: foe }, { type: ctype, owner: foe }];
+  const attacker = ef.owner,
+    eu = invasionForces(ev, ep.index, attacker).map(u => u.gid);
+  applyInvasionResult(ev, { mode: 'land', planet: ep.index, sides: [attacker, foe], winner: 'attacker', participants: [...eu, 'g:0', 'g:1'], alive: [...eu, 'g:1'] });
+  const out = ev.fleets.filter(f => f.owner === foe && f.units.some(u => u.carries === ctype));
+  assert.equal(out.flatMap(f => f.units).length, 1, 'a defender that retreated from the surface leaves in its transport');
+  assert(!ep.garrison.some(u => u.owner === foe), 'and is no longer on the surface');
+}
 let finishSpawn;
 const pending = { arriving: true, members: [0] },
   transport = {

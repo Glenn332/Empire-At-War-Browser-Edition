@@ -134,7 +134,7 @@ export class RetreatCoordinator {
     this.active = { player, left: seconds, text: this.tag(player, 'Countdown_Text_ID'), color: this.tag(player, 'Countdown_Color_RGBA') };
     this.begin(player);
     if (a.isLocal?.(player)) a.generic?.('retreat_clicked');
-    a.play(this.tag(player, 'Begin_SFXEvent'), player);
+    a.play(this.unitSound('SFXEvent_Retreat_Start') || this.tag(player, 'Begin_SFXEvent'), player);
     for (const other of a.players())
       if (other !== player && a.isSide(other) && a.teamOf(other) !== a.teamOf(player))
         a.play(this.tag(player, 'Enemy_Begin_SFXEvent'), other);
@@ -157,13 +157,19 @@ export class RetreatCoordinator {
     a.begin?.(this.state);
   }
 
-  cancel() {
+  unitSound(tag) {
+    const first = this.list && [...this.list][0];
+    return first?.type?.str?.(tag).trim() || '';
+  }
+
+  cancel(automatic = false) {
     if (!this.active) return;
     const { player } = this.active;
+    const sfx = (!automatic && this.unitSound('SFXEvent_Retreat_Cancel')) || this.tag(player, 'Cancel_SFXEvent');
     this.active = null;
     this.a.cancelled?.(this.state);
     this.state = null;
-    this.a.play(this.tag(player, 'Cancel_SFXEvent'), player);
+    this.a.play(sfx, player);
     this.a.show?.(null);
   }
 
@@ -181,11 +187,8 @@ export class RetreatCoordinator {
       return;
     }
     if (!r || this.done) return;
-    const code = a.blocker(r.player);
-    if (code) {
-      this.cancel();
-      const sfx = this.refusal(r.player, code);
-      if (sfx) a.play(sfx, r.player);
+    if (this.canRetreat(r.player)) {
+      this.cancel(true);
       return;
     }
     r.left -= dt;
@@ -324,7 +327,7 @@ export class RetreatCoordinator {
     this.active = null;
     a.show?.(null);
     const going = [...this.list].filter(e => {
-      if (!e.type?.bool?.('Is_Named_Hero') && simRandom() < attrition) {
+      if (!carriesNamedHero(e) && simRandom() < attrition) {
         a.remove(e, true);
         this.list.delete(e);
         return false;
@@ -349,6 +352,13 @@ export class RetreatCoordinator {
   }
 }
 
+function carriesNamedHero(e, seen = new Set()) {
+  if (!e || seen.has(e)) return false;
+  seen.add(e);
+  if (e.type?.bool?.('Is_Named_Hero') || e.carries?.bool?.('Is_Named_Hero')) return true;
+  return [...(e.fighters || []), ...(e.members || []), ...(e.holds || []), ...(e.cargo || [])].some(x => x !== e && carriesNamedHero(x, seen));
+}
+
 function clockText(left) {
   const t = Math.max(0, left),
     whole = Math.trunc(t);
@@ -365,11 +375,12 @@ export function showRetreatLine(line) {
     el = document.createElement('div');
     el.id = 'retreatline';
     const c = db.constants,
-      size = fontPixels(innerHeight, c.num('Countdowns_Font_Size', 12));
+      point = c.num('Game_Play_UI_Countdown_Font_Size', 0),
+      size = point > 0 ? fontPixels(innerHeight, point) : 16;
     el.style.cssText = `position:fixed;left:${c.num('GUI_Tactical_Countdown_Timers_Screen_X', 0.005) * 100}%;top:${
       c.num('GUI_Tactical_Countdown_Timers_Screen_Y', 0.1) * 100
     }%;white-space:pre;pointer-events:none;z-index:6;font:${size}px ${fontFamily(
-      c.str('Countdowns_Font_Name', 'EmpireAtWar-Medium').trim() || 'EmpireAtWar-Medium'
+      c.str('Game_Play_UI_Countdown_Font_Name', '').trim() || 'Arial'
     )};text-shadow:1px 1px 0 #000`;
     document.body.appendChild(el);
   }
