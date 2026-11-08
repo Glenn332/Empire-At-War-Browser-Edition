@@ -228,7 +228,7 @@ export class GalacticRadar {
       row.height = (rect?.h || 0) * scale;
       row.known = appearance.known;
       const key = name + '|' + color.key,
-        alpha = (appearance.alpha * (appearance.color[3] ?? 255)) / 255,
+        alpha = appearance.alpha,
         state = key + '|' + alpha + '|' + selected;
       if (row.key !== state) {
         row.key = state;

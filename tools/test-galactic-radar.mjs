@@ -58,15 +58,17 @@ for (const p of planets) {
 const unknown = planets.find(p => !g.visibility.planets[p.index].discovered),
   known = planets.find(p => g.visibility.planets[p.index].discovered);
 assert(unknown && known);
-assert.equal(radarAppearance(g, unknown).alpha, (db.faction(unknown.owner).vec('Color')[3] ?? 255) / 255);
-assert.deepEqual(radarAppearance(g, unknown).color, db.faction(unknown.owner).vec('Color'));
+const neutral = [...db.factions.values()].find(f => f.bool('Is_Neutral'));
+assert.equal(radarAppearance(g, unknown).alpha, 128 / 255, 'an undiscovered blip is drawn at half alpha');
+assert.deepEqual(radarAppearance(g, unknown).color, neutral.vec('Color'), 'an undiscovered blip shows the neutral colour');
+assert.equal(radarAppearance(g, known).alpha, 1);
 const v = g.visibility.planets[known.index],
   oldOwner = known.owner;
 known.owner = g.active;
 v.ownerKnown = true;
 assert.deepEqual(radarAppearance(g, known).color, db.faction(g.active).vec('Color'));
 v.ownerKnown = false;
-assert.deepEqual(radarAppearance(g, known).color, db.faction(g.active).vec('Color'));
+assert.deepEqual(radarAppearance(g, known).color, neutral.vec('Color'), 'an owner not known shows the neutral colour');
 v.ownerKnown = true;
 known.owner = oldOwner;
 const originView = radarViewPoint({ x: 0, y: 0, z: 100 }, { x: 0, y: 0, z: -1 }, size, [132, 90]);

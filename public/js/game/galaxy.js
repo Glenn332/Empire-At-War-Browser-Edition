@@ -317,6 +317,7 @@ export function snapshotGalaxy(g) {
       owner: p.owner,
       revealed: !!p.revealed,
       restricted: !!p.restricted,
+      ...(p.storyRevealed !== undefined ? { storyRevealed: !!p.storyRevealed } : {}),
       marketRestricted: !!p.marketRestricted,
       invasionEnabled: p.invasionEnabled !== false,
       currentCorruption: p.currentCorruption ?? -1,
@@ -475,6 +476,8 @@ export function applyGalaxy(g, s) {
     });
     p.revealed = !!sp.revealed;
     p.restricted = !!sp.restricted;
+    if (sp.storyRevealed !== undefined) p.storyRevealed = !!sp.storyRevealed;
+    else delete p.storyRevealed;
     p.marketRestricted = !!sp.marketRestricted;
     p.invasionEnabled = sp.invasionEnabled !== false;
     p.currentCorruption = sp.currentCorruption ?? -1;

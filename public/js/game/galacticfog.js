@@ -116,7 +116,10 @@ export const connectionOwner = (g, p) => (intelligence(g, p)?.ownerKnown ? p.own
 
 export function stepVisibility(g, viewer, elapsedFrames = 0) {
   let state = g.visibility;
-  if (!state || !same(state.viewer, viewer)) state = g.visibility = { viewer, clock: 0, planets: [] };
+  if (!state || !same(state.viewer, viewer)) {
+    const kept = state?.planets.map(v => ({ discovered: !!v?.discovered, revealFrames: 0, rememberedOwner: null })) || [];
+    state = g.visibility = { viewer, clock: 0, planets: kept };
+  }
   state.clock = (state.clock || 0) + elapsedFrames;
   const ticks = Math.floor(state.clock + 1e-8);
   state.clock -= ticks;
@@ -131,7 +134,7 @@ export function stepVisibility(g, viewer, elapsedFrames = 0) {
     adjacent = neighbours(g),
     limit = 30 * db.constants.num('Planet_Reveal_Delay_Time', 0.5);
   for (const p of g.planets) {
-    const v = (state.planets[p.index] ||= { discovered: false, revealFrames: 0, rememberedOwner: null });
+    const v = (state.planets[p.index] ||= { discovered: !!p.storyRevealed, revealFrames: 0, rememberedOwner: null });
     if (p.background) {
       v.discovered = true;
       continue;

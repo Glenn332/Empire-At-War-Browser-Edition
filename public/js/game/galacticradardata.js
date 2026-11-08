@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { intelligence } from './galacticfog.js';
+import { intelligence, displayOwner } from './galacticfog.js';
 
 export const radarPlanets = g => g.planets.filter(p => p.owner != null && p.type.list('Behavior').some(b => b.toUpperCase() === 'PLANET'));
 export const radarPoint = (pos, size) => ({ x: ((pos[0] / 380) * size[0]) / 2, y: ((pos[1] / 460) * size[1]) / 2 });
@@ -11,10 +11,10 @@ const colors = new WeakMap(),
 export function radarAppearance(g, p) {
   const v = intelligence(g, p),
     known = !!v?.discovered;
-  const faction = db.faction(p.owner) || db.faction('Neutral');
+  const faction = db.faction(displayOwner(g, p)) || db.faction('Neutral');
   if (faction && !colors.has(faction)) colors.set(faction, faction.vec('Color', neutralColor));
   const color = faction ? colors.get(faction) : neutralColor;
-  return { known, color, alpha: (color[3] ?? 255) / 255 };
+  return { known, color, alpha: known ? 1 : 128 / 255 };
 }
 
 export function radarViewPoint(position, direction, size, viewSize) {

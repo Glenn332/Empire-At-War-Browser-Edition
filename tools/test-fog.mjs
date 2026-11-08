@@ -76,6 +76,16 @@ stepVisibility(returned, viewer);
 assert.equal(intelligence(returned, returned.planets[p.index]).discovered, true, 'Discovery survives battle snapshot');
 assert.equal(returned.displayFilters, 11, 'Overlay filters survive battle snapshot');
 assert.equal(intelligence(returned, returned.planets[p.index]).fleetOverlay, false, 'Expired intelligence stays hidden after return');
+{
+  const early = startingGalaxy(data, campaign),
+    hidden = early.planets.find(p => !p.background && p.owner !== viewer && !g.visibility.planets[p.index]?.discovered);
+  hidden.storyRevealed = true;
+  stepVisibility(early, viewer);
+  assert(intelligence(early, hidden).discovered, 'a story reveal made before the first visibility step is kept');
+  const other = early.players.find(q => q.faction !== viewer).faction;
+  stepVisibility(early, other);
+  assert(intelligence(early, hidden).discovered, 'discovery belongs to the planet, not to the viewer');
+}
 console.log(
   JSON.stringify({
     campaign: campaign.name,
