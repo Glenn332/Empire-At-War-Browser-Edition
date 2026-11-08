@@ -1,7 +1,7 @@
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
-import { scheduleHeroRespawn } from './galacticherorespawn.js';
+import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
 
 const key = s =>
   String(s || '')
@@ -241,7 +241,7 @@ export function activateSabotage(game, actor, planet, ability) {
             : haltIncome(game, actor, planet, ability);
   if (done) {
     game.story?.abilityLanded?.(planet, actor);
-    scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
+    scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, abilityRespawnTime(ability), true);
   }
   return done;
 }

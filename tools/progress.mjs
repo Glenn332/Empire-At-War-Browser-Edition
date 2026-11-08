@@ -1128,7 +1128,7 @@ const GROUPS = [
       [
         'Smugglers',
         P,
-        'the Siphon_Credits_Ability (galacticcorruption.js) is built: the stealth hero on a planet of another main faction takes a rolled share (Min_ to Max_Siphon_Percentage) of its income for Siphon_Duration_In_Cycles payday cycles, one siphon on a planet, and the planet owner is paid the rest; it does not time out on a corrupted planet. Not built: the Detect_Hero_Ability discovery and the Eliminate_Hero ending, the AI Remove_Smuggler plan using them, and the smuggler unit display on the planet panel'
+        'the Siphon_Credits_Ability (galacticcorruption.js) is built: the stealth hero on a planet of another main faction takes a rolled share (Min_ to Max_Siphon_Percentage) of its income for Siphon_Duration_In_Cycles payday cycles, one siphon on a planet, and the planet owner is paid the rest; it does not time out on a corrupted planet. Read and done: a successful siphon takes the hero off and queues it to return after a draw between the ability Min_ and Max_Respawn_Time (Han Solo 300 seconds), as the engine despawn step asks the ability for it; the same draw is used for spy and sabotage. Not built: the Detect_Hero_Ability discovery and the Eliminate_Hero ending (no shipped data uses them; the shipped Remove_Smuggler goal sends a bounty hunter to land), and the smuggler unit display on the planet panel'
       ],
       [
         'Bounty hunters',

@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { simRandom } from './simrandom.js';
 import { placeStartingForce } from './galaxy.js';
 import { ownedTypes } from './galacticproduction.js';
 import { flashSpawned } from './tutorialrewards.js';
@@ -86,6 +87,11 @@ export function stepHeroRespawns(game) {
       else next = frame + 1;
     }
   g.heroRespawnNext = next;
+}
+export function abilityRespawnTime(ability, random = simRandom) {
+  const a = ability?.num?.('Min_Respawn_Time', 0) || 0,
+    b = ability?.num?.('Max_Respawn_Time', 0) || 0;
+  return Math.min(a, b) + random() * Math.abs(b - a);
 }
 export function forceHeroRespawn(game, typeName) {
   const g = game.galaxy,

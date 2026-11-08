@@ -1,5 +1,5 @@
 import { allied } from './galacticvictory.js';
-import { scheduleHeroRespawn } from './galacticherorespawn.js';
+import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
 
 const key = x => String(x || '').toUpperCase();
 const yes = value => /^(yes|true|1)$/i.test(String(value ?? '').trim());
@@ -63,7 +63,7 @@ export function activateSpy(game, actor, planet, ability, type) {
   for (const p of targets) (p.visibilityModifiers ||= []).push({ owner: actor.owner, source, mask, expires });
   if (key(ability.val('Activation_Style')) === 'GROUND_ACTIVATED') game.story?.abilityLanded?.(planet, actor);
   game.audio?.play(ability.val('SFXEvent_Activate', ''));
-  if (yes(ability.val('Causes_Despawn'))) scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
+  if (yes(ability.val('Causes_Despawn'))) scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, abilityRespawnTime(ability), true);
   game.galacticBattleChanged?.();
   return true;
 }

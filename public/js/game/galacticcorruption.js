@@ -2,7 +2,7 @@ import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { changeController } from './galacticpolitics.js';
-import { scheduleHeroRespawn } from './galacticherorespawn.js';
+import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
 import { intelligence } from './galacticfog.js';
 import { vigilant } from './galacticslicer.js';
 import { raiseGround } from './invasion.js';
@@ -407,7 +407,7 @@ export function activateSiphon(game, actor, planet, ability) {
   planet.creditSiphonFound = false;
   planet.creditSiphonEnd = (g.time || 0) + cycles * db.constants.num('Fiscal_Cycle_Time_In_Secs', 45);
   game.story?.abilityLanded?.(planet, actor);
-  scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
+  scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, abilityRespawnTime(ability), true);
   if (same(actor.owner, game.me)) game.notify?.(String(db.t('TEXT_SIPHON_BEGIN')).replace('%s', planetName(planet)).trim(), owner);
   return true;
 }
