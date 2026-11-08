@@ -281,6 +281,7 @@ export function invasionWinner(w, book, cb) {
 
 export function consolidatedCompanies(records, companies, untouched = new Set(), side = undefined) {
   const groups = new Map(),
+    spotted = new Map(),
     ids = [];
   for (const record of records) {
     const type = db.type(record.type);
@@ -293,6 +294,23 @@ export function consolidatedCompanies(records, companies, untouched = new Set(),
           (n, q) => n + q.members.filter(u => (!u.dead || u.retreated) && !(side !== undefined && u.side !== side)).length,
           0
         );
+    const spotter = db.type(type.str('Ignore_For_Reoptimization').trim());
+    if (spotter) {
+      const key = s => String(s).toUpperCase(),
+        size = type.list('Company_Units').filter(n => key(n) !== key(spotter.name)).length,
+        alive = untouched.has(record.gid)
+          ? size
+          : squads.reduce(
+              (n, q) =>
+                n +
+                q.members.filter(u => (!u.dead || u.retreated) && !(side !== undefined && u.side !== side) && key(u.type?.name) !== key(spotter.name))
+                  .length,
+              0
+            );
+      if (!spotted.has(type)) spotted.set(type, { size, rows: [] });
+      spotted.get(type).rows.push({ gid: record.gid, count: alive });
+      continue;
+    }
     if (!type.bool('Is_Homogeneous', true)) {
       if (count > 0) ids.push(record.gid);
       continue;
@@ -303,6 +321,17 @@ export function consolidatedCompanies(records, companies, untouched = new Set(),
     group.records.push(record);
   }
   const threshold = db.constants.num('Transport_Refill_Threshold', 0.5);
+  for (const { size, rows } of spotted.values()) {
+    const list = rows.slice().reverse();
+    for (let i = 0; i < list.length; i++)
+      for (let j = i + 1; j < list.length && list[i].count >= 1 && list[i].count < size; ) {
+        if (list[j].count > 0 && list[j].count < size) {
+          list[i].count++;
+          list[j].count--;
+        } else j++;
+      }
+    for (const r of list) if (r.count > 0 && size > 0 && r.count / size >= threshold) ids.push(r.gid);
+  }
   for (const group of groups.values()) {
     let left = group.count;
     for (const record of group.records) {

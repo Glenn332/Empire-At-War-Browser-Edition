@@ -22,7 +22,24 @@ const { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult
 );
 await loadGameData();
 const { pathfinder, consolidatedCompanies, structureMarkers } = await import('../public/js/game/campaignland.js');
-const { LandWorld } = await import('../public/js/game/land.js');
+
+{
+  const brigade = db.type('Rebel_Artillery_Brigade'),
+    spotter = brigade && db.type(brigade.str('Ignore_For_Reoptimization').trim());
+  if (brigade && spotter) {
+    const gun = db.type(brigade.list('Company_Units').find(n => n.toUpperCase() !== spotter.name.toUpperCase())),
+      squad = (guns, spotters) => [
+        { members: [...Array.from({ length: guns }, () => ({ dead: false, type: gun })), ...Array.from({ length: spotters }, () => ({ dead: false, type: spotter }))] }
+      ];
+    const rec = [{ gid: 'x', type: brigade.name }, { gid: 'y', type: brigade.name }];
+    assert.deepEqual(
+      consolidatedCompanies(rec, new Map([['x', squad(1, 2)], ['y', squad(1, 0)]])),
+      ['y'],
+      'artillery brigades pack their guns into the last company, spotters not counted'
+    );
+    assert.deepEqual(consolidatedCompanies(rec, new Map([['x', squad(0, 2)], ['y', squad(0, 1)]])), [], 'a brigade with only spotters left is lost');
+  }
+}const { LandWorld } = await import('../public/js/game/land.js');
 const { loadMap } = await import('../public/js/ted.js');
 const data = await loadCampaignData();
 const campaign =

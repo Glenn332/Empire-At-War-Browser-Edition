@@ -23,11 +23,19 @@ export function overviewContents(g, p) {
   const ground = open && v?.groundCount ? p.garrison.filter(u => allied(u.owner, p.owner)).map(u => (v.groundContents ? u : null)) : [];
   const structures = open && v?.groundLevel ? p.groundStructures.map(u => (v.mask & VIS.SPECIAL ? u : null)) : [];
   const here = p ? g.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length) : [];
-  const fleets = [];
+  const fleets = [],
+    own = [0, 1, 2].map(() => null);
   for (const f of here.filter(f => f.owner === viewer)) {
     let slot = f.slot ?? 0;
-    if (fleets[slot]) slot = [0, 1, 2].find(i => !fleets[i]);
-    if (slot !== undefined) fleets[slot] = { fleet: f, units: f.units };
+    if (own[slot]) slot = [0, 1, 2].find(i => !own[i]);
+    if (slot !== undefined) own[slot] = f;
+  }
+  for (const [row, slots] of [
+    [1, [1]],
+    [2, [2, 0]]
+  ]) {
+    const list = slots.map(i => own[i]).filter(Boolean);
+    if (list.length) fleets[row] = { fleet: list[0], fleets: list, units: list.flatMap(f => f.units) };
   }
   const others = here.filter(
     f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u))))
@@ -40,8 +48,7 @@ export function overviewContents(g, p) {
       known = others.some(f => allied(f.owner, viewer)) || v?.fleetContents,
       strongest = grouped.reduce((best, u) => (!best || u.type.num('AI_Combat_Power', 0) > best.type.num('AI_Combat_Power', 0) ? u : best), null);
     const units = known ? grouped : v?.fleetCount ? grouped.map(u => (u === strongest ? u : null)) : [strongest];
-    const slot = fleets[0] ? [0, 1, 2].find(i => !fleets[i]) : 0;
-    if (slot !== undefined) fleets[slot] = { fleet: others[0], units, foreign: true };
+    fleets[0] = { fleet: others[0], units, foreign: true };
   }
   return {
     open,
@@ -49,6 +56,7 @@ export function overviewContents(g, p) {
     ground,
     structures,
     fleets,
+    own,
     capacity: open ? Math.max(0, p.type.num('Special_Structures_Land', 3)) : 0
   };
 }
@@ -548,8 +556,9 @@ export class PlanetOverview extends NativePanel {
         const anchor = packed.slots[n]?.anchor,
           record = packed.slots[n]?.unit || packed.slots[anchor]?.unit;
         s.dragImage = anchor !== undefined ? f.slots[anchor].img : s.img;
-        s.target = { kind: 'fleet', planet: p.index, slot: i, fleet, pf: !!pf && s.name.endsWith('_' + pf) };
-        s.source = fleet?.owner === game.me && record ? { kind: 'fleet', planet: p.index, fleet, records: [record] } : null;
+        const home = (state.fleets[i]?.fleets || (fleet ? [fleet] : [])).find(x => x.units.includes(record)) || fleet;
+        s.target = { kind: 'fleet', planet: p.index, slot: i, fleet: state.own?.[i] || null, pf: !!pf && s.name.endsWith('_' + pf) };
+        s.source = home?.owner === game.me && record ? { kind: 'fleet', planet: p.index, fleet: home, records: [record] } : null;
         this.put(s, packed.slots[n], {
           blank: pf && s.name.endsWith('_' + pf) ? this.comps.get(s.name)?.val('Blank_Texture_Name') : '',
           packed: packed.compact

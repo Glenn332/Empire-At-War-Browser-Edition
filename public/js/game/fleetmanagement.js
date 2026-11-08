@@ -26,6 +26,11 @@ export function markPathfinder(fleet, record) {
   if (record && fleet.units.includes(record)) record.pathfinder = true;
 }
 
+const spaceSuperweapon = record =>
+  (record?.carries || record?.type)
+    ?.list('SpaceBehavior')
+    .some(b => b.toUpperCase() === 'TACTICAL_SUPER_WEAPON') ?? false;
+
 export function dropOverviewUnits(game, source, target) {
   if (!source || !target || game.busy || game.over || game.controlsLocked) return false;
   const g = game.galaxy,
@@ -35,6 +40,10 @@ export function dropOverviewUnits(game, source, target) {
   if (target.kind === 'fleet') {
     if (source.kind === 'ground')
       return !!embarkGround(g, p.index, owner, { records: source.records, fleet: target.fleet, slot: target.slot });
+    if (target.pf && pathfinderCell() && (source.records || []).some(spaceSuperweapon)) {
+      game.audio?.play('GUI_Bad_Sound');
+      return false;
+    }
     const fleet = transferFleetUnits(g, source.fleet, owner, target.slot, source.records, target.fleet);
     if (fleet && target.pf && source.records?.length === 1 && pathfinderCell()) markPathfinder(fleet, source.records[0]);
     else if (fleet) for (const u of source.records || []) delete u.pathfinder;
