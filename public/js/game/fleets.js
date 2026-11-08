@@ -133,6 +133,20 @@ function barred(galaxy, fleet, to) {
   return !!owner && !owner.ai && !galaxy.storyEntry?.(fleet, planet);
 }
 
+function validPath(galaxy, from, to, path) {
+  if (!Array.isArray(path) || !path.length || path.at(-1) !== to) return false;
+  let at = from;
+  for (const next of path) {
+    if (!Number.isInteger(next) || !(galaxy.links[at] || []).some(l => l.to === next)) return false;
+    at = next;
+  }
+  return true;
+}
+
+export function humanPath(galaxy, fleet, to, from = fleet.planet) {
+  return from >= 0 ? findPath(galaxy, from, to, null, humanRoute(galaxy, fleet)) : null;
+}
+
 export function orderMove(galaxy, fleet, to, canEnter = null, slot = null, options = {}) {
   const from = fleet.planet;
   if (from < 0 || from === to) return false;
@@ -142,13 +156,9 @@ export function orderMove(galaxy, fleet, to, canEnter = null, slot = null, optio
     return false;
   }
   const ai = options.status !== undefined && !options.human;
-  const path = findPath(
-    galaxy,
-    from,
-    to,
-    canEnter,
-    options.human ? humanRoute(galaxy, fleet) : ai ? aiRoute(galaxy, fleet, options.status) : null
-  );
+  const path = validPath(galaxy, from, to, options.path)
+    ? options.path.slice()
+    : findPath(galaxy, from, to, canEnter, options.human ? humanRoute(galaxy, fleet) : ai ? aiRoute(galaxy, fleet, options.status) : null);
   if (!path || !path.length || baseSpeed(fleet) <= 0) return false;
   if (ai && hopBlocked(galaxy, fleet, path[0], to, options.status)) return false;
   if (!options.free) {

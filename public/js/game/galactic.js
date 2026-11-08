@@ -2888,13 +2888,14 @@ export class GalacticGame {
     };
   }
 
-  moveFleet(f, to, slot = null) {
+  moveFleet(f, to, slot = null, path = null) {
     if (this.busy) return false;
     for (const u of f.units) delete u.pendingAbility;
     delete f.raid;
     if (
       !orderMove(this.galaxy, f, to, null, slot, {
         human: f.owner === this.me,
+        path,
         denied: () => {
           if (f.owner === this.me) this.audio?.play?.('GUI_Bad_Sound');
         }

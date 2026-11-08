@@ -39,4 +39,23 @@ assert.equal(r.ok, true, 'a market purchase runs as a command');
 assert.deepEqual(g.players[0].blackMarket, [item.name]);
 assert.equal(g.players[0].credits, 1000 - 10);
 assert.deepEqual(runCommand(host, 'Empire', { c: 'panel', kind: 'market', rec: recordRef(g, record), p: 0, item: item.name, price: 10, respawn: 0 }), {}, 'never for another player unit');
+{
+  const { startingGalaxy, loadCampaignData } = await import('../public/js/game/galaxy.js');
+  const data = await loadCampaignData();
+  const gx = startingGalaxy(data, data.campaigns.get('SANDBOX_EQUAL_FOOTING_REBEL'));
+  const fleet = gx.fleets.find(f => f.planet >= 0 && f.units.some(u => (u.carries || u.type).num('Max_Speed', 0) > 0));
+  const far = (() => {
+    const seen = new Map([[fleet.planet, null]]),
+      queue = [fleet.planet];
+    for (let k = 0; k < queue.length; k++) for (const l of gx.links[queue[k]] || []) if (!seen.has(l.to)) (seen.set(l.to, queue[k]), queue.push(l.to));
+    const end = queue.at(-1),
+      path = [];
+    for (let at = end; at !== fleet.planet; at = seen.get(at)) path.unshift(at);
+    return path;
+  })();
+  const moved = [];
+  const host2 = { galaxy: gx, moveFleet: (f, to, slot, path) => (moved.push(path), true) };
+  runCommand(host2, fleet.owner, { c: 'move', f: gx.fleets.indexOf(fleet), to: far.at(-1), slot: null, raid: false, ability: null, path: far });
+  assert.deepEqual(moved[0], far, 'a move command carries the route its issuer chose, so every machine flies the same one');
+}
 console.log('ok', item.name);

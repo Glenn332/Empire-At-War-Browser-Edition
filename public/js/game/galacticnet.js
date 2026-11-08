@@ -4,6 +4,7 @@ import { simRandomState } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { embarkLayoutCompany, landLayoutCompany } from './baselayoutdata.js';
 import { carriedCompany } from './invasion.js';
+import { humanPath } from './fleets.js';
 import { choicesOf, executeCorruption } from './galacticcorruption.js';
 import { executeSlice } from './galacticslicer.js';
 import { executeHack } from './galactichack.js';
@@ -110,7 +111,8 @@ export const orders = {
     to,
     slot,
     raid: !!extra.raid,
-    ability: extra.ability ? recordRef(g, extra.ability) : null
+    ability: extra.ability ? recordRef(g, extra.ability) : null,
+    path: humanPath(g, f, to)
   }),
   transfer: (g, f, slot, recs, tf) => ({ c: 'transfer', f: fleetRef(g, f), slot, recs: refs(g, recs), tf: fleetRef(g, tf) }),
   embark: (g, p, { records: recs = null, fleet = null, slot, fresh = false, to = -1 } = {}) => ({
@@ -120,7 +122,11 @@ export const orders = {
     tf: fleetRef(g, fleet),
     slot,
     fresh: !!fresh,
-    to
+    to,
+    path:
+      fresh && g.planets[to]
+        ? humanPath(g, { owner: g.planets[p]?.garrison.find(u => u.owner)?.owner, units: recs || g.planets[p]?.garrison || [] }, to, p)
+        : null
   }),
   land: (g, f, p, recs = null) => ({ c: 'land', f: fleetRef(g, f), p, recs: refs(g, recs) }),
   drop: (g, s, t) => ({ c: 'drop', s: sideRef(g, s), t: sideRef(g, t) }),
@@ -145,7 +151,7 @@ export function runCommand(game, faction, cmd) {
       const f = fleetOf(g, cmd.f);
       if (!own(f) || !g.planets[cmd.to]) return {};
       const hero = cmd.ability ? fromRecordRef(g, cmd.ability) : null;
-      if (game.moveFleet(f, cmd.to, Number.isInteger(cmd.slot) ? cmd.slot : null)) {
+      if (game.moveFleet(f, cmd.to, Number.isInteger(cmd.slot) ? cmd.slot : null, Array.isArray(cmd.path) ? cmd.path : null)) {
         if (cmd.raid) f.raid = cmd.to;
         if (hero && f.units.includes(hero)) hero.pendingAbility = cmd.to;
       }
@@ -163,7 +169,7 @@ export function runCommand(game, faction, cmd) {
       if (tf && !own(tf)) return {};
       if (cmd.fresh) {
         const f = game.embarkFresh(cmd.p, cmd.slot);
-        if (f && g.planets[cmd.to] && game.moveFleet(f, cmd.to, cmd.slot) && cmd.landOn) f.landOn = cmd.to;
+        if (f && g.planets[cmd.to] && game.moveFleet(f, cmd.to, cmd.slot, Array.isArray(cmd.path) ? cmd.path : null) && cmd.landOn) f.landOn = cmd.to;
       } else game.embark(cmd.p, { records: records(g, cmd.recs), fleet: tf, slot: cmd.slot });
       return {};
     }
