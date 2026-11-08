@@ -812,11 +812,36 @@ export class GalacticGame {
     this.screenText?.removeAll();
   }
   showStoryDialog(request) {
+    if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
     this.storyDialog?.show(request);
   }
   notifyStoryGoal(request, sound = true) {
-    if (sound) this.audio?.play(db.faction(this.me)?.str('SFXEvent_Mission_Added'));
-    this.galacticLog?.message(db.t(db.faction(this.me)?.str('Default_Transmission_Message')));
+    if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
+    this.storyButtonFlash(true);
+    const faction = db.faction(this.me);
+    this.galacticLog?.message(db.t(faction?.str('Default_Transmission_Message')), { urgent: true, sfx: faction?.str('SFXEvent_HUD_Advisor_Urgent') || '' });
+    if (sound) this.audio?.play(faction?.str('SFXEvent_Mission_Added'));
+  }
+  storyButtonFlash(on) {
+    const el = this.scriptUI?.controls?.get('B_STORY_ARC_G')?.b;
+    if (!el) return;
+    el.querySelector(':scope > .story-flash')?.remove();
+    if (!on) return;
+    const f = document.createElement('span');
+    f.className = 'story-flash';
+    f.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:plus-lighter;background:rgba(255,255,255,.6);animation:tutorial-flash 0.5s linear infinite';
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    el.appendChild(f);
+  }
+  updateStoryButton() {
+    const ui = this.scriptUI;
+    if (!ui?.controls?.has('B_STORY_ARC_G')) return;
+    const m = this.movies,
+      movie = !!m?.active && m.canvas?.dataset.movie !== 'Light_Loop',
+      on = !!this.story?.storyGoals?.length && !movie;
+    if (this.storyButtonOn === on) return;
+    this.storyButtonOn = on;
+    ui.enable('B_STORY_ARC_G', on);
   }
 
   planetBounds() {
@@ -3235,6 +3260,7 @@ export class GalacticGame {
     this.screenText?.update(elapsed);
     this.audio?.speech?.update();
     this.movies?.update(elapsed);
+    this.updateStoryButton();
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);

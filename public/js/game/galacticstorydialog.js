@@ -1,5 +1,7 @@
 import { db } from '../gamedata.js';
-import { fetchText } from '../vfs.js';
+import { fetchText, fetchBinary } from '../vfs.js';
+import { BinkPlayer } from '../bink.js';
+import { movieDefinitions } from './galacticmovies.js';
 import { loadTextureCanvas } from '../dds.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 
@@ -49,22 +51,63 @@ export function storySummaryColors(color, record) {
   return { top, bottom: record.read && !record.completed ? [172, 172, 255, 255] : top };
 }
 
+const DIALOG_ARGS = {
+  SFX: 'token',
+  MUSIC: 'token',
+  DIALOG: 'token',
+  MOVIE: 'token',
+  MOVIE_ONCE: 'token',
+  ANIM: 'int',
+  IMAGE: 'token',
+  TEXT: 'token',
+  EXTRA_TEXT: '',
+  TITLE: 'token',
+  CLEARTEXT: '',
+  TEXTCOLOR: 'color',
+  NEWLINE: 'int',
+  WAIT: 'int',
+  PAUSE: 'int',
+  LOADCINEMATIC: 'token',
+  CLEARIMAGE: '',
+  HIDECINEMATIC: 'int',
+  STOPMOVIE: '',
+  WAIT_SPEECH: '',
+  '[CHAPTER': 'int'
+};
+const atoi = s => parseInt(String(s ?? ''), 10) || 0;
+
 export function parseStoryDialog(source, chapter = 0) {
+  const tokens = [];
+  String(source || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .forEach((line, row) => {
+      for (const text of line.split(/[ \t\]]+/)) if (text) tokens.push({ text, row });
+    });
   let active = false;
   const out = [];
-  for (const raw of String(source || '')
-    .replace(/^\uFEFF/, '')
-    .split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith('//')) continue;
-    const header = line.match(/^\[CHAPTER\s+(-?\d+)\s*\]/i);
-    if (header) {
-      active = +header[1] === +chapter;
+  for (let i = 0; i < tokens.length; ) {
+    const t = tokens[i++];
+    if (t.text.startsWith('#')) {
+      while (i < tokens.length && tokens[i].row === t.row) i++;
       continue;
     }
-    if (!active) continue;
-    const match = line.match(/^(\w+)\s*([\s\S]*)$/);
-    if (match) out.push({ op: key(match[1]), value: unquote(match[2].trim()) });
+    const op = key(t.text),
+      kind = DIALOG_ARGS[op];
+    if (kind === undefined) return active ? [] : out;
+    let value = '';
+    if (kind === 'token') value = unquote(tokens[i++]?.text ?? '');
+    else if (kind === 'int') value = String(atoi(tokens[i++]?.text));
+    else if (kind === 'color') {
+      const c = [atoi(tokens[i++]?.text), atoi(tokens[i++]?.text), atoi(tokens[i++]?.text)];
+      c.push(i < tokens.length && /^-?\d+$/.test(tokens[i].text) ? atoi(tokens[i++].text) : 255);
+      value = c.join(' ');
+    }
+    if (op === '[CHAPTER') {
+      active = +value === +chapter;
+      continue;
+    }
+    if (active) out.push({ op, value });
   }
   return out;
 }
@@ -292,7 +335,7 @@ export class GalacticStoryDialog {
       d.onLanguageRefresh(() => d.el.setAttribute('aria-label', db.t('TEXT_STORY_GOALS')));
       d.show('IDC_DIALOG_CLOSE_BUTTON', false);
       d.show('IDC_SUMMARY_DIALOG_ABANDON', false);
-      d.show('IDC_RADIO_COMPLETED', this.game.galaxy.campaign.bool('Show_Completed_Tab', true));
+      d.show('IDC_RADIO_COMPLETED', (this.game.galaxy?.campaign?.bool('Show_Completed_Tab', true) ?? true));
       d.radios(['IDC_RADIO_ACTIVE', 'IDC_RADIO_COMPLETED'], 'IDC_RADIO_ACTIVE', id => {
         this.summaryTab = id === 'IDC_RADIO_COMPLETED';
         this.summarySelected = null;
@@ -419,7 +462,19 @@ export class GalacticStoryDialog {
             for (const e of options.entries || []) lines.push({ text: () => storyDialogEntry(e), color: color.slice() });
             break;
           case 'CLEARTEXT':
-            lines = [];
+            if (!this.summary) lines = [];
+            break;
+          case 'MUSIC': {
+            const music = db.music?.get(key(c.value));
+            if (music) this.game.audio?.setPlaylist?.(music.list('Files'), true, true);
+            break;
+          }
+          case 'PAUSE':
+            if (!this.summary) {
+              const on = atoi(c.value) !== 0;
+              if (this.game.pauseGalactic) this.game.pauseGalactic(on);
+              else this.game.paused = on;
+            }
             break;
           case 'IMAGE':
             this.image(c.value, generation);
@@ -437,9 +492,11 @@ export class GalacticStoryDialog {
           case 'MOVIE':
           case 'MOVIE_ONCE':
             if (this.summary) this.game.movies?.play(c.value, c.op === 'MOVIE');
+            else this.dialogMovie(c.value, c.op === 'MOVIE', generation);
             break;
           case 'STOPMOVIE':
             if (this.summary) this.game.movies?.stop();
+            else this.stopDialogMovie();
             break;
           case 'WAIT_SPEECH':
             if (this.summary && !this.speechFinished) {
@@ -449,13 +506,7 @@ export class GalacticStoryDialog {
             }
             break;
           case 'WAIT':
-            if (key(c.value) === 'SPEECH') {
-              if (this.summary && !this.speechFinished) {
-                this.list.set(lines);
-                this.speechWait = run;
-                return;
-              }
-            } else if (parseInt(c.value, 10) > 0) {
+            if (parseInt(c.value, 10) > 0) {
               this.list.set(lines);
               this.timer = setTimeout(run, parseInt(c.value, 10));
               return;
@@ -468,6 +519,38 @@ export class GalacticStoryDialog {
     run();
   }
 
+  async dialogMovie(name, loop, generation) {
+    this.stopDialogMovie();
+    const host = this.dialog?.ctl('IDC_IMAGE');
+    if (!host) return false;
+    const movie = (await movieDefinitions()).get(key(name));
+    if (!movie || !this.open || generation !== this.generation) return false;
+    const buffer = await fetchBinary(movie.val('Movie_File'));
+    if (!buffer || !this.open || generation !== this.generation) return false;
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    host.appendChild(canvas);
+    const player = new BinkPlayer(canvas, { onEnd: () => this.stopDialogMovie(player), onError: () => this.stopDialogMovie(player) });
+    const state = (this.dialogMovieState = { canvas, player, last: performance.now(), raf: 0 });
+    await player.play(buffer, { loop, alpha: /^(yes|true|1)$/i.test(movie.val('Alpha') || ''), startFrame: movie.num('Movie_Start_Frame', 0) });
+    const step = now => {
+      if (this.dialogMovieState !== state) return;
+      player.update(Math.max(0, (now - state.last) / 1000));
+      state.last = now;
+      state.raf = requestAnimationFrame(step);
+    };
+    if (this.dialogMovieState === state) state.raf = requestAnimationFrame(step);
+    return true;
+  }
+  stopDialogMovie(only = null) {
+    const state = this.dialogMovieState;
+    if (!state || (only && state.player !== only)) return;
+    this.dialogMovieState = null;
+    cancelAnimationFrame(state.raf);
+    state.player.stop();
+    state.canvas.remove();
+  }
   async image(name, generation) {
     if (!pictures.has(key(name)))
       pictures.set(
@@ -481,6 +564,7 @@ export class GalacticStoryDialog {
   }
   close(result = 'close') {
     if (!this.open) return;
+    this.stopDialogMovie();
     const popups = this.popupRequests || [];
     this.popupRequests = [];
     if (this.game.setup?.net) {

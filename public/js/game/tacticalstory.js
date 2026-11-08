@@ -1,4 +1,5 @@
 import { installTacticalMission } from './tacticalmission.js';
+import { installTacticalNotices } from './tacticalnotice.js';
 import { installLinkedPresentation } from './linkedpresentation.js';
 import { linkedParent } from './linktactical.js';
 import { StoryPlots } from './storyplots.js';
@@ -19,6 +20,7 @@ export class TacticalStoryHost extends StoryPlots {
   static async create(game, scripts, { restoring = false } = {}) {
     if (!game.tacticalCampaign && game.setup.campaign?.galaxy) game.tacticalCampaign = await TacticalCampaign.create(game);
     const host = (game.tacticalStory = new TacticalStoryHost(game, scripts));
+    installTacticalNotices(game);
     for (const request of game.setup.campaign?.storyPlots || []) await host.readPlot(request.name, '', request.owner);
     if (sandboxGate(game)) await host.readPlot(sandboxPlot(game), '', game.human?.factionName || game.factions?.[game.me]);
     if (game.setup.tacticalStoryPlot)

@@ -61,7 +61,7 @@ const chapter0 = parseStoryDialog(intro, 0),
   chapter1 = parseStoryDialog(intro, 1);
 assert(chapter0.length && chapter1.length);
 assert(chapter0.some(c => c.op === 'EXTRA_TEXT'));
-assert(chapter0.some(c => c.op === 'WAIT' && c.value === 'SPEECH'));
+assert(chapter0.some(c => c.op === 'WAIT' && c.value === '0'), 'WAIT SPEECH reads as a zero wait, as the engine atoi does');
 assert(!chapter0.some(c => c.op === 'MOVIE'), 'Commented native commands stay inactive');
 assert.notDeepEqual(chapter0, chapter1, 'Only the requested native chapter is selected');
 assert.deepEqual(parseStoryDialog(intro, 99999), []);
@@ -99,9 +99,23 @@ assert.equal(storyDialogEntry({ text: '%s', params: [type] }), db.t(type.str('Te
 assert.equal(storyDialogEntry({ text: '%s', params: [{ __type: type, __name: type.name }] }), db.t(type.str('Text_ID')));
 assert.equal(storyDialogEntry({ text: '%s', params: [{ type }] }), db.t(type.str('Text_ID')));
 assert.equal(storyDialogEntry({ text: '%s', params: [{ name: {} }] }), '');
+assert.deepEqual(parseStoryDialog(`// comment
+[CHAPTER 0]
+TEXT a`, 0), [], 'an unknown keyword stops the engine parse');
+assert.deepEqual(parseStoryDialog(`[CHAPTER 0]
+TEXTCOLOR255
+TEXT a`, 0), [], 'the chapter being read is lost');
+assert.deepEqual(parseStoryDialog(`[CHAPTER 0]
+TEXTCOLOR 1 2 3
+WAIT SPEECH
+TEXT a`, 0), [
+  { op: 'TEXTCOLOR', value: '1 2 3 255' },
+  { op: 'WAIT', value: '0' },
+  { op: 'TEXT', value: 'a' }
+]);
 const fixture = parseStoryDialog(
   `
-// comment
+# comment
 [CHAPTER 0]
 TEXTCOLOR 10 20 30 40
 TEXT discarded

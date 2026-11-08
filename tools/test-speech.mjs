@@ -201,7 +201,7 @@ panel.replay(
   [
     { op: 'DIALOG', value: event.name },
     { op: 'TEXT', value: 'Before' },
-    { op: 'WAIT', value: 'SPEECH' },
+    { op: 'WAIT_SPEECH', value: '' },
     { op: 'TEXT', value: 'After' }
   ],
   {}
@@ -216,7 +216,7 @@ assert(movieStops > 0);
 panel.replay(
   [
     { op: 'DIALOG', value: event.name },
-    { op: 'WAIT', value: 'SPEECH' },
+    { op: 'WAIT_SPEECH', value: '' },
     { op: 'TEXT', value: 'Wrong' }
   ],
   {}

@@ -313,6 +313,7 @@ export class ScriptUI {
     if (key === 'ATTACK_BUTTON' && this.game.pauseShellOpen) this.game.setUserPaused(false);
     if (key === 'B_DROID_HELP' && !net) this.game.galacticLog?.toggle();
     if (key === 'B_STORY_ARC_G' && !net) {
+      this.game.storyButtonFlash?.(false);
       if (this.game.storyDialog?.opened) this.game.storyDialog.close();
       else this.game.storyDialog?.showSummary();
     }

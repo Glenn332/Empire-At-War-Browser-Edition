@@ -47,6 +47,16 @@ export class Advisor {
     } catch {}
   }
 
+  message(text, sfx = '') {
+    const g = this.game;
+    if (!text) return;
+    this.log.push({ time: g.world?.time || 0, text });
+    const faction = g.human?.faction;
+    g.audio?.play(sfx || faction?.str('SFXEvent_HUD_Advisor_Urgent'));
+    const bar = g.ui && g.ui.bar;
+    if (bar && bar.showHint) bar.showHint(text, SHOW_SECONDS);
+  }
+
   update(dt) {
     const g = this.game;
     if (!this.enabled || g.over || g.setup.benchmark || g.setup.attract) return;
@@ -115,6 +125,7 @@ export class Advisor {
   }
 
   async openHolocron() {
+    if (this.game.tacticalStory && this.game.toggleStorySummary) return this.game.toggleStorySummary();
     const g = this.game,
       m = g.menus,
       dlg = await m.push('IDD_STORY_SUMMARY_DIALOG');
