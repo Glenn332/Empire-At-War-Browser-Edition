@@ -1509,7 +1509,6 @@ export class GalacticGame {
       }
       this.keys.add(e.code);
       if (pressed(e, 'TACTICAL_OVERVIEW')) this.zoomOut();
-      if (pressed(e, 'PAUSE')) this.setUserPaused(!this.userPaused);
       if (pressed(e, 'CAMERA_HOME')) {
         e.preventDefault();
         this.cameraHome();

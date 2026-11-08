@@ -1580,27 +1580,31 @@ class Game {
     const jumps = this.cinematicJumps,
       w = this.world;
     if (!jumps?.length) return;
-    const fast = 500;
     for (const j of jumps) {
-      if (w.time < j.at || j.done) continue;
+      if (j.done) continue;
       const e = j.e;
       if (e.dead) {
         j.done = true;
         continue;
       }
-      if (!j.started) {
+      const jumping = w.time >= j.at,
+        fast = e.player?.faction?.num('Space_Retreat_Flight_Move_Increment', 500) ?? 500;
+      if (jumping && !j.started) {
         j.started = true;
         for (const u of e.fighters || [e]) u.retreatFlight = true;
-        const sfx = e.player?.faction?.str('SFXEvent_Exit_Into_Hyperspace').trim(),
+        const sfx =
+            e.type?.str('SFXEvent_Retreat_Engines_Jump').trim() || e.player?.faction?.str('SFXEvent_Exit_Into_Hyperspace').trim(),
           u0 = e.fighters?.[0] || e;
         if (sfx) this.audio.play(sfx, u0.x, u0.y);
       }
       if (!e.isSquad && !e.fighters) {
-        const h = e.heading || 0;
-        e.x += Math.cos(h) * fast * dt * 30;
-        e.y += Math.sin(h) * fast * dt * 30;
+        const h = e.heading || 0,
+          step = jumping ? fast : 8.125;
+        e.x += Math.cos(h) * step * dt * 30;
+        e.y += Math.sin(h) * step * dt * 30;
         e.syncObj?.();
       }
+      if (!jumping) continue;
       j.left -= dt * 30;
       if (j.left <= 0) {
         j.done = true;
@@ -1638,6 +1642,11 @@ class Game {
     const w = this.world,
       cb = this.setup.campaign;
     if (!cb || this.over || this.tacticalVictory.winner) return;
+    const station = this.campaignBook?.station;
+    if (db.constants.bool('Space_Station_Destruction_Forces_Retreat') && station && station.dead) {
+      this.tacticalVictory.request(w.teams[cb.attacker.team], 15, 210);
+      return;
+    }
     for (const s of [cb.attacker, cb.defender]) {
       const team = w.teams[s.team];
       if (!sideBeaten(w, team)) continue;

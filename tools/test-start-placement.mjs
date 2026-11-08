@@ -41,4 +41,15 @@ if (company) {
   placeStartingForce(p, A, infantry, []);
   assert.equal(p.garrison.length, max + 1, 'stealthed companies do not take a surface place');
 }
+{
+  const hidden = [...db.types.values()].find(
+    t => t.list('Company_Units').length && strategicStealth({ type: t }) && db.type(t.list('Company_Transport_Unit')[0]) && !strategicStealth({ type: db.type(t.list('Company_Transport_Unit')[0]) })
+  );
+  if (hidden) {
+    const fleets = [{ owner: A, planet: 0, units: [{ type: ship }], leg: null }];
+    placeStartingForce(make(), A, hidden, fleets);
+    const own = fleets.find(f => f.units.some(u => u.carries === hidden));
+    if (own) assert.equal(own.slot, 1, 'a stealthed company leaves in its own orbit stack');
+  }
+}
 console.log('ok', company?.name);

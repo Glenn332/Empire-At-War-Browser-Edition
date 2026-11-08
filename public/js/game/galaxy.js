@@ -124,7 +124,10 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
     if (open && !orbit && surface < db.constants.num('Max_Ground_Forces_On_Planet', 10))
       p.garrison.push((record = { type, owner }));
     else {
-      newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type: transport || type, carries: type }));
+      const fleet = newFleet(fleets, planetIndexOf(p), owner);
+      if (transport && strategicStealth({ type }) && !strategicStealth({ type: transport }))
+        fleet.slot = [1, 2].find(s => !fleets.some(f => f !== fleet && f.planet === planetIndexOf(p) && !f.leg && (f.slot ?? 0) === s)) ?? 0;
+      fleet.units.push((record = { type: transport || type, carries: type }));
       enteredOrbit(p, owner, [record]);
     }
   } else if (kind === 'squadron' || kind === 'starship') {

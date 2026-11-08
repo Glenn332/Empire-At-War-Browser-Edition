@@ -1,3 +1,4 @@
+import { startRemoval } from './galacticcorruption.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { changeController } from './galacticpolitics.js';
@@ -44,6 +45,8 @@ export function executeHack(game, actor, planet, free = false) {
     return false;
   }
   if (cost) adjustCredits(g, player.faction, -cost);
+  if (startRemoval(game, planet, 5)) game.story?.generic?.('decrease_corruption');
+  if (!free) game.audio?.play(db.faction(player.faction)?.str('SFXEvent_Hack_Success').trim());
   game.story?.abilityLanded?.(planet, actor);
   scheduleHeroRespawn(game, actor.record || actor, planet, actor.owner, null, 0, true);
   game.story?.despawn?.(actor);

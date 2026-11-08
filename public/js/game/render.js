@@ -1643,11 +1643,11 @@ export class Renderer {
         }
         if (u.hyper) this.darken(u);
         if (u.engineMeshes.length) {
-          const on = !u.hyper && u.speed > u.maxSpeed * 0.08 && u.engineAlive();
+          const on = !u.hyper && (u.retreatFlight || u.speed > u.maxSpeed * 0.08) && u.engineAlive();
           for (const m of u.engineMeshes) if (m.visible !== on) m.visible = on;
         }
         if (u.isMobile && !u.hyper) {
-          const thrust = 0.55 + 0.45 * Math.min(1, u.speed / (u.maxSpeed || 1));
+          const thrust = u.retreatFlight ? 1 : 0.55 + 0.45 * Math.min(1, u.speed / (u.maxSpeed || 1));
           const ro = u.roll || 0,
             cro = Math.cos(ro),
             sro = Math.sin(ro);
