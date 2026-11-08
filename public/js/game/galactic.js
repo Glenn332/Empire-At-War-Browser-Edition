@@ -2233,6 +2233,10 @@ export class GalacticGame {
     const cfg = this.setup.players?.[pid];
     return !!cfg && cfg.human && !cfg.left && String(cfg.faction || '').toUpperCase() === String(this.storyLocal() || '').toUpperCase();
   }
+  storyZoom(pid, i, out) {
+    const p = this.galaxy.planets[i];
+    if (p && this.storyPartner(pid)) this.story?.signal(out ? 'STORY_ZOOM_OUT_PLANET' : 'STORY_ZOOM_INTO_PLANET', p.type.name);
+  }
   storySelect(pid, i) {
     const p = this.galaxy.planets[i];
     if (p && this.storyPartner(pid)) this.story?.signal('STORY_SELECT_PLANET', p.type.name);
@@ -2998,7 +3002,8 @@ export class GalacticGame {
     v.planet = i;
     v.dir = 1;
     this.select(i);
-    this.story?.signal('STORY_ZOOM_INTO_PLANET', this.galaxy.planets[i]?.type.name);
+    if (this.net) this.order({ c: 'zoom', p: i, out: false });
+    else this.story?.signal('STORY_ZOOM_INTO_PLANET', this.galaxy.planets[i]?.type.name);
     this.radar?.animate('move');
     this.audio && this.audio.play && this.audio.play('GUI_Zoom');
   }
@@ -3103,7 +3108,10 @@ export class GalacticGame {
     }
     const v = this.view;
     if (v.zoom === 0 && v.dir === 0) return;
-    if (v.planet >= 0) this.story?.signal('STORY_ZOOM_OUT_PLANET', this.galaxy.planets[v.planet]?.type.name);
+    if (v.planet >= 0) {
+      if (this.net) this.order({ c: 'zoom', p: v.planet, out: true });
+      else this.story?.signal('STORY_ZOOM_OUT_PLANET', this.galaxy.planets[v.planet]?.type.name);
+    }
     v.dir = -1;
     this.radar?.animate('attack');
     this.audio && this.audio.play && this.audio.play('GUI_Zoom');

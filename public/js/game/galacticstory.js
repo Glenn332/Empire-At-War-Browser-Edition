@@ -1198,7 +1198,7 @@ export class GalacticStoryHost extends StoryPlots {
     if (this.game.setup?.net) {
       const id = (this.choiceId = (this.choiceId || 0) + 1);
       (this.choices ||= new Map()).set(id, { object, ability, planet, rows, owner: key(object.owner) });
-      if (key(object.owner) === key(this.game.me))
+      if (key(object.owner) === key(this.game.localFaction ?? this.game.me))
         this.popup.open(
           rows,
           (row, gui) => {
@@ -1216,7 +1216,7 @@ export class GalacticStoryHost extends StoryPlots {
     const c = this.choices?.get(id);
     if (!c || key(faction) !== c.owner || (index >= 0 && !c.rows[index])) return;
     this.choices.delete(id);
-    if (key(this.game.me) === c.owner) this.popup.close();
+    if (key(this.game.localFaction ?? this.game.me) === c.owner) this.popup.close();
     if (index >= 0) this.neutralizeExecute(c.object, c.ability, c.planet, c.rows[index]);
     if (gui) this.clickGUI(String(gui));
   }

@@ -258,6 +258,9 @@ export function runCommand(game, faction, cmd) {
     case 'select':
       game.storySelect?.(game.actingPid, cmd.p | 0);
       return {};
+    case 'zoom':
+      game.storyZoom?.(game.actingPid, cmd.p | 0, !!cmd.out);
+      return {};
     case 'ui':
       game.scriptClick?.(game.actingPid, String(cmd.name || ''), !!cmd.native);
       return {};
