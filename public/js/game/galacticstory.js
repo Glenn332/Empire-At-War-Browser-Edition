@@ -1148,6 +1148,19 @@ export class GalacticStoryHost extends StoryPlots {
     if (heroes.length && waiting('STORY_MOVE').some(e => heroes.some(h => this.heroMatches(e, h, planet)))) return true;
     return live.some(u => u.carries) && waiting('STORY_LAND_ON').some(e => this.arrivalMatches(e, planet, object));
   }
+  invasionBounced(planet) {
+    const names = new Set([key(planet.type?.name), key(planet.name)]);
+    const e = (this.eventTypes.get('STORY_INVASION_BOUNCED') || []).find(
+      e =>
+        this.waiting(e) &&
+        String(e.params[0] || '')
+          .split(/[\s,]+/)
+          .some(n => names.has(key(n)))
+    );
+    if (!e) return false;
+    this.fire(e);
+    return true;
+  }
   fleetBounced(fleet, planet) {
     this.signalArrival('STORY_FLEET_BOUNCED', planet, this.fleetArrival(fleet, planet).object, fleet.owner);
   }

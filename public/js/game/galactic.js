@@ -2783,6 +2783,7 @@ export class GalacticGame {
         return chosen.includes(this.galaxy.fleets[fi].units[ui]);
       });
     if (!troops.length) return false;
+    if (pl.owner !== fleet.owner && this.story?.invasionBounced?.(pl)) return false;
     if (pl.owner !== fleet.owner) {
       if (!pl.garrison.length && !pl.groundStructures.length) {
         const ids = troops.map(u => u.gid);
@@ -3363,7 +3364,7 @@ export class GalacticGame {
           for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
           for (const done of completed) if (done.tech !== undefined) this.story?.signalTech(done.owner, done.tech);
-          if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner);
+          if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner, this.galaxy.planets[done.planet]);
           for (const done of completed) this.battles.dirty.add(done.planet);
         }
         stepFleets(this.galaxy, dt * LOGIC_FPS, (f, p) => {

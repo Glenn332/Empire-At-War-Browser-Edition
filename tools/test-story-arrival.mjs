@@ -268,4 +268,45 @@ onLanded(null);
     assert.equal(go.planet, 1, 'it stops one planet short');
   }
 }
+{
+  const { constructStory } = await import('../public/js/game/galacticbattleevents.js');
+  const base = [...db.types.values()].find(t => t.list('Behavior').some(b => b.toUpperCase() === 'DUMMY_STAR_BASE') && t.num('Base_Level', 0) >= 2);
+  if (base) {
+    const level = (n, kind, where = P) => ({ ...ev('lvl' + n + kind, 'STORY_CONSTRUCT_LEVEL', where, String(n), kind), active: true });
+    fired = [];
+    const h = host([level(2, 'SPACE'), level(base.num('Base_Level', 0) + 1, 'SPACE'), level(1, 'LAND'), { ...ev('none', 'STORY_CONSTRUCT_LEVEL', '', '1', 'SPACE'), active: true }]);
+    constructStory(h, base, me, planet);
+    assert.deepEqual(fired, ['lvl2SPACE'], 'a star base at or above the level on a listed planet fires STORY_CONSTRUCT_LEVEL; an empty planet list never does');
+  }
+  fired = [];
+  const h = host([{ ...ev('bounce', 'STORY_INVASION_BOUNCED', P), active: true }]);
+  h.waiting = e => e.active && !e.completed && !e.disabled;
+  assert.equal(h.invasionBounced(planet), true);
+  assert.deepEqual(fired, ['bounce'], 'a waiting STORY_INVASION_BOUNCED for the planet takes the invasion over');
+}
+{
+  const plots = Object.create(StoryPlots.prototype);
+  plots.timedEvents = new Set();
+  plots.time = 0;
+  plots._objectives = { items: [{ id: 'TEXT_OBJ', state: 0 }] };
+  const shot = [];
+  plots.fire = e => shot.push(e.name);
+  const timeout = { ...ev('timeout', 'STORY_OBJECTIVE_TIMEOUT', '10', 'TEXT_OBJ'), active: true, elapsedFrom: null };
+  plots.timedEvents.add(timeout);
+  plots.pollEvents();
+  plots.time = 9;
+  plots.pollEvents();
+  assert.deepEqual(shot, []);
+  plots.time = 10;
+  plots.pollEvents();
+  assert.deepEqual(shot, ['timeout'], 'STORY_OBJECTIVE_TIMEOUT fires once the seconds pass with the objective still active');
+  const done = { ...ev('done', 'STORY_OBJECTIVE_TIMEOUT', '1', 'TEXT_OBJ'), active: true, elapsedFrom: null };
+  plots._objectives.items[0].state = 1;
+  plots.timedEvents = new Set([done]);
+  plots.time = 0;
+  plots.pollEvents();
+  plots.time = 2;
+  plots.pollEvents();
+  assert.equal(done.disabled, true, 'a finished objective disables its timeout instead');
+}
 console.log('ok', me, 'against', them, 'neutral', neutral, 'on', P);

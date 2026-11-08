@@ -259,6 +259,9 @@ export class TacticalStoryHost extends StoryPlots {
     else if (cmd?.c === 'guard' && cmd.t) {
       const target = find(cmd.t);
       if (target) for (const u of units) this.guarded(u.type?.name, target.type?.name);
+    } else if (cmd?.c === 'attack' && cmd.t && cmd.hp >= 0) {
+      const hardpoint = find(cmd.t)?.hardpoints?.[cmd.hp];
+      if (hardpoint?.def?.name) this.signal('STORY_ATTACK_HARDPOINT', hardpoint.def.name);
     }
   }
   storyNames(s) {

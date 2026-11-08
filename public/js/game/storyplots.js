@@ -3,6 +3,8 @@ import { db } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
 import { resetCombatEvent } from './galacticbattleevents.js';
 import { ObjectiveList, objectiveReward } from './objectives.js';
+const TIMED = new Set(['STORY_ELAPSED', 'STORY_FLAG', 'STORY_OBJECTIVE_TIMEOUT']);
+const eventAlias = type => (type === 'STORY_CORRUPTION_INCREASED' ? 'STORY_CORRUPTION_CHANGED' : type);
 import { objectivePanel } from './objectivepanel.js';
 const key = s =>
   String(s || '')
@@ -70,7 +72,7 @@ export class StoryPlots {
           const event = {
             name: node.attrs.Name,
             plot,
-            type: key(node.val('Event_Type')),
+            type: eventAlias(key(node.val('Event_Type'))),
             params,
             rewards,
             reward: key(node.val('Reward_Type')),
@@ -94,7 +96,7 @@ export class StoryPlots {
           const list = this.eventTypes.get(event.type) || [];
           list.push(event);
           this.eventTypes.set(event.type, list);
-          if (event.type === 'STORY_ELAPSED' || event.type === 'STORY_FLAG') this.timedEvents.add(event);
+          if (TIMED.has(event.type)) this.timedEvents.add(event);
         }
       }
     }
@@ -459,7 +461,7 @@ export class StoryPlots {
               event.active = !event.prereqs.length;
               event.elapsedFrom = null;
               resetCombatEvent(event);
-              if (event.type === 'STORY_ELAPSED' || event.type === 'STORY_FLAG') this.timedEvents.add(event);
+              if (TIMED.has(event.type)) this.timedEvents.add(event);
             }
           const trigger = p[1] && e.plot.events.get(key(p[1]));
           if (trigger) this.fire(trigger, true);
@@ -499,6 +501,13 @@ export class StoryPlots {
         if (flagsOnly) continue;
         if (e.elapsedFrom === null) e.elapsedFrom = this.time;
         if (this.time - e.elapsedFrom >= (+e.params[0] || 0)) this.fire(e);
+      } else if (e.type === 'STORY_OBJECTIVE_TIMEOUT') {
+        if (flagsOnly) continue;
+        if (e.elapsedFrom === null || e.elapsedFrom === undefined) e.elapsedFrom = this.time;
+        if (this.time - e.elapsedFrom < (parseFloat(e.params[0]) || 0)) continue;
+        const objective = this.objectives.items.find(o => o.id === String(e.params[1] ?? '').trim());
+        if (objective && objective.state === 0) this.fire(e);
+        else e.disabled = true;
       } else if (e.type === 'STORY_FLAG') {
         const target = (parseInt(e.params[1], 10) || 0) | 0,
           mode = String(e.params[2] || '').trim();

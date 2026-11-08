@@ -98,11 +98,21 @@ function counted(host, e, index, param) {
   if (e.remainingCounts[index] === undefined) e.remainingCounts[index] = Number(list(e.params[param])[index] || 1);
   if (--e.remainingCounts[index] <= 0) host.fire(e);
 }
-export function constructStory(host, type, owner) {
+export function constructStory(host, type, owner, planet = null) {
   for (const e of host.eventTypes.get('STORY_CONSTRUCT') || []) {
     if (!active(e)) continue;
     const index = list(e.params[0]).indexOf(key(type.name));
     if (index >= 0 && factionFilter(host, e, e.params[2] || 'FILTER_FRIENDLY_ONLY', owner)) counted(host, e, index, 1);
+  }
+  const behaviors = type.list('Behavior').map(key),
+    kind = behaviors.includes('DUMMY_STAR_BASE') ? 'SPACE' : behaviors.includes('DUMMY_GROUND_BASE') ? 'LAND' : null;
+  if (!kind || !planet) return;
+  for (const e of host.eventTypes.get('STORY_CONSTRUCT_LEVEL') || []) {
+    if (!active(e)) continue;
+    const planets = list(e.params[0]);
+    if (!planets.length || !planets.includes(key(planet.type?.name || planet.name))) continue;
+    if (key(e.params[2]) !== kind) continue;
+    if ((parseInt(e.params[1], 10) || 0) <= type.num('Base_Level', 0)) host.fire(e);
   }
 }
 export function conquerStory(host, planet) {
