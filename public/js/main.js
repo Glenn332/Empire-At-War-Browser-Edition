@@ -1684,6 +1684,7 @@ class Game {
     }
     if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
     const { galaxy, ...result } = this.campaignOutcome || {};
+    result.storyDelayed = this.storyDelayed || [];
     stageStart({ mode: 'galactic', players: [], teamFactions: [], campaign: cb.campaignName, restore: galaxy || cb.galaxy, result });
   }
 

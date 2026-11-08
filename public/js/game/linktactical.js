@@ -385,7 +385,15 @@ export function linkedParent(game) {
   const parent = window.parent.game;
   return parent?.linkedMission?.frame.contentWindow === window ? parent : null;
 }
+export function recordMissionLost(game, winner) {
+  if (linkedParent(game) || !game.setup?.campaign) return;
+  const human = game.human?.factionName ?? game.factions?.[game.me],
+    name = game.setup.tacticalStoryPlot || game.setup.campaign.storyPlots?.at(-1)?.name;
+  if (!name || String(winner).toUpperCase() === String(human).toUpperCase()) return;
+  (game.storyDelayed ||= []).push({ type: 'STORY_MISSION_LOST', name });
+}
 export function reportLinkedVictory(game, winner) {
+  recordMissionLost(game, winner);
   const parent = linkedParent(game);
   if (!parent) return;
   const flags = parent.linkedMissionVictory(winner, game.tacticalStory?.flags.snapshot() || []);

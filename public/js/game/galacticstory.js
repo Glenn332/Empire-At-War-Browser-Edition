@@ -1944,6 +1944,7 @@ export class GalacticStoryHost extends StoryPlots {
       this.reasonCache.clear();
     }
     try {
+      if (service && !this.game.paused && !this.game.modeSuspended) this.replayDelayed();
       if (service) this.pollEvents(false, 'elapsed');
       if (service && !this.suspended)
         for (const inst of this.instances) {

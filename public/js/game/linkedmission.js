@@ -46,14 +46,7 @@ export function linkedMissionVictory(game, winner, flags) {
   session.victoryReported = true;
   if (flags && game.story) game.story.flags = new StoryFlags(flags);
   const name = session.setup.tacticalStoryPlot || session.setup.campaign.storyPlots.at(-1)?.name;
-  if (winner !== game.me && name)
-    for (const e of game.story?.eventTypes.get('STORY_MISSION_LOST') || [])
-      if (
-        String(e.params[0] || '')
-          .split(',')
-          .some(n => n.trim().toUpperCase() === name.toUpperCase())
-      )
-        game.story.fire(e);
+  if (winner !== game.me && name) game.story?.queueDelayed({ type: 'STORY_MISSION_LOST', name });
   return game.story?.flags.snapshot();
 }
 export async function returnLinkedMission(game, result) {

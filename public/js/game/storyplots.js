@@ -115,6 +115,19 @@ export class StoryPlots {
     return plot;
   }
 
+  queueDelayed(record) {
+    (this.delayed ||= []).push(record);
+  }
+  replayDelayed() {
+    const list = this.delayed;
+    if (!list?.length) return;
+    this.delayed = [];
+    for (const r of list) if (r.type === 'STORY_MISSION_LOST') this.signalMissionLost(r.name);
+  }
+  signalMissionLost(name) {
+    for (const e of [...(this.eventTypes.get('STORY_MISSION_LOST') || [])])
+      if (split(e.params[0]).some(n => key(n) === key(name))) this.fire(e);
+  }
   hashPlot(id, plot) {
     (this.plotHash ||= new EngineHash()).add(id, crc32(String(plot.name || '').trim()));
     this.orderPlots();

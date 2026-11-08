@@ -210,3 +210,34 @@ console.log('ok events');
   assert.ok(errors.has('FLASH_UNIT'), 'a region must be one of the REGION_ values');
 }
 console.log('ok flash');
+
+{
+  const { recordMissionLost } = await import('../public/js/game/linktactical.js');
+  const { linkedMissionVictory } = await import('../public/js/game/linkedmission.js');
+  const { StoryPlots } = await import('../public/js/game/storyplots.js');
+  const tactical = { setup: { campaign: { storyPlots: [{ name: 'Story_Mission_X.xml' }] } }, human: { factionName: 'Rebel' } };
+  recordMissionLost(tactical, 'Rebel');
+  assert.equal(tactical.storyDelayed, undefined, 'a human win records nothing');
+  recordMissionLost(tactical, 'Empire');
+  assert.deepEqual(tactical.storyDelayed, [{ type: 'STORY_MISSION_LOST', name: 'Story_Mission_X.xml' }], 'an enemy win records MISSION_LOST for the last tactical plot');
+
+  const fired = [];
+  const host = Object.create(StoryPlots.prototype);
+  Object.assign(host, {
+    fire: e => fired.push(e.name),
+    flags: { snapshot: () => [] },
+    eventTypes: new Map([['STORY_MISSION_LOST', [{ name: 'lost', params: ['story_mission_x.xml, Other'] }]]])
+  });
+  host.queueDelayed(tactical.storyDelayed[0]);
+  assert.deepEqual(fired, [], 'nothing fires while the galaxy is not running');
+  host.replayDelayed();
+  host.replayDelayed();
+  assert.deepEqual(fired, ['lost'], 'replayed once, on the first galactic tick');
+
+  const game = { me: 'Rebel', story: host, linkedMission: { setup: { campaign: { storyPlots: [{ name: 'Story_Mission_X.xml' }] } } } };
+  linkedMissionVictory(game, 'Empire', null);
+  assert.deepEqual(fired, ['lost'], 'a linked mission queues instead of firing at once');
+  host.replayDelayed();
+  assert.deepEqual(fired, ['lost', 'lost']);
+}
+console.log('ok delayed');

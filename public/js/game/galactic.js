@@ -2664,6 +2664,7 @@ export class GalacticGame {
   }
 
   applyResult(r) {
+    for (const record of r.storyDelayed || []) this.story?.queueDelayed(record);
     if (r.credits) this.applyTacticalCredits(r);
     if (r.mode !== 'land') this.victory.superweaponBattle(r);
     this.victory.tacticalDeaths(r);

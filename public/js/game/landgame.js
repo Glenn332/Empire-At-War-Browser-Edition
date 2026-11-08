@@ -3865,7 +3865,7 @@ export class LandGame {
       teamFactions: [],
       campaign: cb.campaignName,
       restore: cb.galaxy,
-      result: this.campaignOutcome
+      result: this.campaignOutcome && { ...this.campaignOutcome, storyDelayed: this.storyDelayed || [] }
     });
   }
 
