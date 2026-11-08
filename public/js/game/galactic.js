@@ -25,7 +25,7 @@ import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
-import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit } from './galaxy.js';
+import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
@@ -81,7 +81,7 @@ import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
 import { campaignScore } from './campaignscore.js';
 import { ParticleManager, loadParticles } from '../particles.js';
-import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction } from './galacticproduction.js';
+import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction, ownedTypes } from './galacticproduction.js';
 import {
   stepVisibility,
   intelligence,
@@ -2183,6 +2183,15 @@ export class GalacticGame {
         if (gone.has(key(p.owner))) p.owner = neutral;
       }
     }
+    if (!this.setup.restore && !this.setup.singlePlayerCampaign)
+      for (const p of g.players) {
+        const home = g.planets[p.home];
+        if (!home) continue;
+        for (const name of db.faction(p.faction)?.list('Multiplayer_Campaign_Heroes') || []) {
+          const type = db.type(name);
+          if (type && !ownedTypes(g, p.faction).some(t => key(t.name) === key(type.name))) placeStartingForce(home, p.faction, type, g.fleets);
+        }
+      }
     const custom = g.campaign.bool('Supports_Custom_Settings') && !this.setup.singlePlayerCampaign && !this.setup.restore;
     for (const p of g.players) {
       const slot = slots.find(s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction));

@@ -60,6 +60,7 @@ export function stepHeroRespawns(game) {
                     u => key(u.owner) === key(entry.owner) && key(u.type.name) === key(tied)
                   )
               )
+              .slice(0, 1)
             : [];
       }
       let spawned = false;
@@ -83,7 +84,7 @@ export function stepHeroRespawns(game) {
         break;
       }
       if (spawned) game.victory?.heroSpawned(type, entry.owner);
-      if (spawned || tied || !planets.length || !type) p.killedHeroes.splice(p.killedHeroes.indexOf(entry), 1);
+      if (spawned || !planets.length || !type) p.killedHeroes.splice(p.killedHeroes.indexOf(entry), 1);
       else next = frame + 1;
     }
   g.heroRespawnNext = next;

@@ -51,6 +51,11 @@ export function marketLocked(campaign, mustBuy, name, bought) {
 }
 
 export const abilityLocked = (campaign, def, bought) => marketLocked(campaign, def.mustBuy, def.gui, bought);
+export function galacticAbilityLocked(g, owner, ability) {
+  if (!/^(yes|true|1)$/i.test(String(ability?.val?.('Must_Be_Bought_On_Black_Market') ?? '').trim())) return false;
+  const bought = g?.players?.find(p => key(p.faction) === key(owner))?.blackMarket || [];
+  return [ability.val('GUI_Activated_Ability_Name').trim(), ability.attrs?.Name].some(n => n && marketLocked(true, true, n, bought));
+}
 
 const techOf = p => (p?.tech ?? 0) + (db.faction(p?.faction)?.num('Displayed_Tech_Level_Adjustment', 0) || 0);
 export function itemPrice(g, item, planet, ability, buyer = null) {

@@ -1,3 +1,4 @@
+import { galacticAbilityLocked } from './blackmarket.js';
 import { db } from '../gamedata.js';
 import { canHack } from './galactichack.js';
 import { planetDestructionAllowed, hasPlanetDestruction } from './planetdestruction.js';
@@ -146,6 +147,7 @@ export function slotFor(game, record, planet, owner = record.owner) {
     const names = list(slot.names);
     for (const a of abilities) {
       if (a.tag.toUpperCase() !== slot.tag || !names.includes(key(a.attrs?.Name))) continue;
+      if (galacticAbilityLocked(game.galaxy, owner, a)) continue;
       const style = key(a.val('Activation_Style', 'Ground_Activated'));
       if (style !== 'GROUND_ACTIVATED') continue;
       if (slot.can(game, actor, planet, a)) return { code: slot.code, text: slot.text, label: db.t(slot.text) };

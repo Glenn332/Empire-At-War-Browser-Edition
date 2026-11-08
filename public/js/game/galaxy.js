@@ -3,6 +3,7 @@ import { fetchText } from '../vfs.js';
 import { parseXML } from '../xml.js';
 import { advisorHintFlags } from './advisorhints.js';
 import { retreatDisabledList, setRetreatDisabledList } from './retreat.js';
+import { strategicStealth } from './galacticfog.js';
 
 let orbitListener = null;
 export function onOrbit(fn) {
@@ -111,8 +112,16 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
       .list('Company_Units')
       .map(n => db.type(n))
       .filter(Boolean);
-    const orbit = units.some(u => u.bool('Always_Spawn_In_Orbit'));
-    if (open && !orbit && p.garrison.length < db.constants.num('Max_Ground_Forces_On_Planet', 10))
+    const hostile = fleets.some(
+      f =>
+        f.planet === planetIndexOf(p) &&
+        !f.leg &&
+        !startAllied(f.owner, owner) &&
+        f.units.some(u => !u.dead && !strategicStealth(u))
+    );
+    const orbit = units.some(u => u.bool('Always_Spawn_In_Orbit')) && (strategicStealth({ type }) || !hostile);
+    const surface = p.garrison.filter(u => !u.dead && !strategicStealth(u)).length;
+    if (open && !orbit && surface < db.constants.num('Max_Ground_Forces_On_Planet', 10))
       p.garrison.push((record = { type, owner }));
     else {
       newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type: transport || type, carries: type }));
@@ -127,6 +136,12 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
   return record;
 }
 const planetIndexOf = p => p.index;
+const startAllied = (a, b) =>
+  String(a || '').toUpperCase() === String(b || '').toUpperCase() ||
+  !!db
+    .faction(a)
+    ?.list('Allies')
+    .some(n => n.toUpperCase() === String(b || '').toUpperCase());
 
 export function startingGalaxy(data, campaign) {
   const c = campaign;
@@ -184,6 +199,11 @@ export function startingGalaxy(data, campaign) {
     p.garrison = [];
     p.production = { space: [], ground: [] };
     p.radius = p.type.num('Scale_Factor', 1) * PLANET_RADIUS;
+  }
+  for (const [, pl, typeName] of c.tuples('Special_Case_Production')) {
+    const p = planets[at(pl)],
+      type = db.type(typeName);
+    if (p && type?.bool('Build_Requires_Initial_Placement')) (p.specialProduction ||= []).push(type.name.toUpperCase());
   }
   const fleets = [];
   for (const [f, pl, typeName] of c.tuples('Starting_Forces')) {

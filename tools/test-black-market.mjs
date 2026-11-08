@@ -199,4 +199,12 @@ assert(sold.length, 'a flagged ability is sold by an item');
 assert.equal(bm.abilityLocked(true, sold[0], []), true);
 assert.equal(bm.abilityLocked(true, sold[0], [bm.itemFor(sold[0].gui).name]), false);
 assert.equal(bm.abilityLocked(false, sold[0], []), false);
+{
+  const name = bm.itemFor(sold[0].gui).abilities[0],
+    fake = { attrs: { Name: name }, val: k => (k === 'Must_Be_Bought_On_Black_Market' ? 'Yes' : k === 'GUI_Activated_Ability_Name' ? name : '') };
+  const g = { players: [{ faction: 'Underworld', blackMarket: [] }] };
+  assert.equal(bm.galacticAbilityLocked(g, 'Underworld', fake), true, 'a galactic ability that must be bought waits for its item');
+  g.players[0].blackMarket.push(bm.itemFor(sold[0].gui).name);
+  assert.equal(bm.galacticAbilityLocked(g, 'Underworld', fake), false);
+}
 console.log('ok', items.length, 'items,', heroes.length, 'hero(es),', flagged.length, 'flagged land abilities');

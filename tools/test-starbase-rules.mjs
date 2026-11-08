@@ -77,4 +77,16 @@ planetFactionChange(game, p, enemy);
 assert.equal(p.owner, enemy);
 assert.equal(p.station, null, 'a faction change without a battle clears the star base');
 assert.equal(p.groundStructures.length, 0, 'and every ground structure');
+{
+  const placed = [...db.types.values()].find(
+    t => t.bool('Build_Requires_Initial_Placement') && t.list('Affiliation').some(a => a.toUpperCase() === owner.toUpperCase())
+  );
+  if (placed) {
+    const q = g.planets.find(x => x.owner === owner);
+    delete q.specialProduction;
+    assert.equal(productionBlock(g, q.index, owner, placed), 'Cannot be produced here', 'an initial placement type needs the campaign special case');
+    q.specialProduction = [placed.name.toUpperCase()];
+    assert.notEqual(productionBlock(g, q.index, owner, placed), 'Cannot be produced here');
+  }
+}
 console.log('ok', owner, bases.map(t => t.name).join(','));

@@ -377,6 +377,7 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
     if (force === 'station' && type.num('Base_Level', 0) !== nextStarbaseLevel(g, p)) return 'Invalid starbase level';
     if (force === 'station' && enemyInOrbit(g, p, owner)) return 'Cannot be produced here';
   }
+  if (type.bool('Build_Requires_Initial_Placement') && !(p.specialProduction || []).includes(upperName(type))) return 'Cannot be produced here';
   if (planetLimited(p, type)) return 'Cannot be produced here';
   const current = type.num('Build_Limit_Current_Per_Player', -1),
     lifetime = type.num('Build_Limit_Lifetime_Per_Player', -1);

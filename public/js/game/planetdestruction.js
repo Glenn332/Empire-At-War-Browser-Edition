@@ -1,3 +1,4 @@
+import { galacticAbilityLocked } from './blackmarket.js';
 import { db } from '../gamedata.js';
 import { allied, targetOwner, currentOwner, campaignPlanet } from './galacticvictory.js';
 import { strategicStealth } from './galacticfog.js';
@@ -186,6 +187,7 @@ export function groundActivated(game, actor, filter, neutralize) {
       )
         continue;
       if (actor.abilitiesDisabled || record.abilitiesDisabled || game.abilitiesDisabled) continue;
+      if (galacticAbilityLocked(game.galaxy, actor.owner, ability)) continue;
       let fired = false;
       if (key(ability.tag) === 'PLANET_DESTRUCTION_ABILITY') fired = activatePlanetDestruction(game, actor, p, ability);
       else if (key(ability.tag) === 'NEUTRALIZE_HERO_ABILITY') fired = !!neutralize?.(actor, ability);
