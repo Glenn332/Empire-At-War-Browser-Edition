@@ -252,7 +252,13 @@ export function isHumanFaction(g, faction) {
 
 export function snapshotGalaxy(g) {
   const n = t => (t ? t.name : null),
-    list = l => l.map(x => [x.type.name, x.owner, x.markerId ?? -1, { checkContestedSpace: x.checkContestedSpace }]);
+    list = l =>
+      l.map(x => [
+        x.type.name,
+        x.owner,
+        x.markerId ?? -1,
+        { checkContestedSpace: x.checkContestedSpace, ...(x.detectNext ? { detectNext: { ...x.detectNext } } : {}) }
+      ]);
   return {
     campaign: g.campaign.name,
     ...(g.humans ? { humans: g.humans.slice() } : {}),
@@ -383,7 +389,8 @@ export function snapshotGalaxy(g) {
           checkContestedSpace: u.checkContestedSpace,
           ...(u.raiding ? { raiding: true } : {}),
           ...(u.pathfinder ? { pathfinder: true } : {}),
-          ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {})
+          ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {}),
+          ...(u.detectNext ? { detectNext: { ...u.detectNext } } : {})
         }
       ]),
       path: f.path.slice(),

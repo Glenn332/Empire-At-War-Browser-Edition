@@ -98,6 +98,7 @@ import { GalacticModelFade } from './galacticfade.js';
 import { strategicIndex, strategicMultiplier } from './galacticspeed.js';
 import { FleetLines } from './fleetlines.js';
 import { stepPolitics, onControllerChange, politicalGroups } from './galacticpolitics.js';
+import { stepDetection } from './galacticdetect.js';
 import { setComponentText } from './componenttext.js';
 import { snapNativeText } from '../nativefont.js';
 import { stageStart } from './transit.js';
@@ -3300,6 +3301,7 @@ export class GalacticGame {
           this.ai?.invalidate();
           this.galacticBattleChanged?.();
         });
+        stepDetection(this);
         this.ai?.update(dt);
         const completed = stepProduction(
           this.galaxy,
