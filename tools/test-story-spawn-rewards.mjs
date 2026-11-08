@@ -193,3 +193,20 @@ console.log('ok tactical');
   assert.deepEqual(fired, ['STORY_REINFORCETank,X_Wing_Squadron', 'STORY_REINFORCETank'], 'only the plot player, an empty name list never matches');
 }
 console.log('ok events');
+
+{
+  const units = [{ type: { name: 'Probe' } }];
+  const game = { world: { units, time: 10 } };
+  const errors = new Map();
+  const run = (reward, rewards, extra = {}) => tutorialReward({ game, errors }, { name: reward, reward, rewards, ...extra });
+  run('FLASH_TERRAIN', ['4'], { position: [120, -40, 0] });
+  const blip = [...game.world.storyBlips.values()][0];
+  assert.deepEqual([blip.x, blip.y, blip.until], [120, -40, 14], 'a radar flash at the reward position for its duration');
+  run('FLASH_OBJECT', ['probe']);
+  assert.ok(units[0].guiFlash && units[0].guiFlash.count === 3, 'the object flashes three times');
+  run('FLASH_OBJECT', ['Nothing']);
+  assert.ok(errors.has('FLASH_OBJECT'));
+  run('FLASH_UNIT', ['FLASH_FLEET', 'Probe']);
+  assert.ok(errors.has('FLASH_UNIT'), 'a region must be one of the REGION_ values');
+}
+console.log('ok flash');

@@ -4,6 +4,8 @@ import { toMainMenu } from './transit.js';
 import { TutorialFx } from './tutorialfx.js';
 import { activateSpawners } from './landbase.js';
 import { finishTutorial } from './tutorialprofile.js';
+import { objectFlash } from './guiflash.js';
+import { STORY_PARAM } from './storyenums.js';
 
 const key = s =>
   String(s || '')
@@ -181,6 +183,39 @@ export function tutorialReward(host, e) {
       if (!present(p[0]) || !present(p[1])) host.errors?.set(e.name, 'Set spawn failed due to incomplete parameters');
       else if (game.world?.units) activateSpawners(game.world, p[0], parseFloat(p[1]) || 0);
       return true;
+    case 'FLASH_OBJECT': {
+      if (!present(p[0])) return true;
+      const u = (game.world?.units || []).find(x => !x.dead && key((x.type || x.def)?.name) === key(p[0]));
+      if (!u) host.errors?.set(e.name, 'STORY REWARD FLASH OBJECT- Unable to find object ' + p[0]);
+      else objectFlash(u, 2);
+      return true;
+    }
+    case 'FLASH_TERRAIN': {
+      if (!present(p[0])) return true;
+      const w = game.world,
+        at = e.position || [0, 0, 0];
+      if (w) (w.storyBlips ||= new Map()).set('STORY_FLASH_TERRAIN:' + e.name, { x: at[0] || 0, y: at[1] || 0, until: (w.time || 0) + (parseFloat(p[0]) || 0) });
+      return true;
+    }
+    case 'FLASH_UNIT': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      const region = STORY_PARAM[key(p[0])] ?? 0;
+      if (!region || !/^REGION_/.test(key(p[0]))) {
+        host.errors?.set(e.name, "STORY REWARD FLASH UNIT - Warning!  Can't find region " + p[0]);
+        return true;
+      }
+      if (!db.type(p[1])) {
+        host.errors?.set(e.name, "STORY REWARD FLASH UNIT - Warning!  Can't find unit type " + p[1]);
+        return true;
+      }
+      const want = key(p[1]),
+        typeOf = el => key(el._type?.name || el.dataset?.type),
+        all = [...document.querySelectorAll('[data-type], [data-component^="B_CREATE_"]')].filter(el => typeOf(el) === want && el.style.display !== 'none');
+      const production = el => /^B_CREATE_/i.test(el.dataset?.component || '') || el.closest?.('[data-component^="B_CREATE_"]');
+      const el = region === 2 ? all.find(production) : all.find(x => !production(x));
+      if (el) fx().flashElement(el, '', { period: 0.5, count: 3 });
+      return true;
+    }
     case 'SWITCH_SIDES':
       game.switchSides?.(present(p[0]) ? p[0] : '');
       return true;

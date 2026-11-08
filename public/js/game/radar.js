@@ -348,13 +348,13 @@ export class Radar {
     }
   }
 
-  drawStoryBlips(g, X, Y, blips) {
+  drawStoryBlips(g, X, Y, blips, time) {
     if (!blips?.size) return;
     const img = this.icon('i_radar_focus.tga', [255, 255, 255]);
     if (!img) return;
     const z = (g.canvas.width / (g.canvas.clientWidth || g.canvas.width)) * Math.min(innerWidth / 1024, innerHeight / 768);
     for (const [name, b] of blips) {
-      if (b.obj?.dead) {
+      if (b.obj?.dead || (b.until !== undefined && (time ?? 0) > b.until)) {
         blips.delete(name);
         continue;
       }
@@ -510,7 +510,7 @@ export class Radar {
         p => this.colorOf(p)
       );
     this.drawEvents(g, X, Y, W, H, w.time);
-    this.drawStoryBlips(g, X, Y, w.storyBlips);
+    this.drawStoryBlips(g, X, Y, w.storyBlips, w.time);
     const corners = [
       [0, 0],
       [r.width, 0],

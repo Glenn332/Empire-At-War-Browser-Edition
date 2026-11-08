@@ -76,6 +76,13 @@ export class StoryPlots {
             params,
             rewards,
             reward: key(node.val('Reward_Type')),
+            position: node.child('Reward_Position')
+              ? node
+                  .val('Reward_Position')
+                  .split(/[\s,]+/)
+                  .filter(Boolean)
+                  .map(Number)
+              : null,
             rewardList: node.all('Reward_Param_List').flatMap(n => n.text.split(/[\s,|]+/)).filter(Boolean),
             prereqs: node.all('Prereq').map(n => prereqNames(n.text)),
             branch: node.val('Branch'),
@@ -108,6 +115,20 @@ export class StoryPlots {
     return plot;
   }
 
+  replaceEventParameter(from, to) {
+    const want = key(from);
+    for (const plot of this.plots.values())
+      for (const e of plot.events.values()) {
+        if (e.type === 'STORY_DEFEAT_HERO') continue;
+        for (let i = 0; i < 3; i++) {
+          if (e.params[i] === undefined) continue;
+          const parts = split(e.params[i]);
+          if (!parts.some(n => key(n) === want)) continue;
+          e.params[i] = parts.map(n => (key(n) === want ? to : n)).join(',');
+          if ((e.type === 'STORY_DESTROY' && i === 2) || (e.type === 'STORY_CONQUER' && i === 1)) e.remainingCounts = null;
+        }
+      }
+  }
   resetEvent(event) {
     event.completed = false;
     event.active = !event.prereqs.length;
@@ -214,19 +235,22 @@ export class StoryPlots {
   prerequisites(e) {
     return !e.prereqs.length || e.prereqs.some(names => names.every(n => e.plot.events.get(key(n))?.completed));
   }
-  fire(e, force = false) {
+  fire(e, force = false, subject = null) {
     if (e.disabled || (!force && (e.completed || !(e.active ?? this.prerequisites(e))))) return false;
     if (!force && e.plot?.active === false) return false;
     if (e.plot?.instance) this.invokeStoryCallback(e.plot.instance, e.name);
     e.completed = true;
     if (e.type === 'STORY_ELAPSED') e.elapsedFrom = this.time;
     if (!e.perpetual) this.timedEvents.delete(e);
-    const firing = this.firingPlot;
+    const firing = this.firingPlot,
+      was = this.firingSubject;
     this.firingPlot = e.plot;
+    this.firingSubject = subject;
     try {
       this.reward(e);
     } finally {
       this.firingPlot = firing;
+      this.firingSubject = was;
     }
     if (e.dialog) {
       const request = {

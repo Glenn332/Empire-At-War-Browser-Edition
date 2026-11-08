@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
+import { planetPolitics } from './planetstats.js';
 
 const key = s => String(s || '').toUpperCase();
 const ability = (type, tag) => type?.sub('Abilities').flatMap(a => a.all(tag)) || [];
@@ -38,7 +39,7 @@ export function presenceController(g, p, orbit) {
   }
   if (!surfaceReachable(p)) for (const f of orbit || []) if (f.owner && live(f.units)) return { owner: f.owner, by: 'orbit' };
   if (!p.destroyed && p.type.bool('Planet_Retains_Residual_Influence') && p.owner) return { owner: p.owner, by: 'residual' };
-  const leaning = Math.max(0, Math.min(5, p.type.num('Political_Control', 0))),
+  const leaning = Math.max(0, Math.min(5, planetPolitics(p))),
     faction = db.faction(p.type.str('Political_Faction').trim());
   if (leaning > 0 && faction) return { owner: faction.name, by: 'leaning' };
   return { owner: neutralFaction(), by: 'neutral' };
@@ -116,7 +117,7 @@ export function politicalGoal(g, p, orbit, by = null) {
   const here = presence(p, owner, orbit),
     top = maxControl();
   let sum = 0;
-  const typePolitics = Math.max(0, Math.min(top, p.type.num('Political_Control', 0))),
+  const typePolitics = Math.max(0, Math.min(top, planetPolitics(p))),
     faction = p.type.str('Political_Faction').trim();
   sum += faction && key(faction) !== key(owner) ? -typePolitics : typePolitics;
   let ships = 0;

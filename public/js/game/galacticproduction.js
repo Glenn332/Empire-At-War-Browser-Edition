@@ -4,6 +4,7 @@ import { forceKind, placeStartingForce } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { strategicStealth } from './galacticfog.js';
+import { planetMaxStarbase } from './planetstats.js';
 
 const mobile = t => ['company', 'starship', 'squadron'].includes(forceKind(t));
 export const techAdvance = t => t.num('Build_Advances_Tech_Level', 0);
@@ -387,7 +388,7 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
 }
 
 function nextStarbaseLevel(g, p) {
-  const max = p.type.num('Max_Space_Base', 5);
+  const max = planetMaxStarbase(p);
   for (const q of Object.values(p.production || {})) for (const job of q) if (forceKind(job.type) === 'station') return 0;
   if (!p.station || !(p.spaceLevel > 0)) return max > 0 ? 1 : 0;
   return p.spaceLevel + 1 <= max ? p.spaceLevel + 1 : 0;

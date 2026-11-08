@@ -346,6 +346,9 @@ export function snapshotGalaxy(g) {
       invasionEnabled: p.invasionEnabled !== false,
       currentCorruption: p.currentCorruption ?? -1,
       ...(p.spawnOverrides ? { spawnOverrides: { ...p.spawnOverrides } } : {}),
+      ...(p.statCreditValue !== undefined ? { statCreditValue: p.statCreditValue } : {}),
+      ...(p.statPolitical !== undefined ? { statPolitical: p.statPolitical } : {}),
+      ...(p.statMaxStarbase !== undefined ? { statMaxStarbase: p.statMaxStarbase } : {}),
       creditSiphonOwner: p.creditSiphonOwner ?? -1,
       corruption: {
         kind: p.corruptionKind || null,
@@ -509,6 +512,9 @@ export function applyGalaxy(g, s) {
     p.invasionEnabled = sp.invasionEnabled !== false;
     p.currentCorruption = sp.currentCorruption ?? -1;
     p.spawnOverrides = sp.spawnOverrides ? { ...sp.spawnOverrides } : undefined;
+    for (const k of ['statCreditValue', 'statPolitical', 'statMaxStarbase'])
+      if (sp[k] !== undefined) p[k] = sp[k];
+      else delete p[k];
     p.creditSiphonOwner = sp.creditSiphonOwner ?? -1;
     p.corruptionKind = sp.corruption?.kind || null;
     p.corruptionPending = sp.corruption?.pending ?? -1;

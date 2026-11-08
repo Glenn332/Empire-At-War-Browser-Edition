@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { cycleNumber } from './galacticeconomy.js';
+import { planetCreditValue } from './planetstats.js';
 
 export const LOG_TABS = ['IDC_DROID_LOG_RADIO', 'IDC_DATA_CHART_RADIO', 'IDC_TECH_TREE_RADIO', 'IDC_SUMMARY_SCREEN_RADIO'];
 export const LOG_WEATHER = [
@@ -105,7 +106,7 @@ export function sampleHistory(g, frame) {
 export const nativeRound = n => (n < 0 ? -Math.trunc(-n + 0.5) : Math.trunc(n + 0.5));
 const same = (a, b) => String(a).toUpperCase() === String(b).toUpperCase();
 export function summaryEconomy(g, p) {
-  const base = p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : (p.baseCreditValue ?? p.type.num('Planet_Credit_Value', 0));
+  const base = p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : planetCreditValue(p);
   let routes = 0,
     mining = 0,
     count = 0,

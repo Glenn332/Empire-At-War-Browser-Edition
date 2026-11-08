@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { planetIncome } from './galacticeconomy.js';
 import { spyMask } from './galacticspy.js';
+import { planetCreditValue } from './planetstats.js';
 
 export const VIS = Object.freeze({
   OWNER: 1,
@@ -111,7 +112,7 @@ export const displayOwner = (g, p) => {
 export const displayIncome = (g, p, orbit = null) =>
   intelligence(g, p)?.income
     ? planetIncome(g, p, p.owner, orbit)
-    : p.type.num(p.destroyed ? 'Planet_Destroyed_Credit_Value' : 'Planet_Credit_Value', 0);
+    : (p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : planetCreditValue(p));
 export const connectionOwner = (g, p) => (intelligence(g, p)?.ownerKnown ? p.owner : intelligence(g, p)?.rememberedOwner);
 
 export function stepVisibility(g, viewer, elapsedFrames = 0) {

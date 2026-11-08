@@ -6,6 +6,8 @@ import { VIS } from './galacticfog.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { advisorHints } from './advisorhints.js';
 import { tutorialReward } from './tutorialrewards.js';
+import { relation } from './galacticrelation.js';
+import { STORY_PARAM } from './storyenums.js';
 
 const key = s =>
   String(s || '')
@@ -233,6 +235,34 @@ export function galacticStoryReward(host, e) {
       g.displayFilters = 0;
       game.ui?.refresh?.();
       return true;
+    case 'STATISTIC_CHANGE': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      const planet = present(p[2]) ? planetsOfType(p[2])[0] : host.firingSubject?.type ? host.firingSubject : null;
+      if (!planet) {
+        host.errors.set(e.name, 'Reward Statistic Change - No planet specified');
+        return true;
+      }
+      const value = atoi(p[1]),
+        stat = key(p[0]);
+      if (stat === 'CREDIT_VALUE') planet.statCreditValue = value;
+      else if (stat === 'POLITICAL_CONTROL') planet.statPolitical = value;
+      else if (stat === 'MAX_STARBASE_LEVEL') planet.statMaxStarbase = value;
+      game.ui?.refresh?.();
+      return true;
+    }
+    case 'PICK_PLANET': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      const filter = STORY_PARAM[key(p[0])] ?? 0,
+        me = game.localFaction ?? game.me;
+      const chosen = g.planets.find(q => {
+        if (q.background) return false;
+        const f = !!q.owner && relation(me, q.owner) === 0,
+          x = !!q.owner && relation(me, q.owner) === 1;
+        return [true, f, f && !x, x, !x, !f, f || x][filter] ?? true;
+      });
+      if (chosen) host.replaceEventParameter?.(p[1], chosen.type.name);
+      return true;
+    }
     case 'SET_TACTICAL_MAP': {
       if (!present(p[0]) || !present(p[1])) return true;
       (game.storyMaps ||= { land: '', space: '' })[key(p[1]) === 'SPACE' ? 'space' : 'land'] = String(p[0]).trim();

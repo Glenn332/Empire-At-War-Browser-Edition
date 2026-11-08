@@ -159,7 +159,7 @@ export function tacticalMapLoad(host, planet, mode) {
   for (const e of [...(host.eventTypes.get('STORY_LOAD_TACTICAL_MAP') || [])]) {
     if (mapMode(e.params[2]) !== mode || !nameList(e.params[0]).includes(key(planet.type.name))) continue;
     const heroes = nameList(e.params[1]);
-    if (!heroes.length || heroes.some((h, i) => places(h)[i] === planet.index)) host.fire(e);
+    if (!heroes.length || heroes.some((h, i) => places(h)[i] === planet.index)) host.fire(e, false, planet);
   }
 }
 

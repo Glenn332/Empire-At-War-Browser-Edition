@@ -13,6 +13,7 @@ import { groundLevel, aiProductionBlock } from './galacticproduction.js';
 import { planetIncome, playerIncome, fiscalCycleSeconds, orbitFleets } from './galacticeconomy.js';
 import { relation } from './galacticrelation.js';
 import { blackMarketItems } from './blackmarket.js';
+import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 
 const KEYS = new Map(),
   key = x => {
@@ -629,7 +630,7 @@ export class GalacticMind extends Reason {
       return own.length
         ? own.filter(p =>
             name.endsWith('STARBASES')
-              ? (p.spaceLevel || 0) === p.type.num('Max_Space_Base', 5)
+              ? (p.spaceLevel || 0) === planetMaxStarbase(p)
               : groundLevel(p, p.owner) === Math.min(5, p.type.num('Special_Structures_Land', 3))
           ).length / own.length
         : 0;
@@ -647,8 +648,8 @@ export class GalacticMind extends Reason {
         STARBASELEVEL: space / db.constants.num('MaximumStarbaseLevel', 5),
         MAXGROUNDBASELEVELUNNORMALIZED: Math.min(5, structureSlots),
         MAXGROUNDBASELEVEL: Math.min(5, structureSlots) / db.constants.num('MaximumGroundbaseLevel', 5),
-        MAXSTARBASELEVELUNNORMALIZED: p.type.num('Max_Space_Base', 5),
-        MAXSTARBASELEVEL: p.type.num('Max_Space_Base', 5) / db.constants.num('MaximumStarbaseLevel', 5),
+        MAXSTARBASELEVELUNNORMALIZED: planetMaxStarbase(p),
+        MAXSTARBASELEVEL: planetMaxStarbase(p) / db.constants.num('MaximumStarbaseLevel', 5),
         OPENSTRUCTURESLOTSUNNORMALIZED: structureSlots - p.groundStructures.filter(u => !u.dead).length,
         MAXSTRUCTURESLOTSUNNORMALIZED: structureSlots,
         MAXSTRUCTURESLOTS: structureSlots / db.constants.num('MaximumSpecialStructures', 5),
@@ -665,9 +666,9 @@ export class GalacticMind extends Reason {
           0,
           ...g.planets
             .filter(world => !world.background && (field !== 'BASEINCOMENBTP' || world.owner === p.owner))
-            .map(p => p.type.num('Planet_Credit_Value', 0))
+            .map(p => planetCreditValue(p))
         );
-        return maximum ? Math.min(1, Math.max(0, p.type.num('Planet_Credit_Value', 0) / maximum)) : 0;
+        return maximum ? Math.min(1, Math.max(0, planetCreditValue(p) / maximum)) : 0;
       }
       if (field === 'INCOMEUNNORMALIZED') return planetIncome(g, p);
       if (field === 'INCOME') {

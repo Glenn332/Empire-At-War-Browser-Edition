@@ -1,6 +1,7 @@
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { stepGambling } from './planetabilities.js';
+import { planetCreditValue } from './planetstats.js';
 
 const bonuses = new WeakMap();
 function incomeBonuses(type) {
@@ -44,7 +45,7 @@ export function planetIncome(g, p, owner = p.owner, orbit = null, terms = null) 
     return value;
   };
   if (!p.owner || p.incomeHalted || (p.incomeHaltUntil && (p.incomeHaltUntil < 0 || p.incomeHaltUntil > (g.time || 0)))) return 0;
-  const base = (p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : p.type.num('Planet_Credit_Value', 0)) * (p.incomeMult ?? 1);
+  const base = (p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : planetCreditValue(p)) * (p.incomeMult ?? 1);
   let total = term('TEXT_ECONOMY_BASE_INCOME', base + base * (p.gambling?.mod || 0));
   const politicalOwner = p.politicalOwner || p.owner;
   const alignment = db.faction(politicalOwner)?.str('Force_Alignment', 'Neutral').toUpperCase(),

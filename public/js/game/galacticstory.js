@@ -31,6 +31,7 @@ import { playScriptMusic, startStrategicMusic } from './galacticmusic.js';
 import { galacticStoryReward } from './storyrewards.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
 import { flashSpawned } from './tutorialrewards.js';
+import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 
 const key = s =>
   String(s || '')
@@ -701,7 +702,7 @@ export class GalacticStoryHost extends StoryPlots {
     if (name === 'VARIABLE_TARGET.MAXGROUNDBASELEVEL') return target.planet?.type.num('Max_Ground_Base_Level', 0) || 0;
     if (name === 'VARIABLE_TARGET.MAXSTRUCTURESLOTSUNNORMALIZED')
       return p?.structureSlots ?? p?.type.num('Special_Structures_Land', 3) ?? 0;
-    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVEL') return target.planet?.type.num('Max_Space_Base', 0) || 0;
+    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVEL') return (target.planet ? planetMaxStarbase(target.planet, 0) : 0);
     if (name === 'VARIABLE_SELF.TECHLEVEL') return owner?.Get_Tech_Level() || 0;
     if (name === 'VARIABLE_SELF.CREDITS') return owner?.Get_Credits() || 0;
     if (name === 'VARIABLE_SELF.GROSSINCOMEUNNORMALIZED') return playerIncome(g, owner?.__faction);
@@ -715,11 +716,11 @@ export class GalacticStoryHost extends StoryPlots {
       )
         ? 1
         : 0;
-    if (name === 'VARIABLE_TARGET.BASEINCOME') return p?.type.num('Planet_Credit_Value', 0) || 0;
+    if (name === 'VARIABLE_TARGET.BASEINCOME') return planetCreditValue(p);
     if (name === 'VARIABLE_TARGET.INCOMEUNNORMALIZED') return p ? planetIncome(g, p) : 0;
     if (name === 'VARIABLE_TARGET.GROUNDBASELEVELUNNORMALIZED') return p ? groundLevel(p, p.owner) : 0;
     if (name === 'VARIABLE_TARGET.STARBASELEVELUNNORMALIZED' || name === 'VARIABLE_TARGET.STARBASELEVEL') return p?.spaceLevel || 0;
-    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVELUNNORMALIZED') return p?.type.num('Max_Space_Base', 0) || 0;
+    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVELUNNORMALIZED') return (p ? planetMaxStarbase(p, 0) : 0);
     if (name === 'VARIABLE_TARGET.OPENSTRUCTURESLOTSUNNORMALIZED')
       return p ? Math.max(0, p.type.num('Special_Structures_Land', 0) - p.groundStructures.length) : 0;
     if (name === 'VARIABLE_TARGET.HASSTRUCTURE' || name === 'VARIABLE_SELF.HASSTRUCTURE')

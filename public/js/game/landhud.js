@@ -617,7 +617,7 @@ export class LandUI {
         tone
       );
     if (S) R.drawEvents(g, X, Y, W, H, w.time);
-    R.drawStoryBlips(g, X, Y, w.storyBlips);
+    R.drawStoryBlips(g, X, Y, w.storyBlips, w.time);
     const v = game.view,
       r = Math.max(8, ((v.dist * 0.55) / spanX) * W);
     g.strokeStyle = '#fff';
