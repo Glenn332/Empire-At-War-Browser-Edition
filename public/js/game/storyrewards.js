@@ -8,6 +8,7 @@ import { advisorHints } from './advisorhints.js';
 import { tutorialReward } from './tutorialrewards.js';
 import { relation } from './galacticrelation.js';
 import { STORY_PARAM } from './storyenums.js';
+import { startRandomStory } from './randomstory.js';
 
 const key = s =>
   String(s || '')
@@ -263,6 +264,9 @@ export function galacticStoryReward(host, e) {
       if (chosen) host.replaceEventParameter?.(p[1], chosen.type.name);
       return true;
     }
+    case 'RANDOM_STORY':
+      startRandomStory(host);
+      return true;
     case 'SET_TACTICAL_MAP': {
       if (!present(p[0]) || !present(p[1])) return true;
       (game.storyMaps ||= { land: '', space: '' })[key(p[1]) === 'SPACE' ? 'space' : 'land'] = String(p[0]).trim();

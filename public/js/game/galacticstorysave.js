@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { LuaPersist } from '../luapersist.js';
+import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
 
 const key = s =>
   String(s || '')
@@ -193,6 +194,7 @@ export function saveStory(host) {
       name: p.name,
       owner: p.owner,
       scriptName: p.scriptName || '',
+      ...(p.generated ? { generated: generatedPlotSave(p) } : {}),
       events: [...p.events.values()].map(e => ({
         name: e.name,
         state: s.js({
@@ -229,7 +231,10 @@ export async function restoreStory(host, data) {
   host.eventTypes.clear();
   host.timedEvents.clear();
   host.storyScripts.clear();
-  for (const sp of data.plots) await host.readPlot(sp.name, sp.scriptName, sp.owner);
+  for (const sp of data.plots) {
+    if (sp.generated) restoreGeneratedPlot(host, sp);
+    else await host.readPlot(sp.name, sp.scriptName, sp.owner);
+  }
   host.instances.length = 0;
   for (const si of data.instances) {
     const inst = {

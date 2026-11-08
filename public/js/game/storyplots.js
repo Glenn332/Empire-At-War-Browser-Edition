@@ -141,6 +141,7 @@ export class StoryPlots {
     return [...this.plots.values()].map(p => ({
       name: p.name,
       owner: p.owner,
+      ...(p.generated ? { generated: this.generatedSave?.(p) } : {}),
       events: [...p.events.values()].map(e => ({
         name: e.name,
         battleCount: e.battleCount || 0,
@@ -157,7 +158,8 @@ export class StoryPlots {
   }
   async restoreCombatEvents(savedPlots) {
     for (const saved of savedPlots) {
-      const plot = await this.readPlot(saved.name, '', saved.owner);
+      const plot = saved.generated ? this.restoreGenerated?.(saved) : await this.readPlot(saved.name, '', saved.owner);
+      if (!plot) continue;
       for (const state of saved.events) {
         const event = plot.events.get(key(state.name));
         if (event)

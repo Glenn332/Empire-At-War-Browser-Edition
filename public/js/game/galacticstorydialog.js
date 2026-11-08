@@ -9,6 +9,17 @@ const scripts = new Map(),
   pictures = new Map();
 const unquote = s => s.replace(/^"([\s\S]*)"$/, '$1');
 
+const scriptPath = name => {
+  const file = String(name || '').replace(/\\/g, '/');
+  return /^Data\//i.test(file) ? file : 'Data/Scripts/Story/' + file.replace(/\.txt$/i, '') + '.txt';
+};
+export function registerStoryScript(name, text) {
+  scripts.set(key(scriptPath(name)), Promise.resolve(text));
+}
+export function dropStoryScript(name) {
+  scripts.delete(key(scriptPath(name)));
+}
+
 async function chapterScript(name, chapter = 0) {
   const file = String(name || '').replace(/\\/g, '/');
   const path = /^Data\//i.test(file) ? file : 'Data/Scripts/Story/' + file.replace(/\.txt$/i, '') + '.txt';

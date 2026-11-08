@@ -32,6 +32,7 @@ import { galacticStoryReward } from './storyrewards.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
 import { flashSpawned } from './tutorialrewards.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
+import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
 
 const key = s =>
   String(s || '')
@@ -846,6 +847,12 @@ export class GalacticStoryHost extends StoryPlots {
     return (this.indexed = { list, byType, byOwner });
   }
 
+  generatedSave(plot) {
+    return generatedPlotSave(plot);
+  }
+  restoreGenerated(saved) {
+    return restoreGeneratedPlot(this, saved);
+  }
   objects() {
     if (this.objectCache) return this.objectCache;
     const out = this.created.filter(o => !o.dead);
