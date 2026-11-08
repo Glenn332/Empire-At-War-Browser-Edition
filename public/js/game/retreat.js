@@ -1,5 +1,7 @@
 import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
+import { fontFamily } from '../fonts.js';
+import { fontPixels } from '../fontpolicy.js';
 
 const key = s => String(s || '').toUpperCase();
 const preventers = new WeakMap();
@@ -167,7 +169,7 @@ export class RetreatCoordinator {
 
   line() {
     return this.active
-      ? { text: `${db.t(this.active.text) || ''} ${Math.max(0, Math.ceil(this.active.left))}`, color: this.active.color }
+      ? { text: (db.t(this.active.text) || '') + clockText(this.active.left), color: this.active.color }
       : null;
   }
 
@@ -347,6 +349,12 @@ export class RetreatCoordinator {
   }
 }
 
+function clockText(left) {
+  const t = Math.max(0, left),
+    whole = Math.trunc(t);
+  return ' ' + String(whole).padStart(3, '0') + '.' + String(Math.trunc((t - whole) * 1000)).padStart(3, '0');
+}
+
 export function showRetreatLine(line) {
   let el = document.getElementById('retreatline');
   if (!line) {
@@ -356,8 +364,13 @@ export function showRetreatLine(line) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'retreatline';
-    el.style.cssText =
-      'position:fixed;left:0;right:0;top:15%;text-align:center;pointer-events:none;z-index:6;font:bold 22px sans-serif;text-shadow:0 0 4px #000,1px 1px 0 #000,-1px -1px 0 #000';
+    const c = db.constants,
+      size = fontPixels(innerHeight, c.num('Countdowns_Font_Size', 12));
+    el.style.cssText = `position:fixed;left:${c.num('GUI_Tactical_Countdown_Timers_Screen_X', 0.005) * 100}%;top:${
+      c.num('GUI_Tactical_Countdown_Timers_Screen_Y', 0.1) * 100
+    }%;white-space:pre;pointer-events:none;z-index:6;font:${size}px ${fontFamily(
+      c.str('Countdowns_Font_Name', 'EmpireAtWar-Medium').trim() || 'EmpireAtWar-Medium'
+    )};text-shadow:1px 1px 0 #000`;
     document.body.appendChild(el);
   }
   const v = String(line.color || '')
