@@ -3,6 +3,7 @@ import { pool as slicePool } from './galacticslicer.js';
 import { db } from '../gamedata.js';
 import { activeLanguage } from '../language.js';
 import { changeController } from './galacticpolitics.js';
+import { planetFactionChange } from './galacticobliterate.js';
 import { StoryPlots } from './storyplots.js';
 import { StoryFlags } from './storyflags.js';
 import { fetchText, findFiles } from '../vfs.js';
@@ -812,7 +813,7 @@ export class GalacticStoryHost extends StoryPlots {
           !p.background && !p.destroyed && !p.restricted && (this.game.galaxy.autoReveal !== false || !!p.revealed),
         Change_Owner: owner => {
           if (owner?.__faction) {
-            const old = changeController(p, owner.__faction, this.game.galaxy);
+            const old = planetFactionChange(this.game, p, owner.__faction);
             this.planetCaptured(p, old);
             if (D.on) this.dbg('changes', owner.__faction, nameOf(p) + ' given to ' + owner.__faction + (old ? ' (was ' + old + ')' : ''));
           }
@@ -1687,8 +1688,7 @@ export class GalacticStoryHost extends StoryPlots {
         const planet = p[0] && game.galaxy.planets.find(q => key(q.type.name) === key(p[0]) || key(q.name) === key(p[0])),
           faction = db.faction(p[1])?.name;
         if (planet && faction && !planet.background) {
-          if (key(planet.owner) !== key(faction)) obliterate(game, planet, planet.owner);
-          const old = changeController(planet, faction, game.galaxy);
+          const old = planetFactionChange(game, planet, faction);
           if (old !== planet.owner) {
             game.ai?.invalidate?.();
             this.planetCaptured(planet, old);
@@ -1989,26 +1989,4 @@ export class GalacticStoryHost extends StoryPlots {
     this.popup.close();
     for (const inst of this.instances) this.drop(inst);
   }
-}
-
-export function obliterate(game, planet, owner) {
-  const g = game.galaxy,
-    same = x => key(x) === key(owner),
-    kill = list => list.filter(u => {
-      if (!same(u.owner) || u.dead) return !u.dead;
-      game.story?.despawn?.(u);
-      u.dead = true;
-      return false;
-    });
-  if (planet.station && same(planet.stationOwner || planet.owner)) {
-    planet.orbitalStructures = kill(planet.orbitalStructures);
-    if ((planet.spaceLevel || 0) > 0) game.story?.stationChanged?.(planet, planet.station, null, null);
-    planet.station = null;
-    planet.spaceLevel = 0;
-    planet.stationOwner = null;
-  }
-  if (same(planet.groundBaseOwner ?? planet.owner)) planet.groundStructures = kill(planet.groundStructures);
-  for (const f of g.fleets) if (f.planet === planet.index && !f.leg && same(f.owner)) f.units = kill(f.units);
-  g.fleets = g.fleets.filter(f => f.units.length);
-  planet.garrison = kill(planet.garrison);
 }

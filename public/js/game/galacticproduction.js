@@ -355,7 +355,7 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
     return 'Requires an unlock';
   if (groundLevel(p, owner) < type.num('Required_Ground_Base_Level', 0)) return 'Requires a ground base';
   const stationLevel = p.station && (p.stationOwner || p.owner) === owner ? p.spaceLevel : 0;
-  if (stationLevel < type.num('Required_Star_Base_Level', 0)) return 'Requires a starbase';
+  if (stationLevel < Math.max(forceKind(type) === 'orbital structure' ? 1 : 0, type.num('Required_Star_Base_Level', 0))) return 'Requires a starbase';
   const allowed = requirements(type, 'Required_Planets');
   if (allowed.length && !allowed.includes(p.type.name.toUpperCase())) return 'Requires another production planet';
   if (!hasStructures(p, owner, type)) return 'Requires a special structure';
@@ -374,8 +374,8 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
         p.type.num('Special_Structures_Space', 5)
     )
       return 'No orbital structure slots';
-    if (force === 'station' && (type.num('Base_Level', 0) > p.type.num('Max_Space_Base', 5) || type.num('Base_Level', 0) <= p.spaceLevel))
-      return 'Invalid starbase level';
+    if (force === 'station' && type.num('Base_Level', 0) !== nextStarbaseLevel(g, p)) return 'Invalid starbase level';
+    if (force === 'station' && enemyInOrbit(g, p, owner)) return 'Cannot be produced here';
   }
   if (planetLimited(p, type)) return 'Cannot be produced here';
   const current = type.num('Build_Limit_Current_Per_Player', -1),
@@ -384,6 +384,16 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
   if (current >= 0 && limitCount(g, owner, type, snap) >= current) return 'TEXT_PRODUCTION_POP_CAP_REACHED';
   return null;
 }
+
+function nextStarbaseLevel(g, p) {
+  const max = p.type.num('Max_Space_Base', 5);
+  for (const q of Object.values(p.production || {})) for (const job of q) if (forceKind(job.type) === 'station') return 0;
+  if (!p.station || !(p.spaceLevel > 0)) return max > 0 ? 1 : 0;
+  return p.spaceLevel + 1 <= max ? p.spaceLevel + 1 : 0;
+}
+
+const enemyInOrbit = (g, p, owner) =>
+  g.fleets.some(f => f.planet === p.index && !f.leg && f.owner !== owner && f.units.some(u => !u.dead) && !f.units.every(u => strategicStealth(u)));
 
 function planetLimited(p, type) {
   const max = type.num('Build_Max_Instances_Per_Planet', -1);
@@ -537,6 +547,7 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
           p.owner !== q.owner ||
           !player ||
           groundLevel(p, q.owner) < q.type.num('Required_Ground_Base_Level', 0) ||
+          (p.station && starbaseOwner === q.owner ? p.spaceLevel || 0 : 0) < q.type.num('Required_Star_Base_Level', 0) ||
           !hasStructures(p, q.owner, q.type) ||
           !hasOrbiting(g, p, q.owner, q.type)
         ) {
@@ -557,10 +568,7 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
       if (
         hasBehavior(q.type, 'DUMMY_STAR_BASE') &&
         !conflictAt?.(p.index) &&
-        g.fleets.some(
-          f =>
-            f.planet === p.index && !f.leg && f.owner !== q.owner && f.units.some(u => !u.dead) && !f.units.every(u => strategicStealth(u))
-        )
+enemyInOrbit(g, p, q.owner)
       ) {
         list.shift();
         if (q.ai) ai?.failed(q);
@@ -589,6 +597,10 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
       if (q.left > 1e-7) continue;
       list.shift();
       const advance = techAdvance(q.type);
+      if (forceKind(q.type) === 'station' && q.type.num('Base_Level', 0) < 2) {
+        for (const u of p.orbitalStructures) u.dead = true;
+        p.orbitalStructures = [];
+      }
       const record = advance > 0 ? null : placeStartingForce(p, q.owner, q.type, g.fleets);
       if (!advance && !record && !PLACED_ELSEWHERE.some(b => hasBehavior(q.type, b)))
         adjustCredits(g, q.owner, q.ai || q.payg ? q.paid || 0 : q.cost, true);

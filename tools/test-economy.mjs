@@ -269,9 +269,14 @@ const site = recheck.planets[p.index],
 site.production = { space: [], ground: [] };
 buyer.credits = 100000;
 assert.equal(queueUnit(recheck, p.index, owner, ship), null);
-site.spaceLevel = ship.num('Required_Star_Base_Level') - 1;
 stepProduction(recheck, 0);
 assert.equal(site.production.space.length, 1, 'A station of the same owner keeps the queued ship');
+const keptLevel = site.spaceLevel;
+site.spaceLevel = ship.num('Required_Star_Base_Level') - 1;
+stepProduction(recheck, 0);
+assert.equal(site.production.space.length, 0, 'A star base below the required level drops the queued ship');
+site.spaceLevel = keptLevel;
+assert.equal(queueUnit(recheck, p.index, owner, ship), null);
 const keptStation = site.station;
 site.station = null;
 stepProduction(recheck, 0);

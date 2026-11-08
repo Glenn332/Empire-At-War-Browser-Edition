@@ -11,7 +11,7 @@ globalThis.fetch = async input => {
 };
 const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
-const { obliterate } = await import('../public/js/game/galacticstory.js');
+const { obliterate } = await import('../public/js/game/galacticobliterate.js');
 const [A, B] = [...db.factions.values()].filter(f => f.bool('Is_Playable')).map(f => f.name);
 const planetType = [...db.types.values()].find(t => t.tag.toLowerCase() === 'planet');
 const station = [...db.types.values()].find(t => t.num('Base_Level', 0) > 0);

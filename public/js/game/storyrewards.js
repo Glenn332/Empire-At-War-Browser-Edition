@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { changeController } from './galacticpolitics.js';
+import { obliterate } from './galacticobliterate.js';
 import { VIS } from './galacticfog.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { advisorHints } from './advisorhints.js';
@@ -72,6 +73,7 @@ export function galacticStoryReward(host, e) {
       const planets = planetsOfType(p[0]);
       if (planets.length) {
         for (const q of planets) {
+          if (q.owner && q.owner !== faction) obliterate(game, q, q.owner);
           const old = changeController(q, faction, g);
           if (old !== q.owner) {
             game.ai?.invalidate?.();
