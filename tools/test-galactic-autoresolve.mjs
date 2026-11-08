@@ -601,6 +601,22 @@ plans.live.splice(plans.live.indexOf(callbackInst), 1);
 for (const e of callbackInst.events) host.vm.free(e.fn);
 host.vm.free(callbackInst.env);
 assert.deepEqual([...host.errors], [], 'Native battle and scoring callbacks run without Lua errors');
+{
+  const order = [],
+    scoring = host.scoringCall,
+    victory = game.victory;
+  host.scoringCall = (name, ...args) => (name === 'Galactic_Unit_Destroyed_Event' ? order.push('lua') : scoring.call(host, name, ...args));
+  game.victory = { heroKilled: () => order.push('story') };
+  const planet = game.galaxy.planets[0],
+    hull = [...db.types.values()].find(t => t.num('Max_Speed', 0) > 0 && t.num('Build_Cost_Credits', 0) > 0);
+  host.deaths(() => {
+    host.combatDeath({ type: hull, owner: a }, planet, a, b, false);
+    host.combatDeath({ type: hull, owner: a }, planet, a, b, false);
+  });
+  assert.deepEqual(order, ['lua', 'lua', 'story', 'story'], 'every Lua destroy call of a battle comes before its story destroy events');
+  host.scoringCall = scoring;
+  game.victory = victory;
+}
 game.ai.dispose();
 game.story.dispose();
 archive.close();

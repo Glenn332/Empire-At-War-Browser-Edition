@@ -2598,7 +2598,9 @@ export class GalacticGame {
     const told = (planet, dead, winnerIndex, space) => {
       if (!story) return;
       try {
-        for (const [record, owner, killer] of dead) story.combatDeath(record, planet, owner, killer, false);
+        story.deaths(() => {
+          for (const [record, owner, killer] of dead) story.combatDeath(record, planet, owner, killer, false);
+        });
         story.objectCache = null;
         story.reasonCache.clear();
         if (r.sides) story.battleFinished(planet, r.sides, [], winnerIndex, space, context);

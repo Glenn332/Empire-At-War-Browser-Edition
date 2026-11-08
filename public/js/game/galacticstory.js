@@ -1394,10 +1394,24 @@ export class GalacticStoryHost extends StoryPlots {
       object = wrapper.__object;
     object.finalBlowOwner = killer || this.neutralOwner();
     this.scoringCall('Galactic_Unit_Destroyed_Event', wrapper, this.player(object.finalBlowOwner));
-    destroyStory(this, record.type, record.carries || record.type, planet);
-    this.game.victory?.heroKilled(record, planet, owner, object.finalBlowOwner);
+    const after = () => {
+      destroyStory(this, record.type, record.carries || record.type, planet);
+      this.game.victory?.heroKilled(record, planet, owner, object.finalBlowOwner);
+    };
+    if (this.deathRound) this.deathRound.push(after);
+    else after();
     this.objectCache = null;
     this.reasonCache.clear();
+  }
+  deaths(fn) {
+    if (this.deathRound) return fn();
+    const round = (this.deathRound = []);
+    try {
+      return fn();
+    } finally {
+      this.deathRound = null;
+      for (const after of round) after();
+    }
   }
   battleContext(planet, owners) {
     battleClassSummary(this, planet, owners);

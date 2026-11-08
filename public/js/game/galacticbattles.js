@@ -105,27 +105,30 @@ export class GalacticBattles {
     const g = this.game.galaxy,
       planet = g.planets[p],
       { sides, result, row, context } = this.resolve(p, attacker, defender, true);
-    for (const i of [1, 0])
-      for (const u of sides[i]) {
-        if (u.station) {
-          const type = result.sides[i].stations.get(u);
-          if (!type && planet.station && this.game.story)
-            galacticBounty(this.game, { type: planet.station }, planet, planet.stationOwner || planet.owner, [attacker, defender][1 - i]);
-          this.game.story?.stationChanged(planet, planet.station, type || null, [attacker, defender][1 - i]);
-          planet.station = type || null;
-          planet.spaceLevel = type?.num('Base_Level', 0) || 0;
-          if (!type) {
-            planet.stationOwner = null;
-            for (const record of planet.orbitalStructures) {
-              this.game.story?.combatDeath(record, planet, record.owner, [attacker, defender][1 - i]);
-              record.dead = true;
+    const deaths = fn => (this.game.story?.deaths ? this.game.story.deaths(fn) : fn());
+    deaths(() => {
+      for (const i of [1, 0])
+        for (const u of sides[i]) {
+          if (u.station) {
+            const type = result.sides[i].stations.get(u);
+            if (!type && planet.station && this.game.story)
+              galacticBounty(this.game, { type: planet.station }, planet, planet.stationOwner || planet.owner, [attacker, defender][1 - i]);
+            this.game.story?.stationChanged(planet, planet.station, type || null, [attacker, defender][1 - i]);
+            planet.station = type || null;
+            planet.spaceLevel = type?.num('Base_Level', 0) || 0;
+            if (!type) {
+              planet.stationOwner = null;
+              for (const record of planet.orbitalStructures) {
+                this.game.story?.combatDeath(record, planet, record.owner, [attacker, defender][1 - i]);
+                record.dead = true;
+              }
             }
+          } else if (!result.sides[i].alive.has(u)) {
+            this.game.story?.combatDeath(u.record, planet, u.owner, [attacker, defender][1 - i]);
+            u.record.dead = true;
           }
-        } else if (!result.sides[i].alive.has(u)) {
-          this.game.story?.combatDeath(u.record, planet, u.owner, [attacker, defender][1 - i]);
-          u.record.dead = true;
         }
-      }
+    });
     for (const fleet of g.fleets)
       if (fleet.planet === p && !fleet.leg && [attacker, defender].includes(fleet.owner)) {
         fleet.units = fleet.units.filter(u => !u.dead);
@@ -187,10 +190,14 @@ export class GalacticBattles {
             )
             .map(u => u.record)
         : [];
-    for (const i of [1, 0])
-      for (const u of sides[i])
-        if (!u.groundBase && (!result.sides[i].alive.has(u) || (i === 1 && result.winner === 0 && !escaping.includes(u.record))))
-          this.game.story?.combatDeath(u.record, planet, u.owner, [attacker, defender][1 - i], !result.sides[i].alive.has(u));
+    const died = () => {
+      for (const i of [1, 0])
+        for (const u of sides[i])
+          if (!u.groundBase && (!result.sides[i].alive.has(u) || (i === 1 && result.winner === 0 && !escaping.includes(u.record))))
+            this.game.story?.combatDeath(u.record, planet, u.owner, [attacker, defender][1 - i], !result.sides[i].alive.has(u));
+    };
+    if (this.game.story?.deaths) this.game.story.deaths(died);
+    else died();
     if (escaping.length) g.planets[p].garrison = g.planets[p].garrison.filter(u => !escaping.includes(u));
     const oldOwner = planet.owner;
     if (result.winner === 0) this.game.story?.captureBaseCleanup(planet, attacker);
