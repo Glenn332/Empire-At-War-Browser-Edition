@@ -10,7 +10,7 @@ export function binkHeader(buffer) {
     alpha = !!(d.getUint32(36, true) & 0x100000);
   if (!frames || !width || !height || width > 8192 || height > 8192 || !Number.isFinite(fps) || fps <= 0)
     throw Error('Invalid Bink dimensions or rate');
-  return { frames, width, height, fps, alpha };
+  return { frames, width, height, fps, alpha, audio: buffer.byteLength >= 44 ? d.getUint32(40, true) : 0 };
 }
 
 export function binkChunkSize(header) {

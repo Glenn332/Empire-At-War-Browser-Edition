@@ -79,6 +79,23 @@ async function handle(data) {
     return;
   }
   if (data.id !== id) return;
+  if (data.type === 'audio') {
+    job = { errors: [] };
+    let samples = null;
+    try {
+      const result = core.exec('-v', 'error', '-i', '/movie.bik', '-map', '0:a:0', '-vn', '-f', 'f32le', '-ac', '2', '-ar', '44100', '/audio.raw');
+      if (result === 0) samples = core.FS.readFile('/audio.raw').slice().buffer;
+    } catch {
+      samples = null;
+    }
+    try {
+      core.FS.unlink('/audio.raw');
+    } catch {}
+    core.reset();
+    job = null;
+    postMessage({ type: 'audio', id, rate: 44100, channels: 2, samples }, samples ? [samples] : []);
+    return;
+  }
   if (data.type === 'stream') {
     const ctrl = new Int32Array(data.control),
       ring = { ctrl, pixels: new Uint8Array(data.pixels), slots: data.slots, frameBytes: header.width * header.height * 4 };

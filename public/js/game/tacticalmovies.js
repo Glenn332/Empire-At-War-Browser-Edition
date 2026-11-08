@@ -24,6 +24,10 @@ export class TacticalMovies {
     this.canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9';
     document.body.appendChild(this.canvas);
     this.player = new BinkPlayer(this.canvas, {
+      audio: () => {
+        const audio = this.game.audio;
+        return audio?.ctx ? { context: audio.ctx, destination: audio.master, volume: audio.musicVolume } : null;
+      },
       onEnd: () => this.finish(),
       onError: error => {
         console.warn('Tactical movie', error);

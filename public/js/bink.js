@@ -3,7 +3,10 @@ import { binkHeader, binkChunkSize, NATIVE_BINK_FPS } from './binkdata.js';
 const SLOTS = 8;
 const streaming = () => !!globalThis.crossOriginIsolated && typeof SharedArrayBuffer === 'function';
 export class BinkPlayer {
-  constructor(canvas, { onEnd = () => {}, onError = () => {} } = {}) {
+  constructor(canvas, { onEnd = () => {}, onError = () => {}, audio = null } = {}) {
+    this.audioOut = audio;
+    this.sound = null;
+    this.soundNode = null;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onEnd = onEnd;
@@ -135,7 +138,12 @@ export class BinkPlayer {
       this.failed(Error(data.message));
       return;
     }
+    if (data.type === 'audio') {
+      this.loadSound(data);
+      return;
+    }
     if (data.type === 'ready') {
+      if (this.header.audio > 0 && this.audioOut) this.worker.postMessage({ type: 'audio', id: this.id });
       if (streaming()) this.stream(this.current());
       else this.request(this.current());
       return;
@@ -154,6 +162,7 @@ export class BinkPlayer {
       if (!this.started && this.frames.has(this.startFrame)) {
         this.started = true;
         this.draw(this.startFrame);
+        this.startSound();
       }
     } else if (data.type === 'done') {
       this.pending.delete(data.start);
@@ -180,7 +189,10 @@ export class BinkPlayer {
   }
   update(dt) {
     if (this.ring && this.playing && !this.started) {
-      if (this.fromRing(this.startFrame)) this.started = true;
+      if (this.fromRing(this.startFrame)) {
+        this.started = true;
+        this.startSound();
+      }
       return;
     }
     if (!this.playing || !this.started || this.paused) return;
@@ -211,7 +223,51 @@ export class BinkPlayer {
     for (const n of this.frames.keys())
       if (!(n >= chunk && n < chunk + this.chunk) && !(next >= 0 && n >= next && n < next + this.chunk)) this.frames.delete(n);
   }
+  loadSound({ rate, channels, samples }) {
+    const out = this.audioOut?.(),
+      context = out?.context;
+    if (!samples || !context || !this.playing) return;
+    const data = new Float32Array(samples),
+      length = Math.floor(data.length / channels);
+    if (!length) return;
+    const buffer = context.createBuffer(channels, length, rate);
+    for (let c = 0; c < channels; c++) {
+      const channel = buffer.getChannelData(c);
+      for (let i = 0; i < length; i++) channel[i] = data[i * channels + c];
+    }
+    this.sound = buffer;
+    if (this.started && !this.paused) this.startSound();
+  }
+  startSound() {
+    this.stopSound();
+    const out = this.audioOut?.(),
+      context = out?.context;
+    if (!this.sound || !context || !out.destination || this.paused) return;
+    const source = context.createBufferSource(),
+      gain = context.createGain(),
+      length = this.header.frames / NATIVE_BINK_FPS;
+    source.buffer = this.sound;
+    source.loop = this.loop;
+    if (this.loop) source.loopEnd = Math.min(length, this.sound.duration);
+    gain.gain.value = out.volume ?? 1;
+    source.connect(gain);
+    gain.connect(out.destination);
+    const offset = (this.startFrame / NATIVE_BINK_FPS + this.clock) % Math.max(1e-3, length);
+    if (offset >= this.sound.duration) return;
+    source.start(0, offset);
+    this.soundNode = { source, gain };
+  }
+  stopSound() {
+    if (!this.soundNode) return;
+    try {
+      this.soundNode.source.stop();
+    } catch {}
+    this.soundNode.gain.disconnect();
+    this.soundNode = null;
+  }
   stop() {
+    this.stopSound();
+    this.sound = null;
     this.endStream();
     this.id++;
     this.playing = false;
@@ -223,8 +279,11 @@ export class BinkPlayer {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
   setPaused(on) {
+    const was = this.paused;
     if (this.paused && !on) this.skipElapsed = true;
     this.paused = on;
+    if (on && !was) this.stopSound();
+    else if (!on && was && this.started) this.startSound();
   }
   dispose() {
     this.stop();
