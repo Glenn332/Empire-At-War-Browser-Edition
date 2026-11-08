@@ -356,6 +356,9 @@ export class TacticalStoryHost extends StoryPlots {
       if (near) this.fire(e);
     }
   }
+  reinforceOwner(e) {
+    return e.plot?.owner || this.factionOf({ side: this.game.me });
+  }
   factionOf(u) {
     return u?.player?.factionName ?? this.game.factions?.[u?.side] ?? '';
   }

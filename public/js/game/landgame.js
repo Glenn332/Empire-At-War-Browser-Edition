@@ -4,6 +4,7 @@ import { mpBattleParent } from './galacticmpbattle.js';
 
 import * as THREE from 'three';
 import { db } from '../gamedata.js';
+import { switchTarget } from './switchsides.js';
 import { loadMap, pickEnvironment, environmentRoll } from '../ted.js';
 import { loadModel, lighting, setPlanetEnvironment, depthMaterial, programSources, planetClock } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
@@ -408,6 +409,20 @@ export class LandGame {
       }
     }
     return h >>> 0;
+  }
+  switchSides(target = '') {
+    if (this.setup.net || this.observer) return false;
+    const n = this.players.length,
+      from = this.me,
+      to = switchTarget(n, from, i => !!db.faction(this.factions[i])?.bool('Is_Debug_Switchable_To', false), i => this.factions[i], target);
+    if (to === from || !this.players[to]) return false;
+    this.players[from].human = false;
+    this.players[from].difficulty ||= 'medium';
+    this.players[to].human = true;
+    this.me = to;
+    this.world.viewer = to;
+    this.ui?.refresh?.();
+    return true;
   }
   takeOver(p, pid) {
     const cfg = this.players[pid];

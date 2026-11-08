@@ -1945,6 +1945,8 @@ export class GalacticStoryHost extends StoryPlots {
             this.service(inst);
           }
         }
+      if (service && this.eventTypes.get('STORY_BEGIN_ERA')?.length)
+        this.signalEra(Math.max(0, ...this.game.galaxy.players.map(p => p.tech || 0)));
       if (this.techPending) {
         this.techPending = false;
         for (const p of this.game.galaxy.players) this.signalTech(p.faction, p.tech);

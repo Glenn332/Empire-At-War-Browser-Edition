@@ -181,6 +181,9 @@ export function tutorialReward(host, e) {
       if (!present(p[0]) || !present(p[1])) host.errors?.set(e.name, 'Set spawn failed due to incomplete parameters');
       else if (game.world?.units) activateSpawners(game.world, p[0], parseFloat(p[1]) || 0);
       return true;
+    case 'SWITCH_SIDES':
+      game.switchSides?.(present(p[0]) ? p[0] : '');
+      return true;
     case 'SET_WEATHER':
       if (!present(p[0])) host.errors?.set(e.name, 'Set weather failed due to incomplete parameters');
       return true;

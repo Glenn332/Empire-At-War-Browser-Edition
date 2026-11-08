@@ -1764,6 +1764,7 @@ export class World {
           j = p.aiPool ? p.aiPool.indexOf(entry) : -1;
         if (k >= 0) p.reinforcements.splice(k, 1);
         if (j >= 0) p.aiPool.splice(j, 1);
+        this.onReinforce?.(p.factionName, type?.name ?? type);
         const e = this.spawn(type, p, x, y, Math.atan2(at.y - y, at.x - x) || th, { hyperspace: true });
         this.audio.playFor(p, p.faction.str('Reinforcements_Enroute_SFXEvent'));
         this.onEvent('built', { player: p, type, entity: e });
@@ -1813,6 +1814,7 @@ export class World {
     const why = this.cantReinforce(player, x, y, footprintOf(type));
     if (why) return why;
     player.reinforcements.splice(i, 1);
+    this.onReinforce?.(player.factionName, type?.name ?? type);
     const e = this.spawn(type, player, x, y, heading, { hyperspace: true });
     this.audio.playFor(player, player.faction.str('Reinforcements_Enroute_SFXEvent'));
     this.onEvent('built', { player, type, entity: e });

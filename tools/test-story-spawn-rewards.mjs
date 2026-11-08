@@ -148,3 +148,48 @@ console.log('ok maps');
   assert.ok(errors.has('SET_WEATHER'));
 }
 console.log('ok tactical');
+
+{
+  const { switchTarget } = await import('../public/js/game/switchsides.js');
+  const f = ['Rebel', 'Pirates', 'Empire', 'Underworld'],
+    can = i => f[i] !== 'Pirates',
+    fo = i => f[i];
+  assert.equal(switchTarget(4, 0, can, fo), 2, 'no faction: the next switchable player');
+  assert.equal(switchTarget(4, 3, can, fo), 0, 'wraps around');
+  assert.equal(switchTarget(4, 0, can, fo, 'underworld'), 3, 'a named faction keeps switching until it is reached');
+  assert.equal(switchTarget(4, 0, can, fo, 'Pirates'), 0, 'an unreachable faction stops back at the start');
+  assert.equal(switchTarget(4, 0, () => false, fo), 0);
+  const calls = [];
+  tutorialReward({ game: { switchSides: t => calls.push(t) }, errors: new Map() }, { name: 's', reward: 'SWITCH_SIDES', rewards: [] });
+  tutorialReward({ game: { switchSides: t => calls.push(t) }, errors: new Map() }, { name: 's', reward: 'SWITCH_SIDES', rewards: ['Empire'] });
+  assert.deepEqual(calls, ['', 'Empire']);
+}
+{
+  const { StoryPlots } = await import('../public/js/game/storyplots.js');
+  const fired = [];
+  const mk = (type, params, owner = '') => ({ name: type + params[0], type, params, plot: { owner } });
+  const host = Object.create(StoryPlots.prototype);
+  Object.assign(host, {
+    game: { me: 'Rebel' },
+    fire: e => fired.push(e.name),
+    eventTypes: new Map([
+      ['STORY_BEGIN_ERA', [mk('STORY_BEGIN_ERA', ['3']), mk('STORY_BEGIN_ERA', ['-1']), mk('STORY_BEGIN_ERA', [''])]],
+      ['STORY_TECH_LEVEL', [mk('STORY_TECH_LEVEL', ['-1'], 'Empire'), mk('STORY_TECH_LEVEL', ['2'], 'Rebel')]],
+      ['STORY_REINFORCE', [mk('STORY_REINFORCE', ['Tank,X_Wing_Squadron']), mk('STORY_REINFORCE', ['']), mk('STORY_REINFORCE', ['Tank'], 'Empire')]]
+    ])
+  });
+  host.signalEra(2);
+  assert.deepEqual(fired, ['STORY_BEGIN_ERA-1', 'STORY_BEGIN_ERA'], 'era at or above the level; -1 and an empty level fire at once');
+  fired.length = 0;
+  host.signalEra(3);
+  assert.equal(fired.length, 3);
+  fired.length = 0;
+  host.signalTech('Empire', 1);
+  host.signalTech('Rebel', 1);
+  assert.deepEqual(fired, ['STORY_TECH_LEVEL-1'], 'tech level keeps its owner filter');
+  fired.length = 0;
+  host.signalReinforce('Rebel', 'x_wing_squadron');
+  host.signalReinforce('Empire', 'Tank');
+  assert.deepEqual(fired, ['STORY_REINFORCETank,X_Wing_Squadron', 'STORY_REINFORCETank'], 'only the plot player, an empty name list never matches');
+}
+console.log('ok events');

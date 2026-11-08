@@ -93,6 +93,7 @@ import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
 import { Beacons, beaconType } from './game/beacons.js';
 import { SpectatorView } from './game/spectator.js';
+import { switchTarget } from './game/switchsides.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
@@ -1939,6 +1940,25 @@ class Game {
     if (!mine) this.audio.play('GUI_Common_Chat_Receive');
   }
 
+  switchSides(target = '') {
+    if (this.setup.net || this.observer || !this.human) return false;
+    const list = this.world.players,
+      from = list.indexOf(this.human),
+      to = switchTarget(list.length, from, i => !!list[i].faction?.bool('Is_Debug_Switchable_To', false), i => list[i].factionName, target);
+    if (to === from || !list[to]) return false;
+    const old = this.human,
+      next = list[to];
+    old.human = false;
+    old.difficulty ||= 'medium';
+    next.human = true;
+    this.ais = (this.ais || []).filter(a => a.player !== next);
+    if (!old.team.mapSide) this.ais.push(new SkirmishAI(this.world, old, old.difficulty));
+    this.human = next;
+    this.audio.human = next;
+    this.world.viewer = next;
+    this.ui?.refresh?.();
+    return true;
+  }
   takeOver(p) {
     const pre = this.takeovers?.get(p);
     if (!pre?.brain || p.defeated) return false;

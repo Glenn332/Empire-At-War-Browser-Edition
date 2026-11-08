@@ -263,16 +263,23 @@ export class StoryPlots {
     }
     return true;
   }
+  levelEvents(type, owner, level) {
+    for (const e of this.eventTypes.get(type) || []) {
+      if (owner && e.plot?.owner && key(e.plot.owner) !== key(owner)) continue;
+      if (level >= (parseInt(e.params[0], 10) || 0)) this.fire(e);
+    }
+  }
   signalTech(owner, level) {
-    for (const e of this.eventTypes.get('STORY_TECH_LEVEL') || []) {
-      if (e.plot?.owner && key(e.plot.owner) !== key(owner)) continue;
-      const want = parseInt(e.params[0], 10);
-      if (want === -1) {
-        const seen = e.techSeen;
-        e.techSeen = level;
-        if (seen === undefined || seen === level) continue;
-      } else if (!(level >= want)) continue;
-      this.fire(e);
+    this.levelEvents('STORY_TECH_LEVEL', owner, level);
+  }
+  signalEra(level) {
+    this.levelEvents('STORY_BEGIN_ERA', null, level);
+  }
+  signalReinforce(owner, name) {
+    const target = key(name);
+    for (const e of this.eventTypes.get('STORY_REINFORCE') || []) {
+      if (key(this.reinforceOwner ? this.reinforceOwner(e) : this.plotOwner(e)) !== key(owner)) continue;
+      if (wantedNames(e.params[0]).has(target)) this.fire(e);
     }
   }
   signalCredits(owner, credits) {

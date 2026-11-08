@@ -1,4 +1,5 @@
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
+import { switchTarget } from './switchsides.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { galacticLight } from './galacticlighting.js';
@@ -2398,6 +2399,22 @@ export class GalacticGame {
     const r = runCommand(this, this.me, cmd);
     this.syncFleetViews();
     return r;
+  }
+  switchSides(target = '') {
+    if (this.setup.net) return false;
+    const g = this.galaxy,
+      list = g.players,
+      from = list.findIndex(p => String(p.faction).toUpperCase() === String(this.me).toUpperCase()),
+      to = switchTarget(list.length, from, i => !!db.faction(list[i].faction)?.bool('Is_Debug_Switchable_To', false), i => list[i].faction, target);
+    if (to === from || !list[to]) return false;
+    const faction = db.faction(list[to].faction)?.name || list[to].faction;
+    g.active = faction;
+    if (g.humans) g.humans = [String(faction).toUpperCase()];
+    this.me = faction;
+    if (this.localFaction) this.localFaction = faction;
+    this.ai?.reconcile().catch(() => {});
+    this.ui?.refresh();
+    return true;
   }
   asFaction(faction, fn) {
     const me = this.me,

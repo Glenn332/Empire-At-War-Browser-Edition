@@ -3077,6 +3077,7 @@ export class LandWorld {
   }
 
   async reinforce(side, typeName, x, y, heading = 0) {
+    this.onReinforce?.(this.factions[side], typeName);
     const type = db.type(typeName),
       craft = type && db.type(type.str('Company_Transport_Unit') || '');
     const pending = type ? new LandSquad(this, type, side, { arriving: true }) : null;

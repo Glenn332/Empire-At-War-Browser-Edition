@@ -149,6 +149,7 @@ export class ScriptHost {
         else if (kind === 'gameover') this.tell('Game_Mode_Ending_Event', this.land ? 'Land' : 'Space');
       };
     }
+    this.world.onReinforce = (owner, name) => this.story?.signalReinforce?.(owner, name);
     {
       const before = this.world.onEvent;
       this.world.onEvent = (kind, data) => {
