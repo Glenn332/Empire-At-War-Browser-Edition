@@ -1,7 +1,6 @@
 import { db } from '../gamedata.js';
 import { forceKind, enteredOrbit } from './galaxy.js';
 import { ownerCorruption } from './galacticbounty.js';
-import { groundLevel } from './galacticproduction.js';
 import { changeController } from './galacticpolitics.js';
 import { retreatDestination } from './fleetretreat.js';
 import { orderMove } from './fleets.js';
@@ -227,7 +226,5 @@ export function applyInvasionResult(g, r) {
       const type = db.type(u.type);
       return type ? [{ ...u, type, position: u.position.slice() }] : [];
     });
-  const level = groundLevel(pl, pl.owner),
-    winner = won ? attacker : defender;
-  pl.tacticalStructures = (pl.tacticalStructures || []).filter(u => u.owner === winner && u.baseLevel <= level);
+  pl.tacticalStructures = (pl.tacticalStructures || []).filter(u => u.owner === pl.owner);
 }

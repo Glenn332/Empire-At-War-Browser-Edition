@@ -363,8 +363,7 @@ export function snapshotGalaxy(g) {
       tacticalStructures: (p.tacticalStructures || []).map(u => ({
         type: u.type.name,
         owner: u.owner,
-        position: u.position.slice(),
-        baseLevel: u.baseLevel
+        position: u.position.slice()
       })),
       ground: list(p.groundStructures),
       orbital: list(p.orbitalStructures),

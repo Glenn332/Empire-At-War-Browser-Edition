@@ -256,7 +256,7 @@ export function finishLinkedTactical(game, session, result) {
     if (winner === 0) {
       for (const u of p.groundStructures) removeRecord(game, p, u, u.owner, winning);
       p.groundLevel = 0;
-      p.tacticalStructures = [];
+      p.tacticalStructures = (p.tacticalStructures || []).filter(u => u.owner === winning);
       p.production.ground = [];
       if (p.station && (p.stationOwner || p.owner) !== winning) {
         game.story?.stationChanged(p, p.station, null, winning);
@@ -311,7 +311,7 @@ export function finishLinkedTactical(game, session, result) {
       } else {
         for (const u of p.groundStructures) removeRecord(game, p, u, u.owner, winning, request.resolution !== 1);
         p.groundLevel = 0;
-        p.tacticalStructures = [];
+        p.tacticalStructures = (p.tacticalStructures || []).filter(u => u.owner === winning);
         p.production.ground = [];
       }
     }

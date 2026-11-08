@@ -96,34 +96,35 @@ export async function placeLandInvasion(w, map, cb) {
     contained: new Map()
   };
   book.persistent = new Map();
+  book.records = [];
   const finishSite = w.finishSite.bind(w),
     positionKey = site => site.x + ':' + site.y;
   w.finishSite = async (site, type, side) => {
     const unit = await finishSite(site, type, side),
       pad = site.pad || site.mdu?.type;
-    if (unit && pad?.bool('Tactically_Built_Child_Object_Persists')) {
-      const level = d.structures.filter(
-        r =>
-          book.absent.includes(r.gid) ||
-          (book.proxyStructures.has(r.gid) ? !book.lostStructures.has(r.gid) : book.structures.get(r.gid)?.some(u => !u.dead))
-      ).length;
+    const held = book.persistent.get(positionKey(site));
+    if (held?.unit && (held.unit.dead || held.site?.structure !== held.unit)) {
+      book.persistent.delete(positionKey(site));
+      book.records = book.records.filter(r => r !== held);
+    }
+    if (unit && pad?.bool('Tactically_Built_Child_Object_Persists') && !book.persistent.has(positionKey(site)))
       book.persistent.set(positionKey(site), {
         unit,
         site,
         type: type.name,
         owner: cb.sides[side === a.side ? 0 : 1],
-        position: [site.x, site.y, site.z],
-        baseLevel: Math.min(5, level)
+        position: [site.x, site.y, site.z]
       });
-    }
     return unit;
   };
   for (const saved of d.tacticalStructures || []) {
     const site = w.sites.find(s => s.pad && Math.abs(s.x - saved.position[0]) < 0.0001 && Math.abs(s.y - saved.position[1]) < 0.0001),
-      type = db.type(saved.type);
-    if (!site || !type) continue;
-    const unit = await w.finishSite(site, type, saved.owner === cb.sides[0] ? a.side : d.side);
-    if (unit) book.persistent.set(positionKey(site), { ...saved, position: saved.position.slice(), unit, site });
+      type = db.type(saved.type),
+      record = { type: saved.type, owner: saved.owner, position: saved.position.slice(), unit: null, site: site || null };
+    book.records.push(record);
+    if (!site || !type || book.persistent.has(positionKey(site))) continue;
+    book.persistent.set(positionKey(site), record);
+    record.unit = await w.finishSite(site, type, saved.owner === cb.sides[0] ? a.side : d.side);
   }
   const records = d.structures.flatMap(s => {
     const type = db.type(s.type);
@@ -289,9 +290,13 @@ export function consolidatedCompanies(records, companies, untouched = new Set(),
     const count = untouched.has(record.gid)
       ? nominal
       : squads.reduce(
-          (n, q) => n + q.members.filter(u => (!u.dead || u.retreated) && !(u.bribed && u.side !== side && side !== undefined)).length,
+          (n, q) => n + q.members.filter(u => (!u.dead || u.retreated) && !(side !== undefined && u.side !== side)).length,
           0
         );
+    if (!type.bool('Is_Homogeneous', true)) {
+      if (count > 0) ids.push(record.gid);
+      continue;
+    }
     if (!groups.has(type)) groups.set(type, { nominal, count: 0, records: [] });
     const group = groups.get(type);
     group.count += count;
@@ -319,7 +324,12 @@ export function landInvasionResult(w, book, cb, winnerSide) {
   ];
   for (const id of book.absent) if (id.startsWith('s:')) ids.push(id);
   for (const [id, objects] of book.structures)
-    if (book.proxyStructures.has(id) ? !book.lostStructures.has(id) : objects.some(u => !u.dead)) ids.push(id);
+    if (
+      book.proxyStructures.has(id)
+        ? !book.lostStructures.has(id)
+        : objects.some(u => !u.dead && (u.side === undefined || u.side === cb.defender.side))
+    )
+      ids.push(id);
   return {
     mode: 'land',
     planet: cb.planet,
@@ -331,8 +341,8 @@ export function landInvasionResult(w, book, cb, winnerSide) {
         !book.structures.get(id)?.some(u => w.parentModeDeaths?.has(u.squad || u))
     ),
     participants: cb.attacker.units.map(u => u.gid),
-    tacticalStructures: [...(book.persistent?.values() || [])]
-      .filter(p => !p.unit.dead && p.site.structure === p.unit)
-      .map(({ type, owner, position, baseLevel }) => ({ type, owner, position: position.slice(), baseLevel }))
+    tacticalStructures: [...new Set([...(book.records || []), ...(book.persistent?.values() || [])])]
+      .filter(p => !p.unit || (!p.unit.dead && p.site?.structure === p.unit))
+      .map(({ type, owner, position }) => ({ type, owner, position: position.slice() }))
   };
 }

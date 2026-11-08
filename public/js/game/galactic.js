@@ -2829,8 +2829,7 @@ export class GalacticGame {
           tacticalStructures: (pl.tacticalStructures || []).map(u => ({
             type: u.type.name,
             owner: u.owner,
-            position: u.position.slice(),
-            baseLevel: u.baseLevel
+            position: u.position.slice()
           })),
           tech: g.players.find(p => p.faction === b.defender)?.tech || 0,
           structures: pl.groundStructures.flatMap((u, i) =>

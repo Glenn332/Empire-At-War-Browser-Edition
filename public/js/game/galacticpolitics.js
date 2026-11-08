@@ -172,6 +172,7 @@ export function changeController(planet, faction, g = null) {
   const old = planet.owner;
   if (key(old) === key(faction)) return old;
   planet.owner = faction;
+  if (planet.tacticalStructures) planet.tacticalStructures = planet.tacticalStructures.filter(u => u.owner === faction);
   planet.politicalOwner = undefined;
   planet.politicalTargetOwner = undefined;
   politicalFlip(planet);

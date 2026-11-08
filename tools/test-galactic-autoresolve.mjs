@@ -383,9 +383,9 @@ applyGalaxy(restored, snap);
 assert.equal(restored.planets[p.index].owner, b);
 assert.deepEqual(snapshotGalaxy(restored).fleets, snap.fleets, 'Post-battle casualties and retreat routes survive snapshots');
 const structure = [...db.types.values()].find(t => forceKind(t) === 'ground structure'),
-  padRecord = { type: structure, owner: b, position: [3, 4, 5], baseLevel: 1 };
+  padRecord = { type: structure, owner: b, position: [3, 4, 5] };
 p.groundStructures = [{ type: structure, owner: b }];
-p.tacticalStructures = [padRecord, { ...padRecord, baseLevel: 2 }, { ...padRecord, owner: a, baseLevel: 0 }];
+p.tacticalStructures = [padRecord, { ...padRecord, position: [6, 7, 8] }, { ...padRecord, owner: a }];
 const padSnapshot = snapshotGalaxy(galaxy),
   padGalaxy = startingGalaxy(data, campaign);
 applyGalaxy(padGalaxy, padSnapshot);
@@ -394,8 +394,8 @@ const { applyInvasionResult } = await import('../public/js/game/invasion.js');
 applyInvasionResult(galaxy, { planet: p.index, sides: [a, b], winner: 'defender', participants: [], alive: ['s:0'] });
 assert.deepEqual(
   p.tacticalStructures,
-  [padRecord],
-  'Saved pad defenses prune foreign owners and entries above the surviving ground-base level'
+  [padRecord, { ...padRecord, position: [6, 7, 8] }],
+  'Saved pad defenses keep only the records of the planet owner'
 );
 assert.equal(restored.planets[p.index].lastSpaceConflict, p.lastSpaceConflict);
 assert.equal(

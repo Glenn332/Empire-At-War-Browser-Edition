@@ -196,6 +196,13 @@ book.entity.get('0:0').dead = true;
 const result = battleResult(w, book, cb, 0);
 assert(!result.alive.includes('0:0'));
 assert(result.alive.includes('0:1'));
+{
+  const e = book.entity.get('0:1'),
+    was = e.player;
+  e.player = { ...was, team: w.teams[1] };
+  assert(!battleResult(w, book, cb, 0).alive.includes('0:1'), 'a unit that changed sides is lost to its galaxy owner');
+  e.player = was;
+}
 GalacticGame.prototype.applyResult.call(game, { ...result, sides: [owner, enemy], station: true });
 assert.equal(second.units.length, 1);
 assert.equal(second.units[0], a);

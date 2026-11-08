@@ -385,8 +385,30 @@ function wholeTeamLost(e) {
 
 export function battleResult(w, book, cb, winnerTeam) {
   const alive = book.absent.slice();
-  for (const [gid, e] of book.entity)
-    if ((!e.dead || e.retreated) && !w.parentModeDeaths?.has(e) && !(wholeTeamLost(e) && !e.retreated)) alive.push(gid);
+  const attackers = new Set((cb.attacker.units || []).map(u => u.gid));
+  for (const [gid, e] of book.entity) {
+    const team = w.teams[attackers.has(gid) ? cb.attacker.team : cb.defender.team],
+      changedSides = !!team && w.teams.includes(e.player?.team) && e.player.team !== team;
+    if ((!e.dead || e.retreated) && !changedSides && !w.parentModeDeaths?.has(e) && !(wholeTeamLost(e) && !e.retreated)) alive.push(gid);
+  }
+  const squadrons = new Map();
+  for (const [gid, e] of book.entity) {
+    if (!e.fighters || !e.members?.length || !alive.includes(gid)) continue;
+    const k = (attackers.has(gid) ? 'a:' : 'd:') + e.type.name;
+    if (!squadrons.has(k)) squadrons.set(k, { nominal: e.members.length, count: 0, gids: [] });
+    const group = squadrons.get(k);
+    group.count += e.retreated ? e.members.length : e.fighters.filter(f => !f.dead).length;
+    group.gids.push(gid);
+  }
+  const refill = db.constants.num('Squadron_Refill_Threshold', 0.5);
+  for (const group of squadrons.values()) {
+    let left = group.count;
+    for (const gid of group.gids) {
+      const count = Math.min(group.nominal, left);
+      left -= count;
+      if (!(count > 0 && count / group.nominal >= refill)) alive.splice(alive.indexOf(gid), 1);
+    }
+  }
   for (const team of [cb.attacker.team, cb.defender.team]) {
     const t = w.teams[team],
       waiting = book.waiting.filter(u => u.team === team),

@@ -318,7 +318,7 @@ if (repeated) {
   assert.equal(site.structure.type, childType);
   assert.deepEqual(site.rot, [0, 0, 45]);
   let result = landInvasionResult(tactical, book, cb, cb.defender.side);
-  assert.deepEqual(result.tacticalStructures, cb.defender.tacticalStructures);
+  assert.deepEqual(result.tacticalStructures, cb.defender.tacticalStructures.map(({ baseLevel, ...r }) => r));
   site.structure.dead = true;
   result = landInvasionResult(tactical, book, cb, cb.defender.side);
   assert.deepEqual(result.tacticalStructures, [], 'A destroyed saved child is removed');
