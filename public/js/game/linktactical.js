@@ -137,6 +137,39 @@ export function linkedTacticalSetup(game, request) {
   return { setup, participants, context, request };
 }
 
+const nameList = s =>
+  String(s || '')
+    .split(/[\s,|]+/)
+    .map(key)
+    .filter(Boolean);
+const mapMode = s => (key(s) === 'SPACE' ? 'space' : key(s) === 'LAND' || key(s) === 'GROUND' ? 'land' : null);
+
+export function tacticalMapLoad(host, planet, mode) {
+  if (!host?.eventTypes || !planet) return;
+  const g = host.game.galaxy;
+  const places = name => {
+    const out = [];
+    for (const p of g.planets)
+      for (const r of [...(p.groundStructures || []), ...(p.orbitalStructures || []), ...(p.garrison || [])])
+        if (!r.dead && (key(r.type.name) === name || key(r.carries?.name) === name)) out.push(p.index);
+    for (const f of g.fleets)
+      for (const r of f.units) if (!r.dead && (key(r.type.name) === name || key(r.carries?.name) === name)) out.push(f.leg ? -1 : f.planet);
+    return out;
+  };
+  for (const e of [...(host.eventTypes.get('STORY_LOAD_TACTICAL_MAP') || [])]) {
+    if (mapMode(e.params[2]) !== mode || !nameList(e.params[0]).includes(key(planet.type.name))) continue;
+    const heroes = nameList(e.params[1]);
+    if (!heroes.length || heroes.some((h, i) => places(h)[i] === planet.index)) host.fire(e);
+  }
+}
+
+export function takeStoryMap(game, mode) {
+  const maps = game.storyMaps;
+  const file = maps?.[mode] || '';
+  if (maps) maps[mode] = '';
+  return file;
+}
+
 export function linkedMapLoaded(host, request) {
   if (!host) return;
   const planet = host.game.galaxy.planets[request.planet];

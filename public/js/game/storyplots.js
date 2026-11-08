@@ -76,6 +76,7 @@ export class StoryPlots {
             params,
             rewards,
             reward: key(node.val('Reward_Type')),
+            rewardList: node.all('Reward_Param_List').flatMap(n => n.text.split(/[\s,|]+/)).filter(Boolean),
             prereqs: node.all('Prereq').map(n => prereqNames(n.text)),
             branch: node.val('Branch'),
             perpetual: yes(node.val('Perpetual')),
@@ -105,6 +106,14 @@ export class StoryPlots {
         plot.events.get(name)?.dependents.push(event);
       }
     return plot;
+  }
+
+  resetEvent(event) {
+    event.completed = false;
+    event.active = !event.prereqs.length;
+    event.elapsedFrom = null;
+    resetCombatEvent(event);
+    if (TIMED.has(event.type)) this.timedEvents.add(event);
   }
 
   combatSnapshot() {
@@ -455,14 +464,7 @@ export class StoryPlots {
         }
         this.resetDepth++;
         try {
-          for (const event of e.plot.events.values())
-            if (event.branch === p[0]) {
-              event.completed = false;
-              event.active = !event.prereqs.length;
-              event.elapsedFrom = null;
-              resetCombatEvent(event);
-              if (TIMED.has(event.type)) this.timedEvents.add(event);
-            }
+          for (const event of e.plot.events.values()) if (event.branch === p[0]) this.resetEvent(event);
           const trigger = p[1] && e.plot.events.get(key(p[1]));
           if (trigger) this.fire(trigger, true);
         } finally {
@@ -470,6 +472,21 @@ export class StoryPlots {
         }
         break;
       }
+      case 'RESET_EVENT':
+        for (const name of [...(p[0] ? [p[0]] : []), ...(e.rewardList || [])]) {
+          const event = e.plot.events.get(key(name));
+          if (event) this.resetEvent(event);
+        }
+        break;
+      case 'DISABLE_AUTORESOLVE':
+        this.errors.set(e.name, 'DISABLE AUTORESOLVE in no longer working.  This should not be used.');
+        break;
+      case 'INFORMATION':
+        break;
+      case 'ENABLE_OVERWHELMING_ODDS':
+      case 'ENABLE_COMBAT_CINEMATIC':
+        this.errors.set(e.name, 'Reward for event ' + e.name + ' needs some code support!');
+        break;
       case 'SET_FLAG':
         this.flags.set(p[0], p[1]);
         break;

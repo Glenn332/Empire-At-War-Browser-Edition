@@ -233,6 +233,14 @@ export function galacticStoryReward(host, e) {
       g.displayFilters = 0;
       game.ui?.refresh?.();
       return true;
+    case 'SET_TACTICAL_MAP': {
+      if (!present(p[0]) || !present(p[1])) return true;
+      (game.storyMaps ||= { land: '', space: '' })[key(p[1]) === 'SPACE' ? 'space' : 'land'] = String(p[0]).trim();
+      return true;
+    }
+    case 'ENABLE_GALACTIC_REVEAL':
+      if (present(p[0])) g.autoReveal = atoi(p[0]) !== 0;
+      return true;
     case 'HIDE_CURSOR_ON_CLICK':
       game.hideCursorOnClick = atoi(p[0]) !== 0;
       return true;

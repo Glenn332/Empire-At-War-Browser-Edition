@@ -1,4 +1,4 @@
-import { readLinkedTactical } from './linktactical.js';
+import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { galacticLight } from './galacticlighting.js';
@@ -2604,11 +2604,13 @@ export class GalacticGame {
     };
     const myTeam = this.net && (b.humans || []).length ? 0 : b.attacker === this.me ? 0 : 1;
     const storyPlots = this.story?.startTactical(pl, true) || [];
+    tacticalMapLoad(this.story, pl, 'space');
+    const storyMap = takeStoryMap(this, 'space');
     const snap = snapshotGalaxy(g);
     snap.view = this.viewSnap(pl.pos[0], pl.pos[1]);
     return {
       mode: 'space',
-      mapFile: pl.type.str('Space_Tactical_Map').trim(),
+      mapFile: storyMap || pl.type.str('Space_Tactical_Map').trim(),
       credits: 0,
       popCap: 0,
       fog: true,
@@ -2845,11 +2847,13 @@ export class GalacticGame {
       pl = g.planets[b.p],
       myTeam = this.net && (b.humans || []).length ? 0 : b.attacker === this.me ? 0 : 1;
     const storyPlots = this.story?.startTactical(pl, false) || [];
+    tacticalMapLoad(this.story, pl, 'land');
+    const storyMap = takeStoryMap(this, 'land');
     const snap = snapshotGalaxy(g);
     snap.view = this.viewSnap(pl.pos[0], pl.pos[1]);
     return {
       mode: 'land',
-      mapFile: pl.type.str('Land_Tactical_Map').trim(),
+      mapFile: storyMap || pl.type.str('Land_Tactical_Map').trim(),
       credits: 0,
       popCap: 0,
       fog: true,

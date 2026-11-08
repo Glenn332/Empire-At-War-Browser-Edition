@@ -57,3 +57,67 @@ finishTutorial('TUTORIAL_FIVE', storage);
 assert.equal(tutorialFinished('Tutorial_Five', storage), true, 'the profile matches the campaign name');
 assert.equal(tutorialFinished('Tutorial_Six', storage), false);
 console.log('ok');
+
+const { StoryPlots } = await import('../public/js/game/storyplots.js');
+const ev = (name, extra = {}) => ({ name, type: 'STORY_TRIGGER', prereqs: [['X']], completed: true, active: true, elapsedFrom: 5, ...extra });
+const plot = { events: new Map() };
+for (const n of ['A', 'B', 'C', 'D']) plot.events.set(n, ev(n));
+const fake = { errors: new Map(), timedEvents: new Set(), resetEvent: StoryPlots.prototype.resetEvent };
+const reset = (rewards, rewardList = [], reward = 'RESET_EVENT') =>
+  StoryPlots.prototype.commonReward.call(fake, { name: 'R', plot, reward, rewards, rewardList });
+assert.equal(reset(['a'], ['C']), true);
+assert.deepEqual(
+  ['A', 'B', 'C', 'D'].map(n => plot.events.get(n).completed),
+  [false, true, false, true],
+  'RESET_EVENT resets its first parameter and every name of Reward_Param_List'
+);
+assert.equal(plot.events.get('A').active, false, 'a reset event waits for its prerequisites again');
+assert.equal(plot.events.get('A').elapsedFrom, null);
+reset([], [], 'DISABLE_AUTORESOLVE');
+assert.ok(fake.errors.has('R'), 'DISABLE_AUTORESOLVE only reports that it no longer works');
+console.log('ok reset');
+
+const { tacticalMapLoad, takeStoryMap } = await import('../public/js/game/linktactical.js');
+const { galacticStoryReward } = await import('../public/js/game/storyrewards.js');
+{
+  const fired = [];
+  const T = n => ({ name: n });
+  const galaxy = {
+    planets: [
+      { index: 0, type: T('Naboo'), garrison: [{ type: T('Hero_A') }] },
+      { index: 1, type: T('Kamino'), garrison: [] }
+    ],
+    fleets: [{ planet: 1, leg: { to: 0 }, units: [{ type: T('Hero_B') }] }]
+  };
+  const ev = (n, params) => ({ name: n, params });
+  const host = {
+    game: { galaxy },
+    eventTypes: new Map([
+      [
+        'STORY_LOAD_TACTICAL_MAP',
+        [
+          ev('any', ['Naboo', '', 'LAND']),
+          ev('space', ['Naboo', '', 'SPACE']),
+          ev('heroHere', ['Kamino,Naboo', 'Hero_A', 'LAND']),
+          ev('heroAway', ['Naboo', 'Hero_B', 'LAND']),
+          ev('other', ['Kamino', '', 'LAND'])
+        ]
+      ]
+    ]),
+    fire: e => fired.push(e.name)
+  };
+  tacticalMapLoad(host, galaxy.planets[0], 'land');
+  assert.deepEqual(fired, ['any', 'heroHere'], 'planet, mode and hero presence select the events, a hero in hyperspace is not at the planet');
+  const game = { galaxy: { autoReveal: undefined } };
+  const gh = { game, errors: new Map(), objects: () => [] };
+  galacticStoryReward(gh, { name: 'm', reward: 'SET_TACTICAL_MAP', rewards: ['_X_LAND.TED', 'LAND', 'EMPIRE'] });
+  galacticStoryReward(gh, { name: 'm', reward: 'SET_TACTICAL_MAP', rewards: ['_X_SPACE.TED', 'SPACE'] });
+  assert.equal(takeStoryMap(game, 'land'), '_X_LAND.TED');
+  assert.equal(takeStoryMap(game, 'land'), '', 'the story map is used by one battle');
+  assert.equal(takeStoryMap(game, 'space'), '_X_SPACE.TED');
+  galacticStoryReward(gh, { name: 'r', reward: 'ENABLE_GALACTIC_REVEAL', rewards: ['0'] });
+  assert.equal(game.galaxy.autoReveal, false);
+  galacticStoryReward(gh, { name: 'r', reward: 'ENABLE_GALACTIC_REVEAL', rewards: ['1'] });
+  assert.equal(game.galaxy.autoReveal, true);
+}
+console.log('ok maps');
