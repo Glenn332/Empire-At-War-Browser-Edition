@@ -210,7 +210,7 @@ export class GalacticStoryHost extends StoryPlots {
     }
     if (this.index.has('GAMESCORING')) this.scoring = this.addScript('GameScoring', true);
     if (this.scoring) {
-      this.scoring.initialCallbacks = [['Game_Mode_Starting_Event', ['Galactic', campaign.name]]];
+      this.scoring.initialCallbacks = [['Game_Mode_Starting_Event', ['Galactic', key(campaign.name)]]];
       await this.warmInstance(this.scoring);
     }
     for (const plot of this.plots.values()) this.startPlot(plot);
@@ -454,6 +454,19 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('GUI_Component_Visibility', (name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0));
     vm.global('GUI_Component_Enable', (name, on) => game.scriptUI?.enable(String(name), on !== false && on !== 0));
     vm.global('GUI_Component_Text', (name, text) => game.scriptUI?.text(String(name), String(text ?? '')));
+    vm.global('GUI_Component_Color', (name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a));
+    vm.global('GUI_Text_Color', (name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a));
+    vm.global('GUI_Component_Blink', (name, on) => game.scriptUI?.blink(String(name), !!on));
+    vm.global('GUI_Component_Flash', (name, perpetual, duration, count) => {
+      if (/^b_story_arc/i.test(String(name)) && !game.scriptUI?.elements?.(String(name)).length) game.storyButtonFlash?.(true);
+      else game.scriptUI?.flash(String(name), !!perpetual, +duration || 0, +count || 0);
+    });
+    vm.global('GUI_Component_Stop_Flash', name => {
+      if (/^b_story_arc/i.test(String(name))) game.storyButtonFlash?.(false);
+      game.scriptUI?.stopFlash(String(name));
+    });
+    vm.global('GUI_Component_Play_Anim', (name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop));
+    vm.global('GUI_Component_Stop_Anim', name => game.scriptUI?.stopAnim(String(name)));
     vm.global('GUI_Button_Icon', (name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args));
     vm.global('Check_Story_Flag', (player, name, target, clear) => {
       const flags = this.aiFlags.get(key(player?.__faction)),
@@ -472,12 +485,26 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Lock_Controls', on => {
       game.controlsLocked = on !== false && on !== 0;
     });
+    vm.global('GetNextStarbaseType', planet => this.nextBase(planet?.__planet, true));
+    vm.global('GetNextGroundbaseType', planet => this.nextBase(planet?.__planet, false));
+    vm.global('WaitForGroundbase', (planet, level) => {
+      const p = planet?.__planet,
+        want = Math.max(0, Math.min(5, +level || 0)),
+        done = () => !!p && groundLevel(p, p.owner) >= want;
+      return { __wrap: true, __name: 'BlockingStatus', Is_Valid: () => true, IsFinished: done, Result: done };
+    });
+    vm.global('WaitForStarbase', (planet, level) => {
+      const p = planet?.__planet,
+        want = Math.max(0, Math.min(5, +level || 0)),
+        done = () => !!p && (p.spaceLevel || 0) >= want && (want > 0 || !!p.station);
+      return { __wrap: true, __name: 'BlockingStatus', Is_Valid: () => true, IsFinished: done, Result: done };
+    });
     vm.global('Find_Path', (player, from, to) => {
       const a = from?.__planet,
         b = to?.__planet;
       if (!a || !b) return undefined;
       const path = findPath(game.galaxy, a.index, b.index);
-      return path ? [a, ...path.map(i => game.galaxy.planets[i])].map(p => this.planet(p)) : undefined;
+      return path ? [a, ...path.map(i => game.galaxy.planets[i])].map(p => this.planet(p)) : [];
     });
     vm.global('Add_Planet_Highlight', (planet, id) => {
       const p = planet?.__planet,
@@ -579,6 +606,7 @@ export class GalacticStoryHost extends StoryPlots {
         Get_Build_Cost: () => t.num('Build_Cost_Credits'),
         Get_Tech_Level: () => t.num('Tech_Level', 0),
         Is_Hero: () => t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero'),
+        Get_Base_Level: () => t.num('Base_Level', 0),
         __missing: this.absent('Type')
       };
       this.types.set(t, wrapper);
@@ -600,6 +628,12 @@ export class GalacticStoryHost extends StoryPlots {
       Get_Faction_Name: () => id,
       Get_Name: () => faction.name,
       Get_ID: () => [...db.factions.values()].indexOf(faction),
+      Get_Team: () => {
+        const p = data();
+        return p ? (p.team ?? this.game.galaxy.players.indexOf(p)) : -1;
+      },
+      Get_Clan_ID: () => (data() ? (data().clan ?? -1) : -1),
+      Get_GameSpy_Stats_Player_ID: () => -1,
       Is_Human: () => (this.game.isHuman ? this.game.isHuman(id) : id === key(this.game.me || this.game.galaxy.active)),
       Is_Neutral: () => faction.bool('Is_Neutral'),
       Set_Black_Market_Tutorial: on => {
@@ -829,6 +863,21 @@ export class GalacticStoryHost extends StoryPlots {
         Get_Owner: () => this.player(p.owner),
         Get_Position: () => this.position(...p.pos),
         Get_Planet_Location: () => wrapper,
+        Get_Next_Starbase_Type: () => this.nextBase(p, true),
+        Get_Affiliated_Indigenous_Type: player => {
+          const faction = key(player?.__faction),
+            friends = new Set([faction, ...(db.faction(faction)?.list('Allies') || []).map(key)]);
+          let best,
+            most = -Infinity;
+          for (const [name, count] of p.type.tuples('Potential_Indigenous_Power')) {
+            const t = db.type(name);
+            if (t && t.list('Affiliation').some(f => friends.has(key(f))) && +count > most) {
+              most = +count;
+              best = t;
+            }
+          }
+          return best ? this.type(best) : undefined;
+        },
         Get_Game_Object: () => wrapper,
         Get_Starbase_Level: () => p.spaceLevel || 0,
         Get_Groundbase_Level: () => p.groundLevel || 0,
@@ -1071,6 +1120,20 @@ export class GalacticStoryHost extends StoryPlots {
       Get_Game_Object: () => result,
       Is_Category: category => object.type.categories().has(key(category)),
       Has_Property: name => typeHasProperty(object.type, name),
+      Contains_Hero: () => this.containedHeroes(object).length > 0,
+      Get_Contained_Heroes: () => this.containedHeroes(object).map(o => this.object(o)),
+      Contains_Object_Type: type => this.containsType(object.type, type),
+      Has_Ability: () => false,
+      Is_Ability_Ready: () => false,
+      Is_Ability_Active: () => false,
+      Is_Ability_Autofire: () => false,
+      Get_AI_Power_Vs_Unit: () => strategicPower(object.type),
+      Can_Garrison_Fire: () => false,
+      Show_Emitter: () => {},
+      Set_Targeting_Stickiness_Time_Threshold: () => {},
+      Set_Prefer_Ground_Over_Space: () => {},
+      Set_All_Abilities_Autofire: () => {},
+      Cancel_Ability: () => {},
       Is_Transport: () => forceKind(object.type) === 'company',
       Can_Land_On_Planet: target => {
         const p = target?.__planet;
@@ -1114,6 +1177,43 @@ export class GalacticStoryHost extends StoryPlots {
     if (object !== record) this.objectWrappers.set(object, result);
     return result;
   }
+  containedHeroes(object) {
+    const t = object.type,
+      hero = x => x.bool('Is_Named_Hero') || x.bool('Is_Generic_Hero');
+    if (hero(t)) return [object];
+    return [...new Set(t.list('Company_Units').map(key))]
+      .map(n => db.type(n))
+      .filter(x => x && hero(x))
+      .map(x => this.member(object, x));
+  }
+  containsType(t, wanted) {
+    const name = key(wanted?.__type?.name || wanted);
+    if (!name) return false;
+    const seen = new Set(),
+      walk = x => {
+        if (!x || seen.has(x)) return false;
+        seen.add(x);
+        if (key(x.name) === name) return true;
+        return [...x.list('Company_Units'), ...x.list('Squadron_Units')].some(n => walk(db.type(n)));
+      };
+    return walk(t);
+  }
+  nextBase(p, space) {
+    if (!p) return undefined;
+    const owner = space ? p.stationOwner || p.owner : p.owner,
+      current = space ? p.station : p.groundStructures?.find(u => !u.dead && key(u.type.tag) === 'GROUNDBASE')?.type;
+    let next = current ? db.type(current.str('Next_Level_Base')) : null;
+    if (!current) {
+      const faction = key(db.faction(owner)?.name);
+      const base = space
+        ? { REBEL: 'Rebel_Star_Base_1', EMPIRE: 'Empire_Star_Base_1' }[faction]
+        : { REBEL: 'Rebel_Ground_Base_1', EMPIRE: 'Empire_Ground_Base_1', PIRATES: 'Pirate_Ground_Base_1' }[faction];
+      next = base ? db.type(base) : null;
+    }
+    if (!next) return undefined;
+    const max = space ? planetMaxStarbase(p) : p.type.num('Max_Ground_Base', 5);
+    return next.num('Base_Level', 0) > max ? undefined : this.type(next);
+  }
   despawn(object) {
     this.objectCache = null;
     this.reasonCache.clear();
@@ -1154,6 +1254,19 @@ export class GalacticStoryHost extends StoryPlots {
       __objects: objects,
       Is_Valid: () => objects.some(o => !o.dead),
       Get_Unit_Table: () => objects.filter(o => !o.dead).map(o => this.object(o)),
+      Get_Type: () => {
+        const live = objects.filter(o => !o.dead),
+          squad = live.length === 1 && forceKind(live[0].type) === 'squadron';
+        return this.type(squad ? live[0].type : db.type('Galactic_Fleet') || live[0]?.type);
+      },
+      Contains_Hero: () => objects.some(o => !o.dead && this.containedHeroes(o).length),
+      Get_Contained_Heroes: () => objects.filter(o => !o.dead).flatMap(o => this.containedHeroes(o).map(h => this.object(h))),
+      Contains_Object_Type: type => objects.some(o => !o.dead && this.containsType(o.type, type)),
+      Destroy_Contained_Objects: fraction => {
+        const live = objects.filter(o => !o.dead),
+          keep = Math.round((1 - Math.max(0, Math.min(1, +fraction || 0))) * live.length);
+        for (let n = live.length; n > keep; n--) this.despawn(live.splice(Math.floor(simRandom() * live.length), 1)[0]);
+      },
       Get_Owner: () => this.player(objects[0]?.owner),
       Get_Planet_Location: () => this.planet(objects[0]?.planet),
       Activate_Ability: filter => {
@@ -1580,7 +1693,11 @@ export class GalacticStoryHost extends StoryPlots {
       case 'ENABLE_EVENT':
       case 'DISABLE_EVENT':
         if (key(p[0]) === 'TUTORIAL_CLICK_GUI') game.scriptUI?.enable(p[1] || '', e.reward === 'ENABLE_EVENT');
-        else this.unsupported('Reward.' + e.reward + ':' + p[0]);
+        else if (/^(TUTORIAL_|STORY_)/.test(key(p[0]))) {
+          const blocked = (game.blockedEvents ||= new Set());
+          if (e.reward === 'ENABLE_EVENT') blocked.delete(key(p[0]));
+          else blocked.add(key(p[0]));
+        }
         break;
       case 'LOCK_CONTROLS':
         game.controlsLocked = +p[0] !== 0;
@@ -1878,6 +1995,17 @@ export class GalacticStoryHost extends StoryPlots {
   environment(inst, extra) {
     const vm = this.vm,
       localValues = () => inst.running?.values || inst.values;
+    const killThread = id => {
+      const thread = inst.threads.find(t => t.id === id);
+      if (thread && thread !== inst.running) {
+        vm.free(thread.ref);
+        inst.threads = inst.threads.filter(t => t !== thread);
+      }
+    };
+    const killAll = () => {
+      for (const thread of inst.threads) if (thread !== inst.running) vm.free(thread.ref);
+      inst.threads = inst.threads.filter(t => t === inst.running);
+    };
     const values = {
       Script: {
         __wrap: true,
@@ -1920,13 +2048,17 @@ export class GalacticStoryHost extends StoryPlots {
           return thread.id;
         },
         Is_Thread_Active: id => inst.threads.some(t => t.id === id),
-        Kill: id => {
-          const thread = inst.threads.find(t => t.id === id);
-          if (thread && thread !== inst.running) {
-            vm.free(thread.ref);
-            inst.threads = inst.threads.filter(t => t !== thread);
-          }
-        }
+        Kill: id => killThread(id),
+        Kill_All: () => killAll(),
+        Get_Current_ID: () => inst.running?.id ?? 0
+      },
+      Thread: {
+        __wrap: true,
+        __name: 'Thread',
+        Kill: id => killThread(id),
+        Kill_All: () => killAll(),
+        Get_Current_ID: () => inst.running?.id ?? 0,
+        Is_Thread_Active: id => inst.threads.some(t => t.id === id)
       }
     };
     if (extra) Object.assign(values, extra);

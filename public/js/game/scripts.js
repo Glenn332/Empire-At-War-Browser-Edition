@@ -717,6 +717,39 @@ export class ScriptHost {
         const s = ab(name);
         if (s) s.auto = on !== false;
       },
+      Set_All_Abilities_Autofire: on => {
+        for (const u of (e.isSquad ? e.fighters : e.members) || [e]) for (const s of u?.abilities || []) s.auto = on !== false;
+      },
+      Cancel_Ability: name => {
+        const kind = String(name || '').toUpperCase();
+        if (ab(kind)) self.cmd.ability(e, kind, false);
+      },
+      Get_Energy: () => {
+        const en = lead(e)?.energy;
+        return en && en.cap > 0 ? en.value / en.cap : 0;
+      },
+      Get_AI_Power_Vs_Unit: () => {
+        const u = lead(e);
+        return u ? u.type.num('AI_Combat_Power', 0) * (u.healthFrac ?? 1) : 0;
+      },
+      Can_Garrison_Fire: () => (lead(e)?.type.num('Num_Garrison_Guns', 0) || 0) > 0,
+      Contains_Hero: () => {
+        const list = (e.isSquad ? e.fighters : e.members) || [e];
+        return list.some(u => u && (u.type.bool('Is_Named_Hero') || u.type.bool('Is_Generic_Hero')));
+      },
+      Get_Contained_Heroes: () =>
+        ((e.isSquad ? e.fighters : e.members) || [])
+          .filter(u => u && !u.dead && (u.type.bool('Is_Named_Hero') || u.type.bool('Is_Generic_Hero')))
+          .map(u => self.wrap(u)),
+      Set_Targeting_Stickiness_Time_Threshold: seconds => {
+        for (const u of (e.isSquad ? e.fighters : e.members) || [e]) if (u) u.stickiness = Math.max(0, +seconds || 0);
+      },
+      Set_Prefer_Ground_Over_Space: on => {
+        e.preferGround = !!on;
+      },
+      Show_Emitter: (name, on) => {
+        (e.hiddenEmitters ||= new Set())[on === false ? 'add' : 'delete'](String(name || '').toUpperCase());
+      },
       Sell: () => {
         if (self.cmd.sell) self.cmd.sell(e);
       },
@@ -1089,7 +1122,13 @@ export class ScriptHost {
     vm.global(
       'SFXManager',
       Object.assign(hollow('SFXManager'), {
-        Allow_Ambient_VO: on => w.audio?.allowAmbientVO?.(on === undefined ? true : !!on)
+        Allow_Ambient_VO: on => w.audio?.allowAmbientVO?.(on === undefined ? true : !!on),
+        Allow_HUD_VO: on => w.audio?.allowVO?.('hudVOOff', on === undefined ? true : !!on),
+        Allow_Unit_Reponse_VO: on => w.audio?.allowVO?.('unitResponseOff', on === undefined ? true : !!on),
+        Allow_Localized_SFXEvents: on => w.audio?.allowVO?.('localizedOff', on === undefined ? true : !!on),
+        Allow_Enemy_Sighted_VO: on => {
+          w.enemySightedVOOff = on === undefined ? false : !on;
+        }
       })
     );
     vm.global('Thread', {
@@ -1103,8 +1142,78 @@ export class ScriptHost {
           inst.threads = inst.threads.filter(x => x !== t);
         }
       },
+      Kill_All: () => {
+        const inst = this.current;
+        if (!inst) return;
+        for (const t of inst.threads) if (t !== inst.running) vm.free(t.ref);
+        inst.threads = inst.threads.filter(t => t === inst.running);
+      },
+      Get_Current_ID: () => this.current?.running?.id ?? 0,
       __missing: this.absent('Thread')
     });
+    const inField = kind => value => {
+      const at = this.at(value);
+      if (!at || !w.fields) return false;
+      return w.fields.some(f => f[kind] && (at.x - f.x) ** 2 + (at.y - f.y) ** 2 <= f.r * f.r);
+    };
+    vm.global('Is_Point_In_Asteroid_Field', inField('asteroid'));
+    vm.global('Is_Point_In_Ion_Storm', inField('ion'));
+    vm.global('Is_Point_In_Nebula', inField('nebula'));
+    vm.global('Are_On_Opposite_Sides_Of_Shield', (a, b, player) => {
+      const p = this.at(a),
+        q = this.at(b);
+      if (!p || !q) return false;
+      const side = player?.__player ? (player.__player.side ?? player.__player.id) : undefined;
+      return (w.shields || []).some(
+        s =>
+          (side === undefined || s.side === side) &&
+          Math.hypot(p.x - s.x, p.y - s.y) < s.r !== Math.hypot(q.x - s.x, q.y - s.y) < s.r
+      );
+    });
+    vm.global('Camera_To_Follow', value => {
+      const e = value ? this.of(value) : null,
+        g = this.game;
+      if (g.landBattle) {
+        if (e) g.startTrack?.(e);
+        else g.endTrack?.();
+      } else if (g.ui) {
+        if (e) g.ui.startTrack?.(e);
+        else g.ui.endTrack?.();
+      }
+    });
+    vm.global('Rotate_Camera_To', (angle, seconds, shortest) => {
+      const g = this.game,
+        rig = g.landBattle ? g.view : g.renderer?.rig;
+      if (!rig || !Number.isFinite(+angle)) return;
+      const to = -Math.PI / 2 - (+angle * Math.PI) / 180,
+        from = rig.yaw,
+        turn = Math.PI * 2;
+      let delta = to - from;
+      if (shortest === undefined || +shortest > 0 || shortest === true) delta = ((((delta + Math.PI) % turn) + turn) % turn) - Math.PI;
+      const time = Math.max(0, +seconds || 0);
+      if (!time || typeof requestAnimationFrame !== 'function') {
+        rig.yaw = from + delta;
+        return;
+      }
+      const start = performance.now(),
+        token = (this.cameraTurn = {});
+      const step = () => {
+        if (this.cameraTurn !== token) return;
+        const k = Math.min(1, (performance.now() - start) / (time * 1000));
+        rig.yaw = from + delta * k;
+        if (k < 1) requestAnimationFrame(step);
+      };
+      step();
+    });
+    if (!this.game.setup?.linkedTactical) {
+      vm.global('Fade_On', () => {});
+      vm.global('Fade_Off', () => {});
+      vm.global('End_Cinematic_Mode', () => {
+        this.game.tacticalCinematics?.stop?.();
+        this.localizedSFX = false;
+        w.audio?.allowVO?.('localizedOff', true);
+      });
+    }
     vm.global(
       'DiscreteDistribution',
       (this.distributions = {

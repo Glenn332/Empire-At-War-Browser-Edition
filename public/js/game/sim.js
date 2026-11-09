@@ -1,4 +1,5 @@
 import { ScanAhead } from './scanjobs.js';
+import { unitTeamColor } from './teamcolor.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
 import { Pathfinder, layerMask, ASTEROID_LAYERS } from './pathfind.js';
@@ -632,7 +633,10 @@ export class Unit {
       w = this.world;
     const data = getModelData(t.str('Space_Model_Name'));
     if (data) {
-      this.model = buildModel(data, { teamColor: this.player && this.player.id >= 0 ? this.player.color : null, ...w.modelOpts });
+      this.model = buildModel(data, {
+        teamColor: this.player && this.player.id >= 0 ? unitTeamColor(w.colorize !== false, this.type, this.player.factionName, this.player.color) : null,
+        ...w.modelOpts
+      });
       this.obj.add(this.model.root);
       const r = this.model.radius * this.scale;
       this.fxReach = Math.max(this.fxReach, this.model.drawRadius * this.scale);
@@ -1029,7 +1033,13 @@ export class Unit {
       (this.hpColl ||= []).push({ hp, coll: partColl, inv: at.invert().elements, r });
     }
     if (attach && bone) {
-      hp.model = buildModel(attach, { teamColor: this.player && this.player.id >= 0 ? this.player.color : null, ...this.world.modelOpts });
+      hp.model = buildModel(attach, {
+        teamColor:
+          this.player && this.player.id >= 0
+            ? unitTeamColor(this.world.colorize !== false, this.type, this.player.factionName, this.player.color)
+            : null,
+        ...this.world.modelOpts
+      });
       const own = fireA ? [] : [def.str('Fire_Bone_A'), def.str('Fire_Bone_B')].map(n => n && hp.model.bone(n)).filter(Boolean);
       if (own.length) {
         const at = this.modelMatrix(bone, _m2),

@@ -271,7 +271,22 @@ export class GalacticPlanning {
         __call: (owner, equation, flags, probability, range) =>
           this.ai.findTarget(owner?.__faction || inst.ai?.player.faction, equation, flags, probability, null, null, range),
         Reachable_Target: (owner, equation, flags, reach, probability, target, range) =>
-          this.ai.findTarget(owner?.__faction, equation, flags, probability, target?.__planet, reach, range)
+          this.ai.findTarget(owner?.__faction, equation, flags, probability, target?.__planet, reach, range),
+        Best_Of: (force, list, equation) => {
+          const owner = force?.__force?.inst?.ai?.player.faction || inst.ai?.player.faction;
+          let best,
+            top = 0;
+          for (const entry of Array.isArray(list) ? list : []) {
+            const p = entry?.__planet || entry?.__object?.planet;
+            if (!p) continue;
+            const score = +this.ai.evaluate(String(equation), owner, p) || 0;
+            if (score > top) {
+              top = score;
+              best = entry;
+            }
+          }
+          return best;
+        }
       },
       _FindStageArea: (owner, target, force) => {
         const c = this.ai.controllers.get(key(owner?.__faction)),
@@ -1573,6 +1588,24 @@ export class GalacticPlanning {
       },
       Get_Goal_Type_Name: () => inst.goal,
       Get_Planet: () => this.host.planet(planet()),
+      Add_Force: wrapped => {
+        const object = wrapped?.__object,
+          record = object?.record || object;
+        if (!record || force.units.includes(record)) return;
+        if (!this.reservations.has(record)) this.reservations.set(record, inst);
+        force.units.push(record);
+      },
+      Get_Type_Of_Unit: index => {
+        const spec = force.specs?.[Math.max(0, (+index || 1) - 1)];
+        return spec?.types?.[0] ? this.host.type(spec.types[0]) : undefined;
+      },
+      Refit_To_Definition: (target, amount) =>
+        +amount > 0 ? this.assemble(force, target?.__planet || force.stage) : this.block({ k: 'const', result: true }),
+      Add_Opportunity_Fire_Event_Subscription: () => {},
+      Remove_Opportunity_Fire_Event_Subscription: () => {},
+      Clear_Opportunity_Fire_Event_Subscriptions: () => {},
+      Set_All_Abilities_Autofire: () => {},
+      Set_Targeting_Stickiness_Time_Threshold: () => {},
       __missing: this.unavailable('GalacticTaskForce')
     };
     return wrapper;
@@ -1953,6 +1986,18 @@ export class GalacticPlanning {
     this.routeCache.clear();
     this.poolCache.clear();
   }
+  moveResources(inst, goal, amount) {
+    if (!(Math.abs(amount) >= 0)) return false;
+    const other = this.live.find(
+      x => x !== inst && x.ai === inst.ai && x.thing === inst.thing && String(x.goal || '').toUpperCase() === String(goal || '').toUpperCase()
+    );
+    const from = inst.budget,
+      to = other?.budget;
+    if (!from || !to) return false;
+    from.requested = (from.requested || 0) - amount;
+    to.requested = (to.requested || 0) + amount;
+    return true;
+  }
   budgetWrapper(inst) {
     const budget = () => inst.ai?.budget,
       row = () => inst.budget;
@@ -1983,6 +2028,19 @@ export class GalacticPlanning {
       },
       Wait_For_Spendable: amount => this.block({ k: 'spendable', inst, amount }),
       Wait_For_Unallocated: amount => this.block({ k: 'unallocated', inst, amount }),
+      Wait_For_Spendable_Resources: amount => this.block({ k: 'spendable', inst, amount }),
+      Wait_For_Unallocated_Resources: amount => this.block({ k: 'unallocated', inst, amount }),
+      Flush_Unallocated_Resources: () => {
+        if (row()) row().requested = 0;
+      },
+      Flush_All_Resources: () => {
+        if (row()) {
+          row().allocated = 0;
+          row().requested = 0;
+        }
+      },
+      Give_Resources_To_Goal: (amount, goal) => this.moveResources(inst, goal, +amount || 0),
+      Take_Resources_From_Goal: (amount, goal) => this.moveResources(inst, goal, -(+amount || 0)),
       __missing: this.unavailable('Budget')
     };
   }

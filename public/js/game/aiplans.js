@@ -1249,6 +1249,43 @@ export class Plans {
           if (u && u.Set_Single_Ability_Autofire) u.Set_Single_Ability_Autofire(name, on);
         }
       },
+      Set_All_Abilities_Autofire: on => {
+        for (const e of f.units) host.wrap(e)?.Set_All_Abilities_Autofire?.(on);
+      },
+      Set_Targeting_Stickiness_Time_Threshold: seconds => {
+        for (const e of f.units) host.wrap(e)?.Set_Targeting_Stickiness_Time_Threshold?.(seconds);
+      },
+      Get_AI_Power_Vs_Unit: () => alive().reduce((n, e) => n + (host.wrap(e)?.Get_AI_Power_Vs_Unit?.() || 0), 0),
+      Add_Force: v => {
+        const e = host.of(v);
+        if (e && !f.units.includes(e)) take(e);
+      },
+      Get_Type_Of_Unit: index => {
+        const spec = f.def?.specs?.[Math.max(0, (+index || 1) - 1)] || f.specs?.[Math.max(0, (+index || 1) - 1)];
+        const t = spec?.types?.[0];
+        return t ? host.type(t) : undefined;
+      },
+      Find_Closest_Enemy: category => {
+        const a = here();
+        if (!a) return undefined;
+        const cat = category ? String(category).toUpperCase() : '';
+        let best = null,
+          bd = Infinity;
+        for (const u of w.units) {
+          const q = u.player;
+          if (u.dead || !q || !p || q === p || q.team === p.team || q.neutral || p.neutral) continue;
+          if (cat && !u.type.categories().has(cat)) continue;
+          const d = (u.x - a.x) ** 2 + (u.y - a.y) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = u;
+          }
+        }
+        return best ? host.wrap(best.squad || best) : undefined;
+      },
+      Add_Opportunity_Fire_Event_Subscription: () => {},
+      Remove_Opportunity_Fire_Event_Subscription: () => {},
+      Clear_Opportunity_Fire_Event_Subscriptions: () => {},
       Can_Garrison: v => {
         const t = host.of(v);
         return !!(host.cmd.canGarrison && t && f.units.some(e => host.cmd.canGarrison(e, t)));

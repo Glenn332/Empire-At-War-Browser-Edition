@@ -1,10 +1,11 @@
 import { TacticalMarker } from './tacticalobjects.js';
+import { colorizes } from './teamcolor.js';
 import { setTacticalRules } from './tacticalrules.js';
 import { linkedParent, reportLinkedVictory, authoredMapOwner, ensureMissionPlayers, missionMapActor } from './linktactical.js';
 import { mpBattleParent } from './galacticmpbattle.js';
 
 import * as THREE from 'three';
-import { db } from '../gamedata.js';
+import { db, selectionBoxColors } from '../gamedata.js';
 import { switchTarget } from './switchsides.js';
 import { loadMap, pickEnvironment, environmentRoll } from '../ted.js';
 import { loadModel, lighting, setPlanetEnvironment, depthMaterial, programSources, planetClock } from '../model.js';
@@ -670,6 +671,7 @@ export class LandGame {
         return { ai: true, reserve: Math.max(0, t.credits - t.share), released: 0, adjust: t.adjust ?? 1, parts: t.parts || [] };
       });
     world.viewer = this.me;
+    world.colorize = colorizes(setup);
     world.colors = this.factions.map((f, i) => {
       const p = this.players[i];
       if (p) return p.color ? new THREE.Color(p.color) : null;
@@ -4382,9 +4384,10 @@ export class LandGame {
     const dn = this.down,
       m = this.ui.mouse;
     if (dn && dn[2] === 0 && !this.ui.placing && !this.ui.armed && Math.hypot(m.x - dn[0], m.y - dn[1]) > 5) {
-      g.strokeStyle = '#35ff5a';
-      g.lineWidth = 1;
-      g.fillStyle = 'rgba(53,255,90,.08)';
+      const tone = (this.boxTone ||= selectionBoxColors(this.factions?.[this.me]));
+      g.strokeStyle = tone.stroke;
+      g.lineWidth = 3;
+      g.fillStyle = tone.fill;
       g.fillRect(dn[0], dn[1], m.x - dn[0], m.y - dn[1]);
       g.strokeRect(dn[0] + 0.5, dn[1] + 0.5, m.x - dn[0], m.y - dn[1]);
     }

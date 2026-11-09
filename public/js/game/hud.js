@@ -1565,13 +1565,16 @@ export class CommandBar {
     const sig = rows.map(r => (r.weather ? 'wx:' + r.weather.icon : r.type.name + (r.it ? '*' : ''))).join();
     if (sig !== this.sideSig) {
       this.sideSig = sig;
-      side.replaceChildren(
-        ...rows.map((r, i) => {
+      const perColumn = Math.max(1, db.constants.num('Icons_Per_Column', 13)),
+        items = rows.map((r, i) => {
           const d = document.createElement('div');
           d.className = 'sideitem' + (r.it ? ' building' : '');
           const k = wx ? i - 1 : i,
-            n = wx ? rows.length - 1 : rows.length,
-            piece = r.weather || n === 1 ? 3 : k === 0 ? 0 : k === n - 1 ? 2 : 1;
+            total = wx ? rows.length - 1 : rows.length,
+            start = Math.floor(Math.max(0, k) / perColumn) * perColumn,
+            n = Math.min(perColumn, total - start),
+            at = k - start,
+            piece = r.weather || n === 1 ? 3 : at === 0 ? 0 : at === n - 1 ? 2 : 1;
           d.style.backgroundImage = css(this.tex('skirmish_upgrade', 'Blank_Texture_Name', piece));
           d.innerHTML = '<i></i><span></span>';
           d._r = r;
@@ -1591,10 +1594,18 @@ export class CommandBar {
               this.ui.hudTimer = 0;
             };
           return d;
-        })
-      );
+        });
+      const columns = [];
+      for (const d of items) {
+        const k = d._r.weather ? -1 : items.indexOf(d) - (wx ? 1 : 0),
+          c = k < 0 ? 0 : Math.floor(k / perColumn);
+        (columns[c] ||= Object.assign(document.createElement('div'), { className: 'sidecolumn' })).appendChild(d);
+      }
+      side.style.flexDirection = columns.length > 1 ? 'row-reverse' : '';
+      side.style.alignItems = 'flex-start';
+      side.replaceChildren(...columns.filter(Boolean));
     }
-    for (const d of side.children) {
+    for (const d of side.querySelectorAll('.sideitem')) {
       const it = d._r && d._r.it;
       if (it) d.lastChild.textContent = Math.round(100 * (1 - it.left / it.total)) + '%';
     }

@@ -251,6 +251,9 @@ export class StoryPlots {
         if (!e) return undefined;
         return this.eventWrapperOf(plot, e);
       },
+      Reset: () => {
+        for (const e of plot.events.values()) this.resetEvent(e);
+      },
       __missing: this.absent('StoryPlot')
     };
   }
@@ -391,6 +394,7 @@ export class StoryPlots {
     }
   }
   signal(type, value) {
+    if (this.game?.blockedEvents?.has(type)) return;
     const target = key(value);
     for (const e of this.eventTypes.get(type) || []) {
       const wanted = type === 'STORY_AI_NOTIFICATION' ? e.params[1] || e.params[0] : e.params[0];

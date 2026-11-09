@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { unitTeamColor } from './teamcolor.js';
 import { db } from '../gamedata.js';
 import { loadModel, buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
@@ -822,6 +823,7 @@ export class LandWorld {
     }
     this.queues = factions.map(() => ({ units: [], upgrades: [] }));
     this.colors = factions.map(() => null);
+    this.colorize = true;
     this.beaten = new Set();
     this.mods = factions.map(() => ({ build: 1, credit: 1, damage: 1, health: 1 }));
     this.credits = factions.map(() => credits);
@@ -991,6 +993,10 @@ export class LandWorld {
 
   marketOf(q) {
     return this.market?.[q.side];
+  }
+  teamColorFor(side, type) {
+    if (!(side >= 0)) return this.colors[side] || null;
+    return unitTeamColor(this.colorize !== false, type, this.factions[side], this.colors[side] || null);
   }
   ally(a, b) {
     return a === b || (this.team[a] !== undefined && this.team[a] === this.team[b]);
@@ -2072,7 +2078,7 @@ export class LandWorld {
     const file = site.pad ? site.pad.str('Land_Model_Name') : '';
     if (file)
       loadModel(file, {
-        teamColor: this.colors[side] || null,
+        teamColor: this.teamColorFor(side, site.pad),
         alt: Math.max(
           ...site.pad
             .list('Land_Damage_Alternates')
@@ -2193,7 +2199,7 @@ export class LandWorld {
   async finishSite(site, uc, side = site.side) {
     const type = db.type(uc.str('Tactical_Buildable_Constructed')) || uc;
     const file = type.str('Land_Model_Name'),
-      inst = file && (await loadModel(file, { teamColor: this.colors[side] || null, alts: true }).catch(() => null));
+      inst = file && (await loadModel(file, { teamColor: this.teamColorFor(side, type), alts: true }).catch(() => null));
     if (!inst) {
       site.building = null;
       return null;
@@ -3255,7 +3261,7 @@ export class LandWorld {
         while (data && !this.fixed && this.sliceOver()) await this.nextSlice();
         let inst = null;
         try {
-          inst = data ? buildModel(data, { teamColor: this.colors[side] || null }) : null;
+          inst = data ? buildModel(data, { teamColor: this.teamColorFor(side, t) }) : null;
         } catch {
           inst = null;
         }
@@ -3456,7 +3462,7 @@ export class LandWorld {
             file = h && h.str('Model_To_Attach'),
             bone = file && inst.bone ? inst.bone(h.str('Attachment_Bone')) : null;
           if (bone)
-            loadModel(file, { teamColor: this.colors[side] || null })
+            loadModel(file, { teamColor: this.teamColorFor(side, t) })
               .then(a => {
                 if (!a || !a.root || u.gone) return;
                 bone.add(a.root);
@@ -4245,7 +4251,7 @@ export class LandWorld {
     u.lieFor = u.vanish ? 0 : after(u.anim && u.anim.anim ? u.anim.anim.duration : 0);
     const file = clone ? clone.str('Land_Model_Name') : '';
     if (file && file.toUpperCase() !== u.type.str('Land_Model_Name').toUpperCase() && !/^NI_|^EI_|^RI_|^UI_/i.test(file)) {
-      loadModel(file, { teamColor: this.colors[u.side] || null })
+      loadModel(file, { teamColor: this.teamColorFor(u.side, u.type) })
         .then(inst => {
           if (!inst || u.gone) return;
           u.inst.root.visible = false;

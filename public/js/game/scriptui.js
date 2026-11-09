@@ -443,7 +443,7 @@ export class ScriptUI {
     b.setAttribute('aria-label', s.text || b.title || name);
     if (opening) snapNativeText(text);
     const color = pair(c.val('Text_Color') || '255 255 255 255');
-    text.style.color = `rgba(${color.slice(0, 3).join(',')},${(color[3] ?? 255) / 255})`;
+    text.style.color = s.textColor || `rgba(${color.slice(0, 3).join(',')},${(color[3] ?? 255) / 255})`;
     const scale = c.num('Scale', 1);
     const normal = s.icon ?? token(c, 'Icon_Texture_Name'),
       overlay = !s.enabled
@@ -510,16 +510,20 @@ export class ScriptUI {
     this.resize();
   }
 
-  play(name) {
+  play(name, at = 0, loop = false) {
     const key = String(name).toUpperCase(),
       shell = this.shells.get(key),
       a = shell?.anim;
     if (!a) return;
     const bones = shell.model.bones,
-      start = performance.now();
+      run = (shell.run = (shell.run || 0) + 1),
+      start = performance.now() - (at / a.fps) * 1000;
+    if (!at) shell.stopped = false;
     const step = () => {
-      if (this.shells.get(key) !== shell) return;
-      const f = ((performance.now() - start) / 1000) * a.fps,
+      if (this.shells.get(key) !== shell || shell.run !== run) return;
+      let f = ((performance.now() - start) / 1000) * a.fps;
+      if (loop && !shell.stopped && a.frames > 1) f %= a.frames - 1;
+      f = Math.min(f, Math.max(0, a.frames - 1));
         [f0, f1] = frameKeys(a, f, false),
         k = f - Math.floor(f);
       const local = new Map();
@@ -555,9 +559,71 @@ export class ScriptUI {
         const [x, y] = delta(+el.dataset.bone);
         el.style.translate = x || y ? `${x}px ${-y}px` : '';
       }
-      if (f < a.frames - 1) requestAnimationFrame(step);
+      if ((loop && !shell.stopped) || f < a.frames - 1) requestAnimationFrame(step);
     };
     step();
+  }
+
+  elements(name) {
+    const key = String(name).toUpperCase(),
+      out = [];
+    const rec = this.controls.get(key);
+    if (rec) out.push(rec.b);
+    const shell = this.shells.get(key);
+    if (shell) out.push(shell.root);
+    if (!out.length)
+      for (const el of this.game.ui?.root?.querySelectorAll?.('[data-control]') || [])
+        if (el.dataset.control.toUpperCase() === key) out.push(el);
+    return out;
+  }
+  color(name, r, g, b, a) {
+    const s = this.state(name),
+      unit = v => Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : 1));
+    s.tint = [unit(r), unit(g), unit(b), unit(a ?? 1)];
+    this.apply(name);
+  }
+  textColor(name, r, g, b, a) {
+    const unit = v => Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : 1));
+    const color = `rgba(${[r, g, b].map(v => Math.round(unit(v) * 255)).join(',')},${unit(a ?? 1)})`;
+    this.state(name).textColor = color;
+    const rec = this.controls.get(String(name).toUpperCase());
+    if (rec) rec.text.style.color = color;
+  }
+  flash(name, perpetual, duration, count) {
+    this.stopFlash(name);
+    const key = String(name).toUpperCase(),
+      marks = [];
+    for (const el of this.elements(key)) {
+      const f = document.createElement('span');
+      f.className = 'story-flash';
+      f.style.cssText =
+        'position:absolute;inset:0;pointer-events:none;mix-blend-mode:plus-lighter;background:rgba(255,255,255,.6);animation:tutorial-flash 0.5s linear infinite';
+      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      el.appendChild(f);
+      marks.push(f);
+    }
+    const entry = { marks, timer: 0 };
+    if (!perpetual && +duration > 0) entry.timer = setTimeout(() => this.stopFlash(key), +duration * 1000);
+    (this.flashes ||= new Map()).set(key, entry);
+  }
+  stopFlash(name) {
+    const key = String(name).toUpperCase(),
+      entry = this.flashes?.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    for (const f of entry.marks) f.remove();
+    this.flashes.delete(key);
+  }
+  blink(name, on) {
+    for (const el of this.elements(name)) el.style.animation = on ? 'tutorial-flash 0.8s steps(2, jump-none) infinite' : '';
+  }
+  stopAnim(name) {
+    const key = String(name).toUpperCase(),
+      shell = this.shells.get(key),
+      a = shell?.anim;
+    if (!a) return;
+    shell.stopped = true;
+    this.play(key, a.frames);
   }
 
   get modal() {

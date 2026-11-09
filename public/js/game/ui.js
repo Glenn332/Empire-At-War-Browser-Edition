@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { db } from '../gamedata.js';
+import { db, selectionBoxColors } from '../gamedata.js';
 import { getModelData, buildModel } from '../model.js';
 import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas, iconOpaque } from '../icons.js';
@@ -1939,9 +1939,10 @@ export class UI {
     g.globalAlpha = 1;
     if (this.drag && this.drag.box) {
       const d = this.drag;
-      g.strokeStyle = '#6be675';
-      g.fillStyle = 'rgba(107,230,117,0.08)';
-      g.lineWidth = 1;
+      const tone = (this.boxTone ||= selectionBoxColors(this.player?.faction));
+      g.strokeStyle = tone.stroke;
+      g.fillStyle = tone.fill;
+      g.lineWidth = 3;
       g.fillRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
       g.strokeRect(d.x0 + 0.5, d.y0 + 0.5, d.x1 - d.x0, d.y1 - d.y0);
     }

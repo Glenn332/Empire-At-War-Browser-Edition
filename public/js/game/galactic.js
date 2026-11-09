@@ -26,6 +26,7 @@ import { loadTexture } from '../dds.js';
 import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
+import { fontPixels } from '../fontpolicy.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
 import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
@@ -198,6 +199,7 @@ export class GalacticGame {
   dispose() {
     this.modeSuspended = true;
     this.over = true;
+    this.countdownBox?.remove();
     this.life.abort();
     this.overview?.cancelDrag();
     this.unsubscribeLanguage?.();
@@ -1621,7 +1623,7 @@ export class GalacticGame {
       }
       const spot = this.pickStack(this.lastSpots, e.clientX, e.clientY);
       const f = spot?.fleets ? spot.fleets.find(x => x.owner === this.me && !x.leg && x.units.length) || spot.f : spot?.f || null;
-      if (f && f.owner === this.me && !f.leg) {
+      if (f && f.owner === this.me && !f.leg && !this.inputBlocked('TUTORIAL_DRAG_FLEET')) {
         this.dragFleet = f;
         this.dragReach = baseSpeed(f) > 0 ? humanReach(this.galaxy, f) : null;
         this.stackDown = { x: e.clientX, y: e.clientY };
@@ -1629,7 +1631,7 @@ export class GalacticGame {
         el.setPointerCapture(e.pointerId);
         return;
       }
-      if (!this.planetSelectionLocked) this.select(this.pick(e.clientX, e.clientY));
+      if (!this.planetSelectionLocked && !this.inputBlocked('TUTORIAL_CLICK_PLANET')) this.select(this.pick(e.clientX, e.clientY));
     });
     el.addEventListener('pointerup', e => {
       if (e.button === 2) this.drag = null;
@@ -1651,7 +1653,7 @@ export class GalacticGame {
         this.stackDown = null;
         const surfaceTo = !target && !this.radar?.contains(e.clientX, e.clientY) && this.pickStack(this.lastSurfaceSpots, e.clientX, e.clientY);
         const combine = this.fleetCombine !== false;
-        if (click) this.select(p);
+        if (click && !this.inputBlocked('TUTORIAL_CLICK_PLANET')) this.select(p);
         else if (surfaceTo && surfaceTo.p !== p) {
           if (this.net) this.order({ ...orders.embark(this.galaxy, p, { fresh: true, to: surfaceTo.p }), landOn: true });
           else {
@@ -1698,7 +1700,7 @@ export class GalacticGame {
         const combine = this.fleetCombine !== false,
           ownSurface = !overRadar && surface && f.planet === surface.p && routeAllied(this.galaxy.planets[surface.p].owner, f.owner),
           sameOrbit = !overRadar && orbit && f.planet === orbit.p && !!orbit.f && orbit.f !== f;
-        if (click) this.select(f.planet);
+        if (click && !this.inputBlocked('TUTORIAL_CLICK_PLANET')) this.select(f.planet);
         else if (!combine && !special && (ownSurface || sameOrbit)) this.audio?.play('GUI_Bad_Sound');
         else if (this.net) {
           const g = this.galaxy;
@@ -1748,7 +1750,7 @@ export class GalacticGame {
       'wheel',
       e => {
         e.preventDefault();
-        if (this.controlsLocked || this.scriptUI?.modal) return;
+        if (this.controlsLocked || this.scriptUI?.modal || this.inputBlocked('TUTORIAL_ZOOM')) return;
         if (this.dragFleet || this.drag) return;
         const v = this.view,
           out = v.zoom === 0 && v.dir === 0,
@@ -1839,6 +1841,9 @@ export class GalacticGame {
     this.select(i);
   }
 
+  inputBlocked(kind) {
+    return !!this.blockedEvents && (this.blockedEvents.has(kind) || this.blockedEvents.has('TUTORIAL_ALL'));
+  }
   select(i) {
     if (i >= 0 && this.galaxy.planets[i] && !this.scriptUI?.modal) {
       if (this.net) this.order({ c: 'select', p: i });
@@ -3475,6 +3480,7 @@ export class GalacticGame {
 
   advanceBattle(real) {
     const b = this.battle;
+    if (b) this.countdownBox?.remove();
     if (!b || !this.fadeEl) return false;
     b.t += real;
     this.fadeEl.style.opacity = Math.max(0, Math.min(1, (b.t - b.zoom) / b.fade));
@@ -3677,11 +3683,58 @@ export class GalacticGame {
     }
     if (this.renderer.endFrame) this.renderer.endFrame();
     this.drawNames(zoom);
+    this.drawCountdowns();
     this.overview?.update();
     this.corruptionTip();
     this.updatePointer();
     this.radar?.drawFrame(real);
     this.radar?.refresh();
+  }
+
+  drawCountdowns() {
+    const lines = [];
+    for (const p of this.galaxy.planets)
+      for (const queue of [p.production?.space, p.production?.ground]) {
+        const q = queue?.[0];
+        if (!q || !q.type.bool('Build_Countdown_Timer')) continue;
+        const left = Math.max(0, Math.floor(q.left ?? 0)) + 1,
+          rgba = q.type.str('Build_Countdown_Text_RGBA')
+            .split(/[\s,]+/)
+            .map(parseFloat)
+            .filter(Number.isFinite);
+        lines.push({
+          text: db.t(q.type.str('Build_Countdown_Text_ID')) + ' ' + String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0'),
+          color: rgba.length >= 3 ? `rgba(${rgba[0]},${rgba[1]},${rgba[2]},${(rgba[3] ?? 255) / 255})` : '#fff'
+        });
+      }
+    const box = (this.countdownBox ||= Object.assign(document.createElement('div'), { id: 'galactic-countdowns' }));
+    if (!lines.length) {
+      if (box.isConnected) box.remove();
+      return;
+    }
+    if (!box.isConnected) {
+      const c = db.constants,
+        point = c.num('Game_Play_UI_Countdown_Font_Size', 0),
+        size = point > 0 ? fontPixels(innerHeight, point) : 16;
+      box.style.cssText = `position:fixed;left:${c.num('GUI_Strategic_Countdown_Timers_Screen_X', 0.005) * 100}%;top:${
+        c.num('GUI_Strategic_Countdown_Timers_Screen_Y', 0.02) * 100
+      }%;pointer-events:none;z-index:6;white-space:pre;font:${size}px ${fontFamily(
+        c.str('Game_Play_UI_Countdown_Font_Name', '').trim() || 'Arial'
+      )};text-shadow:1px 1px 0 #000`;
+      document.body.appendChild(box);
+    }
+    const signature = lines.map(l => l.text + l.color).join('|');
+    if (box.dataset.sig === signature) return;
+    box.dataset.sig = signature;
+    const spacing = db.constants.num('GUI_Strategic_Countdown_Timers_Screen_Spacing', 0.05) * innerHeight;
+    box.replaceChildren(
+      ...lines.map((l, i) => {
+        const row = document.createElement('div');
+        row.textContent = l.text;
+        row.style.cssText = `position:absolute;left:0;top:${i * spacing}px;color:${l.color}`;
+        return row;
+      })
+    );
   }
 
   drawPlanetStatus(ctx, p, point, scale, ratio) {

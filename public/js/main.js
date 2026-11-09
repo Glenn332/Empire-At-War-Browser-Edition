@@ -1,4 +1,5 @@
 import { TacticalMarker } from './game/tacticalobjects.js';
+import { colorizes } from './game/teamcolor.js';
 import { setTacticalRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
 import { mpBattleParent } from './game/galacticmpbattle.js';
@@ -480,6 +481,7 @@ class Game {
       seedSim(this.setup.seed >>> 0);
     }
     const world = (this.world = new World({ scene: this.renderer.scene, fx: this.renderer, audio, map }));
+    world.colorize = colorizes(this.setup);
     world.bring = type => {
       this.bring(type);
     };

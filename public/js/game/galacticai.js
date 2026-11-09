@@ -328,6 +328,11 @@ export class GalacticMind extends Reason {
       return (sign * Math.trunc(Math.abs(p.politicalTarget ?? 0))) / (db.constants.num('MaximumPoliticalControl', 5) || 5);
     }
     if (name === 'VARIABLE_TARGET.ISFACTION') return +(!!p && factions.includes(key(p.owner)));
+    if (name === 'VARIABLE_TARGET.HASINDIGENOUSUNITS') {
+      if (!p) throw new UnknownPerception('HasIndigenousUnits requires a target');
+      const listed = p.type.tuples('Potential_Indigenous_Power').map(([n]) => key(n));
+      return +(types.length ? listed.some(n => typeSet.has(n)) : listed.length > 0);
+    }
     if (name === 'VARIABLE_TARGET.ISHUMANCONTROLLED') return +(!!p && humanSide(this.ai.game, p.owner));
     if (name === 'VARIABLE_SELF.ISFACTION') return +factions.includes(key(c.player.faction));
     if (name === 'VARIABLE_HUMAN.ISFACTION' || name === 'VARIABLE_ENEMY.ISFACTION') {

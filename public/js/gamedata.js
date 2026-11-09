@@ -169,6 +169,16 @@ export const typeHasProperty = (t, name) =>
       .map(x => x.trim().toUpperCase())
       .filter(Boolean)
   )).has(String(name).trim().toUpperCase());
+export function selectionBoxColors(faction) {
+  const c = db.constants,
+    pick = c.bool('Use_Neutral_UI_Color', false) ? c.str('Neutral_UI_Color') : db.faction(faction || '')?.str('Color'),
+    v = String(pick || '')
+      .split(/[\s,]+/)
+      .map(parseFloat)
+      .filter(Number.isFinite);
+  const rgb = v.length >= 3 ? v.slice(0, 3).map(n => Math.round(n)).join(',') : '107,230,117';
+  return { stroke: `rgb(${rgb})`, fill: `rgba(${rgb},0.2)` };
+}
 export const SPAWN_TIERS = 6;
 const tierRows = (type, prefix, tech) => {
   if (!(tech >= 0 && tech < SPAWN_TIERS)) return [];

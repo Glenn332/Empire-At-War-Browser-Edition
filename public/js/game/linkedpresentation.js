@@ -73,6 +73,21 @@ export function installLinkedPresentation(game, scripts) {
       fx.slide = null;
       fx.bar = 0;
     });
+    vm.global('Fade_On', () => {
+      fx.fade = null;
+      fx.alpha = 1;
+    });
+    vm.global('Fade_Off', () => {
+      fx.fade = null;
+      fx.alpha = 0;
+    });
+    vm.global('End_Cinematic_Mode', () => {
+      game.tacticalCinematics?.stop?.();
+      fx.slide = null;
+      fx.bar = 0;
+      if (scripts) scripts.localizedSFX = false;
+      game.audio?.allowVO?.('localizedOff', true);
+    });
     vm.global('Resume_Hyperspace_In', () => {
       if (!game.landBattle) game.world.holdHyperspace = false;
     });

@@ -2364,3 +2364,7 @@ body.attract #buildTag {
     opacity: 0;
   }
 }
+.sidecolumn {
+  display: flex;
+  flex-direction: column;
+}

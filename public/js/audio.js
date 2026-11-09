@@ -194,6 +194,9 @@ export class Audio {
     const live = this.active.get(key) || 0;
     if (live >= ev.num('Max_Instances', 4)) return true;
     if (this.ambientVOOff && ev.bool('Is_Ambient_VO')) return true;
+    if (this.hudVOOff && ev.bool('Is_HUD_VO')) return true;
+    if (this.unitResponseOff && ev.bool('Is_Unit_Response_VO')) return true;
+    if (this.localizedOff && ev.bool('Localize')) return true;
     const prob = ev.num('Probability', 100);
     if (prob < 100 && Math.random() * 100 > prob) return true;
     const reply = ev.bool('Is_Unit_Response_VO'),
@@ -538,6 +541,9 @@ export class Audio {
   setMusicVolume(v) {
     this.musicVolume = v;
     if (this.music) this.music.volume = this.musicLevel();
+  }
+  allowVO(kind, on = true) {
+    this[kind] = !on;
   }
   allowAmbientVO(on = true) {
     this.ambientVOOff = !on;
