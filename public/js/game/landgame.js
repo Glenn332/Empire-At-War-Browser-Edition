@@ -322,6 +322,10 @@ export class LandGame {
     if (window.game === this) window.game = null;
   }
 
+  resumeModeMusic() {
+    if (this.modeMusic?.length && this.audio.setPlaylist) this.audio.setPlaylist(this.modeMusic, false);
+  }
+
   scriptEffect(kind, d) {
     if (kind !== 'scriptHighlight' || !d?.unit) return;
     const u = d.unit.members?.find(m => !m.dead) || d.unit.site?.structure || d.unit,
@@ -571,6 +575,7 @@ export class LandGame {
   }
 
   toggleMenu() {
+    if (!this.menus?.open && this.tacticalCinematics?.on && !this.over) return;
     this.menus.toggle();
   }
 
@@ -1025,7 +1030,7 @@ export class LandGame {
       const ev = tu && db.music.get(tu[1].toUpperCase());
       return ev ? ev.list('Files') : [];
     };
-    const music = tracks('Music_Event_List_Ambient').concat(tracks('Music_Event_List_Battle'));
+    const music = (this.modeMusic = tracks('Music_Event_List_Ambient').concat(tracks('Music_Event_List_Battle')));
     if (music.length && this.audio.setPlaylist) this.audio.setPlaylist(music, false);
 
     const q = new URLSearchParams(location.search);
@@ -2882,6 +2887,7 @@ export class LandGame {
     if (!w.interp) w.poseQueued();
     if (!this.lock) this.scripts?.host.updateStory(dt);
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
+    this.movies?.update(real);
     this.tacticalStory?.update();
     stepTacticalSpeech(this, real);
     if (this.tutorialFx || this.dualFlash) {

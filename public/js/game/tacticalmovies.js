@@ -4,6 +4,8 @@ import { BinkPlayer } from '../bink.js';
 import { TacticalCrawl } from './tacticalcrawl.js';
 import { movieDefinitions } from './galacticmovies.js';
 import { CreditsRoll } from './creditsroll.js';
+import { movieSubtitles } from './subtitles.js';
+import { fontFamily } from '../fonts.js';
 const yes = value => /^(yes|true|1)$/i.test(value || '');
 export class TacticalMovies {
   constructor(game, scripts, { createCrawl = name => TacticalCrawl.create(name) } = {}) {
@@ -118,6 +120,11 @@ export class TacticalMovies {
       }
     }
     if (!this.active || this.player.frame < 0) return;
+    const crawlEnd = this.movie.num('Text_Crawl_End_Frame', 0);
+    if (this.crawl && crawlEnd > 0 && this.player.frame + 1 > crawlEnd) {
+      this.crawl.dispose();
+      this.crawl = null;
+    }
     this.crawl?.update(this.player.frame + 1 - this.movie.num('Text_Crawl_Start_Frame', 0));
     const frame = this.player.frame + 1,
       old = this.frame;
@@ -142,8 +149,47 @@ export class TacticalMovies {
         .find(([name, at]) => name && old < +at && +at <= frame);
       if (entry) emit(entry[0]);
     }
+    this.captions(old, frame);
+  }
+  captions(old, frame) {
+    if (this.caption && frame >= this.caption.until) {
+      this.caption.el.remove();
+      this.caption = null;
+    }
+    if (!movieSubtitles() || typeof document === 'undefined') return;
+    const pairs = tag =>
+      this.movie
+        .all(tag)
+        .map(node => node.text.trim().split(/[\s,]+/))
+        .filter(([id, n]) => id && Number.isFinite(+n));
+    const start = pairs('Caption_Frame').find(([, at]) => old < +at && +at <= frame);
+    if (!start) return;
+    const id = start[0].toUpperCase(),
+      length = +(pairs('Caption_Duration').find(([n]) => n.toUpperCase() === id)?.[1] ?? 150);
+    this.caption?.el.remove();
+    const el = document.createElement('div'),
+      rect = this.canvas.getBoundingClientRect(),
+      size = db.constants.num('Bink_Player_Caption_Font_Size', 10);
+    el.className = 'movie-caption';
+    el.textContent = db.t(id) || id;
+    Object.assign(el.style, {
+      position: 'fixed',
+      left: rect.left + 'px',
+      width: Math.max(200, rect.width) + 'px',
+      top: rect.bottom + 4 + 'px',
+      textAlign: 'center',
+      color: '#fff',
+      font: `${size * 1.6}px ${fontFamily(db.constants.str('Bink_Player_Caption_Font_Name') || 'EmpireAtWar-Medium')}`,
+      textShadow: '0 0 2px #000, 0 0 2px #000',
+      pointerEvents: 'none',
+      zIndex: String((+this.canvas.style.zIndex || 9) + 1)
+    });
+    document.body.appendChild(el);
+    this.caption = { el, until: +start[1] + length };
   }
   finish() {
+    this.caption?.el.remove();
+    this.caption = null;
     const done = this.onFinish;
     this.onFinish = null;
     this.crawl?.dispose();

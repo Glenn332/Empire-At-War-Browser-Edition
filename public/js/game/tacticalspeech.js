@@ -16,8 +16,8 @@ export async function installTacticalSpeech(game, host) {
   }
   game.speechStoryDone?.();
   game.speechStoryDone = speech?.on('storydone', record => {
-    game.screenText?.show({ id: 'TEXT_SPEECH_' + record.name, remove: true });
     host.signal('STORY_SPEECH_DONE', record.name);
+    game.screenText?.show({ id: 'TEXT_SPEECH_' + record.name, remove: true });
   });
 }
 

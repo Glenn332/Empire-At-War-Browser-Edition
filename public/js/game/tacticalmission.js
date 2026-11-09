@@ -40,7 +40,8 @@ export function installTacticalMission(game, scripts) {
     else audio?.setPlaylist(event.list('Files'), false, true);
   });
   vm.global('Resume_Mode_Based_Music', () => {
-    if (playlist.length) audio?.setPlaylist(playlist);
+    if (game.resumeModeMusic) game.resumeModeMusic();
+    else if (playlist.length) audio?.setPlaylist(playlist);
   });
   vm.global('Stop_All_Speech', () => audio?.speech?.stopActive());
 }

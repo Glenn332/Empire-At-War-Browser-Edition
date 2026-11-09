@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { GalacticStoryDialog } from './galacticstorydialog.js';
+import { tutorialFx } from './tutorialrewards.js';
 
 const factionOf = game => game.human?.faction || db.faction(game.human?.factionName || game.factions?.[game.me]);
 
@@ -22,6 +23,8 @@ export function installTacticalNotices(game) {
       else game.message?.(text);
     }
     if (sound) game.audio?.play(f?.str('SFXEvent_Mission_Added'));
+    const button = game.ui?.bar?.bStory;
+    if (button && typeof document !== 'undefined') tutorialFx(game).flashElement(button, '', { period: 0.5, count: 6 });
   };
   game.toggleStorySummary = () => {
     const d = dialog();

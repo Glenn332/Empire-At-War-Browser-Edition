@@ -288,13 +288,23 @@ export class ScriptUI {
     }
     const group = c.val('Group'),
       tab = yes(c.val('Tab'));
-    s.selected = yes(c.val('Toggle')) ? !s.selected : tab ? true : s.selected;
+    if (tab) s.selected = !(s.selected && yes(c.val('Toggle')));
+    else {
+      s.selected = true;
+      clearTimeout(s.release);
+      s.release = setTimeout(() => {
+        s.selected = false;
+        this.apply(key);
+      }, 200);
+    }
     if (tab && s.selected && group)
-      for (const [n, t] of this.states)
-        if (n !== key && this.comps.get(n)?.val('Group') === group) {
-          t.selected = false;
-          this.apply(n);
-        }
+      for (const [n, t] of this.states) {
+        const other = this.comps.get(n);
+        if (n === key || !t.selected || other?.val('Group') !== group || !yes(other.val('Tab'))) continue;
+        t.selected = false;
+        this.apply(n);
+        if (!net) this.handlers?.get(n)?.(n, { unselect: true });
+      }
     this.apply(key);
     const native = forced && this.nativeControls.get(key);
     if (native) {

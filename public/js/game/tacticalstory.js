@@ -1,6 +1,7 @@
 import { installTacticalMission } from './tacticalmission.js';
 import { installTacticalNotices } from './tacticalnotice.js';
 import { installLinkedPresentation } from './linkedpresentation.js';
+import { GalacticMovies } from './galacticmovies.js';
 import { linkedParent } from './linktactical.js';
 import { StoryPlots } from './storyplots.js';
 import { StoryFlags } from './storyflags.js';
@@ -27,6 +28,9 @@ export class TacticalStoryHost extends StoryPlots {
       await host.readPlot(game.setup.tacticalStoryPlot, '', game.human?.factionName || game.factions?.[game.me]);
     await installTacticalSpeech(game, host);
     installLinkedPresentation(game, scripts);
+    const at = game.ui?.bar?.movieAt;
+    if (!game.movies && at && typeof document !== 'undefined')
+      game.movies = new GalacticMovies(game, null, { anchor: [at.x, at.y], root: game.ui.bar.root });
     if (game.setup.linkedTactical) {
       game.tacticalCameraData = await loadTacticalCameraData();
       installTacticalMission(game, scripts);
@@ -217,10 +221,10 @@ export class TacticalStoryHost extends StoryPlots {
             color: p[5] || ''
           });
         if (p[7]) game.audio?.speech?.replace(p[7]);
-        if (p[8]) game.movies?.play(p[8], !!parseInt(p[9], 10));
+        if (p[8]) game.movies?.play(p[8], String(p[9] ?? '').trim() !== '0');
         break;
       case 'COMMANDBAR_MOVIE':
-        if (p[0]) game.movies?.play(p[0], !!parseInt(p[1], 10));
+        if (p[0]) game.movies?.play(p[0], String(p[1] ?? '').trim() !== '0');
         break;
       case 'STOP_COMMANDBAR_MOVIE':
         game.movies?.stop();

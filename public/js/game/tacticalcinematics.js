@@ -80,7 +80,17 @@ export class TacticalCinematics {
     if (typeof document !== 'undefined') document.body.classList.add('cinematic');
     if (g.landBattle) g.hudTimer = 0;
     if (!g.landBattle) g.renderer.cameraOverride = () => this.paint();
-    if (music) g.playCinematicMusic?.();
+    if (music) g.resumeModeMusic?.();
+  }
+  endMode() {
+    this.stop();
+    const fx = this.game.linkedPresentation;
+    if (fx) {
+      fx.slide = null;
+      fx.bar = 0;
+      fx.paint?.();
+    }
+    if (typeof document !== 'undefined') document.body.classList.remove('letterboxed');
   }
   stop() {
     if (!this.on) return;

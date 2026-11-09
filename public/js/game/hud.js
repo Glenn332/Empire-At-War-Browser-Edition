@@ -356,6 +356,7 @@ export class CommandBar {
     this.player = game.human;
     this.comps = data.comps;
     this.shell = data.shell;
+    this.movieAt = data.movieAt || null;
     this.rshell = data.reinforce;
     this.heroShells = data.heroes || null;
     this.skin = data.skins?.get(String(this.player?.factionName || '').toUpperCase()) || null;

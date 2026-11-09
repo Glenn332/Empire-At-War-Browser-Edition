@@ -177,15 +177,17 @@ export class TacticalCrawl {
       texture.minFilter = THREE.LinearFilter;
       texture.needsUpdate = true;
       this.textures.push(texture);
-      const group = this.inst.mesh(meshName);
+      const group = this.inst.mesh(meshName),
+        subs = (this.inst.model.meshes.find(m => key(m.name) === key(meshName))?.subs || []).filter(s => s.material);
+      let index = 0;
       group?.traverse(o => {
         if (!o.isMesh) return;
         const material = o.material.clone();
         o.material = material;
         this.materials.push(material);
-        const original = this.inst.model.meshes.find(m => key(m.name) === key(meshName))?.subs.find(s => s.material)?.material;
+        const original = subs[Math.min(index++, subs.length - 1)]?.material;
         if (key(original?.shader).replace(/\.(FX|FXO)$/, '') !== key(def.val('Polygon_Shader_Name')).replace(/\.(FX|FXO)$/, '')) return;
-        if (def.val('Polygon_Tex_Param_Name') !== 'BaseTexture') return;
+        if (key(def.val('Polygon_Tex_Param_Name')) !== 'BASETEXTURE' || !material.uniforms.map) return;
         material.uniforms.map.value = texture;
         const p = original.params;
         if ((p.Diffuse || []).slice(0, 3).every(v => v === 0) && (p.Specular || []).slice(0, 3).every(v => v === 0))

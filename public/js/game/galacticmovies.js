@@ -27,19 +27,23 @@ export async function movieDefinitions() {
 }
 
 export class GalacticMovies {
-  constructor(game, hud) {
+  constructor(game, hud, { anchor = null, root = null } = {}) {
     this.game = game;
     this.generation = 0;
     this.active = false;
     this.movie = null;
-    const index = hud.model.bones.findIndex(b => key(b.name) === 'MOVIE_GALACTIC');
-    const matrix = index >= 0 ? uiBoneTransforms(hud.model)[index] : null;
-    this.anchor = matrix ? [matrix[3], matrix[7]] : null;
+    this.root = root;
+    if (anchor) this.anchor = anchor;
+    else {
+      const index = hud.model.bones.findIndex(b => key(b.name) === 'MOVIE_GALACTIC');
+      const matrix = index >= 0 ? uiBoneTransforms(hud.model)[index] : null;
+      this.anchor = matrix ? [matrix[3], matrix[7]] : null;
+    }
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'galactic-commandbar-movie';
     this.canvas.hidden = true;
-    this.canvas.style.cssText = 'position:fixed;pointer-events:none;z-index:7';
-    document.body.appendChild(this.canvas);
+    this.canvas.style.cssText = root ? 'position:absolute;pointer-events:none;z-index:7' : 'position:fixed;pointer-events:none;z-index:7';
+    (root || document.body).appendChild(this.canvas);
     this.player = new BinkPlayer(this.canvas, {
       onEnd: () => this.finish(),
       onError: error => {
@@ -77,9 +81,18 @@ export class GalacticMovies {
   }
   resize() {
     if (!this.movie || !this.anchor) return;
-    const s = this.game.overlayScale(),
-      offset = db.constants.vec('CB_Movie_Offset', [0, 0]),
+    const offset = db.constants.vec('CB_Movie_Offset', [0, 0]),
       own = vector(this.movie.val('Commandbar_Offset'));
+    if (this.root) {
+      Object.assign(this.canvas.style, {
+        left: this.anchor[0] + (offset[0] || 0) + (own[0] || 0) + 'px',
+        bottom: this.anchor[1] + (offset[1] || 0) + (own[1] || 0) - this.canvas.height + 'px',
+        width: this.canvas.width + 'px',
+        height: this.canvas.height + 'px'
+      });
+      return;
+    }
+    const s = this.game.overlayScale();
     Object.assign(this.canvas.style, {
       left: (this.anchor[0] + (offset[0] || 0) + (own[0] || 0)) * s + 'px',
       top: innerHeight - (this.anchor[1] + (offset[1] || 0) + (own[1] || 0)) * s + 'px',

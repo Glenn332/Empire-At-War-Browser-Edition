@@ -1,3 +1,4 @@
+import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
@@ -664,7 +665,8 @@ export class Menus {
       dlg.slider('IDC_SLIDER_MUSIC_VOLUME', A.musicVolume, v => setInput('musicVol', v));
     };
     show();
-    for (const id of ['IDC_TEXT_AUDIO_3D_TECHNOLOGY', 'IDC_USE_MOVIE_SUBTITLES']) dlg.show(id, false);
+    dlg.show('IDC_TEXT_AUDIO_3D_TECHNOLOGY', false);
+    dlg.check('IDC_USE_MOVIE_SUBTITLES', movieSubtitles(), on => setMovieSubtitles(on));
     const put = v => {
       A.setMasterVolume(v.master);
       setInput('sfxVol', v.sfx);

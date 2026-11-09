@@ -1751,6 +1751,8 @@ export class GalacticGame {
   }
 
   pick(sx, sy) {
+    const label = this.view.zoom === 0 && (this.nameHits || []).find(n => sx >= n.x && sx <= n.x + n.w && sy >= n.y && sy <= n.y + n.h);
+    if (label && this.galaxy.planets[label.i]?.selectable && !this.galaxy.planets[label.i].background) return label.i;
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
     let best = -1,
@@ -3521,6 +3523,43 @@ export class GalacticGame {
     }
   }
 
+  zoomStation(pv, i, real) {
+    const p = this.galaxy.planets[i],
+      owner = p.stationOwner || p.owner,
+      seen = owner === this.me || !!intelligence(this.galaxy, p)?.spaceLevel,
+      level = Math.min(5, p.spaceLevel || 0),
+      faction = db.faction(owner)?.name || '',
+      want =
+        pv.alt === 1 && p.station && level > 0 && seen
+          ? /^(Empire|Rebel|Underworld)$/i.test(faction)
+            ? `${faction}_Star_Base_${level}`
+            : 'Pirate_Asteroid_Base'
+          : null;
+    if (pv.stationView && pv.stationView.name !== want) {
+      pv.stationView.inst?.root.parent?.remove(pv.stationView.inst.root);
+      pv.stationView = null;
+    }
+    if (!want) return;
+    if (!pv.stationView) {
+      const bone = pv.inst.bone('station_ALT1'),
+        file = db.type(want)?.str('Galactic_Model_Name');
+      const view = (pv.stationView = { name: want, yaw: 0, inst: null });
+      if (bone && file)
+        loadModel(file)
+          .then(inst => {
+            if (pv.stationView !== view || !inst) return;
+            bone.add(inst.root);
+            view.inst = inst;
+          })
+          .catch(() => {});
+    }
+    const view = pv.stationView;
+    if (view.inst) {
+      view.yaw += db.constants.num('Galactic_Zoom_In_Station_Rotation', 0.04) * real * LOGIC_FPS;
+      view.inst.root.rotation.z = view.yaw;
+    }
+  }
+
   present(real, elapsed, zoom) {
     this.abilityParticles?.update(this.paused ? 0 : real * this.rate);
     if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.rate);
@@ -3553,6 +3592,7 @@ export class GalacticGame {
         for (const [n, meshes] of (pv.inst.alts || []).entries())
           if (meshes) for (const m of meshes) m.visible = n === state && !m.userData.hiddenByDefault;
       }
+      this.zoomStation(pv, i, real);
       if (pv.inst.billboards.length) updateBillboards(pv.inst, this.camera);
     }
     if (this.marker && this.marker.billboards.length) updateBillboards(this.marker, this.camera);
@@ -3741,6 +3781,7 @@ export class GalacticGame {
     const alpha = Math.max(0, 1 - this.view.zoom * 10);
     this.lastSpots = [];
     this.lastSurfaceSpots = [];
+    this.nameHits = [];
     if (!alpha) return;
     const scale = this.overlayScale(),
       ui = scale * r;
@@ -3779,6 +3820,10 @@ export class GalacticGame {
           x.strokeText(pv.name.toUpperCase(), px, py);
         }
         x.fillText(pv.name.toUpperCase(), px, py);
+      }
+      {
+        const h = s.pt * 1.6 * ui * s.scale;
+        this.nameHits.push({ i, x: px / r, y: (py - h / 2) / r, w: x.measureText(pv.name.toUpperCase()).width / r, h: h / r });
       }
       if (this.filters & 1) {
         const s = this.valueStyle,

@@ -1800,6 +1800,14 @@ class Game {
     setTimeout(() => wrap.remove(), life);
   }
 
+  resumeModeMusic() {
+    const m = this.music;
+    if (!m) return;
+    const mode = m.mode || 'ambient';
+    m.mode = '';
+    this.setMusic(mode);
+  }
+
   setMusic(mode, fade = false) {
     const m = this.music,
       list = m[mode] && m[mode].length ? m[mode] : m.battle.length ? m.battle : m.ambient;
@@ -2046,6 +2054,7 @@ class Game {
   }
 
   toggleMenu() {
+    if (!this.menus?.open && this.tacticalCinematics?.on && !this.over) return;
     this.menus.toggle().then(ok => {
       if (!ok) this.plainMenu();
     });
@@ -2396,6 +2405,7 @@ class Game {
     this.scripts?.updateStory(storyDelta);
     this.tacticalCinematics?.update(storyDelta);
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
+    this.movies?.update(real);
     this.tacticalStory?.update();
     stepTacticalSpeech(this, real);
     if (this.tutorialFx || this.dualFlash) {

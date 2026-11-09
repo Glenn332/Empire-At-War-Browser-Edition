@@ -19,6 +19,7 @@ export function defaultName(game) {
 }
 
 export async function snapshotNow(game, name = '') {
+  if (game.tacticalCinematics?.on) game.tacticalCinematics.endMode();
   if (game.mirror) return withMultiplayer(game, await game.mirror.save(name));
   return snapshot(game, name);
 }
