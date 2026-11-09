@@ -359,8 +359,7 @@ export class GalacticStoryHost extends StoryPlots {
     const vm = this.vm,
       game = this.game,
       self = this;
-    for (const n of ['_ScriptMessage', '_OuputDebug']) vm.global(n, () => {});
-    vm.global('_MessagePopup', s => game.message?.(String(s)));
+    for (const n of ['_ScriptMessage', '_OuputDebug', '_MessagePopup']) vm.global(n, () => {});
     vm.global('DumpCallStack', () => '');
     vm.global('GetThreadID', () => this.current?.running?.id || 0);
     vm.global('_ScriptExit', () => {

@@ -271,12 +271,17 @@ export class NativePanel {
     b.type = 'button';
     b.className = 'native-button';
     b.dataset.control = n;
-    this.place(b, m?.rect || { x: origin.x - (r?.w || 24) / 2, y: origin.y - (r?.h || 24) / 2, w: r?.w || 24, h: r?.h || 24 });
-    const hit = m?.rect || { x: origin.x - (r?.w || 24) / 2, y: origin.y - (r?.h || 24) / 2, w: r?.w || 24, h: r?.h || 24 };
+    const k = +c?.val('Scale') > 0 ? +c.val('Scale') : 1,
+      base = m?.rect || { x: origin.x - (r?.w || 24) / 2, y: origin.y - (r?.h || 24) / 2, w: r?.w || 24, h: r?.h || 24 },
+      hit =
+        k === 1
+          ? base
+          : { x: base.x + (base.w * (1 - k)) / 2, y: base.y + (base.h * (1 - k)) / 2, w: base.w * k, h: base.h * k };
+    this.place(b, hit);
     b.style.setProperty('--art-x', origin.x - hit.x + 'px');
     b.style.setProperty('--art-y', hit.y + hit.h - origin.y + 'px');
-    b.style.setProperty('--art-w', (r?.w || 0) + 'px');
-    b.style.setProperty('--art-h', (r?.h || 0) + 'px');
+    b.style.setProperty('--art-w', (r?.w || 0) * k + 'px');
+    b.style.setProperty('--art-h', (r?.h || 0) * k + 'px');
     b.style.setProperty('--art', css(iconUrl(art)));
     b.style.setProperty('--over', css(iconUrl(over)));
     const tip = texture('Tooltip_Text'),

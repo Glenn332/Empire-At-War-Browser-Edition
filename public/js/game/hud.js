@@ -313,24 +313,28 @@ function loadBaseHud() {
 }
 
 let assets = null;
+export async function loadShellModel(comps, component, fallback) {
+  const file = comps?.get(component)?.val?.('Model_Name')?.trim();
+  return (file && (await loadALO(file).catch(() => null))) || loadALO(fallback);
+}
 async function buildBaseHud() {
   if (assets) return assets;
   const barFiles = await loadFileList('CommandBarComponentFiles.xml')
     .then(l => (l.length ? l : ['CommandBarComponents.xml']))
     .catch(() => ['CommandBarComponents.xml']);
-  const [xmls, shell, reinforce, evil, good, evilTex, goodTex] = await Promise.all([
-    Promise.all(barFiles.map(f => fetchText('Data/XML/' + f))),
-    loadALO('i_tactical_controls.alo'),
-    loadALO('i_main_reinforce.alo'),
+  const xmls = await Promise.all(barFiles.map(f => fetchText('Data/XML/' + f)));
+  const comps = new Map();
+  for (const xml of xmls)
+    if (xml)
+      for (const top of parseXML(xml).children) for (const c of top.children) if (c.attrs.Name) comps.set(c.attrs.Name.toUpperCase(), c);
+  const [shell, reinforce, evil, good, evilTex, goodTex] = await Promise.all([
+    loadShellModel(comps, 'I_MAIN_SKIRMISH', 'i_tactical_controls.alo'),
+    loadShellModel(comps, 'I_MAIN_REINFORCE', 'i_main_reinforce.alo'),
     loadALO('i_main_hero_frame_empire.alo').catch(() => null),
     loadALO('i_main_hero_frame_rebel.alo').catch(() => null),
     loadTextureCanvas('i_main_hero_frame_empire.dds').catch(() => null),
     loadTextureCanvas('i_main_hero_frame_rebel.dds').catch(() => null)
   ]);
-  const comps = new Map();
-  for (const xml of xmls)
-    if (xml)
-      for (const top of parseXML(xml).children) for (const c of top.children) if (c.attrs.Name) comps.set(c.attrs.Name.toUpperCase(), c);
   if (!shell || !reinforce || !comps.size) return null;
   assets = { comps, reinforce: uiMeshes(reinforce), ...(await tacticalShell(shell, comps)) };
   if (evil && good && evilTex && goodTex)

@@ -1,8 +1,7 @@
 import { setComponentText } from './componenttext.js';
 import { db } from '../gamedata.js';
-import { loadALO } from '../alo.js';
 import { iconUrl, iconCanvasRect } from '../icons.js';
-import { CommandBar, loadHudAssets, loadFactionModel, uiMeshes } from './hud.js';
+import { CommandBar, loadHudAssets, loadFactionModel, loadShellModel, uiMeshes } from './hud.js';
 import { displayIncome, intelligence } from './galacticfog.js';
 import { playerIncome, fiscalCycleSeconds, cycleNumber, incomeBreakdown, planetBreakdown } from './galacticeconomy.js';
 import { orders } from './galacticnet.js';
@@ -24,7 +23,7 @@ const rounded = n => Math.sign(n) * Math.floor(Math.abs(n) + 0.5);
 
 export async function loadGalacticHudAssets(faction = '') {
   const data = await loadHudAssets(faction);
-  const shell = (await loadFactionModel(data, faction, 'I_GALACTIC_CONTROLS')) || (await loadALO('i_galactic_controls.alo'));
+  const shell = (await loadFactionModel(data, faction, 'I_GALACTIC_CONTROLS')) || (await loadShellModel(data?.comps, 'I_MAIN_COMMANDBAR', 'i_galactic_controls.alo'));
   return data && shell ? { ...data, shell: uiMeshes(shell), model: shell } : null;
 }
 

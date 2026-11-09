@@ -177,7 +177,7 @@ function neighbours(g) {
       const a = g.planets[i],
         b = g.planets[j];
       if (a.background || b.background) continue;
-      if (a.pos.reduce((s, n, k) => s + (n - b.pos[k]) ** 2, 0) < rr) {
+      if (range === 0 || a.pos.reduce((s, n, k) => s + (n - b.pos[k]) ** 2, 0) < rr) {
         list[i].add(j);
         list[j].add(i);
       }

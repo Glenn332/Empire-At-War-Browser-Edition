@@ -330,8 +330,8 @@ export class GalacticGame {
         const inst = file && (await loadModel(file, { alts: p.background ? false : [0, 1, 2] }).catch(() => null));
         if (inst) {
           placeGalacticModel(inst.root, p);
-          new GalacticModelFade(inst, p.type, p.background);
-          const scene = p.background
+          new GalacticModelFade(inst, p.type, p.type.bool('In_Background'));
+          const scene = p.type.bool('In_Background')
             ? this.backgroundScene
             : p.type.bool('In_Midground')
               ? this.midgroundScene

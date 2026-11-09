@@ -159,7 +159,7 @@ export function startingGalaxy(data, campaign) {
       type,
       name: type.name,
       pos: vec3(type, 'Galactic_Position'),
-      background: type.bool('In_Background'),
+      background: type.bool('In_Background') || !type.list('Behavior').some(b => same(b, 'PLANET')),
       selectable: type.list('Behavior').some(b => same(b, 'SELECTABLE')),
       owner: null,
       forces: [],

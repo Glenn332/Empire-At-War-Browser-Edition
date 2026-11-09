@@ -55,7 +55,7 @@ export class ScriptUI {
     for (const [name, mesh] of data.shell) {
       const c = this.comps.get(name),
         type = c?.val('Type');
-      if (!existing.has(name) && /^(TextButton|Button)$/i.test(type || '') && !/^B_(CREATE_|FILTERS|SCROLL_|DIAL$)/.test(name))
+      if (!existing.has(name) && /^(TextButton|Button)$/i.test(type || '') && !/^B_(CREATE_|FILTERS\d+$|SCROLL_|DIAL$)/.test(name))
         this.buildControl(this.main, name, mesh);
     }
   }
