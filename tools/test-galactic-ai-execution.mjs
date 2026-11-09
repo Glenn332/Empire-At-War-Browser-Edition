@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { openGame } from './megfs.mjs';
 let seed = 0x5a01318;
 Math.random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+const realNow = performance.now.bind(performance);
+let clock = 0;
+Object.defineProperty(performance, 'now', { configurable: true, value: () => (clock += 0.002) });
 const mod = process.argv.indexOf('--mod'),
   archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), mod < 0 ? [] : [process.argv[mod + 1]]);
 globalThis.fetch = async input => {
@@ -58,9 +61,9 @@ const ai = await GalacticAI.create(game),
   seen = new WeakSet(),
   seconds = +(process.argv.find(a => a.startsWith('--seconds='))?.split('=')[1] || 250),
   dt = 1 / 15,
-  start = performance.now();
+  start = realNow();
 game.battles = new GalacticBattles(game);
-for (let i = 0; i < seconds / dt; i++) {
+const step = async () => {
   game.story.update(dt, game.paused);
   if (game.story.pending.size) await Promise.all([...game.story.pending.values()]);
   ai.income(stepIncome(galaxy, dt));
@@ -89,7 +92,17 @@ for (let i = 0; i < seconds / dt; i++) {
   for (const inst of ai.plans.live)
     for (const force of inst.forces)
       for (const u of force.units) assert.equal(ai.plans.reservations.get(u), inst, 'Active forces cannot share a reserved unit');
-}
+};
+const aiQueued = () =>
+  galaxy.planets.reduce(
+    (n, p) =>
+      n +
+      Object.values(p.production)
+        .flat()
+        .filter(q => q.ai).length,
+    0
+  );
+for (let i = 0; i < seconds / dt; i++) await step();
 const report = ai.report(),
   builds = events.filter(e => e.status === 'built'),
   moves = events.filter(e => e.status === 'move'),
@@ -100,7 +113,7 @@ console.log(
   JSON.stringify({
     mod: mod >= 0,
     seconds,
-    millisecondsPerUpdate: (performance.now() - start) / (seconds / dt),
+    millisecondsPerUpdate: (realNow() - start) / (seconds / dt),
     builds: builds.slice(0, 8),
     moves: moves.slice(0, 8),
     counts: { built: builds.length, moves: moves.length, production: events.filter(e => e.status === 'production').length },
@@ -120,15 +133,9 @@ game.paused = true;
 ai.update(1);
 assert.equal(JSON.stringify(ai.report()), frozen);
 game.paused = false;
+for (let i = 0; i < 120 / dt && !aiQueued(); i++) await step();
 const snapshot = snapshotGalaxy(galaxy),
-  queueCount = galaxy.planets.reduce(
-    (n, p) =>
-      n +
-      Object.values(p.production)
-        .flat()
-        .filter(q => q.ai).length,
-    0
-  );
+  queueCount = aiQueued();
 assert(queueCount, 'Snapshot fixture needs real in-progress AI production');
 const probe = startingGalaxy(data, campaign);
 applyGalaxy(probe, snapshot);
