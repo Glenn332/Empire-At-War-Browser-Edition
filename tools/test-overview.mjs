@@ -94,7 +94,7 @@ assert.equal(overviewContents(g, p).structures[0], p.groundStructures[0]);
 p.visibilityModifiers = [];
 g.fleets = [{ owner: viewer, planet: p.index, leg: null, units: [{ type: company }] }];
 stepVisibility(g, viewer);
-assert.equal(overviewContents(g, p).fleets[2].units[0], g.fleets[0].units[0], 'Own slot 0 shows in the third row, its units known over foreign ground');
+assert.equal(overviewContents(g, p).fleets[0].units[0], g.fleets[0].units[0], 'Own slot 0 shows in the first row, its units known over foreign ground');
 g.fleets[0].slot = 1;
 assert.equal(overviewContents(g, p).fleets[1].units[0], g.fleets[0].units[0], 'own slot 1 shows in the second row');
 delete g.fleets[0].slot;

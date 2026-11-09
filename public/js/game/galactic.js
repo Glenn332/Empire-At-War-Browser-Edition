@@ -351,7 +351,7 @@ export class GalacticGame {
             if (a) this.idlers.push(new AnimState(inst, a, { loop: true, speed: p.type.num('Idle_Anim_00_Rate_Mod', 1) }));
           }
         }
-        this.planetViews[i] = { inst, name: db.t(p.type.str('Text_ID')) || p.name, show: p.type.bool('Show_Name') && !p.background };
+        this.planetViews[i] = { inst, name: db.t(p.type.str('Text_ID')) || p.name, show: !p.background };
         P(`Placing the planets (${++done}/${g.planets.length})`, 0.1 + (0.8 * done) / g.planets.length);
       })
     );
@@ -1021,6 +1021,8 @@ export class GalacticGame {
           .filter(Boolean) || [],
       pt: name?.num('Font_Point_Size', 7) ?? 7,
       offset: pair(name, 'Offset', [30, 0]),
+      text: pair(name, 'Text_Offset', [0, 0]),
+      center: /^(false|no|0)$/i.test((name?.val('Left_Justified') || '').trim()),
       scale: name?.num('Scale', 1) ?? 1,
       outline: !/^(false|no|0)$/i.test(name?.val('Text_Outline') || '')
     };
@@ -1197,14 +1199,16 @@ export class GalacticGame {
     const name = comp.textures[Math.max(0, index)],
       icon = iconName ?? this.representative(units, owner);
     const col = empty && comp === this.fleetComp ? [25 / 255, 85 / 255, 151 / 255] : this.factionColor(owner);
-    const key = [name, index, icon, col, comp.size[0], comp.offset[0], overlay].join('|');
+    const key = [name, index, icon, col, comp.size[0], comp.offset[0], comp.scale, overlay].join('|');
     if (this.stackPictures.has(key)) return this.stackPictures.get(key);
     const bg = this.tinted(name, col),
       portrait = icon && this.tinted(icon, [1, 1, 1]);
     if (!bg) return null;
-    const w = portrait ? portrait.width * comp.size[0] : 0,
-      h = portrait ? portrait.height * comp.size[0] : 0;
-    const dy = (bg.height - h) / 2 - index * comp.offset[0];
+    const own = comp.size[0] / (comp.scale || 1),
+      shift = comp.offset[0] / (comp.scale || 1);
+    const w = portrait ? portrait.width * own : 0,
+      h = portrait ? portrait.height * own : 0;
+    const dy = (bg.height - h) / 2 - index * shift;
     const halfW = Math.ceil(Math.max(bg.width / 2, w / 2)),
       halfH = Math.ceil(Math.max(bg.height / 2, h / 2 + Math.abs(dy)));
     const cv = document.createElement('canvas');
@@ -1215,9 +1219,9 @@ export class GalacticGame {
     if (portrait) ctx.drawImage(portrait, halfW - w / 2, halfH - h / 2 + dy, w, h);
     const badge = overlay && this.tinted(overlay, [1, 1, 1]);
     if (badge) {
-      const bw = badge.width * comp.size[0],
-        bh = badge.height * comp.size[0];
-      ctx.drawImage(badge, halfW - bw / 2, halfH - bh / 2 + (bg.height - bh) / 2 - index * comp.offset[0], bw, bh);
+      const bw = badge.width * own,
+        bh = badge.height * own;
+      ctx.drawImage(badge, halfW - bw / 2, halfH - bh / 2 + (bg.height - bh) / 2 - index * shift, bw, bh);
     }
     this.stackPictures.set(key, cv);
     return cv;
@@ -2009,6 +2013,33 @@ export class GalacticGame {
       }
     }
     (this.pointers ||= new Pointers(this.renderer.domElement)).set(dragging ? 'POINTER_GRABBING' : grab ? 'POINTER_CAN_GRAB' : null);
+  }
+
+  refreshZoomedInfo() {
+    const panel = this.galacticLog?.zoomed,
+      button = this.overview?.infoButton;
+    if (!panel) return;
+    const tutorial = this.galaxy.players.find(p => p.faction === this.me)?.tutorial,
+      i = this.view.planet,
+      open =
+        !!button &&
+        !button.hidden &&
+        !this.overview.root.hidden &&
+        this.view.zoom === 1 &&
+        !this.battle &&
+        !tutorial &&
+        !document.body.classList.contains('commandbar-hidden');
+    const data = open && i >= 0 ? this.planetTip(i) : null;
+    if (!data) {
+      if (panel.shown) panel.hide();
+      return;
+    }
+    panel.anchorFn = () => {
+      const r = button.getBoundingClientRect(),
+        k = this.overlayScale();
+      return [(r.left + r.width / 2) / k, (innerHeight - (r.top + r.height / 2)) / k];
+    };
+    if (panel.shown !== 'planet:' + data.state) panel.showPlanet(data);
   }
 
   planetTip(i) {
@@ -3641,6 +3672,7 @@ export class GalacticGame {
       this.hudTimer = 0.25;
       this.ui?.refresh();
       this.overview?.refresh();
+      this.refreshZoomedInfo();
       this.baseLayout?.refresh();
       this.marketPanel?.refresh();
       this.corruptionPanel?.refresh();
@@ -3886,6 +3918,7 @@ export class GalacticGame {
       this.labelRasterCache.set(key, canvas);
     }
     const scale = style.scale;
+    if (style.center) px -= (canvas.width * ratio * scale) / 2;
     ctx.drawImage(
       canvas,
       Math.floor(px / ratio + 0.5) * ratio,
@@ -3934,8 +3967,8 @@ export class GalacticGame {
         x.drawImage(ring, point.x * r - (ring.width * z) / 2, point.y * r - (ring.height * z) / 2, ring.width * z, ring.height * z);
         x.globalAlpha = alpha;
       }
-      const px = point.x * r + s.offset[0] * ui,
-        py = point.y * r;
+      const px = point.x * r + (s.offset[0] + s.text[0]) * ui,
+        py = point.y * r - (s.offset[1] + s.text[1]) * ui;
       const count = v?.groundLevel ? p.groundStructures.length : 0;
       const level =
         count < db.constants.num('Num_Structures_For_Medium_Planet_Name', 3)
@@ -3948,6 +3981,7 @@ export class GalacticGame {
       x.lineJoin = 'round';
       x.lineWidth = 2 * ui * s.scale;
       x.fillStyle = `rgb(${ink.map(c => Math.round(c * 255)).join(',')})`;
+      x.textAlign = s.center ? 'center' : 'left';
       if (!this.drawNameGlyphs(x, pv.name.toUpperCase(), s.fonts[level] || s.font, s, ink, px, py, r)) {
         if (s.outline) {
           x.strokeStyle = '#000';
@@ -3955,9 +3989,11 @@ export class GalacticGame {
         }
         x.fillText(pv.name.toUpperCase(), px, py);
       }
+      x.textAlign = 'left';
       {
-        const h = s.pt * 1.6 * ui * s.scale;
-        this.nameHits.push({ i, x: px / r, y: (py - h / 2) / r, w: x.measureText(pv.name.toUpperCase()).width / r, h: h / r });
+        const h = s.pt * 1.6 * ui * s.scale,
+          w = x.measureText(pv.name.toUpperCase()).width / r;
+        this.nameHits.push({ i, x: px / r - (s.center ? w / 2 : 0), y: (py - h / 2) / r, w, h: h / r });
       }
       if (this.filters & 1) {
         const s = this.valueStyle,

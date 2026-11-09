@@ -30,13 +30,9 @@ export function overviewContents(g, p) {
     if (own[slot]) slot = [0, 1, 2].find(i => !own[i]);
     if (slot !== undefined) own[slot] = f;
   }
-  for (const [row, slots] of [
-    [1, [1]],
-    [2, [2, 0]]
-  ]) {
-    const list = slots.map(i => own[i]).filter(Boolean);
-    if (list.length) fleets[row] = { fleet: list[0], fleets: list, units: list.flatMap(f => f.units) };
-  }
+  for (const slot of [1, 2])
+    if (own[slot]) fleets[slot] = { fleet: own[slot], fleets: [own[slot]], units: own[slot].units };
+  const docked = orbitalRecords(p, viewer, v);
   const others = here.filter(
     f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u, f.owner))))
   );
@@ -54,6 +50,15 @@ export function overviewContents(g, p) {
         : [strongest];
     fleets[0] = { fleet: others[0], units, foreign: true };
   }
+  if (own[0] || docked.length) {
+    const prior = fleets[0];
+    fleets[0] = {
+      fleet: own[0] || prior?.fleet || null,
+      fleets: own[0] ? [own[0]] : [],
+      units: [...(prior?.units || []), ...docked, ...(own[0]?.units || [])],
+      foreign: !own[0] && !!prior
+    };
+  }
   return {
     open,
     known: !!v?.groundCount,
@@ -61,8 +66,21 @@ export function overviewContents(g, p) {
     structures,
     fleets,
     own,
-    capacity: open ? Math.max(0, p.type.num('Special_Structures_Land', 3)) : 0
+    capacity: open ? Math.max(0, p.type.num('Special_Structures_Land', 3)) : 0,
+    station: p?.station && v?.spaceLevel ? p.station : null
   };
+}
+
+const docks = new WeakMap();
+function orbitalRecords(p, viewer, v) {
+  if (!p || !v?.spaceLevel) return [];
+  return (p.orbitalStructures || [])
+    .filter(s => !s.dead && (s.owner || p.stationOwner || p.owner) === viewer)
+    .map(s => {
+      let rec = docks.get(s);
+      if (!rec) docks.set(s, (rec = { type: s.type, owner: s.owner, structure: s }));
+      return rec;
+    });
 }
 
 export function stableSlots(units, count, indices) {
@@ -174,6 +192,7 @@ export class PlanetOverview extends NativePanel {
     this.planet = -1;
     this.ground = this.controls(/^PAD_\d+$/);
     this.structures = this.controls(/^PLANET_STRUCTURE_\d+$/);
+    this.spacePads = this.controls(/^SPACE_PAD_\d+$/).sort((a, b) => parseInt(a.name.slice(10), 10) - parseInt(b.name.slice(10), 10));
     this.fleets = [1, 2, 3].map(i => ({
       slots: this.controls(new RegExp(`^Q${i}_\\d{4}$`)),
       label: this.text('text_fleet' + i, () => db.t('TEXT_FLEET_PANE_' + (i - 1)), true)
@@ -222,7 +241,7 @@ export class PlanetOverview extends NativePanel {
       this.abilityLabel.hidden = true;
       this.abilityLabel.style.zIndex = '3';
     }
-    for (const slot of [...this.ground, ...this.structures, ...this.fleets.flatMap(f => f.slots)]) {
+    for (const slot of [...this.ground, ...this.structures, ...this.spacePads, ...this.fleets.flatMap(f => f.slots)]) {
       slot.record = null;
       slot.el.addEventListener('pointerenter', e => (game.overviewTip = { slot, x: e.clientX, y: e.clientY }));
       slot.el.addEventListener('pointermove', e => {
@@ -559,6 +578,12 @@ export class PlanetOverview extends NativePanel {
       this.put(s, built[i], { blank: state.open && i < count ? blankName : '', big: false });
       this.track(s, built[i]?.unit);
     });
+    this.spacePads.forEach((s, i) => {
+      const blankName = this.comps.get(s.name)?.val('Blank_Texture_Name').trim().split(/\s+/)[0];
+      const record = i === 0 && state.station ? { unit: { type: state.station, owner: p.stationOwner || p.owner } } : null;
+      this.put(s, record, { blank: blankName || '', big: false });
+      this.track(s, null);
+    });
     this.fleets.forEach((f, i) => {
       const fleet = state.fleets[i]?.fleet,
         units = state.fleets[i]?.units || [],
@@ -585,13 +610,13 @@ export class PlanetOverview extends NativePanel {
         s.dragImage = anchor !== undefined ? f.slots[anchor].img : s.img;
         const home = (state.fleets[i]?.fleets || (fleet ? [fleet] : [])).find(x => x.units.includes(record)) || fleet;
         s.target = { kind: 'fleet', planet: p.index, slot: i, fleet: state.own?.[i] || null, pf: !!pf && s.name.endsWith('_' + pf), cell: n };
-        s.source = home?.owner === game.me && record ? { kind: 'fleet', planet: p.index, fleet: home, records: [record] } : null;
+        s.source = home?.owner === game.me && record && !record.structure ? { kind: 'fleet', planet: p.index, fleet: home, records: [record] } : null;
         this.put(s, packed.slots[n], {
           blank: pf && s.name.endsWith('_' + pf) ? this.comps.get(s.name)?.val('Blank_Texture_Name') : '',
           packed: packed.compact
         });
         if (anchor !== undefined) this.emptyControl(s);
-        this.track(s, record);
+        this.track(s, record?.structure || record);
       });
     });
     this.paintChosen();

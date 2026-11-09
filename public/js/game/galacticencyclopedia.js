@@ -35,9 +35,10 @@ export function encyclopediaLines(text, count) {
 }
 
 export class GalacticEncyclopedia {
-  constructor(game, data) {
+  constructor(game, data, prefix = 'ENCYCLOPEDIA_') {
     this.game = game;
     this.comps = data.comps;
+    this.prefix = prefix;
     this.rows = [];
     this.droid = false;
     this.images = new Map();
@@ -72,7 +73,8 @@ export class GalacticEncyclopedia {
     addEventListener('resize', this.onResize);
   }
   component(name) {
-    return this.comps.get(name.toUpperCase());
+    const key = name.toUpperCase();
+    return (this.prefix !== 'ENCYCLOPEDIA_' && this.comps.get(key.replace(/^ENCYCLOPEDIA_/, this.prefix))) || this.comps.get(key);
   }
   sprite(name) {
     return name && (this.images.get(name.toUpperCase()) || iconCanvasRect(name));
@@ -381,7 +383,10 @@ export class GalacticEncyclopedia {
         })
       );
     items.push(this.image('e_line.tga', width / 2 - padding, 0, { end: true }));
-    for (const id of data.destroyed ? ['TEXT_ENCYCLOPEDIA_PLANET_DESTROYED'] : data.type.list('Encyclopedia_Text'))
+    const multiplayer = this.game.setup?.net && data.type.list('MP_Encyclopedia_Text').length;
+    for (const id of data.destroyed
+      ? ['TEXT_ENCYCLOPEDIA_PLANET_DESTROYED']
+      : data.type.list(multiplayer ? 'MP_Encyclopedia_Text' : 'Encyclopedia_Text'))
       items.push(...this.text(db.t(id)));
     items.push(this.image('e_line2.tga', Math.trunc(width / 2 - padding) - padding, 0, { end: true }));
     bars.forEach((name, row) => {

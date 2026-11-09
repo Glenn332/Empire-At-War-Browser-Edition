@@ -40,6 +40,8 @@ export class GalacticLog {
     this.encyclopedia = hud && new GalacticEncyclopedia(game, hud);
     this.help = hud && new GalacticEncyclopedia(game, hud);
     if (this.help) this.help.root.style.zIndex = '60';
+    this.zoomed = hud && new GalacticEncyclopedia(game, hud, 'ZOOMED_');
+    if (this.zoomed) this.zoomed.root.style.zIndex = '59';
     this.helpAlpha = 0;
   }
   toggle() {
@@ -274,5 +276,6 @@ export class GalacticLog {
     this.queue.length = 0;
     this.encyclopedia?.dispose();
     this.help?.dispose();
+    this.zoomed?.dispose();
   }
 }

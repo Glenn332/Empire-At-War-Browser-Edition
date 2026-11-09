@@ -4,6 +4,12 @@ import { embarkGround, planetAllowsCompany, landedOnSurface } from './invasion.j
 import { factionRelated, orbitBlockaded } from './galacticforces.js';
 import { aidebug as D, who, nameOf } from '../aidebug.js';
 
+const stayInOrbit = company =>
+  company
+    .list('Company_Units')
+    .map(n => db.type(n))
+    .some(u => u?.bool('Always_Spawn_In_Orbit'));
+
 const key = x => String(x || '').toUpperCase(),
   INF = 0xffffffff;
 
@@ -338,6 +344,7 @@ export class GalacticFreeStore {
   autoLand(record) {
     const at = this.where(record);
     if (!at?.fleet || !record.carries || !at.planet || this.game.paused) return;
+    if (this.game.isHuman?.(this.owner) || stayInOrbit(record.carries)) return;
     if (this.inTransit(record) || !this.isSafe(record)) return;
     const p = at.planet;
     if (!this.room(p) || !this.landable(p) || !planetAllowsCompany(p, record.carries)) return;
