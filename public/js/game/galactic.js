@@ -327,7 +327,7 @@ export class GalacticGame {
     await Promise.all(
       g.planets.map(async (p, i) => {
         const file = destroyedPlanetModel(p);
-        const inst = file && (await loadModel(file, { alts: p.background ? false : [0, 2] }).catch(() => null));
+        const inst = file && (await loadModel(file, { alts: p.background ? false : [0, 1, 2] }).catch(() => null));
         if (inst) {
           placeGalacticModel(inst.root, p);
           new GalacticModelFade(inst, p.type, p.background);
@@ -650,7 +650,7 @@ export class GalacticGame {
     pv.inst = null;
     pv.alt = undefined;
     const file = destroyedPlanetModel(p);
-    pv.destroyedLoad = file ? loadModel(file, { alts: [0, 2] }).catch(() => null) : Promise.resolve(null);
+    pv.destroyedLoad = file ? loadModel(file, { alts: [0, 1, 2] }).catch(() => null) : Promise.resolve(null);
     const inst = await pv.destroyedLoad;
     if (inst) {
       placeGalacticModel(inst.root, p);
@@ -1424,6 +1424,8 @@ export class GalacticGame {
       if (point) out.push({ ...spot, ...point });
     }
     const occupiedByPlanet = new Map();
+    if (this.dragReach && this.dragFleet && this.dragGround === undefined && !this.dragFleet.leg && baseSpeed(this.dragFleet) > 0)
+      this.dragReach = humanReach(this.galaxy, this.dragFleet);
     if (this.dragReach)
       for (const s of out) {
         let slots = occupiedByPlanet.get(s.p);
@@ -1731,17 +1733,18 @@ export class GalacticGame {
       e => {
         e.preventDefault();
         if (this.controlsLocked || this.scriptUI?.modal) return;
+        if (this.dragFleet || this.drag) return;
         const v = this.view,
-          out = v.zoom === 0 && v.dir === 0;
+          out = v.zoom === 0 && v.dir === 0,
+          zoomed = v.zoom === 1 && v.dir === 0;
         if (e.deltaY < 0) {
-          if (out && this.zoomMap(-1)) {
-            this.anchorZoom(e.clientX, e.clientY);
-            return;
-          }
-          const i = this.hover >= 0 ? this.hover : this.selected;
-          if (i >= 0) this.zoomIn(i);
-        } else if (!out || !this.zoomMap(1)) this.zoomOut();
-        else this.anchorZoom(e.clientX, e.clientY);
+          if (zoomed) this.openBaseLayout();
+          if (!out) return;
+          if (this.hover >= 0) this.select(this.hover);
+          if (this.selected >= 0) this.zoomIn(this.selected);
+          else if (this.zoomMap(-1)) this.anchorZoom(e.clientX, e.clientY);
+        } else if (zoomed) this.zoomOut();
+        else if (out && this.zoomMap(1)) this.anchorZoom(e.clientX, e.clientY);
       },
       { passive: false }
     );
@@ -3356,10 +3359,10 @@ export class GalacticGame {
       storyMoviesDone(this.story);
       this.pendingBattle?.tick?.();
     }
+    planetClock.value = (planetClock.value + real) % 28800;
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
     if (!this.paused && !this.over && !this.storyMovie?.pausesMode) {
       for (const a of this.idlers) a.step(real);
-      planetClock.value += real;
       if (!this.battle && !this.net) {
         this.simulate(real * this.rate);
         if (this.over) return;
@@ -3533,7 +3536,8 @@ export class GalacticGame {
     for (let i = 0; i < this.planetViews.length; i++) {
       const pv = this.planetViews[i];
       if (!pv?.inst) continue;
-      const state = intelligence(this.galaxy, this.galaxy.planets[i])?.discovered ? 0 : 2;
+      let state = !intelligence(this.galaxy, this.galaxy.planets[i])?.discovered ? 2 : this.view.zoom > 0 || this.view.dir > 0 ? 1 : 0;
+      if (state && !pv.inst.alts?.[state]?.length) state = 0;
       if (pv.alt !== state) {
         pv.alt = state;
         for (const [n, meshes] of (pv.inst.alts || []).entries())

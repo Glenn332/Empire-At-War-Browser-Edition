@@ -88,7 +88,7 @@ const mk = (viewer = 'Rebel') => {
   f.leg = null;
   f.path = [];
   g.visibility.planets[1].mask = VIS.OWNER;
-  assert.deepEqual(F.findPath(g, 0, 3, null, H.humanRoute(g, f)), [1, 3], 'an unseen fleet does not stop the route');
+  assert.deepEqual(F.findPath(g, 0, 3, null, H.humanRoute(g, f)), [2, 3], 'an enemy fleet blocks the route even when the player does not see it');
   g.visibility.planets[1].mask = VIS.ALL;
   const s = fleetOf('Rebel', 0, [{ type: ship, owner: 'Rebel', stealth: true }]);
   assert.deepEqual(F.findPath(g, 0, 3, null, H.humanRoute(g, s)), [1, 3], 'stealth');

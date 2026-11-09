@@ -47,31 +47,99 @@ export function legFactor(galaxy, a, b, owner = null) {
   return k;
 }
 
+const fastest = new WeakMap();
+function routeFactor(galaxy) {
+  let f = fastest.get(galaxy.links);
+  if (f === undefined) {
+    f = 1;
+    for (const list of galaxy.links) for (const l of list) if (l.route) f = Math.max(f, l.route.type.num('HS_Speed_Factor', 1) || 1);
+    fastest.set(galaxy.links, f);
+  }
+  return f;
+}
+
 export function findPath(galaxy, from, to, canEnter = null, penalty = null) {
   if (from === to) return [];
-  const n = galaxy.planets.length,
-    cost = new Float64Array(n).fill(Infinity),
+  const planets = galaxy.planets,
+    n = planets.length,
+    g = new Float64Array(n).fill(Infinity),
+    f = new Float64Array(n),
     prev = new Int32Array(n).fill(-1),
-    done = new Uint8Array(n);
-  cost[from] = 0;
-  for (;;) {
-    let u = -1;
-    for (let i = 0; i < n; i++) if (!done[i] && cost[i] < Infinity && (u < 0 || cost[i] < cost[u])) u = i;
-    if (u < 0) return null;
-    if (u === to) break;
-    done[u] = 1;
+    state = new Uint8Array(n),
+    slot = new Int32Array(n).fill(-1),
+    heap = [],
+    goal = planets[to].pos,
+    factor = routeFactor(galaxy);
+  const h = i => {
+    const q = planets[i].pos;
+    return Math.hypot(q[0] - goal[0], q[1] - goal[1], q[2] - goal[2]) / factor;
+  };
+  const put = (k, i) => {
+    heap[k] = i;
+    slot[i] = k;
+  };
+  const up = k => {
+    const i = heap[k];
+    while (k > 0) {
+      const parent = (k - 1) >> 1;
+      if (!(f[i] < f[heap[parent]])) break;
+      put(k, heap[parent]);
+      k = parent;
+    }
+    put(k, i);
+  };
+  const down = k => {
+    const i = heap[k],
+      size = heap.length;
+    for (;;) {
+      let c = 2 * k + 1;
+      if (c >= size) break;
+      if (c + 1 < size && f[heap[c + 1]] < f[heap[c]]) c++;
+      if (!(f[heap[c]] < f[i])) break;
+      put(k, heap[c]);
+      k = c;
+    }
+    put(k, i);
+  };
+  g[from] = 0;
+  f[from] = h(from);
+  state[from] = 1;
+  heap.push(from);
+  slot[from] = 0;
+  while (heap.length) {
+    const u = heap[0],
+      last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      slot[last] = 0;
+      down(0);
+    }
+    state[u] = 2;
+    if (u === to) {
+      const path = [];
+      for (let i = to; i !== from; i = prev[i]) path.unshift(i);
+      return path;
+    }
     for (const l of galaxy.links[u]) {
-      if (canEnter && !canEnter(galaxy.planets[l.to], l.to === to)) continue;
-      const extra = penalty ? penalty(galaxy.planets[l.to], l.to === to, galaxy.planets[u]) : 0;
-      if (extra !== null && cost[u] + l.cost + extra < cost[l.to]) {
-        cost[l.to] = cost[u] + l.cost + extra;
-        prev[l.to] = u;
+      const v = l.to;
+      if (state[v] === 2) continue;
+      if (canEnter && !canEnter(planets[v], v === to)) continue;
+      const extra = penalty ? penalty(planets[v], v === to, planets[u]) : 0;
+      if (extra === null) continue;
+      const cost = g[u] + l.cost + extra;
+      if (!(cost < g[v])) continue;
+      g[v] = cost;
+      f[v] = cost + h(v);
+      prev[v] = u;
+      if (state[v] === 1) up(slot[v]);
+      else {
+        state[v] = 1;
+        heap.push(v);
+        up(heap.length - 1);
       }
     }
   }
-  const path = [];
-  for (let i = to; i !== from; i = prev[i]) path.unshift(i);
-  return path;
+  return null;
 }
 
 export function blocks(galaxy, p, owner, fleet = null) {

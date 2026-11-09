@@ -22,7 +22,22 @@ uniform sampler2D map;
 varying vec2 vUv;
 varying vec4 vColor;
 void main() { gl_FragColor = texture2D(map, vUv) * vColor; }`;
+const ADD_FRAG = `
+uniform sampler2D map;
+varying vec2 vUv;
+varying vec4 vColor;
+void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb * vColor.rgb, 1.0); }`;
 const SPARKS = ROUTE_SPARK_SEEDS.length;
+const look = blending =>
+  blending === THREE.AdditiveBlending
+    ? {
+        fragmentShader: ADD_FRAG,
+        blending: THREE.CustomBlending,
+        blendEquation: THREE.AddEquation,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneFactor
+      }
+    : { fragmentShader: FRAG, blending };
 
 export class RouteBatches {
   constructor(scene, texture, blendOf) {
@@ -92,10 +107,9 @@ export class RouteBatches {
       geo,
       new THREE.ShaderMaterial({
         vertexShader: QUAD_VERT,
-        fragmentShader: FRAG,
+        ...look(blending),
         transparent: true,
         depthWrite: false,
-        blending,
         side: THREE.DoubleSide,
         uniforms: { map: { value: this.texture(texture) } }
       })
@@ -132,10 +146,9 @@ export class RouteBatches {
       geo,
       new THREE.ShaderMaterial({
         vertexShader: SPARK_VERT,
-        fragmentShader: FRAG,
+        ...look(THREE.AdditiveBlending),
         transparent: true,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         uniforms: { map: { value: this.texture(texture) } }
       })
