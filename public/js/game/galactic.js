@@ -3555,8 +3555,9 @@ export class GalacticGame {
       seen = owner === this.me || !!intelligence(this.galaxy, p)?.spaceLevel,
       level = Math.min(5, p.spaceLevel || 0),
       faction = db.faction(owner)?.name || '',
+      zoomed = pv.alt !== 2 && (this.view.zoom > 0 || this.view.dir > 0),
       want =
-        pv.alt === 1 && p.station && level > 0 && seen
+        zoomed && p.station && level > 0 && seen
           ? /^(Empire|Rebel|Underworld)$/i.test(faction)
             ? `${faction}_Star_Base_${level}`
             : 'Pirate_Asteroid_Base'
@@ -3621,6 +3622,7 @@ export class GalacticGame {
       this.zoomStation(pv, i, real);
       if (pv.inst.billboards.length) updateBillboards(pv.inst, this.camera);
     }
+    if (this.marker) this.marker.root.visible = this.selected >= 0 && this.view.zoom === 0 && this.view.dir <= 0;
     if (this.marker && this.marker.billboards.length) updateBillboards(this.marker, this.camera);
     if (this.marker?.root.visible) {
       this.tintMarker();

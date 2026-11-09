@@ -925,10 +925,8 @@ export class GalacticStoryHost extends StoryPlots {
         owner.__faction,
         record ? 'spawned ' + nameOf(record) + ' at ' + nameOf(planet) : 'could not spawn ' + t.name + ' at ' + nameOf(planet)
       );
-    for (let i = firstNewFleet; i < fleets.length; i++) {
+    for (let i = firstNewFleet; i < fleets.length; i++)
       this.game.fleetView?.(fleets[i])?.catch?.(error => this.errors.set('Spawn_Unit model', error.message));
-      this.game.battles?.arrive(fleets[i], planet.index);
-    }
     if (record) return this.object(record, planet, owner.__faction).__object;
     return undefined;
   }
