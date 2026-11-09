@@ -442,6 +442,10 @@ export class ScriptHost {
         p.credits += n > 0 && p.adjust ? n * p.adjust.credit : n;
       },
       Get_Tech_Level: () => p.techLevel,
+      Give_Random_Sliceable_Tech: () => {
+        const pick = this.randomSliceableTech(p);
+        return pick ? this.typeWrap(pick) : undefined;
+      },
       Release_Credits_For_Tactical: amount => {
         const s = this.world.tacticalSessions?.[p.id];
         if (!s || !s.ai) return;
@@ -475,6 +479,49 @@ export class ScriptHost {
       },
       __missing: this.absent('Player')
     };
+  }
+
+  randomSliceableTech(p) {
+    const faction = String(p.factionName || '').toUpperCase(),
+      galaxyPlayer = this.game.setup?.campaign?.galaxy?.players?.find(q => String(q.faction).toUpperCase() === faction),
+      unlocked = (p.unlockedTech ||= new Set()),
+      max = galaxyPlayer?.maxTech ?? 5;
+    const unlock = t => {
+      unlocked.add(t);
+      if (galaxyPlayer && !(galaxyPlayer.unlockedTypes ||= []).some(n => String(n).toUpperCase() === t.name.toUpperCase()))
+        galaxyPlayer.unlockedTypes.push(t.name);
+    };
+    const below = () => {
+      for (const t of db.types.values())
+        if (t.bool('Build_Initially_Locked') && t.bool('Build_Can_Be_Unlocked_By_Slicer') && t.num('Tech_Level', 0) < p.techLevel && t.list('Affiliation').some(n => n.toUpperCase() === faction) && !unlocked.has(t))
+          unlock(t);
+    };
+    const raise = level => {
+      p.techLevel = Math.max(0, Math.min(max, level));
+      if (galaxyPlayer) galaxyPlayer.tech = p.techLevel;
+      below();
+    };
+    const rows = [];
+    let total = 0;
+    for (const t of db.types.values()) {
+      if (!t.bool('Build_Initially_Locked') || !t.bool('Build_Can_Be_Unlocked_By_Slicer') || unlocked.has(t)) continue;
+      if (!t.list('Affiliation').some(n => n.toUpperCase() === faction) || t.num('Tech_Level', 0) > (p.techLevel || 0)) continue;
+      const weight = Math.fround(1 / t.num('Slice_Cost_Credits', 0));
+      if (!(weight > 0)) continue;
+      total = Math.fround(total + weight);
+      rows.push([t, total]);
+    }
+    if (!rows.length) {
+      if ((p.techLevel || 0) !== 0 || max <= 0) return null;
+      raise(1);
+      return this.randomSliceableTech(p);
+    }
+    const r = Math.fround(total * Math.fround(Math.floor(simRandom() * 32768) / 32767)),
+      pick = (rows.find(([, at]) => r <= at) || rows[rows.length - 1])[0];
+    if (rows.length === 1) {
+      if ((p.techLevel || 0) < max) raise((p.techLevel || 0) + 1);
+    } else unlock(pick);
+    return pick;
   }
 
   unitWrap(e) {

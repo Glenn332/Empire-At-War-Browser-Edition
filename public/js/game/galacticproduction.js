@@ -8,12 +8,40 @@ import { planetMaxStarbase } from './planetstats.js';
 
 const mobile = t => ['company', 'starship', 'squadron'].includes(forceKind(t));
 export const techAdvance = t => t.num('Build_Advances_Tech_Level', 0);
-export function setTechLevel(g, owner, level) {
-  const p = g.players.find(q => q.faction === owner);
+export function setTechLevel(g, owner, level, { unlock = false } = {}) {
+  const p = g.players.find(q => String(q.faction).toUpperCase() === String(owner).toUpperCase());
   if (!p) return null;
   p.tech = Math.max(0, Math.min(p.maxTech, Math.trunc(level)));
+  p.techUnlocked = unlock ? unlockBelowTech(p) : [];
   return p.tech;
 }
+
+export function unlockBelowTech(p) {
+  const out = [],
+    have = new Set((p.unlockedTypes || []).map(n => String(n).toUpperCase()));
+  for (const t of db.types.values()) {
+    if (!t.bool('Build_Initially_Locked') || !t.bool('Build_Can_Be_Unlocked_By_Slicer')) continue;
+    if (!(t.num('Tech_Level', 0) < p.tech) || have.has(t.name.toUpperCase())) continue;
+    if (!t.list('Affiliation').some(n => String(n).toUpperCase() === String(p.faction).toUpperCase())) continue;
+    (p.unlockedTypes ||= []).push(t.name);
+    have.add(t.name.toUpperCase());
+    out.push(t.name);
+  }
+  return out;
+}
+
+export function raiseTech(game, owner, level, { unlock = true, sfx = true } = {}) {
+  const g = game.galaxy,
+    tech = setTechLevel(g, owner, level, { unlock });
+  if (tech === null) return null;
+  const p = g.players.find(q => String(q.faction).toUpperCase() === String(owner).toUpperCase());
+  game.story?.signalTech?.(p.faction, tech);
+  const local = String(game.localFaction ?? game.me).toUpperCase() === String(p.faction).toUpperCase();
+  if (sfx && local && p.techUnlocked.length) game.audio?.play?.(db.faction(p.faction)?.str('SFXEvent_New_Construction_Options_Available'));
+  return tech;
+}
+
+export const engineRoll = (lo, hi, random) => Math.fround(lo + (hi - lo) * Math.fround(Math.floor(random() * 32768) / 32767));
 
 export function ownedTypes(g, owner) {
   const out = [];
@@ -438,6 +466,7 @@ export function aiTypeBlocked(g, owner, type, room = null, snap = null) {
   return false;
 }
 
+export const strategicPrerequisite = (g, planet, owner, type) => prerequisite(g, g.planets[planet], owner, type, true);
 export function aiProductionBlock(g, planet, owner, type, room = null, snap = null) {
   const p = g.planets[planet],
     why = prerequisite(g, p, owner, type, true, snap);
@@ -613,7 +642,7 @@ enemyInOrbit(g, p, q.owner)
         planet: p.index,
         type: q.type,
         owner: q.owner,
-        ...(advance > 0 ? { tech: setTechLevel(g, q.owner, advance) } : {})
+        ...(advance > 0 ? { tech: setTechLevel(g, q.owner, advance, { unlock: true }) } : {})
       });
       if (q.ai) ai?.complete(q, record);
     }

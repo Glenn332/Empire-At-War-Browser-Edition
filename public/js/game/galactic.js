@@ -3463,7 +3463,13 @@ export class GalacticGame {
           this.mergeFleets();
           for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
-          for (const done of completed) if (done.tech !== undefined) this.story?.signalTech(done.owner, done.tech);
+          for (const done of completed)
+            if (done.tech !== undefined) {
+              this.story?.signalTech(done.owner, done.tech);
+              const p = this.galaxy.players.find(q => q.faction === done.owner);
+              if (done.owner === (this.localFaction ?? this.me) && p?.techUnlocked?.length)
+                this.audio?.play?.(db.faction(done.owner)?.str('SFXEvent_New_Construction_Options_Available'));
+            }
           if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner, this.galaxy.planets[done.planet]);
           for (const done of completed) this.battles.dirty.add(done.planet);
         }

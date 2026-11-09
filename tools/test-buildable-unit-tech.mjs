@@ -37,6 +37,7 @@ const run = (who, unlocked, give, tech = level) => {
     commonReward: () => false,
     signalTech: (f, l) => signals.push([f, l])
   };
+  host.game.story = host;
   GalacticStoryHost.prototype.reward.call(host, { reward: 'BUILDABLE_UNIT', rewards: [give, ''], plot: { owner: who } });
   return { player, signals };
 };

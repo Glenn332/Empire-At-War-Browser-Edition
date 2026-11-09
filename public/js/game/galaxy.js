@@ -4,6 +4,7 @@ import { parseXML } from '../xml.js';
 import { advisorHintFlags } from './advisorhints.js';
 import { retreatDisabledList, setRetreatDisabledList } from './retreat.js';
 import { strategicStealth } from './galacticfog.js';
+import { unlockBelowTech } from './galacticproduction.js';
 
 let orbitListener = null;
 export function onOrbit(fn) {
@@ -254,6 +255,7 @@ export function startingGalaxy(data, campaign) {
     }
   for (const p of planets)
     if (p.owner && db.faction(p.owner)?.bool('Benefits_From_Corruption') && (p.currentCorruption ?? -1) === -1) p.currentCorruption = 3;
+  for (const p of players) unlockBelowTech(p);
   return {
     campaign: c,
     planets,

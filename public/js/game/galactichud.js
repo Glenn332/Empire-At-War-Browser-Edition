@@ -480,7 +480,9 @@ export class GalacticBar extends CommandBar {
     this.setReadout('Text_Day_Counter', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));
     this.setReadout(
       'Text_Tech_Level',
-      db.t('TEXT_TECH') + ' ' + ((player?.tech || 0) + db.faction(game.me).num('Displayed_Tech_Level_Adjustment', 0))
+      String(game.me).toUpperCase() === 'UNDERWORLD'
+        ? ''
+        : db.t('TEXT_TECH') + ' ' + ((player?.tech || 0) + db.faction(game.me).num('Displayed_Tech_Level_Adjustment', 0))
     );
     this.setReadout('Text_Pop_Cap', popUsed + ' / ' + popCap);
     this.refreshHeroes();

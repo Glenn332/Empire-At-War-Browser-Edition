@@ -14,7 +14,7 @@ import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
 import { placeStartingForce, forceKind } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { planetIncome, playerIncome, adjustCredits } from './galacticeconomy.js';
-import { groundLevel } from './galacticproduction.js';
+import { groundLevel, raiseTech, engineRoll } from './galacticproduction.js';
 import { advisorHints } from './galacticlogdata.js';
 import { strategicStealth } from './galacticfog.js';
 import { battleStory, battleClassSummary, destroyStory, destroyBaseStory, conquerStory, scoringCall } from './galacticbattleevents.js';
@@ -613,8 +613,7 @@ export class GalacticStoryHost extends StoryPlots {
       Set_Tech_Level: level => {
         const p = data();
         if (!p || typeof level !== 'number') return;
-        p.tech = Math.max(0, Math.min(p.maxTech, Math.trunc(level)));
-        this.signalTech(p.faction, p.tech);
+        raiseTech(this.game, p.faction, level);
       },
       Get_Difficulty: () => ({ easy: 'Easy', medium: 'Normal', hard: 'Hard' })[this.game.setup?.difficulty] || 'Normal',
       Lock_Tech: type => this.tech(faction.name, type?.__type, false),
@@ -631,29 +630,22 @@ export class GalacticStoryHost extends StoryPlots {
     if (!player) return null;
     const rows = [];
     let total = 0;
-    for (const type of slicePool(this.game.galaxy, player)) {
-      const weight = 1 / type.num('Slice_Cost_Credits', 0);
-      if (!(weight > 0) || !Number.isFinite(weight)) continue;
-      total += weight;
+    for (const type of slicePool(this.game.galaxy, player, false)) {
+      const weight = Math.fround(1 / type.num('Slice_Cost_Credits', 0));
+      if (!(weight > 0)) continue;
+      total = Math.fround(total + weight);
       rows.push([type, total]);
     }
     if (!rows.length) {
       if ((player.tech || 0) !== 0 || player.maxTech <= 0) return null;
-      player.tech = 1;
-      this.signalTech(player.faction, player.tech);
+      raiseTech(this.game, player.faction, 1);
       return this.randomSliceableTech(player);
     }
-    const r = simRandom() * total,
+    const r = engineRoll(0, total, simRandom),
       pick = (rows.find(([, at]) => r <= at) || rows[rows.length - 1])[0];
     if (rows.length === 1) {
-      if (player.tech < player.maxTech) {
-        player.tech += 1;
-        this.signalTech(player.faction, player.tech);
-      }
-    } else if (!(player.unlockedTypes ||= []).some(n => key(n) === key(pick.name))) {
-      player.lockedTypes = (player.lockedTypes || []).filter(n => key(n) !== key(pick.name));
-      player.unlockedTypes.push(pick.name);
-    }
+      if (player.tech < player.maxTech) raiseTech(this.game, player.faction, player.tech + 1);
+    } else if (!(player.unlockedTypes ||= []).some(n => key(n) === key(pick.name))) player.unlockedTypes.push(pick.name);
     return this.type(pick);
   }
 
@@ -1588,8 +1580,7 @@ export class GalacticStoryHost extends StoryPlots {
         if (player) {
           const level = Math.trunc(+p[1] || 0);
           player.maxTech = Math.max(player.maxTech, level);
-          player.tech = Math.max(0, Math.min(player.maxTech, level));
-          this.signalTech(player.faction, player.tech);
+          raiseTech(game, player.faction, level);
         }
         break;
       }
@@ -1661,7 +1652,7 @@ export class GalacticStoryHost extends StoryPlots {
             [p[0], true],
             [p[1], false]
           ])
-            for (const name of split(names)) {
+            for (const name of String(names ?? '').trim() ? [String(names).trim()] : []) {
               const type = db.type(name);
               if (!type) continue;
               const n = key(type.name),
@@ -1686,10 +1677,7 @@ export class GalacticStoryHost extends StoryPlots {
                 t.bool('Build_Can_Be_Unlocked_By_Slicer') &&
                 !unlocked.has(key(t.name))
             );
-          if (!left) {
-            player.tech += 1;
-            this.signalTech(player.faction, player.tech);
-          }
+          if (!left) raiseTech(game, player.faction, player.tech + 1);
         }
         break;
       }

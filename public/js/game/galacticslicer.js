@@ -3,7 +3,7 @@ import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { scheduleHeroRespawn } from './galacticherorespawn.js';
-import { setTechLevel, groundLevel } from './galacticproduction.js';
+import { setTechLevel, groundLevel, raiseTech, engineRoll } from './galacticproduction.js';
 
 const key = s =>
   String(s || '')
@@ -44,12 +44,13 @@ export function curve(
   };
 }
 
-export function pool(g, player) {
+export function pool(g, player, storyLocks = true) {
   const out = [];
   for (const type of db.types.values()) {
     if (!type.bool('Build_Can_Be_Unlocked_By_Slicer') || !type.bool('Build_Initially_Locked')) continue;
     if (!type.list('Affiliation').some(n => same(n, player.faction)) || type.num('Tech_Level', 0) > (player.tech || 0)) continue;
-    if ((player.unlockedTypes || []).some(n => same(n, type.name)) || (player.lockedTypes || []).some(n => same(n, type.name))) continue;
+    if ((player.unlockedTypes || []).some(n => same(n, type.name)) || (storyLocks && (player.lockedTypes || []).some(n => same(n, type.name))))
+      continue;
     out.push(type);
   }
   return out;
@@ -123,8 +124,7 @@ export function canSlice(game, actor, planet) {
     !planet.background &&
     !allied(actor.owner, owner) &&
     main(owner) &&
-    main(actor.owner) &&
-    pool(g, player).length > 0
+    main(actor.owner)
   );
 }
 
@@ -135,7 +135,15 @@ export function activateSlicer(game, actor, planet, ability) {
   if (!player || !owner || planet.destroyed || planet.background || allied(actor.owner, owner) || !main(owner) || !main(actor.owner))
     return false;
   const types = pool(g, player);
-  if (!types.length) return false;
+  if (!types.length) {
+    if ((player.tech || 0) >= player.maxTech) {
+      const sfx = db.faction(player.faction)?.str('SFXEvent_Slice_Failure').trim();
+      if (sfx && same(player.faction, game.localFaction ?? game.me)) game.audio?.play(sfx);
+      return false;
+    }
+    raiseTech(game, player.faction, (player.tech || 0) + 1);
+    return activateSlicer(game, actor, planet, ability);
+  }
   const rows = options(game, actor.owner, planet, ability, types),
     respawn = respawnRoll(player, ability);
   const side = panelSide(game, player.faction, player);
@@ -145,7 +153,8 @@ export function activateSlicer(game, actor, planet, ability) {
   }
   const can = rows.filter(r => r.cost <= player.credits);
   if (!can.length) return false;
-  return executeSlice(game, actor, planet, can[Math.floor(simRandom() * can.length)], rows.length === 1, respawn);
+  const r = engineRoll(0, can.length, simRandom);
+  return executeSlice(game, actor, planet, can[Math.max(0, Math.min(can.length - 1, Math.ceil(r) - 1))], rows.length === 1, respawn);
 }
 
 export const vigilant = (planet, actor) =>
@@ -168,10 +177,7 @@ export function executeSlice(game, actor, planet, row, only, respawn, random = s
   if (success) {
     adjustCredits(g, player.faction, -row.cost);
     if (!(player.unlockedTypes ||= []).some(n => same(n, row.type.name))) player.unlockedTypes.push(row.type.name);
-    if (only) {
-      const level = setTechLevel(g, player.faction, (player.tech || 0) + 1);
-      game.story?.signalTech?.(player.faction, level);
-    }
+    if (only) raiseTech(game, player.faction, (player.tech || 0) + 1);
     const sfx = db.faction(player.faction)?.str('SFXEvent_Slice_Success').trim();
     if (sfx && same(player.faction, game.me)) game.audio?.play(sfx);
     if (same(player.faction, game.me))

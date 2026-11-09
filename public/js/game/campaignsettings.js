@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { unlockBelowTech } from './galacticproduction.js';
 
 const key = s =>
   String(s || '')
@@ -53,6 +54,7 @@ export function applyCampaignSettings(g, settings, human) {
     p.credits = settings.credits;
     p.tech = start + shift;
     p.maxTech = max + shift;
+    unlockBelowTech(p);
   }
   g.campaignAutoResolve = settings.autoResolve;
 }
