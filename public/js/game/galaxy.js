@@ -283,7 +283,11 @@ export function snapshotGalaxy(g) {
         x.type.name,
         x.owner,
         x.markerId ?? -1,
-        { checkContestedSpace: x.checkContestedSpace, ...(x.detectNext ? { detectNext: { ...x.detectNext } } : {}) }
+        {
+          checkContestedSpace: x.checkContestedSpace,
+          ...(x.detectNext ? { detectNext: { ...x.detectNext } } : {}),
+          ...(Number.isInteger(x.guiIndex) ? { guiIndex: x.guiIndex } : {})
+        }
       ]);
   return {
     campaign: g.campaign.name,
@@ -424,6 +428,7 @@ export function snapshotGalaxy(g) {
           checkContestedSpace: u.checkContestedSpace,
           ...(u.raiding ? { raiding: true } : {}),
           ...(u.pathfinder ? { pathfinder: true } : {}),
+          ...(Number.isInteger(u.guiIndex) ? { guiIndex: u.guiIndex } : {}),
           ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {}),
           ...(u.detectNext ? { detectNext: { ...u.detectNext } } : {})
         }

@@ -34,7 +34,11 @@ export function parseTacticalCamera(source, name, defaults = {}) {
     distDefault: 'Distance_Default',
     distMin: 'Distance_Min',
     distMax: 'Distance_Max',
-    distPerUnit: 'Distance_Per_Mouse_Unit'
+    distPerUnit: 'Distance_Per_Mouse_Unit',
+    nearClip: 'Near_Clip',
+    farClip: 'Far_Clip',
+    fadeBegin: 'Object_Fade_Begin',
+    fadeEnd: 'Object_Fade_End'
   };
   const result = { ...defaults };
   const visit = node => {

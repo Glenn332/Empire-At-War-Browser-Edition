@@ -2,10 +2,8 @@ import { embarkGround, landFriendly } from './invasion.js';
 import { db } from '../gamedata.js';
 import { isHumanFaction } from './galaxy.js';
 
-export function pathfinderCell() {
-  const i = Math.trunc(db.constants?.num('Pathfinder_Slot_Index', 0) ?? 0);
-  return i < 0 ? null : String(Math.floor(i / 7)).padStart(2, '0') + String(i % 7).padStart(2, '0');
-}
+export const pathfinderCell = () => '0000';
+export const pathfinderAuto = () => Math.trunc(db.constants?.num('Pathfinder_Slot_Index', 999) ?? 999) === -1;
 
 export function aiPathfinder(g, owner, records) {
   if (!g.aiPathfinders || isHumanFaction(g, owner) || !records.length || records.some(u => u.pathfinder)) return null;

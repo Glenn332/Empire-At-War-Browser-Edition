@@ -6,6 +6,7 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
+import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
 import { POSE_MARGIN } from './landinstances.js';
@@ -89,17 +90,8 @@ function animSet(type) {
   const base = (animOverride(type) || type.str('Land_Model_Name')).replace(/\.alo$/i, '').toUpperCase();
   let s = SETS.get(base);
   if (!s && LISTING) {
-    s = { kinds: new Map(), clips: new Map(), ready: true };
+    s = { kinds: animKinds(base, LISTING), clips: new Map(), ready: true };
     SETS.set(base, s);
-    for (const n of LISTING) {
-      if (!n.startsWith(base + '_')) continue;
-      const m = n.slice(base.length + 1).match(/^([A-Z_]+)_\d\d\.ALA$/);
-      if (m) {
-        if (!s.kinds.has(m[1])) s.kinds.set(m[1], []);
-        s.kinds.get(m[1]).push(n);
-      }
-    }
-    for (const v of s.kinds.values()) v.sort();
   }
   if (!s) {
     s = { kinds: new Map(), clips: new Map(), ready: false };
@@ -107,15 +99,7 @@ function animSet(type) {
     findFiles('MODELS\\\\' + base + '_[A-Z_]+_\\d\\d\\.ALA$')
       .then(list => {
         if (s.ready) return;
-        for (const f of list) {
-          const n = f.split('\\').pop().toUpperCase(),
-            m = n.slice(base.length + 1).match(/^([A-Z_]+)_\d\d\.ALA$/);
-          if (m) {
-            if (!s.kinds.has(m[1])) s.kinds.set(m[1], []);
-            s.kinds.get(m[1]).push(n);
-          }
-        }
-        for (const v of s.kinds.values()) v.sort();
+        s.kinds = animKinds(base, list.map(f => f.split(/[\\/]/).pop().toUpperCase()));
         s.ready = true;
         for (const k of s.want || []) variants(type, k);
       })
@@ -236,13 +220,7 @@ export async function preloadLand(roots, factions, onProgress = () => {}, mapRoo
     let s = SETS.get(base);
     if (!s) SETS.set(base, (s = { kinds: new Map(), clips: new Map(), ready: false }));
     if (!s.ready) {
-      s.kinds.clear();
-      for (const n of own) {
-        const k = n.slice(base.length + 1).match(/^([A-Z_]+)_\d\d\.ALA$/)[1];
-        if (!s.kinds.has(k)) s.kinds.set(k, []);
-        s.kinds.get(k).push(n);
-      }
-      for (const v of s.kinds.values()) v.sort();
+      s.kinds = animKinds(base, own);
       s.ready = true;
     }
     for (const n of own) clips.add(n);
