@@ -69,14 +69,20 @@ export function sampleHistory(g, frame) {
   if (state.historyFrame === frame) return;
   state.historyFrame = frame;
   const powers = new Map(g.players.map(p => [p.faction, 0]));
-  const add = (owner, type) => {
-    if (powers.has(owner)) powers.set(owner, powers.get(owner) + 2 * combatPower(type));
+  const add = (owner, value) => {
+    if (powers.has(owner) && value) powers.set(owner, powers.get(owner) + value);
   };
+  const own = u => (u.carries ? combatPower(u.type) + combatPower(u.carries) : 2 * combatPower(u.type));
   for (const p of g.planets) {
-    if (p.station) add(p.stationOwner || p.owner, p.station);
-    for (const u of [...p.groundStructures, ...p.orbitalStructures, ...p.garrison]) add(u.owner, u.type);
+    if (!p.background && p.owner) add(p.owner, 2 * combatPower(p.type));
+    if (p.station) add(p.stationOwner || p.owner, 2 * combatPower(p.station));
+    for (const u of [...p.groundStructures, ...p.orbitalStructures, ...p.garrison]) add(u.owner, own(u));
   }
-  for (const f of g.fleets) for (const u of f.units) add(f.owner, u.carries || u.type);
+  for (const f of g.fleets)
+    for (const u of f.units) {
+      add(f.owner, combatPower(u.type) + (u.carries ? combatPower(u.carries) : 0));
+      add(f.owner, own(u));
+    }
   for (const player of g.players) {
     const rows = (state.history[player.faction] ||= []);
     if (rows.length >= 100 && rows.length % 2 === 0) {

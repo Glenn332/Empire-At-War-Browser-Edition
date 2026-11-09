@@ -516,6 +516,12 @@ export class UI {
       game.toggleBenchmark();
       return;
     }
+    if (pressed(e, 'DROID_ADVISOR') || pressed(e, 'MISSION_HOLOCRON')) {
+      e.preventDefault();
+      if (pressed(e, 'DROID_ADVISOR')) game.advisor?.openLog();
+      else game.advisor?.openHolocron();
+      return;
+    }
     const squadCam = pressed(e, 'SQUAD_CAM');
     if (squadCam || pressed(e, 'BATTLE_CAM')) {
       e.preventDefault();

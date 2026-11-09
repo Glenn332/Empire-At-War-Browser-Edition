@@ -28,6 +28,8 @@ export const ACTIONS = [
   { id: 'CAMERA_RESET', page: 3, edit: 'IDC_EDIT_CAMERA_RESET', label: 'TEXT_CAMERA_RESET', keys: ['End'] },
   { id: 'CAMERA_HOME', page: 3, edit: 'IDC_EDIT_CAMERA_HOME', label: 'TEXT_CAMERA_HOME', keys: ['Home'] },
   { id: 'TACTICAL_OVERVIEW', page: 3, edit: 'IDC_EDIT_TACTICAL_OVERVIEW', label: 'TEXT_TACTICAL_OVERVIEW', keys: ['Backspace'] },
+  { id: 'DROID_ADVISOR', page: 3, edit: 'IDC_EDIT_DROID_ADVISOR', label: 'TEXT_GAME_DROID_ADVISOR_KEYBOARD', keys: [] },
+  { id: 'MISSION_HOLOCRON', page: 3, edit: 'IDC_EDIT_MISSION_HOLOCRON', label: 'TEXT_MISSION_HOLOCRON', keys: ['Tab'] },
   { id: 'BATTLE_CAM', page: 3, edit: 'IDC_EDIT_BATTLE_CAM', label: 'TEXT_MOVIE_MODE', keys: ['Space'] },
   { id: 'INITIATE_CHAT', page: 3, edit: 'IDC_EDIT_INITIATE_CHAT', label: 'TEXT_INITIATE_CHAT', keys: ['Enter', 'NumpadEnter'] },
   { id: 'PAUSE', page: 5, extra: { col: 0, y: 65 }, label: 'Pause', keys: ['KeyP', 'Pause'] },

@@ -2190,6 +2190,12 @@ export class LandGame {
         v.pitch = h.pitch;
         return;
       }
+      if ((pressed(e, 'DROID_ADVISOR') || pressed(e, 'MISSION_HOLOCRON')) && !this.menus.open) {
+        e.preventDefault();
+        if (pressed(e, 'DROID_ADVISOR')) this.advisor?.openLog();
+        else this.advisor?.openHolocron();
+        return;
+      }
       const squadCam = pressed(e, 'SQUAD_CAM');
       if ((squadCam || pressed(e, 'BATTLE_CAM')) && !this.menus.open) {
         e.preventDefault();
@@ -3866,6 +3872,7 @@ export class LandGame {
           won ? this.me : this.players.findIndex(p => p.team !== this.myTeam)
         );
       if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
+      if (this.campaignOutcome && this.world.builtUpgrades?.length) this.campaignOutcome.upgradesBuilt = this.world.builtUpgrades.slice();
       showSummary(this, won, this.myTeam).then(shown => {
         if (shown) d.remove();
       });

@@ -1550,6 +1550,16 @@ export class GalacticGame {
         return;
       }
       this.keys.add(e.code);
+      if (pressed(e, 'DROID_ADVISOR')) {
+        e.preventDefault();
+        this.galacticLog?.toggle();
+      }
+      if (pressed(e, 'MISSION_HOLOCRON')) {
+        e.preventDefault();
+        this.storyButtonFlash?.(false);
+        if (this.storyDialog?.opened) this.storyDialog.close();
+        else this.storyDialog?.showSummary();
+      }
       if (pressed(e, 'TACTICAL_OVERVIEW')) this.zoomOut();
       if (pressed(e, 'CAMERA_HOME')) {
         e.preventDefault();
@@ -2719,6 +2729,12 @@ export class GalacticGame {
 
   applyResult(r) {
     for (const record of r.storyDelayed || []) this.story?.queueDelayed(record);
+    const host = this.galaxy.planets[r.planet];
+    if (host)
+      for (const u of r.upgradesBuilt || []) {
+        const list = (host.upgrades ||= []);
+        if (!list.some(x => (x.type ?? x) === u.type && x.owner === u.owner)) list.push({ type: u.type, owner: u.owner });
+      }
     if (r.credits) this.applyTacticalCredits(r);
     if (r.mode !== 'land') this.victory.superweaponBattle(r);
     this.victory.tacticalDeaths(r);

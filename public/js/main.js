@@ -1349,6 +1349,8 @@ class Game {
 
   onEvent(kind, d) {
     if (kind === 'scriptHighlight') return this.scriptEffect(kind, d);
+    if (kind === 'upgrade' && this.setup.campaign && d.type?.behaviors?.().has('DUMMY_UPGRADE') && d.player?.factionName)
+      (this.builtUpgrades ||= []).push({ type: d.type.name, owner: d.player.factionName });
     const me = this.human;
     this.reportView?.event(kind, d);
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))
@@ -1706,6 +1708,7 @@ class Game {
     if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
     const { galaxy, ...result } = this.campaignOutcome || {};
     result.storyDelayed = this.storyDelayed || [];
+    if (this.builtUpgrades?.length) result.upgradesBuilt = this.builtUpgrades.slice();
     stageStart({ mode: 'galactic', players: [], teamFactions: [], campaign: cb.campaignName, restore: galaxy || cb.galaxy, result });
   }
 

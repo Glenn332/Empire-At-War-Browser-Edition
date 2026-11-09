@@ -408,6 +408,7 @@ export function snapshotGalaxy(g) {
       orbital: list(p.orbitalStructures),
       garrison: list(p.garrison),
       visibilityModifiers: p.visibilityModifiers?.map(m => ({ ...m })),
+      ...(p.upgrades?.length ? { upgrades: p.upgrades.map(u => ({ ...u })) } : {}),
       production: Object.fromEntries(['space', 'ground'].map(k => [k, p.production[k].map(q => ({ ...q, type: n(q.type) }))]))
     })),
     fleets: g.fleets.map(f => ({
@@ -555,6 +556,7 @@ export function applyGalaxy(g, s) {
     p.incomeMult = sp.incomeMult ?? 1;
     p.gambling = sp.gambling ? { ...sp.gambling } : null;
     p.visibilityModifiers = sp.visibilityModifiers?.map(m => ({ ...m }));
+    p.upgrades = sp.upgrades?.map(u => ({ ...u })) || [];
     p.groundStructures = list(sp.ground);
     p.orbitalStructures = list(sp.orbital);
     p.garrison = list(sp.garrison);

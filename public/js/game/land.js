@@ -3030,8 +3030,11 @@ export class LandWorld {
         const q = list[0];
         if (!q || (q.left -= dt) > 0) continue;
         list.shift();
-        if (isUpgrade(q.type)) this.grant(side, q.type);
-        else this.ready[side].push(q.type);
+        if (isUpgrade(q.type)) {
+          this.grant(side, q.type);
+          if (this.campaign && q.type.behaviors().has('DUMMY_UPGRADE'))
+            (this.builtUpgrades ||= []).push({ type: q.type.name, owner: this.factions[side] });
+        } else this.ready[side].push(q.type);
         if (this.onReady) this.onReady(side, q.type);
       }
     });

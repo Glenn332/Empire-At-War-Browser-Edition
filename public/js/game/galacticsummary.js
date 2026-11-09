@@ -229,7 +229,7 @@ export async function renderSummary(owner, d) {
         }
         for (let j = 0; j < 8; j++) {
           const value = p?.upgrades?.[j],
-            type = value?.str ? value : db.type(value);
+            type = value?.str ? value : db.type(value?.type ?? value);
           work.push(icon(`IDC_HERO${i}_ICON${j}`, type?.str('Icon_Name') || '', type));
         }
       } else {
