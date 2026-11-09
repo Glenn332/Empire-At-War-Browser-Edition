@@ -3453,8 +3453,9 @@ export class GalacticGame {
     const running = !this.paused && !this.over && !this.storyMovie?.pausesMode;
     if (running || (this.paused && !this.over && db.constants.bool('Animate_During_Galactic_Mode_Pause', false)))
       for (const a of this.idlers) {
-        if (a.inst.root.userData.culled && !a.onFrame) a.advance(real);
-        else a.step(real);
+        const t = running ? real * this.rate : real;
+        if (a.inst.root.userData.culled && !a.onFrame) a.advance(t);
+        else a.step(t);
       }
     if (running) {
       if (!this.battle && !this.net) {
