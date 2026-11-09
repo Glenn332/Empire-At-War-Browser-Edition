@@ -212,9 +212,9 @@ export function canCorrupt(game, actor, planet) {
   );
 }
 
-const groupsOf = (g, owner) =>
+const groupsOf = (g, owner, atPlanet = false) =>
   [
-    ...g.fleets.filter(f => same(f.owner, owner)).flatMap(f => f.units),
+    ...g.fleets.filter(f => same(f.owner, owner) && !(atPlanet && f.leg)).flatMap(f => f.units),
     ...g.planets.flatMap(p => p.garrison.filter(u => same(u.owner, owner)))
   ].filter(u => !u.dead);
 const holds = (record, types) => {
@@ -252,7 +252,13 @@ export function requirements(game, player, choice) {
     choice.missionType < 0 || choice.missionCount <= 0 || (player.corruptionMissions?.[choice.missionType] || 0) >= choice.missionCount;
   const planets =
     !choice.planets.length || g.planets.some(p => same(p.owner, player.faction) && choice.planets.some(n => same(n, p.type.name)));
-  const have = choice.units.length ? groupsOf(g, player.faction).filter(u => holds(u, choice.units)).length : 0;
+  const destroyed = t => t.bool('Destroy_When_Used_As_Corruption_Prereq', true);
+  const moving = new Set(g.fleets.filter(f => f.leg && same(f.owner, player.faction)).flatMap(f => f.units));
+  const have = choice.units.length
+    ? groupsOf(g, player.faction).filter(
+        u => holds(u, choice.units) && (!moving.has(u) || choice.units.some(t => holds(u, [t]) && !destroyed(t)))
+      ).length
+    : 0;
   const units = choice.unitCount <= 0 || !choice.units.length || have >= choice.unitCount;
   return {
     credits,
@@ -325,7 +331,7 @@ export function executeCorruption(game, actor, planet, choice) {
           g.fleets = g.fleets.filter(f => f.units.length || f.leg);
         }
       } else {
-        const pool = groupsOf(g, player.faction).filter(u => holds(u, [type]) && u !== (actor.record || actor));
+        const pool = groupsOf(g, player.faction, true).filter(u => holds(u, [type]) && u !== (actor.record || actor));
         for (let i = 0; i < choice.unitCount && pool.length; i++)
           game.story?.despawn?.(pool.splice(Math.floor(simRandom() * pool.length), 1)[0]);
       }

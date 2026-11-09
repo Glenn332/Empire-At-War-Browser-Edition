@@ -177,13 +177,12 @@ export class CorruptionVisuals {
       mesh.frustumCulled = false;
       mesh.renderOrder = 3;
       this.game.scene.add(mesh);
-      this.paths.set(key, (m = { mesh }));
+      this.paths.set(key, (m = { mesh, owner: a.corruptionKind ? a : b.corruptionKind ? b : a }));
     }
+    const p = m.owner;
     let fade = 1;
-    for (const p of [a, b]) {
-      if (p.corruptionKind === 'corrupt' && type(p) === -1) fade = Math.min(fade, this.progress(p));
-      else if (p.corruptionKind === 'remove' && type(p) !== -1) fade = Math.min(fade, 1 - this.progress(p));
-    }
+    if (p.corruptionKind === 'corrupt' && type(p) === -1) fade = this.progress(p);
+    else if (p.corruptionKind === 'remove' && type(p) !== -1) fade = 1 - this.progress(p);
     m.mesh.material.uniforms.color.value.setRGB((this.color[0] / 255) * fade, (this.color[1] / 255) * fade, (this.color[2] / 255) * fade);
   }
 
