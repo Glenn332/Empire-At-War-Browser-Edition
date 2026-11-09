@@ -3665,7 +3665,7 @@ export class GalacticGame {
     }
     const view = pv.stationView;
     if (view.inst) {
-      view.yaw += db.constants.num('Galactic_Zoom_In_Station_Rotation', 0.04) * real * LOGIC_FPS;
+      if (!this.paused) view.yaw += (db.constants.num('Galactic_Zoom_In_Station_Rotation', 0.04) * real * LOGIC_FPS * LOGIC_FPS) / 1000;
       view.inst.root.rotation.z = view.yaw;
     }
   }
