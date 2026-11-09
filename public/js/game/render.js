@@ -274,10 +274,7 @@ export class CameraRig {
       cp = Math.cos(pitch),
       sp = Math.sin(pitch);
     if (this.spec) {
-      const t = Math.tan((this.fovH * DEG) / 2),
-        aspect = c.aspect || 4 / 3,
-        wide = aspect > 4 / 3 ? t * 0.75 * (16 / 9) : t,
-        fov = (2 * Math.atan(wide / aspect)) / DEG;
+      const fov = (2 * Math.atan(0.75 * Math.tan((this.fovH * DEG) / 2))) / DEG;
       if (Math.abs(c.fov - fov) > 1e-4) {
         c.fov = fov;
         c.updateProjectionMatrix();
@@ -1615,18 +1612,11 @@ export class Renderer {
         for (const h of p.fxs) h.release();
       }
       fx.length = fn;
-      const viewer = world.viewer ? world.viewer.bit : 0,
-        fadeEnd = this.rig?.spec?.fadeEnd,
-        cullFar = this.rig?.free || !(fadeEnd > 0) ? 0 : fadeEnd;
+      const viewer = world.viewer ? world.viewer.bit : 0;
       _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       for (const u of world.units) {
         if (u.dead) continue;
-        let seen = (!viewer || (u.seenBy & viewer) !== 0) && !u.scriptHidden;
-        if (seen && cullFar > 0) {
-          const v = cam.matrixWorldInverse.elements,
-            depth = -(v[2] * u.x + v[6] * u.y + v[10] * (u.z || 0) + v[14]);
-          if (depth - (u.visualRadius || 50) > cullFar) seen = false;
-        }
+        const seen = (!viewer || (u.seenBy & viewer) !== 0) && !u.scriptHidden;
         if (u.obj.visible !== seen && !(u.isPad && u.padChild)) u.obj.visible = seen;
         if (!seen) continue;
         if (u.inNebula || u.haze) this.updateHaze(u, dt);
