@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { fetchText, fetchBinary } from '../vfs.js';
 import { BinkPlayer } from '../bink.js';
 import { movieDefinitions } from './galacticmovies.js';
+import { StoryCinematic } from './storycinematic.js';
 import { loadTextureCanvas } from '../dds.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 
@@ -464,6 +465,15 @@ export class GalacticStoryDialog {
           case 'CLEARTEXT':
             if (!this.summary) lines = [];
             break;
+          case 'LOADCINEMATIC':
+            if (!this.summary) this.cinematicView()?.load(c.value);
+            break;
+          case 'ANIM':
+            if (!this.summary) this.cinematic?.play(atoi(c.value));
+            break;
+          case 'HIDECINEMATIC':
+            if (!this.summary) this.cinematic?.hide(atoi(c.value));
+            break;
           case 'MUSIC': {
             const music = db.music?.get(key(c.value));
             if (music) this.game.audio?.setPlaylist?.(music.list('Files'), true, true);
@@ -543,6 +553,15 @@ export class GalacticStoryDialog {
     if (this.dialogMovieState === state) state.raf = requestAnimationFrame(step);
     return true;
   }
+  cinematicView() {
+    const host = this.dialog?.ctl('IDC_IMAGE');
+    if (!host) return null;
+    if (this.cinematic?.host !== host) {
+      this.cinematic?.dispose();
+      this.cinematic = new StoryCinematic(host, () => this.game.galaxy?.time ?? this.game.world?.time ?? 0);
+    }
+    return this.cinematic;
+  }
   stopDialogMovie(only = null) {
     const state = this.dialogMovieState;
     if (!state || (only && state.player !== only)) return;
@@ -565,6 +584,8 @@ export class GalacticStoryDialog {
   close(result = 'close') {
     if (!this.open) return;
     this.stopDialogMovie();
+    this.cinematic?.dispose();
+    this.cinematic = null;
     const popups = this.popupRequests || [];
     this.popupRequests = [];
     if (this.game.setup?.net) {
