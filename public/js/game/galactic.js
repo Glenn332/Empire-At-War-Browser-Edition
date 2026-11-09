@@ -343,6 +343,7 @@ export class GalacticGame {
                 ? this.midforegroundScene
                 : this.scene;
           scene.add(inst.root);
+          if (scene === this.scene) inst.root.userData.cull = true;
           if (p.type.bool('Loop_Idle_Anim_00')) {
             const a = await Promise.resolve(loadALA(animName(file, 'IDLE'))).catch(() => null);
             if (a) this.idlers.push(new AnimState(inst, a, { loop: true }));
@@ -660,6 +661,7 @@ export class GalacticGame {
       placeGalacticModel(inst.root, p);
       new GalacticModelFade(inst, p.type, p.background);
       this.scene.add(inst.root);
+      inst.root.userData.cull = true;
       pv.inst = inst;
       if (p.type.bool('Loop_Idle_Anim_00')) {
         const anim = await Promise.resolve(loadALA(animName(file, 'IDLE'))).catch(() => null);
@@ -3403,8 +3405,12 @@ export class GalacticGame {
     }
     planetClock.value = (planetClock.value + real) % 28800;
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
+    this.cullPlanets();
     if (!this.paused && !this.over && !this.storyMovie?.pausesMode) {
-      for (const a of this.idlers) a.step(real);
+      for (const a of this.idlers) {
+        if (a.inst.root.userData.culled && !a.onFrame) a.advance(real);
+        else a.step(real);
+      }
       if (!this.battle && !this.net) {
         this.simulate(real * this.rate);
         if (this.over) return;
@@ -3412,6 +3418,32 @@ export class GalacticGame {
     }
     this.stepPlanetFlashes(real);
     this.present(real, elapsed, zoom);
+  }
+
+  cullPlanets() {
+    const cam = this.camera,
+      frustum = (this.cullFrustum ||= new THREE.Frustum());
+    cam.updateMatrixWorld();
+    frustum.setFromProjectionMatrix((this.cullMatrix ||= new THREE.Matrix4()).multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    for (const o of this.scene.children) {
+      const d = o.userData;
+      if (!d.cull) continue;
+      if (!d.cullSphere || d.cullChildren !== o.children.length || !d.cullAt?.equals(o.position)) {
+        o.updateMatrixWorld(true);
+        d.cullSphere = new THREE.Box3().setFromObject(o).getBoundingSphere(new THREE.Sphere());
+        d.cullSphere.radius *= 1.5;
+        d.cullChildren = o.children.length;
+        d.cullAt = o.position.clone();
+      }
+      d.culled = d.cullSphere.radius > 0 && !frustum.intersectsSphere(d.cullSphere);
+    }
+  }
+
+  updateSceneMatrices() {
+    const s = this.scene;
+    if (s.matrixAutoUpdate) s.updateMatrix();
+    s.matrixWorld.copy(s.matrix);
+    for (const o of s.children) if (!o.userData.culled) o.updateMatrixWorld(true);
   }
 
   planetFlash(p, on) {
@@ -3624,7 +3656,7 @@ export class GalacticGame {
           if (meshes) for (const m of meshes) m.visible = n === state && !m.userData.hiddenByDefault;
       }
       this.zoomStation(pv, i, real);
-      if (pv.inst.billboards.length) updateBillboards(pv.inst, this.camera);
+      if (pv.inst.billboards.length && !pv.inst.root.userData.culled) updateBillboards(pv.inst, this.camera);
     }
     if (this.marker) this.marker.root.visible = this.selected >= 0 && this.view.zoom === 0 && this.view.dir <= 0;
     if (this.marker && this.marker.billboards.length) updateBillboards(this.marker, this.camera);
@@ -3634,7 +3666,13 @@ export class GalacticGame {
     }
     this.updateRoutes(real, zoom);
     this.hover = this.mouse.in ? this.pick(this.mouse.x, this.mouse.y) : -1;
-    renderGalacticScenes(this.renderer, this.camera, this.scene, this.backgroundScene, this.midgroundScene, this.midforegroundScene);
+    this.updateSceneMatrices();
+    this.scene.matrixWorldAutoUpdate = false;
+    try {
+      renderGalacticScenes(this.renderer, this.camera, this.scene, this.backgroundScene, this.midgroundScene, this.midforegroundScene);
+    } finally {
+      this.scene.matrixWorldAutoUpdate = true;
+    }
     if (this.renderer.endFrame) this.renderer.endFrame();
     this.drawNames(zoom);
     this.overview?.update();
@@ -3662,11 +3700,11 @@ export class GalacticGame {
       me = String(this.me).toUpperCase(),
       up = x => String(x || '').toUpperCase();
     const named = t => !!t && (t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => db.type(n)?.bool('Is_Named_Hero')));
-    const owners = new Set();
-    for (const f of this.galaxy.fleets)
-      if (f.planet === p.index && !f.leg)
-        for (const u of f.units)
-          if (!u.dead && named(u.carries || u.type) && (up(f.owner) === me || !strategicStealth(u, f.owner))) owners.add(up(f.owner));
+    const owners = new Set(),
+      here = this.orbitIndex ? this.orbitIndex.get(p.index) || [] : this.galaxy.fleets.filter(f => f.planet === p.index && !f.leg);
+    for (const f of here)
+      for (const u of f.units)
+        if (!u.dead && named(u.carries || u.type) && (up(f.owner) === me || !strategicStealth(u, f.owner))) owners.add(up(f.owner));
     for (const u of p.garrison) if (named(u.carries || u.type) && (up(u.owner) === me || v?.groundCount)) owners.add(up(u.owner));
     if (this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false) {
       if (owners.has(me)) out.push({ name: s.hero.textures[0], scale: s.hero.scale });
@@ -3683,7 +3721,7 @@ export class GalacticGame {
       if (style?.textures[0]) out.push({ name: style.textures[0], scale: style.scale });
     }
     if (s.hunter?.textures[0] && up(p.owner) !== me) {
-      const orbit = this.galaxy.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length);
+      const orbit = here.filter(f => f.units.length);
       if (politicalGroups(this.galaxy, p, orbit).has(14)) out.push({ name: s.hunter.textures[0], scale: s.hunter.scale });
     }
     const type = p.currentCorruption ?? -1,
@@ -3819,6 +3857,13 @@ export class GalacticGame {
       ui = scale * r;
     let orbit = null;
     x.globalAlpha = alpha;
+    const index = (this.orbitIndex = new Map());
+    for (const f of this.galaxy.fleets)
+      if (!f.leg) {
+        const list = index.get(f.planet);
+        if (list) list.push(f);
+        else index.set(f.planet, [f]);
+      }
     this.galaxy.planets.forEach((p, i) => {
       const pv = this.planetViews[i],
         point = pv?.show && this.overlayPoint(p.pos);
@@ -3875,6 +3920,7 @@ export class GalacticGame {
       if (v?.discovered) this.drawCorruption(x, p, point, scale, r, v);
       if (v?.discovered && this.filters & 4) this.drawPlanetStatus(x, p, point, scale, r);
     });
+    this.orbitIndex = null;
     const put = (units, owner, comp, sx, sy, empty = false, fleet = null) => {
       const badge =
         comp === this.fleetComp && units.length

@@ -13,28 +13,48 @@ const allied = (a, b) =>
     ?.list('Allies')
     .some(n => key(n) === key(b));
 
-const members = record => {
-  const t = record.carries || record.type,
-    list = [...t.list('Company_Units'), ...t.list('Squadron_Units')].map(n => db.type(n)).filter(Boolean);
-  return list.length ? [t, ...list] : [t];
+const memberCache = new WeakMap(),
+  abilityCache = new WeakMap();
+const membersOf = t => {
+  let out = memberCache.get(t);
+  if (!out) {
+    const list = [...t.list('Company_Units'), ...t.list('Squadron_Units')].map(n => db.type(n)).filter(Boolean);
+    memberCache.set(t, (out = list.length ? [t, ...list] : [t]));
+  }
+  return out;
 };
+const members = record => membersOf(record.carries || record.type);
 const heroOf = record => members(record).find(t => t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero')) || null;
-const abilities = (record, tag) =>
-  members(record).flatMap(t =>
-    t
-      .sub('Abilities')
-      .flatMap(n => n.children)
-      .filter(a => key(a.tag) === tag && yes(a.val('Initially_Enabled', 'Yes')))
-  );
+const abilitiesOf = (t, tag) => {
+  let byTag = abilityCache.get(t);
+  if (!byTag) abilityCache.set(t, (byTag = new Map()));
+  let out = byTag.get(tag);
+  if (!out) {
+    out =
+      tag === '*'
+        ? membersOf(t).flatMap(m => m.sub('Abilities').flatMap(n => n.children))
+        : membersOf(t).flatMap(m =>
+            m
+              .sub('Abilities')
+              .flatMap(n => n.children)
+              .filter(a => key(a.tag) === tag && yes(a.val('Initially_Enabled', 'Yes')))
+          );
+    byTag.set(tag, out);
+  }
+  return out;
+};
+const abilities = (record, tag) => abilitiesOf(record.carries || record.type, tag);
 const style = a => key(a.val('Activation_Style', '')).trim();
 
-function onPlanet(g, p) {
+function onPlanet(g, p, orbit = g.fleets) {
   const out = [];
   for (const u of p.garrison) if (!u.dead) out.push({ record: u, owner: u.owner, fleet: null });
-  for (const f of g.fleets)
+  for (const f of orbit)
     if (f.planet === p.index && !f.leg) for (const u of f.units) if (!u.dead) out.push({ record: u, owner: f.owner, fleet: f });
   return out;
 }
+
+const detects = u => !u.dead && abilities(u, 'DETECT_HERO_ABILITY').length > 0;
 
 export function antiStealth(g, p, viewer, hostile) {
   let keep = 1;
@@ -49,8 +69,7 @@ export function antiStealth(g, p, viewer, hostile) {
 
 function evade(target) {
   let best = 0;
-  for (const a of members(target.record).flatMap(t => t.sub('Abilities').flatMap(n => n.children)))
-    best = Math.max(best, a.num('Evade_Detection_Chance', 0));
+  for (const a of abilities(target.record, '*')) best = Math.max(best, a.num('Evade_Detection_Chance', 0));
   return best;
 }
 
@@ -100,10 +119,19 @@ function eliminateSiphon(game, p, detector) {
 
 export function stepDetection(game, random = simRandom) {
   const g = game.galaxy,
-    now = g.time || 0;
+    now = g.time || 0,
+    orbits = new Map();
+  for (const f of g.fleets)
+    if (!f.leg) {
+      const list = orbits.get(f.planet);
+      if (list) list.push(f);
+      else orbits.set(f.planet, [f]);
+    }
   for (const p of g.planets) {
     if (p.background || p.destroyed) continue;
-    const here = onPlanet(g, p);
+    const orbit = orbits.get(p.index) || [];
+    if (!p.garrison.some(detects) && !orbit.some(f => f.units.some(detects))) continue;
+    const here = onPlanet(g, p, orbit);
     for (const detector of here) {
       const detects = abilities(detector.record, 'DETECT_HERO_ABILITY');
       if (!detects.length || detector.record.dead) continue;

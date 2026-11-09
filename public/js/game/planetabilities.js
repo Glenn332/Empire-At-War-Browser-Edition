@@ -13,11 +13,21 @@ const holder = p => p.politicalOwner ?? p.owner;
 export const planetBonusesOn = p =>
   !!holder(p) && !p.destroyed && (p.currentCorruption ?? -1) !== 0 && !db.faction(holder(p))?.bool('Is_Neutral');
 
-const abilitiesOf = (type, tag) =>
-  type
-    .sub('Abilities')
-    .flatMap(n => n.children)
-    .filter(a => a.tag.toUpperCase() === tag && yes(a.val('Initially_Enabled', 'Yes')));
+const abilityCache = new WeakMap();
+const abilitiesOf = (type, tag) => {
+  let byTag = abilityCache.get(type);
+  if (!byTag) abilityCache.set(type, (byTag = new Map()));
+  let out = byTag.get(tag);
+  if (!out)
+    byTag.set(
+      tag,
+      (out = type
+        .sub('Abilities')
+        .flatMap(n => n.children)
+        .filter(a => a.tag.toUpperCase() === tag && yes(a.val('Initially_Enabled', 'Yes'))))
+    );
+  return out;
+};
 
 export function techFactor(g, owner) {
   let sum = 0;

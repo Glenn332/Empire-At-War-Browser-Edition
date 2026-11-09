@@ -19,7 +19,18 @@ const getMark = () => {
 
 function saveable(g) {
   const s = g && g.setup;
-  return !!(s && !g.over && !g.noSave && !g.net && !s.attract && !s.benchmark && !s.net && !s.linkedTactical && window.parent === window);
+  return !!(
+    s &&
+    !g.over &&
+    !g.noSave &&
+    !g.galaxy?.observer &&
+    !g.net &&
+    !s.attract &&
+    !s.benchmark &&
+    !s.net &&
+    !s.linkedTactical &&
+    window.parent === window
+  );
 }
 
 export function watchForResume(game) {
