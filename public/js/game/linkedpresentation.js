@@ -40,6 +40,7 @@ export function installLinkedPresentation(game, scripts) {
   const options = game.setup.linkedTactical;
   if (!options) return;
   const fx = (game.linkedPresentation = new LinkedPresentation(options, db.constants.num('Camera_FX_Manager_Letterbox_Height', 0.085)));
+  if (options.letterbox) game.controlsLocked = true;
   const mask = document.createElement('div');
   mask.style.cssText = 'position:fixed;inset:0;background:#000;pointer-events:none;z-index:8';
   document.body.appendChild(mask);

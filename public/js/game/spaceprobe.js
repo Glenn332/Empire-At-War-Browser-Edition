@@ -57,6 +57,7 @@ export function battleSnapshot(game, save = null, refs = null) {
     fog: !!w.fog,
     skirmish: !!w.skirmish,
     campaign: !!w.campaign,
+    rules: w.tacticalRules || null,
     setup,
     net: net ? { seed: game.setup.seed >>> 0 } : null,
     teams: w.teams.map(t => ({

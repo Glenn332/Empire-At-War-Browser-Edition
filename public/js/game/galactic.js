@@ -2691,8 +2691,10 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
+        skirmishRules: !!this.skirmishRules,
         spawn: pl.spawnOverrides ? { ...pl.spawnOverrides } : null,
         upgrades: battleUpgrades(this.galaxy, pl),
+        sides: [b.attacker, b.defender],
         planetOwner: pl.owner,
         planetWeapons: (pl.groundStructures || [])
           .filter(u => !u.dead && u.type.bool('Is_Special_Weapon_In_Space') && u.type.num('Special_Weapon_Index', -1) >= 0)
@@ -2937,6 +2939,7 @@ export class GalacticGame {
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
         corruption: pl.currentCorruption ?? -1,
+        skirmishRules: !!this.skirmishRules,
         spawn: pl.spawnOverrides ? { ...pl.spawnOverrides } : null,
         upgrades: battleUpgrades(this.galaxy, pl),
         attacker: {
@@ -3342,8 +3345,15 @@ export class GalacticGame {
     if (this.pendingLinkedTactical && !this.battle?.linked) {
       const request = this.pendingLinkedTactical;
       if (request.pending) {
-        this.startBattle(request.planet, request.attacker, request.defender, request.mode);
-        this.battle.linked = request;
+        if (!this.pendingBattle) {
+          this.startBattle(request.planet, request.attacker, request.defender, request.mode);
+          this.battle.linked = request;
+        } else if (!request.presented && !this.pendingBattle.busy) {
+          request.presented = true;
+          this.pendingBattle
+            .show({ p: request.planet, attacker: request.attacker, defender: request.defender, mode: request.mode, options: {}, linked: request })
+            .catch(error => console.error(error));
+        }
       } else {
         launchLinkedMission(this, request).catch(error => {
           this.story.errors.set('LINK_TACTICAL', error.message);

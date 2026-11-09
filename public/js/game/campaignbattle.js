@@ -3,7 +3,7 @@ import { isTacticalSuperweapon } from './tacticalsuperweapon.js';
 import { db } from '../gamedata.js';
 import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
-import { fleetIntro } from './instantbattle.js';
+import { HYPER, LOGIC_FPS } from './sim.js';
 
 const CLASS = s => {
   const v = String(s || '').toLowerCase();
@@ -268,29 +268,95 @@ export function markers(map, name) {
   const want = name.toUpperCase().replace(/[\s_]+/g, ' ');
   return map.objects
     .filter(o => o.type.name.toUpperCase().replace(/[\s_]+/g, ' ') === want)
-    .map(o => ({ x: o.pos[0], y: o.pos[1], heading: (o.rot[2] * Math.PI) / 180 }));
+    .map(o => ({ x: o.pos[0], y: o.pos[1], z: o.pos[2] || 0, heading: (o.rot[2] * Math.PI) / 180 }));
 }
 
 export function campaignIntro(game) {
   const cb = game.setup.campaign,
     team = game.human?.team,
-    a = team && game.campaignBook?.anchors[team.id];
-  if (!a) return;
-  const units = [...game.campaignBook.entity.values()].filter(e => e && !e.dead && e.player.team === team);
+    book = game.campaignBook;
+  if (!team || !book || game.setup.net) return;
+  const arriving = book.anchors[cb.attacker.team];
+  if (!arriving) return;
+  const units = [...book.entity.values()].filter(e => e && !e.dead && e.player.team.id === cb.attacker.team);
   if (!units.length) return;
-  const cx = units.reduce((s, u) => s + u.x, 0) / units.length,
-    cy = units.reduce((s, u) => s + u.y, 0) / units.length;
-  const reach = units.reduce((r, u) => Math.max(r, Math.hypot(u.x - cx, u.y - cy) + (u.visualRadius || 0)), 350);
   const attacking = team.id === cb.attacker.team;
-  fleetIntro(game, {
-    units,
-    center: { x: cx, y: cy },
-    facing: Math.atan2(a.toward.y - a.y, a.toward.x - a.x),
-    reach,
+  hyperspaceOpening(game, {
+    entry: arriving,
+    own: book.anchors[team.id] || arriving,
+    local: attacking,
+    lead: units.find(u => !u.isSquad) || units[0],
     speech: game.human.faction
       .str(attacking ? 'SpeechEvent_Tactical_Intro_Space_Attacker' : 'SpeechEvent_Tactical_Intro_Space_Defender')
       .trim()
   });
+}
+
+const KEY_END = 120,
+  OPENING_SECONDS = 5,
+  SPEECH_AFTER = 10;
+
+export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech }) {
+  const cine = g.cine,
+    R = g.renderer,
+    rig = R?.rig;
+  if (!cine || !rig) return;
+  const facing = Math.atan2(entry.toward.y - entry.y, entry.toward.x - entry.x),
+    fx = Math.cos(facing),
+    fy = Math.sin(facing),
+    ez = entry.z || 0,
+    start = { x: entry.x - fx * HYPER.far, y: entry.y - fy * HYPER.far, z: ez };
+  let from;
+  if (local) {
+    from =
+      Math.random() < 0.5
+        ? { x: entry.x + (start.x - entry.x) * 0.05 - fy * 300, y: entry.y + (start.y - entry.y) * 0.05 + fx * 300, z: ez + 70 }
+        : { x: 2 * start.x - entry.x, y: 2 * start.y - entry.y, z: ez - 70 };
+  } else {
+    from = { x: lead ? lead.x : start.x, y: lead ? lead.y : start.y, z: ez + 20 };
+  }
+  rig.x = own.x;
+  rig.y = own.y;
+  rig.clamp?.();
+  rig.home = { ...(rig.home || {}), x: rig.x, y: rig.y };
+  const pitch = rig.viewPitch ? rig.viewPitch() : rig.pitch,
+    cp = Math.cos(pitch);
+  const home = { x: rig.x + Math.cos(rig.yaw) * cp * rig.dist, y: rig.y + Math.sin(rig.yaw) * cp * rig.dist, z: (rig.z || 0) + Math.sin(pitch) * rig.dist };
+  const ease = k => k * k * (3 - 2 * k),
+    mix = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k });
+  const spot = f => (local ? (f <= 35 ? from : mix(from, home, ease((f - 35) / (KEY_END - 35)))) : mix(from, home, ease(f / KEY_END)));
+  const aim = f => (local ? (f <= 23 ? start : mix(start, { ...entry, z: ez }, ease((f - 23) / (KEY_END - 23)))) : { x: entry.x, y: entry.y, z: ez });
+  let t = 0,
+    spoke = false;
+  const say = () => {
+    if (spoke || !speech) return;
+    spoke = true;
+    const wait = Math.max(0, SPEECH_AFTER - t) * 1000;
+    setTimeout(() => !g.over && g.audio.speech?.enqueue(speech), wait);
+  };
+  cine.start();
+  cine.subject = lead || null;
+  cine.sequence = {
+    stop() {
+      cine.subject = null;
+      say();
+    },
+    frame(dt) {
+      if (!g.paused) t += Math.min(dt, 0.1);
+      if (t >= OPENING_SECONDS || g.over) return false;
+      const f = Math.min(KEY_END, t * LOGIC_FPS),
+        p = spot(f),
+        q = aim(f),
+        cam = R.camera;
+      cam.position.set(p.x, p.y, p.z);
+      cam.up.set(0, 0, 1);
+      cam.lookAt(q.x, q.y, q.z);
+      cine.lookX = q.x;
+      cine.lookY = q.y;
+      cine.camDist = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+      return true;
+    }
+  };
 }
 
 export function placeCampaignBattle(w, map, teams, cb) {

@@ -6,6 +6,7 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
+import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
 import { POSE_MARGIN } from './landinstances.js';
 import { cachedPose, settlePose } from './posecache.js';
@@ -786,7 +787,7 @@ export function buildsFor(type, faction, campaign = false) {
   const out = [];
   let on = false;
   for (const k of type
-    .list(campaign ? 'Tactical_Buildable_Objects_Campaign' : 'Tactical_Buildable_Objects_Multiplayer')
+    .list(campaign && !tacticalRules().skirmish ? 'Tactical_Buildable_Objects_Campaign' : 'Tactical_Buildable_Objects_Multiplayer')
     .flatMap(x => x.split(/[\s,]+/))
     .filter(Boolean)) {
     if (db.faction(k)) {
@@ -818,7 +819,7 @@ export const missingFor = (world, side, t) =>
     .list('Tactical_Build_Prerequisites')
     .map(n => db.type(n))
     .filter(p => p && !world.owned[side].has(p.name));
-export const costOf = t => t.num('Tactical_Build_Cost_Multiplayer', 0);
+export const costOf = (t, faction = null) => (faction ? padCost(t, faction) : tacticalCost(t));
 export const landPop = t =>
   t.has('Land_Override_Population_Value') ? t.num('Land_Override_Population_Value', 0) : t.num('Population_Value', 0);
 export const timeOf = t => t.num('Tactical_Build_Time_Seconds', 10);
@@ -2203,8 +2204,8 @@ export class LandWorld {
 
   startSite(site, uc, side) {
     if (!this.siteOptions(site, side).includes(uc)) return 'Cannot be built there';
-    if (this.credits[side] < costOf(uc)) return 'Not enough credits';
-    this.credits[side] -= costOf(uc);
+    if (this.credits[side] < costOf(uc, this.factions[side])) return 'Not enough credits';
+    this.credits[side] -= costOf(uc, this.factions[side]);
     const secs = timeOf(uc) * this.mods[side].build;
     site.building = { uc, type: uc, side, left: secs, total: secs };
     return null;
@@ -2481,7 +2482,7 @@ export class LandWorld {
   buy(u, type, side = u.side) {
     const why = this.cantBuy(u, type, side);
     if (why) return why;
-    this.credits[side] -= costOf(type);
+    this.credits[side] -= costOf(type, this.factions[side]);
     const secs = timeOf(type) * this.mods[side].build;
     this.queueOf(side, type).push({ type, left: secs, total: secs, from: u, side });
     return null;
@@ -2504,7 +2505,7 @@ export class LandWorld {
     }
     const lacks = missingFor(this, side, type);
     if (lacks.length) return 'Requires ' + lacks.map(p => db.t(p.str('Text_ID')) || p.name.replace(/_/g, ' ')).join(', ');
-    if (this.credits[side] < costOf(type)) return 'Not enough credits';
+    if (this.credits[side] < costOf(type, this.factions[side])) return 'Not enough credits';
     if (isUpgrade(type)) {
       if (this.owned[side].has(type.name) || this.teamSides(side).some(s => this.queues[s].upgrades.some(q => q.type === type)))
         return 'Already bought';
@@ -2518,13 +2519,13 @@ export class LandWorld {
     const q = list[index];
     if (!q) return;
     list.splice(index, 1);
-    this.credits[side] += costOf(q.type);
+    this.credits[side] += costOf(q.type, this.factions[side]);
   }
   cancelSite(site) {
     const b = site && site.building;
     if (!b || b.done) return;
     site.building = null;
-    this.credits[b.side] += costOf(b.uc);
+    this.credits[b.side] += costOf(b.uc, this.factions[b.side]);
   }
 
   useAbility(squad, kind, tgt = null) {

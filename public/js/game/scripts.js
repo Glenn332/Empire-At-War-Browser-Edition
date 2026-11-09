@@ -1,6 +1,7 @@
 import { hintedObjects } from './tacticalobjects.js';
 import { loadFengari, LuaVM, LuaRef, Multi } from '../lua.js';
 import { db } from '../gamedata.js';
+import { tacticalCost } from './tacticalrules.js';
 import { fetchText, findFiles } from '../vfs.js';
 import { useAbility } from './abilities.js';
 import { orderMove, orderAttack, orderGuard, orderStop } from './orders.js';
@@ -386,7 +387,7 @@ export class ScriptHost {
       Get_Max_Range: () => t.num('Targeting_Max_Attack_Distance', t.num('Max_Attack_Distance', 800)),
       Get_Min_Range: () => t.num('Targeting_Min_Attack_Distance', 0),
       Get_Build_Cost: () => t.num('Tactical_Build_Cost_Multiplayer', t.num('Build_Cost_Credits', 0)),
-      Get_Tactical_Build_Cost: () => t.num('Tactical_Build_Cost_Multiplayer', 0),
+      Get_Tactical_Build_Cost: () => tacticalCost(t),
       Get_Tech_Level: () => t.num('Tech_Level', 0),
       Is_Valid: () => true,
       Is_Affected_By_Missile_Shield: () => /^(ROCKET|MPTL_ROCKET)$/i.test(t.str('Projectile_Category').trim()),

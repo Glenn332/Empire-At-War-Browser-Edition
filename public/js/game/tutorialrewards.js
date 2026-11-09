@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { setSkirmishRules } from './tacticalrules.js';
 import { openDialog } from './dialogs.js';
 import { toMainMenu } from './transit.js';
 import { TutorialFx } from './tutorialfx.js';
@@ -169,7 +170,13 @@ export function tutorialReward(host, e) {
       return true;
     case 'SKIRMISH_RULES':
       if (!present(p[0])) host.errors?.set(e.name, 'SKIRMISH_RULES takes one parameter, and param = 0 or 1');
-      else game.skirmishRules = atoi(p[0]) !== 0;
+      else {
+        game.skirmishRules = atoi(p[0]) !== 0;
+        if (game.world?.tacticalRules) {
+          game.world.tacticalRules = setSkirmishRules(game.skirmishRules);
+          game.mirror?.setRules?.(game.world.tacticalRules);
+        }
+      }
       return true;
     case 'FINISHED_TUTORIAL':
       if (!present(p[0])) host.errors?.set(e.name, 'FINISHED_TUTORIAL takes one parameter, name of the tutorial');

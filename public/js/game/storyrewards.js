@@ -9,6 +9,7 @@ import { tutorialReward } from './tutorialrewards.js';
 import { relation } from './galacticrelation.js';
 import { STORY_PARAM } from './storyenums.js';
 import { startRandomStory } from './randomstory.js';
+import { setRetreatDisabled } from './retreat.js';
 
 const key = s =>
   String(s || '')
@@ -182,6 +183,9 @@ export function galacticStoryReward(host, e) {
       else list.push({ owner: faction, source, mask, expires });
       return true;
     }
+    case 'DISABLE_RETREAT':
+      if (present(p[0])) setRetreatDisabled(p[0], atoi(p[1]) !== 0);
+      return true;
     case 'NEW_POWER_FOR_ALL':
     case 'REMOVE_POWER_FROM_ALL': {
       const q = player(owner);

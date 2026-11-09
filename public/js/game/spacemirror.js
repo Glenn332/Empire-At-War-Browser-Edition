@@ -156,6 +156,10 @@ export class SpaceMirror {
     this.worker.postMessage({ k: 'cmd', cmd: this.ours(cmd) });
   }
 
+  setRules(rules) {
+    this.worker?.postMessage({ k: 'rules', rules });
+  }
+
   setViewer(p) {
     this.worker?.postMessage({ k: 'viewer', id: p ? p.id : -1 });
   }

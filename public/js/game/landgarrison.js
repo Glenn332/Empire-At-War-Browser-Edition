@@ -1,6 +1,7 @@
 import { db, spawnList } from '../gamedata.js';
 import { planetAllowsCompany } from './invasion.js';
 import { simRandom } from './simrandom.js';
+import * as THREE from '../../vendor/three/build/three.module.js';
 
 const spawners = new Map();
 export const isSpawner = t => {
@@ -38,13 +39,31 @@ export function adoptGarrisons(w) {
   for (const u of w.units) if (!u.dead && !u.inside && isSpawner(u.type) && !w.garrisons.has(u)) attach(w, u, false);
 }
 
-async function letOut(w, u, entry, i, count) {
-  const angle = u.heading + (i - (count - 1) / 2) * 0.65,
-    distance = u.type.num('Spawned_Squadron_Location_Flyout_Distances', 110);
-  const at = w.nearestOpen(u.x + Math.cos(angle) * distance, u.y + Math.sin(angle) * distance);
+function exitPoint(w, u) {
+  const names = u.type.list('Spawned_Squadron_Location_Bones').flatMap(n => n.split(/[\s,]+/)).filter(Boolean),
+    flyouts = u.type
+      .list('Spawned_Squadron_Location_Flyout_Distances')
+      .flatMap(n => n.split(/[\s,]+/))
+      .filter(Boolean)
+      .map(Number);
+  const bones = u.inst?.bone ? names.map((n, k) => ({ bone: u.inst.bone(n), k })).filter(b => b.bone) : [];
+  const reach = i => (Number.isFinite(flyouts[i]) ? flyouts[i] : u.radius || 110);
+  if (!bones.length) return { x: u.x, y: u.y, angle: u.heading, distance: reach(-1) };
+  const i = Math.min(bones.length - 1, Math.floor(simRandom() * bones.length)),
+    { bone, k } = bones[i],
+    at = new THREE.Vector3();
+  u.holder?.updateMatrixWorld(true);
+  w.boneAt(u, bone, at);
+  const m = bone.matrixWorld?.elements,
+    angle = m && (m[0] || m[1]) ? Math.atan2(m[1], m[0]) : u.heading;
+  return { x: at.x, y: at.y, angle, distance: reach(k) };
+}
+
+async function letOut(w, u, entry, spot = exitPoint(w, u)) {
+  const at = w.nearestOpen(spot.x + Math.cos(spot.angle) * spot.distance, spot.y + Math.sin(spot.angle) * spot.distance);
   if (!at) return null;
   if (entry.remaining > 0) entry.remaining--;
-  const q = await w.spawn(entry.type.name, at.x, at.y, angle, u.side);
+  const q = await w.spawn(entry.type.name, at.x, at.y, spot.angle, u.side);
   if (!q?.members.length) return null;
   const group = q.mates || [q];
   entry.out.push(group);
@@ -75,7 +94,8 @@ export async function tickGarrisons(w, initial = false) {
     try {
       if (g.load) {
         g.load = false;
-        for (const e of g.entries) for (let i = 0; i < e.start && e.remaining !== 0 && !u.dead; i++) await letOut(w, u, e, i, e.start);
+        const spot = exitPoint(w, u);
+        for (const e of g.entries) for (let i = 0; i < e.start && e.remaining !== 0 && !u.dead; i++) await letOut(w, u, e, spot);
         g.timer = w.time + delay;
         continue;
       }
@@ -85,7 +105,7 @@ export async function tickGarrisons(w, initial = false) {
       for (let k = 0; k < es.length; k++) {
         const e = es[(first + k) % es.length];
         if (e.out.length >= e.start || e.remaining === 0) continue;
-        await letOut(w, u, e, e.out.length, e.start);
+        await letOut(w, u, e);
         g.timer = w.time + delay;
         break;
       }

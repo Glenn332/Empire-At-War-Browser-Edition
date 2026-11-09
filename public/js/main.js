@@ -1,4 +1,5 @@
 import { TacticalMarker } from './game/tacticalobjects.js';
+import { setTacticalRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
 import { mpBattleParent } from './game/galacticmpbattle.js';
 import { startGalaxyFrame, galaxyFrameSetup } from './game/mpgalaxyframe.js';
@@ -542,6 +543,7 @@ class Game {
 
     world.skirmish = !this.setup.attract && !this.setup.benchmark && !this.setup.campaign && !this.setup.instant;
     world.campaign = !!this.setup.campaign;
+    world.tacticalRules = setTacticalRules({ campaign: !!this.setup.campaign, skirmish: !!this.setup.campaign?.skirmishRules, corrupted: (this.setup.campaign?.corruption ?? -1) !== -1 });
     await installTacticalBattle(this);
     if (this.setup.campaign)
       for (const p of world.players)
@@ -560,7 +562,12 @@ class Game {
       this.campaignBook = placeCampaignBattle(world, map, teams, cbk);
       world.overrunSides = [teams[cbk.attacker.team], teams[cbk.defender.team]];
       this.retreat = this.spaceRetreat(cbk);
-      placeCampaignSpecialWeapons(world, map.objects, cbk);
+      placeCampaignSpecialWeapons(world, map.objects, cbk, faction => {
+        if (!db.faction(faction)) return null;
+        const t = world.addTeam(new Team(world.teams.length, db.faction(faction).name));
+        t.mapSide = true;
+        return world.addPlayer(new Player(world.players.length, t, { credits: 0, name: db.faction(faction).name }));
+      });
       for (const p of world.players)
         if (p.id >= 0)
           giveFreeUpgrades(
@@ -740,7 +747,7 @@ class Game {
     else if (this.instant) {
       this.message(`${db.t(map.textId) || map.planet} — the last fleet standing wins`);
       this.instant.intro();
-    } else if (this.campaignBook && !this.setup.linkedTactical && !this.setup.tacticalStoryPlot) campaignIntro(this);
+    } else if (this.campaignBook && (this.setup.campaign?.linked?.cinematic ?? 1) === 1) campaignIntro(this);
     if (this.observer) this.spectatorView = new SpectatorView(this);
     this.reportView = this.spectatorView || (this.setup.benchmark || this.setup.attract ? null : new SpectatorView(this, 'space', { quiet: true }));
     this.last = performance.now();
@@ -1437,6 +1444,8 @@ class Game {
     return (w.retreat = new RetreatCoordinator({
       prefix: 'Space',
       campaign: !!cb && !this.setup.linkedTactical,
+      skirmishRules: () => !!cb?.skirmishRules || !!this.skirmishRules,
+      principals: cb?.sides || null,
       time: () => w.time,
       generic: name => this.tacticalStory?.generic(name),
       players: () => w.players.filter(p => p.id >= 0),

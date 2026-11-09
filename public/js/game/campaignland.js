@@ -7,17 +7,18 @@ const normalize = s => s.toUpperCase().replace(/[\s_]+/g, ' ');
 const relevant = t => t.bool('Victory_Relevant', true) || t.bool('Land_Victory_Relevant');
 
 export function pathfinder(units, authoredHero = '') {
+  const named = String(authoredHero).toUpperCase();
   const selected = units.find(
     u =>
-      u.type.toUpperCase() === String(authoredHero).toUpperCase() ||
-      db
-        .type(u.type)
-        ?.list('Company_Units')
-        .some(n => n.toUpperCase() === String(authoredHero).toUpperCase())
+      u.pathfinder ||
+      (!!named &&
+        (u.type.toUpperCase() === named ||
+          db
+            .type(u.type)
+            ?.list('Company_Units')
+            .some(n => n.toUpperCase() === named)))
   );
   if (selected) return selected;
-  const flagged = units.find(u => u.pathfinder);
-  if (flagged) return flagged;
   const hero = u => {
     const t = db.type(u.type);
     return t && (/hero/i.test(t.tag) || t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => /hero/i.test(db.type(n)?.tag || '')));
@@ -79,7 +80,8 @@ export async function placeLandInvasion(w, map, cb) {
     defend = defs[0];
   if (!defend) throw new Error('Campaign land map has no Defending Forces Position');
   const entries = markers(map, 'Attacker Entry Position');
-  const entry = entries.sort((a, b) => Math.hypot(a.x - defend.x, a.y - defend.y) - Math.hypot(b.x - defend.x, b.y - defend.y))[0];
+  const d3 = (p, q) => (p.x - q.x) ** 2 + (p.y - q.y) ** 2 + ((p.z || 0) - (q.z || 0)) ** 2;
+  let entry = [...entries].sort((p, q) => d3(p, defend) - d3(q, defend))[0];
   if (!entry) throw new Error('Campaign land map has no Attacker Entry Position');
   const book = {
     companies: new Map(),
@@ -107,7 +109,7 @@ export async function placeLandInvasion(w, map, cb) {
       book.persistent.delete(positionKey(site));
       book.records = book.records.filter(r => r !== held);
     }
-    if (unit && pad?.bool('Tactically_Built_Child_Object_Persists') && !book.persistent.has(positionKey(site)))
+    if (unit && !cb.linked?.sandbox && pad?.bool('Tactically_Built_Child_Object_Persists') && !book.persistent.has(positionKey(site)))
       book.persistent.set(positionKey(site), {
         unit,
         site,
@@ -195,6 +197,14 @@ export async function placeLandInvasion(w, map, cb) {
     }
     await spawn(r, d.side, savedCompanyMarker(map, r.markerId) || defs[i % defs.length]);
   }
+  const preventer = w.units.find(
+    u => !u.dead && u.side !== a.side && u.type.behaviors().has('DUMMY_GROUND_STRUCTURE') && u.type.num('Reinforcement_Prevention_Radius', 0) !== 0
+  );
+  if (preventer) {
+    const at = { x: preventer.x, y: preventer.y, z: preventer.z || 0 };
+    entry = [...entries].sort((p, q) => d3(q, at) - d3(p, at))[0];
+    book.anchors[a.side] = entry;
+  }
   const first = pathfinder(a.units, cb.linked?.hero);
   for (const u of a.units) {
     const type = db.type(u.type);
@@ -206,19 +216,18 @@ export async function placeLandInvasion(w, map, cb) {
     }
   }
   for (const p of w.points.filter(p => p.reinforce)) {
-    const present = new Set(
-      w.units
-        .filter(
-          u =>
-            !u.dead &&
-            u.side >= 0 &&
-            u.side < w.factions.length &&
-            (u.captures || u.side === a.side) &&
-            Math.hypot(u.x - p.x, u.y - p.y) <= p.radius
-        )
-        .map(u => u.side)
+    const counted = w.units.filter(
+      u =>
+        !u.dead &&
+        u.side >= 0 &&
+        u.side < w.factions.length &&
+        (u.captures || u.side === a.side) &&
+        (u.x - p.x) ** 2 + (u.y - p.y) ** 2 + ((u.z || 0) - (p.z || 0)) ** 2 <= p.radius * p.radius
     );
-    if (present.size) p.side = present.size === 1 ? [...present][0] : -1;
+    if (counted.length) {
+      const owner = p.side >= 0 ? p.side : counted[0].side;
+      p.side = counted.every(u => u.side === owner || w.ally(u.side, owner)) ? owner : -1;
+    }
     w.showOwner(p);
   }
   const reinforce = w.reinforce.bind(w);

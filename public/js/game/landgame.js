@@ -1,4 +1,5 @@
 import { TacticalMarker } from './tacticalobjects.js';
+import { setTacticalRules } from './tacticalrules.js';
 import { linkedParent, reportLinkedVictory, authoredMapOwner, ensureMissionPlayers, missionMapActor } from './linktactical.js';
 import { mpBattleParent } from './galacticmpbattle.js';
 
@@ -639,6 +640,7 @@ export class LandGame {
       popCap: setup.popCap
     }));
     world.campaign = !!setup.campaign;
+    world.tacticalRules = setTacticalRules({ campaign: !!setup.campaign, skirmish: !!setup.campaign?.skirmishRules, corrupted: (setup.campaign?.corruption ?? -1) !== -1 });
     world.playerSides = this.players.length;
     world.clearShots = !setup.net;
     world.fowOn = setup.fog !== false;
@@ -3634,6 +3636,8 @@ export class LandGame {
     return new RetreatCoordinator({
       prefix: 'Land',
       campaign: !!this.invasionBook && !this.setup.linkedTactical,
+      skirmishRules: () => !!cb?.skirmishRules || !!this.skirmishRules,
+      principals: cb?.sides || null,
       time: () => w.time,
       generic: name => this.tacticalStory?.generic(name),
       players: () => this.players.map((_, i) => i),

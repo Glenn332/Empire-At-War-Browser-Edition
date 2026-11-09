@@ -123,13 +123,14 @@ export function specialWeaponSource(mapObjects) {
 }
 const weaponSource = mapObjects => specialWeaponSource(mapObjects) || { x: 0, y: 0, z: 0 };
 
-export function placeCampaignSpecialWeapons(world, mapObjects, campaign) {
+export function placeCampaignSpecialWeapons(world, mapObjects, campaign, addOwner = null) {
   const names = campaign.planetWeapons || [];
   if (!names.length || !campaign.planetOwner) return;
   const players = world.players.filter(
     p => p.id >= 0 && p.faction && String(p.factionName).toUpperCase() === String(campaign.planetOwner).toUpperCase()
   );
-  const owner = players.find(p => p.human) || players[0];
+  let owner = players.find(p => p.human) || players[0];
+  if (!owner && addOwner) owner = addOwner(campaign.planetOwner);
   if (!owner) return;
   const at = weaponSource(mapObjects);
   for (const name of names) {

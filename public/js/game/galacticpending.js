@@ -173,6 +173,7 @@ export class PendingBattle {
 
   fight(request) {
     this.game.startBattle(request.p, request.attacker, request.defender, request.mode, request.options);
+    if (request.linked && this.game.battle) this.game.battle.linked = request.linked;
     return true;
   }
 

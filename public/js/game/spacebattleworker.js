@@ -1,6 +1,7 @@
 import './workeroverlay.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { loadGameData, db } from '../gamedata.js';
+import { setTacticalRules } from './tacticalrules.js';
 import { loadMap } from '../ted.js';
 import { World, Player, Team, Unit, Squad, modelsForType, resetEntityIds } from './sim.js';
 import { seedSim, simRandomState, simRandomDraws } from './simrandom.js';
@@ -80,6 +81,7 @@ async function setUp(m, events) {
   w.autofire = m.autofire;
   w.skirmish = !!m.skirmish;
   w.campaign = !!m.campaign;
+  w.tacticalRules = setTacticalRules(m.rules || { campaign: w.campaign });
   const teams = m.teams.map((tm, i) => {
     const t = w.addTeam(new Team(i, tm.faction));
     t.mapSide = !!tm.mapSide;
@@ -406,6 +408,8 @@ async function run(m) {
     } else if (c.k === 'lockstep') {
       held.push(c);
       drain();
+    } else if (c.k === 'rules') {
+      w.tacticalRules = setTacticalRules(c.rules);
     } else if (c.k === 'viewer') {
       w.viewer = w.players.find(p => p.id === c.id) || null;
     } else if (c.k === 'jobs') {

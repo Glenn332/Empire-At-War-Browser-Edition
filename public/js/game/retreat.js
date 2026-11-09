@@ -55,7 +55,8 @@ export class RetreatCoordinator {
 
   canRetreat(player) {
     const a = this.a;
-    if (!a.campaign || this.done || !a.isSide(player)) return 1;
+    if (!a.campaign || a.skirmishRules?.() || this.done || !a.isSide(player)) return 1;
+    if (a.principals && !a.principals.some(f => key(f) === key(a.factionOf(player)))) return 1;
     if (a.time() - this.start < this.allowedAfter()) return 2;
     if (this.active && this.active.player !== player) return 5;
     if (!db.faction(a.factionOf(player))?.bool('Is_Playable') || retreatDisabled(a.factionOf(player))) return 1;

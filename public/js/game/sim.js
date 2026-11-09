@@ -17,6 +17,7 @@ import {
   inRange
 } from './abilities.js';
 import { simRandom } from './simrandom.js';
+import { tacticalCost, padCost, buildListTag } from './tacticalrules.js';
 import { collisionOf, extentBoxOf, meshHit } from './collmesh.js';
 import {
   CAT,
@@ -118,7 +119,7 @@ export function footprintOf(type) {
 export function buildListFor(type, factionName) {
   const out = [];
   let current = null;
-  for (const tok of type.list('Tactical_Buildable_Objects_Multiplayer')) {
+  for (const tok of type.list(buildListTag())) {
     if (db.faction(tok)) {
       current = tok.toUpperCase();
       continue;
@@ -136,7 +137,12 @@ export function particleFile(typeName) {
   return t ? t.str('Space_Model_Name') || t.str('Land_Model_Name') : '';
 }
 
-export const buildCost = t => t.num('Tactical_Build_Cost_Multiplayer', t.num('Build_Cost_Credits', 0));
+export const buildCost = (t, faction = null) =>
+  t.has('Tactical_Build_Cost_Multiplayer') || t.has('Tactical_Build_Cost_Campaign')
+    ? faction
+      ? padCost(t, faction)
+      : tacticalCost(t)
+    : t.num('Build_Cost_Credits', 0);
 export const buildTime = t => t.num('Tactical_Build_Time_Seconds', t.num('Build_Time_Seconds', 10));
 export const isSquadronType = t => t.has('Squadron_Units');
 export const isCompanyType = t => t.has('Company_Units');
@@ -245,7 +251,7 @@ export class Team {
   }
 }
 
-const HYPER = (() => {
+export const HYPER = (() => {
   const ease = x => (x <= 0.5 ? (x * 4) / 3 : 2 / 3 + ((x - (x * x) / 2 - 0.5 + 0.125) * 4) / 3 / 0.5);
   const step = f =>
     f < 25 ? 0 : f < 35 ? 750 : f < 45 ? 750 - ease((f - 34) / 10) * 741.875 : f < 120 ? 8.125 : 8.125 - ease((f - 119) / 30) * 8.125;
@@ -1637,7 +1643,7 @@ export class World {
       const q = builder.buildQueues.get(p.id + ':' + type.str('Tactical_Production_Queue', 'Tactical_Units'));
       if (q && q.length >= db.constants.num('Max_Build_Queue', 5)) return 'Build queue full';
     }
-    if (p.credits < buildCost(type)) return 'Not enough credits';
+    if (p.credits < buildCost(type, p.factionName)) return 'Not enough credits';
     return null;
   }
 
@@ -1661,7 +1667,7 @@ export class World {
     const why = this.cantBuild(builder, type, player);
     if (why) return why;
     const p = player || (builder.isPad ? builder.padOwner : builder.player);
-    p.credits -= buildCost(type);
+    p.credits -= buildCost(type, p.factionName);
     (p.everBought ||= new Map()).set(type, (p.everBought.get(type) || 0) + 1);
     if (builder.isPad) {
       this.raiseOnPad(builder, type, p);
@@ -1703,7 +1709,7 @@ export class World {
     const q = builder.buildQueues.get(queueName);
     if (!q || !q[index]) return;
     const [it] = q.splice(index, 1);
-    it.player.credits += buildCost(it.type);
+    it.player.credits += buildCost(it.type, it.player.factionName);
     if (it.player.everBought && it.player.everBought.get(it.type) > 0)
       it.player.everBought.set(it.type, it.player.everBought.get(it.type) - 1);
     this.audio.playFor(it.player, it.type.str('SFXEvent_Build_Cancelled'));
