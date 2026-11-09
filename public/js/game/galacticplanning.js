@@ -888,8 +888,14 @@ export class GalacticPlanning {
         force.specs.map(spec => ({ force, spec, n: 0, fit: 0, escort: force.flags.has('ESCORTFORCE') }))
       ),
       candidates = [];
+    const heroes = def.forces.some(f => !f.flags.has('DENYHEROATTACH')),
+      hero = t => t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero');
     const existing = cache.entries.filter(
-      e => (e.type.bool('Is_Named_Hero') || (def.freeStore && !def.magic)) && (!this.reservations.has(e.record) || options.all)
+      e =>
+        (e.type.bool('Is_Named_Hero') || (def.freeStore && !def.magic)) &&
+        (heroes || !hero(e.type)) &&
+        !(hero(e.type) && this.reservations.get(e.record)?.def?.magic) &&
+        (!this.reservations.has(e.record) || options.all)
     );
     for (const e of existing) {
       if (!def.engaged && (this.game.battle?.p === e.planet.index || this.game.pendingBattle?.request?.p === e.planet.index)) continue;
@@ -1027,8 +1033,8 @@ export class GalacticPlanning {
         const role = !!escort && mainOK && !mainShort && e.lines.some(l => l.escort && room(l)),
           open = e.lines.filter(l => room(l) && (!escort || l.escort === role));
         if (!open.length) continue;
-        if (!first.has(e.type)) first.set(e.type, Math.floor(simRandom() * 8));
-        const l = open[first.get(e.type) % open.length];
+        if (!first.has(e.type)) first.set(e.type, simRandom());
+        const l = open[Math.min(open.length - 1, Math.floor(first.get(e.type) * open.length))];
         if (e.magic) {
           available.push({ e, l, score: (l.spec.percent ? 1 : 1 - l.n / l.spec.max) + simRandom(), selected: -1, weight: 0, T: null, factory: null, price: 0 });
           continue;
@@ -1085,8 +1091,10 @@ export class GalacticPlanning {
       }
       if (!available.length) break;
       if (picked.length) {
-        const varied = available.filter(x => (typeCounts.get(x.e.type) || 0) / picked.length < 0.5);
-        if (varied.length) available = varied;
+        const out = new Set();
+        for (const x of available)
+          if ((typeCounts.get(x.e.type) || 0) / picked.length >= 0.5 && available.some(y => y !== x && !out.has(y))) out.add(x);
+        if (out.size) available = available.filter(x => !out.has(x));
       }
       let best = available[0];
       for (const c of available) if (c.score > best.score) best = c;
@@ -1126,13 +1134,18 @@ export class GalacticPlanning {
     for (const T of [main, escort])
       if (T && picked.length && (!sat(T) || [...T.domains].some(d => T.total[d] > 0 && T.left[d] / T.total[d] > threshold))) return null;
     if (!def.magic && !controller.budget.admits(category, cost, horizon, limit)) return null;
+    if (!def.magic && goal?.buildDelay > 0) {
+      const base = picked.reduce((n, e) => n + (e.production ? e.type.num('Build_Time_Seconds', 0) : 0), 0),
+        tolerance = base * (controller.adjustment?.build?.galactic ?? 1) * goal.buildDelay;
+      if (tolerance > 0 && tolerance < horizon) return null;
+    }
     return { def, goal, groups, stages: forceStages, cost, horizon, limit };
   }
   staffable(controller, goal, target, options = {}) {
     const id = controller.player.faction + '|' + key(goal) + '|' + (target?.index ?? 'global');
     let valid = false;
     for (const name of this.byGoal.get(key(goal)) || [])
-      if (this.solve(controller, name, target, { ...options, goal, all: true })) {
+      if ((options.waiting && this.defs.get(name)?.magic) || this.solve(controller, name, target, { ...options, goal, all: true })) {
         valid = true;
         break;
       }
@@ -1149,10 +1162,7 @@ export class GalacticPlanning {
   start(controller, goal, target, options = {}) {
     const names = this.byGoal.get(key(goal)) || [];
     if (!names.length) return null;
-    const offset = Math.floor(simRandom() * names.length);
-    let selection = null;
-    for (let i = 0; i < names.length && !selection; i++)
-      selection = this.solve(controller, names[(i + offset) % names.length], target, { ...options, goal });
+    const selection = this.solve(controller, names[Math.min(names.length - 1, Math.floor(simRandom() * names.length))], target, { ...options, goal });
     if (!selection) return null;
     for (const entries of selection.groups.values())
       for (const e of entries) if (!e.production && this.reservations.has(e.record)) return null;

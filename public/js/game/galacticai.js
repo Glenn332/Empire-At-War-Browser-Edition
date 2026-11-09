@@ -13,6 +13,7 @@ import { groundLevel, aiProductionBlock, strategicPrerequisite } from './galacti
 import { planetIncome, playerIncome, fiscalCycleSeconds, orbitFleets } from './galacticeconomy.js';
 import { relation } from './galacticrelation.js';
 import { blackMarketItems } from './blackmarket.js';
+import { antiStealth } from './galacticdetect.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 
 const KEYS = new Map(),
@@ -322,7 +323,7 @@ export class GalacticMind extends Reason {
     if (force !== undefined) return force;
     if (name === 'VARIABLE_TARGET.TARGETPOLITICALCONTROL') {
       if (!p) return 0;
-      const sign = key(p.owner) === key(c.player.faction) ? 1 : -1;
+      const sign = key(p.politicalOwner ?? p.owner) === key(c.player.faction) ? 1 : -1;
       return (sign * Math.trunc(Math.abs(p.politicalTarget ?? 0))) / (db.constants.num('MaximumPoliticalControl', 5) || 5);
     }
     if (name === 'VARIABLE_TARGET.ISFACTION') return +(!!p && factions.includes(key(p.owner)));
@@ -341,6 +342,11 @@ export class GalacticMind extends Reason {
       return g.players.find(pl => key(pl.faction) === key(owner))?.tech || 0;
     }
     if (name === 'VARIABLE_SELF.CREDITSUNNORMALIZED') return c.player.credits;
+    if (name === 'VARIABLE_ENEMY.CREDITSUNNORMALIZED') {
+      const foe = this.ai.primaryEnemy(c);
+      if (!foe) throw new UnknownPerception('Variable_Enemy is unbound');
+      return g.players.find(pl => key(pl.faction) === key(foe))?.credits ?? 0;
+    }
     if (name === 'VARIABLE_SELF.TIMESINCESPACEDEFENDER')
       return c.player.lastSpaceDefense === undefined ? 9.999999843067494e17 : g.time - c.player.lastSpaceDefense;
     if (name === 'VARIABLE_SELF.TIMESINCEGROUNDDEFENDER')
@@ -606,12 +612,14 @@ export class GalacticMind extends Reason {
       ).length;
       return +(worldCount >= Math.floor(+binding.count + 0.5));
     }
-    if (name === 'VARIABLE_SELF.HASUNIT') {
+    if (name === 'VARIABLE_SELF.HASUNIT' || name === 'VARIABLE_ENEMY.HASUNIT') {
       if (!types.length) throw new UnknownPerception(variable + ' requires Parameter_Type');
+      const who = name === 'VARIABLE_ENEMY.HASUNIT' ? this.ai.primaryEnemy(c) : c.player.faction;
+      if (!who) throw new UnknownPerception('Variable_Enemy is unbound');
       const held = t =>
         +typeSet.has(key(t.name)) + [...t.list('Company_Units'), ...t.list('Squadron_Units')].filter(n => typeSet.has(key(n))).length;
       let objects = 0;
-      for (const u of this.ai.forces().objects) if (key(u.owner) === key(c.player.faction)) objects += held(u.type);
+      for (const u of this.ai.forces().objects) if (key(u.owner) === key(who)) objects += held(u.type);
       const queued =
         binding.complete > 0
           ? 0
@@ -620,7 +628,7 @@ export class GalacticMind extends Reason {
                 n +
                 Object.values(p.production || {})
                   .flat()
-                  .reduce((m, q) => m + (key(q.owner) === key(c.player.faction) ? held(q.type) : 0), 0),
+                  .reduce((m, q) => m + (key(q.owner) === key(who) ? held(q.type) : 0), 0),
               0
             );
       return +(objects + queued >= +binding.count);
@@ -719,10 +727,27 @@ export class GalacticMind extends Reason {
       }
       return this.ai.typeTokens.get(type) ?? -1;
     }
-    if (name === 'VARIABLE_TARGET.BLACKMARKETABILITIESAVAILABLE') {
+    if (name === 'VARIABLE_TARGET.BLACKMARKETPRICEMODIFIER') return p ? p.type.num('Planet_Black_Market_Modifier', 0) : 0;
+    if (name === 'VARIABLE_TARGET.BLACKMARKETMINIMUMABILITYPRICE') {
       const buyer = factions.length ? g.players.find(pl => key(pl.faction) === factions[0]) : null;
-      if (!buyer) throw new UnknownPerception(variable + ' requires a Parameter_Faction in the game');
+      if (!buyer || !p) throw new UnknownPerception(variable + ' requires a Parameter_Faction in the game');
+      const seller = g.players.find(pl => key(pl.faction) === key(p.owner));
+      let low = 1e18;
+      for (const item of blackMarketItems()) {
+        if (key(item.faction) !== key(p.owner) || (buyer.blackMarket || []).some(n => key(n) === key(item.name))) continue;
+        low = Math.min(low, item.cost * ((seller?.tech ?? 0) < item.tech ? item.uncommon : 1));
+      }
+      return low + p.type.num('Planet_Black_Market_Modifier', 0);
+    }
+    if (name === 'VARIABLE_TARGET.ENEMYFORCE.ANTISTEALTHEFFECTIVENESS') {
+      if (!p) return 0;
+      return antiStealth(g, p, c.player.faction, (owner, viewer) => relation(viewer, owner) === 1);
+    }
+    if (name === 'VARIABLE_TARGET.BLACKMARKETABILITIESAVAILABLE') {
+      if (!factions.length) throw new UnknownPerception(variable + ' requires a Parameter_Faction');
       if (!p || (p.currentCorruption ?? -1) !== 6) return 0;
+      const buyer = g.players.find(pl => key(pl.faction) === factions[0]);
+      if (!buyer) throw new UnknownPerception(variable + ' requires a Parameter_Faction in the game');
       return +blackMarketItems().some(
         item => key(item.faction) === key(p.owner) && !(buyer.blackMarket || []).some(n => key(n) === key(item.name))
       );

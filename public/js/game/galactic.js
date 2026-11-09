@@ -2542,6 +2542,7 @@ export class GalacticGame {
       planet.lastGroundConflict = this.galaxy.time;
       if (player) player.lastGroundDefense = this.galaxy.time;
     }
+    this.ai?.plans?.conflict?.(planet, [attacker, defender], mode === 'space', true);
     this.planetInfo.close();
     this.galacticLog?.close();
     this.radar?.flash(p);
@@ -2741,6 +2742,7 @@ export class GalacticGame {
     const story = this.story,
       context = story && this.galaxy.planets[r.planet] ? story.battleContext(this.galaxy.planets[r.planet], r.sides) : null;
     const told = (planet, dead, winnerIndex, space) => {
+      if (r.sides && planet) this.ai?.plans?.conflict?.(planet, r.sides, space, false);
       if (!story) return;
       try {
         story.deaths(() => {

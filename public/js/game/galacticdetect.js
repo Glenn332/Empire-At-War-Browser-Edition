@@ -36,6 +36,17 @@ function onPlanet(g, p) {
   return out;
 }
 
+export function antiStealth(g, p, viewer, hostile) {
+  let keep = 1;
+  for (const o of onPlanet(g, p)) {
+    if (!hostile(o.owner, viewer)) continue;
+    let best = 0;
+    for (const a of abilities(o.record, 'DETECT_HERO_ABILITY')) best = Math.max(best, a.num('Detection_Chance', 0));
+    keep *= 1 - Math.min(1, Math.max(0, best));
+  }
+  return 1 - keep;
+}
+
 function evade(target) {
   let best = 0;
   for (const a of members(target.record).flatMap(t => t.sub('Abilities').flatMap(n => n.children)))

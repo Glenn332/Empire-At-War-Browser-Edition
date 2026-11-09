@@ -167,7 +167,7 @@ export async function difficultyAdjustment(faction, difficulty, playerType = nul
           bribe: n('Bribe_Cost_Multiplier'),
           galacticSleep: n('Galactic_AI_Goal_Cycle_Sleep_Duration'),
           galacticContrast: n('Galactic_AI_Contrast_Multiplier'),
-          build: { space: n('Space_Build_Time_Multiplier'), land: n('Land_Build_Time_Multiplier') }
+          build: { space: n('Space_Build_Time_Multiplier'), land: n('Land_Build_Time_Multiplier'), galactic: n('Galactic_Build_Time_Multiplier') }
         });
       }
       return out;

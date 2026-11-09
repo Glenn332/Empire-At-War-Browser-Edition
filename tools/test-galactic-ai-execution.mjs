@@ -25,6 +25,8 @@ const { GalacticAI } = await import('../public/js/game/galacticai.js'),
   { stepFleets } = await import('../public/js/game/fleets.js');
 const { pauseGalactic } = await import('../public/js/game/galacticpause.js');
 const { GalacticBattles } = await import('../public/js/game/galacticbattles.js');
+const { seedSim } = await import('../public/js/game/simrandom.js');
+seedSim(+(process.env.AI_SEED || 20261109));
 const data = await loadCampaignData(),
   campaign = data.campaigns.get(mod < 0 ? 'SANDBOX_EQUAL_FOOTING_EMPIRE' : 'KNOWNSMALL_ERA_1_EMPIRE'),
   galaxy = startingGalaxy(data, campaign);

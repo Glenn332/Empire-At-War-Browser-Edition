@@ -300,7 +300,7 @@ export class GoalSystem {
         !this.likeOn(kept, c.def, c.name, c.t) &&
         (c.inst
           ? P.canRetain?.(c.inst) !== false
-          : P.staffable(cmdr, c.name, this.thingOf(c.t), { mind, t: c.t, fails: this.failures(S, 'plan', c.name, c.t) }));
+          : P.staffable(cmdr, c.name, this.thingOf(c.t), { mind, t: c.t, fails: this.failures(S, 'plan', c.name, c.t), waiting: true }));
       const take = c => {
         if (c.inst) {
           if (P.retain?.(c.inst) === false) return false;
