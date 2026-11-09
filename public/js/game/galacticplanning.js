@@ -1,3 +1,4 @@
+import { heroAttachRefused } from './heroattach.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { forceKind, placeStartingForce } from './galaxy.js';
@@ -895,6 +896,7 @@ export class GalacticPlanning {
         (e.type.bool('Is_Named_Hero') || (def.freeStore && !def.magic)) &&
         (heroes || !hero(e.type)) &&
         !(hero(e.type) && this.reservations.get(e.record)?.def?.magic) &&
+        !options.refused?.has(e.type) &&
         (!this.reservations.has(e.record) || options.all)
     );
     for (const e of existing) {
@@ -1134,6 +1136,9 @@ export class GalacticPlanning {
     for (const T of [main, escort])
       if (T && picked.length && (!sat(T) || [...T.domains].some(d => T.total[d] > 0 && T.left[d] / T.total[d] > threshold))) return null;
     if (!def.magic && !controller.budget.admits(category, cost, horizon, limit)) return null;
+    const refused = picked.filter(e => !e.production && hero(e.type) && heroAttachRefused(e.type, allCost)).map(e => e.type);
+    if (refused.length && !options.refused) return this.solve(controller, name, target, { ...options, refused: new Set(refused) });
+    if (refused.length) return null;
     if (!def.magic && goal?.buildDelay > 0) {
       const base = picked.reduce((n, e) => n + (e.production ? e.type.num('Build_Time_Seconds', 0) : 0), 0),
         tolerance = base * (controller.adjustment?.build?.galactic ?? 1) * goal.buildDelay;

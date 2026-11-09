@@ -2,6 +2,7 @@ import { Lockstep, TURN } from './netgame.js';
 import { ticker } from '../net.js';
 import { simRandomState } from './simrandom.js';
 import { db } from '../gamedata.js';
+import { snapshot, putSave } from './savegame.js';
 import { embarkLayoutCompany, landLayoutCompany } from './baselayoutdata.js';
 import { carriedCompany } from './invasion.js';
 import { humanPath } from './fleets.js';
@@ -247,6 +248,18 @@ export function runCommand(game, faction, cmd) {
       }
       if (done) game.galacticBattleChanged?.();
       return done ? { ok: true } : {};
+    }
+    case 'save': {
+      const mine = game.actingPid === game.localPid,
+        name = String(cmd.name || '').slice(0, 64);
+      try {
+        putSave(snapshot(game, name), mine && cmd.slot != null ? cmd.slot : null)
+          .then(() => game.message?.(`${db.t('TEXT_SAVE_GAME_TITLE') || 'Save Game'}: ${name}`, 'good'))
+          .catch(error => console.error(error));
+      } catch (error) {
+        console.error(error);
+      }
+      return {};
     }
     case 'sell': {
       const rec = fromRecordRef(g, cmd.rec);

@@ -127,7 +127,7 @@ export class Menus {
       else if (!g.lock) g.paused = true;
       g.setUIPause?.('menu', true);
     }
-    dlg.enable('IDC_SAVE_GAME', !g.over && !g.setup.benchmark && !g.noSave && !(g.setup.net && g.setup.campaign));
+    dlg.enable('IDC_SAVE_GAME', !g.over && !g.setup.benchmark && !g.noSave && !(g.setup.net && g.setup.campaign && !g.galactic));
     const rehost = g.setup.net?.rehost;
     dlg.enable('IDC_LOAD_GAME', !g.setup.net || !!rehost);
     if (rehost) dlg.setText('IDC_LOAD_GAME', 'Back to Game Setup');
@@ -454,6 +454,11 @@ export class Menus {
       down.classList.toggle('off', !on);
     };
     const write = async id => {
+      if (g.galactic && g.net) {
+        g.order({ c: 'save', name: name.value.trim(), slot: id });
+        this.pop();
+        return;
+      }
       try {
         await putSave(await snapshotNow(g, name.value.trim()), id);
       } catch (error) {

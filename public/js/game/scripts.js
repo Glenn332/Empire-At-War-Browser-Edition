@@ -2040,15 +2040,27 @@ export class ScriptHost {
           Reset: () => of().clear()
         };
       })(),
-      Create_Thread: Object.assign((name, arg) => {
-        const t = vm.thread(inst.env, String(name));
-        if (!t) return -1;
-        t.id = ++inst.threadIds;
-        t.arg = arg;
-        t.values = new Map();
-        inst.threads.push(t);
-        return t.id;
-      }, { Is_Thread_Active: id => inst.threads.some(t => t.id === id) }),
+      Create_Thread: {
+        __wrap: true,
+        __name: 'Create_Thread',
+        __call: (name, arg) => {
+          const t = vm.thread(inst.env, String(name));
+          if (!t) return -1;
+          t.id = ++inst.threadIds;
+          t.arg = arg;
+          t.values = new Map();
+          inst.threads.push(t);
+          return t.id;
+        },
+        Is_Thread_Active: id => inst.threads.some(t => t.id === id),
+        Kill: id => {
+          const t = inst.threads.find(t => t.id === id);
+          if (t && t !== inst.running) {
+            vm.free(t.ref);
+            inst.threads = inst.threads.filter(x => x !== t);
+          }
+        }
+      },
       GetEvent: {
         __wrap: true,
         __name: 'GetEvent',

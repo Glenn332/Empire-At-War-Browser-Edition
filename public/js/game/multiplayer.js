@@ -1688,8 +1688,6 @@ async function openStaging(args) {
       '',
       'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides play without the story.'
     );
-  if (host && st.type === 'control')
-    addChat('', 'Land Control plays as a Land battle here: winning by holding the control points is not in this version yet.');
   if (host) {
     const link = inviteLink(net.gameId, kind);
     addChat('', 'Invite link (click to copy, send it to whoever you want to play): ' + link, link);

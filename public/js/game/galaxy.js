@@ -431,6 +431,7 @@ export function snapshotGalaxy(g) {
           ...(u.raiding ? { raiding: true } : {}),
           ...(u.pathfinder ? { pathfinder: true } : {}),
           ...(Number.isInteger(u.guiIndex) ? { guiIndex: u.guiIndex } : {}),
+          ...(u.speedScale ? { speedScale: u.speedScale } : {}),
           ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {}),
           ...(u.detectNext ? { detectNext: { ...u.detectNext } } : {})
         }

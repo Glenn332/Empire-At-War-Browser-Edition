@@ -28,6 +28,7 @@ export function baseSpeed(fleet) {
   const f = db.faction(fleet.owner);
   return (
     hyperspaceSpeed(fleet.units) *
+    fleet.units.reduce((k, u) => Math.min(k, u.speedScale ?? 1), 1) *
     (f ? f.num('Hyperspace_Speed_Factor', 0.07) : 0.07) *
     db.constants.num('Object_Max_Speed_Multiplier_Galactic', 5)
   );

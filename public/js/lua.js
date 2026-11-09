@@ -543,7 +543,8 @@ export class LuaVM {
 
   requireFunction(env, loaded) {
     const { lua, aux } = this;
-    return this.guard(L2 => {
+    const attempt = this.guard(L2 => {
+      lua.lua_settop(L2, 1);
       const name = lua.lua_tojsstring(L2, 1) || '',
         key = name
           .replace(/\.lua$/i, '')
@@ -556,6 +557,10 @@ export class LuaVM {
       const src = this.source(key);
       if (src === undefined) {
         this.need.add(key);
+        if (lua.lua_isyieldable(L2)) {
+          lua.lua_settop(L2, 1);
+          return lua.lua_yieldk(L2, 0, 0, attempt);
+        }
         return aux.luaL_error(L2, this.str('@@need ' + key));
       }
       if (src === null) return aux.luaL_error(L2, this.str(`module '${name}' not found`));
@@ -571,6 +576,7 @@ export class LuaVM {
       lua.lua_setfield(L2, -3, this.str(key));
       return 1;
     });
+    return attempt;
   }
 
   run(src, name, env) {

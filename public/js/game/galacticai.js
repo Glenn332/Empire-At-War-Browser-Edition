@@ -14,6 +14,7 @@ import { planetIncome, playerIncome, fiscalCycleSeconds, orbitFleets } from './g
 import { relation } from './galacticrelation.js';
 import { blackMarketItems } from './blackmarket.js';
 import { antiStealth } from './galacticdetect.js';
+import { loadHeroAttach } from './heroattach.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 
 const KEYS = new Map(),
@@ -848,7 +849,7 @@ export class GalacticAI {
     this.neighbours = galacticNeighbours(this.game.galaxy);
     const types = await aiPlayerTypes();
     await Promise.all(types.map(type => this.profile(type.name)));
-    await Promise.all([this.plans.load(), this.loadHints(), this.reconcile()]);
+    await Promise.all([this.plans.load(), this.loadHints(), this.reconcile(), loadHeroAttach().catch(() => {})]);
     const host = this.game.story,
       player = this.game.galaxy.players[0];
     for (const name of new Set(types.map(t => t.galactic).filter(Boolean))) {

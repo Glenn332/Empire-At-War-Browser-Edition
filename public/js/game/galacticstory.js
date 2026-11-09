@@ -20,7 +20,7 @@ import { strategicStealth } from './galacticfog.js';
 import { battleStory, battleClassSummary, destroyStory, destroyBaseStory, conquerStory, scoringCall } from './galacticbattleevents.js';
 import { strategicPower } from './galacticforces.js';
 import { groundActivated } from './planetdestruction.js';
-import { orderMove, pullIn } from './fleets.js';
+import { orderMove, pullIn, findPath } from './fleets.js';
 import { scheduleHeroRespawn, forceHeroRespawn } from './galacticherorespawn.js';
 import { sabotageReward } from './galacticsabotage.js';
 import { galacticBounty, ownerCorruption } from './galacticbounty.js';
@@ -473,6 +473,13 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Lock_Controls', on => {
       game.controlsLocked = on !== false && on !== 0;
     });
+    vm.global('Find_Path', (player, from, to) => {
+      const a = from?.__planet,
+        b = to?.__planet;
+      if (!a || !b) return undefined;
+      const path = findPath(game.galaxy, a.index, b.index);
+      return path ? [a, ...path.map(i => game.galaxy.planets[i])].map(p => this.planet(p)) : undefined;
+    });
     vm.global('Add_Planet_Highlight', (planet, id) => {
       const p = planet?.__planet,
         scene = game.scene || game.renderer?.scene;
@@ -596,6 +603,14 @@ export class GalacticStoryHost extends StoryPlots {
       Get_ID: () => [...db.factions.values()].indexOf(faction),
       Is_Human: () => (this.game.isHuman ? this.game.isHuman(id) : id === key(this.game.me || this.game.galaxy.active)),
       Is_Neutral: () => faction.bool('Is_Neutral'),
+      Set_Black_Market_Tutorial: on => {
+        const p = data();
+        if (p) p.blackMarketTutorial = !!on;
+      },
+      Set_Sabotage_Tutorial: on => {
+        const p = data();
+        if (p) p.sabotageTutorial = !!on;
+      },
       Enable_Advisor_Hints: (mode, on) => {
         const p = data(),
           name = { GALACTIC: 'Galactic', SPACE: 'Space', LAND: 'Land' }[key(mode)];
@@ -787,6 +802,17 @@ export class GalacticStoryHost extends StoryPlots {
           (!types.length || types.includes(key(o.type.name))) &&
           (!categories || categories.some(n => o.type.categories().has(n)))
       ).length;
+    }
+    const mind = !this.askingMind && owner?.__faction && this.game.ai?.perceiver?.(owner.__faction);
+    if (mind) {
+      this.askingMind = true;
+      try {
+        const value = mind.read(variable, params, target);
+        if (Number.isFinite(+value)) return +value;
+      } catch {
+      } finally {
+        this.askingMind = false;
+      }
     }
     this.unsupported('Perception.' + variable);
     return 0;
@@ -1033,6 +1059,17 @@ export class GalacticStoryHost extends StoryPlots {
       Set_Check_Contested_Space: on => {
         record.checkContestedSpace = !!on;
       },
+      Override_Max_Speed: scale => {
+        const k = +scale;
+        if (Number.isFinite(k) && k > 0) record.speedScale = k;
+        else delete record.speedScale;
+      },
+      Get_Parent_Object: () => {
+        const g = this.game.galaxy,
+          f = g.fleets.find(x => x.units.includes(record));
+        if (f) return this.galacticFleet(f);
+        return object.planet ? this.planet(object.planet) : undefined;
+      },
       __missing: this.absent('Object')
     };
     this.objectWrappers.set(record, result);
@@ -1063,8 +1100,15 @@ export class GalacticStoryHost extends StoryPlots {
       }
     }
   }
-  fleet(list) {
+  galacticFleet(f) {
+    const g = this.game.galaxy,
+      at = f.leg ? null : g.planets[f.planet];
+    const wrap = this.fleet(f.units.filter(u => !u.dead).map(u => this.object(u, at || undefined, f.owner)), f);
+    return wrap;
+  }
+  fleet(list, galactic = null) {
     const objects = (Array.isArray(list) ? list : []).map(o => o?.__object).filter(Boolean);
+    const home = () => galactic || this.game.galaxy.fleets.find(f => objects.some(o => f.units.includes(o.record || o)));
     return {
       __wrap: true,
       __name: 'Fleet',
@@ -1078,6 +1122,19 @@ export class GalacticStoryHost extends StoryPlots {
         for (const o of objects) this.activate(o, filter);
       },
       Move_To: target => this.moveFleet(objects, target),
+      Get_Parent_Object: () => {
+        const f = home();
+        if (f) return f.leg ? undefined : this.planet(this.game.galaxy.planets[f.planet]);
+        return this.planet(objects[0]?.planet);
+      },
+      Invade: () => {
+        const f = home(),
+          g = this.game.galaxy;
+        if (!f || f.leg) return false;
+        const p = g.planets[f.planet];
+        if (!p || !f.units.some(u => !u.dead && forceKind(u.carries || u.type) === 'company')) return false;
+        return !!this.game.land?.(f, p.index);
+      },
       __missing: this.absent('Fleet')
     };
   }
@@ -1812,14 +1869,26 @@ export class GalacticStoryHost extends StoryPlots {
         },
         Params: () => inst.params
       },
-      Create_Thread: (name, arg) => {
-        const thread = vm.thread(inst.env, String(name));
-        if (!thread) return -1;
-        thread.id = inst.threads.length + 1;
-        thread.arg = arg;
-        thread.values = new Map();
-        inst.threads.push(thread);
-        return thread.id;
+      Create_Thread: {
+        __wrap: true,
+        __name: 'Create_Thread',
+        __call: (name, arg) => {
+          const thread = vm.thread(inst.env, String(name));
+          if (!thread) return -1;
+          thread.id = (inst.threadIds = Math.max(inst.threadIds || 0, inst.threads.length) + 1);
+          thread.arg = arg;
+          thread.values = new Map();
+          inst.threads.push(thread);
+          return thread.id;
+        },
+        Is_Thread_Active: id => inst.threads.some(t => t.id === id),
+        Kill: id => {
+          const thread = inst.threads.find(t => t.id === id);
+          if (thread && thread !== inst.running) {
+            vm.free(thread.ref);
+            inst.threads = inst.threads.filter(t => t !== thread);
+          }
+        }
       }
     };
     if (extra) Object.assign(values, extra);

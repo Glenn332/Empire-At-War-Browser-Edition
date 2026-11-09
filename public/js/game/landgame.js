@@ -999,6 +999,7 @@ export class LandGame {
       if (pt.reinforce)
         this.audio.play(f.str(world.ally(pt.side, this.me) ? 'SFXEvent_HUD_Landing_Zone_Captured' : 'SFXEvent_HUD_Landing_Zone_Lost'));
       else if (world.ally(pt.side, this.me)) this.audio.play(f.str('SFXEvent_HUD_Build_Pad_Captured'));
+      if (this.setup.type === 'control') this.dominationCheck(pt.side);
     };
 
     const own = world.units.find(u => !u.dead && u.side === this.me);
@@ -2799,9 +2800,35 @@ export class LandGame {
     });
   }
 
+  dominationCheck(side) {
+    const w = this.world,
+      relevant = w.points.filter(p => p.type?.bool?.('Control_Point_Domination_Condition_Relevant'));
+    const playable = side >= 0 && !!db.faction(this.factions[side])?.bool('Is_Playable');
+    if (playable && relevant.length && relevant.every(p => p.side >= 0 && (p.side === side || w.ally(p.side, side))))
+      this.domination = { side, left: db.constants.num('Control_Point_Domination_Victory_Time_In_Secs', 30) };
+    else this.domination = null;
+  }
+
+  dominationStep(dt) {
+    const d = this.domination;
+    if (!d || this.over) return;
+    const was = d.left;
+    d.left -= dt;
+    const f = db.faction(this.factions[this.me]),
+      whose = d.side === this.me ? 'Owned' : this.world.ally(d.side, this.me) ? 'Ally_Owned' : 'Enemy_Owned';
+    for (const mark of [60, 30, 15, 5])
+      if (was > mark && d.left <= mark && f) this.audio.play(f.str(`SFXEvent_HUD_Reinforcement_Point_${whose}_${String(mark).padStart(2, '0')}_Seconds`));
+    if (d.left <= 0) {
+      this.domination = null;
+      this.world.winner = this.teams[d.side];
+      this.end(this.world.winner === this.myTeam);
+    }
+  }
+
   stepEnd(dt) {
     const w = this.world;
     tickGarrisons(w).catch(e => console.error('garrison', e));
+    if (this.setup.type === 'control') this.dominationStep(dt);
     if (this.invasionVictory && !this.over) {
       this.invasionVictory.left -= dt;
       if (this.invasionVictory.left <= 0 && !this.invasionBook.pending && !w.garrisonBusy && !this.tacticalStory?.disableDepth) {
