@@ -2,7 +2,7 @@ import { db } from '../gamedata.js';
 import { planetIncome } from './galacticeconomy.js';
 import { spyMask } from './galacticspy.js';
 import { planetCreditValue } from './planetstats.js';
-import { abilityEnabled } from './abilityoverride.js';
+import { abilityEnabled, overrideState } from './abilityoverride.js';
 
 export const VIS = Object.freeze({
   OWNER: 1,
@@ -110,7 +110,7 @@ function effects(type, depth = 0) {
 }
 let roster = null;
 export const useGalaxy = g => (roster = g);
-const overridden = () => !!roster?.players?.some(p => p.abilityOverrides);
+const overridden = () => overrideState.any && !!roster;
 function cloaked(type, owner, depth = 0) {
   const e = effects(type);
   if (e.company) return true;

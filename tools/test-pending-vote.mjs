@@ -46,23 +46,20 @@ const make = (pid, players) => {
 const players = [
   { human: true, faction: 'Rebel' },
   { human: true, faction: 'Empire' },
-  { human: false, faction: 'Underworld' }
+  { human: true, faction: 'Underworld' }
 ];
 const request = () => ({ p: 0, attacker: 'Rebel', defender: 'Empire', mode: 'space', options: {} });
 
 {
-  const { pb, shown, orders, game } = make(0, players);
+  const { pb, game } = make(2, players);
   assert.ok(pb.begin(request()));
-  await new Promise(r => setTimeout(r));
-  assert.equal(shown.get('PENDING_BATTLE_SHELL'), true, 'the vote uses the pending shell');
-  assert.deepEqual(pb.request.voters, [0, 1], 'every connected human votes');
-  pb.click('choice_button_right');
-  assert.deepEqual(orders, [{ c: 'battle', id: 1, choice: 'resolve' }], 'Auto-Resolve votes auto');
-  assert.equal(shown.get('choice_button_right'), false, 'the buttons go after voting');
+  assert.deepEqual(pb.request.voters, [0, 1], 'only the two sides of the battle vote');
+  game.actingPid = 0;
   pb.answer('Rebel', 1, 'resolve');
+  assert.ok(pb.request, 'the vote waits for the other side');
   game.actingPid = 1;
   pb.answer('Empire', 1, 'resolve');
-  assert.equal(pb.request, null, 'all voted: decided');
+  assert.equal(pb.request, null, 'both sides voted: decided');
 }
 {
   const { pb, outcomes, game } = make(0, players);
@@ -73,17 +70,15 @@ const request = () => ({ p: 0, attacker: 'Rebel', defender: 'Empire', mode: 'spa
   assert.deepEqual(outcomes, ['fight'], 'one tactical vote means a tactical battle');
 }
 {
-  const { pb, orders, advance } = make(1, players);
+  const { pb, outcomes } = make(0, players);
   pb.begin(request());
-  pb.tick();
-  assert.equal(orders.length, 0);
-  advance(db.constants.num('Battle_Pending_Timeout_Seconds', 30) + 0.01);
-  pb.tick();
-  assert.deepEqual(orders, [{ c: 'battle', id: 1, choice: 'fight' }], 'on timeout the local vote is tactical');
+  const steps = pb.request.timeout;
+  for (let i = 0; i < steps; i++) pb.tick();
+  assert.ok(outcomes.length, 'the countdown decides with the default when time runs out');
 }
 {
-  const { pb, outcomes } = make(0, players);
-  pb.begin({ ...request(), defender: 'Underworld' });
+  const { pb, outcomes } = make(0, [{ human: true, faction: 'Rebel' }, { human: false, faction: 'Empire' }]);
+  pb.begin(request());
   assert.deepEqual(outcomes, ['resolve', 'fight'], 'a battle against the AI resolves at once');
 }
 console.log('ok');

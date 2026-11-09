@@ -575,7 +575,6 @@ export class LandGame {
   }
 
   toggleMenu() {
-    if (!this.menus?.open && this.tacticalCinematics?.on && !this.over) return;
     this.menus.toggle();
   }
 

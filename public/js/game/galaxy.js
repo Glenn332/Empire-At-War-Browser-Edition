@@ -4,6 +4,7 @@ import { parseXML } from '../xml.js';
 import { advisorHintFlags } from './advisorhints.js';
 import { retreatDisabledList, setRetreatDisabledList } from './retreat.js';
 import { strategicStealth } from './galacticfog.js';
+import { overrideState } from './abilityoverride.js';
 import { unlockBelowTech } from './galacticproduction.js';
 
 let orbitListener = null;
@@ -491,7 +492,10 @@ export function applyGalaxy(g, s) {
       player.blackMarket = (saved.blackMarket || []).slice();
       player.blackMarketTutorial = !!saved.blackMarketTutorial;
       player.sabotageTutorial = !!saved.sabotageTutorial;
-      if (saved.abilityOverrides) player.abilityOverrides = { ...saved.abilityOverrides };
+      if (saved.abilityOverrides) {
+        player.abilityOverrides = { ...saved.abilityOverrides };
+        overrideState.any = true;
+      }
       else delete player.abilityOverrides;
       player.corruptionMissions = (saved.corruptionMissions || Array(8).fill(0)).slice();
     }

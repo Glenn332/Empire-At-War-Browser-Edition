@@ -456,13 +456,13 @@ export class GalacticBar extends CommandBar {
   heroFocus(h) {
     const game = this.game,
       v = game.view;
-    if (h.e.fleet?.leg) return;
     const i = h.e.planet,
-      at = game.galaxy.planets[i]?.pos;
-    if (!(i >= 0) || !at) return;
-    game.select(i);
+      transit = !!h.e.fleet?.leg,
+      at = transit ? h.e.fleet.pos : game.galaxy.planets[i]?.pos;
+    if (!at) return;
+    if (!transit && i >= 0) game.select(i);
     if (v.zoom > 0 || v.dir > 0) {
-      if (v.planet !== i) game.zoomIn(i);
+      if (!transit && i >= 0 && v.planet !== i) game.zoomIn(i);
       return;
     }
     v.x = at[0];

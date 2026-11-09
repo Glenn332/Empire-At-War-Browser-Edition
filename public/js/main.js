@@ -2054,7 +2054,6 @@ class Game {
   }
 
   toggleMenu() {
-    if (!this.menus?.open && this.tacticalCinematics?.on && !this.over) return;
     this.menus.toggle().then(ok => {
       if (!ok) this.plainMenu();
     });

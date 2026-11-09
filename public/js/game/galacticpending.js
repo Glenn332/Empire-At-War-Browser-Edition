@@ -98,16 +98,22 @@ export class PendingBattle {
 
   netBegin(request) {
     const game = this.game,
+      C = db.constants,
       humans = [request.attacker, request.defender].filter(f => game.isHuman(f));
     const coop = !!game.setup.singlePlayerCampaign && humans.length >= 1;
     if ((humans.length < 2 && !coop) || (game.setup.options?.autoResolve ?? 2) === 0) return this.resolve(request);
     request.id = this.netCount = (this.netCount || 0) + 1;
-    request.voters = (game.setup.players || []).map((p, i) => (p.human && !p.left ? i : -1)).filter(i => i >= 0);
+    const sides = [request.attacker, request.defender].map(key);
+    request.voters = (game.setup.players || [])
+      .map((p, i) => (p.human && !p.left && sides.includes(key(p.faction)) ? i : -1))
+      .filter(i => i >= 0);
     request.humans = humans;
     request.answers = new Map();
-    request.deadline = (game.now?.() ?? performance.now()) + Math.max(0, pendingTimeout()) * 1000;
+    request.steps = 0;
+    request.timeout = Math.max(1, C.num('AutoResolveVoteDefaultTimeOut', 10)) * 30;
+    request.fallback = C.bool('AutoResolveVoteDefaultToTactical') ? 'fight' : 'resolve';
     this.request = request;
-    if (request.voters.includes(game.localPid)) this.show(request).catch(error => console.error(error));
+    if (request.voters.includes(game.localPid)) this.openVote(request).catch(error => console.error(error));
     return true;
   }
 
@@ -118,13 +124,14 @@ export class PendingBattle {
       this.begin(waiting);
     }
     const r = this.request;
-    if (!r?.voters || !r.voters.includes(this.game.localPid)) return;
-    const left = this.secondsLeft(r);
-    if (left !== r.shownLeft) {
-      r.shownLeft = left;
-      this.paint();
+    if (!r?.voters) return;
+    if (this.game.held) return;
+    r.steps++;
+    if (this.vote) this.paintVote();
+    if (r.steps >= r.timeout) {
+      for (const v of r.voters) if (!r.answers.has(v)) r.answers.set(v, r.fallback);
+      this.tally();
     }
-    if (!r.sent && left <= 0) this.cast('fight');
   }
 
   secondsLeft(r) {
@@ -146,6 +153,7 @@ export class PendingBattle {
       who = this.game.actingPid;
     if (!r?.voters || r.id !== id || !r.voters.includes(who) || r.answers.has(who) || !['fight', 'resolve'].includes(choice)) return;
     r.answers.set(who, choice);
+    if (this.vote) this.paintVote();
     this.tally();
   }
 
@@ -153,7 +161,8 @@ export class PendingBattle {
     const r = this.request;
     if (!r?.voters || !r.voters.every(v => r.answers.has(v))) return;
     const fight = [...r.answers.values()].includes('fight');
-    this.close();
+    this.closeVote();
+    this.request = null;
     if (fight) this.fight(r);
     else this.resolve(r, true);
   }
@@ -164,11 +173,75 @@ export class PendingBattle {
     r.voters = r.voters.filter(v => v !== pid);
     if (gone) r.humans = r.humans.filter(f => key(f) !== key(faction));
     if (r.humans.length < (this.game.setup.singlePlayerCampaign ? 1 : 2)) {
-      this.close();
+      this.closeVote();
+      this.request = null;
       this.resolve(r, true);
       return;
     }
     this.tally();
+  }
+
+  async openVote(request) {
+    const game = this.game,
+      dlg = await openDialog('IDD_MP_VOTE_DIALOG', { modal: false });
+    if (!dlg) {
+      game.order({ c: 'battle', id: request.id, choice: request.fallback });
+      return;
+    }
+    if (this.request !== request) {
+      dlg.close();
+      return;
+    }
+    this.vote = dlg;
+    const planet = game.galaxy.planets[request.p];
+    dlg.setText(
+      'IDC_TEXT_MP_VOTE_PLANET_NAME',
+      db.t(request.mode === 'land' ? 'TEXT_MP_TACTICAL_LAND_BATTLE_IS_PENDING' : 'TEXT_MP_TACTICAL_SPACE_BATTLE_IS_PENDING') +
+        ' ' +
+        (db.t(planet.type.str('Text_ID')) || planet.name)
+    );
+    dlg.setText('IDC_CAPTION', db.t('TEXT_ASK_AUTO_RESOLVE'));
+    dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', db.t('TEXT_ASK_BUTTON_TACTICAL'));
+    dlg.setText('IDC_DIALOG_BOX_BUTTON_RIGHT', db.t('TEXT_ASK_BUTTON_AUTO_RESOLVE'));
+    const cast = choice => {
+      if (request.sent || this.request !== request) return;
+      request.sent = choice;
+      game.order({ c: 'battle', id: request.id, choice });
+      dlg.enable('IDC_DIALOG_BOX_BUTTON_LEFT', false);
+      dlg.enable('IDC_DIALOG_BOX_BUTTON_RIGHT', false);
+    };
+    dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => cast('fight'));
+    dlg.on('IDC_DIALOG_BOX_BUTTON_RIGHT', () => cast('resolve'));
+    this.sound(request);
+    this.paintVote();
+  }
+  paintVote() {
+    const r = this.request,
+      dlg = this.vote;
+    if (!r || !dlg) return;
+    dlg.setText('IDC_COUNTDOWN_TIMER', String(Math.max(0, Math.ceil((r.timeout - r.steps) / 30))));
+    for (let i = 0; i < 9; i++) {
+      const v = r.voters[i],
+        here = v !== undefined;
+      dlg.show(`IDC_NAME_PLAYER_${i}`, here);
+      dlg.show(`IDC_RESULT_PLAYER_${i}`, here);
+      if (!here) continue;
+      const a = r.answers.get(v);
+      dlg.setText(`IDC_NAME_PLAYER_${i}`, this.game.setup.players?.[v]?.name || 'Player');
+      dlg.setText(
+        `IDC_RESULT_PLAYER_${i}`,
+        a ? db.t(a === 'fight' ? 'TEXT_ASK_BUTTON_TACTICAL' : 'TEXT_ASK_BUTTON_AUTO_RESOLVE') : db.t('TEXT_WAITING')
+      );
+    }
+  }
+  closeVote() {
+    if (!this.vote) return;
+    this.vote.close();
+    this.vote = null;
+    if (this.music) {
+      this.game.audio?.stopMusic?.();
+      this.music = false;
+    }
   }
 
   fight(request) {

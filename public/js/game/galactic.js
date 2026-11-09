@@ -1737,6 +1737,11 @@ export class GalacticGame {
         const v = this.view,
           out = v.zoom === 0 && v.dir === 0,
           zoomed = v.zoom === 1 && v.dir === 0;
+        if (!out && !zoomed) {
+          if (e.deltaY < 0 && v.dir < 0 && v.planet >= 0) this.zoomIn(v.planet);
+          else if (e.deltaY > 0 && v.dir > 0) this.zoomOut();
+          return;
+        }
         if (e.deltaY < 0) {
           if (zoomed) this.openBaseLayout();
           if (!out) return;
@@ -3066,7 +3071,10 @@ export class GalacticGame {
 
   zoomIn(i) {
     const v = this.view;
-    if (v.zoom > 0 && v.planet === i) return;
+    if (v.zoom > 0 && v.planet === i) {
+      if (v.dir < 0) v.dir = 1;
+      return;
+    }
     if (v.zoom > 0 && v.planet !== i) {
       v.planet = i;
       v.zoom = Math.min(v.zoom, 0.999);
