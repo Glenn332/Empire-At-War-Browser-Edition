@@ -1038,7 +1038,7 @@ export class GalacticGame {
     };
     this.graphComp = component('GRAPH_LEFT');
     this.ringComp = {
-      texture: ring?.val('Icon_Texture_Name') || 'planet_ring.tga',
+      texture: ring ? ring.val('Icon_Texture_Name').trim() : 'planet_ring.tga',
       scale: ring?.num('Scale', 1) ?? 1,
       alpha:
         (ring
@@ -3927,7 +3927,7 @@ export class GalacticGame {
         faction = db.faction(displayOwner(this.galaxy, p)),
         col = rgb(faction?.str('Color')),
         ink = faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : col;
-      const ring = i !== this.selected && this.tinted(this.ringComp.texture, col);
+      const ring = i !== this.selected && !!this.ringComp.texture && this.tinted(this.ringComp.texture, col);
       if (ring) {
         const z = ui * this.ringComp.scale;
         x.globalAlpha = alpha * this.ringComp.alpha;
