@@ -58,16 +58,11 @@ assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, uw), 0);
 game = mk(3);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], uw, uw), 0);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, null), 0);
-const nalShare = db
-  .type('NalHutta_Planetary_Advantage')
-  .sub('Abilities')
-  .flatMap(x => x.all('Bounty_On_Faction_Ability'))[0]
-  .num('Bounty_Percentage_Amount', 0);
 game = mk(-1, foe);
 assert.equal(
   galacticBounty(game, rec, game.galaxy.planets[0], uw, foe),
-  Math.max(1, Math.round(value * nalShare)),
-  'Nal Hutta pays the share its NalHutta_Planetary_Advantage bounty ability names'
+  Math.round(value),
+  'the holder of Nal Hutta gets the whole value for a corruption faction loss, as the galactic payer does'
 );
 game = mk(5);
 assert.equal(galacticBounty(game, rec, game.galaxy.planets[0], foe, uw), 0, 'a corruption upgrade without a bounty ability pays nothing');
