@@ -3658,7 +3658,10 @@ export class GalacticGame {
         loadModel(file)
           .then(inst => {
             if (pv.stationView !== view || !inst) return;
-            bone.add(inst.root);
+            const holder = pv.inst.root.parent || this.scene;
+            pv.inst.root.updateWorldMatrix(true, true);
+            inst.root.position.copy(holder.worldToLocal(bone.getWorldPosition(new THREE.Vector3())));
+            holder.add(inst.root);
             view.inst = inst;
           })
           .catch(() => {});
