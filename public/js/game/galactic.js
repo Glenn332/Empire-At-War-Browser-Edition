@@ -134,7 +134,7 @@ function scrollVelocity(v, tx, ty, accel, decel) {
       ['x', tx],
       ['y', ty]
     ]) {
-      const n = v[key] + accel * t;
+      const n = (Math.sign(v[key]) === -Math.sign(t) ? 0 : v[key]) + accel * t;
       v[key] = t >= 0 ? Math.min(n, t) : Math.max(n, t);
     }
     return;
