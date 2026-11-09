@@ -49,6 +49,7 @@ import { CorruptionVisuals } from './corruptionvisuals.js';
 import { slotFor, activateSlot, isHero, SLOTS } from './abilityslots.js';
 import { isRaidForce, raidCapable, RAID_SLOT } from './raid.js';
 import { relation, hidden } from './galacticrelation.js';
+import { orbitPanes } from './orbitpanes.js';
 import { TooltipGate } from './tooltipgate.js';
 import { Pointers } from './pointers.js';
 import { sellRecord } from './galacticsell.js';
@@ -1110,40 +1111,63 @@ export class GalacticGame {
     return { x: Math.trunc((v.x * 0.5 + 0.5) * innerWidth) + dx * scale, y: Math.trunc((-v.y * 0.5 + 0.5) * innerHeight) - dy * scale };
   }
 
-  representative(units) {
-    let ordinary = null,
+  representative(units, owner = null) {
+    const icon = t => {
+      const name = t?.str('Icon_Name');
+      if (!name) return '';
+      const prefixed = this.iconPrefix + name;
+      return iconCanvasRect(prefixed) ? prefixed : iconCanvasRect(name) ? name : '';
+    };
+    const health = (t, who) => t.num('Tactical_Health', 0) * (this.ai?.controllers?.get(String(who || '').toUpperCase())?.adjustment?.health ?? 1);
+    const namedHero = (t, depth = 0) => {
+      if (!t || depth > 4) return null;
+      if (t.bool('Is_Named_Hero')) return t;
+      for (const n of [...t.list('Company_Units'), ...t.list('Squadron_Units')]) {
+        const h = namedHero(db.type(n), depth + 1);
+        if (h) return h;
+      }
+      return null;
+    };
+    let best = null,
+      bestScore = -Infinity,
       hero = null;
     for (const u of units) {
-      const type = u.carries || u.type;
-      if (!type) continue;
-      let candidates = this.typePortraits.get(type);
-      if (!candidates) {
-        candidates = [];
-        const visit = (t, named = false, depth = 0) => {
-          if (!t || depth > 4) return;
-          named ||= t.bool('Is_Named_Hero');
-          const icon = t.str('Icon_Name');
-          const prefixed = this.iconPrefix + icon;
-          if (icon && (iconCanvasRect(prefixed) || iconCanvasRect(icon)))
-            candidates.push({
-              icon: iconCanvasRect(prefixed) ? prefixed : icon,
-              hero: named,
-              rank: t.num('Ranking_In_Category'),
-              health: t.num('Tactical_Health')
-            });
-          if (t.bool('Is_Generic_Hero') && icon) return;
-          for (const n of [...t.list('Company_Units'), ...t.list('Squadron_Units')]) visit(db.type(n), named, depth + 1);
-        };
-        visit(type);
-        this.typePortraits.set(type, candidates);
+      if (u.dead || !u.type) continue;
+      const own = u.type,
+        who = u.owner ?? owner;
+      let present = u.carries || own,
+        isHero = false;
+      const named = namedHero(own) || (u.carries && namedHero(u.carries));
+      if (named) {
+        present = named;
+        isHero = true;
+      } else if (own.bool('Is_Generic_Hero') && own.str('Icon_Name')) {
+        present = own;
+        isHero = true;
       }
-      for (const c of candidates) {
-        if (c.hero) {
-          if (!hero || c.rank < hero.rank) hero = c;
-        } else if (!ordinary || c.health > ordinary.health) ordinary = c;
+      if (isHero) {
+        if ((!hero || present.num('Ranking_In_Category') < hero.num('Ranking_In_Category'))) hero = present;
+        const s = health(present, who);
+        if (s >= bestScore) {
+          best = present;
+          bestScore = s;
+        }
+      } else if (u.carries) {
+        const s = health(u.carries, who);
+        if (s > bestScore) {
+          best = u.carries;
+          bestScore = s;
+        }
+      } else {
+        const s = health(own, who);
+        if (s > bestScore) {
+          best = own;
+          bestScore = s;
+        }
       }
     }
-    return (this.filters & 8 ? hero || ordinary : ordinary || hero)?.icon || '';
+    const pick = this.filters & 8 ? hero || best : best || hero;
+    return pick ? icon(pick) : '';
   }
 
   factionColor(owner) {
@@ -1162,7 +1186,7 @@ export class GalacticGame {
   stackPicture(units, owner, comp, empty = false, count = units.length, iconName = null, overlay = null) {
     const index = Math.min(comp.textures.length - 1, Math.ceil(count / Math.max(1, db.constants.num('Ships_Per_Stack', 5))));
     const name = comp.textures[Math.max(0, index)],
-      icon = iconName ?? this.representative(units);
+      icon = iconName ?? this.representative(units, owner);
     const col = empty && comp === this.fleetComp ? [25 / 255, 85 / 255, 151 / 255] : this.factionColor(owner);
     const key = [name, index, icon, col, comp.size[0], comp.offset[0], overlay].join('|');
     if (this.stackPictures.has(key)) return this.stackPictures.get(key);
@@ -1190,6 +1214,19 @@ export class GalacticGame {
     return cv;
   }
 
+  sweepEmptyFleets() {
+    const g = this.galaxy;
+    if (!g.fleets.some(f => !f.leg && f.planet >= 0 && !f.units.length)) return;
+    g.fleets = g.fleets.filter(f => {
+      if (f.leg || f.planet < 0 || f.units.length) return true;
+      const v = this.fleetViews.get(f);
+      if (v) {
+        this.scene.remove(v.inst.root);
+        this.fleetViews.delete(f);
+      }
+      return false;
+    });
+  }
   mergeFleets() {
     const g = this.galaxy,
       keep = [],
@@ -1374,44 +1411,17 @@ export class GalacticGame {
     const out = [],
       g = this.galaxy,
       side = (innerWidth / innerHeight >= 1.75 && this.fleetComp.wide) || this.fleetComp.side;
-    const controllers = new Map();
-    for (const p of g.planets) if (p.station && p.spaceLevel > 0) controllers.set(p.index, p.stationOwner || p.owner);
-    for (const f of g.fleets) if (!f.leg && !controllers.has(f.planet)) controllers.set(f.planet, f.owner);
-    const shown = f => {
-      if (!f.units.length || f.leg || f.planet < 0) return false;
-      const v = intelligence(g, g.planets[f.planet]);
-      return !!v?.discovered && !(f.owner !== this.me && (!v.fleetOverlay || f.units.every(strategicStealth)));
-    };
-    const contested = new Set();
-    for (const f of g.fleets) if (f.owner !== this.me && shown(f)) contested.add(f.planet);
-    for (const f of g.fleets) {
-      if (!shown(f)) continue;
-      const slot = controllers.get(f.planet) === this.me && !contested.has(f.planet) ? f.slot || 0 : f.owner !== this.me ? 0 : f.slot || 2;
+    const { spots: placed } = orbitPanes(g, this.me);
+    for (const spot of placed) {
+      const slot = spot.displaySlot;
       const point = this.overlayPoint(
-        g.planets[f.planet].pos,
+        g.planets[spot.p].pos,
         slot === 0 ? -side[0] : slot === 2 ? side[0] : 0,
         slot === 1 ? this.fleetComp.offset[1] : side[1],
         ui
       );
-      if (point) out.push({ f, p: f.planet, slot: f.slot ?? 0, displaySlot: slot, ...point });
+      if (point) out.push({ ...spot, ...point });
     }
-    const panes = new Map(),
-      merged = [];
-    for (const spot of out) {
-      const k = spot.p + ':' + spot.displaySlot,
-        first = panes.get(k);
-      if (first) {
-        first.units.push(...spot.f.units);
-        first.fleets.push(spot.f);
-      } else {
-        spot.units = [...spot.f.units];
-        spot.fleets = [spot.f];
-        panes.set(k, spot);
-        merged.push(spot);
-      }
-    }
-    out.length = 0;
-    out.push(...merged);
     const occupiedByPlanet = new Map();
     if (this.dragReach)
       for (const s of out) {
@@ -3457,6 +3467,7 @@ export class GalacticGame {
           if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner, this.galaxy.planets[done.planet]);
           for (const done of completed) this.battles.dirty.add(done.planet);
         }
+        this.sweepEmptyFleets();
         stepFleets(this.galaxy, dt * LOGIC_FPS, (f, p) => {
           const raid = f.raid === p && isRaidForce(f) ? [...f.units] : null;
           this.story?.fleetEntered?.({ ...f, raid: raid ? p : undefined }, this.galaxy.planets[p]);
