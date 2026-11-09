@@ -80,25 +80,34 @@ export function battleTime(seconds) {
   return `${db.t('TEXT_BATTLE_TIME') || 'Battle Time:'} ${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
 }
 
-function spectatorReport(game, losses) {
-  const au = game.audio,
-    hush = au ? au.menuOnly : false;
+function reportScreen(game, losses, won, me) {
+  const view = game.reportView,
+    watching = !!game.observer,
+    au = game.audio,
+    hush = au ? au.menuOnly : false,
+    held = game.paused;
   if (au) {
     au.menuOnly = true;
     au.stopLoops?.();
   }
+  if (!watching && !game.lock) game.paused = true;
   game.endScreen = true;
   const resume = () => {
     if (au) au.menuOnly = hush;
+    if (!watching && !game.lock) game.paused = held;
     game.endScreen = false;
   };
-  const rehost = game.setup?.net?.rehost;
-  game.summary = game.spectatorView.report({
+  const rehost = !game.campaignOutcome && game.setup?.net?.rehost;
+  game.summary = view.report({
     losses,
     planet: game.setup?.campaign ? battlePlanetName(game) : '',
+    ...(watching ? {} : { me, won, exitLabel: db.t('TEXT_CONTINUE') || 'Continue' }),
     onExit: () => {
       resume();
-      game.toggleMenu();
+      if (watching) return game.toggleMenu();
+      game.tacticalStory?.generic('battle_end_closed');
+      if (game.campaignOutcome) game.returnToGalaxy();
+      else game.toggleMenu();
     },
     rehost: rehost
       ? () => {
@@ -111,9 +120,9 @@ function spectatorReport(game, losses) {
 }
 
 export async function showSummary(game, won, me) {
-  if (game.spectatorView?.report) {
+  if (game.reportView?.report) {
     const scored = game.scripts && game.scripts.losses ? game.scripts.losses() : null;
-    return spectatorReport(game, scored && [...scored.values()].some(m => m.size) ? scored : game.losses);
+    return reportScreen(game, scored && [...scored.values()].some(m => m.size) ? scored : game.losses, won, me);
   }
   const dlg = await openSummary();
   if (!dlg) return false;

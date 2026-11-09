@@ -837,6 +837,16 @@ body.spectating #messages {
   font-size: 18px;
   letter-spacing: 0.08em;
 }
+.sp-rep-team b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-rep-row.me .sp-rep-team b {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
 .sp-rep-row.won .sp-rep-team b {
   color: var(--gold-hi);
 }

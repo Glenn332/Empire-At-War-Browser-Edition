@@ -304,6 +304,8 @@ export class LandGame {
     this.ui?.destroy?.();
     this.spectatorView?.destroy();
     this.spectatorView = null;
+    this.reportView?.destroy();
+    this.reportView = null;
     this.bench?.dispose?.();
     const R = this.renderer;
     if (R?.isMirror) R.dispose?.();
@@ -947,7 +949,7 @@ export class LandGame {
     this.losses = new Map();
     world.onDeath = u => {
       if (this.invasionBook) invasionStructureDeath(world, this.invasionBook, u);
-      this.spectatorView?.landDeath(u);
+      this.reportView?.landDeath(u);
       if (world.companyLost(u)) {
         const lk = this.teams[u.side] ?? 'w' + u.side,
           ty = u.squad?.type || u.type;
@@ -1122,6 +1124,7 @@ export class LandGame {
     this.fit();
     this.listen('resize', () => this.fit());
     if (this.observer) this.spectatorView = new SpectatorView(this, 'land');
+    this.reportView = this.spectatorView || (this.setup.benchmark ? null : new SpectatorView(this, 'land', { quiet: true }));
     window.game = this;
     if (this.setup.benchmark) await this.startBenchmark(this.setup.benchmark);
     if (this.scripts && !setup.net && !q.has('nowarm') && !this.savedScripts)
@@ -3818,6 +3821,7 @@ export class LandGame {
       reportLinkedVictory(this, faction);
     }
     this.over = !this.invasionBook;
+    this.reportView?.finished(this.tacticalWinner);
     const d = document.createElement('div');
     d.id = 'landend';
     d.textContent = this.observer

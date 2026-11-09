@@ -546,7 +546,7 @@ class LandSource {
 }
 
 export class SpectatorView {
-  constructor(game, kind = 'space') {
+  constructor(game, kind = 'space', { quiet = false } = {}) {
     this.game = game;
     this.src = kind === 'land' ? new LandSource(game) : new SpaceSource(game);
     this.teams = this.src.teams;
@@ -562,6 +562,12 @@ export class SpectatorView {
     this.history = [];
     this.deaths = [];
     this.histStep = HISTORY_STEP;
+    this.quiet = quiet;
+    this.timer = setInterval(() => this.update(), 250);
+    if (quiet) {
+      this.update();
+      return;
+    }
     document.body.classList.add('spectating');
     this.buildTop();
     this.buildLog();
@@ -571,7 +577,6 @@ export class SpectatorView {
     addEventListener('resize', this.onResize);
     this.layout();
     this.track(0, true);
-    this.timer = setInterval(() => this.update(), 250);
     this.update();
   }
 
@@ -598,7 +603,7 @@ export class SpectatorView {
     this.winner = key ?? null;
     this.freeze();
     this.update();
-    this.renderCards();
+    if (!this.quiet) this.renderCards();
   }
 
   freeze() {
@@ -890,6 +895,18 @@ export class SpectatorView {
 
   update() {
     if (!this.src.world) return;
+    if (this.quiet) {
+      this.src.poll(item => this.add(item));
+      const m = this.src.measure();
+      this.sample(this.src.time(), m);
+      m.forEach((x, i) => {
+        const st = this.stats[i];
+        st.income = x.income;
+        st.peak = Math.max(st.peak || 0, x.power);
+        st.out = x.out;
+      });
+      return;
+    }
     this.clockEl.textContent = clock(this.src.time());
     const drop = Math.round(this.top.offsetHeight * this.scale + 10);
     if (drop !== this.drop) document.body.style.setProperty('--sp-drop', (this.drop = drop) + 'px');
@@ -990,15 +1007,23 @@ export class SpectatorView {
     return this.teams.map((_, i) => (Math.max(0, b.v[i] - a.v[i]) / span) * 60);
   }
 
-  report({ losses, planet = '', onExit, rehost = null }) {
+  report({ losses, planet = '', onExit, rehost = null, me, won, exitLabel = 'Exit' }) {
     const { t, m, totals, stats } = this.freeze(),
-      order = this.teams.map((_, i) => i).sort((a, b) => (this.teams[b].key === this.winner) - (this.teams[a].key === this.winner) || a - b);
+      mine = me === undefined ? -1 : this.indexOf(me),
+      order = this.teams
+        .map((_, i) => i)
+        .sort((a, b) => (this.teams[b].key === this.winner) - (this.teams[a].key === this.winner) || (b === mine) - (a === mine) || a - b);
+    document.getElementById('spReport')?.remove();
     const root = el('div', 'sp-report');
     root.id = 'spReport';
     const panel = el('div', 'sp-rep-panel', root);
     const head = el('div', 'sp-rep-head', panel);
     el('span', 'sp-tag', head, 'Battle report');
-    el('h2', '', head).textContent = this.winnerTitle(this.winner);
+    const h2 = el('h2', '', head);
+    if (mine >= 0) {
+      h2.textContent = won ? T('TEXT_WIN_BATTLE', 'Victory!') : T('TEXT_LOST_BATTLE', 'Defeat!');
+      h2.classList.add(won ? 'won' : 'lost');
+    } else h2.textContent = this.winnerTitle(this.winner);
     el('span', 'sp-rep-time', head).textContent = `${planet ? planet + ' · ' : ''}${clock(t)}`;
     const table = el('div', 'sp-rep-table', panel);
     const cols = ['Built', 'Lost', 'Kills', 'Earned', 'Peak power', 'Upgrades'];
@@ -1010,13 +1035,13 @@ export class SpectatorView {
         tot = totals[i] || { built: 0, lost: 0, killed: 0 },
         st = stats[i],
         won = team.key === this.winner;
-      const row = el('div', 'sp-rep-row' + (won ? ' won' : '') + (st.out && !won ? ' out' : ''), table);
+      const row = el('div', 'sp-rep-row' + (won ? ' won' : '') + (st.out && !won ? ' out' : '') + (i === mine ? ' me' : ''), table);
       row.style.setProperty('--tc', team.color);
       const who = el('span', 'sp-rep-team', row);
       const crest = el('i', 'sp-crest', who);
       paintCrest(crest, team.faction);
       const tx = el('span', '', who);
-      el('b', '', tx).textContent = this.teamLabel(i) + (won ? ' · Victor' : '');
+      el('b', '', tx).textContent = this.teamLabel(i) + (won ? ' · Victor' : '') + (i === mine ? ' · You' : '');
       el('small', '', tx).textContent = `${this.factionLabel(team)} · ${team.names.join(', ')}`;
       const ups = m[i].upgrades ? [...m[i].upgrades] : [];
       const vals = [tot.built, tot.lost, tot.killed, short(st.income || 0), short(st.peak || 0), ups.length];
@@ -1051,7 +1076,7 @@ export class SpectatorView {
         rehost();
       };
     }
-    const exit = el('button', 'sp-rep-btn main', foot, 'Exit');
+    const exit = el('button', 'sp-rep-btn main', foot, exitLabel);
     exit.type = 'button';
     exit.onclick = () => {
       close();
@@ -1332,6 +1357,7 @@ export class SpectatorView {
       const i = this.indexOf(item.team);
       if (i >= 0) this.deaths.push({ t: item.time, i, type: item.type, station: item.kind === 'station', by: item.by, byColor: item.byColor });
     }
+    if (this.quiet) return;
     const last = this.log[0];
     if (
       last &&

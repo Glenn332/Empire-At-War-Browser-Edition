@@ -742,6 +742,7 @@ class Game {
       this.instant.intro();
     } else if (this.campaignBook && !this.setup.linkedTactical && !this.setup.tacticalStoryPlot) campaignIntro(this);
     if (this.observer) this.spectatorView = new SpectatorView(this);
+    this.reportView = this.spectatorView || (this.setup.benchmark || this.setup.attract ? null : new SpectatorView(this, 'space', { quiet: true }));
     this.last = performance.now();
     requestAnimationFrame(this.frame);
     window.game = this;
@@ -783,6 +784,8 @@ class Game {
     this.ui?.destroy();
     this.spectatorView?.destroy();
     this.spectatorView = null;
+    this.reportView?.destroy();
+    this.reportView = null;
     this.bench?.dispose();
     this.bench = null;
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
@@ -1331,7 +1334,7 @@ class Game {
 
   onEvent(kind, d) {
     const me = this.human;
-    this.spectatorView?.event(kind, d);
+    this.reportView?.event(kind, d);
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))
       this.ui.radar.event('Default_Unit_Die', d.unit.x, d.unit.y);
     if (kind === 'beacon' && this.mirror && d.beacon.owner) (this.world.beacons ||= new Beacons()).add(d.beacon, this.world.time);
@@ -1732,6 +1735,7 @@ class Game {
       return;
     }
     const won = winner === this.human.team;
+    this.reportView?.finished(winner);
     const s = this.human.stats,
       t = this.world.time;
     $('menuTitle').textContent = won ? 'Victory' : 'Defeat';
