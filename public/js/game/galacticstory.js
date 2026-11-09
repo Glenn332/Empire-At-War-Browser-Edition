@@ -607,6 +607,12 @@ export class GalacticStoryHost extends StoryPlots {
         Get_Tech_Level: () => t.num('Tech_Level', 0),
         Is_Hero: () => t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero'),
         Get_Base_Level: () => t.num('Base_Level', 0),
+        Is_Build_Locked: player => {
+          const p = this.game.galaxy.players.find(x => key(x.faction) === key(player?.__faction));
+          if (!p) return false;
+          const listed = list => (list || []).some(n => key(n) === key(t.name));
+          return listed(p.lockedTypes) || (t.bool('Build_Initially_Locked') && !listed(p.unlockedTypes));
+        },
         __missing: this.absent('Type')
       };
       this.types.set(t, wrapper);
