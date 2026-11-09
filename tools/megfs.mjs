@@ -176,7 +176,7 @@ export function openGame(gameDir, mods = [], { language = 0, expansion = true } 
         languages.clear();
       },
       resolve(key) {
-        key = key.replace(/\//g, '\\').toUpperCase();
+        key = key.replace(/[\\/]+/g, '\\').toUpperCase();
         if (index.has(key)) return key;
         if (key.endsWith('.TGA') && index.has(key.slice(0, -4) + '.DDS')) return key.slice(0, -4) + '.DDS';
         return null;

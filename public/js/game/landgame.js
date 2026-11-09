@@ -815,7 +815,7 @@ export class LandGame {
                   if (ghost) ghost.visible = false;
                 }
                 const idle = beh(o.type).has('IDLE') ? await Promise.resolve(loadALA(animName(file, 'IDLE'))).catch(() => null) : null;
-                if (idle) (this.propAnims ||= []).push(this.propEntry(grp, inst, new AnimState(inst, idle, { loop: true })));
+                if (idle) (this.propAnims ||= []).push(this.propEntry(grp, inst, new AnimState(inst, idle, { loop: true, speed: o.type.num('Idle_Anim_00_Rate_Mod', 1) })));
                 grp.updateMatrixWorld(true);
                 if (!idle) {
                   grp.traverse(x => {

@@ -1,13 +1,13 @@
 import { simRandom } from './simrandom.js';
 import { pool as slicePool } from './galacticslicer.js';
-import { db } from '../gamedata.js';
+import { db, typeHasProperty } from '../gamedata.js';
 import { activeLanguage } from '../language.js';
 import { changeController } from './galacticpolitics.js';
 import { planetFactionChange } from './galacticobliterate.js';
 import { StoryPlots } from './storyplots.js';
 import { StoryFlags } from './storyflags.js';
 import { fetchText, findFiles } from '../vfs.js';
-import { LuaVM, LuaRef, Multi, loadFengari } from '../lua.js';
+import { LuaVM, LuaRef, Multi, loadFengari, FORCE_ONLY_METHODS } from '../lua.js';
 import { GalacticNeutralizePopup } from './galacticpopup.js';
 import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
@@ -349,7 +349,7 @@ export class GalacticStoryHost extends StoryPlots {
   }
 
   absent(kind) {
-    return name => (/^[A-Z]/.test(name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined);
+    return name => (/^[A-Z]/.test(name) && !FORCE_ONLY_METHODS.has(name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined);
   }
   unsupported(name) {
     this.missing.set(name, (this.missing.get(name) || 0) + 1);
@@ -868,7 +868,47 @@ export class GalacticStoryHost extends StoryPlots {
       add(byType, key(o.type.name), o);
       add(byOwner, key(o.owner), o);
     }
+    for (const o of list)
+      for (const n of new Set(o.type.list('Company_Units').map(key)))
+        if (n !== key(o.type.name) && db.type(n)) add(byType, n, this.member(o, db.type(n)));
     return (this.indexed = { list, byType, byOwner });
+  }
+  member(company, type) {
+    const members = (this.members ||= new WeakMap());
+    let byType = members.get(company);
+    if (!byType) members.set(company, (byType = new Map()));
+    let m = byType.get(type);
+    if (!m) {
+      const record = company.record || company;
+      m = {
+        type,
+        record,
+        company,
+        get owner() {
+          return company.owner;
+        },
+        set owner(v) {
+          company.owner = v;
+        },
+        get planet() {
+          return company.planet;
+        },
+        set planet(v) {
+          company.planet = v;
+        },
+        get pos() {
+          return company.pos;
+        },
+        get dead() {
+          return !!(company.dead || record.dead);
+        },
+        set dead(v) {
+          if (v) company.dead = true;
+        }
+      };
+      byType.set(type, m);
+    }
+    return m;
   }
 
   generatedSave(plot) {
@@ -1030,6 +1070,7 @@ export class GalacticStoryHost extends StoryPlots {
       Get_Position: () => this.position(...(object.pos || object.planet?.pos || [0, 0, 0])),
       Get_Game_Object: () => result,
       Is_Category: category => object.type.categories().has(key(category)),
+      Has_Property: name => typeHasProperty(object.type, name),
       Is_Transport: () => forceKind(object.type) === 'company',
       Can_Land_On_Planet: target => {
         const p = target?.__planet;

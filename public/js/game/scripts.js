@@ -1,6 +1,6 @@
 import { hintedObjects } from './tacticalobjects.js';
-import { loadFengari, LuaVM, LuaRef, Multi } from '../lua.js';
-import { db } from '../gamedata.js';
+import { loadFengari, LuaVM, LuaRef, Multi, FORCE_ONLY_METHODS } from '../lua.js';
+import { db, typeHasProperty } from '../gamedata.js';
 import { tacticalCost } from './tacticalrules.js';
 import { fetchText, findFiles } from '../vfs.js';
 import { useAbility } from './abilities.js';
@@ -26,7 +26,6 @@ const NATIVES =
     ' '
   );
 
-const ONLY_FORCES = new Set(['Get_Unit_Table', 'Are_All_Units_On_Free_Store', 'Get_Force_Count', 'Produce_Force', 'Release_Forces']);
 const LEVELS = { easy: 'Easy', medium: 'Normal', hard: 'Hard' };
 const lead = e => (e && e.isSquad ? e.fighters[0] : e);
 const body = e => (e && !e.isSquad && e.members ? e.members[0] : lead(e));
@@ -51,14 +50,7 @@ function shouldSwitch(u, t) {
 const HARM_FADE = 6;
 const gone = e => !e || e.dead || (e.isSquad && !e.fighters.length);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const hasProp = (t, name) =>
-  (t._props ||= new Set(
-    t
-      .str('Property_Flags')
-      .split('|')
-      .map(x => x.trim().toUpperCase())
-      .filter(Boolean)
-  )).has(String(name).trim().toUpperCase());
+const hasProp = typeHasProperty;
 
 export class ScriptHost {
   static async create(game) {
@@ -327,7 +319,7 @@ export class ScriptHost {
   }
   absent(kind) {
     return name =>
-      /^[A-Z]/.test(name) && !ONLY_FORCES.has(name)
+      /^[A-Z]/.test(name) && !FORCE_ONLY_METHODS.has(name)
         ? () => {
             const k = kind + '.' + name;
             this.missing.set(k, (this.missing.get(k) || 0) + 1);

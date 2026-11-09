@@ -653,7 +653,7 @@ async function campaignOptions(st, campaign) {
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
         autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-        randomEvents: C.bool('MP_Default_Random_Events', false)
+        randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
       });
       show();
     });
@@ -881,7 +881,7 @@ async function openStaging(args) {
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
     autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-    randomEvents: C.bool('MP_Default_Random_Events', false)
+    randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;

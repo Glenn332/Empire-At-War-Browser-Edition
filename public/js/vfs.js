@@ -7,7 +7,7 @@ const overlay = (globalThis.SWR_OVERLAY ? Promise.resolve(globalThis.SWR_OVERLAY
   return null;
 });
 export const pageOverlay = () => overlay;
-const keyOf = path => path.replace(/\//g, '\\').toUpperCase();
+const keyOf = path => String(path).replace(/[\\/]+/g, '\\').toUpperCase();
 
 const cache = new Map();
 
@@ -18,7 +18,7 @@ const base = () => globalThis.SWR_BASE || '';
 const GAME = expansion() ? '' : 'game=eaw';
 function url(path, language) {
   const q = [language === undefined ? '' : 'language=' + language, GAME].filter(Boolean).join('&');
-  return base() + 'asset/' + path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') + (q ? '?' + q : '');
+  return base() + 'asset/' + String(path).replace(/[\\/]+/g, '/').split('/').map(encodeURIComponent).join('/') + (q ? '?' + q : '');
 }
 
 let worker = null,

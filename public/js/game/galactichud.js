@@ -217,7 +217,11 @@ export class GalacticBar extends CommandBar {
       }
     }
     this.slots = [];
-    this.slotCount = [...this.shell.keys()].filter(n => /^B_CREATE_\d+$/.test(n)).length;
+    {
+      const bones = [...this.shell.keys()].filter(n => /^B_CREATE_\d+$/.test(n)).length,
+        rows = db.constants.num('Strategic_Command_Bar_Buildable_Row_Count', 0);
+      this.slotCount = rows > 0 ? Math.min(bones, rows) : bones;
+    }
     for (let i = 0; i < this.slotCount; i++) {
       const name = 'b_Create_' + String(i).padStart(2, '0');
       const b = this.button(name, {

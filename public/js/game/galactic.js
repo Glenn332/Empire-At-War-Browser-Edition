@@ -346,7 +346,7 @@ export class GalacticGame {
           if (scene === this.scene) inst.root.userData.cull = true;
           if (p.type.bool('Loop_Idle_Anim_00')) {
             const a = await Promise.resolve(loadALA(animName(file, 'IDLE'))).catch(() => null);
-            if (a) this.idlers.push(new AnimState(inst, a, { loop: true }));
+            if (a) this.idlers.push(new AnimState(inst, a, { loop: true, speed: p.type.num('Idle_Anim_00_Rate_Mod', 1) }));
           }
         }
         this.planetViews[i] = { inst, name: db.t(p.type.str('Text_ID')) || p.name, show: p.type.bool('Show_Name') && !p.background };
@@ -665,7 +665,7 @@ export class GalacticGame {
       pv.inst = inst;
       if (p.type.bool('Loop_Idle_Anim_00')) {
         const anim = await Promise.resolve(loadALA(animName(file, 'IDLE'))).catch(() => null);
-        if (anim && pv.inst === inst) this.idlers.push(new AnimState(inst, anim, { loop: true }));
+        if (anim && pv.inst === inst) this.idlers.push(new AnimState(inst, anim, { loop: true, speed: p.type.num('Idle_Anim_00_Rate_Mod', 1) }));
       }
     }
     this.overview?.refresh();
@@ -3406,11 +3406,13 @@ export class GalacticGame {
     planetClock.value = (planetClock.value + real) % 28800;
     if (this.pendingLinkedTactical && !this.battle?.linked) return;
     this.cullPlanets();
-    if (!this.paused && !this.over && !this.storyMovie?.pausesMode) {
+    const running = !this.paused && !this.over && !this.storyMovie?.pausesMode;
+    if (running || (this.paused && !this.over && db.constants.bool('Animate_During_Galactic_Mode_Pause', false)))
       for (const a of this.idlers) {
         if (a.inst.root.userData.culled && !a.onFrame) a.advance(real);
         else a.step(real);
       }
+    if (running) {
       if (!this.battle && !this.net) {
         this.simulate(real * this.rate);
         if (this.over) return;
@@ -3869,7 +3871,9 @@ export class GalacticGame {
         point = pv?.show && this.overlayPoint(p.pos);
       if (!point) return;
       const v = intelligence(this.galaxy, p),
-        col = rgb(db.faction(displayOwner(this.galaxy, p))?.str('Color'));
+        faction = db.faction(displayOwner(this.galaxy, p)),
+        col = rgb(faction?.str('Color')),
+        ink = faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : col;
       const ring = i !== this.selected && this.tinted(this.ringComp.texture, col);
       if (ring) {
         const z = ui * this.ringComp.scale;
@@ -3890,8 +3894,8 @@ export class GalacticGame {
       x.textBaseline = 'middle';
       x.lineJoin = 'round';
       x.lineWidth = 2 * ui * s.scale;
-      x.fillStyle = `rgb(${col.map(c => Math.round(c * 255)).join(',')})`;
-      if (!this.drawNameGlyphs(x, pv.name.toUpperCase(), s.fonts[level] || s.font, s, col, px, py, r)) {
+      x.fillStyle = `rgb(${ink.map(c => Math.round(c * 255)).join(',')})`;
+      if (!this.drawNameGlyphs(x, pv.name.toUpperCase(), s.fonts[level] || s.font, s, ink, px, py, r)) {
         if (s.outline) {
           x.strokeStyle = '#000';
           x.strokeText(pv.name.toUpperCase(), px, py);
@@ -3908,7 +3912,7 @@ export class GalacticGame {
         x.font = `${s.pt * 1.6 * ui * s.scale}px ${fontFamily(s.font)}`;
         const vx = (point.x + s.offset[0] * scale) * r,
           vy = (point.y - s.offset[1] * scale) * r;
-        if (!this.drawNameGlyphs(x, text, s.font, s, col, vx, vy, r)) {
+        if (!this.drawNameGlyphs(x, text, s.font, s, ink, vx, vy, r)) {
           if (s.outline) {
             x.strokeStyle = '#000';
             x.strokeText(text, vx, vy);

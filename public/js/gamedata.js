@@ -160,6 +160,15 @@ function crc32(str) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+export const typeHasProperty = (t, name) =>
+  !!t &&
+  (t._props ||= new Set(
+    t
+      .str('Property_Flags')
+      .split('|')
+      .map(x => x.trim().toUpperCase())
+      .filter(Boolean)
+  )).has(String(name).trim().toUpperCase());
 export const SPAWN_TIERS = 6;
 const tierRows = (type, prefix, tech) => {
   if (!(tech >= 0 && tech < SPAWN_TIERS)) return [];

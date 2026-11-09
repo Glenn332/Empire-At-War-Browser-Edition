@@ -2348,7 +2348,8 @@ export class LandWorld {
     }
     const idleA = await animOf(type, 'IDLE'),
       buildA = idleA ? null : await animOf(type, 'BUILD');
-    if (idleA) u.anim = new AnimState(inst, idleA, { loop: true, time: simRandom() * idleA.duration });
+    if (idleA)
+      u.anim = new AnimState(inst, idleA, { loop: true, time: simRandom() * idleA.duration, speed: type.num('Idle_Anim_00_Rate_Mod', 1) });
     else if (buildA) {
       new AnimState(inst, buildA).seek(1);
       inst.syncFromBones();

@@ -41,7 +41,7 @@ const KNOWN_HOST_RE =
     /^VARIABLE_SELF\.AVERAGEAGEOF(?:SPACE|GROUND)INTELLIGENCE$/,
     /^VARIABLE_TARGET\.(FRIENDLYFORCE|ENEMYFORCE)\.HAS(GROUND|SPACE)UNITSBITFIELD$/,
     /^VARIABLE_TARGET\.(FRIENDLYFORCE|ENEMYFORCE)\.NEARBY(SPACE|GROUND)TOTAL$/,
-    /^VARIABLE_(SELF|TARGET)\.(STRUCTURECOUNT|HASSTRUCTURE)$/,
+    /^VARIABLE_(SELF|TARGET|HUMAN|ENEMY)\.(STRUCTURECOUNT|HASSTRUCTURE)$/,
     /^VARIABLE_TARGET\.(?:TYPE\.ISTYPE|ISSURFACEACCESSIBLE|(?:MAX|OPEN)?(?:GROUND|STAR|STRUCTURE)|BASEINCOME|INCOME)/,
     /^VARIABLE_STORYFLAG\[([^\]]+)\]$/,
     /^(GAME|VARIABLE_TARGET|VARIABLE_SELF|VARIABLE_HUMAN|VARIABLE_ENEMY)\.(?:(FRIENDLYFORCE|ENEMYFORCE)\.)?(PER[T]ARGETMAX(?:SPACE|GROUND)FORCE|(?:SPACE|GROUND)TOTAL(?:UNNORMALIZED|NBPTM|NBTD|NBTT)?|STARBASETOTALUNNORMALIZED|GROUNDBASETOTALUNNORMALIZED)$/
@@ -592,7 +592,12 @@ export class GalacticMind extends Reason {
     const structure = nameMatch(NAME_RE[9], name);
     if (structure) {
       if (!types.length) throw new UnknownPerception(variable + ' requires Parameter_Type');
-      const worlds = structure[1] === 'TARGET' ? (p ? [p] : []) : g.planets.filter(p => key(p.owner) === key(c.player.faction));
+      let side = c.player.faction;
+      if (structure[1] === 'HUMAN' || structure[1] === 'ENEMY') {
+        side = structure[1] === 'HUMAN' ? this.ai.humanOf(c) : this.ai.primaryEnemy(c);
+        if (!side) throw new UnknownPerception('Variable_' + (structure[1] === 'HUMAN' ? 'Human' : 'Enemy') + ' is unbound');
+      }
+      const worlds = structure[1] === 'TARGET' ? (p ? [p] : []) : g.planets.filter(p => key(p.owner) === key(side));
       const matches = t => typeSet.has(key(t.name));
       let count = 0;
       for (const world of worlds) {
