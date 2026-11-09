@@ -4,7 +4,7 @@ import { intelligence, strategicStealth } from './galacticfog.js';
 const same = (a, b) => String(a || '').toUpperCase() === String(b || '').toUpperCase();
 const isSuper = t => !!t && t.list('CategoryMask').some(m => /^super$/i.test(m));
 
-export const fleetStealthed = f => f.units.length > 0 && f.units.every(u => u.dead || strategicStealth(u));
+export const fleetStealthed = f => f.units.length > 0 && f.units.every(u => u.dead || strategicStealth(u, f.owner));
 
 export function orbitController(g, p, fleets) {
   if (p.station && (p.spaceLevel || 0) > 0) return p.stationOwner || p.owner;

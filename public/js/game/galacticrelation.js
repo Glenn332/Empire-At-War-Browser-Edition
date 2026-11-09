@@ -32,7 +32,7 @@ function relationOf(a, b) {
 }
 export const enemy = (a, b) => relation(a, b) === 1;
 
-export const hidden = fleet => fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u));
+export const hidden = fleet => fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u, fleet.owner));
 const live = fleet => fleet.units.some(u => !u.dead);
 
 export function conflictAt(galaxy, p, owner, fleet = null) {

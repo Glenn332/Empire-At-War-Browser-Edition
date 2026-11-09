@@ -6,7 +6,7 @@ import { strategicStealth } from './galacticfog.js';
 import { drawMesh, uiMeshDepthAt } from './hud.js';
 import { NativePanel, loadNativePanelAssets, typeIcon } from './nativepanel.js';
 export { overviewIcon } from './nativepanel.js';
-import { intelligence, VIS } from './galacticfog.js';
+import { intelligence, unitVisible, VIS } from './galacticfog.js';
 import { canViewBaseLayout } from './baselayoutdata.js';
 import { canOpenPlanetInfo } from './planetinfodata.js';
 import { dropOverviewUnits, pathfinderCell } from './fleetmanagement.js';
@@ -20,8 +20,8 @@ export function overviewContents(g, p) {
   const v = p && intelligence(g, p),
     open = !!p && p.type.bool('Planet_Surface_Accessible', true),
     viewer = g.visibility?.viewer;
-  const ground = open && v?.groundCount ? p.garrison.filter(u => allied(u.owner, p.owner)).map(u => (v.groundContents ? u : null)) : [];
-  const structures = open && v?.groundLevel ? p.groundStructures.map(u => (v.mask & VIS.SPECIAL ? u : null)) : [];
+  const ground = open && v?.groundCount ? p.garrison.filter(u => allied(u.owner, p.owner)).map(u => (unitVisible(g, u, viewer, p, { ground: true }) ? u : null)) : [];
+  const structures = open && v?.groundLevel ? p.groundStructures.map(u => (unitVisible(g, u, viewer, p, { ground: true, structure: true }) ? u : null)) : [];
   const here = p ? g.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length) : [];
   const fleets = [],
     own = [0, 1, 2].map(() => null);
@@ -38,7 +38,7 @@ export function overviewContents(g, p) {
     if (list.length) fleets[row] = { fleet: list[0], fleets: list, units: list.flatMap(f => f.units) };
   }
   const others = here.filter(
-    f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u))))
+    f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u, f.owner))))
   );
   if (others.length) {
     const all = others.flatMap(f => f.units),
@@ -47,7 +47,11 @@ export function overviewContents(g, p) {
     const grouped = order.flatMap(t => all.filter(u => u.type === t)),
       known = others.some(f => allied(f.owner, viewer)) || v?.fleetContents,
       strongest = grouped.reduce((best, u) => (!best || u.type.num('AI_Combat_Power', 0) > best.type.num('AI_Combat_Power', 0) ? u : best), null);
-    const units = known ? grouped : v?.fleetCount ? grouped.map(u => (u === strongest ? u : null)) : [strongest];
+    const units = known
+      ? grouped
+      : v?.fleetCount
+        ? grouped.map(u => (u === strongest || unitVisible(g, u, viewer, p, { owner: others.find(f => f.units.includes(u))?.owner }) ? u : null))
+        : [strongest];
     fleets[0] = { fleet: others[0], units, foreign: true };
   }
   return {
@@ -539,7 +543,7 @@ export class PlanetOverview extends NativePanel {
         packed = packOverviewFleet(units, f.slots, this.fleetIndices, this.prefix, pf);
       const mark = this.fleetIcons[i],
         raid = !!fleet && isRaidForce(fleet),
-        stealth = !!fleet && fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u)),
+        stealth = !!fleet && fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u, fleet.owner)),
         pick = stealth ? 0 : raid ? 1 : -1;
       if (mark) {
         const name = mark.alternates[pick],

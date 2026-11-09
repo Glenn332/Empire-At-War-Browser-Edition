@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { planetIncome } from './galacticeconomy.js';
 import { spyMask } from './galacticspy.js';
 import { planetCreditValue } from './planetstats.js';
+import { abilityEnabled } from './abilityoverride.js';
 
 export const VIS = Object.freeze({
   OWNER: 1,
@@ -14,9 +15,54 @@ export const VIS = Object.freeze({
   GROUND_COUNT: 128,
   GROUND_CONTENTS: 256,
   SPECIAL: 512,
+  POLITICAL: 0x400,
+  POLITICAL_BREAKDOWN: 0x800,
+  PRODUCTION: 0x1000,
+  MINOR_HEROES: 0x2000,
+  MAJOR_HEROES: 0x4000,
+  INCOME_BREAKDOWN: 0x8000,
   MOST_POWERFUL: 0x10000,
+  FORCE_SENSITIVE: 0x20000,
+  SUPER_WEAPONS: 0x40000,
   ALL: 0x9fff
 });
+const LEVELS = {
+  PLANET_OWNERSHIP: 0x1,
+  STARBASE_LEVEL: 0x2,
+  GROUND_BASE_LEVEL: 0x4,
+  CREDIT_INCOME: 0x8,
+  FLEET_PRESENCE: 0x10,
+  NUM_FLEETS: 0x20,
+  FLEET_CONTENTS: 0x40,
+  NUM_GROUND_COMPANIES: 0x80,
+  GROUND_COMPANY_CONTENTS: 0x100,
+  SPECIAL_STRUCTURES: 0x200,
+  POLITICAL_CONTROL: 0x400,
+  POLITICAL_CONTROL_BREAKDOWN: 0x800,
+  OBJECT_UNDER_PRODUCTION: 0x1000,
+  ENEMY_MINOR_STEALTH_HEROES: 0x2000,
+  ENEMY_MAJOR_STEALTH_HEROES: 0x4000,
+  CREDIT_INCOME_BREAKDOWN: 0x8000,
+  MOST_POWERFUL_SHIP: 0x10000,
+  FORCE_SENSITIVE_HEROES: 0x20000,
+  SUPER_WEAPONS: 0x40000,
+  EVIL_DEFAULT: 0,
+  GOOD_DEFAULT: 0x11,
+  PLANET_OWNER: 0x9fff,
+  MAXIMUM: 0xffffffff
+};
+export function visibilityLevel(text) {
+  let mask = 0,
+    any = false;
+  for (const part of String(text || '').split(/[|\s]+/)) {
+    if (!part) continue;
+    const m = LEVELS[part.toUpperCase()];
+    if (m === undefined) return null;
+    mask = (mask | m) >>> 0;
+    any = true;
+  }
+  return any ? mask : null;
+}
 const upper = new Map(),
   up = s => {
     let u = upper.get(s);
@@ -33,13 +79,16 @@ const targetController = p => p.politicalTargetOwner ?? controller(p);
 const strength = p => p.politicalControl ?? (db.faction(controller(p))?.bool('Is_Neutral') ? 0 : 1);
 const caches = new WeakMap(),
   typeEffects = new WeakMap();
-const yes = value => /^(yes|true|1)$/i.test(value);
+const yes = value => !/^(no|false|0)$/i.test(String(value ?? 'Yes').trim());
 function effects(type, depth = 0) {
   if (typeEffects.has(type)) return typeEffects.get(type);
-  const result = { stealth: type.bool('Is_Stealth_Company'), spies: [] };
+  const result = { stealth: type.bool('Is_Stealth_Company'), company: type.bool('Is_Stealth_Company'), cloaks: [], members: [], spies: [] };
   typeEffects.set(type, result);
   for (const a of type.sub('Abilities').flatMap(n => n.children)) {
-    if (/^Galactic_Stealth_Ability$/i.test(a.tag) && yes(a.val('Initially_Enabled'))) result.stealth = true;
+    if (/^Galactic_Stealth_Ability$/i.test(a.tag)) {
+      result.cloaks.push(a);
+      if (yes(a.val('Initially_Enabled'))) result.stealth = true;
+    }
     if (!yes(a.val('Initially_Enabled')) || !/^Galactic_Automatic$/i.test(a.val('Activation_Style'))) continue;
     if (!/^System_Spy_Ability$/i.test(a.tag) || a.num('Duration_In_Secs', 30) >= 0) continue;
     const mask = spyMask(a);
@@ -53,13 +102,50 @@ function effects(type, depth = 0) {
         const e = effects(child, depth + 1);
         result.spies.push(...e.spies);
         members.push(e);
+        result.members.push(child);
       }
     }
   if (!result.stealth && members.length && members.every(e => e.stealth)) result.stealth = true;
   return result;
 }
-export function strategicStealth(u) {
-  return u.stealth ?? effects(u.carries || u.type).stealth;
+let roster = null;
+export const useGalaxy = g => (roster = g);
+const overridden = () => !!roster?.players?.some(p => p.abilityOverrides);
+function cloaked(type, owner, depth = 0) {
+  const e = effects(type);
+  if (e.company) return true;
+  if (e.cloaks.some(a => abilityEnabled(roster, owner, type, a))) return true;
+  return depth < 8 && e.members.length > 0 && e.members.every(t => cloaked(t, owner, depth + 1));
+}
+export function strategicStealth(u, owner = u.owner) {
+  if (u.stealth != null) return u.stealth;
+  const type = u.carries || u.type;
+  return overridden() && owner ? cloaked(type, owner) : effects(type).stealth;
+}
+const alliedTo = (a, b) =>
+  same(a, b) ||
+  !!db
+    .faction(a)
+    ?.list('Allies')
+    .some(n => same(n, b));
+export function unitVisible(g, u, viewer, p, { ground = false, structure = false, owner = u.owner } = {}) {
+  if (g.observer || alliedTo(owner, viewer)) return true;
+  const v = intelligence(g, p),
+    mask = v?.mask || 0,
+    corrupted = (p.currentCorruption ?? -1) !== -1 && !!db.faction(viewer)?.bool('Benefits_From_Corruption');
+  const type = u.carries || u.type;
+  if (structure) {
+    if (corrupted) return true;
+    return !!(mask & VIS.SPECIAL) && !(ground ? v?.groundBlocked : v?.spaceBlocked);
+  }
+  const major = type.bool('Is_Named_Hero'),
+    minor = type.bool('Is_Generic_Hero');
+  if (major || minor) {
+    const seen = corrupted || !!(mask & (major ? VIS.MAJOR_HEROES : VIS.MINOR_HEROES));
+    if (strategicStealth(u, owner)) return seen;
+    if (seen) return true;
+  }
+  return !!(ground ? v?.groundContents : v?.fleetContents);
 }
 function spyMasks(g, viewer, orbit) {
   const masks = new Uint32Array(g.planets.length);
@@ -116,6 +202,7 @@ export const displayIncome = (g, p, orbit = null) =>
 export const connectionOwner = (g, p) => (intelligence(g, p)?.ownerKnown ? p.owner : intelligence(g, p)?.rememberedOwner);
 
 export function stepVisibility(g, viewer, elapsedFrames = 0) {
+  roster = g;
   let state = g.visibility;
   if (!state || !same(state.viewer, viewer)) {
     const kept = state?.planets.map(v => ({ discovered: !!v?.discovered, revealFrames: 0, rememberedOwner: null })) || [];
@@ -145,7 +232,7 @@ export function stepVisibility(g, viewer, elapsedFrames = 0) {
     }
     const corrupted = (p.currentCorruption ?? -1) !== -1 && !!faction?.bool('Benefits_From_Corruption');
     const ownOrbit = orbit[p.index].filter(f => friendly(f.owner, viewer));
-    const present = ownOrbit.some(f => f.units.some(u => !strategicStealth(u)));
+    const present = ownOrbit.some(f => f.units.some(u => !strategicStealth(u, f.owner)));
     let direct = (strength(p) > 0 && friendly(controller(p), viewer)) || corrupted;
     if (!present) v.revealFrames = 0;
     else if (!direct) {
@@ -158,12 +245,6 @@ export function stepVisibility(g, viewer, elapsedFrames = 0) {
     }
     let mask = (g.observer || friendly(targetController(p), viewer) ? VIS.ALL : baseline) | spies[p.index];
     for (const m of p.visibilityModifiers || []) if (same(m.owner, viewer) && (m.expires == null || m.expires > g.time)) mask |= m.mask;
-    for (const m of p.visibilityModifiers || [])
-      if (same(m.owner, viewer)) {
-        if (m.expires != null && m.expires <= g.time) continue;
-        if (m.min != null) mask = Math.max(mask, m.min);
-        if (m.max != null) mask = Math.min(mask, m.max);
-      }
     if (corrupted) mask |= VIS.ALL;
     if (v.mask & VIS.OWNER && !(mask & VIS.OWNER)) v.rememberedOwner = controller(p);
     v.mask = mask;
@@ -172,6 +253,8 @@ export function stepVisibility(g, viewer, elapsedFrames = 0) {
     const groundBlocked = p.type.bool('Planet_Groundbase_Stealth') && groundOwner && !friendly(groundOwner, viewer) && !corrupted;
     const spaceBlocked = p.type.bool('Planet_Starbase_Stealth') && spaceOwner && !friendly(spaceOwner, viewer) && !corrupted;
     const groundLevel = Math.min(5, p.groundStructures.filter(u => same(u.owner, groundOwner)).length);
+    v.groundBlocked = !!groundBlocked;
+    v.spaceBlocked = !!spaceBlocked;
     v.groundLevel = !groundBlocked && (!!(mask & VIS.GROUND_LEVEL) || friendly(groundOwner, viewer) || groundLevel >= minLevel);
     v.spaceLevel = !spaceBlocked && (!!(mask & VIS.SPACE_LEVEL) || friendly(spaceOwner, viewer) || (p.spaceLevel || 0) >= minLevel);
     v.groundContents = !groundBlocked && !!(mask & VIS.GROUND_CONTENTS);

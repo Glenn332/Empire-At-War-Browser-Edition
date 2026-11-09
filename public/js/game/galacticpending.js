@@ -6,6 +6,8 @@ import { fillSummary, openSummary, battleTime } from './summary.js';
 import { typeIcon } from './nativepanel.js';
 import { battleHostile } from './galacticbattles.js';
 import { openDialog } from './dialogs.js';
+import { intelligence, VIS } from './galacticfog.js';
+import { fleetsVisibleAt } from './orbitpanes.js';
 
 const key = x => String(x || '').toUpperCase();
 const SHELLS = ['PENDING_BATTLE_SHELL', 'STORY_PENDING_BATTLE_SHELL'];
@@ -16,6 +18,7 @@ const color = s => {
     .filter(Number.isFinite);
   return v.length >= 3 ? [v[0], v[1], v[2], v[3] ?? 255] : [255, 255, 255, 255];
 };
+const pendingTimeout = () => db.constants.num('Battle_Pending_Timeout_Seconds', 10);
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
 export class PendingBattle {
@@ -95,19 +98,16 @@ export class PendingBattle {
 
   netBegin(request) {
     const game = this.game,
-      C = db.constants,
       humans = [request.attacker, request.defender].filter(f => game.isHuman(f));
     const coop = !!game.setup.singlePlayerCampaign && humans.length >= 1;
     if ((humans.length < 2 && !coop) || (game.setup.options?.autoResolve ?? 2) === 0) return this.resolve(request);
     request.id = this.netCount = (this.netCount || 0) + 1;
-    request.voters = (game.setup.players || []).map((p, i) => (p.human && !p.left && game.isHuman(p.faction) ? i : -1)).filter(i => i >= 0);
+    request.voters = (game.setup.players || []).map((p, i) => (p.human && !p.left ? i : -1)).filter(i => i >= 0);
     request.humans = humans;
     request.answers = new Map();
-    request.steps = 0;
-    request.timeout = Math.max(1, C.num('AutoResolveVoteDefaultTimeOut', 15)) * 30;
-    request.fallback = C.bool('AutoResolveVoteDefaultToTactical') ? 'fight' : 'resolve';
+    request.deadline = (game.now?.() ?? performance.now()) + Math.max(0, pendingTimeout()) * 1000;
     this.request = request;
-    if (request.voters.includes(game.localPid)) this.openVote(request).catch(error => console.error(error));
+    if (request.voters.includes(game.localPid)) this.show(request).catch(error => console.error(error));
     return true;
   }
 
@@ -118,14 +118,27 @@ export class PendingBattle {
       this.begin(waiting);
     }
     const r = this.request;
-    if (!r?.voters) return;
-    if (this.game.held) return;
-    r.steps++;
-    if (this.vote) this.paintVote();
-    if (r.steps >= r.timeout) {
-      for (const v of r.voters) if (!r.answers.has(v)) r.answers.set(v, r.fallback);
-      this.tally();
+    if (!r?.voters || !r.voters.includes(this.game.localPid)) return;
+    const left = this.secondsLeft(r);
+    if (left !== r.shownLeft) {
+      r.shownLeft = left;
+      this.paint();
     }
+    if (!r.sent && left <= 0) this.cast('fight');
+  }
+
+  secondsLeft(r) {
+    return Math.max(0, Math.ceil((r.deadline - (this.game.now?.() ?? performance.now())) / 1000));
+  }
+
+  cast(choice) {
+    const r = this.request;
+    if (!r?.voters || r.sent) return;
+    r.sent = choice;
+    this.game.order({ c: 'battle', id: r.id, choice });
+    const ui = this.game.scriptUI;
+    for (const id of ['choice_button_left', 'choice_button_right', 'attack_button_single']) ui?.visibility(id, false);
+    this.paint();
   }
 
   answer(faction, id, choice) {
@@ -133,7 +146,6 @@ export class PendingBattle {
       who = this.game.actingPid;
     if (!r?.voters || r.id !== id || !r.voters.includes(who) || r.answers.has(who) || !['fight', 'resolve'].includes(choice)) return;
     r.answers.set(who, choice);
-    if (this.vote) this.paintVote();
     this.tally();
   }
 
@@ -141,8 +153,7 @@ export class PendingBattle {
     const r = this.request;
     if (!r?.voters || !r.voters.every(v => r.answers.has(v))) return;
     const fight = [...r.answers.values()].includes('fight');
-    this.closeVote();
-    this.request = null;
+    this.close();
     if (fight) this.fight(r);
     else this.resolve(r, true);
   }
@@ -153,75 +164,11 @@ export class PendingBattle {
     r.voters = r.voters.filter(v => v !== pid);
     if (gone) r.humans = r.humans.filter(f => key(f) !== key(faction));
     if (r.humans.length < (this.game.setup.singlePlayerCampaign ? 1 : 2)) {
-      this.closeVote();
-      this.request = null;
+      this.close();
       this.resolve(r, true);
       return;
     }
     this.tally();
-  }
-
-  async openVote(request) {
-    const game = this.game,
-      dlg = await openDialog('IDD_MP_VOTE_DIALOG', { modal: false });
-    if (!dlg) {
-      game.order({ c: 'battle', id: request.id, choice: request.fallback });
-      return;
-    }
-    if (this.request !== request) {
-      dlg.close();
-      return;
-    }
-    this.vote = dlg;
-    const planet = game.galaxy.planets[request.p];
-    dlg.setText(
-      'IDC_TEXT_MP_VOTE_PLANET_NAME',
-      db.t(request.mode === 'land' ? 'TEXT_MP_TACTICAL_LAND_BATTLE_IS_PENDING' : 'TEXT_MP_TACTICAL_SPACE_BATTLE_IS_PENDING') +
-        ' ' +
-        (db.t(planet.type.str('Text_ID')) || planet.name)
-    );
-    dlg.setText('IDC_CAPTION', db.t('TEXT_ASK_AUTO_RESOLVE'));
-    dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', db.t('TEXT_ASK_BUTTON_TACTICAL'));
-    dlg.setText('IDC_DIALOG_BOX_BUTTON_RIGHT', db.t('TEXT_ASK_BUTTON_AUTO_RESOLVE'));
-    const cast = choice => {
-      if (request.sent || this.request !== request) return;
-      request.sent = choice;
-      game.order({ c: 'battle', id: request.id, choice });
-      dlg.enable('IDC_DIALOG_BOX_BUTTON_LEFT', false);
-      dlg.enable('IDC_DIALOG_BOX_BUTTON_RIGHT', false);
-    };
-    dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => cast('fight'));
-    dlg.on('IDC_DIALOG_BOX_BUTTON_RIGHT', () => cast('resolve'));
-    this.sound(request);
-    this.paintVote();
-  }
-  paintVote() {
-    const r = this.request,
-      dlg = this.vote;
-    if (!r || !dlg) return;
-    dlg.setText('IDC_COUNTDOWN_TIMER', String(Math.max(0, Math.ceil((r.timeout - r.steps) / 30))));
-    for (let i = 0; i < 9; i++) {
-      const v = r.voters[i],
-        here = v !== undefined;
-      dlg.show(`IDC_NAME_PLAYER_${i}`, here);
-      dlg.show(`IDC_RESULT_PLAYER_${i}`, here);
-      if (!here) continue;
-      const a = r.answers.get(v);
-      dlg.setText(`IDC_NAME_PLAYER_${i}`, this.game.setup.players?.[v]?.name || 'Player');
-      dlg.setText(
-        `IDC_RESULT_PLAYER_${i}`,
-        a ? db.t(a === 'fight' ? 'TEXT_ASK_BUTTON_TACTICAL' : 'TEXT_ASK_BUTTON_AUTO_RESOLVE') : db.t('TEXT_WAITING')
-      );
-    }
-  }
-  closeVote() {
-    if (!this.vote) return;
-    this.vote.close();
-    this.vote = null;
-    if (this.music) {
-      this.game.audio?.stopMusic?.();
-      this.music = false;
-    }
   }
 
   fight(request) {
@@ -236,8 +183,7 @@ export class PendingBattle {
     const unasked = () => {
       if (!game.net) return this.fight(request);
       this.request = request;
-      request.sent = 'fight';
-      game.order({ c: 'battle', id: request.id, choice: 'fight' });
+      this.cast('fight');
       return true;
     };
     if (!ui) return unasked();
@@ -345,9 +291,11 @@ export class PendingBattle {
       t.el.className = 'ht';
       t.el.style.left = t.bone.x + (off[0] || 0) + 'px';
       t.el.style.top = -t.bone.y - (off[1] || 0) + 'px';
-      const line =
-        (db.t(planet.type.str('Text_ID')) || planet.name) +
-        db.t(request.mode === 'land' ? 'TEXT_TACTICAL_LAND_BATTLE_IS_PENDING' : 'TEXT_TACTICAL_SPACE_BATTLE_IS_PENDING');
+      const kind = request.mode === 'land' ? 'LAND' : 'SPACE',
+        body = request.sent
+          ? db.t('TEXT_WAITING_FOR_OPPONENT')
+          : (db.t(planet.type.str('Text_ID')) || planet.name) + db.t(`TEXT_${game.net ? 'MP_' : ''}TACTICAL_${kind}_BATTLE_IS_PENDING`),
+        line = request.voters ? body + ' ' + this.secondsLeft(request) : body;
       t.line = line;
       t.tint = color(db.constants.str('Battle_Pending_Message_Color'));
       setComponentText(t.el, t.comp, line, { scale, tint: t.tint });
@@ -412,17 +360,8 @@ export class PendingBattle {
     const k = key(name),
       shell = this.name;
     if (this.game.net) {
-      const choice =
-        shell === SHELLS[0] && k === 'CHOICE_BUTTON_RIGHT'
-          ? 'resolve'
-          : (shell === SHELLS[0] && k === 'CHOICE_BUTTON_LEFT') || (shell === SHELLS[1] && k === 'ATTACK_BUTTON_SINGLE')
-            ? 'fight'
-            : null;
-      if (choice && !this.request.sent) {
-        this.request.sent = choice;
-        this.game.order({ c: 'battle', id: this.request.id, choice });
-        if (choice === 'resolve' && this.request.humans.length > 1) this.game.message('Waiting for the other player to answer...');
-      }
+      if (shell === SHELLS[0] && k === 'CHOICE_BUTTON_RIGHT') this.cast('resolve');
+      else if ((shell === SHELLS[0] && k === 'CHOICE_BUTTON_LEFT') || (shell === SHELLS[1] && k === 'ATTACK_BUTTON_SINGLE')) this.cast('fight');
       return;
     }
     if (shell === SHELLS[0] && k === 'CHOICE_BUTTON_RIGHT') this.resolve(this.close({ keepPause: true }), true);
@@ -436,8 +375,7 @@ export class PendingBattle {
       for (const p of game.galaxy.players) p.bounty = 0;
       const outcome = game.battles.resolveFor(request);
       if (!outcome) return this.fight(request);
-      if ([request.attacker, request.defender].some(f => key(f) === key(game.localFaction ?? game.me)))
-        this.present(request, outcome, silent).catch(error => console.error(error));
+      this.present(request, outcome, silent).catch(error => console.error(error));
       game.ui?.refresh();
       game.overview?.refresh();
       return true;
@@ -464,8 +402,8 @@ export class PendingBattle {
     this.game.overview?.refresh();
   }
 
-  losses({ sides, result }, attacker, defender) {
-    const me = this.game.localFaction ?? this.game.me,
+  losses({ sides, result }, attacker, defender, me = this.game.localFaction ?? this.game.me) {
+    const
       lost = [new Map(), new Map()],
       dead = [[], []];
     for (let i = 0; i < 2; i++)
@@ -482,15 +420,42 @@ export class PendingBattle {
     return { yours: lost[0], enemy: lost[1], mine: dead[0], theirs: dead[1] };
   }
 
+  sees(planet, viewer) {
+    const g = this.game.galaxy,
+      v = intelligence(g, planet);
+    if (v && v.mask & VIS.FLEET_PRESENCE) return true;
+    const fleets = g.fleets.filter(f => f.planet === planet.index && !f.leg);
+    return fleetsVisibleAt(g, planet, viewer, fleets);
+  }
+
+  async netResult(line) {
+    const dlg = await openDialog('IDD_MP_AUTO_RESOLVE_RESULT_DIALOG', { modal: false }).catch(() => null);
+    if (!dlg) return;
+    dlg.setText('IDC_RESULTS_TEXT', line);
+    dlg.setText('IDC_CANCEL_BUTTON', db.t('TEXT_BUTTON_CLOSE'));
+    dlg.show('IDC_DIALOG_CLOSE_BUTTON', false);
+    this.dialog = dlg;
+    await new Promise(done =>
+      dlg.on('IDC_CANCEL_BUTTON', () => {
+        dlg.close();
+        this.dialog = null;
+        done();
+      })
+    );
+  }
+
   async present(request, outcome, silent) {
     const game = this.game,
       { p, attacker, defender, mode } = request,
       planet = game.galaxy.planets[p];
     const space = mode === 'space',
       planetName = db.t(planet.type.str('Text_ID')) || planet.name;
-    const { yours, enemy, mine, theirs } = this.losses(outcome, attacker, defender);
-    const me = game.localFaction ?? game.me,
-      winnerIndex = outcome.result.winner,
+    const local = game.localFaction ?? game.me,
+      fighting = [attacker, defender].some(f => key(f) === key(local));
+    if (!fighting && !this.sees(planet, local)) return;
+    const me = fighting ? local : attacker;
+    const { yours, enemy, mine, theirs } = this.losses(outcome, attacker, defender, me);
+    const winnerIndex = outcome.result.winner,
       won =
         key([attacker, defender][winnerIndex]) === key(me) ||
         !!db
@@ -518,8 +483,10 @@ export class PendingBattle {
         : a > b
           ? 'LOSS_REGULAR'
           : 'LOSS_MINOR';
-    log?.message(token(db.t(`TEXT_AR_${kind}_${verdict}`), faction, planetName, String(a)), { color: red });
-    if (silent) return;
+    const line = token(db.t(`TEXT_AR_${kind}_${verdict}`), faction, planetName, String(a));
+    log?.message(line, { color: red });
+    if (silent || !fighting) return;
+    if (game.net) return this.netResult(line);
     const dlg = await openSummary();
     if (!dlg) return;
     fillSummary(dlg, {

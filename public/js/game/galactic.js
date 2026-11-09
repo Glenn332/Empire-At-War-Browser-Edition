@@ -93,6 +93,7 @@ import {
   connectionOwner,
   visibleTransit,
   strategicStealth,
+  unitVisible,
   VIS
 } from './galacticfog.js';
 import { routeStyle, routeSettings, routeAxes } from './galacticroutes.js';
@@ -2026,7 +2027,7 @@ export class GalacticGame {
     const here = army ? [lead] : g.fleets.filter(f => f.planet === spot.p && !f.leg && f.units.length);
     const hostile = !friendly(lead),
       listed = army ? here : hostile ? here.filter(f => !friendly(f)) : here.filter(f => friendly(f) && (f.slot ?? 0) === (lead.slot ?? 0));
-    const stealthy = f => f.units.every(u => strategicStealth(u)),
+    const stealthy = f => f.units.every(u => strategicStealth(u, f.owner)),
       nodes = new Map();
     let reveal = !hostile,
       countOnly = false;
@@ -2065,11 +2066,15 @@ export class GalacticGame {
       countOnly && !reveal && v && v.mask & VIS.MOST_POWERFUL
         ? list.reduce((b, n) => (!b || n.type.num('Damage', 0) > b.type.num('Damage', 0) ? n : b), null)
         : null;
-    const known = n => reveal || n === strongest || n.type.list('CategoryMask').some(m => /^super$/i.test(m));
+    const known = n =>
+      reveal ||
+      n === strongest ||
+      n.type.list('CategoryMask').some(m => /^super$/i.test(m)) ||
+      unitVisible(g, n.unit, this.me, planet, { ground: army, owner: n.fleet.owner });
     const cells = list.map(n => ({
       icon: known(n) ? n.type.str('Icon_Name') || 'i_button_temporary.tga' : 'i_button_unknown.tga',
       label: n.count >= 2 ? 'x' + n.count : '',
-      badge: known(n) && strategicStealth(n.unit)
+      badge: known(n) && strategicStealth(n.unit, n.fleet.owner)
     }));
     const shown = spot.units || spot.f.units,
       picture = this.stackPicture(shown, lead.owner, army ? this.groundComp : this.fleetComp, false, shown.length);
@@ -3575,7 +3580,7 @@ export class GalacticGame {
     for (const f of this.galaxy.fleets)
       if (f.planet === p.index && !f.leg)
         for (const u of f.units)
-          if (!u.dead && named(u.carries || u.type) && (up(f.owner) === me || !strategicStealth(u))) owners.add(up(f.owner));
+          if (!u.dead && named(u.carries || u.type) && (up(f.owner) === me || !strategicStealth(u, f.owner))) owners.add(up(f.owner));
     for (const u of p.garrison) if (named(u.carries || u.type) && (up(u.owner) === me || v?.groundCount)) owners.add(up(u.owner));
     if (this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false) {
       if (owners.has(me)) out.push({ name: s.hero.textures[0], scale: s.hero.scale });
@@ -3782,7 +3787,7 @@ export class GalacticGame {
     const put = (units, owner, comp, sx, sy, empty = false, fleet = null) => {
       const badge =
         comp === this.fleetComp && units.length
-          ? units.every(u => strategicStealth(u))
+          ? units.every(u => strategicStealth(u, owner))
             ? 'i_icon_stealth.tga'
             : fleet && isRaidForce(fleet)
               ? 'i_icon_raid.tga'

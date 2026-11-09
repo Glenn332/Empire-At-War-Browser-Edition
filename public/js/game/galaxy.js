@@ -118,7 +118,7 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
         f.planet === planetIndexOf(p) &&
         !f.leg &&
         !startAllied(f.owner, owner) &&
-        f.units.some(u => !u.dead && !strategicStealth(u))
+        f.units.some(u => !u.dead && !strategicStealth(u, f.owner))
     );
     const orbit = units.some(u => u.bool('Always_Spawn_In_Orbit')) && (strategicStealth({ type }) || !hostile);
     const surface = p.garrison.filter(u => !u.dead && !strategicStealth(u)).length;

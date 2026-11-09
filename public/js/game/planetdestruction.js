@@ -43,7 +43,7 @@ export function planetDestructionAllowed(game, actor, planet) {
   if (
     (actor.record || actor).checkContestedSpace !== false &&
     game.galaxy.fleets.some(
-      f => f.planet === planet.index && !f.leg && f.units.some(u => !u.dead && !strategicStealth(u)) && !allied(actor.owner, f.owner)
+      f => f.planet === planet.index && !f.leg && f.units.some(u => !u.dead && !strategicStealth(u, f.owner)) && !allied(actor.owner, f.owner)
     )
   )
     return false;

@@ -24,7 +24,7 @@ export function hostilePresence(galaxy, planet, owner, v = galaxy.visibility?.pl
 export function humanRoute(galaxy, fleet) {
   const owner = fleet.owner,
     benefits = !!db.faction(owner)?.bool('Benefits_From_Corruption');
-  const stealth = fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u)),
+  const stealth = fleet.units.length > 0 && fleet.units.every(u => strategicStealth(u, fleet.owner)),
     vis = galaxy.visibility?.planets;
   return (planet, isTarget) => {
     if (vis && !vis[planet.index]?.discovered) return null;

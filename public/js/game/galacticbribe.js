@@ -17,7 +17,7 @@ export function controllerOf(galaxy, index) {
   const planet = galaxy.planets[index];
   if (planet.station && (planet.spaceLevel || 0) > 0) return planet.stationOwner || planet.owner || null;
   const fleets = galaxy.fleets.filter(f => f.planet === index && !f.leg && f.units.length);
-  const seen = fleets.find(f => !f.units.every(u => strategicStealth(u))) || fleets[0];
+  const seen = fleets.find(f => !f.units.every(u => strategicStealth(u, f.owner))) || fleets[0];
   return seen ? seen.owner : null;
 }
 

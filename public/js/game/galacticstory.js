@@ -763,7 +763,7 @@ export class GalacticStoryHost extends StoryPlots {
         (friendly ? owner?.Is_Ally(this.player(who)) : owner?.Is_Enemy(this.player(who))) &&
         (!factions.length || factions.includes(key(who)));
       return space
-        ? +g.fleets.some(f => f.planet === p.index && !f.leg && matches(f.owner) && f.units.some(u => !u.dead && !strategicStealth(u)))
+        ? +g.fleets.some(f => f.planet === p.index && !f.leg && matches(f.owner) && f.units.some(u => !u.dead && !strategicStealth(u, f.owner)))
         : +p.garrison.some(u => !u.dead && matches(u.owner));
     }
     if (name === 'VARIABLE_TARGET.FRIENDLYFORCE.HASGROUNDUNITSBITFIELD')

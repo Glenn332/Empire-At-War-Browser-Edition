@@ -2,7 +2,7 @@ import { setAbilityOverride } from './abilityoverride.js';
 import { db } from '../gamedata.js';
 import { changeController } from './galacticpolitics.js';
 import { obliterate } from './galacticobliterate.js';
-import { VIS } from './galacticfog.js';
+import { visibilityLevel } from './galacticfog.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { advisorHints } from './advisorhints.js';
 import { tutorialReward } from './tutorialrewards.js';
@@ -165,16 +165,21 @@ export function galacticStoryReward(host, e) {
       if (!q || !faction || !present(p[3])) return true;
       const list = (q.visibilityModifiers ||= []),
         source = key(p[3]),
-        at = list.findIndex(m => m.source === source && key(m.owner) === key(faction));
-      if (at >= 0) list.splice(at, 1);
-      if (key(p[2]) !== 'NONE') {
-        if (key(p[2]) !== 'MAXIMUM') {
-          host.unsupported('SET_PLANET_VISIBILITY_LEVEL:' + p[2]);
-          return true;
-        }
-        const seconds = present(p[4]) ? parseFloat(p[4]) : -1;
-        list.push({ owner: faction, source, mask: VIS.ALL, min: VIS.ALL, expires: seconds >= 0 ? g.time + seconds : null });
+        mine = m => m.source === source && key(m.owner) === key(faction);
+      if (key(p[2]) === 'NONE') {
+        q.visibilityModifiers = list.filter(m => !mine(m));
+        return true;
       }
+      const mask = visibilityLevel(p[2]);
+      if (mask == null) {
+        host.unsupported('SET_PLANET_VISIBILITY_LEVEL:' + p[2]);
+        return true;
+      }
+      const seconds = present(p[4]) ? parseFloat(p[4]) : -1,
+        expires = seconds > 0 ? g.time + seconds : null,
+        at = list.find(mine);
+      if (at) Object.assign(at, { mask, expires });
+      else list.push({ owner: faction, source, mask, expires });
       return true;
     }
     case 'NEW_POWER_FOR_ALL':

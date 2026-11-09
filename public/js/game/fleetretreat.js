@@ -6,7 +6,7 @@ export function retreatDestination(g, from, owner, land = false, forced = false)
   const spaceOwner = q => {
     if (q.station) return q.stationOwner || q.owner;
     const fleets = g.fleets.filter(f => f.planet === q.index && !f.leg && f.units.some(u => !u.dead));
-    return (fleets.find(f => f.units.some(u => !u.dead && !strategicStealth(u))) || fleets[0])?.owner;
+    return (fleets.find(f => f.units.some(u => !u.dead && !strategicStealth(u, f.owner))) || fleets[0])?.owner;
   };
   const tiers = [
     q => same(spaceOwner(q)),

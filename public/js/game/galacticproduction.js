@@ -423,7 +423,7 @@ function nextStarbaseLevel(g, p) {
 }
 
 const enemyInOrbit = (g, p, owner) =>
-  g.fleets.some(f => f.planet === p.index && !f.leg && f.owner !== owner && f.units.some(u => !u.dead) && !f.units.every(u => strategicStealth(u)));
+  g.fleets.some(f => f.planet === p.index && !f.leg && f.owner !== owner && f.units.some(u => !u.dead) && !f.units.every(u => strategicStealth(u, f.owner)));
 
 function planetLimited(p, type) {
   const max = type.num('Build_Max_Instances_Per_Planet', -1);
