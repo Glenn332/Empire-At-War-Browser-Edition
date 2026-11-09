@@ -126,6 +126,9 @@ function tex(dlgId, ctlId, key) {
   return '';
 }
 
+const designAspect = new Map();
+const textHeight = dialogId => Math.min(innerHeight, Math.floor(innerWidth / (designAspect.get(dialogId) || 4 / 3)));
+
 function font(ctlId, kind, nativeSize = false, dialogId = null) {
   const F = nativeSize ? data.fonts : data.legacyFonts,
     own = ctlId && F.get(ctlId.toUpperCase()),
@@ -145,7 +148,7 @@ function font(ctlId, kind, nativeSize = false, dialogId = null) {
   const family = fontFamily(f.Name || 'Arial');
   const scale = nativeSize ? innerHeight / 768 : Math.min(innerHeight / 768, innerWidth / 1024),
     widthScale = nativeSize ? innerWidth / 1024 : scale;
-  const basePixels = dialogFontPixels(innerHeight, parseInt(f.Size, 10) || 7),
+  const basePixels = dialogFontPixels(textHeight(dialogId), parseInt(f.Size, 10) || 7),
     stretch = parseFloat(f.Stretch_Factor) || 1;
   const physical = stretchedFontHeight(basePixels, stretch);
   const face = f.Name || 'Arial',
@@ -214,7 +217,7 @@ function nativeLabel(el, text, f, options = {}) {
     bottom: f.bottom,
     outline: f.outline,
     emboss: f.emboss,
-    screenHeight: innerHeight,
+    screenHeight: textHeight(f.dialogId),
     ...options
   });
 }
@@ -806,6 +809,11 @@ export async function openDialog(
   anchor ??= at ? 0 : (ENGINE_ANCHOR[id] ?? 0);
   if (anchor === 9 && !stretch) anchor = 0;
   if (anchor >= 1 && anchor <= 8) at = await anchorAt(id, anchor, resource.w, resource.h);
+  if (anchor === 9) {
+    const back = await image(tex(id, null, 'Frame_Background'));
+    if (back?.w && back?.h && back.w / back.h > 4 / 3) designAspect.set(id, back.w / back.h);
+    else designAspect.delete(id);
+  }
   const centered = (size, reference) => Math.trunc(Math.fround(Math.fround(1 - Math.fround(size / reference)) * (reference / 2)));
   const dx = anchor === 9 ? centered(resource.w, 1024) : 0,
     dy = anchor === 9 ? centered(resource.h, 768) : 0;
@@ -965,7 +973,7 @@ export async function openDialog(
               return;
             }
             d._staticTextRequest = null;
-            const effect = Math.trunc(Math.fround(innerHeight / 600) + 0.5),
+            const effect = Math.trunc(Math.fround(textHeight(f.dialogId) / 600) + 0.5),
               lines = wrapStaticText(value, c.w * f.widthScale, t => f.bitmap.measure(t, f.padding) + (f.outline ? effect : 0)),
               pitch = ((f.bitmap.height + (f.outline || f.emboss ? effect : 0)) * 1.05) / f.metricScale;
             d.replaceChildren();
