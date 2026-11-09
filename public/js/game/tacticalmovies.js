@@ -76,6 +76,7 @@ export class TacticalMovies {
           return;
         }
         this.crawl = crawl;
+        if (crawl?.canvas) crawl.canvas.style.zIndex = String((+this.canvas.style.zIndex || 9) + 1);
       }
       if (yes(movie.val('Has_Credits'))) {
         const credits = await CreditsRoll.create(this.game, { zIndex: (+this.canvas.style.zIndex || 9) + 1 }).catch(error => {
