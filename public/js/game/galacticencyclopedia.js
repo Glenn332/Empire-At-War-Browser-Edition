@@ -358,7 +358,17 @@ export class GalacticEncyclopedia {
     this.shown = 'planet:' + data.state;
     const generation = ++this.generation,
       bars = ['i_bar_icons_space.tga', 'i_bar_icons_land.tga'];
-    await this.warm([...this.frameNames('ENCYCLOPEDIA_BACK'), 'e_topbar.tga', 'e_topbar2.tga', 'e_line.tga', 'e_line2.tga', ...bars]);
+    const weather = data.destroyed ? '' : data.type.str('Encyclopedia_Weather_Icon').trim();
+    await this.warm([
+      ...this.frameNames('ENCYCLOPEDIA_BACK'),
+      'e_topbar.tga',
+      'e_topbar2.tga',
+      'e_line.tga',
+      'e_line2.tga',
+      data.emblem,
+      weather,
+      ...bars
+    ]);
     if (generation !== this.generation) return;
     const C = db.constants,
       back = this.component('ENCYCLOPEDIA_BACK'),
@@ -370,9 +380,21 @@ export class GalacticEncyclopedia {
       rgb = data.color.map(c => Math.round(c * 255));
     items.push(this.image(pop ? 'e_topbar.tga' : 'e_topbar2.tga', width / 2 - padding));
     if (pop) items.push(...this.population(pop));
+    if (data.emblem)
+      items.push(
+        this.image(data.emblem, C.num('Encyclopedia_Icon_X_Offset', 39) + shift - padding, C.num('Encyclopedia_Icon_Y_Offset', -12), {
+          exclude: true
+        })
+      );
     items.push(
       ...this.text(data.name, 'ENCYCLOPEDIA_HEADER_TEXT', { x: this.headerX(C.num('Encyclopedia_Name_Offset', 68) + shift), extra: 8 })
     );
+    const sky = weather && this.image(weather);
+    if (sky) {
+      sky.x = Math.trunc(width - padding) - Math.trunc(sky.w / 2);
+      sky.exclude = true;
+      items.push(sky);
+    }
     if (data.corruption)
       items.push(
         ...this.text(data.corruption.text, 'ENCYCLOPEDIA_TEXT', {

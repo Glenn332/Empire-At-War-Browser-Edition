@@ -2036,8 +2036,12 @@ export class GalacticGame {
     }
     panel.anchorFn = () => {
       const r = button.getBoundingClientRect(),
-        k = this.overlayScale();
-      return [(r.left + r.width / 2) / k, (innerHeight - (r.top + r.height / 2)) / k];
+        k = this.overlayScale(),
+        back = panel.component('ENCYCLOPEDIA_BACK'),
+        size = parseFloat(back?.val('Size')) || 262,
+        shift = parseFloat(back?.val('Default_Offset')) || 0,
+        x = (r.left + r.width / 2) / k;
+      return [Math.min(x, innerWidth / k - size - shift - 12 / k), (innerHeight - (r.top + r.height / 2)) / k];
     };
     if (panel.shown !== 'planet:' + data.state) panel.showPlanet(data);
   }
@@ -2075,7 +2079,11 @@ export class GalacticGame {
       space,
       land
     };
-    data.state = [i, owner, type, data.destroyed, space, land].join('|');
+    const marks = this.galacticLog?.encyclopedia?.comps?.get('G_PLANET_FLEET')?.val('Icon_Alternate_Texture_Name').trim().split(/\s+/).filter(Boolean) || [],
+      side = n => String(C.str(n) || '').toUpperCase(),
+      held = String(p.owner || '').toUpperCase();
+    data.emblem = marks[held === side('Good_Side_Name') ? 0 : held === side('Evil_Side_Name') ? 1 : 2] || '';
+    data.state = [i, owner, type, data.destroyed, space, land, data.emblem].join('|');
     return data;
   }
 
