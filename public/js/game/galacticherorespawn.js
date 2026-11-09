@@ -2,7 +2,6 @@ import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
 import { placeStartingForce } from './galaxy.js';
 import { ownedTypes } from './galacticproduction.js';
-import { flashSpawned } from './tutorialrewards.js';
 const key = x => String(x || '').toUpperCase();
 const member = t => db.type(t.list('Company_Units')[0] || t.list('Squadron_Units')[0]) || t;
 export function scheduleHeroRespawn(game, record, p, owner, killer, time = 0, ability = false) {
@@ -75,7 +74,11 @@ export function stepHeroRespawns(game) {
         }
         if (entry.owner === game.me) {
           game.audio?.play(type.str('SFXEvent_Hero_Respawned') || child.str('SFXEvent_Hero_Respawned'));
-          flashSpawned(game, q, g.fleets.find(f => f.units.includes(record)) || null);
+          const fleet = g.fleets.find(f => f.units.includes(record)) || null;
+          if (typeof document !== 'undefined')
+            import('./tutorialrewards.js')
+              .then(m => m.flashSpawned(game, q, fleet))
+              .catch(error => console.error(error));
         }
         game.ai?.freeStores?.get(key(entry.owner))?.add(record);
         game.story && (game.story.objectCache = null);
