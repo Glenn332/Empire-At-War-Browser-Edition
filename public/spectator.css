@@ -1034,3 +1034,65 @@ body.spectating #messages {
   font-variant-numeric: tabular-nums;
   padding-left: 10px;
 }
+
+.sp-rep-svg .lane {
+  stroke-opacity: 0.35;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.sp-rep-svg .lanelab {
+  font-weight: 600;
+}
+.sp-rep-svg .death {
+  stroke: #000;
+  stroke-width: 1.2;
+  fill-opacity: 0.85;
+  cursor: pointer;
+}
+.sp-rep-svg .death.hot {
+  stroke: #fff;
+  stroke-width: 2;
+  fill-opacity: 1;
+}
+.sp-rep-svg .dotn {
+  font: 600 10px 'IBM Plex Mono', Consolas, monospace;
+  fill: #000;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.sp-rep-none {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 14px var(--fine);
+  color: var(--dim);
+  pointer-events: none;
+}
+.sp-rep-tip-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sp-rep-tip-unit .sp-chip {
+  width: 30px;
+  height: 30px;
+}
+.sp-rep-tip-unit .nm {
+  flex: 1;
+  white-space: nowrap;
+}
+.sp-rep-tip-unit .by {
+  font-size: 12px;
+  white-space: nowrap;
+  filter: brightness(1.25);
+}
+.sp-rep-tip-more {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dim);
+}

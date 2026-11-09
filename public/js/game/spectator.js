@@ -54,7 +54,8 @@ const GRAPHS = [
     fmt: (v, p, i) => (p.cap?.[i] ? `${num(v)} / ${num(p.cap[i])}` : num(v))
   },
   { tab: 'Kills', title: 'Enemy units destroyed', value: (h, k, i) => h[k].k?.[i] || 0, fmt: v => num(v) },
-  { tab: 'Losses', title: 'Own units lost', value: (h, k, i) => h[k].l?.[i] || 0, fmt: v => num(v) }
+  { tab: 'Losses', title: 'Own units lost', value: (h, k, i) => h[k].l?.[i] || 0, fmt: v => num(v) },
+  { tab: 'Units lost', title: 'Units lost over time (hover a dot to see which)', lanes: true }
 ];
 const short = n => (n >= 100000 ? `${(n / 1000).toFixed(0)}k` : n >= 10000 ? `${(n / 1000).toFixed(1)}k` : num(n));
 const colorHex = c => (c && c.getHexString ? '#' + c.getHexString() : '#c3ab02');
@@ -559,6 +560,7 @@ export class SpectatorView {
     this.stats = this.teams.map(() => ({ credits: -1, power: -1, out: null, rate: null, pop: null, ups: null, income: 0, peak: 0 }));
     this.earnLog = [];
     this.history = [];
+    this.deaths = [];
     this.histStep = HISTORY_STEP;
     document.body.classList.add('spectating');
     this.buildTop();
@@ -1081,7 +1083,8 @@ export class SpectatorView {
       btns.forEach((b, j) => b.classList.toggle('on', j === k));
       sub.textContent = g.title;
       plot.textContent = '';
-      this.graph(plot, g);
+      if (g.lanes) this.lanes(plot);
+      else this.graph(plot, g);
       this.graphTab = k;
     };
     let size = '';
@@ -1093,6 +1096,135 @@ export class SpectatorView {
     });
     watch.observe(plot);
     return watch;
+  }
+
+  lanes(plot) {
+    const W = Math.max(320, Math.round(plot.clientWidth) || 640),
+      H = Math.max(160, Math.round(plot.clientHeight) || 190),
+      L = 110,
+      R = 16,
+      Tp = 8,
+      B = 30,
+      h = this.history,
+      n = this.teams.length;
+    const t0 = h[0].t,
+      t1 = h[h.length - 1].t,
+      span = Math.max(1, t1 - t0),
+      lane = (H - Tp - B) / n;
+    const x = t => L + ((Math.min(t1, Math.max(t0, t)) - t0) / span) * (W - L - R),
+      y = i => Tp + lane * (i + 0.5);
+    const step = (span * 12) / (W - L - R),
+      groups = new Map();
+    for (const d of this.deaths) {
+      if (d.t > t1 + 0.5) continue;
+      const key = `${d.i}|${Math.floor((d.t - t0) / step)}`;
+      let gr = groups.get(key);
+      if (!gr) groups.set(key, (gr = { i: d.i, from: d.t, to: d.t, n: 0, station: false, list: [] }));
+      gr.from = Math.min(gr.from, d.t);
+      gr.to = Math.max(gr.to, d.t);
+      gr.n++;
+      gr.station ||= d.station;
+      gr.list.push(d);
+    }
+    const dots = [...groups.values()];
+    let s = `<svg viewBox="0 0 ${W} ${H}" class="sp-rep-svg" role="img" aria-label="Units lost over time">`;
+    for (let i = 0; i < n; i++) {
+      const yy = y(i).toFixed(1),
+        c = this.teams[i].color,
+        total = this.deaths.filter(d => d.i === i && d.t <= t1 + 0.5).length;
+      s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" class="lane" stroke="${c}"/>`;
+      s += `<text x="${L - 10}" y="${yy}" class="ylab lanelab" fill="${c}">${this.teamLabel(i)} · ${total}</text>`;
+      if (i) s += `<line x1="${L}" x2="${W - R}" y1="${(Tp + lane * i).toFixed(1)}" y2="${(Tp + lane * i).toFixed(1)}" class="grid"/>`;
+    }
+    for (const f of [0, 0.25, 0.5, 0.75, 1])
+      s += `<text x="${x(t0 + span * f).toFixed(1)}" y="${H - 8}" class="xlab${f === 1 ? ' end' : ''}">${clock(t0 + span * f)}</text>`;
+    const rOf = gr => Math.min(Math.max(4, lane * 0.42), 3.5 + Math.sqrt(gr.n) * 2.2);
+    dots.forEach((gr, k) => {
+      const cx = x((gr.from + gr.to) / 2),
+        cy = y(gr.i),
+        r = rOf(gr),
+        c = this.teams[gr.i].color;
+      gr.cx = cx;
+      gr.cy = cy;
+      gr.r = r;
+      s += gr.station
+        ? `<rect x="${(cx - r).toFixed(1)}" y="${(cy - r).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(r * 2).toFixed(1)}" fill="${c}" class="death st" data-k="${k}" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})"/>`
+        : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${c}" class="death" data-k="${k}"/>`;
+      if (gr.n > 1) s += `<text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" class="dotn">${gr.n}</text>`;
+    });
+    s += `<line class="cross" y1="${Tp}" y2="${H - B}" visibility="hidden"/></svg>`;
+    plot.insertAdjacentHTML('beforeend', s);
+    if (!dots.length) el('p', 'sp-rep-none', plot, 'No units were lost.');
+    const svg = plot.querySelector('svg'),
+      cross = svg.querySelector('.cross'),
+      tip = el('div', 'sp-rep-tip', plot);
+    let on = null;
+    const leave = () => {
+      on?.classList.remove('hot');
+      on = null;
+      cross.setAttribute('visibility', 'hidden');
+      tip.style.display = 'none';
+    };
+    const move = e => {
+      const box = svg.getBoundingClientRect(),
+        sx = ((e.clientX - box.left) / box.width) * W,
+        sy = ((e.clientY - box.top) / box.height) * H;
+      let best = null,
+        bd = Infinity;
+      for (const gr of dots) {
+        const d = Math.hypot(gr.cx - sx, gr.cy - sy) - gr.r;
+        if (d < bd) {
+          bd = d;
+          best = gr;
+        }
+      }
+      if (!best || bd > 10) return leave();
+      const node = svg.querySelector(`[data-k="${dots.indexOf(best)}"]`);
+      if (node !== on) {
+        on?.classList.remove('hot');
+        on = node;
+        on?.classList.add('hot');
+      }
+      cross.setAttribute('x1', best.cx);
+      cross.setAttribute('x2', best.cx);
+      cross.setAttribute('visibility', 'visible');
+      tip.textContent = '';
+      const team = this.teams[best.i];
+      el('div', 'sp-rep-tip-time', tip, best.to - best.from >= 1 ? `${clock(best.from)} – ${clock(best.to)}` : clock(best.from));
+      const head = el('div', 'sp-rep-tip-row', tip);
+      head.style.setProperty('--tc', team.color);
+      el('i', '', head);
+      el('span', '', head, `${this.teamLabel(best.i)} · ${this.factionLabel(team)} lost ${best.n}`);
+      const byType = new Map();
+      for (const d of best.list) {
+        const key = d.type.name + '|' + (d.by || '');
+        const r = byType.get(key) || { type: d.type, n: 0, by: d.by, byColor: d.byColor };
+        r.n++;
+        byType.set(key, r);
+      }
+      const rows = [...byType.values()].sort((a, b) => b.n - a.n);
+      for (const r of rows.slice(0, 12)) {
+        const row = el('div', 'sp-rep-tip-unit', tip);
+        const ic = el('span', 'sp-chip', row);
+        const url = iconUrl(iconNameFor(r.type) || '');
+        if (url) ic.style.backgroundImage = `url(${url})`;
+        el('span', 'nm', row, nameOf(r.type) + (r.n > 1 ? ` ×${r.n}` : ''));
+        if (r.by) {
+          const by = el('span', 'by', row, 'by ' + r.by);
+          if (r.byColor) by.style.color = r.byColor;
+        }
+      }
+      if (rows.length > 12) el('div', 'sp-rep-tip-more', tip, `+${rows.length - 12} more`);
+      tip.style.display = 'block';
+      const pb = plot.getBoundingClientRect(),
+        left = box.left - pb.left + (best.cx / W) * box.width,
+        top = box.top - pb.top + (best.cy / H) * box.height,
+        right = left + 16 + tip.offsetWidth > pb.width;
+      tip.style.left = `${right ? left - 16 - tip.offsetWidth : left + 16}px`;
+      tip.style.top = `${Math.min(Math.max(0, top - tip.offsetHeight / 2), Math.max(0, pb.height - tip.offsetHeight))}px`;
+    };
+    svg.addEventListener('pointermove', move);
+    svg.addEventListener('pointerleave', leave);
   }
 
   graph(plot, g) {
@@ -1196,6 +1328,10 @@ export class SpectatorView {
 
   add(item) {
     item.time = this.src.time();
+    if ((item.kind === 'lost' || item.kind === 'station') && !this.final) {
+      const i = this.indexOf(item.team);
+      if (i >= 0) this.deaths.push({ t: item.time, i, type: item.type, station: item.kind === 'station', by: item.by, byColor: item.byColor });
+    }
     const last = this.log[0];
     if (
       last &&
