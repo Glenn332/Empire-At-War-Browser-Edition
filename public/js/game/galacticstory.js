@@ -30,7 +30,7 @@ import { installPersistence, saveStory, restoreStory } from './galacticstorysave
 import { playScriptMusic, startStrategicMusic } from './galacticmusic.js';
 import { galacticStoryReward } from './storyrewards.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
-import { flashSpawned } from './tutorialrewards.js';
+import { flashSpawned, tutorialFx } from './tutorialrewards.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
 
@@ -473,6 +473,12 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Lock_Controls', on => {
       game.controlsLocked = on !== false && on !== 0;
     });
+    vm.global('Add_Planet_Highlight', (planet, id) => {
+      const p = planet?.__planet,
+        scene = game.scene || game.renderer?.scene;
+      if (p && scene) tutorialFx(game).highlight('planet:' + String(id), true, { scene, position: { x: p.pos[0], y: p.pos[1], z: p.pos[2] || 0 } });
+    });
+    vm.global('Remove_Planet_Highlight', id => tutorialFx(game).highlight('planet:' + String(id), false));
     vm.global('Game_Message', name => game.message?.(db.t(String(name))));
     vm.global('Play_Music', name => {
       playScriptMusic(game, name);

@@ -497,7 +497,8 @@ const bombTicket = (world, side) =>
     const t = db.type(n);
     return t && abilityOf(t, 'Battlefield_Modifier_Ability').some(a => yes(a.val('Enable_Bombing_Runs')));
   });
-export const canBomb = (world, side) => !!bombTicket(world, side) && !world.bombing.some(b => b.side === side);
+export const canBomb = (world, side) =>
+  !world.sidePlayers?.[side]?.bombingRunOff && !!bombTicket(world, side) && !world.bombing.some(b => b.side === side);
 
 export function bombingRun(world, side, x, y) {
   const ticket = bombTicket(world, side);
@@ -662,6 +663,8 @@ export function enableBombard(world, side, on = true) {
   r.told = false;
 }
 export const canBombard = (world, side) => {
+  const p = world.sidePlayers?.[side];
+  if (p?.bombardmentOff || p?.bombardmentRemoved) return false;
   const r = world.bombard && world.bombard[side];
   return !!r && r.present && !r.run && world.time >= r.readyAt;
 };

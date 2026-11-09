@@ -1459,7 +1459,7 @@ export class World {
       return;
     }
     if (!(s.dps > 0)) return;
-    const foe = o => !o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
+    const foe = o => !o.dead && !o.hyper && !o.limbo && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
     let prey = null,
       best = s.chase * s.chase;
     for (const o of this.units) {
@@ -1609,6 +1609,7 @@ export class World {
   cantBuild(builder, type, player = null) {
     const p = player || (builder.isPad ? builder.padOwner : builder.player);
     if (!p) return 'Not under your control';
+    if (builder.padLocked) return 'Locked';
     if (!this.buildOptions(builder, p).includes(type)) return 'Not available';
     const nameU = type.name.toUpperCase();
     if (isUpgradeType(type)) {
@@ -1946,7 +1947,9 @@ export class World {
       proj = null
     } = {}
   ) {
-    if (target.dead || target.hyper || target.invulnerable) return;
+    if (target.dead || target.hyper || target.invulnerable || target.limbo) return;
+    if (target.noOpportunity) target.noOpportunity = false;
+    if (attacker?.noOpportunity) attacker.noOpportunity = false;
     const retreating = this.retreatState?.list.has(target);
     if (retreating) {
       if (this.retreatState.phase === 'flight') return;
@@ -3053,7 +3056,7 @@ export class World {
     const bit = me.bit;
     const take = o => {
       if (
-        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & bit)) &&
+        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || o.hyper || o.limbo || o.noOpportunity || !(o.seenBy & bit)) &&
         dist2(u, o) <= r2
       )
         list.push(o);

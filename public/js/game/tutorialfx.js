@@ -130,7 +130,7 @@ export class TutorialFx {
     if (any) o.renderer.render(o.scene, o.camera);
   }
 
-  async highlight(target, on, { scene = null, parent = null, position = null } = {}) {
+  async highlight(target, on, { scene = null, parent = null, position = null, kind = 'Object_Highlight', z = 0 } = {}) {
     const store = (this.highlights ||= new Map());
     const old = store.get(target);
     if (old) {
@@ -138,14 +138,16 @@ export class TutorialFx {
       store.delete(target);
     }
     if (!on) return;
-    const fx = db.type('Object_Highlight'),
+    const fx = db.type(kind) || db.type('Object_Highlight'),
       file = fx?.str('Space_Model_Name') || fx?.str('Land_Model_Name') || 'W_HILIGHT_FX.ALO';
     const inst = await loadModel(file).catch(() => null);
     if (!inst) return;
     const a = await loadALA(animName(file, 'IDLE')).catch(() => null);
     const holder = parent || scene;
     if (!holder) return;
-    if (position) inst.root.position.set(position.x, position.y, position.z);
+    if (position) inst.root.position.set(position.x, position.y, position.z + z);
+    else if (z) inst.root.position.z += z;
+    if (store.get(target)) return;
     holder.add(inst.root);
     store.set(target, { root: inst.root, anim: a ? new AnimState(inst, a, { loop: true }) : null });
   }

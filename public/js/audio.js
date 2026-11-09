@@ -193,6 +193,7 @@ export class Audio {
       now = this.ctx.currentTime;
     const live = this.active.get(key) || 0;
     if (live >= ev.num('Max_Instances', 4)) return true;
+    if (this.ambientVOOff && ev.bool('Is_Ambient_VO')) return true;
     const prob = ev.num('Probability', 100);
     if (prob < 100 && Math.random() * 100 > prob) return true;
     const reply = ev.bool('Is_Unit_Response_VO'),
@@ -263,8 +264,13 @@ export class Audio {
       if (voice && group) this.groups.set(group, end);
       if (hud) this.hudUntil = end + 0.15;
       if (reply) this.voiceUntil = Math.max(this.voiceUntil, end);
+      const playing = (this.playing ||= new Map()),
+        tag = key.toUpperCase();
+      (playing.get(tag) || playing.set(tag, new Set()).get(tag)).add(src);
       src.onended = () => {
+        playing.get(tag)?.delete(src);
         done();
+        if (src.stopped) return;
         const next = ev.str('Chained_SFXEvent');
         if (next) this.play(next, x, y);
         if (hud) this.nextHud();
@@ -532,6 +538,24 @@ export class Audio {
   setMusicVolume(v) {
     this.musicVolume = v;
     if (this.music) this.music.volume = this.musicLevel();
+  }
+  allowAmbientVO(on = true) {
+    this.ambientVOOff = !on;
+  }
+  stopEvent(name) {
+    const set = this.playing?.get(String(name || '').trim().toUpperCase());
+    if (!set) return;
+    for (const src of [...set]) {
+      src.stopped = true;
+      try {
+        src.stop();
+      } catch {}
+    }
+  }
+  restoreMaster() {
+    if (this.savedMaster == null) return;
+    this.setMasterVolume(this.savedMaster);
+    this.savedMaster = null;
   }
   setMasterVolume(v) {
     this.masterVolume = v;

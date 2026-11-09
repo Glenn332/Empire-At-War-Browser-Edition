@@ -111,7 +111,19 @@ export class ScriptHost {
       guard: (us, t) => orderGuard(us, t),
       stop: us => orderStop(us),
       ability: (e, kind, on, target) => useAbility(this.world, e, kind, on, target),
-      build: (e, type, check) => !!(this.world.scriptBuild && this.world.scriptBuild(e, type, check))
+      build: (e, type, check) => !!(this.world.scriptBuild && this.world.scriptBuild(e, type, check)),
+      joinTeam: (q, p) => {
+        q.team.players = q.team.players.filter(x => x !== q);
+        q.team = p.team;
+        if (!p.team.players.includes(q)) p.team.players.push(q);
+      },
+      leaveTeam: q => {
+        const w = this.world,
+          t = w.addTeam(new q.team.constructor(w.teams.length, q.factionName));
+        q.team.players = q.team.players.filter(x => x !== q);
+        q.team = t;
+        t.players.push(q);
+      }
     };
     this.cmd = this.logged(this.cmd);
     this.globals();
@@ -302,6 +314,17 @@ export class ScriptHost {
     }
     return true;
   }
+  effect(kind, data) {
+    if (this.land) this.game.scriptEffect?.(kind, data);
+    else this.world.onEvent?.(kind, data);
+  }
+  relate(p, q, ally) {
+    if (!p || !q || p === q) return;
+    (p.relations ||= new Map()).set(q, ally);
+    const back = q.relations?.get(p);
+    if (ally && back === true && p.team !== q.team) this.cmd.joinTeam?.(q, p);
+    else if (!ally && p.team === q.team) this.cmd.leaveTeam?.(q);
+  }
   absent(kind) {
     return name =>
       /^[A-Z]/.test(name) && !ONLY_FORCES.has(name)
@@ -464,6 +487,26 @@ export class ScriptHost {
         return foe ? this.player(foe) : undefined;
       },
       Retreat: () => !!w.retreat?.requestByScript(p.factionName),
+      Make_Ally: o => this.relate(p, o && o.__player, true),
+      Make_Enemy: o => this.relate(p, o && o.__player, false),
+      Disable_Bombing_Run: on => {
+        p.bombingRunOff = !!on;
+      },
+      Disable_Orbital_Bombardment: on => {
+        p.bombardmentOff = !!on;
+      },
+      Remove_Orbital_Bombardment: on => {
+        p.bombardmentRemoved = !!on;
+      },
+      Enable_As_Actor: () => {
+        p.scriptActor = true;
+      },
+      Set_Black_Market_Tutorial: on => {
+        p.blackMarketTutorial = !!on;
+      },
+      Set_Sabotage_Tutorial: on => {
+        p.sabotageTutorial = !!on;
+      },
       Lock_Tech: o => {
         const t = o && o.__type;
         if (t) {
@@ -972,6 +1015,48 @@ export class ScriptHost {
         const inst = self.current;
         if (inst) inst.prox = inst.prox.filter(p => p.of !== e);
       },
+      Highlight: (on, z) => self.effect('scriptHighlight', { unit: e, on: on === true, z: +z || 0, small: false }),
+      Highlight_Small: (on, z) => self.effect('scriptHighlight', { unit: e, on: on === true, z: +z || 0, small: true }),
+      Prevent_Opportunity_Fire: on => {
+        e.noOpportunity = !!on;
+        for (const u of members()) u.noOpportunity = !!on;
+      },
+      In_End_Cinematic: on => {
+        e.inEndCinematic = !!on;
+        for (const u of members()) u.inEndCinematic = !!on;
+      },
+      Set_In_Limbo: on => {
+        e.limbo = !!on;
+        for (const u of members()) u.limbo = !!on;
+      },
+      Lock_Build_Pad_Contents: on => {
+        const pad = self.land ? e.padSite || e.site || e : e;
+        if (pad) pad.padLocked = !!on;
+      },
+      Is_Under_Effects_Of_Ability: name => {
+        const kind = { TRACTOR_BEAM: 'TRACTOR', ION_CANNON_SHOT: 'ION' }[String(name || '').toUpperCase()];
+        return !!kind && members().some(u => (u.statuses || []).some(st => st.kind === kind));
+      },
+      Enable_Behavior: (id, on) => {
+        if (!(id >= 0 && id <= 105)) return;
+        const off = (e.behaviorsOff ||= new Set());
+        if (on) off.delete(id | 0);
+        else off.add(id | 0);
+        if ((id | 0) === 78) for (const u of members()) u.holsterOff = !on;
+      },
+      Can_Move: () =>
+        members().some(
+          u => !u.dead && !u.hyper && !u.inside && !u.suspended && (u.maxSpeed > 0 || u.speed > 0) && !(u.moveLocks > 0)
+        ),
+      Stop_SFX_Event: name => w.audio?.stopEvent?.(String(name || ''), e),
+      Play_Cinematic_Engine_Flyby: () => {
+        const t = lead(e)?.type || e.type,
+          sfx = t?.str('SFXEvent_Engine_Cinematic_Focus_Loop') || t?.str('SFXEvent_Fire_Cinematic') || '';
+        if (sfx.trim()) w.audio.play(sfx.trim(), e.x, e.y);
+      },
+      Enable_Dynamic_LOD: on => {
+        e.dynamicLOD = !!on;
+      },
       __missing: this.absent('Object')
     };
     return obj;
@@ -1009,7 +1094,12 @@ export class ScriptHost {
           : undefined;
       return o;
     });
-    vm.global('SFXManager', hollow('SFXManager'));
+    vm.global(
+      'SFXManager',
+      Object.assign(hollow('SFXManager'), {
+        Allow_Ambient_VO: on => w.audio?.allowAmbientVO?.(on === undefined ? true : !!on)
+      })
+    );
     vm.global('Thread', {
       __wrap: true,
       __name: 'Thread',
@@ -1328,6 +1418,40 @@ export class ScriptHost {
     createObject.__raw = reinforceUnit.__raw = true;
     vm.global('Create_Generic_Object', createObject);
     vm.global('Reinforce_Unit', reinforceUnit);
+    const fromPool = L => {
+      const t = typeOf(vm.get(1, L)),
+        at = this.at(vm.get(2, L)),
+        p = playerOf(vm.get(3, L));
+      const pool = p && (p.reinforcements || []),
+        i = t && pool ? pool.findIndex(x => (x?.type || x) === t) : -1;
+      if (!t || !at || !p || i < 0) {
+        vm.push(undefined, L);
+        return 1;
+      }
+      pool.splice(i, 1);
+      const book = this.game.campaignBook,
+        record = book?.waiting?.find(r => r.type === t && r.team === p.team?.id);
+      if (record) book.waiting.splice(book.waiting.indexOf(record), 1);
+      return whenArt(L, t, () => {
+        const e = w.spawn(t, p, at.x, at.y, 0);
+        if (record && e) book.entity?.set(record.gid, e);
+        w.recountPop?.();
+        return e ? [this.wrap(e)] : undefined;
+      });
+    };
+    fromPool.__raw = true;
+    vm.global('Spawn_From_Reinforcement_Pool', fromPool);
+    vm.global('Do_End_Cinematic_Cleanup', () => {
+      const local = this.game.human || w.viewer;
+      for (const e of [...w.selectables()]) {
+        const l = lead(e);
+        if (gone(e) || !l || e.inEndCinematic || l.inEndCinematic || l.player === local || !(l.maxSpeed > 0 || l.speed > 0)) continue;
+        const o = this.wrap(e);
+        o.Hide?.(true);
+        o.Teleport?.(this.pos(1, 1, 0));
+      }
+    });
+    vm.global('Master_Volume_Restore', () => w.audio?.restoreMaster?.());
     const nearest = (from, pred) => {
       let best = null,
         bd = 1e18;
@@ -1397,6 +1521,15 @@ export class ScriptHost {
         const r = { team: p.team, pl: p, x: 0, y: 0, r: 1e7, until: Infinity, by: this.current, env: this.current && this.current.env };
         w.reveals.push(r);
         return this.revealWrap(r);
+      },
+      Temporary_Reveal: (player, where, radius) => {
+        const p = playerOf(player),
+          at = this.at(where),
+          e = this.of(where);
+        if (!p || !at) return undefined;
+        const r = +radius || (e && (e.radius || e.visualRadius)) || 10;
+        w.reveals.push({ team: p.team, pl: p, x: at.x, y: at.y, r, until: w.time + 1, by: this.current, env: this.current && this.current.env });
+        return undefined;
       },
       Reveal: (player, where, radius) => {
         const p = playerOf(player),
@@ -1915,7 +2048,7 @@ export class ScriptHost {
         t.values = new Map();
         inst.threads.push(t);
         return t.id;
-      }, {}),
+      }, { Is_Thread_Active: id => inst.threads.some(t => t.id === id) }),
       GetEvent: {
         __wrap: true,
         __name: 'GetEvent',

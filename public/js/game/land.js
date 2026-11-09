@@ -1033,7 +1033,7 @@ export class LandWorld {
     return side >= 0 && o.side >= 0 && !this.ally(side, o.side) && (o.side !== this.wild || !!o.squad?.native);
   }
   targetEnemy(a, b) {
-    if (b.untargetable) return false;
+    if (b.untargetable || b.limbo) return false;
     if (this.fowOn && !this.sightOf(a.side, b)) return false;
     if (!(a.confuseUntil > this.time)) return this.enemy(a, b);
     return this.ally(a.side, b.side) && (a.side !== this.wild || !!a.squad?.native) && (b.side !== this.wild || !!b.squad?.native);
@@ -2203,6 +2203,7 @@ export class LandWorld {
   }
 
   startSite(site, uc, side) {
+    if (site.padLocked) return 'Locked';
     if (!this.siteOptions(site, side).includes(uc)) return 'Cannot be built there';
     if (this.credits[side] < costOf(uc, this.factions[side])) return 'Not enough credits';
     this.credits[side] -= costOf(uc, this.factions[side]);
@@ -2542,6 +2543,7 @@ export class LandWorld {
 
   sell(u) {
     if (!u || u.dead || !u.structure || u.sellFor === undefined) return 'Cannot be sold';
+    if (u.site?.padLocked) return 'Locked';
     this.credits[u.side] += u.sellFor;
     if (this.onSound) this.onSound(u.type.str('SFXEvent_Sold_Tactical'), u.x, u.y);
     u.dead = true;
@@ -4113,13 +4115,14 @@ export class LandWorld {
   nearestFoe(u, among, reach, gun = null) {
     if (this.aiSuspended && among === this.units) return null;
     if (u.retreating) return null;
-    if (among === this.units && u.x !== undefined) among = this.foesNear(u.x, u.y, reach);
+    const auto = among === this.units;
+    if (auto && u.x !== undefined) among = this.foesNear(u.x, u.y, reach);
     const w = gun || u.weapon,
-      first = this.pickFoe(u, among, reach, gun, null);
+      first = this.pickFoe(u, among, reach, gun, null, auto);
     if (!first || !w || !this.clearShooting() || !this.shotBlocked(u, first, w)) return first;
     const skip = new Set([first]);
     for (let i = 0; i < 3; i++) {
-      const t = this.pickFoe(u, among, reach, gun, skip);
+      const t = this.pickFoe(u, among, reach, gun, skip, auto);
       if (!t) break;
       if (!this.shotBlocked(u, t, w)) return t;
       skip.add(t);
@@ -4127,7 +4130,7 @@ export class LandWorld {
     return first;
   }
 
-  pickFoe(u, among, reach, gun, skip) {
+  pickFoe(u, among, reach, gun, skip, auto = false) {
     const R = gun ? null : u.ranks;
     const aa = (u.antiAir ??= !!(
       u.flies ||
@@ -4149,6 +4152,7 @@ export class LandWorld {
         e.cloaked ||
         e.retreating ||
         e.inside ||
+        (auto && e.noOpportunity) ||
         e.side < 0 ||
         (e.flies && !aa && !gun) ||
         !this.targetEnemy(u, e) ||
@@ -4302,7 +4306,9 @@ export class LandWorld {
   }
 
   hurt(u, amount, from, how = '') {
-    if (u.dead || u.invulnUntil > this.time) return;
+    if (u.dead || u.invulnUntil > this.time || u.limbo) return;
+    if (u.noOpportunity) u.noOpportunity = false;
+    if (from?.noOpportunity) from.noOpportunity = false;
     if (this.retreatState?.list.has(u)) {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(u.side);

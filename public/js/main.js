@@ -89,7 +89,7 @@ import { loadBlackMarket } from './game/blackmarket.js';
 import { giveFreeUpgrades } from './game/planetabilities.js';
 import { stageStart, unstash, setInPlace, toMainMenu } from './game/transit.js';
 import { TacticalCinematics } from './game/tacticalcinematics.js';
-import { stepDualFlash } from './game/tutorialrewards.js';
+import { stepDualFlash, tutorialFx } from './game/tutorialrewards.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
 import { Beacons, beaconType } from './game/beacons.js';
@@ -1339,7 +1339,16 @@ class Game {
     }
   }
 
+
+  scriptEffect(kind, d) {
+    if (kind !== 'scriptHighlight' || !d?.unit) return;
+    const u = d.unit.isSquad ? d.unit.fighters?.[0] || d.unit : d.unit.members?.[0] || d.unit,
+      parent = u.holder || u.obj || u.mesh || u.inst?.root;
+    if (parent) tutorialFx(this).highlight(d.unit, d.on, { parent, kind: d.small ? 'Object_Highlight_Small' : 'Object_Highlight', z: d.z || 0 });
+  }
+
   onEvent(kind, d) {
+    if (kind === 'scriptHighlight') return this.scriptEffect(kind, d);
     const me = this.human;
     this.reportView?.event(kind, d);
     if (kind === 'killed' && this.ui && this.ui.radar && d.unit && (!this.world.fog || (me && d.unit.seenBy & me.bit)))

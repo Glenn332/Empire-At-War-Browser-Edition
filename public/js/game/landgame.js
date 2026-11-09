@@ -110,7 +110,7 @@ import { MirrorRenderer, mirrorSupported } from '../mirror.js';
 import { loadBlackMarket } from './blackmarket.js';
 import { giveFreeUpgrades } from './planetabilities.js';
 import { stageStart } from './transit.js';
-import { stepDualFlash } from './tutorialrewards.js';
+import { stepDualFlash, tutorialFx } from './tutorialrewards.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { simRandom, seedSim, simRandomState } from './simrandom.js';
 import { resetLandIds, preloadLand } from './land.js';
@@ -320,6 +320,13 @@ export class LandGame {
     this.track?.destroy();
     this.chase?.destroy();
     if (window.game === this) window.game = null;
+  }
+
+  scriptEffect(kind, d) {
+    if (kind !== 'scriptHighlight' || !d?.unit) return;
+    const u = d.unit.members?.find(m => !m.dead) || d.unit.site?.structure || d.unit,
+      parent = u.holder || u.mesh || u.inst?.root;
+    if (parent) tutorialFx(this).highlight(d.unit, d.on, { parent, kind: d.small ? 'Object_Highlight_Small' : 'Object_Highlight', z: d.z || 0 });
   }
 
   message(text, cls, color, life) {
@@ -1239,7 +1246,9 @@ export class LandGame {
             h: +u.heading.toFixed(3),
             hp: r1(u.health),
             sh: r1(u.shield),
-            o: [u.off.x, u.off.y]
+            o: [u.off.x, u.off.y],
+            ...(u.limbo ? { limbo: 1 } : {}),
+            ...(u.noOpportunity ? { nof: 1 } : {})
           }))
         })),
         landing: w.transports
@@ -1506,6 +1515,10 @@ export class LandGame {
         const m = q.members[0];
         return m
           ? w.spawn(q.type, m.x, m.y, m.h, q.side, q.members).then(sq => {
+              sq?.members?.forEach((u, i) => {
+                if (q.members[i]?.limbo) u.limbo = true;
+                if (q.members[i]?.nof) u.noOpportunity = true;
+              });
               if (sq && q.co !== undefined) sq.company = 's' + q.co;
               if (sq && q.in >= 0 && w.sites[q.in] && w.sites[q.in].structure) putInside(w, sq, w.sites[q.in].structure);
               if (sq && q.home) {

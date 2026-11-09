@@ -505,7 +505,20 @@ export class LandScripts {
   cmd() {
     const w = this.game.world;
     const squads = us => us.filter(q => q.members && (q.members.length || q.forming) && !q.structure);
+    const retag = side => {
+      const p = w.sidePlayers?.[side],
+        id = w.team[side];
+      if (p) p.team = (w.teamTags ||= new Map()).get(id) || w.teamTags.set(id, { id }).get(id);
+    };
     return {
+      joinTeam: (q, p) => {
+        w.team[q.id] = w.team[p.id];
+        retag(q.id);
+      },
+      leaveTeam: q => {
+        w.team[q.id] = Math.max(...Object.values(w.team).map(Number).filter(Number.isFinite)) + 1;
+        retag(q.id);
+      },
       move: (us, x, y, attack) => {
         const l = squads(us);
         if (attack && l.length > 1) {

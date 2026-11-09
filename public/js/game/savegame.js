@@ -180,6 +180,8 @@ function spaceSnapshot(game, name) {
     if (u.income) o.inc = r1(u.income.timer);
     if (u.swarm) o.sw = u.swarm;
     if (u.everSeenBy) o.seen = u.everSeenBy;
+    if (u.limbo) o.limbo = 1;
+    if (u.noOpportunity) o.nof = 1;
     return o;
   };
   const squad = s => {
@@ -453,6 +455,8 @@ export function restore(game, save) {
     }
     damage(u, o);
     if (o.seen) u.everSeenBy = o.seen;
+    if (o.limbo) u.limbo = true;
+    if (o.nof) u.noOpportunity = true;
   }
   w.units = w.units.filter(u => !u.dead);
   w.unitGridN = Infinity;
