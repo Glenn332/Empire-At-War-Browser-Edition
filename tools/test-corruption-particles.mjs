@@ -17,7 +17,7 @@ if (!funnel || !glow) {
   console.log('no corruption particles in this data: skipped');
   process.exit(0);
 }
-assert.equal(FRAME, 22);
+assert.equal(FRAME, 23);
 
 const sim = new ParticleSim();
 sim.defs.set('F', funnel);

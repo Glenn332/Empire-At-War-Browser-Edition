@@ -19,6 +19,7 @@ export class CorruptionVisuals {
     const C = db.constants;
     this.brightness = C.vec('Particle_Brightness_Per_Corruption_Level', [1, 1]);
     this.scales = C.vec('Particle_Scale_Per_Corruption_Level', [1, 1]);
+    this.energy = C.vec('Particle_Energy_Per_Corruption_Level', [1, 1]);
     this.radius = C.num('Corruption_Line_Radius', 12.5);
     this.offset = C.num('Corruption_Line_Start_End_Offset', 18);
     this.grow = C.num('Corruption_Line_Grow_Seconds', 7);
@@ -80,6 +81,7 @@ export class CorruptionVisuals {
         f.vx = f.vy = 0;
         f.bright = lerp(this.pick(this.brightness, now), this.pick(this.brightness, target), t);
         f.scale = lerp(this.pick(this.scales, now), this.pick(this.scales, target), t);
+        f.energy = lerp(this.pick(this.energy, now), this.pick(this.energy, target), t);
       });
       if (handle) this.glow.set(p.index, handle);
     }

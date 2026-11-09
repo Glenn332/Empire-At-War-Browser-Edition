@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+const { emitterPoolSize, energyCap } = await import('../public/js/particlesim.js');
+const e = { weather: true, lifetime: 4, burst: false, perSecond: 20, perBurst: 10, burstDelay: 1 };
+assert.equal(emitterPoolSize(e), 20, 'a flagged emitter sizes its pool for one second');
+assert.equal(emitterPoolSize({ ...e, weather: false }), 80, 'rate times lifetime');
+assert.equal(emitterPoolSize({ ...e, weather: false, burst: true, perBurst: 6, burstDelay: 2 }), 12);
+assert.equal(emitterPoolSize({ ...e, weather: false, lifetime: 0.01 }), 20, 'an interval longer than the lifetime keeps one emission');
+assert.equal(emitterPoolSize({ ...e, perSecond: 100000 }), 5003, 'capped');
+assert.equal(energyCap(e, 0.5), 10, 'energy is the share of pool slots alive');
+assert.equal(energyCap(e, 0.01), 1, 'rounded up');
+assert.equal(energyCap(e, 1), Infinity);
+assert.equal(energyCap({ ...e, weather: false }, 0.2), Infinity, 'only flagged emitters');
+console.log('ok');

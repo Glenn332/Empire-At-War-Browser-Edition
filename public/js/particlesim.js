@@ -331,8 +331,13 @@ class System {
       ix = k * f.vx,
       iy = k * f.vy,
       iz = k * (f.vz || 0);
+    const cap = energyCap(e, f.energy ?? 1);
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
+      if (i >= cap) {
+        parts[n++] = p;
+        continue;
+      }
       p.age += dt;
       if (p.age >= p.life) {
         this.sim.total--;
@@ -415,7 +420,9 @@ class System {
       const batch = this.sim.batch(e);
       const T = e.tracks,
         cell = 1 / e.grid;
-      for (const p of s.parts) {
+      const cap = energyCap(e, this.f.energy ?? 1);
+      for (let pi = 0; pi < s.parts.length && pi < cap; pi++) {
+        const p = s.parts[pi];
         const k = p.age / p.life;
         const idx = sampleTrack(T[5], k) | 0;
         let x = p.x,
@@ -453,7 +460,14 @@ class System {
   }
 }
 
-export const FRAME = 22;
+export const FRAME = 23;
+export function emitterPoolSize(e) {
+  const L = e.weather ? 1 : e.lifetime,
+    rate = e.burst ? e.perBurst / Math.max(1e-6, e.burstDelay) : e.perSecond,
+    interval = e.burst ? e.burstDelay : 1 / Math.max(1e-6, e.perSecond);
+  return Math.min(5003, interval <= L ? Math.ceil(rate * L) : e.burst ? e.perBurst : e.perSecond);
+}
+export const energyCap = (e, energy) => (e.weather && energy < 1 ? Math.ceil(Math.max(0, Math.min(1, energy)) * emitterPoolSize(e)) : Infinity);
 export const PARTICLE_CAP = { def: 30000, min: 30000, max: 50000, step: 1000 };
 
 export class ParticleSim {
@@ -518,6 +532,7 @@ export class ParticleSim {
       s.visible = frames[i + 9] !== 0;
       s.density = frames[i + 10];
       s.near = frames[i + 21] !== 0;
+      f.energy = frames[i + 22];
       if (frames[i + 11] !== 1) s.emitting = false;
     }
     for (const b of this.batches.values()) b.count = 0;

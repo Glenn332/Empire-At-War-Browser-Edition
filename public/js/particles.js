@@ -640,6 +640,7 @@ export class ParticleManager {
         frames[k + 19] = f.lt || 0;
         frames[k + 20] = f.vz || 0;
         frames[k + 21] = !camera || _frustum.intersectsSphere(_near.set(_nearAt.set(f.x, f.y, f.z), 400)) ? 1 : 0;
+        frames[k + 22] = f.energy ?? 1;
         k += FRAME;
       }
       list[n++] = h;
