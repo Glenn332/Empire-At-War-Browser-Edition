@@ -56,6 +56,23 @@ assert.equal(tutorialFinished('Tutorial_Five', storage), false);
 finishTutorial('TUTORIAL_FIVE', storage);
 assert.equal(tutorialFinished('Tutorial_Five', storage), true, 'the profile matches the campaign name');
 assert.equal(tutorialFinished('Tutorial_Six', storage), false);
+{
+  const { tutorialsPlayed, tutorialSuggestionDue, markTutorialSuggestion } = await import('../public/js/game/tutorialprofile.js');
+  const { crc32 } = await import('../public/js/game/enginehash.js');
+  assert.deepEqual(tutorialsPlayed(storage), [crc32('TUTORIAL_FIVE') | 0], 'stored as the engine TutorialsPlayed list of signed CRC values');
+  finishTutorial('TUTORIAL_FIVE', storage);
+  assert.equal(tutorialsPlayed(storage).length, 1, 'an entry is added once');
+  assert.equal(tutorialSuggestionDue(storage), false, 'no suggestion once a tutorial is played');
+  const fresh = new Map(),
+    s2 = { getItem: k => fresh.get(k) ?? null, setItem: (k, v) => fresh.set(k, v) };
+  assert.equal(tutorialSuggestionDue(s2), true);
+  markTutorialSuggestion(s2);
+  assert.equal(fresh.get('swr-profile-tutorials-played'), '-1', 'the suggestion leaves -1 in the list');
+  assert.equal(tutorialSuggestionDue(s2), false);
+  const old = new Map([['swr-profile-finished-tutorials', JSON.stringify(['TUTORIAL_ONE'])], ['swr-profile-suggested-tutorial', '1']]),
+    s3 = { getItem: k => old.get(k) ?? null, setItem: (k, v) => old.set(k, v) };
+  assert.deepEqual(tutorialsPlayed(s3), [crc32('TUTORIAL_ONE') | 0, -1], 'the old keys carry over');
+}
 console.log('ok');
 
 const { StoryPlots } = await import('../public/js/game/storyplots.js');

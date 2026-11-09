@@ -1,26 +1,57 @@
-const PROFILE_KEY = 'swr-profile-finished-tutorials';
+import { crc32 } from './enginehash.js';
+
+const PLAYED_KEY = 'swr-profile-tutorials-played',
+  OLD_FINISHED = 'swr-profile-finished-tutorials',
+  OLD_SUGGESTED = 'swr-profile-suggested-tutorial';
 const key = s =>
   String(s || '')
     .trim()
     .toUpperCase();
+const signed = n => n | 0;
 
-function read(storage) {
+export function tutorialsPlayed(storage = globalThis.localStorage) {
   try {
-    const list = JSON.parse(storage?.getItem(PROFILE_KEY) || '[]');
-    return new Set(Array.isArray(list) ? list.map(key) : []);
+    let text = storage?.getItem(PLAYED_KEY);
+    if (text == null) {
+      const list = [];
+      const old = JSON.parse(storage?.getItem(OLD_FINISHED) || '[]');
+      if (Array.isArray(old)) for (const n of old) list.push(signed(crc32(key(n))));
+      if (storage?.getItem(OLD_SUGGESTED) === '1') list.push(-1);
+      text = list.join(',');
+      if (list.length) storage?.setItem(PLAYED_KEY, text);
+    }
+    return String(text || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => parseInt(s, 10))
+      .filter(n => !Number.isNaN(n));
   } catch {
-    return new Set();
+    return [];
   }
 }
 
+function addPlayed(value, storage) {
+  const list = tutorialsPlayed(storage);
+  if (list.includes(value)) return;
+  list.push(value);
+  try {
+    storage?.setItem(PLAYED_KEY, list.join(','));
+  } catch {}
+}
+
 export function tutorialFinished(name, storage = globalThis.localStorage) {
-  return read(storage).has(key(name));
+  return tutorialsPlayed(storage).includes(signed(crc32(key(name))));
 }
 
 export function finishTutorial(name, storage = globalThis.localStorage) {
-  const set = read(storage);
-  set.add(key(name));
-  try {
-    storage?.setItem(PROFILE_KEY, JSON.stringify([...set]));
-  } catch {}
+  addPlayed(signed(crc32(String(name ?? ''))), storage);
+}
+
+export function tutorialSuggestionDue(storage = globalThis.localStorage) {
+  return tutorialsPlayed(storage).length === 0;
+}
+
+export function markTutorialSuggestion(storage = globalThis.localStorage) {
+  addPlayed(-1, storage);
 }

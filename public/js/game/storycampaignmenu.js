@@ -1,27 +1,21 @@
 import { db } from '../gamedata.js';
+import { tutorialSuggestionDue, markTutorialSuggestion } from './tutorialprofile.js';
 import { openDialog } from './dialogs.js';
 import { loadCampaignData } from './galaxy.js';
 import { expansion } from '../edition.js';
 
 export const MAIN_CAMPAIGN = 'Full_Story_Campaign_Underworld';
 const MAIN_CAMPAIGNS = () => (expansion() ? { A: MAIN_CAMPAIGN } : { A: 'Full_Story_Campaign_Rebel', B: 'Full_Story_Campaign_Empire' });
-const PROFILE_KEY = 'swr-profile-suggested-tutorial';
 const key = s =>
   String(s || '')
     .trim()
     .toUpperCase();
 
 export function tutorialSuggested(storage = globalThis.localStorage) {
-  try {
-    return storage?.getItem(PROFILE_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return !tutorialSuggestionDue(storage);
 }
 export function markTutorialSuggested(storage = globalThis.localStorage) {
-  try {
-    storage?.setItem(PROFILE_KEY, '1');
-  } catch {}
+  markTutorialSuggestion(storage);
 }
 
 export async function suggestTutorial() {

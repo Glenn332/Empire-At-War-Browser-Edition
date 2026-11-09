@@ -226,7 +226,7 @@ export function startingGalaxy(data, campaign) {
       ai: ai.has(f) ? ai.get(f)[0] : null,
       credits: +(credits.get(f) || [0])[0] || 0,
       tech: +(tech.get(f) || [0])[0] || 0,
-      maxTech: +(maxTech.get(f) || [0])[0] || 0,
+      maxTech: maxTech.has(f) ? +maxTech.get(f)[0] || 0 : 5,
       home: home.has(f) ? (at(home.get(f)[0]) ?? -1) : -1,
       unlockedTypes: [],
       lockedTypes: [],
@@ -300,6 +300,7 @@ export function snapshotGalaxy(g) {
     log: g.log ? structuredClone(g.log) : null,
     displayFilters: g.displayFilters || 0,
     autoReveal: g.autoReveal,
+    ...(g.campaignAutoResolve !== undefined ? { campaignAutoResolve: g.campaignAutoResolve } : {}),
     aiPathfinders: !!g.aiPathfinders,
     visibility: g.visibility
       ? {
@@ -449,6 +450,7 @@ export function applyGalaxy(g, s) {
   g.log = s.log ? structuredClone(s.log) : null;
   g.displayFilters = s.displayFilters || 0;
   if (Object.hasOwn(s, 'autoReveal')) g.autoReveal = s.autoReveal;
+  if (Object.hasOwn(s, 'campaignAutoResolve')) g.campaignAutoResolve = s.campaignAutoResolve;
   if (Object.hasOwn(s, 'aiPathfinders')) g.aiPathfinders = !!s.aiPathfinders;
   g.visibility = s.visibility
     ? { viewer: s.visibility.viewer, clock: s.visibility.clock || 0, planets: s.visibility.planets.map(v => ({ ...v })) }

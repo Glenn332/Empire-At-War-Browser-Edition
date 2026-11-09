@@ -88,7 +88,7 @@ export class PendingBattle {
       return true;
     }
     if (!db.constants.bool('Strategic_Queue_Tactical_Battles', true)) return this.fight(request);
-    if (game.autoResolveOption) return this.resolve(request);
+    if (game.autoResolveOption || game.galaxy.campaignAutoResolve === 0) return this.resolve(request);
     if (!this.restricted(request.p) && game.battles.overrun(request)) return this.resolve(request, false, true);
     return this.show(request);
   }

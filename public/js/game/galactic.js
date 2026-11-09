@@ -1,5 +1,6 @@
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { switchTarget } from './switchsides.js';
+import { applyCampaignSettings } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { galacticLight } from './galacticlighting.js';
@@ -237,6 +238,7 @@ export class GalacticGame {
     if (!camp) throw new Error('this game data has no campaign');
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
+    else if (this.setup.campaignSettings) applyCampaignSettings(g, this.setup.campaignSettings, camp.str('Starting_Active_Player'));
     if (this.setup.net) this.multiplayerGalaxy(g);
     g.budgetCreditChange = (owner, amount) => this.ai?.creditChange?.(owner, amount);
     g.storyEntry = (fleet, planet) => !!this.story?.entryAllowed?.(fleet, planet);
