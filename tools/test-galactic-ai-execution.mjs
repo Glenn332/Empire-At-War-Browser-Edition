@@ -54,7 +54,7 @@ assert.deepEqual(game.story.report().errors, {});
 const ai = await GalacticAI.create(game),
   events = [],
   seen = new WeakSet(),
-  seconds = +(process.argv.find(a => a.startsWith('--seconds='))?.split('=')[1] || 120),
+  seconds = +(process.argv.find(a => a.startsWith('--seconds='))?.split('=')[1] || 250),
   dt = 1 / 15,
   start = performance.now();
 game.battles = new GalacticBattles(game);
@@ -91,7 +91,7 @@ for (let i = 0; i < seconds / dt; i++) {
 const report = ai.report(),
   builds = events.filter(e => e.status === 'built'),
   moves = events.filter(e => e.status === 'move'),
-  attacks = moves.filter(e => e.hostile && e.goal === 'CONQUER_PIRATE');
+  attacks = moves.filter(e => e.hostile && /^CONQUER_/.test(e.goal || ''));
 console.log(JSON.stringify({ battles: game.battles.history }));
 assert.deepEqual(game.story.report().errors, {}, 'Ongoing original story scripts must remain compatible with AI execution');
 console.log(

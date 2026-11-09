@@ -209,8 +209,9 @@ export function startingGalaxy(data, campaign) {
     if (p && type?.bool('Build_Requires_Initial_Placement')) (p.specialProduction ||= []).push(type.name.toUpperCase());
   }
   const fleets = [];
-  for (const [f, pl, typeName] of c.tuples('Starting_Forces')) {
-    const p = planets[at(pl)],
+  const startingForces = c.tuples('Starting_Forces').map(([f, pl, typeName]) => ({ f, at: at(pl), typeName }));
+  for (const [f, pl, typeName] of planets.flatMap((_, i) => startingForces.filter(e => e.at === i).map(e => [e.f, i, e.typeName]))) {
+    const p = planets[pl],
       type = db.type(typeName),
       fac = db.faction(f);
     if (!p || !type || !fac) continue;

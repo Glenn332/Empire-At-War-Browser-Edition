@@ -168,10 +168,13 @@ for (const S of A.ai.goals.sides.values()) {
 }
 A.ai.invalidate();
 A.ai.plans.routeCache.clear();
+A.ai.plans.network.cache.clear();
 for (const c of A.ai.controllers.values()) {
   delete c.components;
   delete c.islands;
   delete c.connectors;
+  delete c.graphAt;
+  delete c.graphSignature;
 }
 A.battles = new GalacticBattles(A);
 const t0 = performance.now();
