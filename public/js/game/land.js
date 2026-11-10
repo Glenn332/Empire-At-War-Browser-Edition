@@ -5812,6 +5812,7 @@ export class LandWorld {
       slack: 10,
       stall: 0,
       jig: T.num('MaxJiggleDistance', 0),
+      started: null,
       hl: 0,
       hs: 0
     });
@@ -6013,6 +6014,12 @@ export class LandWorld {
         box.speed = 0;
         continue;
       }
+      if (box.started !== box.path) {
+        box.started = box.path;
+        const most = db.constants.num('Max_Move_Frame_Delay', 6);
+        for (const u of q.members)
+          if (!u.dead && !u.inside && !(u.v > 0)) u.startAt = this.time + Math.floor(simRandom() * (most + 1)) / LOGIC_FPS;
+      }
       if (this.time >= (box.nearAt || 0)) {
         box.nearAt = this.time + 0.2;
         const last = box.path[box.path.length - 1],
@@ -6058,8 +6065,8 @@ export class LandWorld {
         s = Math.sin(box.heading);
       if (box.stall < 4)
         for (const u of q.members) {
-          if (u.dead || u.inside || u.rooted || u.stunUntil > this.time) continue;
-          const lag = -((u.x - box.x) * c + (u.y - box.y) * s) - (box.rear + 2);
+          if (u.dead || u.inside) continue;
+          const lag = -((u.x - box.x) * c + (u.y - box.y) * s) - (box.hl + 2);
           if (lag > 0) cap = Math.min(cap, box.max * (1 - Math.min(1, lag / 10)));
         }
       box.stall = cap < 1 ? box.stall + dt : box.speed > 1 ? 0 : box.stall;
@@ -6158,6 +6165,7 @@ export class LandWorld {
         ey = -dx * s + dy * c,
         ts = Math.min(box.speed, own);
       wantV = Math.abs(ex) <= 1 ? ts : ex > 0 ? ts + (own - ts) * Math.min(1, ex / 10) : ts * (1 - Math.min(1, -ex / 10) ** 2);
+      if (u.startAt > this.time) wantV = 0;
       const f = Math.min(0.5, Math.abs(ey) / 10),
         sg = Math.sign(ey);
       wantH = Math.atan2(s * (1 - f) + c * sg * f, c * (1 - f) - s * sg * f);
@@ -6187,15 +6195,6 @@ export class LandWorld {
         if (ax || ay) {
           const k2 = Math.min(1, v / Math.max(1, own));
           wantH = Math.atan2(hy + ay * k2, hx + ax * k2);
-        }
-      }
-      if (box.speed > 0) {
-        const rag = (u.rag ??= t.num('FormationRaggedness', 0)),
-          most = (u.jigMax ??= t.num('MaxJiggleDistance', 0));
-        if (rag && most) {
-          const k = (box.speed / box.max) * rag;
-          j.x = Math.max(-most, Math.min(most, j.x + (simRandom() * 2 - 1) * k));
-          j.y = Math.max(-most, Math.min(most, j.y + (simRandom() * 2 - 1) * k));
         }
       }
       u.back = false;

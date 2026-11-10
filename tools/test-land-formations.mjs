@@ -39,8 +39,7 @@ function makeWorld(walls = []) {
     tables: null,
     map: { playMin: [0, 0], playMax: [(N - 1) * CELL, (N - 1) * CELL] }
   });
-  for (const [x0, y0, x1, y1] of walls)
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
+  for (const [x0, y0, x1, y1] of walls) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
   W.paths = new LandPaths(W);
   return W;
 }
@@ -164,6 +163,30 @@ function squadOf(W, name, side, x, y, count = 1, member = null) {
   assert(u.hardX === hx, 'unit hard extents are scaled by Scale_Factor');
 }
 
-console.log('ok placement, team box');
+{
+  const W = makeWorld();
+  const q = squadOf(W, 'Imperial_Stormtrooper_Squad', 0, 600, 600, 6, 'Squad_Stormtrooper');
+  const box = W.teamOf(q);
+  box.heading = 0;
+  box.path = [{ x: 1800, y: box.y }];
+  W.tickTeams(1 / 30);
+  for (const u of q.members) {
+    const k = Math.round((u.startAt - W.time) * 30);
+    assert(k >= 0 && k <= 6 && Math.abs(k - (u.startAt - W.time) * 30) < 1e-6, 'a standing member starts 0 to 6 frames late: ' + k);
+  }
+  const lag = q.members[5];
+  lag.x = box.x - 200;
+  lag.stunUntil = 99;
+  for (let i = 0; i < 20; i++) W.tickTeams(1 / 30);
+  assert(box.speed < 1, 'the team holds for a member far behind, stunned or not: ' + box.speed);
+  lag.x = box.x;
+  for (let i = 0; i < 20; i++) W.tickTeams(1 / 30);
+  assert(box.speed > 1, 'and goes on once he is with it');
+  W.teamExtent(q);
+  const L = box.hl;
+  lag.x = box.x - 1000;
+  W.teamExtent(q);
+  assert(box.hl > L, 'the team box takes in the member behind');
+}
 
-
+console.log('ok placement, team box, team walk');
