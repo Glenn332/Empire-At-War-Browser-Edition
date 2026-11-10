@@ -7,7 +7,8 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
-import { surfaceAt, surfaceStatus, surfaceLight, surfaceEffect, NO_SURFACE } from './landsurface.js';
+import { surfaceAt, surfaceStatus, surfaceLight, surfaceEffect, NO_SURFACE, SURFACE_KEY } from './landsurface.js';
+import { CombatMods, MOD, combatBonus } from './combatmods.js';
 import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
@@ -445,6 +446,7 @@ class LandUnit {
     this.surf = NO_SURFACE;
     this.surface = undefined;
     this.surfX = undefined;
+    this.cmods = null;
     this.surfY = undefined;
     this.surfAt = undefined;
     this.burnAt = undefined;
@@ -530,7 +532,6 @@ class LandUnit {
     this.stunUntil = undefined;
     this.cast = undefined;
     this.sellFor = undefined;
-    this.defense = undefined;
     this.ckinds = undefined;
     this.wear = undefined;
     this.gravity = undefined;
@@ -613,7 +614,7 @@ class LandUnit {
     this.lerp = undefined;
   }
   get range() {
-    return this.surf.range === 1 || this.baseRange === undefined ? this.baseRange : this.baseRange * this.surf.range;
+    return !this.cmods || this.baseRange === undefined ? this.baseRange : this.baseRange * this.cmods.factor(MOD.RANGE);
   }
   set range(v) {
     this.baseRange = v;
@@ -888,6 +889,7 @@ export class LandWorld {
     this.credits = factions.map(() => credits);
     this.earned = factions.map(() => 0);
     this.bounty = new BountyBook();
+    this.sideMods = factions.map(() => new CombatMods());
     this.collected = factions.map(() => 0);
     this.ready = factions.map(() => []);
     this.sites = [];
@@ -992,7 +994,42 @@ export class LandWorld {
     return (u.wx = { name, sight: m ? pick(m.sight) : 1, speed: m ? pick(m.speed) : 1 });
   }
   sightMod(u) {
-    return this.wxOf(u).sight * (u.surf ? u.surf.sight : 1);
+    return this.wxOf(u).sight * this.combatFactor(u, MOD.SIGHT);
+  }
+  combatMods(u) {
+    return (u.cmods ||= new CombatMods(this.sideMods, u));
+  }
+  fireDelay(u) {
+    return (u.mod ? u.mod.delay : 1) / this.combatFactor(u, MOD.FIRE_RATE);
+  }
+  combatFactor(u, type) {
+    if (u.cmods) return u.cmods.factor(type);
+    const s = this.sideMods && u.side >= 0 ? this.sideMods[u.side] : null;
+    return s && s.size ? this.combatMods(u).factor(type) : 1;
+  }
+  addCombatMod(u, type, key, source, value) {
+    const m = this.combatMods(u),
+      was = type === MOD.HEALTH || type === MOD.SHIELD ? m.factor(type) : 0;
+    if (m.set(type, key, source, value) && was) this.rescaleCombat(u, type, was, true);
+  }
+  dropCombatMod(u, source) {
+    const m = u.cmods;
+    if (!m) return;
+    const hp = m.factor(MOD.HEALTH),
+      sh = m.factor(MOD.SHIELD);
+    if (!m.drop(source)) return;
+    this.rescaleCombat(u, MOD.HEALTH, hp, false);
+    this.rescaleCombat(u, MOD.SHIELD, sh, false);
+  }
+  rescaleCombat(u, type, was, adding) {
+    const now = u.cmods.factor(type),
+      max = type === MOD.HEALTH ? 'maxHealth' : 'maxShield',
+      cur = type === MOD.HEALTH ? 'health' : 'shield';
+    if (now === was || !(u[max] > 0)) return;
+    const next = (u[max] / was) * now;
+    if (adding) u[cur] = Math.max(type === MOD.HEALTH ? Math.min(u[cur], 1) : 0, u[cur] + next - u[max]);
+    u[max] = next;
+    if (u[cur] > next) u[cur] = next;
   }
   wxSpread(w) {
     const name = this.wxNow();
@@ -2625,23 +2662,9 @@ export class LandWorld {
         .map(n => n.toUpperCase());
       const mine = [u.type.name.toUpperCase(), u.squad.type.name.toUpperCase()];
       if (!(names.some(n => mine.includes(n)) || cats.some(c => inCategory(u.type, c)))) continue;
-      const pct = k => a.num(k, 0);
-      const hp = pct('Health_Bonus_Percentage'),
-        sh = pct('Shield_Bonus_Percentage'),
-        dmg = pct('Damage_Bonus_Percentage'),
-        def = pct('Defense_Bonus_Percentage'),
-        spd = pct('Movement_Speed_Bonus_Percentage') || pct('Speed_Bonus_Percentage');
-      if (hp) {
-        u.maxHealth *= 1 + hp;
-        u.health *= 1 + hp;
-      }
-      if (sh) {
-        u.maxShield *= 1 + sh;
-        u.shield *= 1 + sh;
-      }
-      if (dmg && u.weapon) u.weapon.damage *= 1 + dmg;
-      if (def) u.defense = (u.defense ?? 1) * (1 - Math.min(0.9, def));
-      if (spd) u.speed *= 1 + spd;
+      const b = combatBonus(a),
+        source = 'upgrade:' + type.name.toUpperCase() + ':' + (a.attrs.Name || '').toUpperCase();
+      for (const [t, v] of b.mods) this.addCombatMod(u, t, b.key, source, v);
     }
   }
 
@@ -2649,7 +2672,7 @@ export class LandWorld {
     const why = this.cantBuy(u, type, side);
     if (why) return why;
     this.credits[side] -= costOf(type, this.factions[side]);
-    const secs = timeOf(type) * this.mods[side].build;
+    const secs = timeOf(type) * this.mods[side].build * this.combatFactor(u, MOD.BUILD);
     this.queueOf(side, type).push({ type, left: secs, total: secs, from: u, side });
     return null;
   }
@@ -3718,7 +3741,7 @@ export class LandWorld {
               timer: 0,
               baseRange: h.num('Fire_Range_Distance', u.baseRange),
               get range() {
-                return this.baseRange * u.surf.range;
+                return u.cmods ? this.baseRange * u.cmods.factor(MOD.RANGE) : this.baseRange;
               },
               spare: new Set(h.list('Fire_Category_Restrictions').map(c => c.toUpperCase())),
               inacc: h.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]),
@@ -4194,7 +4217,13 @@ export class LandWorld {
       }
       if (s !== u.surface) {
         u.surface = s;
-        u.surf = surfaceEffect(this.tables, u.type, s);
+        const was = u.surf,
+          now = surfaceEffect(this.tables, u.type, s);
+        if (was !== now) {
+          for (const [, source] of was.mods) this.dropCombatMod(u, source);
+          for (const [t, source, v] of now.mods) this.combatMods(u).add(t, SURFACE_KEY, source, v);
+        }
+        u.surf = now;
         u.surfSt = s < 0 || u.structure ? null : surfaceStatus(this.tables, u.type, s);
         u.burnAt = this.time + u.surf.delay;
       } else if (u.surf.damage > 0 && this.time >= u.burnAt) {
@@ -4817,10 +4846,9 @@ export class LandWorld {
       amount *= this.retreatState.damaged(u.side);
     }
     amount *=
-      (u.defense ?? 1) *
+      (from instanceof LandUnit && !from.dead ? this.combatFactor(from, MOD.DAMAGE) : 1) *
+      (2 - this.combatFactor(u, MOD.DEFENSE)) *
       (u.mod ? u.mod.taken : 1) *
-      (u.surf ? u.surf.taken : 1) *
-      (from && from.surf && !from.dead ? from.surf.dealt : 1) *
       (u.shell ? db.constants.num('Base_Shield_Vulnerability_Modifier', 2) : 1);
     const soak = Math.min(u.shield, amount);
     u.shield -= soak;
@@ -5045,7 +5073,7 @@ export class LandWorld {
       return;
     }
     const reach =
-      (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) * (u.surf ? u.surf.range : 1) +
+      (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) * this.combatFactor(u, MOD.RANGE) +
       (this.meshOf(t) ? t.collR : t.hitRadius > 0 ? t.hitRadius : 0) +
       Math.abs(tz - z0);
     const shot = {
@@ -5203,7 +5231,7 @@ export class LandWorld {
           } else if (w.cooldown <= 0) {
             w.left = w.pulses;
             w.timer = 0;
-            w.cooldown = w.recharge * (u.mod ? u.mod.delay : 1);
+            w.cooldown = w.recharge * this.fireDelay(u);
           }
         }
       }
@@ -5233,7 +5261,7 @@ export class LandWorld {
     u.heading += Math.max(-step, Math.min(step, da));
     A.roll = near(A.roll, Math.max(-1, Math.min(1, da / 0.5)) * A.bank, A.rollRate * dt);
     A.v = near(A.v, wantV, A.push * dt);
-    const go = A.v * (u.mod ? u.mod.speed : 1) * (u.surf ? u.surf.speed : 1) * this.wxOf(u).speed * (u.gravity ?? 1) * dt,
+    const go = A.v * (u.mod ? u.mod.speed : 1) * this.combatFactor(u, MOD.SPEED) * this.wxOf(u).speed * (u.gravity ?? 1) * dt,
       was = A.alt;
     u.x += Math.cos(u.heading) * go;
     u.y += Math.sin(u.heading) * go;
@@ -5608,7 +5636,7 @@ export class LandWorld {
       } else if (g.cooldown <= 0) {
         g.left = g.pulses;
         g.timer = 0;
-        g.cooldown = g.recharge * (u.mod ? u.mod.delay : 1);
+        g.cooldown = g.recharge * this.fireDelay(u);
       }
     }
     if (hidden && !seen && !u.weapon && this.repositions(u.squad)) this.seekClear(u.squad, u, hidden, hideG);
@@ -5753,7 +5781,7 @@ export class LandWorld {
       } else if (w.cooldown <= 0) {
         w.left = w.pulses;
         w.timer = 0;
-        w.cooldown = w.recharge * (u.mod ? u.mod.delay : 1);
+        w.cooldown = w.recharge * this.fireDelay(u);
       }
     }
     if (u.path.length) return false;
@@ -5871,7 +5899,7 @@ export class LandWorld {
     } else if (w.cooldown <= 0) {
       w.left = w.pulses;
       w.timer = 0;
-      w.cooldown = w.recharge * (u.mod ? u.mod.delay : 1);
+      w.cooldown = w.recharge * this.fireDelay(u);
     }
   }
 
@@ -5996,7 +6024,7 @@ export class LandWorld {
           } else if (w.cooldown <= 0) {
             w.left = w.pulses;
             w.timer = 0;
-            w.cooldown = w.recharge * (u.mod ? u.mod.delay : 1);
+            w.cooldown = w.recharge * this.fireDelay(u);
           }
         }
       } else if (u.turret) {
@@ -6285,7 +6313,7 @@ export class LandWorld {
   paceOf(u) {
     return (
       u.mod.speed *
-      (u.surf ? u.surf.speed : 1) *
+      this.combatFactor(u, MOD.SPEED) *
       this.pursuit(u) *
       this.wxOf(u).speed *
       (u.gravity ?? 1) *

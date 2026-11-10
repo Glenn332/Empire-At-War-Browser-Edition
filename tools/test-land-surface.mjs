@@ -86,14 +86,24 @@ const find = (T, name) => {
   return null;
 };
 
+const { CombatMods, MOD } = await import('../public/js/game/combatmods.js');
 const eff = name => surfaceEffect(tables, trooper, idx(name));
-assert.equal(eff('water').speed, 0.5, 'water Speed_Mod -0.5 halves the speed');
-assert.equal(eff('slow_ground').speed, 0.5, 'slow ground the same');
+const fac = (e, t) => {
+  const m = new CombatMods();
+  for (const [type, source, v] of e.mods) m.add(type, 0, source, v);
+  return m.factor(t);
+};
+assert.equal(fac(eff('water'), MOD.SPEED), 0.5, 'water Speed_Mod -0.5 halves the speed');
+assert.equal(fac(eff('slow_ground'), MOD.SPEED), 0.5, 'slow ground the same');
 assert.equal(eff('mud'), NO_SURFACE, 'mud is not read by the engine although the settings give it a Speed_Mod');
-assert.equal(eff('good_ground').taken, 0.5, 'good ground Defense_Mod 0.5 halves the damage taken');
-assert.equal(eff('good_ground').dealt, 2, 'good ground Damage_Mod 1.0 doubles the damage dealt');
-assert.equal(eff('high_ground').sight, 1.25, 'high ground FOW_Reveal_Range_Mod');
-assert.equal(eff('high_ground').range, 1.25, 'troopers list High_Ground twice: the same source key keeps the largest, no stacking');
+assert.equal(2 - fac(eff('good_ground'), MOD.DEFENSE), 0.5, 'good ground Defense_Mod 0.5 halves the damage taken');
+assert.equal(fac(eff('good_ground'), MOD.DAMAGE), 2, 'good ground Damage_Mod 1.0 doubles the damage dealt');
+assert.equal(fac(eff('high_ground'), MOD.SIGHT), 1.25, 'high ground FOW_Reveal_Range_Mod');
+assert.equal(
+  fac(eff('high_ground'), MOD.RANGE),
+  1.25,
+  'troopers list High_Ground twice: the same stacking key keeps the largest, no stacking'
+);
 assert.deepEqual([eff('lava').damage, eff('lava').delay], [10, 1], 'lava burns 10 a second');
 assert.deepEqual([eff('damage_ground').damage, eff('damage_ground').delay], [10, 1]);
 assert.equal(eff('infantry_ground'), NO_SURFACE, 'infantry ground only shows its icon');
@@ -125,7 +135,7 @@ const fakeTables = {
     ]
   ])
 };
-assert.equal(surfaceEffect(fakeTables, fake, idx('slow_ground')).speed, 0.75, 'two lists: the larger modifier wins');
+assert.equal(fac(surfaceEffect(fakeTables, fake, idx('slow_ground')), MOD.SPEED), 0.75, 'two lists: the larger modifier wins');
 assert.deepEqual(
   [surfaceEffect(fakeTables, fake, idx('lava')).damage, surfaceEffect(fakeTables, fake, idx('lava')).delay],
   [7, 0.5],
@@ -146,6 +156,7 @@ const world = terrain =>
     units: [],
     time: 0,
     weather: { level: 0, name: 'clear' },
+    sideMods: [new CombatMods(), new CombatMods()],
     retreatState: null,
     ally: () => true,
     tracksDamage: () => false,
@@ -274,5 +285,75 @@ const trooperAt = (W, at, extra = {}) => {
   u.x += 30;
   W.tickSurfaces();
   assert.equal(calls, 1, 'a moving unit looks it up once per tick');
+}
+{
+  const W = world(bespin);
+  const a = trooperAt(W, rock),
+    b = trooperAt(W, { x: 100, y: 100 });
+  W.tickSurfaces();
+  W.addCombatMod(a, MOD.DAMAGE, 0, 'aura', 0.25);
+  assert.equal(W.combatFactor(a, MOD.DAMAGE), 2, 'a combat bonus on the surface stacking key: the larger one wins');
+  W.addCombatMod(a, MOD.DAMAGE, 3, 'upgrade', 0.25);
+  assert.equal(W.combatFactor(a, MOD.DAMAGE), 2.25, 'on another stacking key it adds');
+  W.hurt(b, 100, a);
+  assert.equal(b.health, 775, 'the shooter deals 1 + 1.0 + 0.25');
+  W.addCombatMod(a, MOD.DEFENSE, 3, 'upgrade', 0.5);
+  assert.equal(W.combatFactor(a, MOD.DEFENSE), 1.75, 'good ground 0.5 and armour 0.5 add up to 1.0 and stop at 0.75');
+  W.hurt(a, 100, null);
+  assert.equal(a.health, 975, 'a quarter of the damage gets through');
+  W.dropCombatMod(a, 'upgrade');
+  assert.equal(W.combatFactor(a, MOD.DAMAGE), 2, 'unregistering the upgrade restores the surface bonus');
+  assert.equal(W.combatFactor(a, MOD.DEFENSE), 1.5);
+  a.x = 100;
+  a.y = 100;
+  W.tickSurfaces();
+  assert.equal(W.combatFactor(a, MOD.DAMAGE), 1.25, 'off the good ground the aura alone is left');
+  assert.equal(W.combatFactor(a, MOD.DEFENSE), 1);
+  W.dropCombatMod(a, 'aura');
+  assert.equal(W.combatFactor(a, MOD.DAMAGE), 1);
+  assert.equal(a.cmods.size, 0, 'nothing is left behind');
+}
+
+{
+  const W = world(endor);
+  const u = trooperAt(W, { x: 100, y: 100 }),
+    foe = trooperAt(W, { x: 120, y: 100 }, { side: 1 });
+  W.tickSurfaces();
+  W.addCombatMod(u, MOD.DAMAGE, 0, 'own', 0.5);
+  W.sideMods[0].add(MOD.DAMAGE, 0, 'player', 0.25);
+  assert.equal(W.combatFactor(u, MOD.DAMAGE), 1.5, 'player and unit modifiers on one stacking key: the larger one wins');
+  W.sideMods[0].add(MOD.DAMAGE, 2, 'player', 0.25);
+  assert.equal(W.combatFactor(u, MOD.DAMAGE), 1.75, 'a player modifier on another key adds');
+  assert.equal(W.combatFactor(foe, MOD.DAMAGE), 1, 'the other player is not touched');
+  W.sideMods[0].add(MOD.SPEED, 1, 'player', 0.5);
+  W.sideMods[0].add(MOD.BUILD, 1, 'player', -0.5);
+  assert.equal(W.paceOf(u), 1, 'speed reads the unit modifiers only');
+  assert.equal(W.combatFactor(u, MOD.BUILD), 1, 'so does build time');
+  W.sideMods[0].remove(MOD.DAMAGE, 2, 'player');
+  assert.equal(W.combatFactor(u, MOD.DAMAGE), 1.5, 'removing the player modifier restores');
+  W.sideMods[0].add(MOD.RANGE, 0, 'player', 0.5);
+  assert.equal(u.range, 150, 'player fire range reaches the weapon range');
+  assert.equal(W.sightMod(u), 1, 'and not the sight');
+}
+
+{
+  const W = world(endor);
+  const tank = db.type('T2B_Tank'),
+    u = trooperAt(W, { x: 100, y: 100 }, { type: tank, squad: { type: tank } });
+  W.applyUpgrade(u, db.type('RL_Light_Armor_L1_Upgrade'));
+  assert.equal(W.combatFactor(u, MOD.DEFENSE), 1.25, 'light armour L1: a quarter less damage');
+  W.applyUpgrade(u, db.type('RL_Light_Armor_L2_Upgrade'));
+  assert.equal(W.combatFactor(u, MOD.DEFENSE), 1.5, 'L2 shares Stacking_Category 3: half, not 0.75 x 0.5');
+  W.applyUpgrade(u, db.type('RL_Light_Armor_L2_Upgrade'));
+  assert.equal(W.combatFactor(u, MOD.DEFENSE), 1.5, 'applying an upgrade again changes nothing');
+  W.hurt(u, 100, null);
+  assert.equal(u.health, 950);
+  W.addCombatMod(u, MOD.HEALTH, 0, 'hp', 0.25);
+  assert.deepEqual([u.maxHealth, u.health], [1250, 1200], 'a health bonus raises the most health and adds the difference');
+  W.dropCombatMod(u, 'hp');
+  assert.deepEqual([u.maxHealth, u.health], [1000, 1000], 'taking it away lowers the most health and caps the health');
+  const t2 = trooperAt(W, { x: 100, y: 100 }, { squad: { type: trooper } });
+  W.applyUpgrade(t2, db.type('RL_Light_Armor_L2_Upgrade'));
+  assert.equal(t2.cmods, null, 'units the upgrade does not name get nothing');
 }
 console.log('land surface status ok');

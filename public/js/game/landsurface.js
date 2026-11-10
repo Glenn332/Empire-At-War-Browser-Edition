@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { heightAt, CELL } from './terrain.js';
+import { MOD } from './combatmods.js';
 
 export const SURFACES = [
   'default',
@@ -71,13 +72,26 @@ export function surfaceStatus(tables, type, surface) {
   return found;
 }
 
-export const NO_SURFACE = Object.freeze({ speed: 1, taken: 1, dealt: 1, sight: 1, range: 1, damage: 0, delay: 0 });
+export const NO_SURFACE = Object.freeze({ mods: Object.freeze([]), damage: 0, delay: 0 });
+export const SURFACE_KEY = 0;
 const BURNS = new Set([15, 8]);
 const MODS = new Map([
-  [12, ['defense', 'dealt']],
-  [13, ['sight', 'range']],
-  [14, ['speed']],
-  [4, ['speed']]
+  [
+    12,
+    [
+      ['defense', MOD.DEFENSE],
+      ['dealt', MOD.DAMAGE]
+    ]
+  ],
+  [
+    13,
+    [
+      ['sight', MOD.SIGHT],
+      ['range', MOD.RANGE]
+    ]
+  ],
+  [14, [['speed', MOD.SPEED]]],
+  [4, [['speed', MOD.SPEED]]]
 ]);
 
 const effects = new WeakMap();
@@ -88,30 +102,20 @@ export function surfaceEffect(tables, type, surface) {
   if (byType[surface]) return byType[surface];
   const keys = MODS.get(surface) || [],
     name = SURFACES[surface],
-    top = {};
+    mods = [];
   let damage = 0,
     delay = 0;
   if (name)
     for (const g of type.list('SurfaceFX_Name')) {
       const s = tables.surface.get(g.toUpperCase())?.get(name);
       if (!s) continue;
-      for (const k of keys) if (s[k] !== 0 && !(top[k] >= s[k])) top[k] = s[k];
+      for (const [k, t] of keys) if (s[k] !== 0) mods.push([t, 'surface:' + g.toUpperCase(), s[k]]);
       if (BURNS.has(surface) && s.damage > 0) {
         damage = s.damage;
         delay = s.delay;
       }
     }
-  const e = {
-    speed: Math.max(0, 1 + (top.speed || 0)),
-    taken: 1 - (top.defense || 0),
-    dealt: 1 + (top.dealt || 0),
-    sight: 1 + (top.sight || 0),
-    range: 1 + (top.range || 0),
-    damage,
-    delay
-  };
-  const plain = Object.keys(NO_SURFACE).every(k => e[k] === NO_SURFACE[k]);
-  return (byType[surface] = plain ? NO_SURFACE : e);
+  return (byType[surface] = mods.length || damage ? { mods, damage, delay } : NO_SURFACE);
 }
 
 export function surfaceLight(tint, seconds, out) {
