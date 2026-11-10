@@ -32,7 +32,6 @@ export function overviewContents(g, p) {
   }
   for (const slot of [1, 2])
     if (own[slot]) fleets[slot] = { fleet: own[slot], fleets: [own[slot]], units: own[slot].units };
-  const docked = orbitalRecords(p, viewer, v);
   const others = here.filter(
     f => f.owner !== viewer && (allied(f.owner, viewer) || (v?.fleetOverlay && !f.units.every(u => strategicStealth(u, f.owner))))
   );
@@ -50,14 +49,9 @@ export function overviewContents(g, p) {
         : [strongest];
     fleets[0] = { fleet: others[0], units, foreign: true };
   }
-  if (own[0] || docked.length) {
+  if (own[0]) {
     const prior = fleets[0];
-    fleets[0] = {
-      fleet: own[0] || prior?.fleet || null,
-      fleets: own[0] ? [own[0]] : [],
-      units: [...(prior?.units || []), ...docked, ...(own[0]?.units || [])],
-      foreign: !own[0] && !!prior
-    };
+    fleets[0] = { fleet: own[0], fleets: [own[0]], units: [...(prior?.units || []), ...own[0].units] };
   }
   return {
     open,
@@ -69,18 +63,6 @@ export function overviewContents(g, p) {
     capacity: open ? Math.max(0, p.type.num('Special_Structures_Land', 3)) : 0,
     station: p?.station && v?.spaceLevel ? p.station : null
   };
-}
-
-const docks = new WeakMap();
-function orbitalRecords(p, viewer, v) {
-  if (!p || !v?.spaceLevel) return [];
-  return (p.orbitalStructures || [])
-    .filter(s => !s.dead && (s.owner || p.stationOwner || p.owner) === viewer)
-    .map(s => {
-      let rec = docks.get(s);
-      if (!rec) docks.set(s, (rec = { type: s.type, owner: s.owner, structure: s }));
-      return rec;
-    });
 }
 
 export function stableSlots(units, count, indices) {

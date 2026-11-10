@@ -62,6 +62,9 @@ const addTypes = (out, u, depth = 0) => {
   add(u.type);
   add(u.carries);
 };
+const runsInGalaxy = src =>
+  /["']Galactic["']/.test(src) || !/Get_Game_Mode\s*\(\s*\)\s*~=\s*["'](Space|Land)["']/.test(src);
+
 export class GalacticStoryHost extends StoryPlots {
   static async create(game, { warm = true } = {}) {
     const restoring = !!game.setup?.restore;
@@ -137,6 +140,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.storyGoalId = 0;
     this.created = [];
     this.objectWrappers = new WeakMap();
+    this.objectScripts = new Map();
     game.galaxy.storySnapshot = () => this.combatSnapshot();
     this.flags = new StoryFlags(game.galaxy.storyFlagsSaved);
     game.galaxy.storyFlagSnapshot = () => this.flags.snapshot();
@@ -1124,6 +1128,7 @@ export class GalacticStoryHost extends StoryPlots {
       Force_Test_Space_Conflict: () => (object.planet ? this.game.battles?.testSpace(object.planet.index, object.owner) : undefined),
       Get_Position: () => this.position(...(object.pos || object.planet?.pos || [0, 0, 0])),
       Get_Game_Object: () => result,
+      Service_Wrapper: () => {},
       Is_Category: category => object.type.categories().has(key(category)),
       Has_Property: name => typeHasProperty(object.type, name),
       Contains_Hero: () => this.containedHeroes(object).length > 0,
@@ -2096,7 +2101,7 @@ export class GalacticStoryHost extends StoryPlots {
     }
     const vm = this.vm;
     inst.tags = inst.history.slice();
-    inst.env = this.environment(inst);
+    inst.env = this.environment(inst, inst.extra);
     inst.values.clear();
     inst.exit = false;
     inst.starts++;
@@ -2106,6 +2111,7 @@ export class GalacticStoryHost extends StoryPlots {
       if (error) throw new Error(error);
       const definitions = vm.call(inst.env, 'Base_Definitions');
       if (!definitions.ok && !definitions.missing) throw new Error(definitions.error);
+      if (inst.extra?.Object) vm.set(inst.env, 'Object', inst.extra.Object);
       for (const [name, args] of inst.initialCallbacks || []) {
         const fn = vm.ref(inst.env, name);
         if (fn) inst.events.push({ fn, params: args, release: true });
@@ -2195,6 +2201,7 @@ export class GalacticStoryHost extends StoryPlots {
             this.service(inst);
           }
         }
+      if (service && !this.suspended && !this.game.paused && !this.game.modeSuspended) this.serviceObjectScripts(force);
       if (service && this.eventTypes.get('STORY_BEGIN_ERA')?.length)
         this.signalEra(Math.max(0, ...this.game.galaxy.players.map(p => p.tech || 0)));
       if (this.techPending) {
@@ -2235,6 +2242,73 @@ export class GalacticStoryHost extends StoryPlots {
       }
     }
   }
+  objectScriptHolders() {
+    const g = this.game.galaxy,
+      out = [];
+    if (!g?.planets) return out;
+    for (const p of g.planets)
+      for (const record of [...(p.groundStructures || []), ...(p.orbitalStructures || []), ...(p.garrison || [])])
+        if (!record.dead) out.push([record, p, record.owner || p.owner]);
+    for (const fleet of g.fleets || [])
+      for (const record of fleet.units) if (!record.dead) out.push([record, fleet.leg ? null : g.planets[fleet.planet], fleet.owner]);
+    return out;
+  }
+
+  serviceObjectScripts(force = false) {
+    this.objectScripts ||= new Map();
+    const live = new Set();
+    for (const [record, planet, owner] of this.objectScriptHolders()) {
+      const name = record.type?.str?.('Lua_Script')?.trim();
+      if (!name) continue;
+      live.add(record);
+      const known = this.objectScripts.get(record);
+      if (known !== undefined) {
+        if (known) this.object(record, planet || undefined, owner);
+        continue;
+      }
+      const src = this.source(moduleKey(name));
+      if (src === undefined) continue;
+      if (!src || !runsInGalaxy(src)) {
+        this.objectScripts.set(record, null);
+        continue;
+      }
+      const inst = {
+        name,
+        key: moduleKey(name),
+        object: record,
+        state: 'new',
+        env: null,
+        thread: null,
+        events: [],
+        tags: [],
+        history: [],
+        values: new Map(),
+        threads: [],
+        next: 0,
+        exit: false,
+        initialized: false,
+        starts: 0,
+        needs: []
+      };
+      inst.extra = { Object: this.object(record, planet || undefined, owner) };
+      this.objectScripts.set(record, inst);
+    }
+    for (const [record, inst] of this.objectScripts) {
+      if (live.has(record)) continue;
+      if (inst) this.drop(inst);
+      this.objectScripts.delete(record);
+    }
+    for (const inst of [...this.objectScripts.values()]) {
+      if (!inst) continue;
+      if (inst.state === 'new' && !this.pending.size) this.start(inst);
+      if (inst.state === 'run' && (force || this.serviceTime >= inst.next)) {
+        inst.next = this.serviceTime + inst.rate;
+        this.service(inst);
+      }
+      if (inst.state === 'over') this.objectScripts.set(inst.object, null);
+    }
+  }
+
   drop(inst) {
     if (inst.trigger) {
       this.vm.free(inst.trigger);
@@ -2262,5 +2336,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.disposed = true;
     this.popup.close();
     for (const inst of this.instances) this.drop(inst);
+    for (const inst of this.objectScripts?.values() || []) if (inst) this.drop(inst);
+    this.objectScripts?.clear();
   }
 }
