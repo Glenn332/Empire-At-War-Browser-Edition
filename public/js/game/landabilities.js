@@ -560,10 +560,10 @@ function toggled(world, q, st) {
             left: 0,
             timer: 0
           };
-          u.altRange = st.def.node.num('Targeting_Max_Attack_Distance', 0) || h.num('Fire_Range_Distance', u.range);
+          u.altRange = st.def.node.num('Targeting_Max_Attack_Distance', 0) || h.num('Fire_Range_Distance', u.baseRange);
         }
         u.mainWeapon = u.weapon;
-        u.mainRange = u.range;
+        u.mainRange = u.baseRange;
         u.weapon = u.altWeapon;
         u.range = u.altRange;
       } else if (u.mainWeapon) {

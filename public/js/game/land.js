@@ -7,7 +7,7 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
-import { surfaceAt, surfaceStatus, surfaceLight } from './landsurface.js';
+import { surfaceAt, surfaceStatus, surfaceLight, surfaceEffect, NO_SURFACE } from './landsurface.js';
 import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
@@ -394,7 +394,7 @@ class LandUnit {
     this.shield = undefined;
     this.armor = undefined;
     this.aimZ = undefined;
-    this.range = undefined;
+    this.baseRange = undefined;
     this.weapon = undefined;
     this.turret = undefined;
     this.kind = undefined;
@@ -442,7 +442,13 @@ class LandUnit {
     this.deflects = undefined;
     this.deflect = undefined;
     this.mod = undefined;
-    this.wade = undefined;
+    this.surf = NO_SURFACE;
+    this.surface = undefined;
+    this.surfX = undefined;
+    this.surfY = undefined;
+    this.surfAt = undefined;
+    this.burnAt = undefined;
+    this.surfSt = null;
     this.surfaceIcon = '';
     this.surfaceLit = null;
     this.surfaceFrom = 0;
@@ -605,6 +611,12 @@ class LandUnit {
     this.iq = undefined;
     this.ihold = undefined;
     this.lerp = undefined;
+  }
+  get range() {
+    return this.surf.range === 1 || this.baseRange === undefined ? this.baseRange : this.baseRange * this.surf.range;
+  }
+  set range(v) {
+    this.baseRange = v;
   }
 }
 export const landUnit = fields => Object.assign(new LandUnit(), fields);
@@ -980,7 +992,7 @@ export class LandWorld {
     return (u.wx = { name, sight: m ? pick(m.sight) : 1, speed: m ? pick(m.speed) : 1 });
   }
   sightMod(u) {
-    return this.wxOf(u).sight;
+    return this.wxOf(u).sight * (u.surf ? u.surf.sight : 1);
   }
   wxSpread(w) {
     const name = this.wxNow();
@@ -3704,7 +3716,10 @@ export class LandWorld {
               cooldown: simRandom() * 1.5,
               left: 0,
               timer: 0,
-              range: h.num('Fire_Range_Distance', u.range),
+              baseRange: h.num('Fire_Range_Distance', u.baseRange),
+              get range() {
+                return this.baseRange * u.surf.range;
+              },
               spare: new Set(h.list('Fire_Category_Restrictions').map(c => c.toUpperCase())),
               inacc: h.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]),
               muzzles: [h.str('Fire_Bone_A'), h.str('Fire_Bone_B')]
@@ -3882,14 +3897,6 @@ export class LandWorld {
         }
         this.setAnim(u, 'idle');
         u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1 };
-        u.wade = 1;
-        if (this.tables)
-          for (const g of t.list('SurfaceFX_Name')) {
-            const k = this.tables.surface.get(g.toUpperCase()),
-              wtr = k && k.get('water');
-            if (wtr && wtr.speed) u.wade = Math.min(u.wade, 1 + wtr.speed);
-          }
-        else if (!t.num('Hover_Offset', 0)) u.wade = 0.5;
         u.ghost = inst.meshByName.get('STEALTH') || null;
         if (u.ghost) u.ghost.visible = false;
         u.foot = /infantry/i.test(t.str('MovementClass')) || inCategory(t, 'INFANTRY');
@@ -4176,7 +4183,25 @@ export class LandWorld {
     const T = this.terrain;
     if (!this.tables || !T) return;
     for (const u of this.units) {
-      const st = u.dead || u.inside || u.structure ? null : surfaceStatus(this.tables, u.type, surfaceAt(T, u.x, u.y));
+      let s = -1;
+      if (!(u.dead || u.inside)) {
+        if (u.x !== u.surfX || u.y !== u.surfY) {
+          u.surfX = u.x;
+          u.surfY = u.y;
+          u.surfAt = surfaceAt(T, u.x, u.y);
+        }
+        s = u.surfAt;
+      }
+      if (s !== u.surface) {
+        u.surface = s;
+        u.surf = surfaceEffect(this.tables, u.type, s);
+        u.surfSt = s < 0 || u.structure ? null : surfaceStatus(this.tables, u.type, s);
+        u.burnAt = this.time + u.surf.delay;
+      } else if (u.surf.damage > 0 && this.time >= u.burnAt) {
+        u.burnAt += u.surf.delay;
+        this.hurt(u, u.surf.damage, null);
+      }
+      const st = u.surfSt;
       u.surfaceIcon = (st && st.icon) || '';
       const tint = st && u.holder && st.tint;
       if (tint) {
@@ -4405,7 +4430,7 @@ export class LandWorld {
 
   arm(u, t, side, cool) {
     const swap = swapMode(t),
-      base = u.range;
+      base = u.baseRange;
     u.weapons = t.list('Projectile_Types').map(n => {
       const proj = db.type(n);
       return proj
@@ -4791,7 +4816,12 @@ export class LandWorld {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(u.side);
     }
-    amount *= (u.defense ?? 1) * (u.mod ? u.mod.taken : 1) * (u.shell ? db.constants.num('Base_Shield_Vulnerability_Modifier', 2) : 1);
+    amount *=
+      (u.defense ?? 1) *
+      (u.mod ? u.mod.taken : 1) *
+      (u.surf ? u.surf.taken : 1) *
+      (from && from.surf && !from.dead ? from.surf.dealt : 1) *
+      (u.shell ? db.constants.num('Base_Shield_Vulnerability_Modifier', 2) : 1);
     const soak = Math.min(u.shield, amount);
     u.shield -= soak;
     u.health -= amount - soak;
@@ -5014,7 +5044,10 @@ export class LandWorld {
       if (u.foot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
       return;
     }
-    const reach = (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) + (this.meshOf(t) ? t.collR : t.hitRadius > 0 ? t.hitRadius : 0) + Math.abs(tz - z0);
+    const reach =
+      (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) * (u.surf ? u.surf.range : 1) +
+      (this.meshOf(t) ? t.collR : t.hitRadius > 0 ? t.hitRadius : 0) +
+      Math.abs(tz - z0);
     const shot = {
       x: sx,
       y: sy,
@@ -5200,7 +5233,7 @@ export class LandWorld {
     u.heading += Math.max(-step, Math.min(step, da));
     A.roll = near(A.roll, Math.max(-1, Math.min(1, da / 0.5)) * A.bank, A.rollRate * dt);
     A.v = near(A.v, wantV, A.push * dt);
-    const go = A.v * (u.mod ? u.mod.speed : 1) * this.wxOf(u).speed * (u.gravity ?? 1) * dt,
+    const go = A.v * (u.mod ? u.mod.speed : 1) * (u.surf ? u.surf.speed : 1) * this.wxOf(u).speed * (u.gravity ?? 1) * dt,
       was = A.alt;
     u.x += Math.cos(u.heading) * go;
     u.y += Math.sin(u.heading) * go;
@@ -6250,13 +6283,12 @@ export class LandWorld {
   }
 
   paceOf(u) {
-    const wet = this.wet[Math.round(u.y / CELL) * this.n + Math.round(u.x / CELL)] ? u.wade : 1;
     return (
       u.mod.speed *
+      (u.surf ? u.surf.speed : 1) *
       this.pursuit(u) *
       this.wxOf(u).speed *
       (u.gravity ?? 1) *
-      wet *
       (u.shell ? db.constants.num('Base_Shield_Speed_Modifier', 0.5) : 1)
     );
   }

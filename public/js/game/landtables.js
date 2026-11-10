@@ -52,7 +52,8 @@ export async function loadLandTables() {
         icon: named(k, 'Status_Icon_Name'),
         sight: k.num('FOW_Reveal_Range_Mod', 0),
         range: k.num('Fire_Range_Mod', 0),
-        damage: k.num('Terrain_Damage', 0)
+        damage: k.num('Terrain_Damage', 0),
+        delay: k.num('Terrain_Damage_Delay', 0)
       });
     kinds.bones = [
       g.val('Dynamic_Track_Left_Bone') || g.children.map(k => k.val('Dynamic_Track_Left_Bone')).find(Boolean),

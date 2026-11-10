@@ -1212,7 +1212,7 @@ export function ungarrison(world, host, x = null, y = null, only = null) {
       if (u.inside !== host) continue;
       u.inside = null;
       u.gunner = false;
-      u.range /= mult;
+      u.baseRange /= mult;
       u.holder.visible = true;
       const at = x !== null ? o : host;
       u.x = at.x + (simRandom() - 0.5) * 16;
@@ -1258,7 +1258,7 @@ export function putInside(world, q, host) {
     u.inside = host;
     u.path = [];
     u.target = null;
-    u.range *= mult;
+    u.baseRange *= mult;
     u.gunner = ports-- > 0;
     u.holder.visible = false;
     u.x = host.x;
