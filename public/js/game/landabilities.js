@@ -57,6 +57,7 @@ const SELF = new Set([
   'DETONATE_REMOTE_BOMB',
   'SWAP_WEAPONS'
 ]);
+export const PICKS_UNIT = new Set(['PLACE_REMOTE_BOMB']);
 const TOGGLE = new Set(['SPREAD_OUT', 'DEPLOY', 'HUNT', 'ROCKET_ATTACK', 'SWAP_WEAPONS']);
 export const FORCE = new Set([
   'FORCE_TELEKINESIS',
@@ -236,6 +237,8 @@ export function setSide(world, q, side, dieAfter = 0) {
     });
 }
 
+export const blastFactor = (d, r, tiers) => (tiers > 0 ? Math.max(0, Math.min(1, 1 - Math.floor((d * tiers) / r) / (tiers + 1))) : 1);
+
 export function blast(world, P, x, y, side, on = null) {
   if (!P) return;
   const at = { x, y, z: world.groundZ(x, y) };
@@ -295,10 +298,11 @@ export function blast(world, P, x, y, side, on = null) {
   const dmg = P.num('Projectile_Blast_Area_Damage', 0),
     r = P.num('Projectile_Blast_Area_Range', 0);
   if (dmg > 0 && r > 0) {
-    const tiers = P.bool('Projectile_Blast_Area_Dropoff') ? Math.max(1, P.num('Projectile_Blast_Area_Dropoff_Tiers', 3)) : 1;
+    const tiers = P.bool('Projectile_Blast_Area_Dropoff') ? Math.max(1, P.num('Projectile_Blast_Area_Dropoff_Tiers', 3)) : 0;
+    const inner = P.str('Internal_Damage_Type').trim();
     for (const u of near(world, x, y, r, u => world.blastReaches(u, side, P))) {
-      const step = Math.min(tiers - 1, Math.floor((Math.hypot(u.x - x, u.y - y) / r) * tiers));
-      world.hurt(u, dmg * (1 - step / tiers) * db.damageMod(P.str('Damage_Type'), u.armor));
+      if (inner) u.lastDamage = inner;
+      world.hurt(u, dmg * blastFactor(Math.hypot(u.x - x, u.y - y), r, tiers) * db.damageMod(P.str('Damage_Type'), u.armor));
     }
   }
   if (P.num('Land_FOW_Reveal_Range', 0) > 0 && !dmg)
@@ -395,6 +399,7 @@ export function cantTarget(world, q, def, tgt) {
 }
 
 export function abilityBlocked(world, q, kind) {
+  if (kind === 'DETONATE_REMOTE_BOMB') return remoteBombs(world, q.side).length ? null : 'No bombs placed';
   if (kind !== 'DEPLOY_TROOPERS') return null;
   const st = q.abilityState(kind),
     c = st && casterOf(q, kind);
@@ -461,7 +466,7 @@ export function useAbility(world, q, kind, tgt = null) {
 function finish(world, q, st) {
   if (!st.active) return;
   st.active = false;
-  st.cooldown = st.def.recharge;
+  st.cooldown = st.waitExit ? 1e9 : st.def.recharge;
   const kind = st.def.kind;
   if (kind === 'STEALTH' || kind === 'FORCE_CLOAK')
     for (const u of q.members)
@@ -988,6 +993,9 @@ function start(world, q, st, c, tgt) {
       break;
 
     case 'CAPTURE_VEHICLE':
+      sound(world, sv('SFXEvent_Success') || sv('SFXEvent_Activate'), t);
+      steal(world, q, st, c, t);
+      break;
     case 'TACTICAL_BRIBE':
     case 'TARGETED_HACK': {
       fx(world, sv('Bribed_Effect'), t, t.aimZ + sn('Effect_Z_Offset', 0));
@@ -1001,34 +1009,12 @@ function start(world, q, st, c, tgt) {
       }
       sound(world, sv('SFXEvent_Success') || sv('SFXEvent_Activate'), t);
       setSide(world, t.squad, side);
-      const copy = kind === 'CAPTURE_VEHICLE' ? db.type(t.type.str('Vehicle_Thief_Inside_Clone')) : null;
-      const out = copy && landAbilities(copy).find(d => d.kind === 'EJECT_VEHICLE_THIEF');
-      if (out && !t.thief) {
-        t.thief = c;
-        c.inside = t;
-        c.path = [];
-        c.target = null;
-        if (c.holder) c.holder.visible = false;
-        if (q.members.every(u => u.inside)) q.selected = false;
-        t.abilityKinds.add(out.kind);
-        if (!t.squad.abilityState(out.kind)) t.squad.abilities.push({ def: out, active: false, left: 0, cooldown: out.recharge });
-        effect(world, () => {
-          if (t.thief !== c) return true;
-          if (!t.dead) {
-            c.x = t.x;
-            c.y = t.y;
-            return false;
-          }
-          leave(world, t);
-          return true;
-        });
-      }
       break;
     }
     case 'EJECT_VEHICLE_THIEF':
       if (c.thief) {
-        leave(world, c);
-        world.hurt(c, 1e9);
+        c.lastDamage = 'Damage_Vehicle_Thief';
+        world.hurt(c, 1e6 * db.damageMod('Damage_Vehicle_Thief', c.armor), c.thief);
       }
       break;
     case 'AREA_EFFECT_HEAL':
@@ -1061,15 +1047,14 @@ function start(world, q, st, c, tgt) {
     case 'PLACE_REMOTE_BOMB': {
       const bomb = db.type(sv('Bomb_Type'));
       if (!bomb) break;
-      const P = db.type(bomb.list('Death_Explosions')[0]),
-        x = tgt.x,
-        y = tgt.y,
-        life = bomb.num('Projectile_Max_Lifetime', 900);
+      const on = tgt.unit && !tgt.unit.dead && tgt.unit.x !== undefined ? tgt.unit : null,
+        x = on ? on.x : tgt.x,
+        y = on ? on.y : tgt.y;
       world.cast(c, sv('Toss_Anim').toUpperCase());
       after(world, sn('Spawn_Frame', 12) / FPS, () => {
         if (c.dead) return;
         const before = world.shots.length;
-        const aim = { x, y, z: world.groundZ(x, y), aimZ: 0, hitRadius: 0, kind: 'INFANTRY', dead: false };
+        const aim = on && !on.dead ? on : { x, y, z: world.groundZ(x, y), aimZ: 0, hitRadius: 0, kind: 'INFANTRY', dead: false };
         world.fire(c, aim, {
           proj: bomb,
           damage: 0,
@@ -1084,38 +1069,19 @@ function start(world, q, st, c, tgt) {
           quiet: true
         });
         const shot = world.shots.length > before ? world.shots[world.shots.length - 1] : null;
-        let air = 0,
-          bx = x,
-          by = y;
-        if (shot) {
-          shot.dud = true;
-          shot.track = false;
-          shot.target = { dead: true, x: 0, y: 0, hitRadius: 0 };
-          air = shot.total / (shot.speed || 1);
-          bx = shot.ax;
-          by = shot.ay;
+        if (!shot) {
+          plant(world, bomb, x, y, world.groundZ(x, y), side, null);
+          return;
         }
-        after(world, air, () =>
-          lay(world, bomb, bx, by, side, u => {
-            (q.bombs ||= []).push(u);
-            const gone = world.time + life;
-            effect(world, () => {
-              if (u.dead) {
-                blast(world, P, u.x, u.y, side);
-                hurtOwn(world, bomb, P, u.x, u.y, side);
-                q.bombs = (q.bombs || []).filter(b => b !== u);
-                return true;
-              }
-              if (world.time >= gone) world.hurt(u, 1e9);
-              return false;
-            });
-          })
-        );
+        shot.dud = true;
+        shot.track = false;
+        if (shot.target !== on) shot.target = { dead: true, x: 0, y: 0, hitRadius: 0 };
+        shot.onLand = s => plant(world, bomb, s.x, s.y, s.z, side, s.struck || null);
       });
       break;
     }
     case 'DETONATE_REMOTE_BOMB':
-      for (const u of (q.bombs || []).slice()) if (!u.dead) world.hurt(u, 1e9);
+      detonate(world, c, side);
       break;
     case 'PROXIMITY_MINES': {
       const mine = db.type(sv('Mine_Type')),
@@ -1283,6 +1249,7 @@ export function tickAbilities(world, dt) {
   fxs.length = k;
   if (world.beams.length) world.beams = world.beams.filter(b => b.until > world.time);
   if (world.pings.length) world.pings = world.pings.filter(p => p.until > world.time);
+  if (world.remoteBombs?.length) dropOrphanBombs(world);
   if ((world.autoTimer = (world.autoTimer ?? 0.5) - dt) <= 0) {
     world.autoTimer = 0.5;
     for (const q of world.squads)
@@ -1366,24 +1333,163 @@ function lay(world, type, x, y, side, then) {
     .catch(() => {});
 }
 
-function hurtOwn(world, bomb, P, x, y, side) {
-  const amount = bomb.num('Friendly_Damage_Amount', 0),
-    r = P ? P.num('Projectile_Blast_Area_Range', 0) : 0;
-  if (amount > 0 && r > 0)
-    for (const u of near(world, x, y, r, o => world.ally(o.side, side) && !o.structure && !o.mine)) world.hurt(u, amount);
+const isRemoteBomb = type => type.num('Friendly_Damage_Amount', 0) > 0;
+export const remoteBombs = (world, side) => (world.remoteBombs || []).filter(b => b.side === side && !b.u.dead && isRemoteBomb(b.u.type));
+const firstAbility = type => {
+  try {
+    const ab = type.sub('Unit_Abilities_Data')[0]?.all('Unit_Ability')[0];
+    return ab ? ab.val('Type').trim().toUpperCase() : '';
+  } catch {
+    return '';
+  }
+};
+
+function plant(world, type, x, y, z, side, carrier) {
+  lay(world, type, x, y, side, u => {
+    const v = carrier && !carrier.dead ? carrier : null,
+      rec = { u, side, carrier: v, ox: 0, oy: 0, oz: 0, oh: 0, quiet: false };
+    if (v) {
+      const h = -(v.heading || 0),
+        dx = x - v.x,
+        dy = y - v.y;
+      rec.ox = dx * Math.cos(h) - dy * Math.sin(h);
+      rec.oy = dx * Math.sin(h) + dy * Math.cos(h);
+      rec.oz = Math.max(0, z - (v.z || 0));
+      rec.oh = (u.heading || 0) - (v.heading || 0);
+    }
+    (world.remoteBombs ||= []).push(rec);
+    const P = db.type(type.list('Death_Explosions')[0]),
+      gone = world.time + type.num('Projectile_Max_Lifetime', 900);
+    effect(world, () => {
+      if (u.dead) {
+        if (!rec.quiet) blast(world, P, u.x, u.y, side);
+        world.remoteBombs = (world.remoteBombs || []).filter(b => b !== rec);
+        return true;
+      }
+      if (v && !v.dead) {
+        const h = v.heading || 0;
+        u.x = v.x + rec.ox * Math.cos(h) - rec.oy * Math.sin(h);
+        u.y = v.y + rec.ox * Math.sin(h) + rec.oy * Math.cos(h);
+        u.heading = h + rec.oh;
+        u.lift = Math.max(0, (v.z || 0) + rec.oz - world.groundZ(u.x, u.y));
+      }
+      if (world.time >= gone) world.hurt(u, 1e9);
+      return false;
+    });
+  });
+}
+
+function detonate(world, c, side) {
+  for (const b of remoteBombs(world, side)) {
+    const v = b.carrier;
+    if (v && v.dead) continue;
+    if (v && v.side === side) {
+      const n = b.u.type.num('Friendly_Damage_Amount', 0),
+        held = world.units.filter(o => o.inside === v && !o.dead);
+      v.lastDamage = 'Damage_Normal';
+      world.hurt(v, n * db.damageMod('Damage_Normal', v.armor), c);
+      for (const o of held) {
+        o.lastDamage = 'Damage_Remote_Bomb';
+        world.hurt(o, n * db.damageMod('Damage_Remote_Bomb', o.armor), c);
+      }
+    }
+    b.u.invulnUntil = 0;
+    world.hurt(b.u, 1e9);
+  }
+}
+
+function erase(world, u) {
+  u.dead = u.gone = true;
+  u.health = 0;
+  u.target = null;
+  u.path = [];
+  if (u.footprint && !u.structure && world.unstamp) world.unstamp(u);
+  if (u.holder && world.scene) world.scene.remove(u.holder);
+  if (u.squad) u.squad.members = u.squad.members.filter(m => m !== u);
+}
+
+function dropOrphanBombs(world) {
+  for (const side of new Set(world.remoteBombs.map(b => b.side))) {
+    if (world.units.some(o => !o.dead && o.side === side && firstAbility(o.type) === 'PLACE_REMOTE_BOMB')) continue;
+    for (const b of world.remoteBombs)
+      if (b.side === side && !b.u.dead) {
+        b.quiet = true;
+        erase(world, b.u);
+      }
+  }
+}
+
+function steal(world, q, st, c, t) {
+  const side = q.side,
+    clone = db.type(t.type.str('Vehicle_Thief_Inside_Clone'));
+  st.waitExit = true;
+  c.path = [];
+  c.target = null;
+  if (c.holder) c.holder.visible = false;
+  if (q.members.every(u => u === c || u.inside)) q.selected = false;
+  if (!clone) {
+    board(world, c, t, side);
+    return;
+  }
+  const spot = { x: t.x, y: t.y, z: t.z || 0, aimZ: 0, heading: t.heading, squad: t.squad, dead: false, thief: null },
+    part = t.maxHealth > 0 ? t.health / t.maxHealth : 1,
+    shield = t.maxShield > 0 ? t.shield / t.maxShield : 0;
+  c.inside = spot;
+  erase(world, t);
+  Promise.resolve(
+    world.spawn(clone.name, spot.x, spot.y, spot.heading, side, [{ type: clone.name, x: spot.x, y: spot.y, h: spot.heading, hp: Infinity }])
+  )
+    .catch(() => null)
+    .then(s => {
+      const v = s && s.members.find(u => !u.dead);
+      if (v) {
+        v.health = Math.max(1, part * v.maxHealth);
+        v.shield = shield * (v.maxShield || 0);
+        board(world, c, v, side);
+        return;
+      }
+      spot.thief = c;
+      leave(world, spot);
+    });
+}
+
+function board(world, c, v, side) {
+  v.thief = c;
+  if (c.dead || v.dead) {
+    leave(world, v);
+    return;
+  }
+  fx(world, 'Vehicle_Thief_Transition_Particles', v, v.aimZ || 0);
+  c.inside = v;
+  c.path = [];
+  c.target = null;
+  if (c.holder) c.holder.visible = false;
+  if (v.side !== side) setSide(world, v.squad, side);
+  effect(world, () => {
+    if (v.thief !== c) return true;
+    if (!v.dead) return false;
+    leave(world, v);
+    return true;
+  });
 }
 
 function leave(world, v) {
   const c = v.thief;
   v.thief = null;
   if (!c || c.dead) return;
-  const o = world.nearestOpen(v.x + v.hitRadius + 12, v.y, c.need || 1) || world.nearestOpen(v.x, v.y) || v;
   c.inside = null;
-  c.x = o.x;
-  c.y = o.y;
+  c.x = v.x;
+  c.y = v.y;
+  c.heading = v.heading;
   c.path = [];
   c.target = null;
   if (c.holder) c.holder.visible = true;
+  const st = c.squad && c.squad.abilityState('CAPTURE_VEHICLE');
+  if (st && st.waitExit) {
+    st.waitExit = false;
+    st.cooldown = st.def.recharge;
+  }
+  if (v.squad && v.squad.selected && world.onReselect) world.onReselect(v.squad, c.squad);
 }
 
 function screen(world, q, st) {
@@ -1430,7 +1536,16 @@ export function autoAbilities(world, q) {
   }
   if (!ready.length) return;
   const def = ready[Math.floor(simRandom() * ready.length)].def;
-  useAbility(world, q, def.kind, def.aim === 'none' ? null : def.aim === 'point' ? { x: victim.x, y: victim.y } : { unit: victim });
+  useAbility(
+    world,
+    q,
+    def.kind,
+    def.aim === 'none'
+      ? null
+      : def.aim === 'point'
+        ? { x: victim.x, y: victim.y, ...(PICKS_UNIT.has(def.kind) ? { unit: victim } : {}) }
+        : { unit: victim }
+  );
 }
 
 export function aiAbilities(world, q, bribeScore = null) {
@@ -1451,13 +1566,12 @@ export function aiAbilities(world, q, bribeScore = null) {
     }
     if (def.kind === 'PLACE_REMOTE_BOMB') {
       if (!st.active && st.cooldown <= 0 && fighting && dist(c, fighting.target) <= def.range && dist(c, fighting.target) >= def.minRange)
-        useAbility(world, q, def.kind, { x: fighting.target.x, y: fighting.target.y });
+        useAbility(world, q, def.kind, { x: fighting.target.x, y: fighting.target.y, unit: fighting.target });
       continue;
     }
     if (def.kind === 'DETONATE_REMOTE_BOMB') {
-      const due = (q.bombs || []).some(
-        b =>
-          !b.dead &&
+      const due = remoteBombs(world, q.side).some(
+        ({ u: b }) =>
           near(world, b.x, b.y, 150, o => !o.mine && !o.inside && !world.ally(o.side, q.side)).reduce(
             (n, o) => n + o.type.num('AI_Combat_Power', 50),
             0

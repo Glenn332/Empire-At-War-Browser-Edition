@@ -993,6 +993,10 @@ export class LandGame {
       if (u.structure && world.ally(u.side, this.me)) this.audio.play(u.type.str('SFXEvent_Unit_Lost'));
       if (!world.fog || world.ally(u.side, this.me) || u.seen !== false) this.ui.radar?.event('Default_Unit_Die', u.x, u.y);
     };
+    world.onReselect = (from, to) => {
+      const ui = this.ui;
+      if (ui && ui.selection.includes(from)) ui.select([...ui.selection.filter(s => s !== from), ...(to ? [to] : [])]);
+    };
     const transition = (pt, tag, a, b) => {
       if ((a >= 0 && world.ally(a, this.me)) || (b >= 0 && world.ally(b, this.me)))
         this.ui.radar?.event(pt.type.str(tag).trim(), pt.x, pt.y);

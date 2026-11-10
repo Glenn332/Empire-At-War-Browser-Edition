@@ -16,7 +16,7 @@ import {
 import { CELL } from './terrain.js';
 import { Radar } from './radar.js';
 import { BeaconView } from './beacons.js';
-import { SILENT, bribeCost } from './landabilities.js';
+import { PICKS_UNIT, SILENT, bribeCost } from './landabilities.js';
 
 const $ = id => document.getElementById(id);
 const up = n => String(n).toUpperCase();
@@ -392,7 +392,10 @@ export class LandUI {
       c: 'ability',
       u: live.map(q => q.id),
       kind: a.kind,
-      ...(def.aim === 'point' ? { x: g.x, y: g.y } : { t: u.squad.id, m: u.squad.members.indexOf(u) })
+      ...(def.aim === 'point' ? { x: g.x, y: g.y } : {}),
+      ...((def.aim !== 'point' || PICKS_UNIT.has(def.kind)) && u && !u.dead && u.squad
+        ? { t: u.squad.id, m: u.squad.members.indexOf(u) }
+        : {})
     });
   }
 

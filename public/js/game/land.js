@@ -515,6 +515,7 @@ class LandUnit {
     this.capturable = undefined;
     this.specialAt = undefined;
     this.special = undefined;
+    this.demoBomb = undefined;
     this.cats = undefined;
     this.stunUntil = undefined;
     this.cast = undefined;
@@ -4847,7 +4848,7 @@ export class LandWorld {
       const firing = u.animKind === 'ATTACKIDLE' || u.animKind === 'attack' || u.once === 'attack';
       this.oneShot(u, (firing ? 'ATTACKFLINCH' : 'FLINCH') + side, firing ? 'attack' : 'idle');
     }
-    if (from && !from.dead && !u.structure && !u.squad.foe && !u.squad.busy && (!u.path.length || u.squad.march)) this.retaliate(u, from);
+    if (from && !from.dead && !this.ally(from.side, u.side) && !u.structure && !u.squad.foe && !u.squad.busy && (!u.path.length || u.squad.march)) this.retaliate(u, from);
     if (u.health <= 0) {
       if (u.flies && u.type.bool('Spin_Away_On_Death') && simRandom() <= u.type.num('Spin_Away_On_Death_Chance', 0)) {
         u.spin = this.spinAway(u);
@@ -5039,6 +5040,7 @@ export class LandWorld {
       fall: 0,
       vz0: vz,
       path: null,
+      struck: null,
       ox: off.x * Math.cos(-(t.heading || 0)) - off.y * Math.sin(-(t.heading || 0)),
       oy: off.x * Math.sin(-(t.heading || 0)) + off.y * Math.cos(-(t.heading || 0)),
       oz: off.z
@@ -5438,6 +5440,7 @@ export class LandWorld {
   }
 
   shotEnds(s, hit) {
+    s.struck = hit || null;
     if (hit) {
       if (!hit.spot) hit.lastDamage = s.w.damageType;
       if (!this.deflects(hit, s)) this.hurt(hit, s.damage * db.damageMod(s.w.damageType, hit.armor) * this.absorbs(hit, s), s.from);
@@ -5573,6 +5576,11 @@ export class LandWorld {
   }
 
   fight(u, dt) {
+    if (u.special && u.special.lock) {
+      u.path = [];
+      u.target = null;
+      return true;
+    }
     if (this.aiSuspended && !u.squad.foe) {
       u.target = null;
       return false;
