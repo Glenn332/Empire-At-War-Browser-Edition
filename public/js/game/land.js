@@ -586,6 +586,7 @@ class LandUnit {
     this.cb = undefined;
     this.ccCap = undefined;
     this.hardX = undefined;
+    this.freeLeg = undefined;
     this.hardY = undefined;
     this.startAt = undefined;
     this.inView = undefined;
@@ -1303,9 +1304,9 @@ export class LandWorld {
     return hi > lo ? hi - lo : 0;
   }
 
-  moveFailed(q, x, y, facing) {
+  moveFailed(q, x, y, facing, exact = false) {
     q.moveFailAt = this.time;
-    q.moveTry = { x, y, facing, at: this.time + 2 };
+    q.moveTry = { x, y, facing, exact, at: this.time + 2 };
     this.moveTries.add(q);
     if (q.box) {
       q.box.path.length = 0;
@@ -1326,7 +1327,7 @@ export class LandWorld {
       if (this.time < t.at) continue;
       q.moveTry = null;
       this.moveTries.delete(q);
-      this.order(q, t.x, t.y, t.facing);
+      this.order(q, t.x, t.y, t.facing, t.exact);
     }
   }
 
@@ -6688,7 +6689,8 @@ export class LandWorld {
       ad = Math.hypot(ax, ay) || 1,
       sx = u.x + (ax / ad) * Math.min(ad, go),
       sy = u.y + (ay / ad) * Math.min(ad, go);
-    if (this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+    if (!box.path.length) u.freeLeg = false;
+    if (u.freeLeg || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
       u.x = fx;
       u.y = fy;
     } else if (go > 0 && this.isOpen(sx, sy, (u.need & ~3) | 1)) {
@@ -6711,8 +6713,61 @@ export class LandWorld {
     return true;
   }
 
-  order(squad, x, y, facing = null) {
+  ringSpot(x, y, size, need) {
+    const step = 1.5 * (size > 0 ? size : 5 / 1.5);
+    for (let ring = 1; ring <= 20; ring++) {
+      const r = ring * step,
+        k = Math.max(4, Math.floor((2 * Math.PI * r) / step) + 1);
+      for (let i = 0; i < k; i++) {
+        const a = (i / k) * 2 * Math.PI,
+          px = x + Math.cos(a) * r,
+          py = y + Math.sin(a) * r;
+        if (this.isOpen(px, py, need)) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  exitMove(squad, x, y, facing, need) {
+    const m = squad.members,
+      size = Math.max(...m.map(u => Math.hypot(hardExtent(u, 'X'), hardExtent(u, 'Y')))),
+      goal = this.isOpen(x, y, need) ? { x, y } : this.ringSpot(x, y, size, need);
+    if (!goal) return this.moveFailed(squad, x, y, facing, true);
+    const box = this.teamOf(squad);
+    if (box) {
+      if (squad.ext) {
+        box.x = m.reduce((a, u) => a + u.x, 0) / m.length;
+        box.y = m.reduce((a, u) => a + u.y, 0) / m.length;
+        squad.ext = false;
+      }
+      const way = [{ x: goal.x, y: goal.y, free: true }];
+      box.path = way;
+      box.face = facing;
+      box.stall = 0;
+      box.sides = this.sideShifts(squad, box, box, way);
+      box.along = 0;
+      for (const u of m) {
+        u.freeLeg = true;
+        u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
+      }
+      return true;
+    }
+    const cx = m.reduce((a, u) => a + u.x, 0) / m.length,
+      cy = m.reduce((a, u) => a + u.y, 0) / m.length,
+      face = facing ?? Math.atan2(goal.y - cy, goal.x - cx),
+      c = Math.cos(face),
+      s = Math.sin(face),
+      k = squad.spread || 1;
+    for (const u of m) {
+      const end = { x: goal.x + (c * u.off.x - s * u.off.y) * k, y: goal.y + (s * u.off.x + c * u.off.y) * k, free: true };
+      u.path = [u.flies || this.isOpen(end.x, end.y, u.need) ? end : { x: goal.x, y: goal.y, free: true }];
+    }
+    return true;
+  }
+
+  order(squad, x, y, facing = null, exact = false) {
     const m = squad.members;
+    for (const u of m) u.freeLeg = false;
     if (this.clutterAt === this.time) this.clutterSent.push(squad);
     const fp = squad.formPending;
     squad.formPending = null;
@@ -6745,6 +6800,7 @@ export class LandWorld {
       return true;
     }
     const lead = m.find(u => !u.dead && !u.inside && !u.flies) || m[0];
+    if (exact && !fliers) return this.exitMove(squad, x, y, facing, need);
     const goal = fliers
       ? this.isOpen(x, y, need)
         ? { x, y }
@@ -8113,7 +8169,7 @@ export class LandWorld {
           u.v = dt > 0 ? go / dt : 0;
           const fx = u.x + Math.cos(u.heading) * go,
             fy = u.y + Math.sin(u.heading) * go;
-          if (u.flies || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+          if (u.flies || next.free || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
             u.x = fx;
             u.y = fy;
             u.blockFails = 0;

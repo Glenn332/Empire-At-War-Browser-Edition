@@ -1214,12 +1214,15 @@ export function ungarrison(world, host, x = null, y = null, only = null) {
       u.gunner = false;
       u.range /= mult;
       u.holder.visible = true;
-      u.x = o.x + (simRandom() - 0.5) * 16;
-      u.y = o.y + (simRandom() - 0.5) * 16;
+      const at = x !== null ? o : host;
+      u.x = at.x + (simRandom() - 0.5) * 16;
+      u.y = at.y + (simRandom() - 0.5) * 16;
       u.path = [];
       u.target = null;
     }
-    if (x !== null && q.members.length) world.order(q, x, y);
+    if (!q.members.length) return;
+    if (x !== null) world.order(q, x, y);
+    else world.order(q, host.x + Math.cos(a) * (out + 20), host.y + Math.sin(a) * (out + 20), null, true);
   });
   host.holds = only ? host.holds.filter(q => q !== only) : [];
   if (host.hoverH > 0) host.hoverState = 3;
