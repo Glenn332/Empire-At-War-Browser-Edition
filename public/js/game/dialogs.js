@@ -966,6 +966,8 @@ export async function openDialog(
         t.style.position = 'relative';
         t.style.zIndex = 1;
         nativeLabel(t, text, f);
+        d._textEl = t;
+        d._textFont = f;
         d._setText = (value, color) => nativeLabel(t, value, f, color ? { top: color, bottom: color } : {});
       }
       d.addEventListener('mouseenter', () => window.game && window.game.audio.play('GUI_Highlight_Mouse_Over'));
@@ -1127,6 +1129,8 @@ export async function openDialog(
       }
       if (nativeFonts) {
         nativeLabel(t, text, f);
+        d._textEl = t;
+        d._textFont = f;
         d._setText = (value, color) => nativeLabel(t, value, f, color ? { top: color, bottom: color } : {});
       }
     } else if (c.kind === 'CONTROL' && /^button$/i.test(c.cls) && /CHECKBOX/.test(c.style)) {
@@ -1146,6 +1150,8 @@ export async function openDialog(
         nativeLabel(t, text, f);
         d.style.filter = '';
         d.style.textShadow = '';
+        d._textEl = t;
+        d._textFont = f;
         d._setText = (value, color) => nativeLabel(t, value, f, color ? { top: color, bottom: color } : {});
       }
     } else if (c.kind === 'LISTBOX' && nativeLists) {
@@ -1243,6 +1249,9 @@ export async function openDialog(
       for (const [k, v] of Object.entries(c))
         if (k[0] === '_' && typeof v !== 'function') d[k] = v instanceof Element ? (c.contains(v) ? twin(v) : null) : v;
       d.dataset.id = as;
+      if (d._textEl) d._setText = (value, color) => nativeLabel(d._textEl, value, d._textFont, color ? { top: color, bottom: color } : {});
+      if (d.classList.contains('dlg-btn'))
+        d.addEventListener('mouseenter', () => window.game && window.game.audio.play('GUI_Highlight_Mouse_Over'));
       if (x != null) d.style.left = x + 'px';
       if (y != null) d.style.top = y + 'px';
       c.parentNode.appendChild(d);

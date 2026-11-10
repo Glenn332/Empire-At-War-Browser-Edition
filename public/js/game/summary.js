@@ -80,7 +80,7 @@ export function battleTime(seconds) {
   return `${db.t('TEXT_BATTLE_TIME') || 'Battle Time:'} ${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
 }
 
-function reportScreen(game, losses, won, me) {
+function reportScreen(game, losses, won, me, again = false) {
   const view = game.reportView,
     watching = !!game.observer,
     au = game.audio,
@@ -104,7 +104,7 @@ function reportScreen(game, losses, won, me) {
     ...(watching ? {} : { me, won, exitLabel: db.t('TEXT_CONTINUE') || 'Continue' }),
     onExit: () => {
       resume();
-      if (watching) return game.toggleMenu();
+      if (watching || again) return game.toggleMenu();
       game.tacticalStory?.generic('battle_end_closed');
       if (game.campaignOutcome) game.returnToGalaxy();
       else game.toggleMenu();
@@ -116,6 +116,7 @@ function reportScreen(game, losses, won, me) {
         }
       : null
   });
+  game.reopenReport = game.campaignOutcome ? null : () => reportScreen(game, losses, won, me, true);
   return true;
 }
 

@@ -139,6 +139,21 @@ export class Menus {
     dlg.on('IDC_INGAME_OPTIONS', () => this.options());
     dlg.on('IDC_GAME_OPTIONS_QUIT', () => this.confirm(T('TEXT_QUIT_SURE', 'Quit Current Game?'), () => toMainMenu()));
     dlg.on('IDC_GAME_OPTIONS_RESUME', () => this.pop());
+    if (g.over && g.reopenReport) {
+      const px = (id, k) => parseFloat(dlg.ctl(id)?.style[k]) || 0,
+        h = px('IDC_GAME_OPTIONS_RESUME', 'height'),
+        above = px('IDC_INGAME_OPTIONS', 'top') + px('IDC_INGAME_OPTIONS', 'height'),
+        below = px('IDC_GAME_OPTIONS_QUIT', 'top'),
+        y = below - above >= h + 8 ? (above + below - h) / 2 : px('IDC_GAME_OPTIONS_RESUME', 'top') + h + 8;
+      if (dlg.clone('IDC_GAME_OPTIONS_RESUME', 'IDC_SWR_BATTLE_REPORT', null, y)) {
+        const label = T('TEXT_BATTLE_REPORT', 'Battle Report');
+        dlg.setText('IDC_SWR_BATTLE_REPORT', label === label.toUpperCase() ? label.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()) : label);
+        dlg.on('IDC_SWR_BATTLE_REPORT', () => {
+          this.pop();
+          g.reopenReport();
+        });
+      }
+    }
     return true;
   }
 
