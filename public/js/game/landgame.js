@@ -124,6 +124,7 @@ import { loadBlackMarket } from './blackmarket.js';
 import { giveFreeUpgrades } from './planetabilities.js';
 import { stageStart } from './transit.js';
 import { stepDualFlash, tutorialFx } from './tutorialrewards.js';
+import { lightningState, stepLightning } from './weatherlightning.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { simRandom, seedSim, simRandomState } from './simrandom.js';
 import { resetLandIds, preloadLand } from './land.js';
@@ -328,7 +329,6 @@ export class LandGame {
       R.forceContextLoss();
     }
     this.gpu?.dispose();
-    this.flash?.remove();
     this.endTrack();
     this.track?.destroy();
     this.chase?.destroy();
@@ -635,9 +635,6 @@ export class LandGame {
     const scene = (this.scene = new THREE.Scene());
     this.sky = new THREE.Scene();
     this.skyTick = [];
-    this.flash = document.createElement('div');
-    this.flash.style.cssText = 'position:fixed;inset:0;background:#dfe8ff;opacity:0;pointer-events:none;mix-blend-mode:screen;z-index:1';
-    document.body.appendChild(this.flash);
 
     const env = map.environment;
     P('Building the ground', 0.2);
@@ -1650,6 +1647,19 @@ export class LandGame {
     if (generation !== this.environmentGeneration) return;
     this.sky = entry.sky;
     this.skyTick = entry.ticks;
+  }
+  weatherLightning(L, real) {
+    const s = (this.lightningNow ||= lightningState()),
+      was = !!s.light,
+      light = stepLightning(s, L, real);
+    if (light) {
+      const b = light.strength;
+      if (this.bombardLit) lighting.fillColor2.value.setRGB(...lighting.fillColor2.value.toArray().map(c => c + b));
+      else {
+        lighting.fillDir2.value.set(...light.dir);
+        lighting.fillColor2.value.setRGB(b, b, b);
+      }
+    } else if (was && !this.bombardLit) lighting.fillColor2.value.setRGB(0, 0, 0);
   }
   setEnvironmentIndex(n) {
     const envs = this.map?.environments || [];
@@ -3085,16 +3095,8 @@ export class LandGame {
         this.audio.play(now.event);
         this.wxNext = now.lo + Math.random() * (now.hi - now.lo);
       }
-      if (wx.lightning > 0 && (this.boltNext = (this.boltNext ?? 4) - real) <= 0) {
-        this.boltNext = ((3 + Math.random() * 9) / Math.max(0.1, wx.lightning)) * 0.5;
-        this.bolt = 0.45;
-      }
     }
-    if (this.bolt > 0) {
-      this.bolt -= real;
-      const k = this.bolt > 0.3 || (this.bolt > 0.12 && this.bolt < 0.2) ? 0.55 : 0;
-      this.flash.style.opacity = k;
-    } else if (this.flash && this.flash.style.opacity !== '0') this.flash.style.opacity = '0';
+    this.weatherLightning(wx.lightning || 0, real);
     this.fx.wind = windDisturbances(w, dt, this.fx.wind || []);
     this.fx.update(dt);
     const L = this.audio.listener;
