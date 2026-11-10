@@ -1628,7 +1628,8 @@ export class CommandBar {
         (!!def.mustBuy && abilityLocked(this.world.campaign, def, this.world.marketOf(units[0]))) ||
           (!!this.world.abilityBlocked && units.every(u => u.dead || this.world.abilityBlocked(u, def.kind)))
       );
-      const cd = !active && !ready && def.recharge > 0 ? Math.min(...states.map(a => a.cooldown)) / def.recharge : 0;
+      const cd =
+        !active && !ready ? Math.min(...states.map(a => (a.cooldown > 0 ? a.cooldown / (a.span || def.recharge || a.cooldown) : 0))) : 0;
       const left = Math.max(0, Math.min(1, cd));
       b.firstChild.style.display = left > 0 && left < 1 ? '' : 'none';
       b.firstChild.style.setProperty('--cd', 100 * (1 - left) + '%');

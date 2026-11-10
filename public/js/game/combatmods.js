@@ -14,7 +14,7 @@ export const MOD = Object.freeze({
 const COUNT = 11;
 const LOW = [-Infinity, -1, -0.99, -1, -1, -0.99, -0.99, -Infinity, -Infinity, -0.99, -0.99];
 const HIGH = [0.75, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity];
-const OWN_ONLY = [false, false, false, false, false, true, false, false, false, false, true];
+const OWN_ONLY = [false, false, false, false, false, true, false, false, false, true, true];
 
 function best(list) {
   let v = list[0].value;

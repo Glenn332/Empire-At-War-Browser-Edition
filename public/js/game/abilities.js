@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
+import { MOD } from './combatmods.js';
 
 const sound = (world, u, name) => {
   const a = world.audio,
@@ -256,6 +257,14 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   return any ? null : 'Not ready';
 }
 
+export function recharge(u, st, secs) {
+  if (secs === undefined) {
+    const m = u && u.cmods;
+    secs = st.def.recharge * (m && m.size ? m.factor(MOD.RECHARGE) : 1);
+  }
+  st.cooldown = st.span = secs > 0 ? secs : 0;
+}
+
 function swapWeapon(u) {
   if (!u.weapons) return;
   u.weaponIndex = swapped(u.weaponIndex, u.weapons.length);
@@ -271,7 +280,7 @@ function start(world, u, st, target) {
   if (timed) {
     st.active = true;
     st.timer = def.duration;
-  } else st.cooldown = def.recharge;
+  } else recharge(u, st);
   if (kind === 'INTERDICT') world.onEvent('interdict', { unit: u, on: true });
   if (kind !== 'STEALTH' && def.target !== 'none') {
     const c = u.abilities.find(s => s.active && s.def.kind === 'STEALTH');
@@ -326,7 +335,7 @@ function start(world, u, st, target) {
         mark: true
       });
       st.active = false;
-      st.cooldown = def.recharge;
+      recharge(u, st);
       break;
     case 'CORRUPT_SYSTEMS':
       addStatus(world, target, {
@@ -398,7 +407,7 @@ function start(world, u, st, target) {
 function stop(world, u, st) {
   const def = st.def;
   st.active = false;
-  st.cooldown = def.recharge;
+  recharge(u, st);
   if (def.kind === 'INTERDICT') world.onEvent('interdict', { unit: u, on: false });
   if (def.kind === 'SWAP_WEAPONS') swapWeapon(u);
   if (def.kind === 'TRACTOR_BEAM' && st.data && st.data.target && !st.data.target.dead) {

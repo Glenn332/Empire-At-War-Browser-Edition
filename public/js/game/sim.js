@@ -1836,7 +1836,8 @@ export class World {
     let q = builder.buildQueues.get(qn);
     if (!q) builder.buildQueues.set(qn, (q = []));
     this.holdQueues(builder);
-    const secs = buildTime(type) * (p.adjust ? p.adjust.build.space : 1);
+    const m = builder.cmods,
+      secs = buildTime(type) * (p.adjust ? p.adjust.build.space : 1) * (m && m.size ? m.factor(MOD.BUILD) : 1);
     q.push({ type, total: secs, left: secs, player: p });
     if (this.bring) this.bring(type);
     this.audio.playFor(p, type.str('SFXEvent_Build_Started'));

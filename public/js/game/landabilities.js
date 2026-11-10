@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
+import { MOD } from './combatmods.js';
 
 const yes = s => /^(yes|true)$/i.test(String(s || '').trim());
 const names = s =>
@@ -357,6 +358,12 @@ function cloakLook(u, on, world) {
 
 const casterOf = (q, kind) => q.members.find(u => !u.dead && u.abilityKinds.has(kind)) || null;
 
+function landRecharge(world, q, st) {
+  const c = casterOf(q, st.def.kind) || q.members.find(u => !u.dead) || null,
+    secs = st.def.recharge * (c && world.combatFactor ? world.combatFactor(c, MOD.RECHARGE) : 1);
+  st.cooldown = st.span = secs > 0 ? secs : 0;
+}
+
 export const bribeBase = type => {
   const own = type.num('Tactical_Bribe_Cost', 0);
   return own > 1
@@ -466,7 +473,8 @@ export function useAbility(world, q, kind, tgt = null) {
 function finish(world, q, st) {
   if (!st.active) return;
   st.active = false;
-  st.cooldown = st.waitExit ? 1e9 : st.def.recharge;
+  if (st.waitExit) st.cooldown = 1e9;
+  else landRecharge(world, q, st);
   const kind = st.def.kind;
   if (kind === 'STEALTH' || kind === 'FORCE_CLOAK')
     for (const u of q.members)
@@ -1487,7 +1495,7 @@ function leave(world, v) {
   const st = c.squad && c.squad.abilityState('CAPTURE_VEHICLE');
   if (st && st.waitExit) {
     st.waitExit = false;
-    st.cooldown = st.def.recharge;
+    landRecharge(world, c.squad, st);
   }
   if (v.squad && v.squad.selected && world.onReselect) world.onReselect(v.squad, c.squad);
 }

@@ -3,7 +3,7 @@ import { loadFengari, LuaVM, LuaRef, Multi, FORCE_ONLY_METHODS } from '../lua.js
 import { db, typeHasProperty } from '../gamedata.js';
 import { tacticalCost } from './tacticalrules.js';
 import { fetchText, findFiles } from '../vfs.js';
-import { useAbility } from './abilities.js';
+import { useAbility, recharge } from './abilities.js';
 import { orderMove, orderAttack, orderGuard, orderStop } from './orders.js';
 import { loadSpaceBrain, SpaceMind, target as mindTarget } from './spacebrain.js';
 import { Plans } from './aiplans.js';
@@ -802,9 +802,11 @@ export class ScriptHost {
         for (const u of members()) for (const s of u.abilities || []) s.cooldown = 0;
         for (const s of e.abilities || []) s.cooldown = 0;
       },
-      Force_Ability_Recharge: name => {
+      Force_Ability_Recharge: (name, secs) => {
         const s = ab(name);
-        if (s) s.cooldown = 0;
+        if (!s) return;
+        if (secs === undefined || secs === null) recharge(lead(e), s);
+        else if (Number(secs) >= 0) recharge(lead(e), s, Number(secs));
       },
       Set_Single_Ability_Autofire: (name, on) => {
         const s = ab(name);
