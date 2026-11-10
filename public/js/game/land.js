@@ -939,13 +939,10 @@ export class LandWorld {
       name: 'clear',
       strength: 0,
       level: 0,
-      from: 0,
       ease: 1,
-      eased: 1,
+      out: false,
       lightning: 0,
       fog: 0,
-      fogFrom: 0,
-      fogTo: 0,
       emitter: ''
     };
     const T = this.terrain;
@@ -970,11 +967,16 @@ export class LandWorld {
     w.phases = s.phases;
     w.emitter = s.emitter;
     w.i = 0;
-    w.left = s.phases[0].seconds;
-    w.name = s.phases[0].name;
-    w.strength = w.level = s.phases[0].strength;
-    w.lightning = s.phases[0].lightning || 0;
-    w.fog = w.fogTo = s.phases[0].fog || 0;
+    w.out = false;
+    this.weatherPhase(s.phases[0]);
+  }
+  weatherPhase(ph) {
+    const w = this.weather;
+    w.left = ph.seconds;
+    w.name = ph.name;
+    w.strength = w.level = ph.strength;
+    w.lightning = ph.lightning || 0;
+    w.fog = ph.fog || 0;
   }
   wxNow() {
     return this.weather.level > 0.5 ? this.weather.name : 'clear';
@@ -7921,28 +7923,25 @@ export class LandWorld {
     }
     const wx = this.weather;
     if (wx.phases.length && (wx.left -= dt) <= 0) {
-      wx.i = (wx.i + 1) % wx.phases.length;
-      const ph = wx.phases[wx.i],
-        was = wx.name,
-        prev = wx.phases[(wx.i + wx.phases.length - 1) % wx.phases.length];
-      wx.left = ph.seconds;
-      wx.name = ph.name;
-      wx.strength = ph.strength;
-      wx.lightning = ph.lightning || 0;
-      wx.from = wx.level;
-      wx.ease = prev.ease || 1;
-      wx.eased = 0;
-      wx.fogFrom = wx.fog;
-      wx.fogTo = ph.fog || 0;
-      if (was !== wx.name && this.onWeather) this.onWeather(wx.name);
+      if (!wx.out) {
+        wx.out = true;
+        wx.left = wx.ease = wx.phases[wx.i].ease;
+      } else {
+        wx.out = false;
+        wx.i = (wx.i + 1) % wx.phases.length;
+        const was = wx.name;
+        this.weatherPhase(wx.phases[wx.i]);
+        if (was !== wx.name && this.onWeather) this.onWeather(wx.name);
+      }
     }
-    if (wx.eased < 1) {
-      wx.eased = Math.min(1, wx.eased + dt / wx.ease);
-      wx.level = wx.from + (wx.strength - wx.from) * wx.eased;
-      wx.fog = wx.fogFrom + (wx.fogTo - wx.fogFrom) * wx.eased;
-    } else {
-      wx.level = wx.strength;
-      wx.fog = wx.fogTo;
+    if (wx.out) {
+      const a = wx.phases[wx.i],
+        b = wx.phases[(wx.i + 1) % wx.phases.length],
+        f = Math.max(0, Math.min(1, 1 - wx.left / wx.ease)),
+        mix = (x, y) => (x || 0) + ((y || 0) - (x || 0)) * f;
+      wx.level = mix(a.strength, b.strength);
+      wx.lightning = mix(a.lightning, b.lightning);
+      wx.fog = mix(a.fog, b.fog);
     }
     tickAbilities(this, dt);
     this.tickSurfaces();

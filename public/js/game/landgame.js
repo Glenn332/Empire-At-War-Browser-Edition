@@ -1223,7 +1223,7 @@ export class LandGame {
           yaw: +this.view.yaw.toFixed(3),
           pitch: +this.view.pitch.toFixed(3)
         },
-        weather: { i: w.weather.i, left: r1(w.weather.left) },
+        weather: { i: w.weather.i, left: r1(w.weather.left), ...(w.weather.out ? { out: 1 } : {}) },
         captured: w.units
           .filter(u => u.capturable && !u.dead)
           .map(u => ({ pt: w.points.indexOf(u.capturable), hp: r1(u.health), sh: r1(u.shield) })),
@@ -1541,12 +1541,12 @@ export class LandGame {
         }
       }
     if (b.weather && w.weather.phases.length) {
-      const wx = w.weather,
-        ph = wx.phases[b.weather.i % wx.phases.length];
+      const wx = w.weather;
       wx.i = b.weather.i % wx.phases.length;
+      w.weatherPhase(wx.phases[wx.i]);
+      wx.out = !!b.weather.out;
+      if (wx.out) wx.ease = wx.phases[wx.i].ease;
       wx.left = b.weather.left;
-      wx.name = ph.name;
-      wx.strength = ph.strength;
     }
     const squads = await Promise.all(
       (b.squads || []).map(q => {
