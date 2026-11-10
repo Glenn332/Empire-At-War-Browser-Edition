@@ -183,6 +183,8 @@ function spaceSnapshot(game, name) {
     if (u.everSeenBy) o.seen = u.everSeenBy;
     if (u.limbo) o.limbo = 1;
     if (u.noOpportunity) o.nof = 1;
+    const carry = w.carriedBy ? w.carriedBy(u) : [];
+    if (carry.length) o.carry = carry;
     return o;
   };
   const squad = s => {
@@ -208,6 +210,8 @@ function spaceSnapshot(game, name) {
     }
     const ab = s.fighters[0] ? abilities(s.fighters[0]) : [];
     if (ab.length) o.ab = ab;
+    const carry = w.carriedBy ? w.carriedBy(s) : [];
+    if (carry.length) o.carry = carry;
     return o;
   };
   const map = {};
@@ -278,6 +282,9 @@ function spaceSnapshot(game, name) {
         reinforcements: p.reinforcements.map(t => t.name)
       })),
       entities: ents.map(e => (e.isSquad ? squad(e) : unit(e))),
+      ...(w.carried && w.carried.length
+        ? { carried: w.carried.map(c => ({ p: c.owner.id, type: c.type.name, company: c.company.name })) }
+        : {}),
       map,
       groups: [...game.ui.groups].map(([n, list]) => [n, list.map(ref).filter(Boolean)]).filter(([, l]) => l.length),
       selection: game.ui.selection.map(ref).filter(Boolean),
@@ -478,6 +485,7 @@ export function restore(game, save) {
       made.push(null);
       return;
     }
+    if (o.carry) w.carry?.(o.carry, p, e);
     if (e.isSquad) {
       while (e.fighters.length > o.f.length) {
         const f = e.fighters.pop();
@@ -511,6 +519,15 @@ export function restore(game, save) {
     made.push(e);
     refs.set('e' + i, e);
   });
+  if (w.carryOnArrival) {
+    w.carried = [];
+    for (const c of snap.carried || []) {
+      const p = P(c.p),
+        type = db.type(c.type),
+        company = db.type(c.company);
+      if (p && type && company) w.carryOnArrival(p, type, company);
+    }
+  }
   w.units = w.units.filter(u => !u.dead);
   w.unitGridN = Infinity;
 

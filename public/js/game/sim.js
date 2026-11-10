@@ -36,6 +36,7 @@ import {
 import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
 import { leadPoint } from './orders.js';
 import { basisOf } from '../particlesim.js';
+import { CombatMods, MOD, SPACE, bonusSourceDefs, bonusTypeFits, bonusOwnerFits } from './combatmods.js';
 export const spacePop = t =>
   t.has('Space_Override_Population_Value') ? t.num('Space_Override_Population_Value', 0) : t.num('Population_Value', 0);
 
@@ -244,7 +245,6 @@ export class Team {
     this.firstStation = null;
     this.spawnPoints = [];
     this.upgrades = new Set();
-    this.bonuses = [];
     this.incomeMods = [];
     this.defeated = false;
     this.bit = id >= 0 ? 1 << id : 0;
@@ -292,9 +292,6 @@ export class Player {
   }
   get upgrades() {
     return this.team.upgrades;
-  }
-  get bonuses() {
-    return this.team.bonuses;
   }
   get incomeMods() {
     return this.team.incomeMods;
@@ -462,6 +459,7 @@ export class Unit {
     this.hyper = null;
     this.engineGlows = [];
     this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1 };
+    this.cmods = null;
     this.abilities = [];
     this.statuses = [];
     this.cloaked = false;
@@ -1073,24 +1071,23 @@ export class Unit {
   }
 
   applyBonuses() {
-    const p = this.player;
-    const b = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1 };
-    if (p && p.id >= 0) {
-      const cats = this.type.categories(),
-        name = this.type.name.toUpperCase();
-      const base = this.type.parent ? this.type.parent.name.toUpperCase() : '';
-      for (const bn of p.bonuses) {
-        if (!(bn.types.has(name) || bn.types.has(base) || [...bn.cats].some(c => cats.has(c)))) continue;
-        b.damage += bn.damage;
-        b.defense += bn.defense;
-        b.speed += bn.speed;
-        b.health += bn.health;
-        b.shield += bn.shield;
-      }
-    }
+    const p = this.player,
+      m = this.cmods,
+      f = t => (m && m.size ? m.factor(t) : 1),
+      old = this.bonus;
+    const b = {
+      damage: f(MOD.DAMAGE),
+      defense: 2 - f(MOD.DEFENSE),
+      speed: f(MOD.SPEED),
+      health: f(MOD.HEALTH),
+      shield: f(MOD.SHIELD),
+      energy: f(MOD.ENERGY),
+      range: f(MOD.RANGE),
+      hm: 1
+    };
     const adj = p && p.adjust,
       hm = adj ? adj.health : 1,
-      was = this.bonus.hm || 1;
+      was = old.hm || 1;
     b.hm = hm;
     if (hm !== was) {
       const k = hm / was;
@@ -1101,11 +1098,58 @@ export class Unit {
         h.health *= k;
       }
     }
+    if (b.health !== (old.health ?? 1)) this.rescaleHealth(b.health / (old.health ?? 1));
     const oldMax = this.maxShield;
     this.maxShield = this.type.num('Shield_Points', 0) * b.shield * (adj ? adj.shield : 1);
     if (this.maxShield > oldMax) this.shield += this.maxShield - oldMax;
     else if (this.shield > this.maxShield) this.shield = this.maxShield;
+    if (this.energy && b.energy !== (old.energy ?? 1)) {
+      const e = this.energy,
+        cap = e.cap * (b.energy / (old.energy ?? 1));
+      if (cap > e.cap) e.value += cap - e.cap;
+      e.cap = cap;
+      if (e.value > cap) e.value = cap;
+    }
+    if (b.range !== (old.range ?? 1)) {
+      const k = b.range / (old.range ?? 1);
+      this.attackRange *= k;
+      for (const h of this.hardpoints) h.range *= k;
+      if (this.weapons) for (const g of this.weapons) if (g) g.range *= k;
+      if (this.maxRange !== undefined) this.maxRange *= k;
+      if (this.engageRange !== undefined) this.engageRange *= k;
+    }
     this.bonus = b;
+  }
+
+  rescaleHealth(k) {
+    const raise = k > 1;
+    if (this.hpDriven) {
+      let max = 0,
+        sum = 0;
+      for (const h of this.hardpoints) {
+        h.maxHealth *= k;
+        if (raise) {
+          if (h.health > 0 && h.destroyable) h.health = Math.min(h.health * k, h.maxHealth);
+        } else if (h.health > h.maxHealth) h.health = h.maxHealth;
+        if (h.destroyable) {
+          max += h.maxHealth;
+          if (h.alive) sum += h.health;
+        }
+      }
+      this.maxHealth = max;
+      this.health = sum;
+      return;
+    }
+    const next = this.maxHealth * k;
+    for (const h of this.hardpoints) {
+      h.maxHealth *= k;
+      if (raise) {
+        if (h.health > 0 && h.destroyable) h.health = Math.min(h.health * k, h.maxHealth);
+      } else if (h.health > h.maxHealth) h.health = h.maxHealth;
+    }
+    if (raise) this.health = Math.min(next, Math.max(0, this.health + next - this.maxHealth));
+    else if (this.health > next) this.health = next;
+    this.maxHealth = next;
   }
 
   get alive() {
@@ -1308,6 +1352,8 @@ export class Squad {
       };
       this.fighters.push(u);
       world.units.push(u);
+      if (bonusSourceDefs(ft, SPACE).length) world.bonusSource(ft, player, u);
+      world.takeBonuses(u);
       return u;
     };
     this.members = members;
@@ -1420,6 +1466,7 @@ export class World {
     this.fields = [];
     this.onEvent = () => {};
     this.hitPart = null;
+    this.bonusHolders = [];
   }
 
   addTeam(t) {
@@ -1434,21 +1481,120 @@ export class World {
   spawn(type, player, x, y, heading = 0, opts = {}) {
     if (isCompanyType(type)) {
       let last = null;
-      for (const ut of companySpaceUnits(type)) last = this.spawn(ut, player, x, y, heading, opts);
+      const made = companySpaceUnits(type);
+      for (const ut of made) last = this.spawn(ut, player, x, y, heading, opts);
+      if (last) this.carryBonuses(type, player, last, made);
       return last;
     }
     let e;
     if (isSquadronType(type) || type.behaviors().has('FIGHTER_LOCOMOTOR')) {
       e = new Squad(this, type, player, x, y, heading);
       this.squads.push(e);
+      if (isSquadronType(type) && bonusSourceDefs(type, SPACE).length) this.bonusSource(type, player, e);
     } else {
       e = new Unit(this, type, player, x, y, heading);
       this.units.push(e);
+      if (bonusSourceDefs(type, SPACE).length) this.bonusSource(type, player, e);
+      this.takeBonuses(e);
     }
     this.tacticalSuperweapons?.add(e);
     if (opts.hyperspace && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
     this.recountPop();
     return e;
+  }
+
+  bonusSource(type, owner, host = null, alias = false) {
+    const defs = bonusSourceDefs(type, SPACE);
+    if (!defs.length || !owner) return null;
+    const h = { type, defs, owner, host, alias, keys: defs.map((d, i) => type.name + ':' + d.index + ':' + i), hit: host ? [] : null };
+    if (host) {
+      const id = host.id;
+      h.keys = h.keys.map(k => 'bonus:' + id + ':' + k);
+    } else h.keys = h.keys.map(k => 'upgrade:' + owner.id + ':' + k);
+    this.bonusHolders.push(h);
+    for (const u of this.units) if (!u.dead) this.giveBonus(h, u);
+    return h;
+  }
+
+  carryOnArrival(owner, type, company) {
+    if (company && company !== type) (this.carried ||= []).push({ owner, type, company });
+  }
+
+  bonusArrival(owner, type, host) {
+    const list = this.carried;
+    if (!list || !host) return;
+    const i = list.findIndex(c => c.owner === owner && c.type === type);
+    if (i < 0) return;
+    const [c] = list.splice(i, 1);
+    this.carryBonuses(c.company, owner, host);
+  }
+
+  carryBonuses(company, owner, host, made = []) {
+    for (const t of [company, ...company.list('Company_Units').map(n => db.type(n))])
+      if (t && t !== host.type && !made.includes(t) && bonusSourceDefs(t, SPACE).length) {
+        const h = this.bonusSource(t, owner, host);
+        if (h) h.carried = true;
+      }
+  }
+
+  carriedBy(host) {
+    const out = [];
+    for (const h of this.bonusHolders) if (h.carried && h.host === host) out.push(h.type.name);
+    return out;
+  }
+
+  carry(names, owner, host) {
+    for (const n of names || []) {
+      const h = this.bonusSource(db.type(n), owner, host);
+      if (h) h.carried = true;
+    }
+  }
+
+  takeBonuses(u) {
+    const list = this.bonusHolders;
+    for (let i = 0; i < list.length; i++) {
+      const h = list[i];
+      if (!h.host || !h.host.dead) this.giveBonus(h, u);
+    }
+  }
+
+  giveBonus(h, u) {
+    if (u.dead || !u.player) return;
+    let hit = false;
+    for (let i = 0; i < h.defs.length; i++) {
+      const d = h.defs[i];
+      if (u === h.host && !d.self) continue;
+      if (!bonusTypeFits(d, u.type, h.alias && u.type.parent ? u.type.parent.name.toUpperCase() : '')) continue;
+      if (!bonusOwnerFits(d, u.player.factionName, h.owner.team === u.player.team)) continue;
+      const m = (u.cmods ||= new CombatMods());
+      for (const [t, v] of d.mods) if (m.set(t, d.key, h.keys[i], v)) hit = true;
+    }
+    if (!hit) return;
+    if (h.hit) {
+      if (h.hit.length > 512) h.hit = h.hit.filter(x => !x.dead);
+      h.hit.push(u);
+    }
+    u.applyBonuses();
+  }
+
+  tickBonuses() {
+    const list = this.bonusHolders;
+    let k = 0;
+    for (let i = 0; i < list.length; i++) {
+      const h = list[i];
+      if (h.host && h.host.dead) {
+        for (const u of h.hit) {
+          if (u.dead || !u.cmods) continue;
+          let gone = false;
+          for (const key of h.keys) if (u.cmods.drop(key)) gone = true;
+          if (gone) u.applyBonuses();
+        }
+        h.hit.length = 0;
+        continue;
+      }
+      list[k++] = h;
+    }
+    list.length = k;
   }
 
   spawnSwarm(type, from, at, spec) {
@@ -1785,6 +1931,7 @@ export class World {
         if (j >= 0) p.aiPool.splice(j, 1);
         this.onReinforce?.(p.factionName, type?.name ?? type);
         const e = this.spawn(type, p, x, y, Math.atan2(at.y - y, at.x - x) || th, { hyperspace: true });
+        this.bonusArrival(p, type, e);
         this.audio.playFor(p, p.faction.str('Reinforcements_Enroute_SFXEvent'));
         this.onEvent('built', { player: p, type, entity: e });
         st.r = this.insidePrevention(p, at) ? 1000 : 0;
@@ -1835,6 +1982,7 @@ export class World {
     player.reinforcements.splice(i, 1);
     this.onReinforce?.(player.factionName, type?.name ?? type);
     const e = this.spawn(type, player, x, y, heading, { hyperspace: true });
+    this.bonusArrival(player, type, e);
     this.audio.playFor(player, player.faction.str('Reinforcements_Enroute_SFXEvent'));
     this.onEvent('built', { player, type, entity: e });
     return null;
@@ -1858,29 +2006,12 @@ export class World {
   applyUpgrade(p, type, at = null) {
     const raisesStation = type.sub('Abilities').some(ab => ab.children.some(a => a.tag.toLowerCase() === 'starbase_upgrade_ability'));
     if (!raisesStation) p.upgrades.add(type.name.toUpperCase());
+    this.bonusSource(type, p, null, true);
     for (const ab of type.sub('Abilities')) {
       for (const a of ab.children) {
         const kind = a.tag.toLowerCase();
         if (kind === 'starbase_upgrade_ability') this.upgradeStation(p, at);
-        else if (kind === 'combat_bonus_ability') {
-          const split = s =>
-            new Set(
-              s
-                .split(/[\s,|]+/)
-                .filter(Boolean)
-                .map(x => x.toUpperCase())
-            );
-          p.bonuses.push({
-            types: split(a.val('Applicable_Unit_Types')),
-            cats: split(a.val('Applicable_Unit_Categories')),
-            damage: a.num('Damage_Bonus_Percentage'),
-            defense: a.num('Defense_Bonus_Percentage'),
-            speed: a.num('Movement_Speed_Bonus_Percentage'),
-            health: a.num('Health_Bonus_Percentage'),
-            shield: a.num('Shield_Bonus_Percentage')
-          });
-          for (const u of this.units) if (!u.dead && u.player.team === p.team) u.applyBonuses();
-        } else if (kind === 'income_stream_mod_ability') {
+        else if (kind === 'income_stream_mod_ability') {
           p.incomeMods.push({
             mult: a.num('Income_Multiplier', 1),
             add: a.num('Income_Additive_Value', 0),
@@ -1967,7 +2098,7 @@ export class World {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(target.player);
     }
-    amount *= target.mods.damageTaken;
+    amount *= target.mods.damageTaken * target.bonus.defense;
     {
       const by = attacker && (attacker.player || attacker);
       if (by && by.adjust && by !== target.player) amount *= by.adjust.damage;
@@ -2055,7 +2186,7 @@ export class World {
         this.audio.playFor(target.player, alarm);
       }
     }
-    let d = (amount * db.damageMod(damageType, target.armor)) / target.bonus.defense;
+    let d = amount * db.damageMod(damageType, target.armor);
     if (this.viewerSees(target)) this.fx.hit(x, y, z, Math.min(40, 6 + d * 0.5), fx && fx.hit);
     if (target.hpDriven) {
       if (!hp || !hp.alive || !hp.destroyable) hp = this.pickHardpoint(target, x, y);
@@ -2333,6 +2464,7 @@ export class World {
       dt = this.stepDt;
     this.ahead?.clear();
     for (const s of this.squads) if (!s.dead) this.updateSquad(s, dt);
+    if (this.bonusHolders.length) this.tickBonuses();
     for (const sw of this.specialWeapons) sw.update();
     this.tacticalSuperweapons?.update();
     if (this.skirmish && (this.bonusTimer = (this.bonusTimer ?? 0.5) - dt) <= 0) {

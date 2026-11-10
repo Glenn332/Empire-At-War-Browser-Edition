@@ -1621,6 +1621,7 @@ export class ScriptHost {
       if (record) book.waiting.splice(book.waiting.indexOf(record), 1);
       return whenArt(L, t, () => {
         const e = w.spawn(t, p, at.x, at.y, 0);
+        w.bonusArrival?.(p, t, e);
         if (record && e) book.entity?.set(record.gid, e);
         w.recountPop?.();
         return e ? [this.wrap(e)] : undefined;

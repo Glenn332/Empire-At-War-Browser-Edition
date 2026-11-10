@@ -401,11 +401,13 @@ export function placeCampaignBattle(w, map, teams, cb) {
         book.absent.push(u.gid);
         continue;
       }
+      if (u.companyType) w.carryBonuses?.(u.companyType, p, e);
       if (hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
       book.entity.set(u.gid, e);
     }
     for (const u of waiting) {
       p.reinforcements.push(u.type);
+      if (u.companyType) w.carryOnArrival?.(p, u.type, u.companyType);
       if (!p.human) (p.aiPool ||= []).push({ type: u.type, owner: null });
       book.waiting.push({ ...u, team: s.team });
     }
