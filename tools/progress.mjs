@@ -292,6 +292,11 @@ const GROUPS = [
       ['Invulnerability', D],
       ['Missile shield', D],
       ['Energy weapon', D],
+      [
+        'Energy pools and energy per shot',
+        D,
+        'as the engine: POWERED objects hold Energy_Capacity times one plus the energy bonus and gain Energy_Refresh_Rate every EnergyRechargeIntervalInSecs, both scaled by the ENERGY_REGEN_MULTIPLIER and ENERGY_REGEN_INTERVAL_MULTIPLIER of active abilities (DEFEND on the Nebulon B, Assault Frigate, Calamari Cruiser and Home One, SPOILER_LOCK on X-wings and B-wings); a unit weapon (fighters, transports, defence satellites) needs Projectile_Energy_Per_Shot stored to fire and spends it per projectile, hardpoint guns never do, and a costed weapon on a unit without POWERED never fires. In the base game only the defence satellites run dry in long fights (about 170 s of full fire) and the TIE Prototype slows slightly; saves keep the pools'
+      ],
       ['Full salvo', D],
       ['Harmonic bomb', D],
       ['Blast', D],
@@ -932,7 +937,7 @@ const GROUPS = [
       [
         'Land skirmish economy',
         D,
-        "credits, income, costs and build times, tech levels and prerequisites, and what the upgrades do: Combat_Bonus_Ability (health, shields, damage, defence, speed, fire range, build time) goes into each unit combat modifiers under its Stacking_Category as the engine, so the levels of one upgrade line replace each other (Light Armor L2 halves the damage, not L1 times L2) and different lines add, health and shield bonuses raise the most and add the difference, damage counts at the hit for every weapon; income; bombing runs; the enhanced base shield; reflective armour (a chance to stop blaster fire, switched on by its upgrade); weatherproofing; more companies for the free garrison. Not in: the deployment upgrade (landing troops are not vulnerable here to begin with); the ability recharge upgrades shorten the countdowns as the engine. Land energy is the engine pool: POWERED objects hold Energy_Capacity times one plus the energy bonus and gain Energy_Refresh_Rate every 5 s (drained without base power), each Projectile_Energy_Per_Shot shot takes from it and a weapon without enough holds fire; the power generator doubles its side's turbolaser tower pool, and a weapon that costs energy on a unit without POWERED never fires (the Offensive Sensor Node), as in the engine. Not in: the energy regeneration ability multipliers"
+        "credits, income, costs and build times, tech levels and prerequisites, and what the upgrades do: Combat_Bonus_Ability (health, shields, damage, defence, speed, fire range, build time) goes into each unit combat modifiers under its Stacking_Category as the engine, so the levels of one upgrade line replace each other (Light Armor L2 halves the damage, not L1 times L2) and different lines add, health and shield bonuses raise the most and add the difference, damage counts at the hit for every weapon; income; bombing runs; the enhanced base shield; reflective armour (a chance to stop blaster fire, switched on by its upgrade); weatherproofing; more companies for the free garrison. Not in: the deployment upgrade (landing troops are not vulnerable here to begin with); the ability recharge upgrades shorten the countdowns as the engine. Land energy is the engine pool: POWERED objects hold Energy_Capacity times one plus the energy bonus and gain Energy_Refresh_Rate every 5 s (drained without base power), each Projectile_Energy_Per_Shot shot takes from it and a weapon without enough holds fire; the power generator doubles its side's turbolaser tower pool, and a weapon that costs energy on a unit without POWERED never fires (the Offensive Sensor Node), as in the engine, and active abilities scale the refill and its interval by ENERGY_REGEN_MULTIPLIER and ENERGY_REGEN_INTERVAL_MULTIPLIER as the engine"
       ],
       [
         'Land AI',
