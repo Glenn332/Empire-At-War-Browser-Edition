@@ -101,8 +101,7 @@ export class GalacticBar extends CommandBar {
           left: m.origin.x + (off[0] || 0) + 'px',
           bottom: m.origin.y + (off[1] || 0) + 'px',
           width: 'max-content',
-          height: 'auto',
-          translate: /^(true|yes)$/i.test((this.comp(n)?.val('Right_Justified') || '').trim()) ? '-100% 0' : ''
+          height: 'auto'
         });
       t.title = db.t(this.comp(n)?.val('Tooltip_Text').split(/\s+/)[0]);
     }
@@ -412,7 +411,7 @@ export class GalacticBar extends CommandBar {
   }
 
   setReadout(name, value) {
-    setComponentText(this.readouts[name], this.comp(name), value, { scale: this.scale, bottom: true });
+    setComponentText(this.readouts[name], this.comp(name), value, { scale: this.scale, height: this.scale * 768, bottom: true });
   }
 
   layoutSlots(options) {
@@ -568,7 +567,7 @@ export class GalacticBar extends CommandBar {
         base = t.num('Build_Cost_Credits', 0),
         tint = cost < base ? [0, v, 0, 255] : cost > base ? [v, 0, 0, 255] : [v, v, v, 200];
       setComponentText(b._cost, this.comp('b_Create_' + String(i).padStart(2, '0')), String(cost), {
-        scale: this.scale,
+        scale: this.scale, height: this.scale * 768,
         secondary: true,
         tint
       });
@@ -591,7 +590,7 @@ export class GalacticBar extends CommandBar {
         q.children[2],
         this.comp('queue' + String(i).padStart(2, '0')),
         i % 5 === 0 ? Math.round(progress * 100) + '%' : '',
-        { scale: this.scale }
+        { scale: this.scale, height: this.scale * 768 }
       );
     });
   }

@@ -39,7 +39,7 @@ export function setComponentText(
   el,
   c,
   value,
-  { scale = 1, align = componentTextAlign(c), bottom = false, secondary = false, tint = null } = {}
+  { scale = 1, align = componentTextAlign(c), bottom = false, secondary = false, tint = null, height: textHeight = null } = {}
 ) {
   value = String(value ?? '');
   const fallbackPoint = Math.trunc(db.constants?.num('Text_Button_Default_Font_Size', 7) ?? 7);
@@ -60,7 +60,7 @@ export function setComponentText(
             .split(/[\s,]+/)
             .map(Number)
         : [255, 255, 255, 255]);
-  const height = uiTextHeight(),
+  const height = textHeight ? Math.round(textHeight) : uiTextHeight(),
     key = JSON.stringify([value, face, point, height, scale, textScale, maxWidth, outline, emboss, color, align, bottom, languageRevision]);
   if (el._componentText?.key === key) return el._componentText;
   const state = { key, value, point, font: null };

@@ -58,7 +58,7 @@ export class Pointers {
     this.timer = null;
   }
   async set(name) {
-    if (name === this.name) return;
+    if (name === this.name || !this.el?.style) return;
     this.name = name;
     clearInterval(this.timer);
     this.timer = null;

@@ -13,6 +13,7 @@ import { dropOverviewUnits, pathfinderCell, pathfinderAuto } from './fleetmanage
 import { orders } from './galacticnet.js';
 import { canSell, sellPrice } from './galacticsell.js';
 import { allied } from './humanroute.js';
+import { Pointers } from './pointers.js';
 
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
@@ -378,6 +379,7 @@ export class PlanetOverview extends NativePanel {
     }
     if (pressed && this.chosen.size && (this.chosen.has(pressed) || e.shiftKey)) this.chosen.add(pressed);
     this.dragging = { source, x: e.clientX, y: e.clientY, moved: false, empty: [] };
+    (this.dragCursor ||= new Pointers(document.body)).set('POINTER_GRABBING');
     this.showSlot(source);
     for (const slot of [...this.ground, ...this.fleets.flatMap(f => f.slots)])
       if (slot.el.hidden) {
@@ -462,6 +464,13 @@ export class PlanetOverview extends NativePanel {
         this.chosen.add(press.record);
       }
     }
+    if (moved && source.kind === 'ground' && target?.kind === 'ground' && target.planet === source.planet && Number.isInteger(target.cell)) {
+      if (this.movePad(source, target)) {
+        this.paintKey = '';
+        this.refresh();
+      }
+      return;
+    }
     const group = moved && source.records?.some(r => this.chosen.has(r)) ? this.chosenSources(source) : [];
     if (moved && target?.kind === 'fleet' && Number.isInteger(target.cell) && !target.pf)
       for (const s of [source, ...group]) for (const r of s.records || []) r.guiIndex = target.cell;
@@ -481,7 +490,49 @@ export class PlanetOverview extends NativePanel {
     this.paintChosen();
   }
 
+  badge(slot, record) {
+    const type = record && (record.carries || record.type),
+      on = !!type && strategicStealth({ type }, record.owner);
+    (slot.grab ||= new Pointers(slot.el)).set(slot.source ? 'POINTER_CAN_GRAB' : null);
+    if (!on) {
+      if (slot.badgeEl) slot.badgeEl.hidden = true;
+      return;
+    }
+    const r = iconCanvasRect('i_icon_stealth.tga');
+    if (!r) return;
+    if (!slot.badgeEl) {
+      slot.badgeEl = document.createElement('img');
+      slot.badgeEl.alt = '';
+      slot.badgeEl.src = iconUrl('i_icon_stealth.tga');
+      Object.assign(slot.badgeEl.style, { position: 'absolute', left: '0px', top: '0px', width: r.w + 'px', height: r.h + 'px', pointerEvents: 'none', zIndex: 2 });
+      slot.el.appendChild(slot.badgeEl);
+    }
+    slot.badgeEl.hidden = false;
+    slot.badgeEl.style.left = slot.img.offsetLeft + 'px';
+    slot.badgeEl.style.top = slot.img.offsetTop + 'px';
+  }
+
+  movePad(source, target) {
+    const p = this.game.galaxy.planets[source.planet],
+      rec = source.records?.[0];
+    if (!p || !rec || !p.garrison.includes(rec)) return false;
+    const count = this.ground.length,
+      slot = target.cell,
+      at = i => p.garrison.find(u => u !== rec && u.guiIndex === i);
+    rec.guiIndex = -1;
+    if (at(slot)) {
+      let empty = -1;
+      for (let i = slot + 1; i < count && empty < 0; i++) if (!at(i)) empty = i;
+      for (let i = slot - 1; i >= 0 && empty < 0; i--) if (!at(i)) empty = i;
+      if (empty > slot) for (let i = empty - 1; i >= slot; i--) at(i).guiIndex = i + 1;
+      else if (empty >= 0) for (let i = empty + 1; i <= slot; i++) at(i).guiIndex = i - 1;
+    }
+    rec.guiIndex = slot;
+    return true;
+  }
+
   cancelDrag() {
+    this.dragCursor?.set(null);
     removeEventListener('pointermove', this.onMove);
     removeEventListener('pointerup', this.onDrop);
     removeEventListener('blur', this.onCancel);
@@ -546,9 +597,10 @@ export class PlanetOverview extends NativePanel {
     const units = stableSlots(state.ground, this.ground.length, this.indices);
     this.ground.forEach((s, i) => {
       const record = units[i]?.unit;
-      s.target = { kind: 'ground', planet: p.index };
+      s.target = { kind: 'ground', planet: p.index, cell: i };
       s.source = p.owner === game.me && record?.owner === game.me ? { kind: 'ground', planet: p.index, records: [record] } : null;
       this.put(s, units[i]);
+      this.badge(s, record);
       this.track(s, record);
       if (!units[i] && state.open) this.emptyControl(s);
     });
@@ -598,6 +650,7 @@ export class PlanetOverview extends NativePanel {
           packed: packed.compact
         });
         if (anchor !== undefined) this.emptyControl(s);
+        this.badge(s, anchor !== undefined ? null : record);
         this.track(s, record?.structure || record);
       });
     });
