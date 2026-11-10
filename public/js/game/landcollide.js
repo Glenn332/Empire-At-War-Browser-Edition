@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
 import { CELL } from './terrain.js';
+import { TERRAIN } from './landtables.js';
 
 const FPS = 30;
 const CLASSES = {
@@ -38,9 +39,76 @@ export function resetCollideIds() {
   BODY_ID = 0;
 }
 
+function standing(W, u) {
+  const cls = (u.ccls ??= collisionClass(u.type));
+  if (cls < 0 || cls === 1 || u.inside || u.scriptHidden) return null;
+  if (cls <= 4 && W.kind) {
+    const n = W.n,
+      ix = Math.round(u.x / CELL),
+      iy = Math.round(u.y / CELL);
+    if (ix >= 0 && iy >= 0 && ix < n && iy < n && W.kind[iy * n + ix] & (TERRAIN.STEEP | TERRAIN.WATER)) return null;
+  }
+  const t = u.type,
+    s = t.num('Scale_Factor', 1) || 1,
+    b =
+      u.cb ||
+      (u.cb = {
+        id: ++BODY_ID,
+        u,
+        q: null,
+        cls,
+        fixed: true,
+        hx: t.num('Custom_Hard_XExtent', 0) * s || u.body || 10,
+        hy: t.num('Custom_Hard_YExtent', 0) * s || u.body || 10,
+        ox: t.num('Custom_Hard_XExtent_Offset', 0) * s,
+        oy: t.num('Custom_Hard_YExtent_Offset', 0) * s,
+        r: 0,
+        mpi: 0,
+        spacing: 0,
+        expand: 0,
+        turn: 0,
+        path: [],
+        v: 0,
+        max: 0,
+        min: 0,
+        moving: false,
+        need: 2,
+        form: null
+      }),
+    c = Math.cos(u.heading),
+    sn = Math.sin(u.heading);
+  b.x = u.x + c * b.ox - sn * b.oy;
+  b.y = u.y + sn * b.ox + c * b.oy;
+  b.h = u.heading;
+  b.r ||= Math.hypot(b.hx, b.hy);
+  b.side = u.side;
+  return b;
+}
+
+export function collides(W, a, b) {
+  if (a.fixed && b.fixed) return false;
+  const p = a.cls,
+    q = b.cls;
+  if (p === 1 || q === 1) {
+    const A = unitOf(a),
+      B = unitOf(b);
+    return !(p === 1 ? b : a).fixed && !!A && !!B && !W.ally(A.side, B.side);
+  }
+  const other = k => (p === k ? q : p);
+  if (p === 2 || q === 2) return other(2) === 5;
+  if (p === 3 || q === 3) return other(3) >= 5 && other(3) <= 8;
+  if (p === 4 || q === 4) return other(4) >= 5 && other(4) <= 9;
+  return true;
+}
+
 function gather(W) {
   const out = [];
   for (const u of W.units) {
+    if (u.structure && !u.dead && !u.flies) {
+      const b = standing(W, u);
+      if (b) out.push(b);
+      continue;
+    }
     if (u.dead || u.structure || u.flies || u.inside || u.flight || u.rope || u.cinematicTransport || u.scriptHidden || !u.squad) continue;
     if (u.squad.box && u.slot) continue;
     const cls = (u.ccls ??= collisionClass(u.type));
@@ -766,7 +834,7 @@ function goRound(W, c, s, m, near, flags, T) {
     for (const o of bodies) {
       const r = radius(o) + (o.moving ? o.max * T : 0);
       if (o.x + r < X0 || o.x - r > X1 || o.y + r < Y0 || o.y - r > Y1) continue;
-      if (ignored(W, s, o, m, flags, linked)) continue;
+      if (ignored(W, s, o, m, flags, linked) || (o.fixed && !collides(W, s, o))) continue;
       const B = sweptBox(s, o, grow, T);
       const ox = B.hx + extra,
         oy = B.hy + extra,
@@ -865,7 +933,7 @@ function goRound(W, c, s, m, near, flags, T) {
 
 function busy(b) {
   const u = unitOf(b);
-  return !u || !!u.rooted || !!u.inside || !!u.setup || !!(u.needsDeploy && u.deployed);
+  return !u || !!u.structure || !!u.rooted || !!u.inside || !!u.setup || !!(u.needsDeploy && u.deployed);
 }
 
 function standAside(W, mover, b, bodies) {
@@ -1332,7 +1400,7 @@ export function tickCollisions(W) {
     for (let i = gx - 1; i <= gx + 1; i++)
       for (let j = gy - 1; j <= gy + 1; j++)
         for (const b of grid.get(i * 65536 + j) || []) {
-          if (b === a || inColl.has(a.id * 1e6 + b.id)) continue;
+          if (b === a || inColl.has(a.id * 1e6 + b.id) || !collides(W, a, b)) continue;
           const rb = radius(b);
           if (Math.abs(b.x - a.x) > 80 + rb || Math.abs(b.y - a.y) > 80 + rb) continue;
           let c = null;
@@ -1341,7 +1409,7 @@ export function tickCollisions(W) {
             c = { kind: 'ss', a, b, state: SS.START, clock: W.time + 1, mover: null, spot: null };
             tickStopped(W, c, bodies);
             if (c.state === SS.DONE || c.state === SS.GONE) c = null;
-          } else if (a.cls <= 6 && b.cls <= 6) continue;
+          } else if (a.cls <= 6 && b.cls <= 6 && !b.fixed) continue;
           else if (b.moving) {
             const crushEither = crushes(W, a, b) || crushes(W, b, a);
             if (willMeet(a, b, T + (crushEither ? 1.5 : 0))) {

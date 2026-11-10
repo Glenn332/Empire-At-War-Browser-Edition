@@ -586,6 +586,7 @@ class LandUnit {
     this.cb = undefined;
     this.ccCap = undefined;
     this.hardX = undefined;
+    this.freeLeg = undefined;
     this.hardY = undefined;
     this.startAt = undefined;
     this.inView = undefined;
@@ -1304,9 +1305,9 @@ export class LandWorld {
     return hi > lo ? hi - lo : 0;
   }
 
-  moveFailed(q, x, y, facing) {
+  moveFailed(q, x, y, facing, exact = false) {
     q.moveFailAt = this.time;
-    q.moveTry = { x, y, facing, at: this.time + 2 };
+    q.moveTry = { x, y, facing, exact, at: this.time + 2 };
     this.moveTries.add(q);
     if (q.box) {
       q.box.path.length = 0;
@@ -1327,7 +1328,7 @@ export class LandWorld {
       if (this.time < t.at) continue;
       q.moveTry = null;
       this.moveTries.delete(q);
-      this.order(q, t.x, t.y, t.facing);
+      this.order(q, t.x, t.y, t.facing, t.exact);
     }
   }
 
@@ -1349,11 +1350,7 @@ export class LandWorld {
         return;
       }
       this.blockObstacle(at, u.inst.model, fp);
-    } else {
-      this.stampModel(u);
-      u.footOpen = true;
-      this.groundChanged(u.footprint);
-    }
+    } else u.footprint = [];
     this.resurface(u);
     if (u.footprint.length) this.reroute(u.footprint);
   }
@@ -1462,46 +1459,6 @@ export class LandWorld {
       }
   }
 
-  stampModel(u) {
-    const n = this.n,
-      h = u.holder;
-    h.updateMatrixWorld(true);
-    const box = new THREE.Box3(),
-      part = new THREE.Box3(),
-      inv = new THREE.Matrix4().copy(h.matrixWorld).invert(),
-      m = new THREE.Matrix4(),
-      v = new THREE.Vector3();
-    h.traverse(o => {
-      if (!o.isMesh || !o.geometry) return;
-      for (let a = o; a && a !== h.parent; a = a.parent) if (!a.visible) return;
-      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-      box.union(part.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)));
-    });
-    const most = u.hitRadius * 1.7,
-      least = Math.min(most, 24),
-      k = 0.9;
-    const cx = (box.min.x + box.max.x) / 2,
-      cy = (box.min.y + box.max.y) / 2,
-      hx = ((box.max.x - box.min.x) / 2) * k,
-      hy = ((box.max.y - box.min.y) / 2) * k;
-    const inside = (x, y) => {
-      const d = Math.hypot(x - u.x, y - u.y);
-      if (d <= least) return true;
-      if (d > most || box.isEmpty()) return false;
-      v.set(x, y, u.z).applyMatrix4(inv);
-      return Math.abs(v.x - cx) <= hx && Math.abs(v.y - cy) <= hy;
-    };
-    u.footprint = [];
-    const c = Math.ceil(most / CELL),
-      ux = Math.round(u.x / CELL),
-      uy = Math.round(u.y / CELL);
-    for (let iy = Math.max(0, uy - c); iy <= Math.min(n - 1, uy + c); iy++)
-      for (let ix = Math.max(0, ux - c); ix <= Math.min(n - 1, ux + c); ix++)
-        if (this.open[iy * n + ix] && inside(ix * CELL, iy * CELL)) {
-          this.open[iy * n + ix] = 0;
-          u.footprint.push(iy * n + ix);
-        }
-  }
   blockObstacle(o, model, cells = null, boxModel = null) {
     const t = o.type,
       n = this.n,
@@ -6590,8 +6547,12 @@ export class LandWorld {
     if (this.time < (u.detourAt || 0)) return false;
     const foot = u.foot ? (u.need & ~3) | 1 : u.need,
       reach = (u.fp ?? u.hitRadius ?? 0) + 40;
-    const way = this.isOpen(to.x, to.y, foot) ? this.route(u.x, u.y, to.x, to.y, foot) : null;
     const team = !!(u.squad && u.squad.box && !u.squad.ext && u.slot);
+    if (!team && !this.isOpen(u.x, u.y, foot)) {
+      u.path.length = 0;
+      return true;
+    }
+    const way = this.isOpen(to.x, to.y, foot) ? this.route(u.x, u.y, to.x, to.y, foot) : null;
     let len = 0,
       px = u.x,
       py = u.y;
@@ -6602,6 +6563,10 @@ export class LandWorld {
         py = p.y;
       }
     if (!way || (!team && len > Math.hypot(to.x - u.x, to.y - u.y) + 2 * reach)) {
+      if (!team) {
+        u.path.length = 0;
+        return true;
+      }
       u.detourAt = this.time + 45 / LOGIC_FPS;
       return false;
     }
@@ -6733,7 +6698,8 @@ export class LandWorld {
       ad = Math.hypot(ax, ay) || 1,
       sx = u.x + (ax / ad) * Math.min(ad, go),
       sy = u.y + (ay / ad) * Math.min(ad, go);
-    if (this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+    if (!box.path.length) u.freeLeg = false;
+    if (u.freeLeg || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
       u.x = fx;
       u.y = fy;
     } else if (go > 0 && this.isOpen(sx, sy, (u.need & ~3) | 1)) {
@@ -6756,8 +6722,61 @@ export class LandWorld {
     return true;
   }
 
-  order(squad, x, y, facing = null) {
+  ringSpot(x, y, size, need) {
+    const step = 1.5 * (size > 0 ? size : 5 / 1.5);
+    for (let ring = 1; ring <= 20; ring++) {
+      const r = ring * step,
+        k = Math.max(4, Math.floor((2 * Math.PI * r) / step) + 1);
+      for (let i = 0; i < k; i++) {
+        const a = (i / k) * 2 * Math.PI,
+          px = x + Math.cos(a) * r,
+          py = y + Math.sin(a) * r;
+        if (this.isOpen(px, py, need)) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  exitMove(squad, x, y, facing, need) {
+    const m = squad.members,
+      size = Math.max(...m.map(u => Math.hypot(hardExtent(u, 'X'), hardExtent(u, 'Y')))),
+      goal = this.isOpen(x, y, need) ? { x, y } : this.ringSpot(x, y, size, need);
+    if (!goal) return this.moveFailed(squad, x, y, facing, true);
+    const box = this.teamOf(squad);
+    if (box) {
+      if (squad.ext) {
+        box.x = m.reduce((a, u) => a + u.x, 0) / m.length;
+        box.y = m.reduce((a, u) => a + u.y, 0) / m.length;
+        squad.ext = false;
+      }
+      const way = [{ x: goal.x, y: goal.y, free: true }];
+      box.path = way;
+      box.face = facing;
+      box.stall = 0;
+      box.sides = this.sideShifts(squad, box, box, way);
+      box.along = 0;
+      for (const u of m) {
+        u.freeLeg = true;
+        u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
+      }
+      return true;
+    }
+    const cx = m.reduce((a, u) => a + u.x, 0) / m.length,
+      cy = m.reduce((a, u) => a + u.y, 0) / m.length,
+      face = facing ?? Math.atan2(goal.y - cy, goal.x - cx),
+      c = Math.cos(face),
+      s = Math.sin(face),
+      k = squad.spread || 1;
+    for (const u of m) {
+      const end = { x: goal.x + (c * u.off.x - s * u.off.y) * k, y: goal.y + (s * u.off.x + c * u.off.y) * k, free: true };
+      u.path = [u.flies || this.isOpen(end.x, end.y, u.need) ? end : { x: goal.x, y: goal.y, free: true }];
+    }
+    return true;
+  }
+
+  order(squad, x, y, facing = null, exact = false) {
     const m = squad.members;
+    for (const u of m) u.freeLeg = false;
     if (this.clutterAt === this.time) this.clutterSent.push(squad);
     const fp = squad.formPending;
     squad.formPending = null;
@@ -6790,6 +6809,7 @@ export class LandWorld {
       return true;
     }
     const lead = m.find(u => !u.dead && !u.inside && !u.flies) || m[0];
+    if (exact && !fliers) return this.exitMove(squad, x, y, facing, need);
     const goal = fliers
       ? this.isOpen(x, y, need)
         ? { x, y }
@@ -7597,7 +7617,7 @@ export class LandWorld {
       for (const l of G.values()) l.length = 0;
       (this.clutterSent ||= []).length = 0;
       for (const q of this.squads) {
-        if (q.structure || !q.members.length) continue;
+        if (!q.members.length) continue;
         const b = q.box && !q.ext ? q.box : q.members[0],
           k = Math.floor(b.x / CLUTTER_CELL) * 4096 + Math.floor(b.y / CLUTTER_CELL);
         let l = G.get(k);
@@ -7640,7 +7660,7 @@ export class LandWorld {
       list.every(v => v.dead || v.inside || (v.crusher && this.enemy(v, u) && (u.squashable || (v.supercrusher && u.squashableBig))));
     let area = 0;
     for (const q of this.clutterNear(px, py, wide)) {
-      if (q.structure || !q.members.length || sent.includes(q)) continue;
+      if (!q.members.length || sent.includes(q)) continue;
       for (const u of q.members) {
         if (u.dead || u.inside || u.flies || (u.ccls ??= collisionClass(u.type)) < 5) continue;
         if ((u.x - px) ** 2 + (u.y - py) ** 2 > wide * wide) continue;
@@ -8158,7 +8178,7 @@ export class LandWorld {
           u.v = dt > 0 ? go / dt : 0;
           const fx = u.x + Math.cos(u.heading) * go,
             fy = u.y + Math.sin(u.heading) * go;
-          if (u.flies || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+          if (u.flies || next.free || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
             u.x = fx;
             u.y = fy;
             u.blockFails = 0;

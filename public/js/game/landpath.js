@@ -303,7 +303,6 @@ export class LandPaths {
   }
 
   search(a, b, smooth) {
-    if (this.cost) return this.cellSearch(a, b, smooth);
     const sx = cellOf(a.x),
       sy = cellOf(a.y),
       gx = cellOf(b.x),
@@ -437,106 +436,6 @@ export class LandPaths {
       }
     }
     return null;
-  }
-
-  cellSearch(a, b, smooth) {
-    const n = this.n,
-      sx = cellOf(a.x),
-      sy = cellOf(a.y),
-      gx = cellOf(b.x),
-      gy = cellOf(b.y),
-      cost = this.cost,
-      N = n * n;
-    if (!this.enters(sx, sy) || !this.enters(gx, gy)) return null;
-    if (!this.cellG || this.cellG.length < N) {
-      this.cellG = new Float32Array(N);
-      this.cellUp = new Int32Array(N);
-      this.cellMark = new Int32Array(N);
-      this.cellHeap = new Int32Array(8 * N + 2);
-      this.cellF = new Float32Array(8 * N + 2);
-      this.cellRun = 0;
-    }
-    const G = this.cellG,
-      Up = this.cellUp,
-      mark = this.cellMark,
-      heap = this.cellHeap,
-      F = this.cellF,
-      run = ++this.cellRun,
-      done = -run;
-    let size = 0;
-    const push = (i, f) => {
-      if (size + 1 >= heap.length) return;
-      let k = ++size;
-      for (; k > 1 && F[k >> 1] > f; k >>= 1) {
-        heap[k] = heap[k >> 1];
-        F[k] = F[k >> 1];
-      }
-      heap[k] = i;
-      F[k] = f;
-    };
-    const pop = () => {
-      const top = heap[1],
-        li = heap[size],
-        lf = F[size--];
-      let k = 1;
-      for (;;) {
-        let c = 2 * k;
-        if (c > size) break;
-        if (c + 1 <= size && F[c + 1] < F[c]) c++;
-        if (F[c] >= lf) break;
-        heap[k] = heap[c];
-        F[k] = F[c];
-        k = c;
-      }
-      heap[k] = li;
-      F[k] = lf;
-      return top;
-    };
-    const s0 = sy * n + sx,
-      goal = gy * n + gx;
-    G[s0] = 0;
-    Up[s0] = -1;
-    mark[s0] = run;
-    push(s0, Math.hypot(gx - sx, gy - sy));
-    let steps = 0,
-      hit = false;
-    while (size && steps++ < 2 * N) {
-      const i = pop();
-      if (mark[i] === done) continue;
-      mark[i] = done;
-      if (i === goal) {
-        hit = true;
-        break;
-      }
-      const x = i % n,
-        y = (i - x) / n,
-        here = cost(x, y),
-        g0 = G[i];
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dy) continue;
-          const X = x + dx,
-            Y = y + dy;
-          if (!this.enters(X, Y)) continue;
-          if (dx && dy && (!this.enters(x + dx, y) || !this.enters(x, y + dy))) continue;
-          const j = Y * n + X;
-          if (mark[j] === done) continue;
-          const g = g0 + (dx && dy ? Math.SQRT2 : 1) * Math.max(here, cost(X, Y));
-          if (mark[j] === run && !(g < G[j])) continue;
-          mark[j] = run;
-          G[j] = g;
-          Up[j] = i;
-          push(j, g + Math.hypot(gx - X, gy - Y));
-        }
-    }
-    if (!hit) return null;
-    const pts = [];
-    for (let i = goal; i >= 0; i = Up[i]) pts.push({ x: (i % n) * CELL, y: Math.trunc(i / n) * CELL });
-    pts.reverse();
-    if (a.x !== pts[0].x || a.y !== pts[0].y) pts.unshift({ x: a.x, y: a.y });
-    const z = pts[pts.length - 1];
-    if (b.x !== z.x || b.y !== z.y) pts.push({ x: b.x, y: b.y });
-    return smooth ? this.finish(pts) : pts;
   }
 
   stepCost(px, py, qx, qy, from, into) {
