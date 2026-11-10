@@ -210,4 +210,31 @@ const yield_ = u => track && track(u);
   assert.equal(u.path.length, 0, 'no way round closed ground: the move is given up, not tried again');
 }
 
+{
+  const W = makeWorld();
+  for (let y = 45; y <= 55; y++) for (let x = 45; x <= 55; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
+  W.terrain = { size: N, heights: new Float32Array(N * N) };
+  const stub = { position: { set() {} } },
+    made = [0, 1].map(k => squadOf(W, 'T2B_Tank', 0, 70 * CELL, (50 + k) * CELL));
+  for (const q of made) q.members[0].holder = stub;
+  const from = { x: 50 * CELL, y: 50 * CELL },
+    exits = W.unloadGrid(made, 70 * CELL, 50 * CELL, 0, from);
+  assert.equal(exits.length, 2, 'each unit coming out has an exit');
+  for (const q of made) {
+    const u = q.members[0];
+    assert(u.x === from.x && u.y === from.y, 'a unit leaving a transport or spawner starts where it comes out');
+  }
+  W.walkOut(exits, 0);
+  const goals = made.map(q => q.members[0].path);
+  for (const p of goals) {
+    assert(p.length === 1 && p[0].free, 'it walks out on one straight leg that skips the ground test');
+    assert(W.isOpen(p[0].x, p[0].y, 2) && Math.hypot(p[0].x - 70 * CELL, p[0].y - 50 * CELL) < 10 * CELL, 'to its place by the exit point');
+  }
+  assert(Math.hypot(goals[0][0].x - goals[1][0].x, goals[0][0].y - goals[1][0].y) > 20, 'the units get places of their own');
+  const flier = squadOf(W, 'T2B_Tank', 0, 70 * CELL, 50 * CELL);
+  flier.members[0].holder = stub;
+  flier.members[0].flies = true;
+  assert.equal(W.unloadGrid([flier], 70 * CELL, 50 * CELL, 0, from).length, 0, 'fliers are put in place');
+}
+
 console.log('ok exit moves, closed ground, structures as standing bodies of the collision system');

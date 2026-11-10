@@ -40,7 +40,10 @@ export function adoptGarrisons(w) {
 }
 
 function exitPoint(w, u) {
-  const names = u.type.list('Spawned_Squadron_Location_Bones').flatMap(n => n.split(/[\s,]+/)).filter(Boolean),
+  const names = u.type
+      .list('Spawned_Squadron_Location_Bones')
+      .flatMap(n => n.split(/[\s,]+/))
+      .filter(Boolean),
     flyouts = u.type
       .list('Spawned_Squadron_Location_Flyout_Distances')
       .flatMap(n => n.split(/[\s,]+/))
@@ -63,7 +66,7 @@ async function letOut(w, u, entry, spot = exitPoint(w, u)) {
   const at = w.nearestOpen(spot.x + Math.cos(spot.angle) * spot.distance, spot.y + Math.sin(spot.angle) * spot.distance);
   if (!at) return null;
   if (entry.remaining > 0) entry.remaining--;
-  const q = await w.spawn(entry.type.name, at.x, at.y, spot.angle, u.side);
+  const q = await w.spawn(entry.type.name, at.x, at.y, spot.angle, u.side, null, { x: spot.x, y: spot.y });
   if (!q?.members.length) return null;
   const group = q.mates || [q];
   entry.out.push(group);

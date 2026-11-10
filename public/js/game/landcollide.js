@@ -105,7 +105,7 @@ export function collides(W, a, b) {
 function gather(W) {
   const out = [];
   for (const u of W.units) {
-    if (u.structure && !u.dead && !u.flies) {
+    if (u.structure && !u.dead && !u.flies && !u.squad?.craft) {
       const b = standing(W, u);
       if (b) out.push(b);
       continue;

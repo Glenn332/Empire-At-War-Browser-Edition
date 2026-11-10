@@ -587,6 +587,7 @@ class LandUnit {
     this.ccCap = undefined;
     this.hardX = undefined;
     this.freeLeg = undefined;
+    this.exitTo = undefined;
     this.hardY = undefined;
     this.startAt = undefined;
     this.inView = undefined;
@@ -3487,7 +3488,7 @@ export class LandWorld {
         t.stage = 'unload';
         t.wait = 2;
         t.out = false;
-        const out = this.spawn(t.typeName, t.x, t.y, t.heading, t.side);
+        const out = this.spawn(t.typeName, t.x, t.y, t.heading, t.side, null, { x: t.x, y: t.y });
         out.then(
           q => {
             this.squads = this.squads.filter(s => s !== t.pending);
@@ -3521,7 +3522,7 @@ export class LandWorld {
     this.transports.length = k;
   }
 
-  async spawn(typeName, x, y, heading = 0, side = 0, saved = null) {
+  async spawn(typeName, x, y, heading = 0, side = 0, saved = null, from = null) {
     const type = db.type(typeName);
     if (!type) return null;
     let kinds = type.has('Company_Units')
@@ -3981,8 +3982,9 @@ export class LandWorld {
       squad.mates = made;
       this.squads.push(squad);
     }
-    if (!saved) this.unloadGrid(made, x, y, heading);
+    const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
     for (const q of squads) q.forming = false;
+    this.walkOut(exits, heading);
     for (const q of made)
       if (q.scriptQueue) {
         const list = q.scriptQueue;
@@ -3992,10 +3994,11 @@ export class LandWorld {
     return made[0] || squads[0];
   }
 
-  unloadGrid(made, x, y, heading) {
-    const entries = [];
+  unloadGrid(made, x, y, heading, from = null) {
+    const entries = [],
+      exits = [];
     for (const q of made) {
-      if (q.scriptPosition) return;
+      if (q.scriptPosition) return exits;
       const m = q.members.filter(u => !u.dead && !u.inside);
       if (!m.length) continue;
       if (m.length > 1 && m.every(u => u.foot && !u.flies && /LAND_TEAM_INFANTRY_LOCOMOTOR/i.test(u.type.str('LandBehavior')))) {
@@ -4017,7 +4020,7 @@ export class LandWorld {
         }
     }
     const n = entries.length;
-    if (!n) return;
+    if (!n) return exits;
     const cx = Math.max(...entries.map(e => e.cx)),
       cy = Math.max(...entries.map(e => e.cy)),
       S = Math.sqrt(Math.max(400, n * cx * cy * 1.8)),
@@ -4053,7 +4056,9 @@ export class LandWorld {
       at ||= this.nearestOpen(gx, gy, need) || { x: gx, y: gy };
       placed.push({ x: at.x, y: at.y, r: room });
       const mx = e.units.reduce((a, u) => a + u.x, 0) / e.units.length,
-        my = e.units.reduce((a, u) => a + u.y, 0) / e.units.length;
+        my = e.units.reduce((a, u) => a + u.y, 0) / e.units.length,
+        walk = from && e.units.every(u => !u.flies && u.speed > 0),
+        team = e.units.length > 1;
       for (const u of e.units) {
         let ux = at.x + u.x - mx,
           uy = at.y + u.y - my;
@@ -4062,11 +4067,31 @@ export class LandWorld {
           ux = o ? o.x : at.x;
           uy = o ? o.y : at.y;
         }
+        if (walk) {
+          u.exitTo = { x: ux, y: uy };
+          ux = from.x + (team ? u.x - mx : 0);
+          uy = from.y + (team ? u.y - my : 0);
+        }
         u.x = ux;
         u.y = uy;
         u.holder.position.set(u.x, u.y, heightAt(this.terrain, u.x, u.y) + (u.lift || 0) + (u.hoverZ || 0));
       }
+      if (walk) exits.push({ units: e.units, at });
     });
+    return exits;
+  }
+
+  walkOut(exits, heading) {
+    for (const e of exits) {
+      const q = e.units[0].squad;
+      if (this.teamOf(q)) this.order(q, e.at.x, e.at.y, heading, true);
+      else
+        for (const u of e.units) {
+          u.freeLeg = false;
+          u.path = [{ x: u.exitTo.x, y: u.exitTo.y, free: true }];
+        }
+      for (const u of e.units) u.exitTo = null;
+    }
   }
 
   playOnce(u, kind, loop = false) {
