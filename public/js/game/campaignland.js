@@ -183,18 +183,25 @@ export async function placeLandInvasion(w, map, cb) {
     }
     remember(book, u.gid, await w.spawn(u.type, open.x, open.y, at.heading || 0, side));
   };
-  const shelters = w.units
-    .filter(u => !u.dead && u.side === d.side && u.type.bool('Can_Contain_Heroes_During_Ground_Battle'))
+  const shelters = (w.units || [])
+    .filter(u => !u.dead && u.type.bool('Can_Contain_Heroes_During_Ground_Battle'))
     .sort((x, y) => (y.maxHealth || 0) - (x.maxHealth || 0));
+  const stay = (r, t, side) => {
+    const i = shelters.findIndex(u => u.side === side),
+      home = i >= 0 ? shelters.splice(i, 1)[0] : null;
+    if (home) {
+      book.contained.set(r.gid, home);
+      w.carryBonuses?.(t, home);
+    } else {
+      book.absent.push(r.gid);
+      w.carryBonuses?.(t, null, [], side);
+    }
+  };
   for (let i = 0; i < d.units.length; i++) {
     const r = d.units[i],
       t = db.type(r.type);
     if (t && staysInTransport(t)) {
-      const home = shelters.shift();
-      if (home) {
-        book.contained.set(r.gid, home);
-        w.carryBonuses?.(t, home);
-      } else book.absent.push(r.gid);
+      stay(r, t, d.side);
       continue;
     }
     await spawn(r, d.side, savedCompanyMarker(map, r.markerId) || defs[i % defs.length]);
@@ -207,8 +214,14 @@ export async function placeLandInvasion(w, map, cb) {
     entry = [...entries].sort((p, q) => d3(q, at) - d3(p, at))[0];
     book.anchors[a.side] = entry;
   }
-  const first = pathfinder(a.units, cb.linked?.hero);
-  for (const u of a.units) {
+  const landing = a.units.filter(u => {
+    const t = db.type(u.type);
+    if (!t || !staysInTransport(t)) return true;
+    stay(u, t, a.side);
+    return false;
+  });
+  const first = pathfinder(landing, cb.linked?.hero);
+  for (const u of landing) {
     const type = db.type(u.type);
     if (!type) continue;
     if (u === first) await spawn(u, a.side, entry);
@@ -259,6 +272,19 @@ export async function placeLandInvasion(w, map, cb) {
   w.garrisonPlanet = book.planetType;
   await tickGarrisons(w, true);
   return book;
+}
+
+export function restoreSheltered(w, book, cb, saved) {
+  const types = new Map([...(cb.defender?.units || []), ...(cb.attacker?.units || [])].map(r => [r.gid, db.type(r.type)])),
+    was = book.contained || new Map(),
+    now = new Map(saved.filter(([, home]) => home && !home.dead)),
+    stale = new Set([...was].filter(([gid, home]) => now.get(gid) !== home).map(([, home]) => home));
+  w.dropCarried?.(stale);
+  for (const [gid, home] of now) {
+    const t = types.get(gid);
+    if (t && (was.get(gid) !== home || stale.has(home))) w.carryBonuses?.(t, home);
+  }
+  book.contained = now;
 }
 
 export function invasionStructureDeath(w, book, u) {

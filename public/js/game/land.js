@@ -1090,13 +1090,25 @@ export class LandWorld {
     for (const u of this.units) if (!u.dead) this.giveBonus(h, u);
     return h;
   }
-  carryBonuses(company, host, made = []) {
-    if (!company || !host || host.dead) return;
+  carryBonuses(company, host, made = [], side = host?.side) {
+    if (!company || (host && host.dead) || side === undefined) return;
     for (const t of [company, ...company.list('Company_Units').map(n => db.type(n))])
-      if (t && t !== host.type && !made.includes(t) && bonusSourceDefs(t, LAND).length) {
-        const h = this.bonusSource(t, host.side, host);
+      if (t && t !== host?.type && !made.includes(t) && bonusSourceDefs(t, LAND).length) {
+        const h = this.bonusSource(t, side, host);
         if (h) h.carried = true;
       }
+  }
+  dropCarried(hosts) {
+    const list = this.bonusHolders;
+    let k = 0;
+    for (const h of list) {
+      if (h.carried && h.host && hosts.has(h.host)) {
+        for (const u of h.hit) if (!u.dead) for (const key of h.keys) this.dropCombatMod(u, key);
+        continue;
+      }
+      list[k++] = h;
+    }
+    list.length = k;
   }
   giveBonus(h, u) {
     if (u.dead || u.gone) return;
@@ -3689,7 +3701,16 @@ export class LandWorld {
           .map(n => db.type(n))
           .filter(Boolean)
       : [type];
-    if (saved) kinds = saved.map(m => db.type(m.type)).filter(Boolean);
+    let riders;
+    if (saved) {
+      const kept = saved.filter(m => db.type(m.type));
+      kinds = kept.map(m => db.type(m.type));
+      riders = kept.map(m => (m.rider && db.type(m.rider)) || null);
+    } else {
+      const body = k => db.type(k.str('Unique_Ground_Unit').trim());
+      riders = kinds.map(k => (body(k) ? k : null));
+      kinds = kinds.map(k => body(k) || k);
+    }
     const stand = k => !!k.str('Lua_Script') && !/\bSELECTABLE\b/i.test(k.str('LandBehavior') + ' ' + k.str('Behavior'));
     const lone = !saved && kinds.some(k => k !== kinds[0]) ? kinds.map(stand) : kinds.map(() => false);
     const pack = kinds.filter((k, n) => !lone[n]).length,
@@ -4125,6 +4146,11 @@ export class LandWorld {
           if (up) this.applyUpgrade(u, up);
         }
         this.syncCombatBonuses();
+        if (riders[n]) {
+          u.rider = riders[n];
+          const h = this.bonusSource(u.rider, side, u);
+          if (h) h.carried = true;
+        }
       })
     );
     const made = squads.filter(q => q.members.length);
@@ -4140,7 +4166,7 @@ export class LandWorld {
       this.carryBonuses(
         type,
         made[0].members[0],
-        made.flatMap(q => q.members.map(u => u.type))
+        made.flatMap(q => q.members.flatMap(u => (u.rider ? [u.type, u.rider] : [u.type])))
       );
     const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
     for (const q of squads) q.forming = false;
