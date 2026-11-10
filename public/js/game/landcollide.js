@@ -21,7 +21,7 @@ const MM = { NONE: 0, PATH_AROUND: 1, SPEED_SLAVE: 2, PASS: 4, SPEED_ONLY: 6, TH
 const MS = { NONE: 0, PATH_AROUND: 1, THROUGH: 4, RESOLVED: 5, LATER: 7, ATTACK: 8 };
 const SS = { START: 0, MOVING: 1, DONE: 2, GONE: 3, WAIT: 4 };
 
-const K = { least: 0.15, quota: 100, near: 20, past: 60, pad: 3, penalty: 15 };
+const K = { least: 0.15, quota: 100, near: 20, past: 60, pad: 3, penalty: 15, predict: 2 };
 
 function readConstants() {
   const c = db.constants;
@@ -31,6 +31,7 @@ function readConstants() {
   K.past = c.num('LandDestinationProximity', 60);
   K.pad = c.num('DynamicAvoidanceRectangleBound', 3);
   K.penalty = c.num('DynamicObstacleOverlapPenalty', 15);
+  K.predict = c.num('LandPredictionTimeInterval', 2);
 }
 
 let BODY_ID = 0;
@@ -1156,6 +1157,54 @@ function pickMover(A, B) {
   return clearCost(B, A, awayHeading(B, A)) <= clearCost(A, B, awayHeading(A, B)) ? B : A;
 }
 
+function footHit(o, x, y, half) {
+  const dx = o.x - Math.max(x, Math.min(x + 1, o.x)),
+    dy = o.y - y,
+    e = Math.hypot(dx, dy);
+  return e < 1e-6 || e < half + reach(o, dx / e, dy / e);
+}
+
+function comingWays(W, M) {
+  const out = [];
+  for (const c of W.colls || []) {
+    const a = c.a;
+    if (c.kind !== 'ms' || c.b !== M || !a.moving) continue;
+    const X = Math.max(a.mpi, K.predict),
+      far = a.max * Math.min(2 * X, X + 4),
+      pts = [{ x: a.x, y: a.y }];
+    let gone = 0,
+      x = a.x,
+      y = a.y;
+    for (const p of a.path) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (gone + d >= far) {
+        const k = d > 1e-6 ? (far - gone) / d : 0;
+        pts.push({ x: x + (p.x - x) * k, y: y + (p.y - y) * k });
+        break;
+      }
+      pts.push(p);
+      gone += d;
+      x = p.x;
+      y = p.y;
+    }
+    if (pts.length > 1) out.push({ pts, w: a.hy + radius(M) + 4 });
+  }
+  return out;
+}
+
+function onWay(w, x, y) {
+  for (let i = 1; i < w.pts.length; i++) {
+    const a = w.pts[i - 1],
+      b = w.pts[i],
+      ex = b.x - a.x,
+      ey = b.y - a.y,
+      L = ex * ex + ey * ey,
+      k = L > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / L)) : 0;
+    if (Math.hypot(a.x + ex * k - x, a.y + ey * k - y) < w.w) return true;
+  }
+  return false;
+}
+
 function freeSpot(W, M, H, bodies) {
   const R = radius(M),
     cap = Math.min(10, R * 1.5 || 5),
@@ -1163,7 +1212,8 @@ function freeSpot(W, M, H, bodies) {
     cone = M.cls === 5 ? Math.PI : 2.3561945,
     near = M.cls === 5 ? 1 : 0.75,
     most = 20 * 10 + half,
-    close = bodies.filter(o => o !== M && Math.abs(o.x - M.x) <= most + o.r && Math.abs(o.y - M.y) <= most + o.r);
+    close = bodies.filter(o => o !== M && Math.abs(o.x - M.x) <= most + half + o.r && Math.abs(o.y - M.y) <= most + half + o.r),
+    ways = comingWays(W, M);
   let r = 0,
     step = 1;
   for (let ring = 0; ring < 20; ring++) {
@@ -1175,7 +1225,8 @@ function freeSpot(W, M, H, bodies) {
         x = M.x + Math.cos(th + H) * far,
         y = M.y + Math.sin(th + H) * far;
       if (!W.isOpen(x, y, M.need)) continue;
-      if (close.some(o => Math.abs(o.x - x) <= half + o.r && Math.abs(o.y - y) <= half + o.r)) continue;
+      if (close.some(o => footHit(o, x, y, half))) continue;
+      if (ways.some(w => onWay(w, x, y))) continue;
       return { x, y };
     }
     r += step;

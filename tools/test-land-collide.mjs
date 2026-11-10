@@ -153,4 +153,68 @@ function step(W, dt) {
   assert.equal(a.cb.v, 0, 'not smoothed over earlier steps');
 }
 
+const reachOf = (b, dx, dy) => {
+  const c = Math.cos(b.h) * dx + Math.sin(b.h) * dy;
+  return (1 - c * c) * b.hy + c * c * b.hx;
+};
+
+{
+  const W = makeWorld();
+  const a = unitOf(W, 'T2B_Tank', 0, 2000, 2000, 0),
+    b = unitOf(W, 'T2B_Tank', 0, 2008, 2002, 0);
+  for (let f = 0; f < 8 && !a.path.length && !b.path.length; f++) step(W, 1 / 30);
+  const M = a.path.length ? a : b,
+    O = M === a ? b : a;
+  assert(M.path.length, 'two tanks standing in each other: one moves off');
+  const E = M.path[M.path.length - 1],
+    half = M.cb.r + M.cb.spacing * 5,
+    dx = O.x - E.x,
+    dy = O.y - E.y,
+    e = Math.hypot(dx, dy);
+  assert(e >= half + reachOf(O.cb, dx / e, dy / e) - 1.01, 'the free spot keeps the footprint test of the ring search: ' + e.toFixed(1));
+}
+
+{
+  const W = makeWorld();
+  const a = unitOf(W, 'T2B_Tank', 0, 2000, 2000, 0),
+    b = unitOf(W, 'T2B_Tank', 0, 2600, 2600, 0),
+    c = unitOf(W, 'T2B_Tank', 0, 1920, 2000, 0);
+  c.path = [{ x: 2400, y: 2000 }];
+  for (let f = 0; f < 12 && !W.colls?.some(k => k.kind === 'ms' && k.a === c.cb && k.b === a.cb); f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+  }
+  assert(
+    W.colls.some(k => k.kind === 'ms' && k.a === c.cb && k.b === a.cb),
+    'a tank driving at a standing one makes a moving against standing collision'
+  );
+  b.x = 2002;
+  b.y = 1993;
+  b.rooted = true;
+  for (let f = 0; f < 8 && !a.path.length; f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+  }
+  assert(a.path.length, 'the free tank moves off the rooted one');
+  const E = a.path[a.path.length - 1],
+    X = Math.max(c.cb.mpi, db.constants.num('LandPredictionTimeInterval', 2)),
+    far = c.cb.max * Math.min(2 * X, X + 4),
+    w = c.cb.hy + a.cb.r + 4;
+  let x = c.x,
+    y = c.y,
+    gone = 0;
+  for (const p of c.path) {
+    const d = Math.hypot(p.x - x, p.y - y),
+      ex = p.x - x,
+      ey = p.y - y,
+      top = Math.min(1, (far - gone) / d),
+      k = Math.max(0, Math.min(top, ((E.x - x) * ex + (E.y - y) * ey) / (d * d)));
+    assert(Math.hypot(x + ex * k - E.x, y + ey * k - E.y) >= w - 1e-6, 'the free spot is off the way of the unit coming at it');
+    gone += d;
+    if (gone >= far) break;
+    x = p.x;
+    y = p.y;
+  }
+}
+
 console.log('ok land collisions');
