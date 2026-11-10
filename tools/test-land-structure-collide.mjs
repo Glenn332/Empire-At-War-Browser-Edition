@@ -140,6 +140,27 @@ const yield_ = u => track && track(u);
 
 {
   const W = makeWorld();
+  const turret = squadOf(W, 'Empire_Anti_Vehicle_Turret', 0, 1000, 1000, true),
+    t = turret.members[0];
+  W.kind[Math.round(1000 / CELL) * N + Math.round(1000 / CELL)] = TERRAIN.OBSTACLE;
+  W.roomDirty = true;
+  tickCollisions(W);
+  t.cb.hx = t.cb.hy = 30;
+  t.cb.r = Math.hypot(30, 30);
+  const gap = 38,
+    tank = squadOf(W, 'T2B_Tank', 0, 1000 + gap, 1000).members[0];
+  assert(!W.isOpen(1000, 1000, 2) && W.isOpen(tank.x, tank.y, 2), 'the structure stands on closed ground, the tank on open ground');
+  let parted = false;
+  for (let f = 0; f < 30 && !parted; f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+    parted = tank.path.length > 0;
+  }
+  assert(parted, 'a unit standing in a structure body is parted from it though the structure stands on closed ground');
+}
+
+{
+  const W = makeWorld();
   const k = cls => ({ cls, fixed: true, u: { side: 1 } }),
     m = cls => ({ cls, fixed: false, u: { side: 0 } });
   assert(collides(W, m(5), k(2)) && !collides(W, m(7), k(2)), 'a low obstacle stops infantry only');

@@ -1440,7 +1440,7 @@ function tickStopped(W, c, bodies) {
     c.clock = W.time + 1;
     c.state = SS.START;
   }
-  if (!W.isOpen(A.x, A.y, A.need) || !W.isOpen(B.x, B.y, B.need)) {
+  if ((!A.fixed && !W.isOpen(A.x, A.y, A.need)) || (!B.fixed && !W.isOpen(B.x, B.y, B.need))) {
     c.state = SS.GONE;
     return;
   }
