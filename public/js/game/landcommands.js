@@ -1,6 +1,6 @@
 import { db } from '../gamedata.js';
 import { bombingRun, garrison, ungarrison } from './landbase.js';
-import { SILENT } from './landabilities.js';
+import { PICKS_UNIT, SILENT } from './landabilities.js';
 import { Beacons, beaconType } from './beacons.js';
 
 export function executeLand(game, side, cmd) {
@@ -114,7 +114,12 @@ export function executeLand(game, side, cmd) {
       for (const q of users) {
         if (q.dead) continue;
         const d = q.abilityState(cmd.kind).def,
-          tgt = d.aim === 'point' ? (cmd.x !== undefined ? { x: num(cmd.x), y: num(cmd.y) } : null) : { unit: tu };
+          tgt =
+            d.aim === 'point'
+              ? cmd.x !== undefined
+                ? { x: num(cmd.x), y: num(cmd.y), ...(tu && PICKS_UNIT.has(d.kind) ? { unit: tu } : {}) }
+                : null
+              : { unit: tu };
         if (!tgt || (d.aim !== 'point' && !tu)) continue;
         const no = w.useAbility(q, cmd.kind, tgt);
         if (no) why = no;
