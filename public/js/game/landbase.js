@@ -798,7 +798,7 @@ export function bombingRun(world, side, x, y) {
           bomber: true,
           body: 12,
           need: 1,
-          mod: { speed: 1, taken: 1, delay: 1, dealt: 1 }
+          mod: { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1 }
         }));
         squad.members.push(u);
         world.units.push(u);

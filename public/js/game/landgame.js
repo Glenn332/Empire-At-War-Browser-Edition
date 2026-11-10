@@ -1176,7 +1176,7 @@ export class LandGame {
     const w = this.world,
       s = this.setup,
       r1 = v => Math.round(v * 10) / 10,
-      en = u => (u.energy ? { en: [r1(u.energy.value), +u.energy.tick.toFixed(3)] } : {});
+      en = u => (u.energy ? { en: [r1(u.energy.value), +u.energy.tick.toFixed(3), +u.energy.every.toFixed(3)] } : {});
     const live = w.squads.filter(q => !q.structure && !q.arriving && q.members.length);
     let scripts = null;
     try {
@@ -1597,11 +1597,12 @@ export class LandGame {
       for (const [n, left] of q.upgrades || []) reorder(side, n, left);
     });
     for (const [side, n, left] of this.later) reorder(side, n, left);
-    for (const [u, [value, tick]] of energies) {
+    for (const [u, [value, tick, every]] of energies) {
       const e = w.energyOf(u);
       if (!e) continue;
       e.value = Math.max(0, Math.min(e.cap, value));
       e.tick = tick || 0;
+      if (every > 0) e.every = every;
     }
     adoptGarrisons(w);
     this.say(`Loaded: ${this.setup.restore.name}`);

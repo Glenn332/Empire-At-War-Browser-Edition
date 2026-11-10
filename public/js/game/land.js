@@ -375,6 +375,7 @@ class LandEnergy {
     this.refill = refill;
     this.value = base;
     this.tick = 0;
+    this.every = world.energyEvery(unit);
   }
   get cap() {
     return this.base * this.world.combatFactor(this.unit, MOD.ENERGY);
@@ -1058,10 +1059,16 @@ export class LandWorld {
   serviceEnergy(u, dt) {
     const e = u.energy === undefined ? this.energyOf(u) : u.energy;
     if (!e) return;
-    const every = (this.energyInterval ??= Math.max(1 / LOGIC_FPS, db.constants.num('EnergyRechargeIntervalInSecs', 5)));
-    if ((e.tick += dt) < every) return;
-    e.tick -= every;
-    e.value = u.unpowered ? 0 : Math.min(e.cap, Math.max(0, e.value + e.refill));
+    if ((e.tick += dt) < e.every) return;
+    e.tick -= e.every;
+    e.every = this.energyEvery(u);
+    e.value = u.unpowered ? 0 : Math.min(e.cap, Math.max(0, e.value + e.refill * (u.mod ? u.mod.energy : 1)));
+  }
+  energyEvery(u) {
+    return Math.max(
+      1 / LOGIC_FPS,
+      (this.energyInterval ??= db.constants.num('EnergyRechargeIntervalInSecs', 5)) * (u.mod ? u.mod.energyInterval : 1)
+    );
   }
   canShoot(u, w) {
     if (!(w.energy > 0)) return true;
@@ -4059,7 +4066,7 @@ export class LandWorld {
           }
         }
         this.setAnim(u, 'idle');
-        u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1 };
+        u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1 };
         u.ghost = inst.meshByName.get('STEALTH') || null;
         if (u.ghost) u.ghost.visible = false;
         u.foot = /infantry/i.test(t.str('MovementClass')) || inCategory(t, 'INFANTRY');

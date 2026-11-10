@@ -149,6 +149,8 @@ export function refreshMods(u) {
   m.weaponDelay = 1;
   m.shieldRegen = 1;
   m.shieldInterval = 1;
+  m.energyRegen = 1;
+  m.energyInterval = 1;
   m.speed = 1;
   m.damageTaken = 1;
   m.damageDealt = 1;
@@ -159,6 +161,8 @@ export function refreshMods(u) {
     if (g.has('FIRE_RATE_MULTIPLIER')) m.weaponDelay /= Math.max(0.1, g.get('FIRE_RATE_MULTIPLIER'));
     m.shieldRegen *= g.get('SHIELD_REGEN_MULTIPLIER') ?? 1;
     m.shieldInterval *= g.get('SHIELD_REGEN_INTERVAL_MULTIPLIER') ?? 1;
+    m.energyRegen *= g.get('ENERGY_REGEN_MULTIPLIER') ?? 1;
+    m.energyInterval *= g.get('ENERGY_REGEN_INTERVAL_MULTIPLIER') ?? 1;
     m.speed *= g.get('SPEED_MULTIPLIER') ?? 1;
     m.damageTaken *= g.get('TAKE_DAMAGE_MULTIPLIER') ?? 1;
     if (st.def.immobile) m.speed = 0;

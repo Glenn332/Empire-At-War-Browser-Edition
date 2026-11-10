@@ -585,7 +585,7 @@ function toggled(world, q, st) {
 
 export function refreshMods(world, q) {
   for (const u of q.members) {
-    const m = (u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1 });
+    const m = (u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1 });
     for (const st of q.abilities) {
       if (!st.active || !u.abilityKinds.has(st.def.kind)) continue;
       for (const [k, v] of st.def.mods) {
@@ -594,6 +594,8 @@ export function refreshMods(world, q) {
         else if (k === 'WEAPON_DELAY_MULTIPLIER') m.delay *= Math.max(0.05, v);
         else if (k === 'FIRE_RATE_MULTIPLIER') m.delay /= Math.max(0.05, v);
         else if (k === 'CAUSE_DAMAGE_MULTIPLIER') m.dealt *= v;
+        else if (k === 'ENERGY_REGEN_MULTIPLIER') m.energy *= v;
+        else if (k === 'ENERGY_REGEN_INTERVAL_MULTIPLIER') m.energyInterval *= v;
       }
     }
   }

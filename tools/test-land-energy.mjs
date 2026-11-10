@@ -20,6 +20,7 @@ const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const { CombatMods, MOD } = await import('../public/js/game/combatmods.js');
 const { LandWorld, LandSquad, landUnit } = await import('../public/js/game/land.js');
+const { landAbilities, refreshMods } = await import('../public/js/game/landabilities.js');
 
 const DT = 1 / 30;
 const T = n => {
@@ -195,6 +196,111 @@ function shoot(world, u, foe, secs) {
   const trooper = world.make('Stormtrooper', 0);
   assert.equal(trooper.weapon.energy, 0, 'blasters with no cost per shot');
   assert.equal(world.canShoot(trooper, trooper.weapon), true, 'fire without a pool');
+}
+
+{
+  const world = makeWorld();
+  const tower = world.make('E_Ground_Turbolaser_Tower', 0),
+    q = tower.squad;
+  const surge = landAbilities(T('M1_Repulsor_Tank')).find(d => d.mods.has('ENERGY_REGEN_MULTIPLIER'));
+  assert(surge, 'the M1 repulsor tank ability carries ENERGY_REGEN_MULTIPLIER');
+  near(surge.mods.get('ENERGY_REGEN_MULTIPLIER'), 0.3, 'of 0.3');
+  const quick = { kind: 'TEST_QUICK', mods: new Map([['ENERGY_REGEN_INTERVAL_MULTIPLIER', 0.5], ['ENERGY_REGEN_MULTIPLIER', 2]]) };
+  tower.abilityKinds = new Set([surge.kind, quick.kind]);
+  q.abilities = [
+    { def: surge, active: false },
+    { def: quick, active: false }
+  ];
+  const refill = (secs, steps = 1) => {
+    for (let n = 0; n < steps; n++) world.serviceEnergy(tower, secs / steps);
+  };
+  tower.energy.value = 0;
+  tower.energy.tick = 0;
+  q.abilities[0].active = true;
+  refreshMods(world, q);
+  near(tower.mod.energy, 0.3, 'an active ability sets the regen multiplier');
+  refill(5);
+  near(tower.energy.value, 12, 'a service refills Energy_Refresh_Rate times ENERGY_REGEN_MULTIPLIER');
+  near(tower.energy.every, 5, 'with no interval multiplier the next service is EnergyRechargeIntervalInSecs away');
+  q.abilities[1].active = true;
+  refreshMods(world, q);
+  near(tower.mod.energy, 0.6, 'two active abilities multiply');
+  near(tower.mod.energyInterval, 0.5, 'and the interval multiplier is taken too');
+  refill(4.9, 49);
+  near(tower.energy.value, 12, 'the service already scheduled keeps its time');
+  refill(0.11);
+  near(tower.energy.value, 36, 'and refills at the new rate');
+  near(tower.energy.every, 2.5, 'the next one comes after the interval times ENERGY_REGEN_INTERVAL_MULTIPLIER');
+  refill(2.5);
+  near(tower.energy.value, 60, 'so twice as often');
+  q.abilities[0].active = q.abilities[1].active = false;
+  refreshMods(world, q);
+  refill(2.5);
+  near(tower.energy.value, 100, 'expired abilities give the plain refill again');
+  near(tower.energy.every, 5, 'and the plain interval after it');
+  q.abilities = [{ def: { kind: 'TEST_DRAIN', mods: new Map([['ENERGY_REGEN_MULTIPLIER', -10]]) }, active: true }];
+  tower.abilityKinds = new Set(['TEST_DRAIN']);
+  refreshMods(world, q);
+  refill(5);
+  near(tower.energy.value, 0, 'a negative multiplier drains the pool, never below zero');
+}
+
+{
+  const THREE = await import('../public/vendor/three/build/three.module.js');
+  const S = await import('../public/js/game/sim.js');
+  const { useAbility } = await import('../public/js/game/abilities.js');
+  const { loadMap } = await import('../public/js/ted.js');
+  const { preloadModels } = await import('../public/js/model.js');
+  const { seedSim } = await import('../public/js/game/simrandom.js');
+  const maps = [...archive.index.keys()].filter(n => /\\MAPS\\[^\\]*\.TED$/.test(n));
+  const map = await loadMap(
+    maps
+      .find(n => /_SPACE_PLANET_/.test(n) && /KUAT/.test(n))
+      .split('\\')
+      .pop()
+  );
+  const names = new Set();
+  S.modelsForType(T('Nebulon_B_Frigate'), null, names, new Set());
+  await preloadModels([...names].filter(Boolean));
+  const nothing = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : nothing), apply: () => undefined });
+  S.resetEntityIds();
+  seedSim(5);
+  const w = new S.World({ scene: new THREE.Scene(), fx: nothing, audio: nothing, map });
+  w.modelOpts = { headless: true };
+  w.artReady = () => true;
+  w.onEvent = () => {};
+  w.fog = false;
+  const rebel = w.addPlayer(new S.Player(0, w.addTeam(new S.Team(0, 'Rebel')), { credits: 1e6 }));
+  const neb = w.spawn(T('Nebulon_B_Frigate'), rebel, 0, 0);
+  const defend = neb.abilities.find(s => s.def.mods.has('ENERGY_REGEN_MULTIPLIER'));
+  assert(defend, 'the Nebulon B frigate has an ability with ENERGY_REGEN_MULTIPLIER');
+  const regen = defend.def.mods.get('ENERGY_REGEN_MULTIPLIER'),
+    every = defend.def.mods.get('ENERGY_REGEN_INTERVAL_MULTIPLIER');
+  near(regen, 3, 'of 3');
+  near(every, 0.1, 'and ENERGY_REGEN_INTERVAL_MULTIPLIER of 0.1');
+  const en = neb.energy,
+    rate = T('Nebulon_B_Frigate').num('Energy_Refresh_Rate', 0);
+  assert(en && rate > 0, 'it has an energy pool that refills');
+  const step = secs => {
+    for (let n = Math.round(secs / DT); n > 0; n--) {
+      neb.shield = neb.maxShield;
+      w.updateUnit(neb, DT);
+    }
+  };
+  en.value = 0;
+  en.tick = 0;
+  step(5.05);
+  near(en.value, rate, 'space: a plain service refills Energy_Refresh_Rate');
+  assert.equal(useAbility(w, neb, defend.def.kind, true), null, 'the frigate raises ' + defend.def.kind);
+  assert(neb.mods.energyRegen === regen && neb.mods.energyInterval === every, 'its multipliers are on the ship');
+  en.value = 0;
+  step(4.9);
+  near(en.value, 0, 'space: the service already scheduled keeps its time');
+  step(0.2);
+  near(en.value, rate * regen, 'space: the refill is Energy_Refresh_Rate times ENERGY_REGEN_MULTIPLIER');
+  near(en.every, 5 * every, 'space: the next service comes after the interval times ENERGY_REGEN_INTERVAL_MULTIPLIER');
+  step(5 * every);
+  near(en.value, Math.min(en.cap, 2 * rate * regen), 'space: and refills again that much sooner');
 }
 
 console.log('land energy: ok');

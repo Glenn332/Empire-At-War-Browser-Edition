@@ -429,7 +429,16 @@ export class Unit {
     this.shieldDownTimer = 0;
     this.shieldTick = 0;
     const cap = type.behaviors().has('POWERED') ? type.num('Energy_Capacity', 0) : 0;
-    this.energy = cap > 0 ? { value: cap, cap, refill: type.num('Energy_Refresh_Rate', 0), tick: 0 } : null;
+    this.energy =
+      cap > 0
+        ? {
+            value: cap,
+            cap,
+            refill: type.num('Energy_Refresh_Rate', 0),
+            tick: 0,
+            every: Math.max(0.05, db.constants.num('EnergyRechargeIntervalInSecs', 5))
+          }
+        : null;
     this.ionUntil = 0;
     this.attackRange = type.num('Targeting_Max_Attack_Distance', 800);
     this.pop = spacePop(type);
@@ -463,7 +472,16 @@ export class Unit {
     this.abilities = [];
     this.statuses = [];
     this.cloaked = false;
-    this.mods = { weaponDelay: 1, shieldRegen: 1, shieldInterval: 1, speed: 1, damageTaken: 1, damageDealt: 1 };
+    this.mods = {
+      weaponDelay: 1,
+      shieldRegen: 1,
+      shieldInterval: 1,
+      energyRegen: 1,
+      energyInterval: 1,
+      speed: 1,
+      damageTaken: 1,
+      damageDealt: 1
+    };
     this.revealRange = type.num('Space_FOW_Reveal_Range', 600);
     this.seenBy = 0;
     this.everSeenBy = 0;
@@ -2558,11 +2576,11 @@ export class World {
       if (u.dead) return;
     }
     if (u.energy) {
-      const en = u.energy,
-        every = (this.energyInterval ??= Math.max(0.05, db.constants.num('EnergyRechargeIntervalInSecs', 5)));
-      if ((en.tick += dt) >= every) {
-        en.tick -= every;
-        en.value = Math.min(en.cap, en.value + en.refill);
+      const en = u.energy;
+      if ((en.tick += dt) >= en.every) {
+        en.tick -= en.every;
+        en.every = Math.max(0.05, (this.energyInterval ??= db.constants.num('EnergyRechargeIntervalInSecs', 5)) * u.mods.energyInterval);
+        en.value = Math.min(en.cap, Math.max(0, en.value + en.refill * u.mods.energyRegen));
       }
     }
     if (u.maxShield > 0) {
