@@ -33,7 +33,7 @@ import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
 import { Decals, scorch } from './landdecals.js';
-import { activateSpawners, addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf } from './landbase.js';
+import { activateSpawners, addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf, windDisturbances } from './landbase.js';
 import { loadLandTables } from './landtables.js';
 import { loadClashes } from './landclash.js';
 import { LandCinematic } from './landcine.js';
@@ -3048,6 +3048,7 @@ export class LandGame {
       const k = this.bolt > 0.3 || (this.bolt > 0.12 && this.bolt < 0.2) ? 0.55 : 0;
       this.flash.style.opacity = k;
     } else if (this.flash && this.flash.style.opacity !== '0') this.flash.style.opacity = '0';
+    this.fx.wind = windDisturbances(w, dt, this.fx.wind || []);
     this.fx.update(dt);
     const L = this.audio.listener;
     const cineLook = this.tacticalCinematics?.on ? this.tacticalCinematics.evaluate('target') : null;

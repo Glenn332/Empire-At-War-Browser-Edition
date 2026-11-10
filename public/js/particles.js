@@ -76,6 +76,8 @@ function parseEmitter(r, c) {
     emitMode: 0,
     heat: false,
     weather: false,
+    wind: false,
+    windDisturb: false,
     noDepth: false,
     staticRot: false,
     inherit: false,
@@ -168,6 +170,9 @@ function parseEmitter(r, c) {
           case 0x33:
             e.skipTime = r.f32(p);
             break;
+          case 0x31:
+            e.wind = dv.getUint8(p) !== 0;
+            break;
           case 0x34:
             e.emitMode = r.u32(p);
             break;
@@ -179,6 +184,9 @@ function parseEmitter(r, c) {
             break;
           case 0x43:
             e.inherit = dv.getUint8(p) !== 0;
+            break;
+          case 0x44:
+            e.windDisturb = dv.getUint8(p) !== 0;
             break;
           case 0x46:
             e.noDepth = dv.getUint8(p) !== 0;
@@ -448,6 +456,7 @@ export class ParticleManager {
     this.sent = new Set();
     this.busy = false;
     this.owedDt = 0;
+    this.wind = null;
     this.frameData = new Float32Array(SLOTS * 8);
     const tex = (this.frameTex = new THREE.DataTexture(this.frameData, 2, SLOTS, THREE.RGBAFormat, THREE.FloatType));
     tex.minFilter = tex.magFilter = THREE.NearestFilter;
@@ -659,6 +668,7 @@ export class ParticleManager {
           frames: frames.subarray(0, k),
           detail: Math.max(0.1, Math.min(1, +gfx.particle)),
           cap,
+          wind: this.wind && this.wind.length ? Float32Array.from(this.wind) : null,
           heatOn: this.heatOn,
           heatScene: !!this.heatScene,
           free

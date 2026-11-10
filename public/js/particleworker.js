@@ -28,6 +28,7 @@ onmessage = ev => {
   } else if (m.type === 'step') {
     sim.detail = m.detail;
     if (m.cap > 0) sim.cap = m.cap;
+    sim.wind = m.wind || null;
     sim.heatOn = !!m.heatOn;
     sim.heatScene = !!m.heatScene;
     for (const b of m.free || []) give(b);
