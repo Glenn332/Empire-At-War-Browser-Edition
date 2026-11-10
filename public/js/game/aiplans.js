@@ -866,7 +866,8 @@ export class Plans {
         return this.block(
           () => {
             const now = alive();
-            return !now.length || now.every(e => idle(e) || dist(e, r.at) < 350);
+            this.settle(f);
+            return !now.length || now.every(e => !f.moving.has(e));
           },
           undefined,
           r,
@@ -956,6 +957,29 @@ export class Plans {
     );
   }
 
+  moved(f, us) {
+    const o = (f.owners ||= new Map());
+    for (const e of us) {
+      f.moving.add(e);
+      o.set(e, e.player);
+    }
+  }
+
+  settle(f) {
+    const inst = f.inst,
+      o = f.owners;
+    for (const e of f.moving) {
+      if (gone(e) || e.aiPlan !== inst || (o && o.has(e) && o.get(e) !== e.player)) {
+        f.moving.delete(e);
+        if (o) o.delete(e);
+      } else if (idle(e)) {
+        f.moving.delete(e);
+        if (o) o.delete(e);
+        (f.arrived ||= []).push(e);
+      }
+    }
+  }
+
   free(inst) {
     return inst.ai.mine().filter(e => !e.aiPlan && !e.noAI && !this.host.locked(e) && (inst.flags?.engaged || idle(e)));
   }
@@ -997,7 +1021,7 @@ export class Plans {
       }
       const spot = at || { x: t.x, y: t.y };
       host.cmd.move(us, spot.x, spot.y, !!attack, !attack);
-      for (const e of us) f.moving.add(e);
+      this.moved(f, us);
       return this.waitFor({ f, k: 'move', at: { x: spot.x, y: spot.y } });
     };
     const byZones = (kind, v, t, at, attack, tol) => {
@@ -1030,7 +1054,7 @@ export class Plans {
             leg = { x: nz.x, y: nz.y };
             cur = nz;
             host.cmd.move(us, leg.x, leg.y, !!attack, !attack);
-            for (const e of us) f.moving.add(e);
+            this.moved(f, us);
             return;
           }
         }
@@ -1044,7 +1068,8 @@ export class Plans {
           if (last) return last.IsFinished();
           const now = alive();
           if (!now.length) return true;
-          if (now.every(e => idle(e) || dist(e, leg) < 350)) plan();
+          this.settle(f);
+          if (now.every(e => !f.moving.has(e))) plan();
           return failed;
         },
         () => !failed && (!last || last.Result()),
@@ -1328,11 +1353,13 @@ export class Plans {
         f.toldEmpty = true;
         tell(f, 'No_Units_Remaining');
       }
+      this.settle(f);
+      if (f.arrived && f.arrived.length) {
+        const done = f.arrived;
+        f.arrived = [];
+        for (const e of done) if (!gone(e) && e.aiPlan === inst) tell(f, 'Unit_Move_Finished', f.wrapper, host.wrap(e));
+      }
       for (const e of f.units) {
-        if (f.moving.has(e) && idle(e)) {
-          f.moving.delete(e);
-          tell(f, 'Unit_Move_Finished', f.wrapper, host.wrap(e));
-        }
         const st = (f.state ||= new Map()).get(e) || { target: null, ready: new Set() };
         f.state.set(e, st);
         const lu = lead(e);
