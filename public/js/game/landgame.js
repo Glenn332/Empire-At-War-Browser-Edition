@@ -7,7 +7,7 @@ import { mpBattleParent } from './galacticmpbattle.js';
 import * as THREE from 'three';
 import { db, selectionBoxColors } from '../gamedata.js';
 import { switchTarget } from './switchsides.js';
-import { loadMap, pickEnvironment, environmentRoll } from '../ted.js';
+import { loadMap, startEnvironment } from '../ted.js';
 import { loadModel, lighting, setPlanetEnvironment, depthMaterial, programSources, planetClock } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { loadALO } from '../alo.js';
@@ -599,7 +599,7 @@ export class LandGame {
     P('Loading map', 0);
     const map = (this.map = await loadMap(setup.mapFile));
     ensureMissionPlayers(setup, map);
-    pickEnvironment(map, setup.net ? environmentRoll(setup.seed) : Math.random());
+    startEnvironment(map, setup);
     if (!setup.attract && (await showLoadScreen({ setup, map, land: true }))) hideSplash();
     this.teams = this.players.map(p => p.team);
     this.factions = this.players.map(p => setup.teamFactions[p.team]);
@@ -1211,6 +1211,7 @@ export class LandGame {
       },
       battle: {
         kind: 'land',
+        environment: this.savedEnvironment ? this.savedEnvironment.index : this.map.activeEnvironment,
         time: r1(w.time),
         speed: this.speed,
         view: {
