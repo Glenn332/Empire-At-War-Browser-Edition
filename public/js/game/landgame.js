@@ -2509,8 +2509,10 @@ export class LandGame {
         if (ui.armed !== 'guard') ui.armed = null;
         this.hudTimer = 0;
       } else if (e.button === 0) {
-        const u = this.unitAt(cx, cy),
-          g = this.groundAt(cx, cy);
+        let u = this.unitAt(cx, cy);
+        const g = this.groundAt(cx, cy),
+          built = u && u.padSite && u.padSite.mdu === u ? u.padSite.structure : null;
+        if (built && !built.dead) u = built;
         const pad = !u && g ? ui.padAt(g.x, g.y) : null;
         if (u && !u.dead && !u.squad.craft) {
           const now = performance.now(),

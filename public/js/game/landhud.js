@@ -146,7 +146,8 @@ export class LandUI {
     };
 
     const siteFor = (b, uc) => {
-      if (b.isPad) return w.siteOptions(b.site, this.me).includes(uc) ? b.site : null;
+      const own = this.siteOf(b);
+      if (own) return w.siteOptions(own, this.me).includes(uc) ? own : null;
       let best = null,
         bd = Infinity;
       for (const s of w.sites) {
@@ -182,14 +183,18 @@ export class LandUI {
       tacticalPop: t => (t.has('Land_Override_Population_Value') ? t.num('Land_Override_Population_Value', 0) : undefined),
       abilityBlocked: (q, kind) => (q.abilityState ? w.abilityBlocked(q, kind) : null),
       buildOptions: b => {
-        if (b.isPad) return w.siteOptions(b.site, this.me);
+        const own = this.siteOf(b);
+        if (own) return w.siteMenu(own, this.me);
         const u = b.members[0],
           out = [];
         if (!u) return out;
         return out.concat(u.builds);
       },
       cantBuild: (b, t) => {
+        const own = this.siteOf(b);
+        if (own && own.building) return 'Already building';
         if (siteFor(b, t)) return w.credits[this.me] < costOf(t) ? 'Not enough credits' : null;
+        if (own) return 'Cannot be built there';
         const u = b.members[0];
         return u ? w.cantBuy(u, t, this.me) : 'Cannot be built there';
       },
@@ -201,6 +206,8 @@ export class LandUI {
       },
       queuesOf: b => {
         if (b.isPad) return b.buildQueues;
+        const own = this.siteOf(b);
+        if (own) return own.building ? new Map([['site' + w.sites.indexOf(own), [own.building]]]) : NONE;
         if (b.player !== this.player) return NONE;
         const m = new Map(),
           qs = w.queues[this.me];
@@ -311,7 +318,18 @@ export class LandUI {
     return this.mine().filter(s => s.isMobile && !s.native);
   }
   builder() {
-    return this.mine().find(s => s.isPad || (s.structure && !s.craft)) || null;
+    return this.mine().find(s => s.isPad || (s.structure && !s.craft) || this.padOf(s)) || null;
+  }
+  padOf(s) {
+    if (!s || s.isPad || s.dead || !s.members) return null;
+    for (const u of s.members) {
+      const site = u && !u.dead && u.padSite;
+      if (site && site.mdu === u && u.deployed && !site.structure) return site;
+    }
+    return null;
+  }
+  siteOf(b) {
+    return b ? (b.isPad ? b.site : this.padOf(b)) : null;
   }
   stop() {
     const m = this.movers();

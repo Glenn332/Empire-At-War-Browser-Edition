@@ -2118,7 +2118,7 @@ export class LandWorld {
         .some(x => x.toUpperCase() === 'TACTICAL_BUILD_OBJECTS')
     )
       return;
-    const options = buildsFor(u.type, this.factions[u.side]);
+    const options = buildsFor(u.type, this.factions[u.side], this.campaign);
     if (!options.length || u.padSite) return;
     let x = u.x,
       y = u.y,
@@ -2169,6 +2169,30 @@ export class LandWorld {
     return site;
   }
 
+  siteMenu(site, side) {
+    const list = site.base
+      ? this.ally(site.side, side)
+        ? site.options
+        : []
+      : site.point.side >= 0 && this.ally(site.point.side, side)
+        ? buildsFor(site.point.type, this.factions[side], this.campaign)
+        : [];
+    return list.slice(0, 6).filter(t => !this.ownsOneOnly(side, t));
+  }
+
+  ownsOneOnly(side, t) {
+    const made = db.type(t.str('Tactical_Buildable_Constructed')) || t,
+      only = x =>
+        [...x.list('Behavior'), ...x.list('LandBehavior'), ...x.list('SpaceBehavior')].some(b =>
+          /^(SPECIAL_WEAPON|GRAVITY_CONTROL_FIELD|LOBBING_SUPERWEAPON)$/i.test(b)
+        );
+    if (!only(t) && !only(made)) return false;
+    return (
+      this.units.some(u => !u.dead && u.side === side && (u.type === made || u.type === t)) ||
+      this.sites.some(s => s.building && s.building.side === side && s.building.uc === t)
+    );
+  }
+
   siteOptions(site, side) {
     if (site.structure || site.building) return [];
     if (site.readyAt > this.time) return [];
@@ -2182,8 +2206,7 @@ export class LandWorld {
       )
         return [];
     }
-    if (site.base) return this.ally(site.side, side) ? site.options : [];
-    return site.point.side >= 0 && this.ally(site.point.side, side) ? buildsFor(site.point.type, this.factions[side], this.campaign) : [];
+    return this.siteMenu(site, side);
   }
 
   startSite(site, uc, side) {

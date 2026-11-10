@@ -161,8 +161,10 @@ export function executeLand(game, side, cmd) {
         t = db.type(cmd.type);
       if ((!pad && !b) || !t) return {};
       if (b && !w.ally(b.side, side)) return {};
+      const own = b ? b.members.map(u => u.padSite).find(Boolean) : null;
       const siteFor = () => {
         if (pad) return w.siteOptions(pad, side).includes(t) ? pad : null;
+        if (own) return w.siteOptions(own, side).includes(t) ? own : null;
         let best = null,
           bd = Infinity;
         for (const s of w.sites) {
