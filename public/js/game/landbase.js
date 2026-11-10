@@ -370,6 +370,37 @@ export function looks(world, u, dt) {
   }
 }
 
+function windOf(u) {
+  const t = u.type;
+  if (!/WIND_DISTURBANCE/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior'))) return false;
+  return {
+    r: t.num('Wind_Disturbance_Radius', 0),
+    s: t.num('Wind_Disturbance_Strength', 0),
+    a: Math.max(-1, Math.min(1, t.num('Wind_Disturbance_Sphere_Alpha', 0))),
+    x: NaN,
+    y: 0,
+    z: 0
+  };
+}
+
+export function windDisturbances(world, dt, out = []) {
+  out.length = 0;
+  for (const u of world.units) {
+    if (u.gone || u.dead || u.inside) continue;
+    const W = (u.windOf ??= windOf(u));
+    if (!W || !(W.r > 0)) continue;
+    const at = u.holder ? u.holder.position : u,
+      moved = Math.hypot(at.x - W.x, at.y - W.y, at.z - W.z);
+    W.x = at.x;
+    W.y = at.y;
+    W.z = at.z;
+    if (!(dt > 0) || !(moved > 0)) continue;
+    const v = moved / dt;
+    out.push(at.x, at.y, at.z, Math.cos(u.heading) * v, Math.sin(u.heading) * v, 0, W.r, W.s, W.a);
+  }
+  return out;
+}
+
 function tickAmbient(world, step) {
   for (const u of world.units) {
     if (u.dead || u.inside || u.structure || !u.path || !u.path.length) continue;

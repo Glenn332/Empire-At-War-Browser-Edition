@@ -118,6 +118,40 @@ const turn = (B, v) => {
 };
 const cl = v => (v < 0 ? 0 : v > 255 ? 1 : v / 255);
 
+export const WIND = 9;
+const _near = [];
+export function windNear(D, parts, f) {
+  if (!D || !D.length || !parts.length) return null;
+  let reach = 0;
+  for (const p of parts) if (p.world) reach = Math.max(reach, Math.hypot(p.x - f.x, p.y - f.y, p.z - f.z));
+  _near.length = 0;
+  for (let j = 0; j + WIND <= D.length; j += WIND)
+    if (Math.hypot(D[j] - f.x, D[j + 1] - f.y, D[j + 2] - f.z) < reach + D[j + 6]) _near.push(j);
+  return _near.length ? _near : null;
+}
+
+export function windPush(D, near, p, dt) {
+  for (const j of near) {
+    const ox = p.x - D[j],
+      oy = p.y - D[j + 1],
+      oz = p.z - D[j + 2],
+      vx = D[j + 3],
+      vy = D[j + 4],
+      vz = D[j + 5],
+      dist = Math.hypot(ox, oy, oz),
+      t = dist / D[j + 6];
+    if (!(t < 1)) continue;
+    const vl = Math.hypot(vx, vy, vz),
+      d = dist > 0 && vl > 0 ? (ox * vx + oy * vy + oz * vz) / (dist * vl) : 0,
+      a = D[j + 8];
+    if (a < (a <= 0 ? -(d + 1) / 2 : (d + 1) / 2)) continue;
+    const k = D[j + 7] * (1 - 2 * Math.abs(t - 0.5)) * dt;
+    p.vx += vx * k;
+    p.vy += vy * k;
+    p.vz += vz * k;
+  }
+}
+
 class System {
   constructor(sim, def, f, opts) {
     this.sim = sim;
@@ -157,7 +191,13 @@ class System {
     const total = this.sim.total,
       held = s.parts.length;
     const cap = this.sim.cap;
-    if (held > 1500 || total > cap || (!this.near && total > cap * 0.5) || (held >= 24 && total > cap * 0.75 && Math.random() * cap * 0.25 < total - cap * 0.75)) return;
+    if (
+      held > 1500 ||
+      total > cap ||
+      (!this.near && total > cap * 0.5) ||
+      (held >= 24 && total > cap * 0.75 && Math.random() * cap * 0.25 < total - cap * 0.75)
+    )
+      return;
     const cr = Math.cos(f.rot),
       sr = Math.sin(f.rot);
     let lx, ly, lz;
@@ -332,6 +372,7 @@ class System {
       iy = k * f.vy,
       iz = k * (f.vz || 0);
     const cap = energyCap(e, f.energy ?? 1);
+    const W = e.wind && e.windDisturb && dt > 0 ? windNear(this.sim.wind, parts, f) : null;
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
       if (i >= cap) {
@@ -346,6 +387,7 @@ class System {
       p.vx += ax * dt;
       p.vy += ay * dt;
       p.vz += az * dt;
+      if (W && p.world) windPush(this.sim.wind, W, p, dt);
       if (e.radialAccel) {
         const ox = p.world ? p.x - f.x : p.x,
           oy = p.world ? p.y - f.y : p.y,
@@ -467,7 +509,8 @@ export function emitterPoolSize(e) {
     interval = e.burst ? e.burstDelay : 1 / Math.max(1e-6, e.perSecond);
   return Math.min(5003, interval <= L ? Math.ceil(rate * L) : e.burst ? e.perBurst : e.perSecond);
 }
-export const energyCap = (e, energy) => (e.weather && energy < 1 ? Math.ceil(Math.max(0, Math.min(1, energy)) * emitterPoolSize(e)) : Infinity);
+export const energyCap = (e, energy) =>
+  e.weather && energy < 1 ? Math.ceil(Math.max(0, Math.min(1, energy)) * emitterPoolSize(e)) : Infinity;
 export const PARTICLE_CAP = { def: 30000, min: 30000, max: 50000, step: 1000 };
 
 export class ParticleSim {
@@ -480,6 +523,7 @@ export class ParticleSim {
     this.heatScene = false;
     this.detail = 1;
     this.cap = PARTICLE_CAP.def;
+    this.wind = null;
   }
 
   batch(e) {
