@@ -138,6 +138,8 @@ export function uiMeshes(model) {
         verts,
         indices: g.indices,
         texture: sub.material.params.BaseTexture || '',
+        shader: String(sub.material.shader || '').toLowerCase(),
+        params: sub.material.params,
         hidden: mesh.hidden,
         collision: mesh.collision,
         order,
@@ -147,6 +149,44 @@ export function uiMeshes(model) {
         rect: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
       });
     }
+  }
+  return out;
+}
+
+export function meshShade(mesh) {
+  const p = mesh.params || {},
+    rate = p.UVScrollRate,
+    additive = /additive/.test(mesh.shader || '');
+  const scroll = rate && (rate[0] || rate[1]) && (/scroll/.test(mesh.shader || '') || additive) ? [rate[0] || 0, rate[1] || 0] : null;
+  let mult = [1, 1, 1];
+  if (additive && p.Color) mult = p.Color.slice(0, 3);
+  else if (!additive && (p.Emissive || p.Diffuse)) {
+    const e = p.Emissive || [0, 0, 0],
+      d = p.Diffuse || [0, 0, 0];
+    mult = [0, 1, 2].map(i => Math.min(1, 2 * e[i] + d[i]));
+  }
+  return { mult, additive, scroll };
+}
+
+const shadedImages = new WeakMap();
+export function shadedImage(img, mult) {
+  if (mult.every(v => v >= 0.999)) return img;
+  let byMult = shadedImages.get(img);
+  if (!byMult) shadedImages.set(img, (byMult = new Map()));
+  const id = mult.map(v => v.toFixed(3)).join();
+  let out = byMult.get(id);
+  if (!out) {
+    out = document.createElement('canvas');
+    out.width = img.width;
+    out.height = img.height;
+    const c = out.getContext('2d');
+    c.drawImage(img, 0, 0);
+    c.globalCompositeOperation = 'multiply';
+    c.fillStyle = `rgb(${mult.map(v => Math.round(Math.max(0, v) * 255)).join(',')})`;
+    c.fillRect(0, 0, out.width, out.height);
+    c.globalCompositeOperation = 'destination-in';
+    c.drawImage(img, 0, 0);
+    byMult.set(id, out);
   }
   return out;
 }
@@ -692,10 +732,21 @@ export class CommandBar {
     cv.style.height = H + 'px';
     const g = cv.getContext('2d', { willReadFrequently: false });
     g.imageSmoothingQuality = 'high';
-    for (const mesh of pick) {
-      const img = await loadTextureCanvas(this.skinTexture(mesh.texture)).catch(() => null);
-      if (img) drawMesh(g, img, mesh, (x, y) => [x * k, (H - y) * k]);
-    }
+    const images = new Map();
+    for (const mesh of pick) images.set(mesh, await loadTextureCanvas(this.skinTexture(mesh.texture)).catch(() => null));
+    const toPlate = (x, y) => [x * k, (H - y) * k];
+    const paintMesh = (ctx, mesh, shift = null) => {
+      const img = images.get(mesh);
+      if (!img) return;
+      const shade = meshShade(mesh),
+        art = shadedImage(img, shade.mult),
+        moved = shift ? { ...mesh, verts: mesh.verts.map(v => ({ ...v, u: v.u + shift[0], v: v.v + shift[1] })) } : mesh;
+      ctx.save();
+      if (shade.additive) ctx.globalCompositeOperation = 'lighter';
+      drawMesh(ctx, art, moved, toPlate);
+      ctx.restore();
+    };
+    for (const mesh of pick) paintMesh(g, mesh);
     const C = 4,
       mw = Math.ceil(W / C),
       mh = Math.ceil(H / C),
@@ -710,6 +761,40 @@ export class CommandBar {
         }
     } catch {}
     this.solid = { W, H, C, mw, mh, mask, cut: mh, topH: 0 };
+    const scrolling = pick.filter(m => meshShade(m).scroll && images.get(m));
+    this.scrollLayer?.remove();
+    this.scrollLayer = null;
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
+    this.scrollFrame = 0;
+    if (scrolling.length) {
+      g.clearRect(0, 0, cv.width, cv.height);
+      for (const mesh of pick) if (!scrolling.includes(mesh)) paintMesh(g, mesh);
+      const layer = document.createElement('canvas');
+      layer.width = cv.width;
+      layer.height = cv.height;
+      layer.className = 'plate scroll';
+      layer.style.cssText = cv.style.cssText + ';pointer-events:none';
+      const firstStatic = pick.findIndex(m => !scrolling.includes(m));
+      if (firstStatic >= 0 && pick.indexOf(scrolling[0]) > firstStatic) cv.after(layer);
+      else cv.before(layer);
+      this.scrollLayer = layer;
+      const lg = layer.getContext('2d');
+      lg.imageSmoothingQuality = 'high';
+      let last = -1;
+      const tick = now => {
+        if (!layer.isConnected) return;
+        this.scrollFrame = requestAnimationFrame(tick);
+        if (now - last < 33) return;
+        last = now;
+        const t = now / 1000;
+        lg.clearRect(0, 0, layer.width, layer.height);
+        for (const mesh of scrolling) {
+          const r = meshShade(mesh).scroll;
+          paintMesh(lg, mesh, [(t * r[0]) % 1, (t * r[1]) % 1]);
+        }
+      };
+      this.scrollFrame = requestAnimationFrame(tick);
+    }
     this.plateTop?.remove();
     this.plateTop = null;
     if (splitTop) this.splitTopPlate(cv, g, k);
