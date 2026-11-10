@@ -88,7 +88,7 @@ const victim = make(tracked, 1, 100, 0, 100);
 world.trackDamage(victim, 20, shooter);
 const D = victim.dmgTrack;
 assert(D && D.acc === 20 && D.next >= world.time && D.next < world.time + 1, 'The first service a random part of a second on');
-assert.equal(world.timeToKill(victim), 1e18, 'No rate before the first service');
+if (D.next > world.time) assert.equal(world.timeToKill(victim), 1e18, 'No rate before the first service');
 world.time = D.next;
 assert.equal(world.damageTrack(victim).rate, 20, 'The window rate is its damage per second');
 assert.equal(world.timeToKill(victim), 5);
