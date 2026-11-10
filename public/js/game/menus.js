@@ -51,6 +51,8 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' }
 ];
 
+const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
+
 export class Menus {
   constructor(game) {
     this.game = game;
@@ -68,7 +70,7 @@ export class Menus {
   }
 
   async push(id, opts) {
-    const dlg = await openDialog(id, opts);
+    const dlg = await openDialog(id, { ...NATIVE, ...opts });
     if (!dlg) return null;
     const below = this.stack[this.stack.length - 1];
     if (below) below.veil.style.display = 'none';
@@ -77,7 +79,7 @@ export class Menus {
   }
 
   async swap(id, opts) {
-    const dlg = await openDialog(id, opts);
+    const dlg = await openDialog(id, { ...NATIVE, ...opts });
     if (!dlg) return null;
     const old = this.stack.pop();
     if (old) old.close();

@@ -746,6 +746,39 @@ async function nativeList(parent, id, c) {
   return d;
 }
 
+const joined = new Map(),
+  pieceImages = new Map();
+const pieceImage = url => {
+  if (typeof Image === 'undefined') return null;
+  if (!pieceImages.has(url)) {
+    const img = new Image();
+    img.src = url;
+    pieceImages.set(url, img);
+  }
+  return pieceImages.get(url);
+};
+function joinedButton(L, M, R, w, h, lw, rw) {
+  const key = [L?.url, M.url, R?.url, w, h, lw, rw].join('|');
+  if (joined.has(key)) return joined.get(key);
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  const parts = [L, M, R].map(p => p && pieceImage(p.url));
+  if (parts.some(p => p && !(p.complete && p.naturalWidth))) return null;
+  const k = 3,
+    cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(w * k));
+  cv.height = Math.max(1, Math.round(h * k));
+  const g = cv.getContext('2d'),
+    a = L ? Math.round(lw * k) : 0,
+    b = R ? cv.width - Math.round(rw * k) : cv.width;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(parts[1], a, 0, Math.max(0, b - a), cv.height);
+  if (parts[0]) g.drawImage(parts[0], 0, 0, a, cv.height);
+  if (parts[2]) g.drawImage(parts[2], b, 0, cv.width - b, cv.height);
+  const url = cv.toDataURL();
+  joined.set(key, url);
+  return url;
+}
+
 async function anchorAt(id, anchor, w, h) {
   const [left, top] = await Promise.all([image(tex(id, null, 'Frame_Left')), image(tex(id, null, 'Frame_Top'))]);
   const W = w / 1024,
@@ -891,6 +924,11 @@ export async function openDialog(
       const caps = {};
       for (const st of ['', '_Mouse_Over', '_Pressed', '_Disabled'])
         for (const part of ['Left', 'Middle', 'Right']) caps[part + st] = await image(tex(id, c.id, 'Button_' + part + st));
+      await Promise.all(
+        Object.values(caps)
+          .filter(Boolean)
+          .map(p => pieceImage(p.url)?.decode().catch(() => {}))
+      );
       let lw = 0,
         rw = 0,
         bh = c.h;
@@ -902,6 +940,8 @@ export async function openDialog(
           R = caps['Right' + st];
         if (!M) return '';
         if (nativeFonts && !M.atlas) return `url(${M.url}) left top / 100% 100% no-repeat`;
+        const joined = joinedButton(L, M, R, parseFloat(d.style.width) || c.w, bh, lw, rw);
+        if (joined) return `url(${joined}) left top / 100% 100% no-repeat`;
         return `${L ? `url(${L.url}) left top / ${lw}px 100% no-repeat, ` : ''}${R ? `url(${R.url}) right top / ${rw}px 100% no-repeat, ` : ''}url(${M.url}) ${lw}px top / calc(100% - ${lw + rw}px) 100% no-repeat`;
       };
       const layout = () => {
