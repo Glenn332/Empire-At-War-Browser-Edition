@@ -279,11 +279,22 @@ export class Plans {
           pads = w.openPads ? w.openPads(ai.player) : w.units.filter(u => !u.dead && u.isPad && !u.padChild && u.padOwner === ai.player);
         return pads.some(u => w.buildOptions(u, ai.player).some(t => mine.includes(t) && !w.cantBuild(u, t, ai.player)));
       }
-      if (thing && thing.isSite) return w.buildOptions(thing, ai.player).some(t => !w.cantBuild(thing, t, ai.player));
+      if (thing && thing.isSite && !this.fieldsUnits(key))
+        return w.buildOptions(thing, ai.player).some(t => !w.cantBuild(thing, t, ai.player));
       const b = this.buys.get(key);
       if (b) return b.bare || this.choose(ai.player, b.specs, b.required).chosen.length > 0;
       return !!this.staff(ai, key, thing, { ...o, all: true });
     });
+  }
+
+  fieldsUnits(key) {
+    const D = this.defs.get(key);
+    return (
+      !!D &&
+      !D.magic &&
+      !!D.freeStore &&
+      D.forces.some(f => f.specs.some(sp => !(sp.types && sp.types.every(t => t.has('Tactical_Buildable_Constructed')))))
+    );
   }
 
   staff(ai, key, thing, o = {}) {
