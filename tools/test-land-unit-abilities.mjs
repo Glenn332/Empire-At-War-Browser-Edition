@@ -187,6 +187,61 @@ const settle = async (world, secs) => {
   assert.equal(enemyTank.health, tankHp, 'Removed bombs do not explode');
 }
 
+{
+  const world = makeWorld();
+  const chewie = world.make(db.type('Chewbacca'), 0, 0, 0);
+  const walker = world.make(db.type('AT_ST_Walker'), 1, 30, 5, 1.2);
+  walker.health = walker.maxHealth * 0.6;
+  const swaps = [];
+  world.onReselect = (from, to) => swaps.push([from, to]);
+  const q = chewie.squad,
+    hp = chewie.health;
+  assert.equal(useAbility(world, q, 'CAPTURE_VEHICLE', { unit: walker }), null);
+  assert(walker.dead && walker.gone && !walker.squad.members.length, 'The captured vehicle is replaced, not killed');
+  assert.equal(world.deaths.length, 0);
+  await settle(world, 0.1);
+  const clone = world.units.find(u => !u.dead && u.type.name === 'AT_ST_Walker_Captured');
+  assert(clone, 'The inside clone takes its place');
+  assert.deepEqual([clone.x, clone.y, clone.heading, clone.side], [30, 5, 1.2, 0]);
+  assert(Math.abs(clone.health / clone.maxHealth - 0.6) < 1e-9, 'The clone keeps the health share');
+  assert.equal(chewie.inside, clone);
+  assert.equal(clone.thief, chewie);
+  assert(q.abilityState('CAPTURE_VEHICLE').cooldown > 1e6, 'Capture recharge waits for the thief to leave');
+  assert(clone.squad.abilityState('EJECT_VEHICLE_THIEF'));
+  clone.x = 80;
+  clone.y = 40;
+  clone.heading = -0.4;
+  clone.squad.selected = true;
+  assert.equal(useAbility(world, clone.squad, 'EJECT_VEHICLE_THIEF'), null);
+  assert(
+    clone.dead && world.deaths.includes(clone) && clone.lastDamage === 'Damage_Vehicle_Thief',
+    'Eject destroys the vehicle by thief damage'
+  );
+  await settle(world, 0.1);
+  assert.equal(chewie.inside, null);
+  assert.deepEqual(
+    [chewie.x, chewie.y, chewie.heading, chewie.health],
+    [80, 40, -0.4, hp],
+    'The thief steps out unharmed where the vehicle was'
+  );
+  const cap = q.abilityState('CAPTURE_VEHICLE');
+  assert(cap.cooldown <= cap.def.recharge && cap.cooldown > cap.def.recharge - 0.2, 'Capture recharge starts on exit');
+  assert.deepEqual(swaps, [[clone.squad, q]], 'A selected vehicle hands the selection to the thief');
+
+  const tank = world.make(db.type('AT_ST_Walker'), 1, 90, 40);
+  q.abilityState('CAPTURE_VEHICLE').cooldown = 0;
+  assert.equal(useAbility(world, q, 'CAPTURE_VEHICLE', { unit: tank }), null);
+  await settle(world, 0.1);
+  const second = world.units.find(u => !u.dead && u.type.name === 'AT_ST_Walker_Captured');
+  second.x = 120;
+  world.hurt(second, 1e9);
+  await settle(world, 0.1);
+  assert(!chewie.dead && chewie.inside === null && chewie.x === 120, 'Any vehicle death releases the thief at its spot');
+}
+
 console.log(
-  JSON.stringify({ checks: 'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup' })
+  JSON.stringify({
+    checks:
+      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection'
+  })
 );

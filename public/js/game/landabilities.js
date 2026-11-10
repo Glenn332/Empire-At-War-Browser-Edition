@@ -466,7 +466,7 @@ export function useAbility(world, q, kind, tgt = null) {
 function finish(world, q, st) {
   if (!st.active) return;
   st.active = false;
-  st.cooldown = st.def.recharge;
+  st.cooldown = st.waitExit ? 1e9 : st.def.recharge;
   const kind = st.def.kind;
   if (kind === 'STEALTH' || kind === 'FORCE_CLOAK')
     for (const u of q.members)
@@ -993,6 +993,9 @@ function start(world, q, st, c, tgt) {
       break;
 
     case 'CAPTURE_VEHICLE':
+      sound(world, sv('SFXEvent_Success') || sv('SFXEvent_Activate'), t);
+      steal(world, q, st, c, t);
+      break;
     case 'TACTICAL_BRIBE':
     case 'TARGETED_HACK': {
       fx(world, sv('Bribed_Effect'), t, t.aimZ + sn('Effect_Z_Offset', 0));
@@ -1006,34 +1009,12 @@ function start(world, q, st, c, tgt) {
       }
       sound(world, sv('SFXEvent_Success') || sv('SFXEvent_Activate'), t);
       setSide(world, t.squad, side);
-      const copy = kind === 'CAPTURE_VEHICLE' ? db.type(t.type.str('Vehicle_Thief_Inside_Clone')) : null;
-      const out = copy && landAbilities(copy).find(d => d.kind === 'EJECT_VEHICLE_THIEF');
-      if (out && !t.thief) {
-        t.thief = c;
-        c.inside = t;
-        c.path = [];
-        c.target = null;
-        if (c.holder) c.holder.visible = false;
-        if (q.members.every(u => u.inside)) q.selected = false;
-        t.abilityKinds.add(out.kind);
-        if (!t.squad.abilityState(out.kind)) t.squad.abilities.push({ def: out, active: false, left: 0, cooldown: out.recharge });
-        effect(world, () => {
-          if (t.thief !== c) return true;
-          if (!t.dead) {
-            c.x = t.x;
-            c.y = t.y;
-            return false;
-          }
-          leave(world, t);
-          return true;
-        });
-      }
       break;
     }
     case 'EJECT_VEHICLE_THIEF':
       if (c.thief) {
-        leave(world, c);
-        world.hurt(c, 1e9);
+        c.lastDamage = 'Damage_Vehicle_Thief';
+        world.hurt(c, 1e6 * db.damageMod('Damage_Vehicle_Thief', c.armor), c.thief);
       }
       break;
     case 'AREA_EFFECT_HEAL':
@@ -1438,17 +1419,77 @@ function dropOrphanBombs(world) {
   }
 }
 
+function steal(world, q, st, c, t) {
+  const side = q.side,
+    clone = db.type(t.type.str('Vehicle_Thief_Inside_Clone'));
+  st.waitExit = true;
+  c.path = [];
+  c.target = null;
+  if (c.holder) c.holder.visible = false;
+  if (q.members.every(u => u === c || u.inside)) q.selected = false;
+  if (!clone) {
+    board(world, c, t, side);
+    return;
+  }
+  const spot = { x: t.x, y: t.y, z: t.z || 0, aimZ: 0, heading: t.heading, squad: t.squad, dead: false, thief: null },
+    part = t.maxHealth > 0 ? t.health / t.maxHealth : 1,
+    shield = t.maxShield > 0 ? t.shield / t.maxShield : 0;
+  c.inside = spot;
+  erase(world, t);
+  Promise.resolve(
+    world.spawn(clone.name, spot.x, spot.y, spot.heading, side, [{ type: clone.name, x: spot.x, y: spot.y, h: spot.heading, hp: Infinity }])
+  )
+    .catch(() => null)
+    .then(s => {
+      const v = s && s.members.find(u => !u.dead);
+      if (v) {
+        v.health = Math.max(1, part * v.maxHealth);
+        v.shield = shield * (v.maxShield || 0);
+        board(world, c, v, side);
+        return;
+      }
+      spot.thief = c;
+      leave(world, spot);
+    });
+}
+
+function board(world, c, v, side) {
+  v.thief = c;
+  if (c.dead || v.dead) {
+    leave(world, v);
+    return;
+  }
+  fx(world, 'Vehicle_Thief_Transition_Particles', v, v.aimZ || 0);
+  c.inside = v;
+  c.path = [];
+  c.target = null;
+  if (c.holder) c.holder.visible = false;
+  if (v.side !== side) setSide(world, v.squad, side);
+  effect(world, () => {
+    if (v.thief !== c) return true;
+    if (!v.dead) return false;
+    leave(world, v);
+    return true;
+  });
+}
+
 function leave(world, v) {
   const c = v.thief;
   v.thief = null;
   if (!c || c.dead) return;
-  const o = world.nearestOpen(v.x + v.hitRadius + 12, v.y, c.need || 1) || world.nearestOpen(v.x, v.y) || v;
   c.inside = null;
-  c.x = o.x;
-  c.y = o.y;
+  c.x = v.x;
+  c.y = v.y;
+  c.heading = v.heading;
   c.path = [];
   c.target = null;
   if (c.holder) c.holder.visible = true;
+  const st = c.squad && c.squad.abilityState('CAPTURE_VEHICLE');
+  if (st && st.waitExit) {
+    st.waitExit = false;
+    st.cooldown = st.def.recharge;
+  }
+  if (v.squad && v.squad.selected && world.onReselect) world.onReselect(v.squad, c.squad);
 }
 
 function screen(world, q, st) {
