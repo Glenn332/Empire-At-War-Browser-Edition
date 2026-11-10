@@ -7,7 +7,7 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
 | **Space skirmish** | **92.2%** | 164 | 28 | 1 | 193 |
-| **Whole game** | **92.5%** | 304 | 45 | 4 | 353 |
+| **Whole game** | **92.4%** | 304 | 46 | 4 | 354 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -29,7 +29,7 @@ Regenerate with `node tools/progress.mjs`.
 | Platform | space skirmish | 90.0% | 12 | 3 | 0 |
 | What a mod can change | rest of the game | 71.9% | 8 | 7 | 1 |
 | Game modes | rest of the game | 46.2% | 1 | 10 | 2 |
-| Land battles | rest of the game | 100.0% | 71 | 0 | 0 |
+| Land battles | rest of the game | 99.3% | 71 | 1 | 0 |
 | Galactic conquest | rest of the game | 100.0% | 60 | 0 | 0 |
 
 ## What we have, and what we do not
@@ -288,7 +288,7 @@ Regenerate with `node tools/progress.mjs`.
 - ⬜ Replays
 - ⬜ Map editor
 
-### Land battles — 100.0%
+### Land battles — 99.3%
 
 - ✅ Terrain and heightmaps
 - ✅ Terrain textures and blending — *each layer is the game terrain material: texture and bump map at their own size, turn and tilt (the projection is the loader arithmetic read from the program), diffuse and specular colour, lit by the formula of the game terrain shader, under the drifting cloud shadows; the four corner layers of a grid square are mixed in one pass where the game draws a pass per layer; a grid square is left out only when all four corners have a layer with the map hole flag (chunk 0x23), a layer merely without a texture is drawn (with a neighbouring texture, a guess); scenery is drawn under the fog everywhere (props have no HIDE_WHEN_FOGGED) and the terrain-style object shaders (TerrainMeshGloss, TerrainMeshBump, BatchMesh, Grass) are darkened by the fog texture as the ground is; ordinary mesh shaders are not*
@@ -361,6 +361,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Land maps (.ted terrain chunks)
 - ✅ Land audio (footsteps, vehicles, ambience) — *weapon fire, impacts, deaths, unit replies, announcer lines, music and engine loops; footfalls and the other sounds of the animations at the moments AnimationSFXMaps.txt gives (a company footsteps thinned to one in five); the weather loops and gusts. The game own table of map ambience (AmbientMapSounds.xml) is a stub its makers never filled in, so there is none to play*
 - ✅ Land victory conditions — *the land win condition GameConstants names: a side is beaten when every counted building of its base is destroyed; the game end-of-battle screen follows*
+- 🟡 Terrain modifier surfaces (water, slow, good, high and damage ground, lava) — *as the engine (read): the surface under each unit (the map water plane more than 0.5 above the ground, else the surface type of the terrain layer) gives the SurfaceFX settings of its type. Slow ground and water multiply speed by 1 + Speed_Mod; good ground takes Defense_Mod off the damage it takes and adds Damage_Mod to what it deals; high ground adds FOW_Reveal_Range_Mod to sight and Fire_Range_Mod to weapon, hardpoint and projectile reach; damage ground and lava deal Terrain_Damage every Terrain_Damage_Delay from stepping on, with no attacker and no armour table but through Defense and shields; several lists keep the largest modifier; mud and infantry ground change nothing, and units with no terrain modifier wade at full speed. The status icon shows left of the health bar and each member on the surface pulses in its colour from the game constants once a second. Ours: combat bonus abilities multiply with the surface modifiers, where the engine sums its combat modifiers by stacking key; player level combat modifiers are not modelled*
 
 ### Galactic conquest — 100.0%
 

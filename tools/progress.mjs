@@ -710,6 +710,11 @@ const GROUPS = [
         'by the game water shader and the code that feeds it: the scene mirrored in the water and bent by two sliding bump layers, mixed with what lies under it by the map tint and reflectivity, fading in from the shore with depth; lava (flowing base under a lit crust) and ice (a lit sheet that mirrors) likewise. What is under the water is not bent by the ripples, and the sky cube map the game tints water by is left out (its source is not known)'
       ],
       [
+        'Terrain modifier surfaces (water, slow, good, high and damage ground, lava)',
+        P,
+        'as the engine (read): the surface under each unit (the map water plane more than 0.5 above the ground, else the surface type of the terrain layer) gives the SurfaceFX settings of its type. Slow ground and water multiply speed by 1 + Speed_Mod; good ground takes Defense_Mod off the damage it takes and adds Damage_Mod to what it deals; high ground adds FOW_Reveal_Range_Mod to sight and Fire_Range_Mod to weapon, hardpoint and projectile reach; damage ground and lava deal Terrain_Damage every Terrain_Damage_Delay from stepping on, with no attacker and no armour table but through Defense and shields; several lists keep the largest modifier; mud and infantry ground change nothing, and units with no terrain modifier wade at full speed. The status icon shows left of the health bar and each member on the surface pulses in its colour from the game constants once a second. Ours: combat bonus abilities multiply with the surface modifiers, where the engine sums its combat modifiers by stacking key; player level combat modifiers are not modelled'
+      ],
+      [
         'Passability and cover maps',
         D,
         'each vertex is one of the game ground kinds (clear, steep, water, infantry only, impassable - the values of its CellPassabilityType, read from the program) and each unit crosses what its movement class crosses in MovementClassTypeDefs.xml: hover craft go over water, nothing on the ground climbs steep or impassable ground, only those on foot take the infantry paths. The wall, obstacle and shield kinds are put down by objects, not by maps: buildings block by their footprint here and the base shield has its own rule'
