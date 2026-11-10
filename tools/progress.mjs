@@ -21,7 +21,7 @@ const GROUPS = [
       [
         'TED maps: objects, bounds, lights, skydomes',
         D,
-        'each skydome is turned as any object is: Rz(z) Rx(x) and the model quarter turn (minis 29 to 32). Every battle, space or land, skirmish, multiplayer or campaign, starts in a random one of the map environments, stepping past one named Cinematic (Load_Map); the index the map stores is not used for that. Lua Set_New_Environment switches to environment n. Not done: one Load_Map path (map chunk 0x201, not identified) keeps the stored index; the type-filtered chooser has no callers'
+        'each skydome is turned as any object is: Rz(z) Rx(x) and the model quarter turn (minis 29 to 32). Every battle, space or land, skirmish, multiplayer or campaign, starts in a random one of the map environments, stepping past one named Cinematic (Load_Map); the index the map stores is not used for that. Lua Set_New_Environment switches to environment n. The weather scenario comes with the environment, so Endor rains in its two rain environments; multiplayer rolls from the shared game seed so every player gets the same one. A loaded battle keeps the environment it was saved in, as the engine keeps the stored index on its other load path (most likely its save path: no shipped map uses it). Ours: the roll comes from the game seed, not the engine game random stream; the engine chooser among environments of one weather type has no callers, so it is not used'
       ],
       ['DDS textures (DXT1/3/5, RGBA, mipmaps)', D],
       ['MTD/TGA icon atlas', D],
