@@ -3169,7 +3169,7 @@ export class LandGame {
     }
     if (!skip) {
       this.castShadows();
-      if (this.water) this.water.userData.mirror(R, cam, draw);
+      if (this.water) this.water.userData.mirror(R, cam, eye => this.mirrorCards(() => draw(eye)));
       R.clear();
       draw(cam);
       if (R === this.gpu) R.endFrame();
@@ -3544,7 +3544,7 @@ export class LandGame {
             G.clearDepth();
             G.render(this.scene, eye);
           };
-          if (this.water) this.water.userData.mirror(G, cam, drawG);
+          if (this.water) this.water.userData.mirror(G, cam, eye => this.mirrorCards(() => drawG(eye)));
           G.clear();
           drawG(cam);
           shot = G.readNext();
@@ -3985,6 +3985,26 @@ export class LandGame {
       restore: cb.galaxy,
       result: this.campaignOutcome && { ...this.campaignOutcome, storyDelayed: this.storyDelayed || [] }
     });
+  }
+
+  mirrorCards(drawIt) {
+    const props = this.props || [];
+    if (!this.cardMats || this.cardCount !== props.length) {
+      const set = new Set();
+      for (const p of props)
+        if (p.inst && p.inst.billboards && p.inst.billboards.length)
+          p.inst.root.traverse(o => {
+            if (o.isMesh) for (const m of [].concat(o.material)) if (m.side === THREE.FrontSide) set.add(m);
+          });
+      this.cardMats = [...set];
+      this.cardCount = props.length;
+    }
+    for (const m of this.cardMats) m.side = THREE.DoubleSide;
+    try {
+      drawIt();
+    } finally {
+      for (const m of this.cardMats) m.side = THREE.FrontSide;
+    }
   }
 
   teamMark(q) {
