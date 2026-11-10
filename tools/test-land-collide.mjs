@@ -255,4 +255,59 @@ const reachOf = (b, dx, dy) => {
   );
 }
 
+for (const [walker, still, parts] of [
+  ['AT_AT_Walker', true, false],
+  ['AT_AT_Walker', false, true],
+  ['T2B_Tank', true, true]
+]) {
+  const W = makeWorld();
+  const v = unitOf(W, walker, 0, 2000, 2000, 0),
+    i = unitOf(W, 'Squad_Stormtrooper', 0, 2004, 2001, 0);
+  v.rooted = true;
+  if (!still) i.v = i.speed * 0.5;
+  for (let f = 0; f < 8; f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+  }
+  assert.equal(
+    W.colls.some(k => k.kind === 'ss'),
+    parts,
+    walker + (still ? ' with a trooper standing in it: ' : ' with a trooper still going in it: ') + (parts ? 'they part' : 'no parting')
+  );
+}
+
+for (const clash of [false, true]) {
+  const W = makeWorld();
+  const s = unitOf(W, 'AT_AT_Walker', 0, 1000, 2000, 0),
+    t = unitOf(W, 'T2B_Tank', 0, 1090, 2000, 0),
+    men = [];
+  s.path = [{ x: 1500, y: 2000 }];
+  t.rooted = true;
+  for (let x = 1020; x <= 1180; x += 8)
+    for (const y of [1970, 1960, 2030, 2040]) {
+      const u = unitOf(W, 'Squad_Stormtrooper', 0, x, y, 0);
+      u.rooted = true;
+      if (clash) u.clash = {};
+      men.push(u);
+    }
+  for (let f = 0; f < 12 && !s.path.some(p => p.round); f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+  }
+  console.log(
+    'dbg',
+    clash,
+    JSON.stringify(s.path.map(p => [Math.round(p.x), Math.round(p.y)])),
+    JSON.stringify(W.colls.map(k => [k.kind, k.state]))
+  );
+  const way = [{ x: s.x, y: s.y }, ...s.path],
+    through = men.some(u => way.some((p, k) => k && Math.abs(p.y - u.y) < 12 && p.x > u.x - 12 && p.x < u.x + 12));
+  if (clash) assert(!through, 'troopers in a hero clash stay in the way of a giant going round');
+  else
+    assert(
+      s.path.some(p => p.round),
+      'a giant going round leaves troopers out of its search'
+    );
+}
+
 console.log('ok land collisions');

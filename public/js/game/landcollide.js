@@ -630,9 +630,14 @@ function terrainCorners(W, s, win, goal) {
   return out;
 }
 
+const clashing = o => (o.q ? o.q.members.some(u => u.clash) : !!o.u.clash);
+
+const boxMask = s => (s.cls === 5 || s.cls === 9 ? 0x11 : 0x10);
+
 function ignored(W, s, o, m, flags, linked, mask) {
   if (o === s) return true;
   if (o === m) return false;
+  if (mask & 1 && o.cls === 5 && !clashing(o) && !linked(o)) return true;
   if (!o.moving) {
     if (linked(o)) return false;
     if (flags & 2) return true;
@@ -778,7 +783,7 @@ function goalBlocked(W, s, m, goal, flags, linked, grow, extra, T) {
   for (const o of W.ccBodies) {
     if (o === m) continue;
     const r = o.r + (o.moving ? o.max * T : 0) + grow + extra + 2;
-    if (Math.abs(o.x - goal.x) > r || Math.abs(o.y - goal.y) > r || ignored(W, s, o, m, flags, linked)) continue;
+    if (Math.abs(o.x - goal.x) > r || Math.abs(o.y - goal.y) > r || ignored(W, s, o, m, flags, linked, boxMask(s))) continue;
     const B = sweptBox(s, o, grow + extra, T);
     if (inBox(B, goal.x, goal.y)) return true;
   }
@@ -830,7 +835,7 @@ function goRound(W, c, s, m, near, flags, T) {
     for (const o of bodies) {
       const r = radius(o) + (o.moving ? o.max * T : 0);
       if (o.x + r < X0 || o.x - r > X1 || o.y + r < Y0 || o.y - r > Y1) continue;
-      if (ignored(W, s, o, m, flags, linked)) continue;
+      if (ignored(W, s, o, m, flags, linked, boxMask(s))) continue;
       const B = sweptBox(s, o, grow, T);
       const ox = B.hx + extra,
         oy = B.hy + extra,
@@ -1301,7 +1306,21 @@ function freeSpot(W, M, H, bodies) {
   return null;
 }
 
-function stoppedOverlap(a, b) {
+function sidePush(W, I, V) {
+  const R = 1.3 * (I.r + V.r),
+    d = Math.hypot(I.x - V.x, I.y - V.y),
+    w = Math.max(0, Math.min(1, 1 - d / R)) * (I.max > 0 ? Math.max(0, Math.min(1, I.v / I.max)) : 0);
+  if (!(w > 0)) return 0;
+  const fx = Math.cos(I.h),
+    fy = Math.sin(I.h),
+    left = W.isOpen(V.x - fy * R, V.y + fx * R, I.need),
+    right = W.isOpen(V.x + fy * R, V.y - fx * R, I.need);
+  return (-fy * (V.x - I.x) + fx * (V.y - I.y) < 0 && left) || right ? w : 0;
+}
+
+function stoppedOverlap(W, a, b) {
+  const [I, V] = a.cls === 5 ? [a, b] : b.cls === 5 ? [b, a] : [null, null];
+  if (I && I.u && (V.cls === 8 || V.cls === 9) && !sidePush(W, I, V)) return false;
   return overlapCoef(a, b) > K.least;
 }
 
@@ -1467,7 +1486,7 @@ export function tickCollisions(W) {
           if (Math.abs(b.x - a.x) > 80 + rb || Math.abs(b.y - a.y) > 80 + rb) continue;
           let c = null;
           if (!a.moving) {
-            if (b.moving || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > (a.r + rb) ** 2 || !stoppedOverlap(a, b)) continue;
+            if (b.moving || (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > (a.r + rb) ** 2 || !stoppedOverlap(W, a, b)) continue;
             c = { kind: 'ss', a, b, state: SS.START, clock: W.time + 1, mover: null, spot: null };
             tickStopped(W, c, bodies);
             if (c.state === SS.DONE || c.state === SS.GONE) c = null;
