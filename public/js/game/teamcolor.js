@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three/build/three.module.js';
 import { db } from '../gamedata.js';
 
 const cache = new Map();
