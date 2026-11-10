@@ -742,7 +742,8 @@ export class ScriptHost {
           .filter(u => u && !u.dead && (u.type.bool('Is_Named_Hero') || u.type.bool('Is_Generic_Hero')))
           .map(u => self.wrap(u)),
       Set_Targeting_Stickiness_Time_Threshold: seconds => {
-        for (const u of (e.isSquad ? e.fighters : e.members) || [e]) if (u) u.stickiness = Math.max(0, +seconds || 0);
+        const v = +seconds;
+        for (const u of (e.isSquad ? e.fighters : e.members) || [e]) if (u) u.stickiness = v >= 0 ? v : undefined;
       },
       Set_Prefer_Ground_Over_Space: on => {
         e.preferGround = !!on;

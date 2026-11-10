@@ -447,6 +447,9 @@ class LandUnit {
     this.detour = undefined;
     this.detourAt = undefined;
     this.prioSet = undefined;
+    this.stickiness = undefined;
+    this.dmgTrack = undefined;
+    this.rethinkAt = undefined;
     this.weapons = undefined;
     this.weaponIndex = undefined;
     this.evAnim = undefined;
@@ -4119,15 +4122,16 @@ export class LandWorld {
   }
 
   pickFoe(u, among, reach, gun, skip, auto = false) {
-    const R = gun ? null : u.ranks;
     const aa = (u.antiAir ??= !!(
       u.flies ||
       (u.ranks ? u.ranks.AIR < 9999 : /ANTIAIR/i.test(u.type.str('CategoryMask').replace(/\s/g, '')) || /ANTI_AIR/i.test(u.type.name))
     ));
-    const set = gun ? null : setOf(u);
+    const set = gun ? null : setOf(u),
+      low = (this.healthLow ??= db.constants.num('Health_Low_Percent_Threshold', 0.33));
     let best = null,
-      bd = reach * reach,
-      br = Infinity,
+      bd = Infinity,
+      bl = false,
+      bf = null,
       bp = Infinity;
     const T = this.team,
       mine = u.confuseUntil > this.time ? undefined : T[u.side];
@@ -4156,22 +4160,159 @@ export class LandWorld {
         a = Math.atan2(Math.sin(a), Math.cos(a));
         if (Math.abs(a) > gun.cone / 2 + (gun.onHead ? u.turret.extent : 0)) continue;
       }
-      const r = R ? (e.flies ? R.AIR : e.kind === 'VEHICLE' ? R.VEHICLE : e.kind === 'INFANTRY' ? R.INFANTRY : R.ELSE) : 0;
-      if (r >= 9999) continue;
-      let p = 1;
-      if (set) {
-        p = priorityOf(set, e.type);
-        if (p < 0) continue;
-        if (p === Infinity) p = 1e18;
+      const p = this.priorityFor(set, e);
+      if (p < 0) continue;
+      const l = this.healthShare(e) <= low;
+      let take = !best;
+      if (!take) {
+        if (l !== bl) take = l;
+        else if (p !== bp) take = p < bp;
+        else {
+          const f = this.canFireNow(u, e, gun);
+          if (bf === null) bf = this.canFireNow(u, best, gun);
+          take = f !== bf ? f : d < bd;
+        }
       }
-      if (p < bp || (p === bp && (r < br || (r === br && d < bd)))) {
+      if (take) {
         bp = p;
-        br = r;
+        bl = l;
         bd = d;
+        bf = null;
         best = e;
       }
     }
     return best;
+  }
+
+  priorityFor(set, e) {
+    if (!set) return 1;
+    const p = priorityOf(set, e.type);
+    return p === Infinity ? 1e18 : p;
+  }
+
+  healthShare(e) {
+    const q = e.squad;
+    if (q && q.members.length > 1) {
+      let h = 0,
+        m = 0;
+      for (const x of q.members) {
+        h += Math.max(0, x.health);
+        m += x.maxHealth;
+      }
+      m = Math.max(m, q.full || 0);
+      return m > 0 ? h / m : 0;
+    }
+    return e.maxHealth > 0 ? Math.max(0, e.health) / e.maxHealth : 0;
+  }
+
+  canFireNow(u, e, gun) {
+    if (gun) return true;
+    if (!u.weapon) return false;
+    let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading;
+    a = Math.atan2(Math.sin(a), Math.cos(a));
+    if (u.turret) {
+      const d = a - u.turret.yaw;
+      return Math.abs(a) <= u.turret.extent && Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) < 0.12;
+    }
+    return Math.abs(a) <= (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG);
+  }
+
+  beats(u, n, c, gun = null) {
+    const low = (this.healthLow ??= db.constants.num('Health_Low_Percent_Threshold', 0.33)),
+      ln = this.healthShare(n) <= low,
+      lc = this.healthShare(c) <= low;
+    if (ln !== lc) return ln;
+    const set = gun ? null : setOf(u),
+      pn = this.priorityFor(set, n),
+      pc = this.priorityFor(set, c);
+    if (pn < 0) return false;
+    if (pn !== pc) return pc < 0 || pn < pc;
+    const fn = this.canFireNow(u, n, gun),
+      fc = this.canFireNow(u, c, gun);
+    if (fn !== fc) return fn;
+    return (n.x - u.x) ** 2 + (n.y - u.y) ** 2 < (c.x - u.x) ** 2 + (c.y - u.y) ** 2;
+  }
+
+  tracksDamage(t) {
+    return (t._dmgTrack ??= /\bDAMAGE_TRACKING\b/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior')));
+  }
+
+  damageTrack(u) {
+    const T = u.dmgTrack;
+    if (!T) return null;
+    const P = 1;
+    if (this.time >= T.next) {
+      if (!T.acc && !T.by.size) {
+        T.rate = 0;
+        T.next += Math.ceil((this.time - T.next + 1e-9) / P) * P;
+        if (T.next <= this.time) T.next += P;
+      } else {
+        const decay = (u.maxHealth + (u.maxShield || 0)) * (this.threatDecay ??= db.constants.num('AI_SpaceThreatDecayStep', 0.05));
+        while (this.time >= T.next) {
+          T.next += P;
+          for (const [k, v] of T.by) {
+            if (v - decay > 0) T.by.set(k, v - decay);
+            else T.by.delete(k);
+          }
+          T.rate = T.acc / P;
+          T.acc = 0;
+        }
+      }
+    }
+    return T;
+  }
+
+  trackDamage(u, d, from) {
+    if (!(d > 0) || !this.tracksDamage(u.type)) return;
+    const T =
+      this.damageTrack(u) ||
+      (u.dmgTrack = { acc: 0, rate: 0, next: this.time + Math.floor(simRandom() * LOGIC_FPS) / LOGIC_FPS, by: new Map() });
+    T.acc += d;
+    if (from && from !== u && from.type && !from.dead) {
+      const k = from.squad || from;
+      T.by.set(k, (T.by.get(k) || 0) + d);
+    }
+  }
+
+  attackedBy(u, foe) {
+    const T = this.damageTrack(u);
+    return !!(T && foe && T.by.get(foe) > 0);
+  }
+
+  timeToKill(e) {
+    const T = this.damageTrack(e);
+    if (!T || !(T.rate > 0)) return 1e18;
+    return (Math.max(0, e.health) + (e.shield || 0)) / T.rate;
+  }
+
+  sticky(u, t) {
+    const q = t.squad,
+      list = q && q.members.length > 1 ? q.members : [t];
+    let left = 0,
+      any = false;
+    for (const m of list)
+      if (!m.dead && m.dmgTrack) {
+        any = true;
+        left += this.timeToKill(m);
+      }
+    if (!any) return false;
+    let th = u.stickiness;
+    if (!(th >= 0)) {
+      const o = u.squad && u.squad.type && u.squad.type !== u.type ? u.squad.type : u.type;
+      th = o.num('Targeting_Stickiness_Time_Threshold', 0);
+    }
+    return left <= th;
+  }
+
+  rethink(u, t, reach, gun = null) {
+    if (u.rethinkAt === undefined || this.time < u.rethinkAt) {
+      if (u.rethinkAt === undefined) u.rethinkAt = this.time + (30 + Math.floor(simRandom() * 16)) / LOGIC_FPS;
+      return t;
+    }
+    u.rethinkAt = this.time + (30 + Math.floor(simRandom() * 16)) / LOGIC_FPS;
+    if (this.priorityFor(gun ? null : setOf(u), t) === 1 || this.sticky(u, t)) return t;
+    const n = this.nearestFoe(u, this.units, reach, gun);
+    return n && n !== t && this.beats(u, n, t, gun) ? n : t;
   }
 
   spinAway(u) {
@@ -4306,6 +4447,7 @@ export class LandWorld {
     u.shield -= soak;
     u.health -= amount - soak;
     u.lastHit = this.time;
+    this.trackDamage(u, amount, from);
     if (from && from.side !== undefined) u.hitBy = from.side;
     if (from && from !== u && from.type && !from.dead) {
       const m = (u.hurtBy ||= new Map()),
@@ -4637,6 +4779,7 @@ export class LandWorld {
         (foe ? u.target.squad === foe : free && Math.hypot(u.target.x - u.x, u.target.y - u.y) <= u.range * 2)
           ? u.target
           : null;
+      if (tg && !foe) tg = this.rethink(u, tg, u.range);
       if (!tg && this.time >= (u.scanAt || 0)) {
         u.scanAt = this.time + 0.25 + simRandom() * 0.15;
         tg = foe ? this.nearestFoe(u, foe.members, 1e6) : free ? this.nearestFoe(u, this.units, u.range) : null;
@@ -5136,6 +5279,7 @@ export class LandWorld {
         u.target && !u.target.dead && this.targetEnemy(u, u.target) && Math.hypot(u.target.x - u.x, u.target.y - u.y) <= reach
           ? u.target
           : null;
+      if (t && !foe) t = this.rethink(u, t, reach);
       if (!t && this.time >= (u.scanAt || 0)) {
         u.scanAt = this.time + 0.2 + simRandom() * 0.15;
         if (foe) t = this.nearestFoe(u, foe.members, reach);
