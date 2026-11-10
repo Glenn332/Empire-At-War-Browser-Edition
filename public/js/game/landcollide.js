@@ -66,7 +66,7 @@ function gather(W) {
     b.r ||= Math.hypot(b.hx, b.hy);
     b.path = u.path;
     b.side = u.side;
-    b.v = (b.v ?? 0) * 0.75 + (u.v ?? 0) * 0.25;
+    b.v = u.v || 0;
     b.max = u.rooted || u.stunUntil > W.time ? 0 : (u.squad.formSpeed ? Math.min(u.speed, u.squad.formSpeed.v) : u.speed) * W.paceOf(u);
     b.min = b.max * Math.min(1, (u.minFrac ??= u.type.num('Min_Speed', 0) / (u.type.num('Max_Speed', 0) || 1)));
     b.moving = b.path.length > 0 && b.max > 0;
@@ -787,7 +787,16 @@ function goRound(W, c, s, m, near, flags, T) {
         if (B.motion === 0x10) {
           const u = (s.x - B.x) * B.c + (s.y - B.y) * B.s;
           for (const k of [1, -1])
-            nodes.push({ x: B.x + B.c * u - B.s * B.hy * k, y: B.y + B.s * u + B.c * B.hy * k, type: k > 0 ? 7 : 8, o: B.o, dx: B.s * k, dy: -B.c * k, edges: null, room: 0 });
+            nodes.push({
+              x: B.x + B.c * u - B.s * B.hy * k,
+              y: B.y + B.s * u + B.c * B.hy * k,
+              type: k > 0 ? 7 : 8,
+              o: B.o,
+              dx: B.s * k,
+              dy: -B.c * k,
+              edges: null,
+              room: 0
+            });
           exits = true;
         }
       }
@@ -1079,7 +1088,10 @@ function overlapCoef(a, b) {
     const nx = k === 0 ? ca : k === 1 ? -sa : k === 2 ? cb : -sb,
       ny = k === 0 ? sa : k === 1 ? ca : k === 2 ? sb : cb;
     const sum =
-      a.hx * Math.abs(ca * nx + sa * ny) + a.hy * Math.abs(-sa * nx + ca * ny) + b.hx * Math.abs(cb * nx + sb * ny) + b.hy * Math.abs(-sb * nx + cb * ny);
+      a.hx * Math.abs(ca * nx + sa * ny) +
+      a.hy * Math.abs(-sa * nx + ca * ny) +
+      b.hx * Math.abs(cb * nx + sb * ny) +
+      b.hy * Math.abs(-sb * nx + cb * ny);
     const along = dx * nx + dy * ny;
     if (sum === 0 || along > sum || along < -sum) return 0;
     least = Math.min(least, 1 - Math.abs(along / sum));
@@ -1279,7 +1291,8 @@ export function tickCollisions(W) {
         if (c.state === MM.PATH_AROUND) {
           if (!S.path.some(p => p.round) || Math.cos(M.h) * (S.x - M.x) + Math.sin(M.h) * (S.y - M.y) < -(radius(M) + radius(S))) continue;
         } else if (look && !(c.a.moving && c.b.moving && willMeet(c.a, c.b, T))) continue;
-        if (c.state === MM.PATH_AROUND) M.cap = Math.min(M.cap, crushes(W, M, S) || M.path.some(p => p.round) ? Infinity : laneSpeed(M, S, T));
+        if (c.state === MM.PATH_AROUND)
+          M.cap = Math.min(M.cap, crushes(W, M, S) || M.path.some(p => p.round) ? Infinity : laneSpeed(M, S, T));
         else if (c.state === MM.SPEED_ONLY || c.state === MM.SPEED_SLAVE)
           S.cap = Math.min(S.cap, crushes(W, S, M) ? Infinity : holdOff(S, M, T));
         else if (c.state === MM.PASS) {
@@ -1409,10 +1422,11 @@ export function tickCollisions(W) {
     const top = pushes[0];
     let x = 0,
       y = 0;
-    for (const p of pushes) if (p.x * top.x + p.y * top.y >= -0.5 * p.w * top.w) {
-      x += p.x;
-      y += p.y;
-    }
+    for (const p of pushes)
+      if (p.x * top.x + p.y * top.y >= -0.5 * p.w * top.w) {
+        x += p.x;
+        y += p.y;
+      }
     u.ccPush = { x, y };
   }
 }
