@@ -46,10 +46,10 @@ function makeWorld(walls = []) {
 }
 
 let ids = 0;
-function squadOf(W, name, side, x, y, count = 1) {
-  const type = db.type(name);
-  assert(type, name);
-  const q = new LandSquad(W, type, side);
+function squadOf(W, name, side, x, y, count = 1, member = null) {
+  const type = db.type(member || name);
+  assert(type, member || name);
+  const q = new LandSquad(W, db.type(name), side);
   q.id = ++ids;
   const foot = /INFANTRY/i.test(type.str('LandBehavior'));
   q.members = [];
@@ -79,7 +79,7 @@ function squadOf(W, name, side, x, y, count = 1) {
     q.members.push(u);
     W.units.push(u);
   }
-  q.box = null;
+  q.box = member ? undefined : null;
   W.squads.push(q);
   return q;
 }
@@ -138,6 +138,32 @@ function squadOf(W, name, side, x, y, count = 1) {
   }
 }
 
-console.log('ok placement');
+{
+  const W = makeWorld();
+  const q = squadOf(W, 'Imperial_Stormtrooper_Squad', 0, 600, 600, 6, 'Squad_Stormtrooper');
+  const box = W.teamOf(q);
+  assert(box, 'a stormtrooper team walks as a team');
+  const u = q.members[0],
+    hx = db.type('Squad_Stormtrooper').num('Custom_Hard_XExtent', 0) * db.type('Squad_Stormtrooper').num('Scale_Factor', 1);
+  let lo = 0,
+    hi = 0;
+  for (const m of q.members) {
+    const f = (m.x - box.x) * Math.cos(box.heading) + (m.y - box.y) * Math.sin(box.heading);
+    lo = Math.min(lo, f - hx);
+    hi = Math.max(hi, f + hx);
+  }
+  assert(Math.abs(box.hl - ((hi - lo) / 2 + box.jig)) < 1e-6, 'team half length is the box over its members plus the container jiggle');
+  for (const m of q.members) {
+    m.x = box.x;
+    m.y = box.y;
+  }
+  W.teamExtent(q);
+  assert(Math.abs(box.hl - (hx + box.jig)) < 1e-6 && box.hl < 4, 'no floor of 4 under a bunched team: ' + box.hl);
+  const g = W.ground(q);
+  assert.equal(g.hx, box.hl, 'a team formation box is its container box');
+  assert(u.hardX === hx, 'unit hard extents are scaled by Scale_Factor');
+}
+
+console.log('ok placement, team box');
 
 

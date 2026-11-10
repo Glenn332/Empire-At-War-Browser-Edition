@@ -52,8 +52,8 @@ function gather(W) {
         u,
         q: null,
         cls,
-        hx: u.type.num('Custom_Hard_XExtent', 0) || u.body || 10,
-        hy: u.type.num('Custom_Hard_YExtent', 0) || u.body || 10,
+        hx: u.type.num('Custom_Hard_XExtent', 0) * (u.type.num('Scale_Factor', 1) || 1) || u.body || 10,
+        hy: u.type.num('Custom_Hard_YExtent', 0) * (u.type.num('Scale_Factor', 1) || 1) || u.body || 10,
         r: 0,
         mpi: u.type.num('MovementPredictionInterval', 0),
         spacing: u.type.num('FormationSpacing', 0),
@@ -97,8 +97,8 @@ function gather(W) {
     b.path = box.path;
     b.side = u.side;
     b.v = box.speed || 0;
-    b.hx = Math.max(4, box.rear || 4);
-    b.hy = Math.max(4, box.hw || 4);
+    b.hx = box.hl;
+    b.hy = box.hs;
     b.r = Math.hypot(b.hx, b.hy);
     b.max = q.formSpeed ? Math.min(box.max, q.formSpeed.v) : box.max;
     b.min = b.max * Math.min(1, (q.minFrac ??= u.type.num('Min_Speed', 0) / (u.type.num('Max_Speed', 0) || 1)));

@@ -5810,7 +5810,10 @@ export class LandWorld {
       rear: 0,
       hw: 0,
       slack: 10,
-      stall: 0
+      stall: 0,
+      jig: T.num('MaxJiggleDistance', 0),
+      hl: 0,
+      hs: 0
     });
     this.layout(q, box, box.heading);
     const c = Math.cos(box.heading),
@@ -5820,6 +5823,33 @@ export class LandWorld {
         u.x = box.x + c * u.slot.x - s * u.slot.y;
         u.y = box.y + s * u.slot.x + c * u.slot.y;
       }
+    this.teamExtent(q);
+    return box;
+  }
+
+  teamExtent(q) {
+    const box = q.box,
+      c = Math.cos(box.heading),
+      s = Math.sin(box.heading);
+    let maxF = 0,
+      minF = 0,
+      maxS = 0,
+      minS = 0;
+    for (const u of q.members) {
+      if (u.dead || u.inside) continue;
+      const dx = u.x - box.x,
+        dy = u.y - box.y,
+        f = dx * c + dy * s,
+        sd = -dx * s + dy * c,
+        hx = hardExtent(u, 'X'),
+        hy = hardExtent(u, 'Y');
+      if (f + hx > maxF) maxF = f + hx;
+      if (f - hx < minF) minF = f - hx;
+      if (sd + hy > maxS) maxS = sd + hy;
+      if (sd - hy < minS) minS = sd - hy;
+    }
+    box.hl = (maxF - minF) / 2 + (box.jig || 0);
+    box.hs = (maxS - minS) / 2 + (box.jig || 0);
     return box;
   }
 
@@ -5977,6 +6007,7 @@ export class LandWorld {
       }
       if (box.lay === null || box.n !== live || box.k !== (q.spread || 1) || Math.cos(box.heading - box.lay) <= 0.99)
         this.layout(q, box, box.heading);
+      this.teamExtent(q);
       const p = box.path[0];
       if (!p) {
         box.speed = 0;
@@ -6605,10 +6636,13 @@ export class LandWorld {
       t = u.type,
       box = this.teamOf(q);
     let hx, hy;
-    if (box) hx = hy = Math.max(6, box.slack - 10);
-    else {
-      const X = t.num('Custom_Hard_XExtent', 0) || u.body || 10,
-        Y = t.num('Custom_Hard_YExtent', 0) || u.body || 10;
+    if (box) {
+      this.teamExtent(q);
+      hx = box.hl;
+      hy = box.hs;
+    } else {
+      const X = hardExtent(u, 'X'),
+        Y = hardExtent(u, 'Y');
       let ox = 0,
         oy = 0;
       for (const v of m) {
