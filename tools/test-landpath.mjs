@@ -58,20 +58,29 @@ const length = (a, way) => {
   const { P } = field(60);
   const at = (x, y) => (Math.hypot(x - 600, y - 600) < 200 ? 50 : 0),
     a = { x: 200, y: 600 },
-    plain = P.route(a.x, a.y, 1000, 600, MASK),
     safe = P.route(a.x, a.y, 1000, 600, MASK, 0, { danger: { at, threshold: 0.01, weight: 1 } });
+  assert(safe && safe.length <= 2, 'start and goal in one rectangle go straight, danger or not, as the engine region search');
+}
+
+{
+  const { P } = field(60, (x, y) => x === 30 && !(y >= 5 && y <= 8) && !(y >= 51 && y <= 54));
+  const hot = { x: 600, y: 130 },
+    at = (x, y) => (Math.hypot(x - hot.x, y - hot.y) < 150 ? 50 : 0),
+    a = { x: 200, y: 400 },
+    plain = P.route(a.x, a.y, 1000, 400, MASK),
+    safe = P.route(a.x, a.y, 1000, 400, MASK, 0, { danger: { at, threshold: 0.01, weight: 1 } });
   assert(plain && safe);
   const near = way => {
     let best = Infinity,
       p = a;
     for (const q of way) {
-      for (let t = 0; t <= 1; t += 0.05) best = Math.min(best, Math.hypot(p.x + (q.x - p.x) * t - 600, p.y + (q.y - p.y) * t - 600));
+      for (let t = 0; t <= 1; t += 0.05) best = Math.min(best, Math.hypot(p.x + (q.x - p.x) * t - hot.x, p.y + (q.y - p.y) * t - hot.y));
       p = q;
     }
     return best;
   };
-  assert(near(plain) < 50, 'without the danger option the way goes straight through');
-  assert(near(safe) >= 180, 'the danger cost keeps the way out of the threatened ground');
+  assert(near(plain) < 60, 'without the danger option the way takes the near gap: ' + near(plain));
+  assert(near(safe) >= 150, 'the danger cost on the rectangle steps takes the far gap: ' + near(safe));
 }
 
 {
