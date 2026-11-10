@@ -178,6 +178,23 @@ const yield_ = u => track && track(u);
   );
   const side = Math.max(...u.path.map(p => Math.abs(p.y - 50 * CELL)));
   assert(side > 5 * CELL, 'it goes round the closed block: ' + (side / CELL).toFixed(1) + ' cells aside');
+  const north = Math.sign(u.path[0].y - 50 * CELL),
+    foe = squadOf(W, 'T2B_Tank', 1, 50 * CELL, 50 * CELL + north * 7.5 * CELL).members[0];
+  foe.heading = 0;
+  const widest = () => {
+    tickCollisions(W);
+    u.path = [end];
+    u.detourAt = 0;
+    W.blocked(u, end);
+    return Math.max(...u.path.map(p => Math.abs(p.y - 50 * CELL)));
+  };
+  assert(widest() > 7.5 * CELL + 10, 'the way round keeps clear of an enemy standing on it');
+  u.crusher = true;
+  foe.squashable = true;
+  assert(widest() <= 7.5 * CELL + 1, 'an enemy the mover crushes is left out of the way-round search');
+  u.crusher = false;
+  foe.dead = true;
+  tickCollisions(W);
   for (let y = 0; y < N; y++) for (let x = 58; x <= 60; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
   W.groundVer++;
   W.roomDirty = true;

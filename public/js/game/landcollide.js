@@ -705,7 +705,7 @@ const clashing = o => (o.q ? o.q.members.some(u => u.clash) : !!o.u.clash);
 const boxMask = s => (s.cls === 5 || s.cls === 9 ? 0x11 : 0x10);
 
 function ignored(W, s, o, m, flags, linked, mask) {
-  if (o === s || o === s.own) return true;
+  if (o === s || o === s.own || crushes(W, s, o)) return true;
   if (o === m) return false;
   if (mask & 1 && o.cls === 5 && !clashing(o) && !linked(o)) return true;
   if (!o.moving) {
