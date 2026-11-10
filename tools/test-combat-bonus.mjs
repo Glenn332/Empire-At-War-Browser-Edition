@@ -243,6 +243,71 @@ const near = (a, b, why) => assert(Math.abs(a - b) < 1e-6, why + ': ' + a + ' vs
   const late = twin.w.spawn(T('Shuttle_Tyderium'), twin.empire, 0, 900);
   twin.w.bonusArrival(twin.empire, T('Shuttle_Tyderium'), late);
   assert.deepEqual(twin.w.carriedBy(late), ['Mon_Mothma'], 'a waiting company brings its hero bonus when its transport arrives');
+
+  const { placeCampaignBattle, battleResult, flagshipRider, ridesFlagship, flagshipScore } = await import(
+    '../public/js/game/campaignbattle.js'
+  );
+  for (const n of ['Grand_Moff_Tarkin', 'Mon_Mothma', 'Emperor_Palpatine'])
+    assert(flagshipRider(T(n)), n + ' has Attach_To_Flagship_During_Space_Battle and no space unit');
+  assert(!flagshipRider(T('Captain_Piet')), 'Piet has his own ship');
+  assert(!flagshipRider(T('Darth_Vader')), 'Vader does not attach');
+  for (const n of ['Grand_Moff_Tarkin_Team', 'Mon_Mothma_Team', 'Emperor_Palpatine_Team'])
+    assert(ridesFlagship(T(n)), n + ' rides the flagship');
+  assert(!ridesFlagship(T('Piet_Team')), 'Piet_Team comes in its own ship');
+  assert(flagshipScore(T('Star_Destroyer')) > flagshipScore(T('Victory_Destroyer')), 'hull and shields pick the flagship');
+  const supers = T('Death_Star').list('CategoryMask');
+  assert(supers.some(c => /^super$/i.test(c.trim())));
+  assert.equal(flagshipScore(T('Death_Star')), 0, 'a Super ship is never the flagship');
+  assert.equal(flagshipScore(T('Grand_Moff_Tarkin_Team')), 0, 'nor a company');
+
+  const battle = (units, foes = []) => {
+    const f = build(),
+      cb = {
+        planet: 'Kuat',
+        attacker: { team: 1, units: foes.map((n, i) => ({ gid: 'r' + i, type: T(n) })) },
+        defender: { team: 0, units: units.map((n, i) => ({ gid: 'e' + i, type: T(n) })) },
+        linked: null
+      };
+    return { ...f, cb, book: placeCampaignBattle(f.w, map, f.w.teams, cb) };
+  };
+  const fleet = battle(['Victory_Destroyer', 'Grand_Moff_Tarkin_Team', 'Star_Destroyer', 'Victory_Destroyer'], ['Corellian_Corvette']);
+  const flag = fleet.book.entity.get('e2'),
+    escort = fleet.book.entity.get('e0');
+  assert.equal(flag.type.name, 'Star_Destroyer');
+  assert.equal(fleet.book.entity.get('e1'), flag, 'Tarkin is aboard the fleet flagship, the ship with the most hull and shields');
+  assert(!fleet.w.units.some(u => /shuttle/i.test(u.type.name)), 'his shuttle does not come into the battle');
+  assert.deepEqual(fleet.w.carriedBy(flag), ['Grand_Moff_Tarkin'], 'a save lists the hero the flagship carries');
+  near(flag.bonus.health, 1.25, 'the flagship takes the bonus of the hero aboard');
+  near(escort.bonus.health, 1.25, 'and the rest of the fleet');
+  near(fleet.book.entity.get('r0').bonus.health, 1, 'enemies untouched');
+  assert(battleResult(fleet.w, fleet.book, fleet.cb, 0).alive.includes('e1'), 'flagship alive: Tarkin survives');
+  flag.retreated = true;
+  assert(battleResult(fleet.w, fleet.book, fleet.cb, 0).alive.includes('e1'), 'a retreated flagship keeps him');
+  flag.retreated = false;
+  fleet.w.kill(flag, null);
+  fleet.w.tickBonuses();
+  near(escort.bonus.health, 1, 'flagship destroyed: the bonus is gone');
+  assert(!battleResult(fleet.w, fleet.book, fleet.cb, 0).alive.includes('e1'), 'and Tarkin is lost with it');
+
+  const loaded = build(),
+    host = loaded.w.spawn(T('Star_Destroyer'), loaded.empire, 0, 0),
+    side = loaded.w.spawn(T('Victory_Destroyer'), loaded.empire, 300, 0);
+  loaded.w.carry(['Grand_Moff_Tarkin'], loaded.empire, host);
+  near(host.bonus.health, 1.25, 'a loaded flagship gives its rider bonus to itself again');
+  near(side.bonus.health, 1.25, 'and to the fleet');
+
+  const alone = battle(['Grand_Moff_Tarkin_Team']);
+  const ride = alone.book.entity.get('e0');
+  assert.equal(ride.type.name.toUpperCase(), 'SHUTTLE_TYDERIUM', 'no ship to ride: Tarkin keeps his transport');
+  assert.deepEqual(alone.w.carriedBy(ride), ['Grand_Moff_Tarkin']);
+
+  const twice = battle(['Victory_Destroyer', 'Mon_Mothma_Team', 'Star_Destroyer']),
+    again2 = battle(['Victory_Destroyer', 'Mon_Mothma_Team', 'Star_Destroyer']);
+  assert.deepEqual(
+    twice.w.bonusHolders.map(h => h.keys),
+    again2.w.bonusHolders.map(h => h.keys),
+    'flagship keys are built from entity ids'
+  );
 }
 
 console.log('combat bonus abilities ok');
