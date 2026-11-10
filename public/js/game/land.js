@@ -6546,8 +6546,12 @@ export class LandWorld {
     if (this.time < (u.detourAt || 0)) return false;
     const foot = u.foot ? (u.need & ~3) | 1 : u.need,
       reach = (u.fp ?? u.hitRadius ?? 0) + 40;
-    const way = this.isOpen(to.x, to.y, foot) ? this.route(u.x, u.y, to.x, to.y, foot) : null;
     const team = !!(u.squad && u.squad.box && !u.squad.ext && u.slot);
+    if (!team && !this.isOpen(u.x, u.y, foot)) {
+      u.path.length = 0;
+      return true;
+    }
+    const way = this.isOpen(to.x, to.y, foot) ? this.route(u.x, u.y, to.x, to.y, foot) : null;
     let len = 0,
       px = u.x,
       py = u.y;
@@ -6558,6 +6562,10 @@ export class LandWorld {
         py = p.y;
       }
     if (!way || (!team && len > Math.hypot(to.x - u.x, to.y - u.y) + 2 * reach)) {
+      if (!team) {
+        u.path.length = 0;
+        return true;
+      }
       u.detourAt = this.time + 45 / LOGIC_FPS;
       return false;
     }

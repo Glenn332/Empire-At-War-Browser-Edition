@@ -149,4 +149,24 @@ const yield_ = u => track && track(u);
   assert(collides(W, m(7), k(1)) && !collides(W, { cls: 7, fixed: false, u: { side: 1 } }, k(1)), 'a build pad stops enemies only');
 }
 
-console.log('ok structures as standing bodies of the collision system');
+{
+  const W = makeWorld();
+  for (let y = 45; y <= 55; y++) for (let x = 45; x <= 55; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
+  const q = squadOf(W, 'T2B_Tank', 0, 50 * CELL, 50 * CELL),
+    u = q.members[0];
+  assert(W.order(q, 70 * CELL, 50 * CELL, null, true), 'an exit move is ordered from closed ground');
+  assert.equal(u.path.length, 1, 'an exit move is one straight leg');
+  assert(u.path[0].free && u.path[0].x === 70 * CELL, 'its leg skips the ground test and keeps the goal as given');
+  assert(W.order(q, 52 * CELL, 50 * CELL, null, true), 'an exit move to closed ground');
+  const g = u.path[0];
+  assert(W.isOpen(g.x, g.y, 2) && Math.hypot(g.x - 52 * CELL, g.y - 50 * CELL) < 20 * 1.5 * 40, 'the goal goes to the first open spot of the ring search');
+  u.path = [{ x: 70 * CELL, y: 50 * CELL }];
+  W.blocked(u, u.path[0]);
+  assert.equal(u.path.length, 0, 'a unit standing on closed ground whose next step is closed gives the move up');
+  u.x = 40 * CELL;
+  u.path = [{ x: 80 * CELL, y: 50 * CELL }];
+  W.blocked(u, { x: 50 * CELL, y: 50 * CELL });
+  assert.equal(u.path.length, 0, 'no way round closed ground: the move is given up, not tried again');
+}
+
+console.log('ok exit moves, closed ground, structures as standing bodies of the collision system');
