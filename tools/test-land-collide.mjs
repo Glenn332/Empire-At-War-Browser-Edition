@@ -107,39 +107,40 @@ function step(W, dt) {
   return t;
 }
 
-{
-  const W = makeWorld();
-  const A = [],
-    B = [];
-  for (let i = 0; i < 30; i++) {
-    const a = unitOf(W, 'T2B_Tank', 0, 1500 + (i % 6) * 70, 1500 + Math.floor(i / 6) * 70, 0);
-    a.path = [{ x: a.x + 1800, y: a.y }];
-    A.push(a);
-    const b = unitOf(W, CRAWLER, 1, 3300 + (i % 6) * 70, 1520 + Math.floor(i / 6) * 70, Math.PI);
-    b.path = [{ x: b.x - 1800, y: b.y }];
-    B.push(b);
-  }
-  let total = 0,
-    frames = 0;
-  for (let f = 0; f < 1500; f++) {
-    total += step(W, 1 / 30);
-    frames++;
-  }
-  const ms = total / frames;
-  const got = [...A, ...B].filter(u => !u.path.length).length;
-  const prog = [...A.map(u => u.x - 1500), ...B.map(u => 3300 - u.x)].reduce((s, v) => s + v, 0) / 60;
+function crossing(name, place) {
+  const W = makeWorld(),
+    all = [];
+  for (let i = 0; i < 30; i++)
+    for (const side of [0, 1]) {
+      const p = place(i, side),
+        u = unitOf(W, side ? CRAWLER : 'T2B_Tank', side, p.x, p.y, Math.atan2(p.ty - p.y, p.tx - p.x));
+      u.path = [{ x: p.tx, y: p.ty }];
+      u.from = p;
+      all.push(u);
+    }
+  let total = 0;
+  const frames = 1500;
+  for (let f = 0; f < frames; f++) total += step(W, 1 / 30);
+  const got = all.filter(u => !u.path.length).length,
+    prog = all.reduce((s, u) => s + Math.hypot(u.x - u.from.x, u.y - u.from.y), 0) / all.length;
   console.log(
-    '30 v 30 crossing: ' +
-      ms.toFixed(3) +
-      ' ms a collision step, ' +
-      got +
-      ' of 60 through, mean progress ' +
-      prog.toFixed(0) +
-      ', states ' +
-      JSON.stringify(W.colls.reduce((m, c) => ((m[c.kind + c.state] = (m[c.kind + c.state] || 0) + 1), m), {}))
+    name + ': ' + (total / frames).toFixed(3) + ' ms a collision step, ' + got + ' of 60 through, mean progress ' + prog.toFixed(0)
   );
-  if (process.argv.includes('--bench')) process.exit(0);
+  return got;
 }
+
+crossing('30 v 30 head on', (i, side) =>
+  side
+    ? { x: 3300 + (i % 6) * 70, y: 1520 + Math.floor(i / 6) * 70, tx: 1500 + (i % 6) * 70, ty: 1520 + Math.floor(i / 6) * 70 }
+    : { x: 1500 + (i % 6) * 70, y: 1500 + Math.floor(i / 6) * 70, tx: 3300 + (i % 6) * 70, ty: 1500 + Math.floor(i / 6) * 70 }
+);
+const across = crossing('30 v 30 across', (i, side) =>
+  side
+    ? { x: 2300 + (i % 6) * 70, y: 1300 + Math.floor(i / 6) * 70, tx: 2300 + (i % 6) * 70, ty: 3300 + Math.floor(i / 6) * 70 }
+    : { x: 1300 + Math.floor(i / 6) * 70, y: 2300 + (i % 6) * 70, tx: 3300 + Math.floor(i / 6) * 70, ty: 2300 + (i % 6) * 70 }
+);
+if (process.argv.includes('--bench')) process.exit(0);
+void across;
 
 {
   const W = makeWorld();

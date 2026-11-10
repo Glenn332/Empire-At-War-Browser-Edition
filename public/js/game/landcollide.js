@@ -649,7 +649,15 @@ function astar(nodes, edgesOf, from, to, second) {
 
 const isExit = p => p.type === 7 || p.type === 8;
 
-function linkNodes(W, s, nodes, boxes, from, exits) {
+function sameOwnerLinks(p, q) {
+  if (p > q) [p, q] = [q, p];
+  if ((p === 0 && q === 2) || (p === 1 && q === 3) || (p === 7 && q === 8)) return false;
+  if (q === 7) return p === 0 || p === 3;
+  if (q === 8) return p === 1 || p === 2;
+  return true;
+}
+
+function linkNodes(W, s, nodes, boxes, exits) {
   const penalty = K.penalty,
     n = W.n,
     N = nodes.length,
@@ -671,19 +679,16 @@ function linkNodes(W, s, nodes, boxes, from, exits) {
       ey = b.y - a.y,
       el = Math.hypot(ex, ey);
     if (el < 1e-6) return 0;
-    const withStart = i === from || j === from;
-    if (exits && withStart && !isExit(i === from ? b : a)) return 0;
-    if (a.o && a.o === b.o) {
-      if (a.type < 4 && b.type < 4 && Math.abs(a.type - b.type) === 2) return 0;
-      if (isExit(a) || isExit(b)) return 0;
+    if (a.o === b.o) {
+      if (!sameOwnerLinks(a.type, b.type)) return 0;
     } else {
       if (a.o && !isExit(a) && (ex * a.dx + ey * a.dy) / el >= COS44) return 0;
-      if (b.o && !isExit(b) && (-ex * b.dx - ey * b.dy) / el >= COS44) return 0;
-      if (isExit(b) && !withStart && !(-ex * b.dx - ey * b.dy < -0.001)) return 0;
-      if (isExit(a) && !withStart && !(ex * a.dx + ey * a.dy < -0.001)) return 0;
+      if (b.o && (-ex * b.dx - ey * b.dy) / el >= COS44) return 0;
+      if (isExit(a) && b.type !== 5) return 0;
+      if (isExit(b) && !(-ex * b.dx - ey * b.dy < -0.001)) return 0;
     }
+    if (exits && b.type === 5 && !isExit(a)) return 0;
     if (el > a.room && el > b.room && !W.clear(a.x, a.y, b.x, b.y, s.need)) return 0;
-    if (exits && withStart) return 1;
     const lx = Math.min(a.x, b.x),
       hx = Math.max(a.x, b.x),
       ly = Math.min(a.y, b.y),
@@ -777,10 +782,12 @@ function goRound(W, c, s, m, near, flags, T) {
       boxes.push(B);
     }
     if (boxes.some(B => B.o !== m && inBox(B.outer, goal.x, goal.y))) continue;
-    const nodes = [];
+    const nodes = [],
+      sides = [];
     let exits = false,
       startIn = false,
       goalIn = false;
+    for (const p of corners) if (!boxes.some(B => inBox(B.outer, p.x, p.y))) nodes.push(p);
     for (const B of boxes) {
       const O = B.outer;
       if (inBox(O, s.x, s.y)) {
@@ -788,7 +795,7 @@ function goRound(W, c, s, m, near, flags, T) {
         if (B.motion === 0x10) {
           const u = (s.x - B.x) * B.c + (s.y - B.y) * B.s;
           for (const k of [1, -1])
-            nodes.push({
+            sides.push({
               x: B.x + B.c * u - B.s * B.hy * k,
               y: B.y + B.s * u + B.c * B.hy * k,
               type: k > 0 ? 7 : 8,
@@ -816,7 +823,7 @@ function goRound(W, c, s, m, near, flags, T) {
         nodes.push({ x, y, type: t, o: B.o, dx: ix / il, dy: iy / il, edges: null, room: 0 });
       }
     }
-    for (const p of corners) if (!boxes.some(B => inBox(B.outer, p.x, p.y))) nodes.push(p);
+    nodes.push(...sides);
     let from = -1,
       to = -1;
     if (!startIn || exits) {
@@ -842,7 +849,7 @@ function goRound(W, c, s, m, near, flags, T) {
     if (from < 0) from = nearest(s.x, s.y);
     if (to < 0) to = nearest(goal.x, goal.y);
     if (from < 0 || to < 0 || from === to) continue;
-    const edgesOf = linkNodes(W, s, nodes, boxes, from, exits);
+    const edgesOf = linkNodes(W, s, nodes, boxes, exits);
     W.dynUsed += nodes.length;
     const route = astar(nodes, edgesOf, from, to, false) || astar(nodes, edgesOf, from, to, true);
     if (!route) continue;
