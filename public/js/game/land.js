@@ -21,7 +21,7 @@ import { simRandom } from './simrandom.js';
 import { setOf, priorityOf } from './priorities.js';
 import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
-import { tickCollisions, resetCollideIds, collisionClass } from './landcollide.js';
+import { tickCollisions, resetCollideIds, collisionClass, terrainRound } from './landcollide.js';
 import { isSpawner } from './landgarrison.js';
 import { collisionOf, collisionBoxOf, meshHit } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
@@ -6545,24 +6545,14 @@ export class LandWorld {
       return false;
     }
     if (this.time < (u.detourAt || 0)) return false;
-    const foot = u.foot ? (u.need & ~3) | 1 : u.need,
-      reach = (u.fp ?? u.hitRadius ?? 0) + 40;
+    const foot = u.foot ? (u.need & ~3) | 1 : u.need;
     const team = !!(u.squad && u.squad.box && !u.squad.ext && u.slot);
     if (!team && !this.isOpen(u.x, u.y, foot)) {
       u.path.length = 0;
       return true;
     }
-    const way = this.isOpen(to.x, to.y, foot) ? this.route(u.x, u.y, to.x, to.y, foot) : null;
-    let len = 0,
-      px = u.x,
-      py = u.y;
-    if (way)
-      for (const p of way) {
-        len += Math.hypot(p.x - px, p.y - py);
-        px = p.x;
-        py = p.y;
-      }
-    if (!way || (!team && len > Math.hypot(to.x - u.x, to.y - u.y) + 2 * reach)) {
+    const way = terrainRound(this, u, to, hardExtent(u, 'X'), hardExtent(u, 'Y'), team);
+    if (!way) {
       if (!team) {
         u.path.length = 0;
         return true;
@@ -6570,11 +6560,8 @@ export class LandWorld {
       u.detourAt = this.time + 45 / LOGIC_FPS;
       return false;
     }
-    if (team) u.detour = way.slice();
-    else {
-      u.path.splice(0, 1, ...way);
-      u.detourAt = this.time + 0.5;
-    }
+    if (team) u.detour = way.filter(p => p.round);
+    else u.detourAt = this.time + 0.5;
     return true;
   }
 

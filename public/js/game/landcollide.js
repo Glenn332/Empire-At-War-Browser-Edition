@@ -506,7 +506,7 @@ function footFree(W, s, f, end, prev, m, flags, linked) {
   }
   const far = s.r;
   for (const o of W.ccBodies) {
-    if (o === s || Math.abs(o.x - f.x) > far + o.r || Math.abs(o.y - f.y) > far + o.r) continue;
+    if (o === s || o === s.own || Math.abs(o.x - f.x) > far + o.r || Math.abs(o.y - f.y) > far + o.r) continue;
     if (boxesMeet(F, boxOf(o, 0)) && !ignored(W, s, o, m, flags, linked, 0x10)) return false;
   }
   return true;
@@ -564,7 +564,9 @@ function rejoin(W, s, at, m, flags, linked, prev) {
     at.ring = ringAt(end.x, end.y);
     at.ring.half = radius(s) + Math.max(s.spacing * 6, radius(s) * 0.25);
     const most = 20 * 10 + at.ring.half;
-    at.ring.close = W.ccBodies.filter(o => o !== s && Math.abs(o.x - end.x) <= most + o.r && Math.abs(o.y - end.y) <= most + o.r);
+    at.ring.close = W.ccBodies.filter(
+      o => o !== s && o !== s.own && Math.abs(o.x - end.x) <= most + o.r && Math.abs(o.y - end.y) <= most + o.r
+    );
   }
   let f;
   do {
@@ -703,7 +705,7 @@ const clashing = o => (o.q ? o.q.members.some(u => u.clash) : !!o.u.clash);
 const boxMask = s => (s.cls === 5 || s.cls === 9 ? 0x11 : 0x10);
 
 function ignored(W, s, o, m, flags, linked, mask) {
-  if (o === s) return true;
+  if (o === s || o === s.own) return true;
   if (o === m) return false;
   if (mask & 1 && o.cls === 5 && !clashing(o) && !linked(o)) return true;
   if (!o.moving) {
@@ -858,16 +860,17 @@ function goalBlocked(W, s, m, goal, flags, linked, grow, extra, T) {
   return false;
 }
 
-function goRound(W, c, s, m, near, flags, T) {
+function goRound(W, c, s, m, near, flags, T, mode = 4) {
   for (let i = s.path.length - 1; i >= 0; i--) if (s.path[i].round && i < s.path.length - 1) s.path.splice(i, 1);
   if (!s.path.length || !(s.max > 0)) return false;
   const bodies = W.ccBodies,
     rm = radius(s),
-    ro = radius(m),
-    mb = boxOf(m, 0),
-    gap = Math.hypot(m.x - s.x, m.y - s.y);
+    ro = m ? radius(m) : 0,
+    mb = m ? boxOf(m, 0) : null,
+    gap = m ? Math.hypot(m.x - s.x, m.y - s.y) : 0;
   let L = gap + rm + ro;
-  if (near) L = Math.max(gap, Math.hypot(m.x + mb.c * m.hx - s.x, m.y + mb.s * m.hx - s.y)) + rm + ro;
+  if (!m) L = rm;
+  else if (near) L = Math.max(gap, Math.hypot(m.x + mb.c * m.hx - s.x, m.y + mb.s * m.hx - s.y)) + rm + ro;
   else {
     const p0 = s.path[0],
       dx = p0.x - s.x,
@@ -876,6 +879,7 @@ function goRound(W, c, s, m, near, flags, T) {
       t = d > 1e-6 ? rayIntoBox(mb, s.x, s.y, dx / d, dy / d) : -1;
     if (t >= 0) L = t + rm;
   }
+  if (mode === 3) L += 40;
   const linked = o => W.colls.some(k => k.kind !== 'ss' && ((k.a === s && k.b === o) || (k.b === s && k.a === o)));
   const grow = Math.min(s.hx, s.hy) + 0.5,
     extra = Math.max(0, s.expand);
@@ -994,7 +998,7 @@ function goRound(W, c, s, m, near, flags, T) {
       pts.push({ x: l.x + (l.x - p.x) / d, y: l.y + (l.y - p.y) / d, round: true });
     }
     const nextWp = goal.next < s.path.length ? s.path[goal.next] : null;
-    if (pts.length > 2 && nextWp) {
+    if (mode !== 3 && pts.length > 2 && nextWp) {
       const pen = pts[pts.length - 2];
       let skip = false;
       if (near) {
@@ -1010,6 +1014,37 @@ function goRound(W, c, s, m, near, flags, T) {
     return true;
   }
   return false;
+}
+
+export function terrainRound(W, u, to, hx, hy, team) {
+  readConstants();
+  W.ccBodies ||= [];
+  W.colls ||= [];
+  const t = u.type,
+    s = team
+      ? (u.tb ||= { id: 0, u, q: null, cls: 5, r: 0, mpi: 0, expand: 0, turn: 0, fixed: false })
+      : u.cb || (u.tb ||= { id: 0, u, q: null, cls: Math.max(5, (u.ccls ??= collisionClass(t))), r: 0, mpi: 0, expand: 0, turn: 0 });
+  if (s.id === 0) {
+    s.hx = hx;
+    s.hy = hy;
+    s.r = Math.hypot(hx, hy);
+    s.spacing = t.num('FormationSpacing', 0);
+    s.expand = t.num('MovementBoxExpansionFactor', 0);
+  }
+  s.x = u.x;
+  s.y = u.y;
+  s.h = u.heading;
+  s.side = u.side;
+  s.v = u.v || 0;
+  s.max = u.speed * W.paceOf(u);
+  s.min = 0;
+  s.need = team ? (u.need & ~3) | 1 : u.need || 2;
+  s.own = team ? u.squad.cb || null : null;
+  s.path = team ? [{ x: to.x, y: to.y }] : u.path;
+  s.moving = s.path.length > 0 && s.max > 0;
+  const T = db.constants.num('MovingVsMovingLookAheadTime', 1.5);
+  if (!goRound(W, { cursor: 0 }, s, null, false, 0, T, 3)) return null;
+  return s.path;
 }
 
 function busy(b) {

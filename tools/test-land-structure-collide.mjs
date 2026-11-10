@@ -159,13 +159,31 @@ const yield_ = u => track && track(u);
   assert(u.path[0].free && u.path[0].x === 70 * CELL, 'its leg skips the ground test and keeps the goal as given');
   assert(W.order(q, 52 * CELL, 50 * CELL, null, true), 'an exit move to closed ground');
   const g = u.path[0];
-  assert(W.isOpen(g.x, g.y, 2) && Math.hypot(g.x - 52 * CELL, g.y - 50 * CELL) < 20 * 1.5 * 40, 'the goal goes to the first open spot of the ring search');
+  assert(
+    W.isOpen(g.x, g.y, 2) && Math.hypot(g.x - 52 * CELL, g.y - 50 * CELL) < 20 * 1.5 * 40,
+    'the goal goes to the first open spot of the ring search'
+  );
   u.path = [{ x: 70 * CELL, y: 50 * CELL }];
   W.blocked(u, u.path[0]);
   assert.equal(u.path.length, 0, 'a unit standing on closed ground whose next step is closed gives the move up');
-  u.x = 40 * CELL;
-  u.path = [{ x: 80 * CELL, y: 50 * CELL }];
-  W.blocked(u, { x: 50 * CELL, y: 50 * CELL });
+  u.x = 43 * CELL;
+  const end = { x: 80 * CELL, y: 50 * CELL };
+  u.path = [end];
+  u.detourAt = 0;
+  assert(W.blocked(u, end), 'closed ground ahead on open ground: the collision way round is looked for');
+  assert(u.path.length > 1 && u.path[u.path.length - 1] === end, 'the way round is put before the rest of the path');
+  assert(
+    u.path.slice(0, -1).every(p => p.round && W.isOpen(p.x, p.y, 2)),
+    'the way round goes over open ground'
+  );
+  const side = Math.max(...u.path.map(p => Math.abs(p.y - 50 * CELL)));
+  assert(side > 5 * CELL, 'it goes round the closed block: ' + (side / CELL).toFixed(1) + ' cells aside');
+  for (let y = 0; y < N; y++) for (let x = 58; x <= 60; x++) W.kind[y * N + x] = TERRAIN.OBSTACLE;
+  W.groundVer++;
+  W.roomDirty = true;
+  u.path = [end];
+  u.detourAt = 0;
+  W.blocked(u, end);
   assert.equal(u.path.length, 0, 'no way round closed ground: the move is given up, not tried again');
 }
 
