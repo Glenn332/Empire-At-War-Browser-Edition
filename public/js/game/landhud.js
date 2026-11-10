@@ -2,7 +2,17 @@ import { db } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
 import { CommandBar } from './hud.js';
 import { costOf } from './land.js';
-import { canBomb, bombingRun, garrison, ungarrison } from './landbase.js';
+import {
+  canBomb,
+  bombingRun,
+  garrison,
+  ungarrison,
+  bombardEnabled,
+  canBombard,
+  bombardCharge,
+  bombardOf,
+  bombardTargetWhy
+} from './landbase.js';
 import { CELL } from './terrain.js';
 import { Radar } from './radar.js';
 import { BeaconView } from './beacons.js';
@@ -241,6 +251,25 @@ export class LandUI {
       this.placing = this.aiming = null;
       if (this.armed) game.say('Click where the bombers should strike');
     };
+    this.pb = this.bar.button('pb_switch', {
+      onClick: () => {
+        if (!canBombard(w, this.me)) return;
+        this.armed = this.armed === 'orbital' ? null : 'orbital';
+        this.placing = this.aiming = null;
+        if (this.armed) game.audio.play(bombardOf(w, this.me).ship?.str('SFXEvent_Bombard_Select_Target'));
+      }
+    });
+    this.pbCharge = this.bar.place(Object.assign(document.createElement('div'), { className: 'hbar' }), 'pb_switch_recharge');
+    this.pbCharge.innerHTML = '<i></i>';
+    this.bar.root.appendChild(this.pbCharge);
+    {
+      const back = this.bar.tex('pb_switch_recharge', 'Bar_Texture_Name'),
+        fill = this.bar.tex('pb_switch_recharge', 'Bar_Overlay_Name');
+      if (back) this.pbCharge.style.backgroundImage = `url("${back}")`;
+      if (fill) this.pbCharge.firstChild.style.backgroundImage = `url("${fill}")`;
+      this.pbCharge.firstChild.style.backgroundSize = (parseFloat(this.pbCharge.style.width) || 0) + 'px 100%';
+    }
+    this.pb.hidden = this.pbCharge.hidden = true;
     const mm = $('minimap');
     const look = e => {
       game.following = null;
@@ -359,6 +388,36 @@ export class LandUI {
     }
     this.game.command({ c: 'bomb', x: g.x, y: g.y });
   }
+  orbitalWhy(g) {
+    return !g ? 'Not on the map' : bombardTargetWhy(this.world, this.me, g.x, g.y);
+  }
+  orbitalAt(g) {
+    const why = this.orbitalWhy(g);
+    if (why) {
+      this.game.say(why, 'bad');
+      this.game.audio.play('GUI_Bad_Sound');
+      return;
+    }
+    this.armed = null;
+    this.game.hudTimer = 0;
+    const r = this.game.command({ c: 'orbital', x: g.x, y: g.y });
+    if (!(r && r.why)) this.game.audio.play(bombardOf(this.world, this.me).ship?.str('SFXEvent_Bombard_Incoming'));
+  }
+  refreshOrbital() {
+    const w = this.world,
+      on = this.me >= 0 && bombardEnabled(w, this.me),
+      ready = on && canBombard(w, this.me);
+    this.pb.hidden = this.pbCharge.hidden = !on || !this.pb.style.width;
+    if (!on) {
+      if (this.armed === 'orbital') this.armed = null;
+      return;
+    }
+    if (!ready && this.armed === 'orbital') this.armed = null;
+    this.pb.classList.toggle('dis', !ready);
+    this.pb.classList.toggle('sel', this.armed === 'orbital');
+    this.pb.style.filter = ready ? '' : 'brightness(0.5)';
+    this.pbCharge.firstChild.style.width = 100 * bombardCharge(w, this.me) + '%';
+  }
   enter(host) {
     const m = this.movers();
     if (!m.length) return false;
@@ -442,6 +501,7 @@ export class LandUI {
     }
     this.bar.bWeapon.classList.toggle('dis', !canBomb(this.world, this.me));
     this.bar.bWeapon.classList.toggle('sel', this.armed === 'bombing');
+    this.refreshOrbital();
     this.fogDirty = true;
   }
 

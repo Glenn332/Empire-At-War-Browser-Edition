@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { bombingRun, garrison, ungarrison } from './landbase.js';
+import { bombingRun, garrison, ungarrison, orbitalBombard } from './landbase.js';
 import { SILENT } from './landabilities.js';
 import { Beacons, beaconType } from './beacons.js';
 
@@ -149,6 +149,10 @@ export function executeLand(game, side, cmd) {
     }
     case 'bomb': {
       const why = bombingRun(w, side, num(cmd.x), num(cmd.y));
+      return why ? { why } : {};
+    }
+    case 'orbital': {
+      const why = orbitalBombard(w, side, num(cmd.x), num(cmd.y));
       return why ? { why } : {};
     }
     case 'build': {

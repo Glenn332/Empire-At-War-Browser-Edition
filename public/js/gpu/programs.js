@@ -437,7 +437,7 @@ fn layer(slot: f32) -> vec3f {
   vWorld = v.vWorld;
   n = normalize(v.vNormal); toEye = normalize(P.cameraPosition - vWorld);
   dPx = dpdx(vWorld); dPy = dpdy(vWorld);
-  soft = P.ambient + P.fillColor * max(dot(n, P.fillDir), 0.0);
+  soft = P.ambient + P.fillColor * max(dot(n, P.fillDir), 0.0) + P.fillColor2 * max(dot(n, P.fillDir2), 0.0);
   let cl = textureSample(cloudsT, cloudsS, (vWorld.xy + T.cloudAt.xy) / T.cloudAt.z).rgb;
   let seen = textureSample(fogT, fogS, vWorld.xy / T.side.x).r;
   let Ly = v.vLayers;
