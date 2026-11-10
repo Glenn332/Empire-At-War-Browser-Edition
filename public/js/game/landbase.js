@@ -5,6 +5,7 @@ import { buildsFor, isUpgrade, landUnit } from './land.js';
 import { FORCE, blast } from './landabilities.js';
 import { simRandom } from './simrandom.js';
 import { categoryOf } from './projflight.js';
+import { AnimState } from '../ala.js';
 
 const yes = s => /^(yes|true)$/i.test(String(s || '').trim());
 const abilityOf = (type, tag) => (type.sub ? type.sub('Abilities').flatMap(a => a.all(tag)) : []);
@@ -34,6 +35,25 @@ function specialsOf(type) {
   read('Earthquake_Attack_Ability', 'quake');
   read('Eat_Attack_Ability', 'eat');
   read('Arc_Sweep_Attack_Ability', 'sweep');
+  read('Demolition_Ability', 'demolition');
+  for (const S of out)
+    if (S.kind === 'demolition') {
+      const a = S.a,
+        off = a
+          .val('Bomb_Position_Offset')
+          .split(/[\s,]+/)
+          .filter(Boolean)
+          .map(Number);
+      S.min = Math.max(0, S.min);
+      S.max = Math.max(0, S.max);
+      S.amount = Math.max(0, S.amount);
+      S.part = Math.min(1, Math.max(0, S.part));
+      S.bomb = a.val('Bomb_Type').trim() || 'Demolition_Bomb';
+      S.damageType = a.val('Bomb_Damage_Type').trim() || 'Damage_Normal';
+      S.offset = [0, 1, 2].map(i => (Number.isFinite(off[i]) ? off[i] : 0));
+      S.spawnFrame = Math.max(0, Math.trunc(a.num('Bomb_Spawn_Frame', 0)));
+      S.timer = a.num('Bomb_Timer_In_Secs', 5) < 0 ? 5 : a.num('Bomb_Timer_In_Secs', 5);
+    }
   return out.length ? out : false;
 }
 const suitsSpecial = (S, t) => {
@@ -51,6 +71,7 @@ export function specialAttack(world, u, t, dt) {
   if (!list) return false;
   const A = u.special;
   if (A) {
+    if (A.lock) return true;
     if (A.kind !== 'quake') {
       if (world.time < A.until) return true;
       u.special = null;
@@ -70,6 +91,10 @@ export function specialAttack(world, u, t, dt) {
   u.specialAt = world.time + Math.max(0.5, u.weapon ? u.weapon.recharge : 1);
   const d = Math.hypot(t.x - u.x, t.y - u.y) - (t.structure ? t.hitRadius || 0 : 0);
   for (const S of list) {
+    if (S.kind === 'demolition') {
+      if (demolish(world, u, t, S, d)) return true;
+      continue;
+    }
     if (S.kind === 'quake' || d < S.min || d > S.max || !suitsSpecial(S, t) || simRandom() >= S.chance) continue;
     const a = S.a,
       rate = a.num('Attack_Animation_Speedup', 1) || 1,
@@ -163,6 +188,101 @@ export function specialAttack(world, u, t, dt) {
     return true;
   }
   return false;
+}
+
+const LOGIC = 30;
+const turnBy = (u, want, dt) => {
+  let da = want - u.heading;
+  da = Math.atan2(Math.sin(da), Math.cos(da));
+  const step = (u.stopTurn || u.turn || 3) * dt;
+  u.heading += Math.abs(da) <= step ? da : Math.sign(da) * step;
+  return Math.abs(da) - Math.min(Math.abs(da), step);
+};
+
+function demolish(world, u, t, S, d) {
+  if (!(u.type._demolition ??= /\bDEMOLITION\b/i.test(u.type.str('LandBehavior') + ' ' + u.type.str('Behavior')))) return false;
+  if (u.demoBomb && !u.demoBomb.dead) return false;
+  if (!world.enemy(u, t) || (!S.cats.length && !S.types.length) || !suitsSpecial(S, t)) return false;
+  if (d < S.min || d > S.max || simRandom() >= S.chance) return false;
+  const damage = t.maxHealth * S.part + S.amount;
+  u.special = { kind: 'demolition', lock: true };
+  u.path = [];
+  u.target = null;
+  let anim = null,
+    t0 = 0,
+    end = 0,
+    spawned = false,
+    turning = true;
+  world.effects.push(dt => {
+    if (u.dead) {
+      u.special = null;
+      return true;
+    }
+    if (turning) {
+      if (turnBy(u, Math.atan2(t.y - u.y, t.x - u.x), dt) > 0.1) return false;
+      turning = false;
+      t0 = world.time;
+      anim = world.cast(u, 'DEMOLITION') ? u.anim : null;
+      end = anim ? u.cast : t0;
+    }
+    const live = !!anim && u.anim === anim && world.time < end;
+    if (live && !spawned && (world.time - t0) * anim.anim.fps >= S.spawnFrame) {
+      spawned = true;
+      plantDemolition(world, u, t, S, damage);
+    }
+    if (live) return false;
+    u.special = null;
+    return true;
+  });
+  return true;
+}
+
+function plantDemolition(world, u, t, S, damage) {
+  const B = db.type(S.bomb);
+  if (!B || !/\bBOMB\b/i.test(B.str('LandBehavior') + ' ' + B.str('Behavior'))) return;
+  const [ox, oy, oz] = S.offset,
+    k = u.holder ? u.holder.scale.x : 1,
+    a = u.heading + Math.PI / 2,
+    c = Math.cos(a),
+    s = Math.sin(a),
+    x = u.x + (ox * c - oy * s) * k,
+    y = u.y + (ox * s + oy * c) * k,
+    side = u.side,
+    fuse = Math.round(LOGIC * S.timer),
+    at = world.time + fuse / LOGIC,
+    pending = { dead: false };
+  u.demoBomb = pending;
+  Promise.resolve(world.spawn(B.name, x, y, u.heading, side, [{ type: B.name, x, y, h: u.heading, hp: Infinity }]))
+    .catch(() => null)
+    .then(q => {
+      const b = q && q.members.find(m => !m.dead);
+      pending.dead = true;
+      if (!b) return;
+      if (u.demoBomb === pending) u.demoBomb = b;
+      b.mine = true;
+      b.rooted = true;
+      b.lift = Math.max(0, (u.z || 0) + oz * k - world.groundZ(x, y));
+      if (B.bool('Is_Decoration')) b.untargetable = true;
+      b.squad.noAI = true;
+      const idle = b.anims && b.anims.idle;
+      if (idle && b.inst) {
+        b.anim = new AnimState(b.inst, idle, { loop: false, time: Math.max(0, idle.frames - fuse) / idle.fps });
+        b.animKind = '~cast';
+        b.cast = at;
+      }
+      world.effects.push(() => {
+        if (b.dead) return true;
+        if (world.time < at) return false;
+        b.invulnUntil = 0;
+        world.hurt(b, 1e9);
+        if (/^projectile$/i.test(B.tag)) blast(world, B, b.x, b.y, side);
+        else if (!t.dead) {
+          t.lastDamage = S.damageType;
+          world.hurt(t, damage * db.damageMod(S.damageType, t.armor), u);
+        }
+        return true;
+      });
+    });
 }
 
 function endQuake(world, u) {

@@ -16,9 +16,11 @@ globalThis.fetch = async input => {
     bytes = key && archive.read(key);
   return new Response(bytes || null, { status: bytes ? 200 : 404 });
 };
-const { db, loadGameData } = await import('../public/js/gamedata.js');
+const { db, loadGameData, ObjType } = await import('../public/js/gamedata.js');
+const { parseXML } = await import('../public/js/xml.js');
 await loadGameData();
 const { LandWorld, LandSquad, landUnit } = await import('../public/js/game/land.js');
+const { specialAttack } = await import('../public/js/game/landbase.js');
 const { landAbilities, useAbility, tickAbilities, abilityBlocked, blastFactor, remoteBombs } = await import(
   '../public/js/game/landabilities.js'
 );
@@ -239,9 +241,89 @@ const settle = async (world, secs) => {
   assert(!chewie.dead && chewie.inside === null && chewie.x === 120, 'Any vehicle death releases the thief at its spot');
 }
 
+const castable = world => {
+  world.cast = (u, K, secs = 0, loop = false, rate = 1) => {
+    const anim = { fps: 30, frames: 60, duration: 2 };
+    u.anim = { anim, time: 0, kind: K };
+    u.cast = world.time + (secs || anim.duration / rate);
+    (world.casts ||= []).push([u, K, rate]);
+    return true;
+  };
+  return world;
+};
+const synthetic = (base, xml) => {
+  const T = new ObjType(db.type(base).tag, 'Test_' + base);
+  T.parent = db.type(base);
+  T.subs.set('abilities', [parseXML(`<Abilities>${xml}</Abilities>`).children[0]]);
+  return T;
+};
+
+{
+  const world = castable(makeWorld());
+  const T = synthetic(
+    'Kyle_Katarn',
+    `<Demolition_Ability Name="Test_Demolition">
+      <Activation_Min_Range>-5</Activation_Min_Range>
+      <Activation_Max_Range>50</Activation_Max_Range>
+      <Activation_Chance>1.0</Activation_Chance>
+      <Damage_Amount>100</Damage_Amount>
+      <Damage_Percentage>0.5</Damage_Percentage>
+      <Bomb_Damage_Type>Damage_Bomb</Bomb_Damage_Type>
+      <Bomb_Position_Offset>0, -10, 0</Bomb_Position_Offset>
+      <Bomb_Spawn_Frame>15</Bomb_Spawn_Frame>
+      <Bomb_Timer_In_Secs>2</Bomb_Timer_In_Secs>
+      <Applicable_Unit_Categories>Vehicle</Applicable_Unit_Categories>
+    </Demolition_Ability>`
+  );
+  const kyle = world.make(T, 0, 0, 0, Math.PI);
+  const walker = world.make(db.type('AT_ST_Walker'), 1, 30, 0);
+  const hp = walker.health;
+  assert.equal(specialAttack(world, kyle, walker, DT), true, 'Demolition starts on a valid target in range');
+  assert(kyle.special.lock && world.fight(kyle, DT) === true, 'The demolisher stops moving and firing');
+  await settle(world, 0.5);
+  assert(!world.casts?.length, 'No animation while still turning');
+  await settle(world, 0.6);
+  assert(Math.abs(Math.atan2(Math.sin(kyle.heading), Math.cos(kyle.heading))) < 0.1 + 1e-9, 'It turns to face the target first');
+  assert.equal(world.casts.at(-1)[1], 'DEMOLITION');
+  assert(!world.units.some(u => u.type.name === 'Demolition_Bomb'));
+  await settle(world, 0.6);
+  const bomb = world.units.find(u => u.type.name === 'Demolition_Bomb');
+  assert(bomb && bomb.side === 0, 'The bomb appears once the animation reaches Bomb_Spawn_Frame');
+  assert(Math.hypot(bomb.x - 10, bomb.y) < 0.5, 'At the unit transform times Bomb_Position_Offset');
+  assert.equal(kyle.demoBomb, bomb);
+  kyle.specialAt = 0;
+  await settle(world, 1.5);
+  assert.equal(kyle.special, null, 'The unit is released when the animation ends');
+  assert.equal(specialAttack(world, kyle, walker, DT), false, 'No second charge while its bomb is live');
+  assert.equal(walker.health, hp);
+  await settle(world, 1);
+  assert(bomb.dead && world.deaths.includes(bomb), 'The bomb dies at the end of its timer');
+  const want = (walker.maxHealth * 0.5 + 100) * db.damageMod('Damage_Bomb', walker.armor);
+  assert(
+    walker.dead || Math.abs(hp - walker.health - want) < 1e-6,
+    'The target takes max health share plus amount as the bomb damage type'
+  );
+  assert(walker.dead || walker.lastDamage === 'Damage_Bomb');
+
+  const none = synthetic(
+    'Kyle_Katarn',
+    `<Demolition_Ability Name="Test_Demolition_None"><Activation_Max_Range>50</Activation_Max_Range></Demolition_Ability>`
+  );
+  const idle = world.make(none, 0, 0, 40);
+  const tank = world.make(db.type('AT_ST_Walker'), 1, 20, 40);
+  assert.equal(specialAttack(world, idle, tank, DT), false, 'Without categories or types the ability never activates');
+  const plain = synthetic(
+    'Stormtrooper',
+    `<Demolition_Ability Name="Test_Demolition_Plain"><Applicable_Unit_Categories>Vehicle</Applicable_Unit_Categories></Demolition_Ability>`
+  );
+  const trooper = world.make(plain, 0, 0, 80);
+  const tank2 = world.make(db.type('AT_ST_Walker'), 1, 20, 80);
+  assert.equal(specialAttack(world, trooper, tank2, DT), false, 'Units without the DEMOLITION behaviour never activate it');
+}
+
 console.log(
   JSON.stringify({
     checks:
-      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection'
+      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection; demolition: behaviour and category gates, turn, spawn frame, offset, timer, damage'
   })
 );

@@ -497,6 +497,7 @@ class LandUnit {
     this.capturable = undefined;
     this.specialAt = undefined;
     this.special = undefined;
+    this.demoBomb = undefined;
     this.cats = undefined;
     this.stunUntil = undefined;
     this.cast = undefined;
@@ -5090,6 +5091,11 @@ export class LandWorld {
   }
 
   fight(u, dt) {
+    if (u.special && u.special.lock) {
+      u.path = [];
+      u.target = null;
+      return true;
+    }
     if (this.aiSuspended && !u.squad.foe) {
       u.target = null;
       return false;
