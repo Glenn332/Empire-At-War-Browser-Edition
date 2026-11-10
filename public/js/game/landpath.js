@@ -12,13 +12,17 @@ export class LandPaths {
     this.ver = -1;
     this.mask = 0;
     this.clearance = 0;
+    this.cost = null;
+    this.limit = Infinity;
     this.bits = new Int32Array(this.n * this.n);
+    this.zoneMaps = new Map();
   }
 
   sync() {
     const w = this.w;
     if (this.ver === w.groundVer) return;
     this.ver = w.groundVer;
+    this.zoneMaps.clear();
     const n = this.n,
       kind = w.kind,
       open = w.open,
@@ -153,7 +157,73 @@ export class LandPaths {
     return (b & this.mask) === b;
   }
 
-  route(ax, ay, bx, by, mask, clearance = 0) {
+  zones(mask) {
+    let z = this.zoneMaps.get(mask);
+    if (z) return z;
+    const R = this.count,
+      rb = this.rbits,
+      nbS = this.nbStart,
+      nbL = this.nbList,
+      stack = [];
+    z = new Int32Array(R).fill(-1);
+    let id = 0;
+    for (let r = 0; r < R; r++) {
+      if (z[r] !== -1 || (rb[r] & mask) !== rb[r]) continue;
+      z[r] = id;
+      stack.push(r);
+      while (stack.length) {
+        const c = stack.pop();
+        for (let k = nbS[c]; k < nbS[c + 1]; k++) {
+          const nb = nbL[k];
+          if (nb >= 0 && z[nb] === -1 && (rb[nb] & mask) === rb[nb]) {
+            z[nb] = id;
+            stack.push(nb);
+          }
+        }
+      }
+      id++;
+    }
+    this.zoneMaps.set(mask, z);
+    return z;
+  }
+  zoneAt(cx, cy, mask) {
+    const r = this.rectOfCell(cx, cy);
+    return r < 0 ? -1 : this.zones(mask)[r];
+  }
+
+  zoneGoal(mx, my, gx, gy, mask) {
+    this.sync();
+    this.mask = mask;
+    let zm = this.zoneAt(cellOf(mx), cellOf(my), mask);
+    if (zm < 0) {
+      const a = this.nearestCell(mx, my);
+      if (!a) return null;
+      zm = this.zoneAt(cellOf(a.x), cellOf(a.y), mask);
+      if (zm < 0) return null;
+    }
+    const cx = cellOf(gx),
+      cy = cellOf(gy);
+    if (this.zoneAt(cx, cy, mask) === zm) return { x: gx, y: gy };
+    for (let r = 1; r < 30; r++) {
+      let best = null,
+        far = Infinity;
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r, edge = dy === -r || dy === r; dx <= r; dx = edge || dx === r ? dx + 1 : r) {
+          const ix = cx + dx,
+            iy = cy + dy;
+          if (this.zoneAt(ix, iy, mask) !== zm) continue;
+          const d = (ix * CELL - mx) ** 2 + (iy * CELL - my) ** 2;
+          if (d < far) {
+            far = d;
+            best = { x: ix * CELL, y: iy * CELL };
+          }
+        }
+      if (best) return best;
+    }
+    return null;
+  }
+
+  route(ax, ay, bx, by, mask, clearance = 0, opt = null) {
     this.sync();
     this.mask = mask;
     let a = { x: ax, y: ay },
@@ -166,7 +236,17 @@ export class LandPaths {
       b = this.nearestCell(bx, by);
       if (!b) return null;
     }
+    const za = this.zoneAt(cellOf(a.x), cellOf(a.y), mask);
+    if (za < 0 || za !== this.zoneAt(cellOf(b.x), cellOf(b.y), mask)) return null;
+    const d = opt && opt.danger;
+    this.cost = d
+      ? (cx, cy) => {
+          const t = d.at(cx * CELL, cy * CELL);
+          return t < d.threshold ? 1 : Math.max(1, t * d.weight + 1);
+        }
+      : null;
     const way = this.request(a, b, clearance, true);
+    this.cost = null;
     if (!way) return null;
     way.shift();
     if (a.x !== ax || a.y !== ay) way.unshift({ x: a.x, y: a.y });
@@ -223,6 +303,7 @@ export class LandPaths {
   }
 
   search(a, b, smooth) {
+    if (this.cost) return this.cellSearch(a, b, smooth);
     const sx = cellOf(a.x),
       sy = cellOf(a.y),
       gx = cellOf(b.x),
@@ -334,7 +415,8 @@ export class LandPaths {
         if (had && had.closed) continue;
         if ((rb[nb] & mask) !== rb[nb]) continue;
         cross(px, py, ax, ay, aw, ah, RXa[nb], RYa[nb], RWa[nb], RHa[nb], q);
-        const g = f32(this.stepCost(px, py, q[0], q[1], cur, nb) + EG[e]);
+        const step = this.stepCost(px, py, q[0], q[1], cur, nb),
+          g = f32((this.cost ? step * Math.max(this.cost(px, py), this.cost(q[0], q[1])) : step) + EG[e]);
         if (had && !(g < had.g)) continue;
         if (had) had.g = g;
         if (nodes >= most) return null;
@@ -355,6 +437,106 @@ export class LandPaths {
       }
     }
     return null;
+  }
+
+  cellSearch(a, b, smooth) {
+    const n = this.n,
+      sx = cellOf(a.x),
+      sy = cellOf(a.y),
+      gx = cellOf(b.x),
+      gy = cellOf(b.y),
+      cost = this.cost,
+      N = n * n;
+    if (!this.enters(sx, sy) || !this.enters(gx, gy)) return null;
+    if (!this.cellG || this.cellG.length < N) {
+      this.cellG = new Float32Array(N);
+      this.cellUp = new Int32Array(N);
+      this.cellMark = new Int32Array(N);
+      this.cellHeap = new Int32Array(8 * N + 2);
+      this.cellF = new Float32Array(8 * N + 2);
+      this.cellRun = 0;
+    }
+    const G = this.cellG,
+      Up = this.cellUp,
+      mark = this.cellMark,
+      heap = this.cellHeap,
+      F = this.cellF,
+      run = ++this.cellRun,
+      done = -run;
+    let size = 0;
+    const push = (i, f) => {
+      if (size + 1 >= heap.length) return;
+      let k = ++size;
+      for (; k > 1 && F[k >> 1] > f; k >>= 1) {
+        heap[k] = heap[k >> 1];
+        F[k] = F[k >> 1];
+      }
+      heap[k] = i;
+      F[k] = f;
+    };
+    const pop = () => {
+      const top = heap[1],
+        li = heap[size],
+        lf = F[size--];
+      let k = 1;
+      for (;;) {
+        let c = 2 * k;
+        if (c > size) break;
+        if (c + 1 <= size && F[c + 1] < F[c]) c++;
+        if (F[c] >= lf) break;
+        heap[k] = heap[c];
+        F[k] = F[c];
+        k = c;
+      }
+      heap[k] = li;
+      F[k] = lf;
+      return top;
+    };
+    const s0 = sy * n + sx,
+      goal = gy * n + gx;
+    G[s0] = 0;
+    Up[s0] = -1;
+    mark[s0] = run;
+    push(s0, Math.hypot(gx - sx, gy - sy));
+    let steps = 0,
+      hit = false;
+    while (size && steps++ < 2 * N) {
+      const i = pop();
+      if (mark[i] === done) continue;
+      mark[i] = done;
+      if (i === goal) {
+        hit = true;
+        break;
+      }
+      const x = i % n,
+        y = (i - x) / n,
+        here = cost(x, y),
+        g0 = G[i];
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const X = x + dx,
+            Y = y + dy;
+          if (!this.enters(X, Y)) continue;
+          if (dx && dy && (!this.enters(x + dx, y) || !this.enters(x, y + dy))) continue;
+          const j = Y * n + X;
+          if (mark[j] === done) continue;
+          const g = g0 + (dx && dy ? Math.SQRT2 : 1) * Math.max(here, cost(X, Y));
+          if (mark[j] === run && !(g < G[j])) continue;
+          mark[j] = run;
+          G[j] = g;
+          Up[j] = i;
+          push(j, g + Math.hypot(gx - X, gy - Y));
+        }
+    }
+    if (!hit) return null;
+    const pts = [];
+    for (let i = goal; i >= 0; i = Up[i]) pts.push({ x: (i % n) * CELL, y: Math.trunc(i / n) * CELL });
+    pts.reverse();
+    if (a.x !== pts[0].x || a.y !== pts[0].y) pts.unshift({ x: a.x, y: a.y });
+    const z = pts[pts.length - 1];
+    if (b.x !== z.x || b.y !== z.y) pts.push({ x: b.x, y: b.y });
+    return smooth ? this.finish(pts) : pts;
   }
 
   stepCost(px, py, qx, qy, from, into) {
@@ -516,6 +698,10 @@ export class LandPaths {
       out.d = 0;
       return false;
     }
+    if (this.cost) {
+      this.limit = Math.max(this.cost(cellOf(P.x), cellOf(P.y)), this.cost(cellOf(Q.x), cellOf(Q.y))) * 1.5;
+      return this.cells(P, Q, out);
+    }
     return this.seg(P, this.rectOf(P.x, P.y), Q, this.rectOf(Q.x, Q.y), d, out);
   }
   seg(P, ra, Q, rq, d, out) {
@@ -555,7 +741,9 @@ export class LandPaths {
       dy = Q.y - P.y,
       n = this.n,
       bits = this.bits,
-      mask = this.mask;
+      mask = this.mask,
+      cost = this.cost,
+      limit = this.limit;
     const sx = dx < 0 ? -1 : dx > 0 ? 1 : 0,
       sy = dy < 0 ? -1 : dy > 0 ? 1 : 0;
     const fx1 = (HALF + Q.x) / CELL,
@@ -583,7 +771,7 @@ export class LandPaths {
     const open = (mx, my) => {
       if (mx < 0 || my < 0 || mx >= n || my >= n) return false;
       const b = bits[my * n + mx];
-      return (b & mask) === b;
+      return (b & mask) === b && !(cost && cost(mx, my) > limit);
     };
     while (tx <= 1 || ty <= 1) {
       tx = ddx !== 0 ? (ix - fx0) * (1 / ddx) : 1.1;
