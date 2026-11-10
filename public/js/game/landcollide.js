@@ -710,6 +710,7 @@ function ignored(W, s, o, m, flags, linked, mask) {
   if (mask & 1 && o.cls === 5 && !clashing(o) && !linked(o)) return true;
   if (!o.moving) {
     if (linked(o)) return false;
+    if (flags & 4 && o.cls >= 2 && o.cls <= 4) return true;
     if (flags & 2) return true;
     return !!(flags & 1) && W.enemy(unitOf(s), unitOf(o));
   }
