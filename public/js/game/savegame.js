@@ -152,6 +152,7 @@ function spaceSnapshot(game, name) {
       y = u.hyper ? u.hyper.ty : u.y;
     const o = { x: r1(x), y: r1(y), z: r1(u.z), h: +u.heading.toFixed(3), hp: r1(u.health), sh: r1(u.shield) };
     if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
+    if (u.energy) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
     return o;
   };
   const unit = u => {
@@ -229,6 +230,7 @@ function spaceSnapshot(game, name) {
         o.hp = r1(u.health);
         if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
       }
+      if (u.energy && u.energy.value < u.energy.cap) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
       const q = queues(u);
       if (q.length) o.q = q;
       if (u.everSeenBy) o.seen = u.everSeenBy;
@@ -438,6 +440,10 @@ export function restore(game, save) {
     }
     if (o.hp !== undefined) u.health = Math.max(1, Math.min(u.maxHealth, o.hp));
     if (o.sh !== undefined) u.shield = Math.max(0, Math.min(u.maxShield, o.sh));
+    if (o.en && u.energy) {
+      u.energy.value = Math.max(0, Math.min(u.energy.cap, o.en[0]));
+      u.energy.tick = o.en[1] || 0;
+    }
   };
   const place = (u, o) => {
     u.x = o.x;
@@ -608,7 +614,14 @@ export function restore(game, save) {
           if (s) s.cooldown = a.cooldown;
         }
     }
-    for (const f of e.isSquad ? e.fighters : [e]) refreshMods(f);
+    (e.isSquad ? e.fighters : [e]).forEach((f, k) => {
+      refreshMods(f);
+      const en = (e.isSquad ? o.f[k] : o)?.en;
+      if (en && f.energy) {
+        f.energy.value = Math.max(0, Math.min(f.energy.cap, en[0]));
+        f.energy.tick = en[1] || 0;
+      }
+    });
   });
 
   snap.players.forEach((ps, i) => {
