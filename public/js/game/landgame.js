@@ -1175,7 +1175,8 @@ export class LandGame {
   landSnapshot(name, { version, build }) {
     const w = this.world,
       s = this.setup,
-      r1 = v => Math.round(v * 10) / 10;
+      r1 = v => Math.round(v * 10) / 10,
+      en = u => (u.energy ? { en: [r1(u.energy.value), +u.energy.tick.toFixed(3)] } : {});
     const live = w.squads.filter(q => !q.structure && !q.arriving && q.members.length);
     let scripts = null;
     try {
@@ -1225,7 +1226,7 @@ export class LandGame {
         weather: { i: w.weather.i, left: r1(w.weather.left), ...(w.weather.out ? { out: 1 } : {}) },
         captured: w.units
           .filter(u => u.capturable && !u.dead)
-          .map(u => ({ pt: w.points.indexOf(u.capturable), hp: r1(u.health), sh: r1(u.shield) })),
+          .map(u => ({ pt: w.points.indexOf(u.capturable), hp: r1(u.health), sh: r1(u.shield), ...en(u) })),
         houses: w.units
           .filter(u => u.house && !u.dead)
           .map(u => ({ x: Math.round(u.x), y: Math.round(u.y), hp: r1(u.health), timer: r1(u.house.timer), on: u.house.state })),
@@ -1248,7 +1249,8 @@ export class LandGame {
                   type: st.structure.type.name,
                   side: st.structure.side,
                   hp: r1(st.structure.health),
-                  sh: r1(st.structure.shield)
+                  sh: r1(st.structure.shield),
+                  ...en(st.structure)
                 }
               : null,
           building: st.building ? { uc: st.building.uc.name, side: st.building.side, left: r1(st.building.left) } : null
@@ -1274,6 +1276,7 @@ export class LandGame {
             hp: r1(u.health),
             sh: r1(u.shield),
             o: [u.off.x, u.off.y],
+            ...en(u),
             ...(u.limbo ? { limbo: 1 } : {}),
             ...(u.noOpportunity ? { nof: 1 } : {})
           }))
@@ -1478,6 +1481,7 @@ export class LandGame {
       w.showOwner(pt);
     });
     this.later = [];
+    const energies = [];
     await Promise.all(
       (b.sites || []).map(async (sv, i) => {
         const st = w.sites[i];
@@ -1499,6 +1503,7 @@ export class LandGame {
           if (u) {
             u.health = Math.min(u.maxHealth, sv.structure.hp);
             u.shield = Math.min(u.maxShield, sv.structure.sh || 0);
+            if (sv.structure.en) energies.push([u, sv.structure.en]);
             for (const q of sv.structure.queue || []) this.later.push([sv.structure.side, q.type, q.left]);
           }
         }
@@ -1526,6 +1531,7 @@ export class LandGame {
         }
         u.health = Math.min(u.maxHealth, sv.hp);
         u.shield = Math.min(u.maxShield, sv.sh || 0);
+        if (sv.en) energies.push([u, sv.en]);
         for (const q of sv.queue || []) this.later.push([u.side, q.type, q.left]);
       }
     }
@@ -1555,6 +1561,7 @@ export class LandGame {
               sq?.members?.forEach((u, i) => {
                 if (q.members[i]?.limbo) u.limbo = true;
                 if (q.members[i]?.nof) u.noOpportunity = true;
+                if (q.members[i]?.en) energies.push([u, q.members[i].en]);
               });
               if (sq && q.co !== undefined) sq.company = 's' + q.co;
               if (sq && q.in >= 0 && w.sites[q.in] && w.sites[q.in].structure) putInside(w, sq, w.sites[q.in].structure);
@@ -1581,6 +1588,12 @@ export class LandGame {
       for (const [n, left] of q.upgrades || []) reorder(side, n, left);
     });
     for (const [side, n, left] of this.later) reorder(side, n, left);
+    for (const [u, [value, tick]] of energies) {
+      const e = w.energyOf(u);
+      if (!e) continue;
+      e.value = Math.max(0, Math.min(e.cap, value));
+      e.tick = tick || 0;
+    }
     adoptGarrisons(w);
     this.say(`Loaded: ${this.setup.restore.name}`);
     return { squads, landing, landingGids: (b.landing || []).map(l => l.gid) };
