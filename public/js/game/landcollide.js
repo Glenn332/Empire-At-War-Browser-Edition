@@ -1242,6 +1242,10 @@ function classifyMS(W, c, bodies, T) {
     return;
   }
   if (A.cls > 6 || B.cls > 6) {
+    if (goRound(W, c, A, B, false, 1, T) || goRound(W, c, A, B, false, 5, T)) {
+      c.state = MS.PATH_AROUND;
+      return;
+    }
     if (!friend && B.u && A.u) {
       W.attack(A.u.squad, B.u.squad);
       c.state = MS.ATTACK;

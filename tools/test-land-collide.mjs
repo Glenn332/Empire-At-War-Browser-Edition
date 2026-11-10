@@ -310,4 +310,28 @@ for (const clash of [false, true]) {
     );
 }
 
+{
+  const W = makeWorld([
+    [0, 0, N - 1, 97],
+    [0, 103, N - 1, N - 1]
+  ]);
+  const attacks = [];
+  W.attack = (a, b) => attacks.push([a, b]);
+  const s = unitOf(W, 'T2B_Tank', 0, 1050, 2000, 0),
+    b = unitOf(W, 'T2B_Tank', 1, 1300, 2000, 0);
+  b.rooted = true;
+  for (let x = 1340; x <= 2000; x += 40) {
+    const f = unitOf(W, 'T2B_Tank', 1, x, 2000, 0);
+    f.rooted = true;
+  }
+  s.path = [{ x: 1700, y: 2000 }];
+  let seen = null;
+  for (let f = 0; f < 120 && !seen; f++) {
+    step(W, 1 / 30);
+    seen = W.colls.find(k => k.kind === 'ms' && k.a === s.cb && k.b === b.cb && k.state !== undefined) || null;
+    if (seen && seen.state !== 1 && seen.state !== 8) seen = null;
+  }
+  assert(seen && seen.state === 1 && !attacks.length, 'a vehicle blocked by an enemy goes round with enemies passable before it attacks');
+}
+
 console.log('ok land collisions');
