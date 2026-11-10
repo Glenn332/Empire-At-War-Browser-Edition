@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { fetchText, findFiles } from '../vfs.js';
+import { parseXML } from '../xml.js';
 import { simRandom } from './simrandom.js';
 
 const FILES = [
@@ -167,7 +168,11 @@ export async function difficultyAdjustment(faction, difficulty, playerType = nul
           bribe: n('Bribe_Cost_Multiplier'),
           galacticSleep: n('Galactic_AI_Goal_Cycle_Sleep_Duration'),
           galacticContrast: n('Galactic_AI_Contrast_Multiplier'),
-          build: { space: n('Space_Build_Time_Multiplier'), land: n('Land_Build_Time_Multiplier'), galactic: n('Galactic_Build_Time_Multiplier') }
+          build: {
+            space: n('Space_Build_Time_Multiplier'),
+            land: n('Land_Build_Time_Multiplier'),
+            galactic: n('Galactic_Build_Time_Multiplier')
+          }
         });
       }
       return out;
@@ -338,14 +343,30 @@ const GOAL_BITS = {
   ENEMY_REINFORCEMENT_POINT: 0x8000
 };
 
+let HINTS = null;
+export function loadHintSets() {
+  return (HINTS ||= (async () => {
+    const sets = new Map(),
+      files = await findFiles('XML\\\\AI\\\\HINTSETS\\\\[^\\\\]*\\.XML$').catch(() => []);
+    for (const path of files) {
+      const text = await fetchText(path).catch(() => null);
+      if (!text) continue;
+      for (const root of parseXML(text).children)
+        for (const set of root.children) sets.set(set.tag.toUpperCase(), new Map(set.children.map(n => [n.tag.toUpperCase(), +n.text])));
+    }
+    return sets;
+  })());
+}
+
 const BRAINS = new Map();
 export async function loadBrain(faction = null) {
   const sets = (faction && (await aiSets(faction))) || SETS,
     key = sets.join(' ');
   if (!BRAINS.has(key)) BRAINS.set(key, readBrain(FILES, sets));
   const brain = await BRAINS.get(key),
-    p = faction ? await aiPlayer(faction) : null;
-  return Object.assign(Object.create(brain), { player: p ? { land: p.templates.land, ext: p.ext } : null, sleep: 1 });
+    p = faction ? await aiPlayer(faction) : null,
+    hints = (await loadHintSets().catch(() => null))?.get('TEST_HINT_SET') || null;
+  return Object.assign(Object.create(brain), { player: p ? { land: p.templates.land, ext: p.ext } : null, sleep: 1, hints });
 }
 
 const power = u => (u.aiPower ??= Math.max(0, u.type.num('AI_Combat_Power', 0)));
@@ -729,12 +750,14 @@ export class Mind extends Reason {
     if (who === 'Variable_Target' && t) {
       const u = t.unit;
       if (what.startsWith('HINTS.')) {
+        if (t.unit || t.site || t.point) return 0;
+        const k = what.slice(6),
+          set = this.b.hints;
+        if (!set || !set.has(k)) return 0;
         const z = this.zone(t),
-          k = what.slice(6),
           props = z && z.props;
-        if (!props) return 0;
-        for (const n in props) if (n.toUpperCase() === k) return props[n];
-        return 0;
+        if (props) for (const n in props) if (n.toUpperCase() === k && Number.isFinite(+props[n])) return +props[n];
+        return set.get(k) || 0;
       }
       switch (what) {
         case 'TYPE.ISTYPE':
@@ -750,16 +773,12 @@ export class Mind extends Reason {
         case 'ISINSIDEFRIENDLYSHIELD':
         case 'ISINSIDEENEMYSHIELD': {
           const mine = what === 'ISINSIDEFRIENDLYSHIELD';
-          for (const s of w.units)
-            if (
-              s.dome &&
-              s.dome.on &&
-              !s.dead &&
-              s.side >= 0 &&
-              w.ally(s.side, side) === mine &&
-              (s.x - t.x) ** 2 + (s.y - t.y) ** 2 < s.dome.r * s.dome.r
-            )
-              return 1;
+          const tz = u ? u.z || 0 : (t.site && t.site.z) || (w.groundZ ? w.groundZ(t.x, t.y) : 0);
+          for (const s of w.units) {
+            if (!s.dome || !s.dome.on || !(s.dome.r > 0) || s.dead) continue;
+            const foe = side >= 0 && s.side >= 0 && !w.ally(s.side, side) && (s.side !== w.wild || !!s.squad?.native);
+            if (foe !== mine && (s.x - t.x) ** 2 + (s.y - t.y) ** 2 + ((s.z || 0) - tz) ** 2 < s.dome.r * s.dome.r) return 1;
+          }
           return 0;
         }
         case 'ISBUILDPAD':

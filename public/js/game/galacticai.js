@@ -1,7 +1,7 @@
 import { db } from '../gamedata.js';
-import { fetchText, findFiles } from '../vfs.js';
+import { fetchText } from '../vfs.js';
 import { parseXML } from '../xml.js';
-import { aiPlayerType, aiPlayerTypes, difficultyAdjustment, readBrain, Reason } from './landbrain.js';
+import { aiPlayerType, aiPlayerTypes, difficultyAdjustment, readBrain, Reason, loadHintSets } from './landbrain.js';
 import { GoalSystem } from './landgoals.js';
 import { simRandom } from './simrandom.js';
 import { catParam } from './landbrain.js';
@@ -426,7 +426,8 @@ export class GalacticMind extends Reason {
           const budget = job.inst.ai.budget,
             row = job.inst.budget;
           need =
-            Math.min(need, head.total > 0 ? (head.left / head.total) * head.cost : 0, row?.allocated ?? Infinity) - (budget?.spendable(row) ?? 0);
+            Math.min(need, head.total > 0 ? (head.left / head.total) * head.cost : 0, row?.allocated ?? Infinity) -
+            (budget?.spendable(row) ?? 0);
           time = Math.min(time, head.left, Math.max(row?.horizon ?? 0, 0));
           building = true;
         }
@@ -442,9 +443,7 @@ export class GalacticMind extends Reason {
     if (name === 'VARIABLE_SELF.CANADVANCETECH') {
       const pl = c.player,
         item = [...db.types.values()].find(
-          t =>
-            t.num('Build_Advances_Tech_Level', 0) === pl.tech + 1 &&
-            t.list('Affiliation').some(a => key(a) === key(pl.faction))
+          t => t.num('Build_Advances_Tech_Level', 0) === pl.tech + 1 && t.list('Affiliation').some(a => key(a) === key(pl.faction))
         );
       if (!item) return 0;
       for (const world of g.planets) {
@@ -1026,15 +1025,8 @@ export class GalacticAI {
     return this.forceView;
   }
   async loadHints() {
-    this.hintSets = new Map();
+    this.hintSets = await loadHintSets();
     this.markups = new Map();
-    const files = await findFiles('XML\\\\AI\\\\HINTSETS\\\\[^\\\\]*\\.XML$');
-    for (const path of files) {
-      const text = await fetchText(path);
-      if (!text) continue;
-      for (const root of parseXML(text).children)
-        for (const set of root.children) this.hintSets.set(key(set.tag), new Map(set.children.map(n => [key(n.tag), +n.text])));
-    }
     for (const row of this.game.galaxy.campaign.props.get('markup_filename') || []) {
       const [owner, file] = row.split(',').map(s => s.trim());
       if (!owner || !file) continue;
