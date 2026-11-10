@@ -55,4 +55,8 @@ w.units = [shield(1, 0, { dome: { on: false, r: 100 } })];
 assert.equal(inside('IsInsideEnemyShield'), 0, 'a shield that is down protects nothing');
 w.units = [shield(0, 0)];
 assert.equal(inside('IsInsideFriendlyShield'), 1);
+assert.equal(see('Game.IsLandControlGame', null), 0, 'a team land game is no land control game');
+w.landControl = true;
+assert.equal(see('Game.IsLandControlGame', null), 1, 'the capture control points game');
+assert.equal(see('Game.IsSetupPhase', null), 0, 'no setup phase: SetupPhaseEnabled is off in the game constants');
 console.log('ok');

@@ -664,6 +664,7 @@ export class LandGame {
       popCap: setup.popCap
     }));
     world.campaign = !!setup.campaign;
+    world.landControl = setup.type === 'control';
     world.tacticalRules = setTacticalRules({ campaign: !!setup.campaign, skirmish: !!setup.campaign?.skirmishRules, corrupted: (setup.campaign?.corruption ?? -1) !== -1 });
     world.playerSides = this.players.length;
     world.clearShots = !setup.net;

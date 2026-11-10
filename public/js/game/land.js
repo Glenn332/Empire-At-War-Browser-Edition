@@ -1252,7 +1252,8 @@ export class LandWorld {
   }
 
   route(ax, ay, bx, by, need = 1, opt = null) {
-    return this.paths.route(ax, ay, bx, by, this.maskOf(need), (opt && opt.clearance) || 0, opt);
+    const d = this.routeDanger && !(opt && opt.danger) ? { ...opt, danger: this.routeDanger } : opt;
+    return this.paths.route(ax, ay, bx, by, this.maskOf(need), (d && d.clearance) || 0, d);
   }
 
   moveGoal(from, x, y, need = 1) {

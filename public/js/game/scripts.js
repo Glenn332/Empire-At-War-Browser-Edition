@@ -316,7 +316,7 @@ export class ScriptHost {
   resume(e, s) {
     if (gone(e)) return;
     if (!this.land || !e.members) {
-      if (s.order && e.setOrder) {
+      if (s.order && e.setOrder && !(s.order.target && gone(s.order.target))) {
         e.setOrder(s.order);
         if (s.queue) e.queue = s.queue;
       }
@@ -329,6 +329,20 @@ export class ScriptHost {
     e.post = s.post;
     e.leash = s.leash;
     e.legs = s.legs;
+  }
+
+  divertMove(e, p, threat) {
+    const w = this.world,
+      ai = this.current && this.current.ai,
+      mind = this.land && ai && ai.mind && ai.side === e.side && ai.mind.threatAt ? ai.mind : null,
+      tol = +threat;
+    if (!mind || !(tol >= 0) || tol >= 1e18) return this.cmd.move([e], p.x, p.y, false, true);
+    w.routeDanger = { at: (x, y) => mind.threatAt(x, y), threshold: tol, weight: 1 / Math.max(1, tol) };
+    try {
+      this.cmd.move([e], p.x, p.y, false, true);
+    } finally {
+      w.routeDanger = null;
+    }
   }
 
   stepDiversions() {
@@ -928,7 +942,7 @@ export class ScriptHost {
         const p = self.at(o);
         if (!p || gone(e) || !e.order || e.order.kind === 'idle' || self.locked(e)) return false;
         const saved = self.orderOf(e);
-        self.cmd.move([e], p.x, p.y, false, true);
+        self.divertMove(e, p, threat);
         const D = (self.diversions ||= new Map());
         if (!D.has(e)) D.set(e, []);
         D.get(e).push({ at: { x: p.x, y: p.y }, threat, saved, born: self.world.time, order: e.order, dest: self.orderOf(e).dest });

@@ -12,8 +12,14 @@ export function swapMode(type) {
   return type._swap;
 }
 
+const TYPE_DEFAULT = {
+  Projectile_Fire_Recharge_Seconds: 0,
+  Projectile_Fire_Pulse_Count: 1,
+  Projectile_Fire_Pulse_Delay_Seconds: 1
+};
+
 export function fireNum(type, proj, tag, dflt) {
-  return swapMode(type) && proj && proj.has(tag) ? proj.num(tag, dflt) : type.num(tag, dflt);
+  return swapMode(type) && proj ? proj.num(tag, TYPE_DEFAULT[tag] ?? dflt) : type.num(tag, dflt);
 }
 
 export function startingWeapon(type, campaign, bought) {

@@ -305,6 +305,7 @@ export function saveBattleScripts(game, ref) {
             .map(e => [ref(e), host.locks.get(e)])
             .filter(([r]) => r)
         : [],
+      diversions: saveDiversions(host, ref),
       plans: plans ? { failed: [...plans.failed] } : null,
       goals: saveGoals(B),
       story: host.story ? saveStory(host.story, s) : null
@@ -314,6 +315,60 @@ export function saveBattleScripts(game, ref) {
   } finally {
     P.names = null;
   }
+}
+
+export function saveDiversions(host, ref) {
+  return host.diversions
+    ? [...host.diversions]
+        .filter(([e, stack]) => !e.dead && stack.length)
+        .map(([e, stack]) => [
+          ref(e),
+          stack.map(d => ({ at: d.at, threat: d.threat ?? null, born: d.born, dest: d.dest ?? null, saved: packOrder(ref, d.saved) }))
+        ])
+        .filter(([r]) => r)
+    : [];
+}
+
+export function restoreDiversions(host, saved, thing) {
+  if (!saved || !saved.length) return;
+  host.diversions ||= new Map();
+  for (const [r, stack] of saved) {
+    const e = thing(r);
+    if (!e || !stack.length) continue;
+    const list = stack.map(d => ({
+      at: d.at,
+      threat: d.threat ?? undefined,
+      saved: unpackOrder(thing, d.saved),
+      born: d.born,
+      order: null,
+      dest: d.dest
+    }));
+    list[list.length - 1].order = e.order;
+    host.diversions.set(e, list);
+  }
+}
+
+function packOrder(ref, v, depth = 0) {
+  if (v === null || typeof v !== 'object') return typeof v === 'number' && !Number.isFinite(v) ? { inf: Math.sign(v) } : v;
+  if (depth > 4) return null;
+  if (Array.isArray(v)) return v.map(x => packOrder(ref, x, depth + 1));
+  if (v.type || v.members) {
+    const r = ref(v);
+    return r ? { thing: r } : null;
+  }
+  const out = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x !== 'function') out[k] = packOrder(ref, x, depth + 1);
+  return out;
+}
+
+function unpackOrder(thing, v) {
+  if (v === null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return v.map(x => unpackOrder(thing, x));
+  if (v.thing !== undefined) return thing(v.thing) || { dead: true };
+  if (v.inf !== undefined && Object.keys(v).length === 1) return v.inf * Infinity;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) out[k] = unpackOrder(thing, x);
+  return out;
 }
 
 function savePlan(B, s, inst) {
@@ -533,6 +588,7 @@ export function restoreBattleScripts(game, data, ref, thing) {
         if (e) host.locks.set(e, k);
       }
     }
+    restoreDiversions(host, data.diversions, thing);
     if (data.plans && host.plans) host.plans.failed = new Map(data.plans.failed);
     restoreGoals(B, data.goals);
     if (data.story && host.story) restoreStory(host.story, data.story, restored);
