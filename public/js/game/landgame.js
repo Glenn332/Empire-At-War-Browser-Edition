@@ -62,7 +62,7 @@ import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
 import { gfx, pixelRatio, shadowSize, gammaOn } from '../gfx.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
-import { placeLandInvasion, invasionWinner, landInvasionResult, invasionStructureDeath } from './campaignland.js';
+import { placeLandInvasion, invasionWinner, landInvasionResult, invasionStructureDeath, restoreSheltered } from './campaignland.js';
 import { campaignSetup } from './savegame.js';
 import { saveBattleScripts, restoreBattleScripts } from './tacticalsave.js';
 
@@ -1274,6 +1274,7 @@ export class LandGame {
             hp: r1(u.health),
             sh: r1(u.shield),
             o: [u.off.x, u.off.y],
+            ...(u.rider ? { rider: u.rider.name } : {}),
             ...(u.limbo ? { limbo: 1 } : {}),
             ...(u.noOpportunity ? { nof: 1 } : {})
           }))
@@ -1322,6 +1323,7 @@ export class LandGame {
         lostStructures: [...book.lostStructures],
         waiting: book.waiting.map(u => ({ ...u, type: u.type.name })),
         absent: book.absent.slice(),
+        contained: [...(book.contained || [])].map(([gid, home]) => [gid, st(home)]),
         persistent: [...book.persistent].map(([key, e]) => [
           key,
           { type: e.type, owner: e.owner, position: e.position, baseLevel: e.baseLevel, unit: st(e.unit) }
@@ -1346,6 +1348,13 @@ export class LandGame {
     book.lostStructures = new Set(c.book.lostStructures);
     book.waiting = c.book.waiting.map(u => ({ ...u, type: db.type(u.type) })).filter(u => u.type);
     book.absent = c.book.absent.slice();
+    if (c.book.contained)
+      restoreSheltered(
+        w,
+        book,
+        this.setup.campaign || {},
+        c.book.contained.map(([gid, r]) => [gid, st(r)])
+      );
     book.transports = new Map();
     book.pending = 0;
     book.persistent = new Map(
