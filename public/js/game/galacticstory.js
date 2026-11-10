@@ -377,6 +377,39 @@ export class GalacticStoryHost extends StoryPlots {
         : 'Galactic'
     );
     vm.global('Is_Multiplayer_Mode', () => !!game.setup?.net);
+    vm.global('WeightedTypeList', {
+      __wrap: true,
+      __name: 'WeightedTypeList',
+      Create: () => {
+        const types = [],
+          add = (name, weight) => {
+            const t = name?.__type || db.type(String(name));
+            if (t) types.push([t, +weight || 0]);
+          };
+        return {
+          __wrap: true,
+          __name: 'WeightedTypeList',
+          __weighted: types,
+          Is_Valid: () => true,
+          Add_Type: add,
+          Parse: (names, weights) => {
+            if (Array.isArray(names)) names.forEach((n, i) => add(n, Array.isArray(weights) ? weights[i] : weights));
+            else {
+              const parts = String(names || '')
+                .split(',')
+                .map(x => x.trim());
+              if (Array.isArray(weights)) parts.forEach((n, i) => add(n, weights[i]));
+              else for (let i = 0; i + 1 < parts.length; i += 2) add(parts[i], parts[i + 1]);
+            }
+          },
+          Get_Count: () => types.length,
+          Get_Weight: name => types.find(([t]) => t === (name?.__type || db.type(String(name))))?.[1] || 0,
+          Get_Type_At: i => (types[+i - 1] ? self.type(types[+i - 1][0]) : undefined),
+          __missing: this.absent('WeightedTypeList')
+        };
+      },
+      __missing: this.absent('WeightedTypeList')
+    });
     vm.global('Is_Campaign_Game', () => true);
     vm.global('Enable_AI_Fleet_Pathfinders', on => {
       if (game.galaxy) game.galaxy.aiPathfinders = !!on;
@@ -1244,6 +1277,10 @@ export class GalacticStoryHost extends StoryPlots {
     object.dead = true;
     const record = object.record || object;
     record.dead = true;
+    if (record.memberOf) {
+      if (this.memberCache?.get(record.memberOf)?.some(m => !m.dead)) return;
+      return this.despawn(record.memberOf);
+    }
     const g = this.game.galaxy;
     for (const p of g.planets)
       for (const list of ['groundStructures', 'orbitalStructures', 'garrison']) {
@@ -2264,7 +2301,22 @@ export class GalacticStoryHost extends StoryPlots {
         if (!record.dead) out.push([record, p, record.owner || p.owner]);
     for (const fleet of g.fleets || [])
       for (const record of fleet.units) if (!record.dead) out.push([record, fleet.leg ? null : g.planets[fleet.planet], fleet.owner]);
+    for (const [record, planet, owner] of out.slice()) for (const member of this.membersOf(record)) if (!member.dead) out.push([member, planet, owner]);
     return out;
+  }
+
+  membersOf(record) {
+    const holder = record.carries || record.type,
+      names = holder ? [...holder.list('Company_Units'), ...holder.list('Squadron_Units')] : [];
+    if (!names.length) return [];
+    let members = (this.memberCache ||= new WeakMap()).get(record);
+    if (!members || members.holder !== holder) {
+      members = names.map(n => db.type(n)).filter(Boolean).map(type => ({ type, memberOf: record, dead: false }));
+      members.holder = holder;
+      this.memberCache.set(record, members);
+    }
+    for (const m of members) m.owner = record.owner;
+    return members;
   }
 
   serviceObjectScripts(force = false) {
