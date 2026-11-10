@@ -13,6 +13,7 @@ const unset = e => {
   if (e)
     for (const b of bodies(e)) {
       if (b && b.prioSet) b.prioSet = undefined;
+      if (b && b.stickiness !== undefined) b.stickiness = undefined;
       if (b && b.attackPositioning) b.attackPositioning = false;
     }
 };
@@ -1283,8 +1284,17 @@ export class Plans {
       Set_All_Abilities_Autofire: on => {
         for (const e of f.units) host.wrap(e)?.Set_All_Abilities_Autofire?.(on);
       },
-      Set_Targeting_Stickiness_Time_Threshold: seconds => {
-        for (const e of f.units) host.wrap(e)?.Set_Targeting_Stickiness_Time_Threshold?.(seconds);
+      Set_Targeting_Stickiness_Time_Threshold: (seconds, kind) => {
+        const want = String(kind || '')
+          .split('|')
+          .map(s => s.trim().toUpperCase())
+          .filter(Boolean);
+        for (const e of f.units) {
+          const lead = bodies(e)[0],
+            t = lead && (lead.scriptType || lead.type);
+          if (!t || (want.length && !want.some(k => t.categories().has(k) || t.name.toUpperCase() === k))) continue;
+          host.wrap(e)?.Set_Targeting_Stickiness_Time_Threshold?.(seconds);
+        }
       },
       Get_AI_Power_Vs_Unit: () => alive().reduce((n, e) => n + (host.wrap(e)?.Get_AI_Power_Vs_Unit?.() || 0), 0),
       Add_Force: v => {

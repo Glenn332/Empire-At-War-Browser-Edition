@@ -16,6 +16,7 @@ function march(w, q, x, y) {
 
 function marchAll(w, force, x, y) {
   for (const [q, p] of w.places(force, x, y)) march(w, q, p.x, p.y);
+  w.marchTogether(force);
 }
 
 export function commandArmy(game, side) {

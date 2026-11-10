@@ -57,10 +57,12 @@ export function executeLand(game, side, cmd) {
           else if (mode === 'guard') q.post = { x: p.x, y: p.y };
         }
       }
+      if (mode === 'attackmove' && !attack) w.marchTogether(sel);
       return why ? { why, soft: true, at } : { at };
     }
     case 'formmove': {
-      const mode = cmd.mode || '';
+      const mode = cmd.mode || '',
+        went = [];
       for (const [id, x, y] of Array.isArray(cmd.p) ? cmd.p : []) {
         const q = squad(id);
         if (!q || q.side !== side || q.structure || !q.members.length) continue;
@@ -71,7 +73,9 @@ export function executeLand(game, side, cmd) {
         q.foe = null;
         w.order(q, num(x), num(y), num(cmd.h));
         if (mode === 'attackmove') q.march = { x: num(x), y: num(y) };
+        went.push(q);
       }
+      if (mode === 'attackmove') w.marchTogether(went);
       return {};
     }
     case 'stop':

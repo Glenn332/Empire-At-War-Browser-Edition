@@ -447,6 +447,9 @@ class LandUnit {
     this.detour = undefined;
     this.detourAt = undefined;
     this.prioSet = undefined;
+    this.stickiness = undefined;
+    this.dmgTrack = undefined;
+    this.rethinkAt = undefined;
     this.weapons = undefined;
     this.weaponIndex = undefined;
     this.evAnim = undefined;
@@ -606,8 +609,6 @@ export class LandSquad {
     this.legs = undefined;
     this.march = undefined;
     this.marchStill = undefined;
-    this.marchFrom = undefined;
-    this.marchSkip = undefined;
     this.aiPlan = undefined;
     this.formSpeed = undefined;
     this.arriving = undefined;
@@ -2875,30 +2876,15 @@ export class LandWorld {
         continue;
       }
       if (q.march) {
-        const reach = q.members.reduce((r, m) => Math.max(r, m.range || 0, m.type.num('Attack_Move_Response_Range', 0)), 120);
-        if (q.foe && q.marchFrom && Math.hypot(lead.x - q.marchFrom.x, lead.y - q.marchFrom.y) > reach) {
-          q.marchSkip = { foe: q.foe, until: this.time + 10 };
-          q.foe = q.marchFrom = null;
-          for (const u of q.members) u.target = null;
-          this.order(q, q.march.x, q.march.y);
-          continue;
-        }
-        if (!q.foe) {
-          q.marchFrom = null;
-          const e = this.nearestFoe(lead, this.units, reach);
-          if (e && !(q.marchSkip && q.marchSkip.foe === e.squad && q.marchSkip.until > this.time)) {
-            q.marchFrom = { x: lead.x, y: lead.y };
-            this.attack(q, e.squad);
-            continue;
-          }
-          if (Math.hypot(lead.x - q.march.x, lead.y - q.march.y) < 70) q.march = null;
-          else if (!moving && !fighting) {
-            const S = q.marchStill;
-            if (S && S.of === q.march && Math.hypot(lead.x - S.x, lead.y - S.y) < 15) q.march = null;
-            else {
-              q.marchStill = { x: lead.x, y: lead.y, of: q.march };
-              this.order(q, q.march.x, q.march.y);
-            }
+        this.groupMarch(this.marchGroup(q));
+        if (!q.march || q.foe) continue;
+        if (Math.hypot(lead.x - q.march.x, lead.y - q.march.y) < 70) q.march = null;
+        else if (!moving && !fighting) {
+          const S = q.marchStill;
+          if (S && S.of === q.march && Math.hypot(lead.x - S.x, lead.y - S.y) < 15) q.march = null;
+          else {
+            q.marchStill = { x: lead.x, y: lead.y, of: q.march };
+            this.order(q, q.march.x, q.march.y);
           }
         }
         continue;
@@ -2907,6 +2893,156 @@ export class LandWorld {
         const p = q.legs.shift();
         this.order(q, p.x, p.y);
       }
+    }
+  }
+
+  marchTogether(squads) {
+    const G = { squads: [], foe: null, route: null, leash: null, checkAt: 0, at: -1 };
+    for (const q of squads)
+      if (q && q.march) {
+        q.march.g = G;
+        G.squads.push(q);
+      }
+    return G;
+  }
+
+  marchGroup(q) {
+    return q.march.g || this.marchTogether([q]);
+  }
+
+  marchSquads(G) {
+    return G.squads.filter(q => q.march && q.march.g === G && q.members.length && !q.structure);
+  }
+
+  marchNum(q, key) {
+    const t = q.type && q.type.has(key) ? q.type : q.members[0].type;
+    return t.num(key, 0);
+  }
+
+  marchRoute(u, end) {
+    const pts = [{ x: u.x, y: u.y, s: 0 }];
+    for (const p of [...(u.path || []), end]) {
+      const b = pts[pts.length - 1],
+        d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d > 1) pts.push({ x: p.x, y: p.y, s: b.s + d });
+    }
+    return pts;
+  }
+
+  routeProgress(R, x, y) {
+    let best = 0,
+      bd = Infinity;
+    for (let i = 1; i < R.length; i++) {
+      const a = R[i - 1],
+        b = R[i],
+        L = b.s - a.s,
+        k = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (L * L))),
+        d = Math.hypot(a.x + (b.x - a.x) * k - x, a.y + (b.y - a.y) * k - y);
+      if (d < bd) {
+        bd = d;
+        best = a.s + L * k;
+      }
+    }
+    return best;
+  }
+
+  leashAt(G) {
+    const R = G.route,
+      L = G.leash,
+      s = Math.min(R[R.length - 1].s, L.s + L.v * Math.max(0, this.time - L.at));
+    for (let i = 1; i < R.length; i++)
+      if (R[i].s >= s) {
+        const a = R[i - 1],
+          k = (s - a.s) / (R[i].s - a.s);
+        return { x: a.x + (R[i].x - a.x) * k, y: a.y + (R[i].y - a.y) * k };
+      }
+    return R[R.length - 1];
+  }
+
+  marchLead(live) {
+    const L = live[0];
+    return { L, u: L.members.find(m => !m.dead) || L.members[0] };
+  }
+
+  marchHit(live, foe) {
+    return live.some(q => q.members.some(m => this.attackedBy(m, foe)));
+  }
+
+  marchTake(G, live, foe) {
+    if (!foe || !foe.members.length || foe === G.foe) return false;
+    const { L, u } = this.marchLead(live),
+      f = this.marchNum(L, 'Attack_Move_Response_Range');
+    if (f < 0) return false;
+    G.route ||= this.marchRoute(u, L.march);
+    if (G.leash) {
+      const R = f + (this.marchHit(live, foe) ? this.marchNum(L, 'Autonomous_Move_Extension_Vs_Attacker') : 0),
+        P = this.leashAt(G);
+      if (Math.hypot(u.x - P.x, u.y - P.y) > R) return false;
+    }
+    let v = Infinity;
+    for (const q of live) for (const m of q.members) if (!m.dead && m.speed > 0) v = Math.min(v, m.speed);
+    G.foe = foe;
+    G.leash = { s: this.routeProgress(G.route, u.x, u.y), at: this.time, v: v === Infinity ? 0 : v };
+    G.checkAt = this.time + 1;
+    if (live.length > 1) this.attackGroup(live, foe);
+    else this.attack(live[0], foe);
+    return true;
+  }
+
+  marchPop(G, live) {
+    G.foe = null;
+    for (const q of live)
+      if (q.foe || q.members.some(u => u.target)) {
+        q.foe = null;
+        q.spot = null;
+        for (const u of q.members) u.target = null;
+        this.order(q, q.march.x, q.march.y);
+      }
+  }
+
+  chaseOver(G, live) {
+    const foe = G.foe,
+      { L, u } = this.marchLead(live),
+      R =
+        this.marchNum(L, 'Attack_Move_Response_Range') +
+        (this.marchHit(live, foe) ? this.marchNum(L, 'Autonomous_Move_Extension_Vs_Attacker') : 0),
+      P = this.leashAt(G);
+    if (Math.hypot(u.x - P.x, u.y - P.y) >= R) return true;
+    if (this.fowOn && !foe.members.some(m => !m.dead && this.sightOf(L.side, m))) return true;
+    const e = foe.members.find(m => !m.dead) || foe.members[0],
+      g = e.path && e.path.length ? e.path[e.path.length - 1] : e,
+      d = Math.hypot(g.x - P.x, g.y - P.y);
+    return d > R && d - R > (u.range || 0);
+  }
+
+  allInRange(live, foe) {
+    for (const q of live)
+      for (const m of q.members) {
+        if (m.dead || !(m.range > 0)) continue;
+        if (!foe.members.some(e => !e.dead && Math.hypot(e.x - m.x, e.y - m.y) <= m.range + Math.max(0, e.hitRadius || 0))) return false;
+      }
+    return true;
+  }
+
+  groupMarch(G) {
+    if (G.at === this.time) return;
+    G.at = this.time;
+    const live = this.marchSquads(G);
+    if (!live.length) return;
+    if (G.foe) {
+      if (!G.foe.members.length || !live.some(q => q.foe === G.foe)) this.marchPop(G, live);
+      else if (this.time >= G.checkAt) {
+        G.checkAt = this.time + 1;
+        if (this.chaseOver(G, live) && !this.allInRange(live, G.foe)) this.marchPop(G, live);
+      }
+      return;
+    }
+    for (const q of live) {
+      const f = this.marchNum(q, 'Attack_Move_Response_Range');
+      if (f < 0) continue;
+      const u = q.members.find(m => !m.dead && m.weapon) || q.members[0],
+        e = this.nearestFoe(u, this.units, q.maxRange + f);
+      if (e && this.marchTake(G, live, e.squad)) return;
     }
   }
 
@@ -3957,8 +4093,9 @@ export class LandWorld {
       reacts = /\bUNIT_AI\b/i.test(lb),
       f = Math.max(0, t.num('Idle_Chase_Range', 0)) + (reacts && /\bDAMAGE_TRACKING\b/i.test(lb) ? t.num('Autonomous_Move_Extension_Vs_Attacker', 0) : 0);
     if (q.march) {
-      q.marchFrom ||= { x: u.x, y: u.y };
-      this.attack(q, from.squad);
+      const G = this.marchGroup(q),
+        live = this.marchSquads(G);
+      if (live.length && !G.foe) this.marchTake(G, live, from.squad);
       return;
     }
     const lead = q.members.find(m => !m.dead) || u,
@@ -4119,15 +4256,16 @@ export class LandWorld {
   }
 
   pickFoe(u, among, reach, gun, skip, auto = false) {
-    const R = gun ? null : u.ranks;
     const aa = (u.antiAir ??= !!(
       u.flies ||
       (u.ranks ? u.ranks.AIR < 9999 : /ANTIAIR/i.test(u.type.str('CategoryMask').replace(/\s/g, '')) || /ANTI_AIR/i.test(u.type.name))
     ));
-    const set = gun ? null : setOf(u);
+    const set = gun ? null : setOf(u),
+      low = (this.healthLow ??= db.constants.num('Health_Low_Percent_Threshold', 0.33));
     let best = null,
-      bd = reach * reach,
-      br = Infinity,
+      bd = Infinity,
+      bl = false,
+      bf = null,
       bp = Infinity;
     const T = this.team,
       mine = u.confuseUntil > this.time ? undefined : T[u.side];
@@ -4156,22 +4294,159 @@ export class LandWorld {
         a = Math.atan2(Math.sin(a), Math.cos(a));
         if (Math.abs(a) > gun.cone / 2 + (gun.onHead ? u.turret.extent : 0)) continue;
       }
-      const r = R ? (e.flies ? R.AIR : e.kind === 'VEHICLE' ? R.VEHICLE : e.kind === 'INFANTRY' ? R.INFANTRY : R.ELSE) : 0;
-      if (r >= 9999) continue;
-      let p = 1;
-      if (set) {
-        p = priorityOf(set, e.type);
-        if (p < 0) continue;
-        if (p === Infinity) p = 1e18;
+      const p = this.priorityFor(set, e);
+      if (p < 0) continue;
+      const l = this.healthShare(e) <= low;
+      let take = !best;
+      if (!take) {
+        if (l !== bl) take = l;
+        else if (p !== bp) take = p < bp;
+        else {
+          const f = this.canFireNow(u, e, gun);
+          if (bf === null) bf = this.canFireNow(u, best, gun);
+          take = f !== bf ? f : d < bd;
+        }
       }
-      if (p < bp || (p === bp && (r < br || (r === br && d < bd)))) {
+      if (take) {
         bp = p;
-        br = r;
+        bl = l;
         bd = d;
+        bf = null;
         best = e;
       }
     }
     return best;
+  }
+
+  priorityFor(set, e) {
+    if (!set) return 1;
+    const p = priorityOf(set, e.type);
+    return p === Infinity ? 1e18 : p;
+  }
+
+  healthShare(e) {
+    const q = e.squad;
+    if (q && q.members.length > 1) {
+      let h = 0,
+        m = 0;
+      for (const x of q.members) {
+        h += Math.max(0, x.health);
+        m += x.maxHealth;
+      }
+      m = Math.max(m, q.full || 0);
+      return m > 0 ? h / m : 0;
+    }
+    return e.maxHealth > 0 ? Math.max(0, e.health) / e.maxHealth : 0;
+  }
+
+  canFireNow(u, e, gun) {
+    if (gun) return true;
+    if (!u.weapon) return false;
+    let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading;
+    a = Math.atan2(Math.sin(a), Math.cos(a));
+    if (u.turret) {
+      const d = a - u.turret.yaw;
+      return Math.abs(a) <= u.turret.extent && Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) < 0.12;
+    }
+    return Math.abs(a) <= (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG);
+  }
+
+  beats(u, n, c, gun = null) {
+    const low = (this.healthLow ??= db.constants.num('Health_Low_Percent_Threshold', 0.33)),
+      ln = this.healthShare(n) <= low,
+      lc = this.healthShare(c) <= low;
+    if (ln !== lc) return ln;
+    const set = gun ? null : setOf(u),
+      pn = this.priorityFor(set, n),
+      pc = this.priorityFor(set, c);
+    if (pn < 0) return false;
+    if (pn !== pc) return pc < 0 || pn < pc;
+    const fn = this.canFireNow(u, n, gun),
+      fc = this.canFireNow(u, c, gun);
+    if (fn !== fc) return fn;
+    return (n.x - u.x) ** 2 + (n.y - u.y) ** 2 < (c.x - u.x) ** 2 + (c.y - u.y) ** 2;
+  }
+
+  tracksDamage(t) {
+    return (t._dmgTrack ??= /\bDAMAGE_TRACKING\b/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior')));
+  }
+
+  damageTrack(u) {
+    const T = u.dmgTrack;
+    if (!T) return null;
+    const P = 1;
+    if (this.time >= T.next) {
+      if (!T.acc && !T.by.size) {
+        T.rate = 0;
+        T.next += Math.ceil((this.time - T.next + 1e-9) / P) * P;
+        if (T.next <= this.time) T.next += P;
+      } else {
+        const decay = (u.maxHealth + (u.maxShield || 0)) * (this.threatDecay ??= db.constants.num('AI_SpaceThreatDecayStep', 0.05));
+        while (this.time >= T.next) {
+          T.next += P;
+          for (const [k, v] of T.by) {
+            if (v - decay > 0) T.by.set(k, v - decay);
+            else T.by.delete(k);
+          }
+          T.rate = T.acc / P;
+          T.acc = 0;
+        }
+      }
+    }
+    return T;
+  }
+
+  trackDamage(u, d, from) {
+    if (!(d > 0) || !this.tracksDamage(u.type)) return;
+    const T =
+      this.damageTrack(u) ||
+      (u.dmgTrack = { acc: 0, rate: 0, next: this.time + Math.floor(simRandom() * LOGIC_FPS) / LOGIC_FPS, by: new Map() });
+    T.acc += d;
+    if (from && from !== u && from.type && !from.dead) {
+      const k = from.squad || from;
+      T.by.set(k, (T.by.get(k) || 0) + d);
+    }
+  }
+
+  attackedBy(u, foe) {
+    const T = this.damageTrack(u);
+    return !!(T && foe && T.by.get(foe) > 0);
+  }
+
+  timeToKill(e) {
+    const T = this.damageTrack(e);
+    if (!T || !(T.rate > 0)) return 1e18;
+    return (Math.max(0, e.health) + (e.shield || 0)) / T.rate;
+  }
+
+  sticky(u, t) {
+    const q = t.squad,
+      list = q && q.members.length > 1 ? q.members : [t];
+    let left = 0,
+      any = false;
+    for (const m of list)
+      if (!m.dead && m.dmgTrack) {
+        any = true;
+        left += this.timeToKill(m);
+      }
+    if (!any) return false;
+    let th = u.stickiness;
+    if (!(th >= 0)) {
+      const o = u.squad && u.squad.type && u.squad.type !== u.type ? u.squad.type : u.type;
+      th = o.num('Targeting_Stickiness_Time_Threshold', 0);
+    }
+    return left <= th;
+  }
+
+  rethink(u, t, reach, gun = null) {
+    if (u.rethinkAt === undefined || this.time < u.rethinkAt) {
+      if (u.rethinkAt === undefined) u.rethinkAt = this.time + (30 + Math.floor(simRandom() * 16)) / LOGIC_FPS;
+      return t;
+    }
+    u.rethinkAt = this.time + (30 + Math.floor(simRandom() * 16)) / LOGIC_FPS;
+    if (this.priorityFor(gun ? null : setOf(u), t) === 1 || this.sticky(u, t)) return t;
+    const n = this.nearestFoe(u, this.units, reach, gun);
+    return n && n !== t && this.beats(u, n, t, gun) ? n : t;
   }
 
   spinAway(u) {
@@ -4306,6 +4581,7 @@ export class LandWorld {
     u.shield -= soak;
     u.health -= amount - soak;
     u.lastHit = this.time;
+    this.trackDamage(u, amount, from);
     if (from && from.side !== undefined) u.hitBy = from.side;
     if (from && from !== u && from.type && !from.dead) {
       const m = (u.hurtBy ||= new Map()),
@@ -4637,6 +4913,7 @@ export class LandWorld {
         (foe ? u.target.squad === foe : free && Math.hypot(u.target.x - u.x, u.target.y - u.y) <= u.range * 2)
           ? u.target
           : null;
+      if (tg && !foe) tg = this.rethink(u, tg, u.range);
       if (!tg && this.time >= (u.scanAt || 0)) {
         u.scanAt = this.time + 0.25 + simRandom() * 0.15;
         tg = foe ? this.nearestFoe(u, foe.members, 1e6) : free ? this.nearestFoe(u, this.units, u.range) : null;
@@ -5136,6 +5413,7 @@ export class LandWorld {
         u.target && !u.target.dead && this.targetEnemy(u, u.target) && Math.hypot(u.target.x - u.x, u.target.y - u.y) <= reach
           ? u.target
           : null;
+      if (t && !foe) t = this.rethink(u, t, reach);
       if (!t && this.time >= (u.scanAt || 0)) {
         u.scanAt = this.time + 0.2 + simRandom() * 0.15;
         if (foe) t = this.nearestFoe(u, foe.members, reach);
