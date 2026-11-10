@@ -102,7 +102,7 @@ export class GalacticEncyclopedia {
     return [token(c, 'Blank_Texture_Name'), ...(c?.val('Icon_Alternate_Texture_Name').split(/\s+/) || [])];
   }
   image(name, x = 0, y = 0, { end = false, exclude = false, scale = 1, tint = null } = {}) {
-    const r = this.sprite(name);
+    const r = iconCanvasRect(name);
     if (!r) return null;
     return { image: name, x, y, w: r.w * scale, h: r.h * scale, end, exclude, tint };
   }
