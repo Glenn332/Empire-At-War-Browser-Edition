@@ -7558,34 +7558,8 @@ export class LandWorld {
   placeZone(x, y, need) {
     const P = this.paths;
     P.sync();
-    const mask = this.maskOf(need),
-      Z = (this.placeZones ||= new Map());
-    let z = Z.get(mask);
-    if (!z || z.ver !== P.ver) {
-      const zone = new Int32Array(P.count).fill(-1),
-        ok = r => (P.rbits[r] & mask) === P.rbits[r],
-        stack = [];
-      let next = 0;
-      for (let r = 0; r < P.count; r++) {
-        if (zone[r] !== -1 || !ok(r)) continue;
-        zone[r] = next;
-        stack.push(r);
-        while (stack.length) {
-          const k = stack.pop();
-          for (let i = P.nbStart[k]; i < P.nbStart[k + 1]; i++) {
-            const o = P.nbList[i];
-            if (o >= 0 && zone[o] === -1 && ok(o)) {
-              zone[o] = next;
-              stack.push(o);
-            }
-          }
-        }
-        next++;
-      }
-      Z.set(mask, (z = { ver: P.ver, zone }));
-    }
     const r = P.rectOf(x, y);
-    return r < 0 ? -1 : z.zone[r];
+    return r < 0 ? -1 : P.zones(this.maskOf(need))[r];
   }
 
   placeWay(ax, ay, bx, by, need, smooth) {
