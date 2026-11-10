@@ -351,7 +351,7 @@ export class LandInstances {
       if (!h || !h.visible || h.parent !== scene || !inst) continue;
       let rest = false;
       const S = u.skinOf;
-      if (S && (S.ghost || S.fade >= 0 || S.tint.w > 0)) {
+      if (S && (S.ghost || S.fade >= 0 || S.tint.w !== 0)) {
         const back = m => {
           if (m._taken) {
             m.layers.set(0);

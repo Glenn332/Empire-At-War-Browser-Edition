@@ -22,6 +22,7 @@ export const SURFACES = [
 ];
 const WATER_SURFACE = [-1, 4, 8, 7];
 const WATER_GAP = 0.5;
+export const SURFACE_PULSE = 1;
 
 const RULES = new Map([
   [12, { tint: 'Good_Ground_Color_Tint', on: s => s.defense !== 0 || s.dealt !== 0 }],
@@ -68,4 +69,10 @@ export function surfaceStatus(tables, type, surface) {
   }
   byType.set(surface, found);
   return found;
+}
+
+export function surfaceLight(tint, seconds, out) {
+  const w = (Math.cos(((seconds / SURFACE_PULSE) % 1) * 2 * Math.PI) + 1) / 2;
+  out.set(tint[0] + (1 - tint[0]) * w, tint[1] + (1 - tint[1]) * w, tint[2] + (1 - tint[2]) * w, -1);
+  return out;
 }

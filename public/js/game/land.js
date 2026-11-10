@@ -7,7 +7,7 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
-import { surfaceAt, surfaceStatus } from './landsurface.js';
+import { surfaceAt, surfaceStatus, surfaceLight } from './landsurface.js';
 import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
@@ -444,6 +444,8 @@ class LandUnit {
     this.mod = undefined;
     this.wade = undefined;
     this.surfaceIcon = '';
+    this.surfaceLit = null;
+    this.surfaceFrom = 0;
     this.ghost = undefined;
     this.foot = undefined;
     this.body = undefined;
@@ -4145,7 +4147,7 @@ export class LandWorld {
         after = o.onAfterRender;
       o.onBeforeRender = function (...x) {
         before.apply(this, x);
-        if (S.tint.w > 0 || S.ghost || S.fade >= 0) {
+        if (S.tint.w !== 0 || S.ghost || S.fade >= 0) {
           const U = this.material.uniforms;
           U.tint.value = S.tint;
           if (U.ghost) U.ghost.value = S.ghost;
@@ -4155,7 +4157,7 @@ export class LandWorld {
       };
       o.onAfterRender = function (...x) {
         after.apply(this, x);
-        if (S.tint.w > 0 || S.ghost || S.fade >= 0) {
+        if (S.tint.w !== 0 || S.ghost || S.fade >= 0) {
           const U = this.material.uniforms;
           U.tint.value = NO_TINT;
           if (U.ghost) U.ghost.value = 0;
@@ -4176,6 +4178,17 @@ export class LandWorld {
     for (const u of this.units) {
       const st = u.dead || u.inside || u.structure ? null : surfaceStatus(this.tables, u.type, surfaceAt(T, u.x, u.y));
       u.surfaceIcon = (st && st.icon) || '';
+      const tint = st && u.holder && st.tint;
+      if (tint) {
+        if (u.surfaceLit !== tint) {
+          u.surfaceLit = tint;
+          u.surfaceFrom = this.time;
+        }
+        surfaceLight(tint, this.time - u.surfaceFrom, this.skin(u).tint);
+      } else if (u.surfaceLit) {
+        u.surfaceLit = null;
+        if (u.skinOf) u.skinOf.tint.w = 0;
+      }
     }
   }
   tickGlows() {

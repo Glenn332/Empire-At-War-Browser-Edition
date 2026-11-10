@@ -16,8 +16,9 @@ const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const { loadMap } = await import('../public/js/ted.js');
 const { loadLandTables } = await import('../public/js/game/landtables.js');
-const { surfaceAt, surfaceStatus, SURFACES } = await import('../public/js/game/landsurface.js');
+const { surfaceAt, surfaceStatus, surfaceLight, SURFACES } = await import('../public/js/game/landsurface.js');
 const { heightAt } = await import('../public/js/game/terrain.js');
+const THREE = await import('three');
 
 const tables = await loadLandTables();
 const endor = (await loadMap('_MP_LAND_ENDOR.TED')).terrain;
@@ -63,4 +64,15 @@ const hot = surfaceStatus(tables, trooper, lava);
 assert.equal(hot && hot.icon.toLowerCase(), 'i_surface_damage.tga', 'lava shows the damage icon');
 assert.deepEqual(hot.tint, [1, 0, 0], 'lava pulses in the lava colour');
 
+const v = new THREE.Vector4();
+surfaceLight(wet.tint, 0, v);
+assert.deepEqual(v.toArray(), [1, 1, 1, -1], 'the pulse starts at the plain colour');
+surfaceLight(wet.tint, 0.5, v);
+assert.deepEqual(
+  v.toArray().map(c => Math.round(c * 1000) / 1000),
+  [1, 1, 0, -1],
+  'half a second in it is fully the tint'
+);
+surfaceLight(wet.tint, 1, v);
+assert(Math.abs(v.z - 1) < 1e-6, 'one second per pulse');
 console.log('land surface status ok');
