@@ -2769,16 +2769,13 @@ export class LandGame {
       ai.wait = { credits: [2000, 3000, 4000][Math.min(2, tech)], until: w.time + [30, 45, 60][Math.min(2, tech)] };
     }
     const home = w.points.find(p => p.reinforce && p.side >= 0 && w.ally(p.side, side));
-    const view = this.scripts && this.scripts.view,
-      E = ai.led && view && view.landPool ? view.landPool(w.sidePlayers[side]) || [] : null;
-    const idle = E ? E.find(x => (!x.owner || x.owner.state === 'over') && w.time - (x.since ?? 0) > 20) : null;
     if (
       home &&
       w.ready[side].length &&
-      (!ai.led || idle) &&
+      !ai.led &&
       this.reinforcementsEnabled?.[String(this.factions[side] || '').toUpperCase()] !== false
     ) {
-      const t = idle ? idle.type : w.ready[side][0],
+      const t = w.ready[side][0],
         o = w.nearestOpen(home.x + 40 + simRandom() * 80, home.y - 60 + simRandom() * 120);
       if (o && !w.cantReinforce(side, t.name, o.x, o.y)) {
         w.ready[side].splice(w.ready[side].indexOf(t), 1);
