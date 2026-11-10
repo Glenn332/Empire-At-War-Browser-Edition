@@ -495,6 +495,16 @@ export function pickEnvironment(map, r) {
   map.environment = envs[i];
   map.activeEnvironment = i;
 }
+export function startEnvironment(map, setup = {}) {
+  const kept = setup.restore?.battle?.environment,
+    envs = map.environments || [];
+  if (Number.isInteger(kept) && envs[kept]) {
+    map.environment = envs[kept];
+    map.activeEnvironment = kept;
+    return;
+  }
+  pickEnvironment(map, setup.net ? environmentRoll(setup.seed) : Math.random());
+}
 
 export async function loadMap(name, opts = {}) {
   if (dynamicOf(name)) return dynamic.load(name, opts);

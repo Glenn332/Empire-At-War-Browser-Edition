@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall } from './vfs.js';
 import { gfx, storeGfx } from './gfx.js';
-import { loadMap, pickEnvironment, environmentRoll, skirmishMaps, mapTitle } from './ted.js';
+import { loadMap, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
 import { bakeRockTextures } from './rockbake.js';
@@ -340,7 +340,7 @@ class Game {
     progress('Loading map', 0);
     const map = await loadMap(mapFile, { teams: teamFactions.length, instant: !!this.setup.instant });
     ensureMissionPlayers(this.setup, map);
-    pickEnvironment(map, this.setup.net ? environmentRoll(this.setup.seed) : Math.random());
+    startEnvironment(map, this.setup);
     this.map = map;
     Game.loading = this;
     await this.showLoading(map);

@@ -268,6 +268,7 @@ function spaceSnapshot(game, name) {
     battle: {
       kind: 'space',
       time: r1(w.time),
+      environment: game.map.activeEnvironment,
       speed: game.speed,
       camera: { x: r1(R.rig.x), y: r1(R.rig.y), dist: r1(R.rig.dist), yaw: +R.rig.yaw.toFixed(3), pitch: +R.rig.pitch.toFixed(3) },
       teams: w.teams.map(t => ({ upgrades: [...t.upgrades], defeated: !!t.defeated })),
