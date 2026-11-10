@@ -760,7 +760,7 @@ export class CommandBar {
           mask[y * mw + x] = d[(py * cv.width + px) * 4 + 3] > 24 ? 1 : 0;
         }
     } catch {}
-    this.solid = { W, H, C, mw, mh, mask, cut: mh, topH: 0 };
+    this.solid = { W, H, C, mw, mh, mask, cut: mh, topH: 0, contentW: Math.max(0, ...pick.map(m => m.rect.x + m.rect.w)) };
     const scrolling = pick.filter(m => meshShade(m).scroll && images.get(m));
     this.scrollLayer?.remove();
     this.scrollLayer = null;

@@ -3941,6 +3941,22 @@ export class GalacticGame {
     return true;
   }
 
+  flashStack(key, cycles = 3) {
+    const speed = db.constants.num('GUI_Cycle_Speed', 5) || 5;
+    (this.stackFlashes ||= new Map()).set(key, { start: performance.now(), end: performance.now() + (cycles * 2 * Math.PI * 1000) / speed, speed });
+  }
+
+  stackFade(key) {
+    const f = this.stackFlashes?.get(key);
+    if (!f) return 1;
+    const now = performance.now();
+    if (now >= f.end) {
+      this.stackFlashes.delete(key);
+      return 1;
+    }
+    return 0.5 + 0.5 * Math.cos(((now - f.start) / 1000) * f.speed);
+  }
+
   drawNames(zoom) {
     const cv = this.names,
       x = cv.getContext('2d'),
@@ -4026,7 +4042,7 @@ export class GalacticGame {
       if (v?.discovered && this.filters & 4) this.drawPlanetStatus(x, p, point, scale, r);
     });
     this.orbitIndex = null;
-    const put = (units, owner, comp, sx, sy, empty = false, fleet = null) => {
+    const put = (units, owner, comp, sx, sy, empty = false, fleet = null, flashKey = fleet) => {
       const badge =
         comp === this.fleetComp && units.length
           ? units.every(u => strategicStealth(u, owner))
@@ -4037,11 +4053,17 @@ export class GalacticGame {
           : null;
       const img = this.stackPicture(units, owner, comp, empty, units.length, null, badge),
         z = ui * comp.scale;
-      if (img) x.drawImage(img, sx * r - (img.width * z) / 2, sy * r - (img.height * z) / 2, img.width * z, img.height * z);
+      if (!img) return;
+      const fade = flashKey ? this.stackFade(flashKey) : 1,
+        before = x.globalAlpha;
+      x.globalAlpha = before * fade;
+      x.drawImage(img, sx * r - (img.width * z) / 2, sy * r - (img.height * z) / 2, img.width * z, img.height * z);
+      x.globalAlpha = before;
     };
     this.lastSpots = this.stackSpots(scale);
     for (const s of this.lastSpots)
-      if (!s.f || s.f !== this.dragFleet) put(s.units || s.f?.units || [], s.f?.owner || this.me, this.fleetComp, s.x, s.y, !s.f, s.f);
+      if (!s.f || s.f !== this.dragFleet)
+        put(s.units || s.f?.units || [], s.f?.owner || this.me, this.fleetComp, s.x, s.y, !s.f, s.f, s.f && 'slot:' + s.p + ':' + (s.f.slot ?? 0));
     this.corruptionIcons = this.nextIcons || [];
     this.nextIcons = [];
     this.lastSpecialSpots = this.specialSpots(scale);
@@ -4049,7 +4071,7 @@ export class GalacticGame {
     for (const s of this.lastSurfaceSpots)
       if (this.dragGround !== s.p) {
         x.globalAlpha = alpha * (s.empty ? 0.5 : 1);
-        put(s.units, s.empty ? this.me : this.galaxy.planets[s.p].owner, this.groundComp, s.x, s.y, s.empty);
+        put(s.units, s.empty ? this.me : this.galaxy.planets[s.p].owner, this.groundComp, s.x, s.y, s.empty, null, 'army:' + s.p);
       }
     x.globalAlpha = alpha;
     if (this.dragGround !== undefined) {

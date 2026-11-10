@@ -34,7 +34,7 @@ export class GalacticBar extends CommandBar {
   }
 
   resize() {
-    this.scale = Math.min(innerHeight / 768, innerWidth / 1024);
+    this.scale = Math.min(innerHeight / 768, innerWidth / Math.max(1024, this.solid?.contentW || 0));
     this.root.style.transform = `scale(${this.scale})`;
     this.root.style.setProperty('--slack', Math.max(0, innerHeight / this.scale - 768) + 'px');
     for (const b of Object.values(this.heroBars || {})) b.el.style.transform = `scale(${this.scale})`;
@@ -42,7 +42,7 @@ export class GalacticBar extends CommandBar {
   }
 
   drawFaceplate() {
-    return super.drawFaceplate({ exclude: ['RADAR_GALACTIC'], splitTop: true });
+    return super.drawFaceplate({ exclude: ['RADAR_GALACTIC'], splitTop: true }).then(() => this.resize());
   }
   anchorTop() {
     const y = this.solid?.splitY;
@@ -101,7 +101,8 @@ export class GalacticBar extends CommandBar {
           left: m.origin.x + (off[0] || 0) + 'px',
           bottom: m.origin.y + (off[1] || 0) + 'px',
           width: 'max-content',
-          height: 'auto'
+          height: 'auto',
+          translate: /^(true|yes)$/i.test((this.comp(n)?.val('Right_Justified') || '').trim()) ? '-100% 0' : ''
         });
       t.title = db.t(this.comp(n)?.val('Tooltip_Text').split(/\s+/)[0]);
     }
@@ -282,6 +283,27 @@ export class GalacticBar extends CommandBar {
       };
       this.queueSlots.push(q);
     }
+  }
+
+  refreshAllegiance(g, p) {
+    const c = this.comp('Text_Allegiance_A'),
+      m = this.shell.get('TEXT_ALLEGIANCE_A');
+    if (!c || !m) return;
+    const v = p && intelligence(g, p),
+      owner = v?.ownerKnown ? String(p.owner || '').toUpperCase() : '',
+      side = n => String(db.constants.str(n) || '').toUpperCase(),
+      index = !owner ? -1 : owner === side('Good_Side_Name') ? 0 : owner === side('Evil_Side_Name') ? 1 : owner === 'PIRATES' ? 2 : -1,
+      texture = index < 0 ? '' : c.val('Icon_Alternate_Texture_Name').trim().split(/\s+/)[index] || '';
+    if (texture === this.allegianceTexture) return;
+    this.allegianceTexture = texture;
+    this.allegianceGlyph?.remove();
+    this.allegianceGlyph = null;
+    if (!texture) return;
+    const off = (c.val('Icon_Offset') || '0').split(/[\s,]+/).map(Number),
+      scale = c.num('Scale', 1) || 1;
+    const el = this.glyph(texture, 'Text_Allegiance_A', m.origin.x + (off[0] || 0), m.origin.y + (off[1] || 0));
+    if (el && scale !== 1) el.style.transform = `scale(${scale})`;
+    this.allegianceGlyph = el;
   }
 
   glyph(texture, control, x, y) {
@@ -497,7 +519,8 @@ export class GalacticBar extends CommandBar {
     this.setReadout('Text_Pop_Cap', popUsed + ' / ' + popCap);
     this.refreshHeroes();
     this.setReadout('Text_Planet', p ? label(p.type) : '');
-    this.setReadout('Text_Planetary_Income', p ? String(rounded(displayIncome(g, p))) : '');
+    this.setReadout('Text_Planetary_Income', p ? '$ ' + rounded(displayIncome(g, p)) : '');
+    this.refreshAllegiance(g, p);
     for (const { b, bit, name } of this.filters) {
       const selected = !!(game.filters & bit);
       b.classList.toggle('sel', selected);

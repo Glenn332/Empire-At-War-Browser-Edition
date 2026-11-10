@@ -329,6 +329,10 @@ function planetPoint(game, planet, kind, slot) {
 
 export function flashSpawned(game, planet, fleet) {
   if (!game.overlayPoint) return;
+  if (game.flashStack) {
+    game.flashStack(fleet ? 'slot:' + (fleet.planet ?? planet.index) + ':' + (fleet.slot ?? 0) : 'army:' + planet.index);
+    return;
+  }
   const at = fleet
     ? () => {
         const s = (game.lastSpots || []).find(s => s.f === fleet);
