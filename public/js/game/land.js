@@ -366,6 +366,21 @@ export function placeRotation(obj, rot) {
   obj.quaternion.setFromEuler(_placeE.set((rot[0] || 0) * DEG, (rot[1] || 0) * DEG, (rot[2] || 0) * DEG, 'ZYX')).multiply(_facingQ);
   return obj;
 }
+
+class LandEnergy {
+  constructor(world, unit, base, refill) {
+    this.world = world;
+    this.unit = unit;
+    this.base = base;
+    this.refill = refill;
+    this.value = base;
+    this.tick = 0;
+  }
+  get cap() {
+    return this.base * this.world.combatFactor(this.unit, MOD.ENERGY);
+  }
+}
+
 class LandUnit {
   constructor() {
     this.type = undefined;
@@ -411,6 +426,7 @@ class LandUnit {
     this.drain = undefined;
     this.needsPower = undefined;
     this.power = undefined;
+    this.energy = undefined;
     this.noReinforce = undefined;
     this.noBomb = undefined;
     this.slots = undefined;
@@ -1013,8 +1029,12 @@ export class LandWorld {
   }
   addCombatMod(u, type, key, source, value) {
     const m = this.combatMods(u),
+      e = type === MOD.ENERGY ? this.energyOf(u) : null,
+      cap = e ? e.cap : 0,
       was = type === MOD.HEALTH || type === MOD.SHIELD ? m.factor(type) : 0;
-    if (m.set(type, key, source, value) && was) this.rescaleCombat(u, type, was, true);
+    if (!m.set(type, key, source, value)) return;
+    if (was) this.rescaleCombat(u, type, was, true);
+    if (e) e.value = Math.min(e.cap, Math.max(0, e.value + e.cap - cap));
   }
   dropCombatMod(u, source) {
     const m = u.cmods;
@@ -1024,6 +1044,43 @@ export class LandWorld {
     if (!m.drop(source)) return;
     this.rescaleCombat(u, MOD.HEALTH, hp, false);
     this.rescaleCombat(u, MOD.SHIELD, sh, false);
+    if (u.energy && u.energy.value > u.energy.cap) u.energy.value = u.energy.cap;
+  }
+  energyOf(u) {
+    if (u.energy !== undefined) return u.energy;
+    const t = u.type,
+      powered = t
+        .list('Behavior')
+        .concat(t.list('LandBehavior'))
+        .some(b => b.toUpperCase() === 'POWERED');
+    return (u.energy = powered ? new LandEnergy(this, u, t.num('Energy_Capacity', 0), t.num('Energy_Refresh_Rate', 0)) : null);
+  }
+  serviceEnergy(u, dt) {
+    const e = u.energy === undefined ? this.energyOf(u) : u.energy;
+    if (!e) return;
+    const every = (this.energyInterval ??= Math.max(1 / LOGIC_FPS, db.constants.num('EnergyRechargeIntervalInSecs', 5)));
+    if ((e.tick += dt) < every) return;
+    e.tick -= every;
+    e.value = u.unpowered ? 0 : Math.min(e.cap, Math.max(0, e.value + e.refill));
+  }
+  canShoot(u, w) {
+    if (!(w.energy > 0)) return true;
+    const e = this.energyOf(u);
+    return !!e && e.value >= w.energy;
+  }
+  burst(u, t, w, dt) {
+    if (w.left > 0) {
+      if ((w.timer -= dt) <= 0 && this.canShoot(u, w)) {
+        this.fire(u, t, w);
+        if (w.energy > 0) u.energy.value = Math.min(u.energy.cap, Math.max(0, u.energy.value - w.energy));
+        w.left--;
+        w.timer = w.pulseDelay;
+      }
+    } else if (w.cooldown <= 0 && this.canShoot(u, w)) {
+      w.left = w.pulses;
+      w.timer = 0;
+      w.cooldown = w.recharge * this.fireDelay(u);
+    }
   }
   bonusSource(type, side, host = null) {
     const defs = bonusSourceDefs(type, LAND);
@@ -4540,6 +4597,7 @@ export class LandWorld {
             pulses: Math.max(1, fireNum(t, proj, 'Projectile_Fire_Pulse_Count', 1)),
             pulseDelay: fireNum(t, proj, 'Projectile_Fire_Pulse_Delay_Seconds', 0.2),
             recharge: fireNum(t, proj, 'Projectile_Fire_Recharge_Seconds', 1),
+            energy: proj.num('Projectile_Energy_Per_Shot', 0),
             cooldown: cool(),
             left: 0,
             timer: 0,
@@ -5290,19 +5348,7 @@ export class LandWorld {
         ax = tg.x;
         ay = tg.y;
         wantAlt = d < u.range * 1.15 ? u.lift : A.high;
-        if (d <= u.range && d >= u.minRange && Math.abs(rel) < A.arc) {
-          if (w.left > 0) {
-            if ((w.timer -= dt) <= 0) {
-              this.fire(u, tg);
-              w.left--;
-              w.timer = w.pulseDelay;
-            }
-          } else if (w.cooldown <= 0) {
-            w.left = w.pulses;
-            w.timer = 0;
-            w.cooldown = w.recharge * this.fireDelay(u);
-          }
-        }
+        if (d <= u.range && d >= u.minRange && Math.abs(rel) < A.arc) this.burst(u, tg, w, dt);
       }
     } else if (u.path.length) {
       const next = u.path[0];
@@ -5696,17 +5742,7 @@ export class LandWorld {
         continue;
       }
       seen = true;
-      if (g.left > 0) {
-        if ((g.timer -= dt) <= 0) {
-          this.fire(u, t, g);
-          g.left--;
-          g.timer = g.pulseDelay;
-        }
-      } else if (g.cooldown <= 0) {
-        g.left = g.pulses;
-        g.timer = 0;
-        g.cooldown = g.recharge * this.fireDelay(u);
-      }
+      this.burst(u, t, g, dt);
     }
     if (hidden && !seen && !u.weapon && this.repositions(u.squad)) this.seekClear(u.squad, u, hidden, hideG);
   }
@@ -5840,19 +5876,7 @@ export class LandWorld {
       if (u.special && u.special.kind === 'quake') this.setAnim(u, 'attack');
       return true;
     }
-    if (aimed) {
-      if (w.left > 0) {
-        if ((w.timer -= dt) <= 0) {
-          this.fire(u, t);
-          w.left--;
-          w.timer = w.pulseDelay;
-        }
-      } else if (w.cooldown <= 0) {
-        w.left = w.pulses;
-        w.timer = 0;
-        w.cooldown = w.recharge * this.fireDelay(u);
-      }
-    }
+    if (aimed) this.burst(u, t, w, dt);
     if (u.path.length) return false;
     this.setAnim(u, 'attack');
     return true;
@@ -5959,17 +5983,7 @@ export class LandWorld {
       w.left = 0;
       return;
     }
-    if (w.left > 0) {
-      if ((w.timer -= dt) <= 0) {
-        this.fire(u, t);
-        w.left--;
-        w.timer = w.pulseDelay;
-      }
-    } else if (w.cooldown <= 0) {
-      w.left = w.pulses;
-      w.timer = 0;
-      w.cooldown = w.recharge * this.fireDelay(u);
-    }
+    this.burst(u, t, w, dt);
   }
 
   directArcs(u, out = []) {
@@ -6084,17 +6098,7 @@ export class LandWorld {
         }
         if (aimed) {
           shooting = true;
-          if (w.left > 0) {
-            if ((w.timer -= dt) <= 0) {
-              this.fire(u, t);
-              w.left--;
-              w.timer = w.pulseDelay;
-            }
-          } else if (w.cooldown <= 0) {
-            w.left = w.pulses;
-            w.timer = 0;
-            w.cooldown = w.recharge * this.fireDelay(u);
-          }
+          this.burst(u, t, w, dt);
         }
       } else if (u.turret) {
         u.turret.wantPitch = 0;
@@ -8214,6 +8218,7 @@ export class LandWorld {
         continue;
       }
       this.units[alive++] = u;
+      if (u.energy !== null) this.serviceEnergy(u, dt);
       if (u.cinematicTransport) continue;
       if (u.structure) {
         if (u.weapon && u.side >= 0 && !u.unpowered && !(u.stunUntil > this.time)) {
