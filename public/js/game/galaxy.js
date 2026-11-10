@@ -210,7 +210,8 @@ export function startingGalaxy(data, campaign) {
       type = db.type(typeName);
     if (p && type?.bool('Build_Requires_Initial_Placement')) (p.specialProduction ||= []).push(type.name.toUpperCase());
   }
-  const fleets = [];
+  const fleets = [],
+    firstOrbit = new Set();
   const startingForces = c.tuples('Starting_Forces').map(([f, pl, typeName]) => ({ f, at: at(pl), typeName }));
   for (const [f, pl, typeName] of planets.flatMap((_, i) => startingForces.filter(e => e.at === i).map(e => [e.f, i, e.typeName]))) {
     const p = planets[pl],
@@ -219,7 +220,13 @@ export function startingGalaxy(data, campaign) {
     if (!p || !type || !fac) continue;
     p.forces.push({ faction: fac.name, type });
     p.owner = fac.name;
+    const before = fleets.length;
     placeStartingForce(p, fac.name, type, fleets, 0);
+    const first = pl + '|' + fac.name;
+    if (fleets.length > before && !firstOrbit.has(first)) {
+      firstOrbit.add(first);
+      for (const f of fleets.slice(before)) f.slot ??= 1;
+    }
   }
   const factions = new Set([...credits.keys(), ...ai.keys(), ...home.keys()]);
   const players = [...factions]
