@@ -294,6 +294,79 @@ export class ScriptHost {
       });
   }
 
+  orderOf(e) {
+    if (this.land && e.members) {
+      const q = e,
+        pts =
+          q.box && q.box.path && q.box.path.length
+            ? [q.box.path[q.box.path.length - 1]]
+            : q.members.filter(u => !u.dead && u.path && u.path.length).map(u => u.path[u.path.length - 1]);
+      return {
+        foe: q.foe && q.foe.members && q.foe.members.length ? q.foe : null,
+        march: q.march ? { x: q.march.x, y: q.march.y } : null,
+        post: q.post ? { x: q.post.x, y: q.post.y } : null,
+        leash: q.leash || null,
+        legs: q.legs ? q.legs.map(l => ({ x: l.x, y: l.y })) : null,
+        dest: pts.length ? { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : null
+      };
+    }
+    return { order: e.order ? { ...e.order } : null, queue: e.queue ? e.queue.slice() : null };
+  }
+
+  resume(e, s) {
+    if (gone(e)) return;
+    if (!this.land || !e.members) {
+      if (s.order && e.setOrder) {
+        e.setOrder(s.order);
+        if (s.queue) e.queue = s.queue;
+      }
+      return;
+    }
+    if (s.foe && !gone(s.foe)) this.cmd.attack([e], s.foe);
+    else if (s.march) this.cmd.move([e], s.march.x, s.march.y, true, false);
+    else if (s.dest) this.cmd.move([e], s.dest.x, s.dest.y, false, true);
+    else this.cmd.stop([e]);
+    e.post = s.post;
+    e.leash = s.leash;
+    e.legs = s.legs;
+  }
+
+  stepDiversions() {
+    const D = this.diversions;
+    if (!D || !D.size) return;
+    const t = this.world.time;
+    for (const [e, stack] of D) {
+      const top = stack[stack.length - 1];
+      if (gone(e) || !top) {
+        D.delete(e);
+        continue;
+      }
+      if (t <= top.born) continue;
+      const k = e.order ? e.order.kind : 'idle',
+        now = this.land && e.members && k !== 'idle' ? this.orderOf(e).dest : null,
+        left =
+          this.land && e.members
+            ? !!(e.foe || e.march || (now && top.dest && Math.hypot(now.x - top.dest.x, now.y - top.dest.y) > 60))
+            : e.order !== top.order && k !== 'idle';
+      if (left) {
+        D.delete(e);
+        this.plans.signal(e, 'Unit_Diversion_Finished');
+        continue;
+      }
+      if (k !== 'idle') continue;
+      stack.pop();
+      if (!stack.length) D.delete(e);
+      this.plans.signal(e, 'Unit_Diversion_Finished');
+      this.resume(e, top.saved);
+      if (stack.length) {
+        const next = stack[stack.length - 1];
+        next.born = t;
+        next.order = e.order;
+        next.dest = this.orderOf(e).dest;
+      }
+    }
+  }
+
   lock(e) {
     if (e && e.order && e.order.kind !== 'idle') (this.locks ||= new WeakMap()).set(e, e.order.kind);
   }
@@ -529,7 +602,13 @@ export class ScriptHost {
     };
     const below = () => {
       for (const t of db.types.values())
-        if (t.bool('Build_Initially_Locked') && t.bool('Build_Can_Be_Unlocked_By_Slicer') && t.num('Tech_Level', 0) < p.techLevel && t.list('Affiliation').some(n => n.toUpperCase() === faction) && !unlocked.has(t))
+        if (
+          t.bool('Build_Initially_Locked') &&
+          t.bool('Build_Can_Be_Unlocked_By_Slicer') &&
+          t.num('Tech_Level', 0) < p.techLevel &&
+          t.list('Affiliation').some(n => n.toUpperCase() === faction) &&
+          !unlocked.has(t)
+        )
           unlock(t);
     };
     const raise = level => {
@@ -844,21 +923,17 @@ export class ScriptHost {
         self.cmd.guard([e], t);
         return self.plans.block(() => gone(e) || gone(t));
       },
-      Divert: o => {
+      Divert: (o, threat) => {
         const p = self.at(o);
-        if (!p || !e.order || e.order.kind !== 'move') return undefined;
-        const b = obj.Move_To(o);
-        (self.diverts ||= new WeakMap()).set(e, p);
-        return b;
+        if (!p || gone(e) || !e.order || e.order.kind === 'idle' || self.locked(e)) return false;
+        const saved = self.orderOf(e);
+        self.cmd.move([e], p.x, p.y, false, true);
+        const D = (self.diversions ||= new Map());
+        if (!D.has(e)) D.set(e, []);
+        D.get(e).push({ at: { x: p.x, y: p.y }, threat, saved, born: self.world.time, order: e.order, dest: self.orderOf(e).dest });
+        return true;
       },
-      Is_On_Diversion: () => {
-        const p = self.diverts && self.diverts.get(e),
-          u = body(e);
-        if (!p) return false;
-        if (u && e.order && e.order.kind === 'move' && Math.hypot(u.x - p.x, u.y - p.y) > 40) return true;
-        self.diverts.delete(e);
-        return false;
-      },
+      Is_On_Diversion: () => !!(self.diversions && self.diversions.get(e)?.length),
       Lock_Current_Orders: () => {
         self.lock(e);
       },
@@ -1070,9 +1145,7 @@ export class ScriptHost {
         if ((id | 0) === 78) for (const u of members()) u.holsterOff = !on;
       },
       Can_Move: () =>
-        members().some(
-          u => !u.dead && !u.hyper && !u.inside && !u.suspended && (u.maxSpeed > 0 || u.speed > 0) && !(u.moveLocks > 0)
-        ),
+        members().some(u => !u.dead && !u.hyper && !u.inside && !u.suspended && (u.maxSpeed > 0 || u.speed > 0) && !(u.moveLocks > 0)),
       Stop_SFX_Event: name => w.audio?.stopEvent?.(String(name || ''), e),
       Play_Cinematic_Engine_Flyby: () => {
         const t = lead(e)?.type || e.type,
@@ -1165,9 +1238,7 @@ export class ScriptHost {
       if (!p || !q) return false;
       const side = player?.__player ? (player.__player.side ?? player.__player.id) : undefined;
       return (w.shields || []).some(
-        s =>
-          (side === undefined || s.side === side) &&
-          Math.hypot(p.x - s.x, p.y - s.y) < s.r !== Math.hypot(q.x - s.x, q.y - s.y) < s.r
+        s => (side === undefined || s.side === side) && Math.hypot(p.x - s.x, p.y - s.y) < s.r !== Math.hypot(q.x - s.x, q.y - s.y) < s.r
       );
     });
     vm.global('Camera_To_Follow', value => {
@@ -1629,7 +1700,16 @@ export class ScriptHost {
           e = this.of(where);
         if (!p || !at) return undefined;
         const r = +radius || (e && (e.radius || e.visualRadius)) || 10;
-        w.reveals.push({ team: p.team, pl: p, x: at.x, y: at.y, r, until: w.time + 1, by: this.current, env: this.current && this.current.env });
+        w.reveals.push({
+          team: p.team,
+          pl: p,
+          x: at.x,
+          y: at.y,
+          r,
+          until: w.time + 1,
+          by: this.current,
+          env: this.current && this.current.env
+        });
         return undefined;
       },
       Reveal: (player, where, radius) => {
@@ -2332,6 +2412,7 @@ export class ScriptHost {
   update(dt) {
     const w = this.world;
     this.attach();
+    this.stepDiversions();
     if (!w.aiSuspended) this.plans.update();
     let started = 0;
     const list = this.instances,

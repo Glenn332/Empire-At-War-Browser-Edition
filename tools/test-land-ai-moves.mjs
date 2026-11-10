@@ -27,4 +27,7 @@ assert(!f.moving.has(far), 'a unit that stopped short of the goal still finishes
 walking.order = { kind: 'attack' };
 P.settle(f);
 assert(f.moving.has(walking), 'a unit fighting on the way has not finished its move');
+P.host = { diversions: new Map([[walking, [{}]]]) };
+P.settle(f);
+assert(!f.moving.has(walking), 'a diverted unit leaves the formation move');
 console.log('ok');

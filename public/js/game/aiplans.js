@@ -969,7 +969,7 @@ export class Plans {
     const inst = f.inst,
       o = f.owners;
     for (const e of f.moving) {
-      if (gone(e) || e.aiPlan !== inst || (o && o.has(e) && o.get(e) !== e.player)) {
+      if (gone(e) || e.aiPlan !== inst || (o && o.has(e) && o.get(e) !== e.player) || this.host?.diversions?.get(e)?.length) {
         f.moving.delete(e);
         if (o) o.delete(e);
       } else if (idle(e)) {
@@ -978,6 +978,12 @@ export class Plans {
         (f.arrived ||= []).push(e);
       }
     }
+  }
+
+  signal(e, name) {
+    const inst = e && e.aiPlan,
+      f = inst && inst.forces && inst.forces.find(x => x.units.includes(e));
+    if (f) (f.signals ||= []).push([name, e]);
   }
 
   free(inst) {
@@ -1354,6 +1360,11 @@ export class Plans {
         tell(f, 'No_Units_Remaining');
       }
       this.settle(f);
+      if (f.signals && f.signals.length) {
+        const sent = f.signals;
+        f.signals = [];
+        for (const [name, e] of sent) if (!gone(e) && e.aiPlan === inst) tell(f, name, f.wrapper, host.wrap(e));
+      }
       if (f.arrived && f.arrived.length) {
         const done = f.arrived;
         f.arrived = [];
