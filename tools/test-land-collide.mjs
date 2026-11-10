@@ -21,7 +21,7 @@ const { CELL } = await import('../public/js/game/terrain.js');
 const { tickCollisions } = await import('../public/js/game/landcollide.js');
 
 const CRAWLER = 'TIE_Crawler';
-const N = 128;
+const N = 256;
 function makeWorld(walls = []) {
   const W = Object.assign(Object.create(LandWorld.prototype), {
     n: N,
@@ -118,13 +118,29 @@ function crossing(name, place) {
       u.from = p;
       all.push(u);
     }
-  let total = 0;
-  const frames = 1500;
-  for (let f = 0; f < frames; f++) total += step(W, 1 / 30);
+  let total = 0,
+    frames = 0,
+    worst = 0;
+  for (let f = 0; f < 1500 && all.some(u => u.path.length); f++) {
+    const t = step(W, 1 / 30);
+    total += t;
+    worst = Math.max(worst, t);
+    frames++;
+  }
   const got = all.filter(u => !u.path.length).length,
     prog = all.reduce((s, u) => s + Math.hypot(u.x - u.from.x, u.y - u.from.y), 0) / all.length;
   console.log(
-    name + ': ' + (total / frames).toFixed(3) + ' ms a collision step, ' + got + ' of 60 through, mean progress ' + prog.toFixed(0)
+    name +
+      ': ' +
+      (total / frames).toFixed(3) +
+      ' ms a collision step (worst ' +
+      worst.toFixed(1) +
+      ' over ' +
+      frames +
+      ' frames), ' +
+      got +
+      ' of 60 through, mean progress ' +
+      prog.toFixed(0)
   );
   return got;
 }
@@ -216,6 +232,27 @@ const reachOf = (b, dx, dy) => {
     x = p.x;
     y = p.y;
   }
+}
+
+{
+  const W = makeWorld();
+  const s = unitOf(W, 'T2B_Tank', 0, 1050, 2000, 0);
+  s.path = [{ x: 1300, y: 2000 }];
+  const past = db.constants.num('LandDestinationProximity', 60);
+  for (let x = 1120; x <= 1300 + past + 80; x += 40) unitOf(W, 'T2B_Tank', 0, x, 2000, 0);
+  for (let f = 0; f < 12 && !s.path.some(p => p.round); f++) {
+    W.time += 1 / 30;
+    tickCollisions(W);
+  }
+  const E = s.path[s.path.length - 1];
+  assert(
+    s.path.some(p => p.round),
+    'a tank whose way ends inside a line of standing tanks still finds a way round'
+  );
+  assert(
+    Math.abs(E.y - 2000) > 20 && E.x >= 1300 - 1e-6,
+    'it rejoins at a free spot round the end of its path, ahead of it: ' + JSON.stringify(E)
+  );
 }
 
 console.log('ok land collisions');

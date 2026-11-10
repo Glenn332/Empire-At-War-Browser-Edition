@@ -383,70 +383,127 @@ function sweptBox(s, o, grow, T) {
   return B;
 }
 
-function spotNear(W, s, x, y, bodies, most) {
-  const R = radius(s),
-    half = R + s.spacing * 5,
-    cap = Math.min(10, R * 1.5 || 5),
-    close = bodies.filter(o => o !== s && Math.abs(o.x - x) <= most + half + o.r && Math.abs(o.y - y) <= most + half + o.r);
-  let r = 0,
-    step = 1;
-  for (let ring = 0; ring < 20 && r <= most; ring++) {
-    let n = Math.floor((r * 2 * Math.PI) / R) + 1;
-    if (ring && n < 4) n = 4;
-    for (let k = 0; k < n; k++) {
-      const th = (k / n) * 2 * Math.PI,
-        px = x + Math.cos(th + s.h) * r,
-        py = y + Math.sin(th + s.h) * r;
-      if (!W.isOpen(px, py, s.need)) continue;
-      if (close.some(o => Math.abs(o.x - px) <= half + o.r && Math.abs(o.y - py) <= half + o.r)) continue;
-      return { x: px, y: py };
+function ringNext(W, s, q) {
+  const R = radius(s) || 1;
+  while (q.ring < 20) {
+    let n = Math.floor((q.r * 2 * Math.PI) / R) + 1;
+    if (q.ring && n < 4) n = 4;
+    while (q.k < n) {
+      const th = (q.k++ / n) * 2 * Math.PI,
+        x = q.x + Math.cos(th + s.h) * q.r,
+        y = q.y + Math.sin(th + s.h) * q.r;
+      if (!W.isOpen(x, y, s.need)) continue;
+      if (q.close && q.close.some(o => footHit(o, x, y, q.half))) continue;
+      return { x, y };
     }
-    r += step;
-    step = Math.min(cap, step + 0.8);
+    q.k = 0;
+    q.r += q.step;
+    q.step = Math.min(Math.min(10, R * 1.5 || 5), q.step + 0.8);
+    q.ring++;
   }
   return null;
 }
 
-function rejoin(W, s, at, bodies) {
+const ringAt = (x, y) => ({ x, y, r: 0, step: 1, ring: 0, k: 0, close: null, half: 0 });
+
+function boxesMeet(A, B) {
+  const dx = B.x - A.x,
+    dy = B.y - A.y;
+  for (const [nx, ny] of [
+    [A.c, A.s],
+    [-A.s, A.c],
+    [B.c, B.s],
+    [-B.s, B.c]
+  ]) {
+    const ra = A.hx * Math.abs(A.c * nx + A.s * ny) + A.hy * Math.abs(-A.s * nx + A.c * ny),
+      rb = B.hx * Math.abs(B.c * nx + B.s * ny) + B.hy * Math.abs(-B.s * nx + B.c * ny);
+    if (Math.abs(dx * nx + dy * ny) > ra + rb) return false;
+  }
+  return true;
+}
+
+function footFree(W, s, f, end, prev, m, flags, linked) {
+  let dx = f.x - end.x,
+    dy = f.y - end.y,
+    d = Math.hypot(dx, dy);
+  if (d < 1e-9) {
+    dx = Math.cos(s.h);
+    dy = Math.sin(s.h);
+    d = 1;
+  }
+  const F = { x: f.x, y: f.y, c: dx / d, s: dy / d, hx: s.hx, hy: s.hy };
+  if (prev) {
+    for (const B of prev) if (B.o !== s && boxesMeet(F, B) && !ignored(W, s, B.o, m, flags, linked, 0x10)) return false;
+    return true;
+  }
+  const far = s.r;
+  for (const o of W.ccBodies) {
+    if (o === s || Math.abs(o.x - f.x) > far + o.r || Math.abs(o.y - f.y) > far + o.r) continue;
+    if (boxesMeet(F, boxOf(o, 0)) && !ignored(W, s, o, m, flags, linked, 0x10)) return false;
+  }
+  return true;
+}
+
+function routeOk(W, s, a, b) {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  if (d <= 0) return true;
+  const way = W.route(a.x, a.y, b.x, b.y, s.need);
+  if (!way) return false;
+  let wl = 0,
+    x = a.x,
+    y = a.y;
+  for (const q of way) {
+    wl += Math.hypot(q.x - x, q.y - y);
+    x = q.x;
+    y = q.y;
+  }
+  return wl <= 2 * d + 1e-6;
+}
+
+function rejoin(W, s, at, m, flags, linked, prev) {
   const len = pathLength(s),
-    near = K.near,
-    past = K.past;
+    end = s.path[s.path.length - 1],
+    spot = (x, y) => ringNext(W, s, ringAt(x, y)),
+    good = (f, x, y) => !!f && Math.hypot(f.x - x, f.y - y) <= K.near && footFree(W, s, f, end, prev, m, flags, linked);
   while (at.s < len) {
     const p = pointOnPath(s, at.s);
     at.s += 10;
     if (!p) break;
-    const f = spotNear(W, s, p.x, p.y, bodies, near);
-    if (f) return { x: f.x, y: f.y, next: p.next };
+    const f = spot(p.x, p.y);
+    if (good(f, p.x, p.y)) return { x: f.x, y: f.y, next: p.next };
   }
-  const end = s.path[s.path.length - 1],
-    prev = s.path.length > 1 ? s.path[s.path.length - 2] : s,
+  const before = s.path.length > 1 ? s.path[s.path.length - 2] : s,
     t = targetOf(s);
-  let dx = t ? t.x - end.x : end.x - prev.x,
-    dy = t ? t.y - end.y : end.y - prev.y;
-  const dl = Math.hypot(dx, dy);
-  if (dl < 1e-6) return null;
-  const most = t ? dl : past;
-  dx /= dl;
-  dy /= dl;
-  while (at.s - len <= most) {
-    const k = at.s - len;
+  let dx = t ? t.x - end.x : end.x - before.x,
+    dy = t ? t.y - end.y : end.y - before.y;
+  const dl = Math.hypot(dx, dy),
+    most = t ? dl : K.past;
+  if (dl > 1e-6) {
+    dx /= dl;
+    dy /= dl;
+  } else dx = dy = 0;
+  while (dl > 1e-6 && at.s - len < most) {
+    const k = at.s - len,
+      x = end.x + dx * k,
+      y = end.y + dy * k;
     at.s += 10;
-    const f = spotNear(W, s, end.x + dx * k, end.y + dy * k, bodies, near);
-    if (!f) continue;
-    const way = W.route(end.x, end.y, f.x, f.y, s.need);
-    if (!way) return null;
-    let wl = 0,
-      x = end.x,
-      y = end.y;
-    for (const q of way) {
-      wl += Math.hypot(q.x - x, q.y - y);
-      x = q.x;
-      y = q.y;
-    }
-    if (wl > 2 * Math.hypot(f.x - end.x, f.y - end.y) + 1e-6) return null;
-    return { x: f.x, y: f.y, next: s.path.length };
+    const f = spot(x, y),
+      ok = good(f, x, y);
+    if (!routeOk(W, s, end, f || { x, y })) break;
+    if (ok) return { x: f.x, y: f.y, next: s.path.length };
   }
-  return null;
+  if (!at.ring) {
+    at.ring = ringAt(end.x, end.y);
+    at.ring.half = radius(s) + Math.max(s.spacing * 6, radius(s) * 0.25);
+    const most = 20 * 10 + at.ring.half;
+    at.ring.close = W.ccBodies.filter(o => o !== s && Math.abs(o.x - end.x) <= most + o.r && Math.abs(o.y - end.y) <= most + o.r);
+  }
+  let f;
+  do {
+    f = ringNext(W, s, at.ring);
+    if (!f) return null;
+  } while ((f.x - end.x) * dx + (f.y - end.y) * dy < -0.001);
+  return routeOk(W, s, end, f) ? { x: f.x, y: f.y, next: s.path.length } : null;
 }
 
 function cellWindow(W, s, goal, grow) {
@@ -573,7 +630,7 @@ function terrainCorners(W, s, win, goal) {
   return out;
 }
 
-function ignored(W, s, o, m, flags, linked) {
+function ignored(W, s, o, m, flags, linked, mask) {
   if (o === s) return true;
   if (o === m) return false;
   if (!o.moving) {
@@ -749,9 +806,10 @@ function goRound(W, c, s, m, near, flags, T) {
   const linked = o => W.colls.some(k => k.kind !== 'ss' && ((k.a === s && k.b === o) || (k.b === s && k.a === o)));
   const grow = Math.min(s.hx, s.hy) + 0.5,
     extra = Math.max(0, s.expand);
-  const at = { s: Math.max(c.cursor || 0, L + 2) };
+  const at = { s: Math.max(c.cursor || 0, L + 2), ring: null };
+  let prev = null;
   for (let tries = 0; tries < 11; tries++) {
-    const goal = rejoin(W, s, at, bodies);
+    const goal = rejoin(W, s, at, m, flags, linked, prev);
     if (!goal) return false;
     c.cursor = at.s;
     if (goalBlocked(W, s, m, goal, flags, linked, grow, extra, T)) continue;
@@ -781,6 +839,7 @@ function goRound(W, c, s, m, near, flags, T) {
       B.outer = { x: B.x, y: B.y, c: B.c, s: B.s, hx: ox, hy: oy, x0: B.x - wx, x1: B.x + wx, y0: B.y - wy, y1: B.y + wy };
       boxes.push(B);
     }
+    prev = boxes;
     if (boxes.some(B => B.o !== m && inBox(B.outer, goal.x, goal.y))) continue;
     const nodes = [],
       sides = [];
