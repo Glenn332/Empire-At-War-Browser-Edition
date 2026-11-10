@@ -709,7 +709,7 @@ export class LandGame {
     });
     const captain = team => this.teams.indexOf(team);
     const preBuilt = setup.preBuilt !== false;
-    this.life = new Wildlife(world, scene, setup.fog !== false);
+    this.wildlife = new Wildlife(world, scene, setup.fog !== false);
     this.lightning = new Bolts(scene);
     world.onWeather = name => {
       if (name !== 'clear')
@@ -747,7 +747,7 @@ export class LandGame {
           } else if (team && o.type.has('Marker_For_Specific_Object_Type')) {
             if (side >= 0 && !/SPACE_STATION/i.test(team[2])) await world.addBaseSite(o, side, preBuilt && !/BUILDPADS/i.test(team[2]));
           } else if (isAmbient(o.type)) {
-            await this.life.add(o.type, o.pos[0], o.pos[1], o.rot[2] * DEG, o.scale || 1);
+            await this.wildlife.add(o.type, o.pos[0], o.pos[1], o.rot[2] * DEG, o.scale || 1);
           } else if (
             o.type.has('Spawned_Indigenous_Units_Type') &&
             o.type.list('Spawned_Indigenous_Units_Type').every(n => db.type(n) && isAmbient(db.type(n)))
@@ -756,7 +756,7 @@ export class LandGame {
               n = Math.min(12, o.type.num('Spawned_Indigenous_Units_Quantity', 6)),
               r = o.type.num('Spawn_Indigenous_Units_Radius', 80);
             for (let i = 0; i < n; i++)
-              await this.life.add(
+              await this.wildlife.add(
                 db.type(kinds[i % kinds.length]),
                 o.pos[0] + (Math.random() - 0.5) * r,
                 o.pos[1] + (Math.random() - 0.5) * r,
@@ -3092,7 +3092,7 @@ export class LandGame {
         lighting.ambient.value.copy(base);
       }
     }
-    if (dt > 0) this.life.update(dt, w.look);
+    if (dt > 0) this.wildlife.update(dt, w.look);
     this.lightning.update(dt, w, w.tables && w.tables.lightning, cam);
     const wx = w.weather;
     if (wx.emitter && wx.level > 0.01 && !this.wxFx)
@@ -3190,7 +3190,7 @@ export class LandGame {
         for (const p of this.props || []) loose.push(p.grp);
         for (const it of this.shotLooks.live.values()) if (it.holder) loose.push(it.holder);
       }
-      B.collect(w.units, w.look, [this.life ? this.life.list : [], w.points, this.props || []], cam.position, loose);
+      B.collect(w.units, w.look, [this.wildlife ? this.wildlife.list : [], w.points, this.props || []], cam.position, loose);
       this.scene.matrixWorldAutoUpdate = false;
     }
     if (!skip) {
@@ -3390,7 +3390,7 @@ export class LandGame {
     }
     const B = this.batches;
     if (B)
-      for (const list of [this.props || [], this.life ? this.life.list : [], w.points])
+      for (const list of [this.props || [], this.wildlife ? this.wildlife.list : [], w.points])
         for (const e of list) {
           const h = e.holder || e.grp;
           if (h) B.reachOf(h);
