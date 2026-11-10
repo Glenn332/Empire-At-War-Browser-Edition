@@ -46,6 +46,32 @@ export function halfSize(t) {
   return r;
 }
 
+export const flagshipRider = t =>
+  !!t && t.bool('Attach_To_Flagship_During_Space_Battle') && !t.str('Unique_Space_Unit') && !t.has('Space_Model_Name');
+
+export function ridesFlagship(company) {
+  const members = company.list('Company_Units').map(n => db.type(n));
+  return members.length > 0 && members.every(flagshipRider);
+}
+
+export function flagshipScore(t) {
+  if (t.has('Squadron_Units') || t.has('Company_Units') || t.list('CategoryMask').some(c => /^super$/i.test(c.trim()))) return 0;
+  return t.num('Tactical_Health', 0) * db.constants.num('Object_Max_Health_Multiplier_Space', 1) + t.num('Shield_Points', 0);
+}
+
+export function flagshipRecord(field) {
+  let best = null,
+    top = 0;
+  for (const u of field) {
+    const s = u.companyType ? 0 : flagshipScore(u.type);
+    if (s > top) {
+      best = u;
+      top = s;
+    }
+  }
+  return best;
+}
+
 export function splitForCap(units, cap, linked = null) {
   if (linked) {
     const ordinary = units.filter(u => !isTacticalSuperweapon(u.type));
@@ -395,14 +421,36 @@ export function placeCampaignBattle(w, map, teams, cb) {
       p.faction ? p.faction.num('Space_Tactical_Unit_Cap', 0) : 0,
       s === cb.attacker ? cb.linked : null
     );
-    for (const { u, x, y } of arrange(field, at, facing)) {
+    const lead = flagshipRecord(field),
+      aboard = lead ? field.filter(u => u.companyType && ridesFlagship(u.companyType)) : [];
+    let flagship = null;
+    const companies = [];
+    const placed = field.filter(r => !aboard.includes(r));
+    for (const { u, x, y } of arrange(placed, at, facing)) {
       const e = w.spawn(u.type, p, x, y, facing);
       if (!e) {
         book.absent.push(u.gid);
         continue;
       }
-      if (u.companyType) w.carryBonuses?.(u.companyType, p, e);
+      if (u === lead) flagship = e;
+      if (u.companyType) companies.push([u.companyType, e]);
       if (hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
+      book.entity.set(u.gid, e);
+    }
+    for (const [company, e] of companies)
+      if (!flagship) w.carryBonuses?.(company, p, e);
+      else {
+        w.carryBonuses?.(company, p, e, [], t => !flagshipRider(t));
+        w.carryBonuses?.(company, p, flagship, [], flagshipRider);
+      }
+    for (const u of aboard) {
+      const e = flagship || w.spawn(u.type, p, at.x, at.y, facing);
+      if (!e) {
+        book.absent.push(u.gid);
+        continue;
+      }
+      w.carryBonuses?.(u.companyType, p, e);
+      if (!flagship && hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
       book.entity.set(u.gid, e);
     }
     for (const u of waiting) {

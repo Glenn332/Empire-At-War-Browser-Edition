@@ -1503,10 +1503,10 @@ export class World {
     return e;
   }
 
-  bonusSource(type, owner, host = null, alias = false) {
+  bonusSource(type, owner, host = null, alias = false, carried = false) {
     const defs = bonusSourceDefs(type, SPACE);
     if (!defs.length || !owner) return null;
-    const h = { type, defs, owner, host, alias, keys: defs.map((d, i) => type.name + ':' + d.index + ':' + i), hit: host ? [] : null };
+    const h = { type, defs, owner, host, alias, carried, keys: defs.map((d, i) => type.name + ':' + d.index + ':' + i), hit: host ? [] : null };
     if (host) {
       const id = host.id;
       h.keys = h.keys.map(k => 'bonus:' + id + ':' + k);
@@ -1529,12 +1529,10 @@ export class World {
     this.carryBonuses(c.company, owner, host);
   }
 
-  carryBonuses(company, owner, host, made = []) {
+  carryBonuses(company, owner, host, made = [], keep = null) {
     for (const t of [company, ...company.list('Company_Units').map(n => db.type(n))])
-      if (t && t !== host.type && !made.includes(t) && bonusSourceDefs(t, SPACE).length) {
-        const h = this.bonusSource(t, owner, host);
-        if (h) h.carried = true;
-      }
+      if (t && t !== host.type && !made.includes(t) && (!keep || keep(t)) && bonusSourceDefs(t, SPACE).length)
+        this.bonusSource(t, owner, host, false, true);
   }
 
   carriedBy(host) {
@@ -1544,10 +1542,7 @@ export class World {
   }
 
   carry(names, owner, host) {
-    for (const n of names || []) {
-      const h = this.bonusSource(db.type(n), owner, host);
-      if (h) h.carried = true;
-    }
+    for (const n of names || []) this.bonusSource(db.type(n), owner, host, false, true);
   }
 
   takeBonuses(u) {
@@ -1563,7 +1558,7 @@ export class World {
     let hit = false;
     for (let i = 0; i < h.defs.length; i++) {
       const d = h.defs[i];
-      if (u === h.host && !d.self) continue;
+      if (u === h.host && !d.self && !h.carried) continue;
       if (!bonusTypeFits(d, u.type, h.alias && u.type.parent ? u.type.parent.name.toUpperCase() : '')) continue;
       if (!bonusOwnerFits(d, u.player.factionName, h.owner.team === u.player.team)) continue;
       const m = (u.cmods ||= new CombatMods());
