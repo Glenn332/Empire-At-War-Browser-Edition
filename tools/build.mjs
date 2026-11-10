@@ -12,6 +12,8 @@ const pub = path.join(web, 'public'),
 const run = (cmd, args) => execFileSync(cmd, args, { cwd: web, encoding: 'utf8', shell: process.platform === 'win32' }).trim();
 const esbuild = args => run('npx', ['--yes', 'esbuild@0.25.10', '--minify', '--allow-overwrite', '--log-level=error', ...args]);
 
+execFileSync(process.execPath, [path.join(web, 'tools', 'test-module-graph.mjs')], { cwd: web, stdio: 'inherit' });
+
 const commit = run('git', ['rev-parse', '--short', 'HEAD']);
 const build = commit + (run('git', ['status', '--porcelain', '--', 'public']) ? '-dirty' : '');
 
