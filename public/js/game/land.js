@@ -246,6 +246,21 @@ export async function preloadLand(roots, factions, onProgress = () => {}, mapRoo
   return { types: types.size, models: withModel.length, clips: clips.size };
 }
 
+function hardExtent(u, axis) {
+  const k = axis === 'X' ? 'hardX' : 'hardY';
+  if (u[k] !== undefined) return u[k];
+  const t = u.type,
+    v = t.num('Custom_Hard_' + axis + 'Extent', 0);
+  return (u[k] = v > 0 ? v * (t.num('Scale_Factor', 1) || 1) : u.foot ? soldierExtent(u, axis) : u.body || 10);
+}
+
+const PLACE_SIDES = [
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [0, -1]
+];
+
 function soldierExtent(u, axis) {
   const t = u.type,
     sc = t.num('Scale_Factor', 1) || 1,
@@ -569,6 +584,9 @@ class LandUnit {
     this.ccls = undefined;
     this.cb = undefined;
     this.ccCap = undefined;
+    this.hardX = undefined;
+    this.hardY = undefined;
+    this.startAt = undefined;
     this.inView = undefined;
     this.inPose = undefined;
     this.ix = undefined;
@@ -2891,7 +2909,10 @@ export class LandWorld {
       }
       if (!moving && !fighting) {
         const p = q.legs.shift();
-        this.order(q, p.x, p.y);
+        if (this.order(q, p.x, p.y) && !q.box) {
+          const most = db.constants.num('Max_Move_Frame_Delay', 6);
+          for (const u of q.members) if (!u.dead && !(u.v > 0)) u.startAt = this.time + Math.floor(simRandom() * (most + 1)) / LOGIC_FPS;
+        }
       }
     }
   }
@@ -6070,7 +6091,11 @@ export class LandWorld {
       rear: 0,
       hw: 0,
       slack: 10,
-      stall: 0
+      stall: 0,
+      jig: T.num('MaxJiggleDistance', 0),
+      started: null,
+      hl: 0,
+      hs: 0
     });
     this.layout(q, box, box.heading);
     const c = Math.cos(box.heading),
@@ -6080,6 +6105,33 @@ export class LandWorld {
         u.x = box.x + c * u.slot.x - s * u.slot.y;
         u.y = box.y + s * u.slot.x + c * u.slot.y;
       }
+    this.teamExtent(q);
+    return box;
+  }
+
+  teamExtent(q) {
+    const box = q.box,
+      c = Math.cos(box.heading),
+      s = Math.sin(box.heading);
+    let maxF = 0,
+      minF = 0,
+      maxS = 0,
+      minS = 0;
+    for (const u of q.members) {
+      if (u.dead || u.inside) continue;
+      const dx = u.x - box.x,
+        dy = u.y - box.y,
+        f = dx * c + dy * s,
+        sd = -dx * s + dy * c,
+        hx = hardExtent(u, 'X'),
+        hy = hardExtent(u, 'Y');
+      if (f + hx > maxF) maxF = f + hx;
+      if (f - hx < minF) minF = f - hx;
+      if (sd + hy > maxS) maxS = sd + hy;
+      if (sd - hy < minS) minS = sd - hy;
+    }
+    box.hl = (maxF - minF) / 2 + (box.jig || 0);
+    box.hs = (maxS - minS) / 2 + (box.jig || 0);
     return box;
   }
 
@@ -6237,10 +6289,17 @@ export class LandWorld {
       }
       if (box.lay === null || box.n !== live || box.k !== (q.spread || 1) || Math.cos(box.heading - box.lay) <= 0.99)
         this.layout(q, box, box.heading);
+      this.teamExtent(q);
       const p = box.path[0];
       if (!p) {
         box.speed = 0;
         continue;
+      }
+      if (box.started !== box.path) {
+        box.started = box.path;
+        const most = db.constants.num('Max_Move_Frame_Delay', 6);
+        for (const u of q.members)
+          if (!u.dead && !u.inside && !(u.v > 0)) u.startAt = this.time + Math.floor(simRandom() * (most + 1)) / LOGIC_FPS;
       }
       if (this.time >= (box.nearAt || 0)) {
         box.nearAt = this.time + 0.2;
@@ -6287,8 +6346,8 @@ export class LandWorld {
         s = Math.sin(box.heading);
       if (box.stall < 4)
         for (const u of q.members) {
-          if (u.dead || u.inside || u.rooted || u.stunUntil > this.time) continue;
-          const lag = -((u.x - box.x) * c + (u.y - box.y) * s) - (box.rear + 2);
+          if (u.dead || u.inside) continue;
+          const lag = -((u.x - box.x) * c + (u.y - box.y) * s) - (box.hl + 2);
           if (lag > 0) cap = Math.min(cap, box.max * (1 - Math.min(1, lag / 10)));
         }
       box.stall = cap < 1 ? box.stall + dt : box.speed > 1 ? 0 : box.stall;
@@ -6387,6 +6446,7 @@ export class LandWorld {
         ey = -dx * s + dy * c,
         ts = Math.min(box.speed, own);
       wantV = Math.abs(ex) <= 1 ? ts : ex > 0 ? ts + (own - ts) * Math.min(1, ex / 10) : ts * (1 - Math.min(1, -ex / 10) ** 2);
+      if (u.startAt > this.time) wantV = 0;
       const f = Math.min(0.5, Math.abs(ey) / 10),
         sg = Math.sign(ey);
       wantH = Math.atan2(s * (1 - f) + c * sg * f, c * (1 - f) - s * sg * f);
@@ -6416,15 +6476,6 @@ export class LandWorld {
         if (ax || ay) {
           const k2 = Math.min(1, v / Math.max(1, own));
           wantH = Math.atan2(hy + ay * k2, hx + ax * k2);
-        }
-      }
-      if (box.speed > 0) {
-        const rag = (u.rag ??= t.num('FormationRaggedness', 0)),
-          most = (u.jigMax ??= t.num('MaxJiggleDistance', 0));
-        if (rag && most) {
-          const k = (box.speed / box.max) * rag;
-          j.x = Math.max(-most, Math.min(most, j.x + (simRandom() * 2 - 1) * k));
-          j.y = Math.max(-most, Math.min(most, j.y + (simRandom() * 2 - 1) * k));
         }
       }
       u.back = false;
@@ -6549,53 +6600,32 @@ export class LandWorld {
       const at = this.isOpen(box.x, box.y) ? box : m[0];
       {
         const g = this.ground(squad),
-          hx = g.hx,
-          hy = g.hy;
-        const come = Math.atan2(goal.y - at.y, goal.x - at.x),
+          room = db.constants.num('BetweenFormationSpacing', 5),
+          come = Math.atan2(goal.y - at.y, goal.x - at.x),
           f = facing ?? come,
-          fc = Math.cos(f),
-          fs = Math.sin(f),
-          only = [squad];
-        if (this.cluttered(goal.x, goal.y, hx, hy, fc, fs, need, only)) {
-          const vx = -Math.cos(come),
-            vy = -Math.sin(come),
-            aim = squad.aimAt,
-            SIDES = [
-              [1, 0],
-              [0, 1],
-              [-1, 0],
-              [0, -1]
-            ];
-          const gx = goal.x,
-            gy = goal.y;
-          search: for (let k = 0; k <= 40; k++) {
-            const ring = k ? ((k + 7) >> 3) * 20 : 0,
-              turn = ((k & 7) * Math.PI) / 4,
-              ax = gx + Math.cos(turn) * ring,
-              ay = gy + Math.sin(turn) * ring;
-            if (k && !this.isOpen(ax, ay, need)) continue;
-            for (let n = 0, d = 0; n < 40; n++) {
-              const m = n & 7;
-              let px, py;
-              if (m < 4) {
-                const dd = 0.5 * d * (n & 1 ? -0.75 : 1);
-                px = ax + vx * dd;
-                py = ay + vy * dd;
-                d += 7;
-              } else {
-                const dd = (d - 28) * 0.5,
-                  kk = Math.min(hx, hy),
-                  side = SIDES[m - 4];
-                px = ax + vx * dd + side[0] * kk;
-                py = ay + vy * dd + side[1] * kk;
-              }
-              if (aim && (px - aim.x) ** 2 + (py - aim.y) ** 2 > aim.r * aim.r) continue;
-              if (!this.isOpen(px, py, need) || this.cluttered(px, py, hx, hy, fc, fs, need, only)) continue;
-              goal.x = px;
-              goal.y = py;
-              break search;
-            }
-          }
+          gx = goal.x,
+          gy = goal.y;
+        const p = this.placeAnchors(gx, gy, need, (A, forced) =>
+          this.placeBox({
+            A,
+            vx: -Math.cos(come),
+            vy: -Math.sin(come),
+            hx: g.hx + room,
+            hy: g.hy + room,
+            c: Math.cos(f),
+            s: Math.sin(f),
+            need,
+            first: true,
+            several: false,
+            placed: [],
+            sent: [squad],
+            aim: squad.aimAt,
+            forced
+          })
+        );
+        if (p) {
+          goal.x = p.x;
+          goal.y = p.y;
         }
       }
       const way = this.route(at.x, at.y, goal.x, goal.y, need);
@@ -6765,12 +6795,10 @@ export class LandWorld {
       pts,
       cum,
       len: cum[cum.length - 1],
-      along: 0,
       speed: f.speed,
-      stall: 0,
       layouts: new Map(),
       sides: this.routeSides(pts, f.hw, f.hw + 10 * spacing + 10, (f.need & ~3) | 1),
-      members: f.units.map(u => ({ q: u.g.q, g: u.g, dest: null }))
+      members: f.units.map(u => ({ q: u.g.q, g: u.g, dest: null, s: 0, seg: 0, dev: 0, side: 0, off: null }))
     };
     if (F.len < 1) return null;
     this.groups.push(F);
@@ -6788,7 +6816,7 @@ export class LandWorld {
     return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, h: Math.atan2(b.y - a.y, b.x - a.x) };
   }
 
-  groupPlace(F, m, d, P) {
+  groupPlace(F, m, d, P, along = true) {
     const S = F.sides;
     let shift = 0,
       free = Infinity;
@@ -6806,53 +6834,126 @@ export class LandWorld {
       F.layouts.set(side, lay);
     }
     const off = lay.get(m.q) || { x: 0, y: 0 },
+      ox = along ? off.x : 0,
       c = Math.cos(P.h),
       s = Math.sin(P.h);
     m.off = off;
-    return { x: P.x + c * off.x - s * off.y - s * shift, y: P.y + s * off.x + c * off.y + c * shift, h: P.h };
+    m.side = off.y + shift;
+    return { x: P.x + c * ox - s * off.y - s * shift, y: P.y + s * ox + c * off.y + c * shift, h: P.h };
+  }
+
+  groupAlong(F, m, u) {
+    const { pts, cum } = F;
+    let best = Infinity,
+      at = m.s,
+      seg = m.seg,
+      side = 0;
+    const lo = m.seg ? Math.max(1, m.seg - 1) : 1,
+      hi = m.seg ? Math.min(pts.length - 1, m.seg + 4) : pts.length - 1;
+    for (let i = lo; i <= hi; i++) {
+      const a = pts[i - 1],
+        b = pts[i],
+        L = cum[i] - cum[i - 1];
+      if (L < 1e-6) continue;
+      const ux = (b.x - a.x) / L,
+        uy = (b.y - a.y) / L,
+        t = Math.max(0, Math.min(L, (u.x - a.x) * ux + (u.y - a.y) * uy)),
+        d2 = (a.x + ux * t - u.x) ** 2 + (a.y + uy * t - u.y) ** 2;
+      if (d2 < best) {
+        best = d2;
+        at = cum[i - 1] + t;
+        seg = i;
+        side = -(u.x - a.x) * uy + (u.y - a.y) * ux;
+      }
+    }
+    m.s = at;
+    m.seg = seg;
+    return side;
   }
 
   tickGroups(dt) {
     if (!this.groups.length) return;
+    const lo = db.constants.num('FormationMinimumSideError', 0.1),
+      hi = db.constants.num('FormationMaximumSideError', 30) || 30;
     let k = 0;
     for (const F of this.groups) {
       const live = F.members.filter(m => m.q.formMove === F && m.dest && m.q.members.length && !m.q.dead);
-      if (live.length < 2 || F.along >= F.len) {
-        for (const m of live) {
-          m.q.formMove = null;
-          m.q.formSpeed = { v: F.speed, x: m.dest.x, y: m.dest.y };
-          this.order(m.q, m.dest.x, m.dest.y, F.face);
-        }
+      const lead = q => q.members.find(u => !u.dead && !u.inside);
+      const handOff = m => {
+        m.q.formMove = null;
+        m.q.formSpeed = { v: F.speed, x: m.dest.x, y: m.dest.y };
+        this.order(m.q, m.dest.x, m.dest.y, F.face);
+      };
+      if (live.length < 2) {
+        for (const m of live) handOff(m);
         continue;
       }
-      const lead = q => q.members.find(u => !u.dead && !u.inside);
-      const P = this.groupAt(F, F.along),
-        pc = Math.cos(P.h),
-        ps = Math.sin(P.h);
-      let worst = 0;
+      const going = [];
       for (const m of live) {
         const u = lead(m.q);
-        m.lag = 0;
-        if (!u || m.q.foe || u.target) continue;
-        const at = this.groupPlace(F, m, F.along, P);
-        m.lag = (at.x - u.x) * pc + (at.y - u.y) * ps;
-        worst = Math.max(worst, m.lag);
+        if (!u) continue;
+        const actual = this.groupAlong(F, m, u);
+        m.err = 0;
+        this.groupPlace(F, m, m.s, this.groupAt(F, m.s), false);
+        if (m.s >= F.len + Math.min(0, m.off.x) - 20) {
+          handOff(m);
+          continue;
+        }
+        m.fight = !!(m.q.foe || u.target);
+        m.err = m.side - actual;
+        going.push(m);
       }
-      if (worst <= 20) F.stall = 0;
-      else F.stall += dt;
-      const cap = F.stall < 4 ? F.speed * (1 - Math.min(1, Math.max(0, worst - 20) / 40)) : F.speed;
-      F.along = Math.min(F.len, F.along + cap * dt);
-      for (const m of live) {
-        const best = Math.max(...m.q.members.map(u => u.speed || 0)),
-          lag = m.lag;
-        const v = lag >= 0 ? cap + (best - cap) * Math.min(1, lag / 20) : cap * Math.max(0, 1 + lag / 20);
-        m.q.formSpeed = { v: Math.max(0.1, v), x: m.dest.x, y: m.dest.y };
+      if (going.length < 1) continue;
+      let most = 0,
+        least = 0;
+      for (const m of going) {
+        let sum = 0,
+          n = 0;
+        if (!m.fight)
+          for (const o of going) {
+            if (o === m || o.fight) continue;
+            const miss = o.s - m.s - (o.off.x - m.off.x);
+            if (Math.abs(miss) < 0.1) continue;
+            sum += miss;
+            n++;
+          }
+        m.dev = n ? sum / n : 0;
+        if (m.dev > most) most = m.dev;
+        if (m.dev < least) least = m.dev;
       }
-      const d = Math.min(F.len, F.along + 40),
-        Q = this.groupAt(F, d);
-      for (const m of live) {
-        if (m.q.foe) continue;
-        const at = this.groupPlace(F, m, d, Q),
+      const base = F.speed,
+        slow = Math.max(0.4, 1 - Math.abs(least) / 12) * base;
+      for (const m of going) {
+        if (m.fight) {
+          m.q.formSpeed = null;
+          continue;
+        }
+        const u = lead(m.q),
+          own = Math.min(...m.q.members.filter(v => !v.dead && !v.inside).map(v => v.speed || 0)),
+          dec = (u.loco ??= this.locoOf(u)).dec,
+          a = m.dev;
+        let v = base;
+        if (a > 0 && most > 0) {
+          const H = Math.max(most, 12);
+          v = base + (own - base) * (a / H);
+          v = Math.min(v, base + Math.sqrt(2 * dec * a));
+        } else if (a < 0 && least < 0) {
+          const L = Math.min(least, -12);
+          v = base + (slow - base) * (a / L);
+        }
+        let lat = Math.abs(m.err) > lo ? (m.err - Math.sign(m.err) * lo) / hi : 0;
+        const cap = Math.min(base + Math.sqrt(2 * dec * Math.abs(lat * hi)), own),
+          stretch = Math.sqrt(1 + lat * lat);
+        v *= stretch;
+        lat /= stretch;
+        if (lat > 0 && v >= cap / lat) v = cap / lat;
+        m.q.formSpeed = { v: Math.max(0, Math.min(own, v)), x: m.dest.x, y: m.dest.y };
+      }
+      for (const m of going) {
+        if (m.fight) continue;
+        const d = Math.min(F.len, m.s + 40),
+          Q = this.groupAt(F, d),
+          at = this.groupPlace(F, m, d, Q, false),
           c = Math.cos(Q.h),
           s = Math.sin(Q.h),
           kk = m.q.spread || 1;
@@ -6861,7 +6962,7 @@ export class LandWorld {
           if (u.path.length && u.path[0] !== u.formPt) continue;
           const o = u.off || { x: 0, y: 0 };
           let pt = { x: at.x + (c * o.x - s * o.y) * kk, y: at.y + (s * o.x + c * o.y) * kk };
-          if (!this.isOpen(pt.x, pt.y, u.need)) pt = this.groupAt(F, Math.max(0, Math.min(F.len, d + (m.off ? m.off.x : 0))));
+          if (!this.isOpen(pt.x, pt.y, u.need)) pt = { x: Q.x, y: Q.y };
           u.formPt = pt;
           if (!this.clear(u.x, u.y, pt.x, pt.y, u.need) && this.time >= (u.formRouteAt || 0)) {
             u.formRouteAt = this.time + 1;
@@ -6886,10 +6987,13 @@ export class LandWorld {
       t = u.type,
       box = this.teamOf(q);
     let hx, hy;
-    if (box) hx = hy = Math.max(6, box.slack - 10);
-    else {
-      const X = t.num('Custom_Hard_XExtent', 0) || u.body || 10,
-        Y = t.num('Custom_Hard_YExtent', 0) || u.body || 10;
+    if (box) {
+      this.teamExtent(q);
+      hx = box.hl;
+      hy = box.hs;
+    } else {
+      const X = hardExtent(u, 'X'),
+        Y = hardExtent(u, 'Y');
       let ox = 0,
         oy = 0;
       for (const v of m) {
@@ -7096,24 +7200,9 @@ export class LandWorld {
     const P = forms[0],
       from = this.isOpen(P.x, P.y) ? P : P.units[0].g.q.members[0],
       need = Math.max(...forms.map(f => f.need));
-    const room = db.constants.num('BetweenFormationSpacing', 5),
-      SIDES = [
-        [1, 0],
-        [0, 1],
-        [-1, 0],
-        [0, -1]
-      ];
-    for (let k = 0; k <= 41; k++) {
-      const forced = k === 41,
-        ring = forced || !k ? 0 : ((k + 7) >> 3) * 20,
-        turn = ((k & 7) * Math.PI) / 4;
-      const A = { x: x + Math.cos(turn) * ring, y: y + Math.sin(turn) * ring };
-      let way = null;
-      if (!forced) {
-        if (!this.isOpen(A.x, A.y, need)) continue;
-        way = this.near(from.x, from.y, A.x, A.y, need);
-        if (!way) continue;
-      } else way = this.route(from.x, from.y, A.x, A.y, need);
+    const room = db.constants.num('BetweenFormationSpacing', 5);
+    const found = this.placeAnchors(x, y, forms[0].need, (A, forced) => {
+      const way = this.route(from.x, from.y, A.x, A.y, need);
       const pts = [from, ...(way && way.length ? way : [A])];
       const start = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
       let end = Math.atan2(pts[pts.length - 1].y - pts[pts.length - 2].y, pts[pts.length - 1].x - pts[pts.length - 2].x);
@@ -7125,8 +7214,7 @@ export class LandWorld {
         c = Math.cos(face),
         s = Math.sin(face);
       const placed = [];
-      let failed = false;
-      for (let i = 0; i < forms.length && !failed; i++) {
+      for (let i = 0; i < forms.length; i++) {
         const f = forms[i];
         let vx = (f.x - C.x) * ct - (f.y - C.y) * st,
           vy = (f.x - C.x) * st + (f.y - C.y) * ct,
@@ -7140,77 +7228,173 @@ export class LandWorld {
         }
         const hx = f.hd + room,
           hy = f.hw + room;
-        const fits = (px, py) => {
-          const ax = (A.x - px) * c + (A.y - py) * s,
-            ay = -(A.x - px) * s + (A.y - py) * c;
-          if (forms.length > 1 && Math.abs(ax) < hx && Math.abs(ay) < hy) return false;
-          for (const o of placed) {
-            const ox = (o.x - px) * c + (o.y - py) * s,
-              oy = -(o.x - px) * s + (o.y - py) * c;
-            if (Math.abs(ox) < hx + o.hx && Math.abs(oy) < hy + o.hy) return false;
-          }
-          return true;
-        };
-        let d = 0,
-          pos = null,
-          blocked = false,
-          last = A;
-        for (let n = 0; n < 40 && !pos; n++) {
-          const m = n & 7;
-          let px, py;
-          if (m < 4) {
-            const dd = i === 0 && !blocked ? 0.5 * d * (n & 1 ? -0.75 : 1) : d;
-            px = A.x + vx * dd;
-            py = A.y + vy * dd;
-            d += 7;
-          } else {
-            const dd = (d - 28) * (i === 0 ? 0.5 : 1),
-              kk = Math.min(hx, hy),
-              side = SIDES[m - 4];
-            px = A.x + vx * dd + side[0] * kk;
-            py = A.y + vy * dd + side[1] * kk;
-          }
-          last = { x: px, y: py };
-          if (!fits(px, py)) continue;
-          if (f.flies) {
-            pos = last;
-            break;
-          }
-          if (!this.isOpen(px, py, f.need)) {
-            blocked = true;
-            continue;
-          }
-          if (blocked && !this.near(A.x, A.y, px, py, f.need)) continue;
-          if (this.cluttered(px, py, hx, hy, c, s, f.need, list)) continue;
-          pos = last;
-        }
-        if (!pos && forced) pos = last;
-        if (!pos) {
-          failed = true;
-          break;
-        }
+        const pos = this.placeBox({
+          A,
+          vx,
+          vy,
+          hx,
+          hy,
+          c,
+          s,
+          need: f.need,
+          flies: f.flies,
+          first: i === 0,
+          several: forms.length > 1,
+          placed,
+          sent: list,
+          slots: f.units.map(u => ({ x: u.off.x, y: u.off.y, hx: u.g.hx, hy: u.g.hy, q: u.g.q })),
+          forced
+        });
+        if (!pos) return null;
         placed.push({ x: pos.x, y: pos.y, hx, hy, f });
       }
-      if (failed) continue;
-      for (const p of placed) {
-        const pace = p.f.units.length > 1 ? p.f.speed : null;
-        const F = p.f.units.length > 1 && !p.f.flies ? this.groupMove(p.f, p, face) : null;
-        for (const u of p.f.units) {
-          const at = { x: p.x + c * u.off.x - s * u.off.y, y: p.y + s * u.off.x + c * u.off.y, face };
-          out.set(u.g.q, at);
-          u.g.q.formSpeed = pace ? { v: pace, x: at.x, y: at.y } : null;
-          u.g.q.formPending = F ? { F, at } : null;
-        }
+      return { placed, face, c, s };
+    });
+    if (!found) return out;
+    const { placed, face, c, s } = found;
+    for (const p of placed) {
+      const pace = p.f.units.length > 1 ? p.f.speed : null;
+      const F = p.f.units.length > 1 && !p.f.flies ? this.groupMove(p.f, p, face) : null;
+      for (const u of p.f.units) {
+        const at = { x: p.x + c * u.off.x - s * u.off.y, y: p.y + s * u.off.x + c * u.off.y, face };
+        out.set(u.g.q, at);
+        u.g.q.formSpeed = pace ? { v: pace, x: at.x, y: at.y } : null;
+        u.g.q.formPending = F ? { F, at } : null;
       }
-      break;
     }
     return out;
   }
 
-  near(ax, ay, bx, by, need) {
-    if (this.clear(ax, ay, bx, by, need)) return [{ x: bx, y: by }];
-    const way = this.route(ax, ay, bx, by, need);
-    if (!way) return null;
+  placeAnchors(x, y, need, attempt) {
+    let zone = null;
+    for (let k = 0; k <= 41; k++) {
+      const forced = k === 41,
+        ring = forced || !k ? 0 : ((k + 7) >> 3) * 20,
+        turn = ((k & 7) * Math.PI) / 4,
+        A = { x: x + Math.cos(turn) * ring, y: y + Math.sin(turn) * ring };
+      if (ring) {
+        if (!this.isOpen(A.x, A.y, need)) continue;
+        zone ??= this.placeZone(x, y, need);
+        if (this.placeZone(A.x, A.y, need) !== zone) continue;
+        if (!this.clear(A.x, A.y, x, y, need)) {
+          const len = this.placeWay(A.x, A.y, x, y, need, false);
+          if (len === null || len > 1.8 * Math.hypot(x - A.x, y - A.y)) continue;
+        }
+      }
+      const got = attempt(A, forced);
+      if (got) return got;
+    }
+    return null;
+  }
+
+  placeBox(o) {
+    const { A, vx, vy, hx, hy, c, s, need, placed } = o,
+      kk = Math.min(hx, hy);
+    let d = 0,
+      linked = false,
+      onlyClutter = false,
+      zone = null,
+      last = { x: A.x, y: A.y };
+    for (let n = 0; n < 40; n++) {
+      const m = n & 7,
+        half = o.first && !linked;
+      let px, py;
+      if (m < 4) {
+        const dd = half ? 0.5 * d * (n & 1 ? -0.75 : 1) : d;
+        px = A.x + vx * dd;
+        py = A.y + vy * dd;
+        d += 7;
+      } else {
+        const dd = (d - 28) * (half ? 0.5 : 1),
+          side = PLACE_SIDES[m - 4];
+        px = A.x + vx * dd + side[0] * kk;
+        py = A.y + vy * dd + side[1] * kk;
+      }
+      last = { x: px, y: py };
+      const wasClutter = onlyClutter;
+      onlyClutter = false;
+      if (o.several) {
+        const ax = (A.x - px) * c + (A.y - py) * s,
+          ay = -(A.x - px) * s + (A.y - py) * c;
+        if (Math.abs(ax) < hx && Math.abs(ay) < hy) continue;
+      }
+      if (
+        placed.some(p => {
+          const ox = (p.x - px) * c + (p.y - py) * s,
+            oy = -(p.x - px) * s + (p.y - py) * c;
+          return Math.abs(ox) < hx + p.hx && Math.abs(oy) < hy + p.hy;
+        })
+      )
+        continue;
+      if (o.flies) return last;
+      if (o.aim && (px - o.aim.x) ** 2 + (py - o.aim.y) ** 2 > o.aim.r * o.aim.r) continue;
+      if (!this.isOpen(px, py, need) || !this.inPlay(px, py)) {
+        if (linked && wasClutter) return o.forced ? last : null;
+        linked = true;
+        continue;
+      }
+      if (linked) {
+        zone ??= this.placeZone(A.x, A.y, need);
+        if (this.placeZone(px, py, need) !== zone) continue;
+        if (!this.clear(A.x, A.y, px, py, need)) {
+          const len = this.placeWay(A.x, A.y, px, py, need, true);
+          if (len !== null && len > 1.8 * Math.hypot(px - A.x, py - A.y)) continue;
+        }
+      }
+      if (this.cluttered(px, py, hx, hy, c, s, need, o.sent, o.slots)) {
+        onlyClutter = linked;
+        continue;
+      }
+      return last;
+    }
+    return o.forced ? last : null;
+  }
+
+  inPlay(x, y) {
+    const M = this.map;
+    return !M || !M.playMin || !(x <= M.playMin[0] || y <= M.playMin[1] || x >= M.playMax[0] || y >= M.playMax[1]);
+  }
+
+  placeZone(x, y, need) {
+    const P = this.paths;
+    P.sync();
+    const mask = this.maskOf(need),
+      Z = (this.placeZones ||= new Map());
+    let z = Z.get(mask);
+    if (!z || z.ver !== P.ver) {
+      const zone = new Int32Array(P.count).fill(-1),
+        ok = r => (P.rbits[r] & mask) === P.rbits[r],
+        stack = [];
+      let next = 0;
+      for (let r = 0; r < P.count; r++) {
+        if (zone[r] !== -1 || !ok(r)) continue;
+        zone[r] = next;
+        stack.push(r);
+        while (stack.length) {
+          const k = stack.pop();
+          for (let i = P.nbStart[k]; i < P.nbStart[k + 1]; i++) {
+            const o = P.nbList[i];
+            if (o >= 0 && zone[o] === -1 && ok(o)) {
+              zone[o] = next;
+              stack.push(o);
+            }
+          }
+        }
+        next++;
+      }
+      Z.set(mask, (z = { ver: P.ver, zone }));
+    }
+    const r = P.rectOf(x, y);
+    return r < 0 ? -1 : z.zone[r];
+  }
+
+  placeWay(ax, ay, bx, by, need, smooth) {
+    const P = this.paths;
+    P.sync();
+    P.mask = this.maskOf(need);
+    if (P.rectOf(ax, ay) < 0 || P.rectOf(bx, by) < 0) return null;
+    const way = P.request({ x: ax, y: ay }, { x: bx, y: by }, 0, smooth);
+    if (!way || !way.length) return null;
     let len = 0,
       px = ax,
       py = ay;
@@ -7219,45 +7403,29 @@ export class LandWorld {
       px = p.x;
       py = p.y;
     }
-    return len <= 1.8 * Math.hypot(bx - ax, by - ay) ? way : null;
+    return len + Math.hypot(bx - px, by - py);
   }
 
   clutterNear(px, py, reach) {
     if (this.clutterAt !== this.time || this.clutterCount !== this.squads.length) {
       this.clutterAt = this.time;
       this.clutterCount = this.squads.length;
-      const G = (this.clutterGrid ||= new Map()),
-        moving = (this.clutterMoving ||= []);
+      const G = (this.clutterGrid ||= new Map());
       for (const l of G.values()) l.length = 0;
-      moving.length = 0;
       (this.clutterSent ||= []).length = 0;
       for (const q of this.squads) {
         if (q.structure || !q.members.length) continue;
-        if (q.box && !q.ext && q.box.path.length) {
-          moving.push(q);
-          continue;
-        }
-        const m0 = q.members[0],
-          k = Math.floor(m0.x / CLUTTER_CELL) * 4096 + Math.floor(m0.y / CLUTTER_CELL);
+        const b = q.box && !q.ext ? q.box : q.members[0],
+          k = Math.floor(b.x / CLUTTER_CELL) * 4096 + Math.floor(b.y / CLUTTER_CELL);
         let l = G.get(k);
         if (!l) G.set(k, (l = []));
         l.push(q);
       }
     }
     const out = (this.clutterList ||= []),
-      seen = (this.clutterSeen ||= new Set()),
       G = this.clutterGrid,
       r = reach + FOE_PAD;
     out.length = 0;
-    seen.clear();
-    const add = q => {
-      if (!seen.has(q)) {
-        seen.add(q);
-        out.push(q);
-      }
-    };
-    for (const q of this.clutterMoving) add(q);
-    for (const q of this.clutterSent) add(q);
     const x0 = Math.floor((px - r) / CLUTTER_CELL),
       x1 = Math.floor((px + r) / CLUTTER_CELL),
       y0 = Math.floor((py - r) / CLUTTER_CELL),
@@ -7265,47 +7433,46 @@ export class LandWorld {
     for (let cx = x0; cx <= x1; cx++)
       for (let cy = y0; cy <= y1; cy++) {
         const l = G.get(cx * 4096 + cy);
-        if (l) for (let i = 0; i < l.length; i++) add(l[i]);
+        if (l) for (let i = 0; i < l.length; i++) out.push(l[i]);
       }
     return out;
   }
 
-  cluttered(px, py, hx, hy, c, s, need, sent) {
+  cluttered(px, py, hx, hy, c, s, need, sent, slots = null) {
     const most = 0.15 * hx * hy,
-      step = CELL;
+      wide = Math.hypot(hx, hy) + db.constants.num('Destination_Collision_Query_Extension', 60);
+    const mine = [];
+    for (const q of sent) for (const u of q.members) if (!u.dead && !u.inside && !u.flies) mine.push(u);
+    const boxes = (slots && slots.length ? slots : [{ x: 0, y: 0, hx, hy, q: null }]).map(b => ({
+      x: px + c * b.x - s * b.y,
+      y: py + s * b.x + c * b.y,
+      c,
+      s,
+      hx: b.hx,
+      hy: b.hy,
+      q: b.q
+    }));
+    const crushed = (list, u) =>
+      list.length > 0 &&
+      list.every(v => v.dead || v.inside || (v.crusher && this.enemy(v, u) && (u.squashable || (v.supercrusher && u.squashableBig))));
     let area = 0;
-    for (let a = -hx; a <= hx; a += step)
-      for (let b = -hy; b <= hy; b += step) {
-        if (!this.isOpen(px + c * a - s * b, py + s * a + c * b, need)) {
-          area += step * step;
-          if (area > most) return true;
-        }
-      }
-    const wide = Math.hypot(hx, hy) + db.constants.num('Destination_Collision_Query_Extension', 60);
-    for (const q of this.clutterNear(px, py, wide + 60)) {
+    for (const q of this.clutterNear(px, py, wide)) {
       if (q.structure || !q.members.length || sent.includes(q)) continue;
-      const m0 = q.members[0];
-      if (q.box && !q.ext && q.box.path.length) {
-        const end = q.box.path[q.box.path.length - 1],
-          r = Math.max(6, q.box.slack - 10) * 0.8;
-        const ax = (end.x - px) * c + (end.y - py) * s,
-          ay = -(end.x - px) * s + (end.y - py) * c;
-        if (Math.abs(ax) < hx + r && Math.abs(ay) < hy + r) {
-          area += Math.PI * r * r;
-          if (area > most) return true;
-        }
-        continue;
-      }
-      if ((m0.x - px) ** 2 + (m0.y - py) ** 2 > (wide + 60) ** 2) continue;
       for (const u of q.members) {
-        if (u.dead || u.inside || u.flies || (u.path && u.path.length)) continue;
-        const ax = (u.x - px) * c + (u.y - py) * s,
-          ay = -(u.x - px) * s + (u.y - py) * c,
-          r = u.foot ? (u.fp ??= u.type.num('Custom_Soft_Footprint_Radius', 0) || 3) : u.body || 5;
-        if (Math.abs(ax) < hx + r && Math.abs(ay) < hy + r) {
-          area += Math.PI * r * r;
-          if (area > most) return true;
+        if (u.dead || u.inside || u.flies || (u.ccls ??= collisionClass(u.type)) < 5) continue;
+        if ((u.x - px) ** 2 + (u.y - py) ** 2 > wide * wide) continue;
+        const ux = hardExtent(u, 'X'),
+          uy = hardExtent(u, 'Y'),
+          ub = { x: u.x, y: u.y, c: Math.cos(u.heading), s: Math.sin(u.heading), hx: ux, hy: uy };
+        let hit = false;
+        for (const b of boxes) {
+          if (this.overlap(b, ub) <= 0 || crushed(b.q ? b.q.members : mine, u)) continue;
+          hit = true;
+          break;
         }
+        if (!hit) continue;
+        area += ux * uy;
+        if (area > most) return true;
       }
     }
     return false;
@@ -7729,7 +7896,7 @@ export class LandWorld {
         continue;
       }
       const led = u.squad.box && !u.squad.ext && u.slot ? this.teamWalk(u, u.squad.box, dt) : false;
-      const next = led ? null : u.path[0];
+      const next = led || u.startAt > this.time ? null : u.path[0];
       if (!led) u.v = 0;
       if (led) {
       } else if (next) {
