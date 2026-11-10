@@ -607,6 +607,14 @@ export class UI {
       this.bar?.bPing?.click();
       return;
     }
+    if (pressed(e, 'REINFORCE')) {
+      this.bar?.bReinforce?.click();
+      return;
+    }
+    if (pressed(e, 'RETREAT')) {
+      this.bar?.bRetreat?.click();
+      return;
+    }
     if (pressed(e, 'SELECT_ALL')) {
       e.preventDefault();
       this.select(this.world.selectables().filter(s => s.player === this.player && (s.isSquad || s.isMobile) && this.canSelect(s)));

@@ -2368,3 +2368,28 @@ body.attract #buildTag {
   display: flex;
   flex-direction: column;
 }
+.hb-key {
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  z-index: 2;
+  max-width: calc(100% - 4px);
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  font: bold 7px/1 Arial, sans-serif;
+  color: #e8f4ff;
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 0 0 #000,
+    1px 0 0 #000,
+    -1px 1px 0 #000,
+    0 1px 0 #000,
+    1px 1px 0 #000;
+}
+.hb-key[hidden],
+.hide-key-labels .hb-key {
+  display: none;
+}

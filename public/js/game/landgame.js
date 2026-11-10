@@ -2158,6 +2158,14 @@ export class LandGame {
         this.ui.bar?.bPing?.click();
         return;
       }
+      if (pressed(e, 'REINFORCE') && !this.menus.open) {
+        this.ui.bar?.bReinforce?.click();
+        return;
+      }
+      if (pressed(e, 'RETREAT') && !this.menus.open) {
+        this.ui.bar?.bRetreat?.click();
+        return;
+      }
       if (pressed(e, 'DIRECT_CONTROL') && !this.menus.open) {
         this.toggleDirect();
         return;

@@ -392,6 +392,22 @@ async function buildBaseHud() {
   return assets;
 }
 
+function keyBadge(b, id, fixed = null) {
+  if (!b) return;
+  const k = fixed || (id ? keysOf(id)[0] : null);
+  let tag = b._keyBadge;
+  if (!k) {
+    if (tag) tag.hidden = true;
+    return;
+  }
+  if (!tag) tag = b._keyBadge = el('hb-key', b);
+  tag.hidden = false;
+  tag.textContent = keyName(k);
+  const art = [...(b._nativeButton?.layers?.values() || [])].filter(l => !l.hidden && l.style.left);
+  tag.style.left = art.length ? Math.min(...art.map(l => parseFloat(l.style.left))) + 2 + 'px' : '';
+  tag.style.top = art.length ? Math.min(...art.map(l => parseFloat(l.style.top))) + 1 + 'px' : '';
+}
+
 export class CommandBar {
   constructor(game, ui, data) {
     this.game = game;
@@ -648,6 +664,7 @@ export class CommandBar {
     for (const r of this.abilityButtons || []) {
       const n = kinds.indexOf(r.def.kind) + 1;
       r.b.title = (n && n <= 5 ? withKey(r.def.label, 'ABILITY_' + n) : r.def.label) + r.rest;
+      keyBadge(r.b, n && n <= 5 ? 'ABILITY_' + n : null);
     }
   }
 
@@ -989,8 +1006,22 @@ export class CommandBar {
         down = keysOf('SPEED_DOWN')[0];
       this.bFast.title = 'Fast forward' + (up || down ? ` [${[up, down].filter(Boolean).map(keyName).join(' / ')}]` : '');
       this.bCamera.title = withKey('Cinematic camera', 'BATTLE_CAM');
+      for (const [b, id] of [
+        [this.bPause, 'PAUSE'],
+        [this.bFast, 'SPEED_UP'],
+        [this.bCamera, 'BATTLE_CAM'],
+        [this.bHelp, 'DROID_ADVISOR'],
+        [this.bStory, 'MISSION_HOLOCRON'],
+        [this.bWeapon, 'SUPER_WEAPON'],
+        [this.bPing, 'PLACE_BEACON'],
+        [this.bReinforce, 'REINFORCE'],
+        [this.bRetreat, 'RETREAT']
+      ])
+        keyBadge(b, id);
+      keyBadge(this.bOptions, null, 'Escape');
       orders.forEach(([, , text, id], i) => {
         this.orderButtons[i].title = withKey(text, id);
+        keyBadge(this.orderButtons[i], id);
       });
       this.abilityTips();
     };

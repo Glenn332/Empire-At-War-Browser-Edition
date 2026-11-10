@@ -2956,6 +2956,22 @@ async function boot() {
     };
   }
   {
+    const box = $('optKeyLabels');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-keylabels') === '1';
+    } catch {}
+    box.checked = on;
+    document.body.classList.toggle('hide-key-labels', !on);
+    box.parentElement.title = 'Each command bar button shows its hotkey in its top-left corner.';
+    box.onchange = () => {
+      document.body.classList.toggle('hide-key-labels', !box.checked);
+      try {
+        localStorage.setItem('swr-keylabels', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
     const box = $('optMultiPlace');
     let on = true;
     try {

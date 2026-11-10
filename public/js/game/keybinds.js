@@ -19,8 +19,8 @@ export const ACTIONS = [
   { id: 'SELECT_LIKE', page: 0, edit: 'IDC_EDIT_SELECT_LIKE', label: 'TEXT_SELECT_LIKE', keys: ['Ctrl+KeyQ'] },
   { id: 'ATTACK_MOVE', page: 0, edit: 'IDC_EDIT_ATTACK_MOVE', label: 'TEXT_TOOLTIP_ATTACK_MOVE', keys: ['KeyF'] },
   { id: 'WAYPOINT', page: 0, edit: 'IDC_EDIT_WAYPOINT', label: 'TEXT_WAYPOINT', keys: [] },
-  { id: 'PLACE_BEACON', page: 1, edit: 'IDC_EDIT_PLACE_BEACON', label: 'TEXT_PLACE_BEACON', keys: [] },
-  { id: 'SUPER_WEAPON', page: 0, edit: 'IDC_EDIT_SUPER_WEAPON', label: 'TEXT_SUPER_WEAPON', keys: [] },
+  { id: 'PLACE_BEACON', page: 1, edit: 'IDC_EDIT_PLACE_BEACON', label: 'TEXT_PLACE_BEACON', keys: ['KeyC'] },
+  { id: 'SUPER_WEAPON', page: 0, edit: 'IDC_EDIT_SUPER_WEAPON', label: 'TEXT_SUPER_WEAPON', keys: ['KeyZ'] },
   { id: 'SCROLL_UP', page: 3, edit: 'IDC_EDIT_SCROLL_UP', label: 'TEXT_SCROLL_UP', keys: ['KeyW', 'ArrowUp'] },
   { id: 'SCROLL_DOWN', page: 3, edit: 'IDC_EDIT_SCROLL_DOWN', label: 'TEXT_SCROLL_DOWN', keys: ['KeyS', 'ArrowDown'] },
   { id: 'SCROLL_LEFT', page: 3, edit: 'IDC_EDIT_SCROLL_LEFT', label: 'TEXT_SCROLL_LEFT', keys: ['KeyA', 'ArrowLeft'] },
@@ -49,7 +49,9 @@ export const ACTIONS = [
   { id: 'DIRECT_CONTROL', page: 5, extra: { col: 1, y: 165 }, label: 'Direct Control', keys: ['KeyV'] },
   { id: 'TOGGLE_HUD', page: 5, extra: { col: 1, y: 190 }, label: 'Hide / Show HUD', keys: ['KeyH'] },
   { id: 'DIRECT_VIEW', page: 5, extra: { col: 1, y: 215 }, label: 'Direct Control View', keys: ['KeyB'] },
-  { id: 'SQUAD_CAM', page: 5, extra: { col: 1, y: 240 }, label: 'Follow Whole Squad', keys: ['Alt+KeyC'] }
+  { id: 'SQUAD_CAM', page: 5, extra: { col: 1, y: 240 }, label: 'Follow Whole Squad', keys: ['Alt+KeyC'] },
+  { id: 'REINFORCE', page: 5, extra: { col: 0, y: 265 }, label: 'Reinforcements', keys: ['KeyN'] },
+  { id: 'RETREAT', page: 5, extra: { col: 1, y: 265 }, label: 'Retreat', keys: ['KeyY'] }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 

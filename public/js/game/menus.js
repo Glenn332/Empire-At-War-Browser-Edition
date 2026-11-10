@@ -44,6 +44,7 @@ const TWEAK_EXTRA = ['IDC_TWEAK_PARTICLE_LABEL', 'IDC_TWEAK_PARTICLE_COUNT', 'ID
 const TWEAKS = [
   { id: 'IDC_TWEAK_CAPTURE_BARS', input: 'optCaptureBars', label: 'Show capture progress bars' },
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
+  { id: 'IDC_TWEAK_KEY_LABELS', input: 'optKeyLabels', label: 'Show hotkeys on HUD buttons' },
   { id: 'IDC_TWEAK_MULTI_PLACE', input: 'optMultiPlace', label: 'Call in several reinforcements at once' },
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
