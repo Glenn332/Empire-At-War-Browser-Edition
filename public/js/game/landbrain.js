@@ -679,6 +679,7 @@ export class Mind extends Reason {
       }
       if (what === 'FORCEUNNORMALIZED') return this.total;
       if (what === 'ISCAMPAIGNGAME') return w.campaign ? 1 : 0;
+      if (what === 'ISLANDCONTROLGAME') return w.landControl ? 1 : 0;
       return 0;
     }
     if (who === 'Variable_Self' || who === 'Variable_Enemy') {
