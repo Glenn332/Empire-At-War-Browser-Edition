@@ -21,7 +21,7 @@ const FRAG = `
   uniform vec4 texU[${SLOTS}], texV[${SLOTS}];
   uniform vec3 matDiffuse[${SLOTS}], matSpecular[${SLOTS}];
   uniform sampler2D fog, clouds; uniform float side; uniform vec3 cloudAt;
-  uniform vec3 sunDir, sunColor, fillDir, fillColor, ambient, fogTint; uniform vec2 fogRange;
+  uniform vec3 sunDir, sunColor, fillDir, fillColor, fillDir2, fillColor2, ambient, fogTint; uniform vec2 fogRange;
   uniform highp sampler2DShadow shadowMap; uniform mat4 shadowMatrix; uniform float shadowOn, shadowTexel;
   float sunlit(vec3 wp) {
     if (shadowOn < 0.5) return 1.0;
@@ -51,7 +51,7 @@ const FRAG = `
   void main() {
     n = normalize(vNormal); toEye = normalize(cameraPosition - vWorld);
     dPx = dFdx(vWorld); dPy = dFdy(vWorld);
-    soft = ambient + fillColor * max(dot(n, fillDir), 0.0);
+    soft = ambient + fillColor * max(dot(n, fillDir), 0.0) + fillColor2 * max(dot(n, fillDir2), 0.0);
     vec3 c;
     if (vLayers.x == vLayers.y && vLayers.x == vLayers.z && vLayers.x == vLayers.w) c = layer(vLayers.x);
     else {
@@ -369,6 +369,8 @@ export async function buildTerrain(t) {
       sunColor: lighting.sunColor,
       fillDir: lighting.fillDir,
       fillColor: lighting.fillColor,
+      fillDir2: lighting.fillDir2,
+      fillColor2: lighting.fillColor2,
       ambient: lighting.ambient,
       fogTint: lighting.fogTint,
       fogRange: lighting.fogRange,

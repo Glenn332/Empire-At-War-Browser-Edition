@@ -33,7 +33,19 @@ import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
 import { Decals, scorch } from './landdecals.js';
-import { activateSpawners, addHouse, addWall, addCapturable, putInside, tickCapturables, usedOf, windDisturbances } from './landbase.js';
+import {
+  activateSpawners,
+  addHouse,
+  addWall,
+  addCapturable,
+  putInside,
+  tickCapturables,
+  usedOf,
+  setupBombard,
+  bombardOf,
+  bombardLightsNow,
+  windDisturbances
+} from './landbase.js';
 import { loadLandTables } from './landtables.js';
 import { loadClashes } from './landclash.js';
 import { LandCinematic } from './landcine.js';
@@ -880,6 +892,7 @@ export class LandGame {
     if (setup.campaign) await loadBlackMarket();
     if (setup.campaign) world.market = this.factions.map(f => setup.campaign.blackMarket?.[f] || []);
     if (setup.campaign) world.defenderSide = setup.campaign.defender.side;
+    setupBombard(world, setup.campaign || null);
     if (setup.campaign) {
       const had = new Set(world.squads);
       this.invasionBook = await placeLandInvasion(world, map, setup.campaign);
@@ -1217,6 +1230,9 @@ export class LandGame {
           upgrades: q.upgrades.map(x => [x.type.name, r1(x.left)])
         })),
         owned: w.owned.map(s => [...s]),
+        bombard: (w.orbitals || []).map(r =>
+          r ? { present: r.present, readyAt: r1(r.readyAt), countdownStart: r1(r.countdownStart), ship: r.ship ? r.ship.name : '' } : null
+        ),
         credits: w.credits.map(Math.round),
         ready: w.ready.map(l => l.map(t => t.name)),
         points: w.points.map(p => ({ side: p.side, taker: p.taker, progress: +p.progress.toFixed(3) })),
@@ -1427,6 +1443,16 @@ export class LandGame {
     w.time = b.time || 0;
     if (!this.setup.net) this.speed = b.speed || 1;
     if (b.credits) w.credits = b.credits.slice();
+    (b.bombard || []).forEach((r, side) => {
+      if (!r) return;
+      Object.assign(bombardOf(w, side), {
+        present: !!r.present,
+        readyAt: r.readyAt || 0,
+        countdownStart: r.countdownStart || 0,
+        ship: db.type(r.ship) || null,
+        told: w.time >= (r.readyAt || 0)
+      });
+    });
     (b.owned || []).forEach((l, i) => {
       if (w.owned[i]) for (const n of l) w.owned[i].add(n);
     });
@@ -2473,6 +2499,8 @@ export class LandGame {
         ui.armed = null;
       } else if (e.button === 0 && ui.armed === 'bombing') {
         ui.bombAt(this.groundAt(cx, cy));
+      } else if (e.button === 0 && ui.armed === 'orbital') {
+        ui.orbitalAt(this.groundAt(cx, cy));
       } else if (e.button === 0 && ui.aiming) {
         ui.aimAt(this.unitAt(cx, cy), this.groundAt(cx, cy));
       } else if (e.button === 0 && ui.armed === 'waypoint') {
@@ -2482,8 +2510,10 @@ export class LandGame {
         if (ui.armed !== 'guard') ui.armed = null;
         this.hudTimer = 0;
       } else if (e.button === 0) {
-        const u = this.unitAt(cx, cy),
-          g = this.groundAt(cx, cy);
+        let u = this.unitAt(cx, cy);
+        const g = this.groundAt(cx, cy),
+          built = u && u.padSite && u.padSite.mdu === u ? u.padSite.structure : null;
+        if (built && !built.dead) u = built;
         const pad = !u && g ? ui.padAt(g.x, g.y) : null;
         if (u && !u.dead && !u.squad.craft) {
           const now = performance.now(),
@@ -3007,6 +3037,21 @@ export class LandGame {
         lighting.fogTint.value.setRGB(...F.color);
         lighting.fogRange.value.set((1 - a) * F.start + a * (F.end - 0.0001), F.end);
       } else lighting.fogRange.value.set(0, 0);
+    }
+    {
+      const L = bombardLightsNow(w, this.view.x, this.view.y),
+        base = (this.ambientBase ||= new THREE.Color());
+      if (!this.bombardLit) base.copy(lighting.ambient.value);
+      if (L) {
+        this.bombardLit = true;
+        lighting.fillDir2.value.set(...L.dir);
+        lighting.fillColor2.value.setRGB(...L.color);
+        lighting.ambient.value.setRGB(base.r + 0.4 * L.color[0], base.g + 0.4 * L.color[1], base.b + 0.4 * L.color[2]);
+      } else if (this.bombardLit) {
+        this.bombardLit = false;
+        lighting.fillColor2.value.setRGB(0, 0, 0);
+        lighting.ambient.value.copy(base);
+      }
     }
     if (dt > 0) this.life.update(dt, w.look);
     this.lightning.update(dt, w, w.tables && w.tables.lightning, cam);
@@ -4111,6 +4156,21 @@ export class LandGame {
       (this.arcView ||= new ArcView(scene)).update(out, (x, y) => heightAt(this.terrain, x, y) + 2);
     }
     this.moveLayout(scene);
+    {
+      const ui = this.ui,
+        g = ui.armed === 'orbital' && ui.mouse.inside ? this.groundAt(ui.mouse.x, ui.mouse.y) : null,
+        F = db.faction(this.factions[this.me]);
+      const B = F ? (this.orbitalBlob ||= new SelectionRings(scene, F, true, (x, y) => heightAt(this.terrain, x, y))) : null;
+      if (B) {
+        const b = B.batch(F.str('Bombardment_Shadow_Blob_Material_Name').trim().toUpperCase(), false, true);
+        B.begin();
+        if (b && g) {
+          b.mesh.material.color.set(ui.orbitalWhy(g) ? 0xff0000 : 0x00ff00);
+          b.add(g.x, g.y, heightAt(this.terrain, g.x, g.y) + 0.6, 2 * F.num('Bombardment_Blob_Size', 200), 0);
+        }
+        B.end();
+      }
+    }
     {
       const ui = this.ui,
         list = ui.placing ? ui.placeList || [ui.placing] : [],

@@ -686,31 +686,93 @@ function tickBombing(world, dt) {
 }
 
 export function bombardOf(world, side) {
-  const all = (world.bombard ||= []);
-  return (all[side] ||= { present: false, readyAt: 0, run: null, told: false });
+  const all = (world.orbitals ||= []);
+  return (all[side] ||= { present: false, readyAt: 0, countdownStart: 0, run: null, told: false, ship: null });
 }
-export function enableBombard(world, side, on = true) {
+const bombardInterval = () => db.constants.num('Min_Bombard_Interval_Seconds', 260);
+export function enableBombard(world, side, on = true, ship = null) {
   const r = bombardOf(world, side);
   r.present = !!on;
   r.told = false;
+  if (ship) r.ship = ship;
+  r.countdownStart = world.time;
+  r.readyAt = world.time + bombardInterval();
 }
-export const canBombard = (world, side) => {
-  const p = world.sidePlayers?.[side];
-  if (p?.bombardmentOff || p?.bombardmentRemoved) return false;
-  const r = world.bombard && world.bombard[side];
-  return !!r && r.present && !r.run && world.time >= r.readyAt;
+export const bombardEnabled = (world, side) => {
+  const p = world.sidePlayers?.[side],
+    r = world.orbitals && world.orbitals[side];
+  if (p && p.bombardmentRemoved !== undefined) return !p.bombardmentRemoved;
+  return !!r && r.present;
 };
+export const canBombard = (world, side) => {
+  if (!bombardEnabled(world, side) || world.sidePlayers?.[side]?.bombardmentOff) return false;
+  const r = bombardOf(world, side);
+  return !r.run && world.time >= r.readyAt;
+};
+export function bombardCharge(world, side) {
+  const r = world.orbitals && world.orbitals[side];
+  if (!r || r.run) return 0;
+  if (world.time >= r.readyAt) return 1;
+  const span = r.readyAt - r.countdownStart;
+  return span > 0 ? Math.max(0, Math.min(1, (world.time - r.countdownStart) / span)) : 1;
+}
 
 const listOf = (F, tag) =>
   F.list(tag)
     .flatMap(x => x.split(/[\s,]+/))
     .filter(Boolean);
+const orbitalShips = F => (F ? listOf(F, 'Bombardment_Required_Orbital_Ships') : []);
+
+export function setupBombard(world, campaign = null) {
+  const key = s => String(s || '').toUpperCase();
+  world.factions.forEach((name, side) => {
+    const F = db.faction(name),
+      ships = orbitalShips(F).map(key);
+    if (!ships.length) return;
+    let ship = null;
+    if (!campaign) {
+      if (!F.bool('Is_Playable')) return;
+      ship = ships.map(n => db.type(n)).find(Boolean) || null;
+      if (!ship) return;
+    } else {
+      for (const f of campaign.galaxy?.fleets || [])
+        if (f.planet === campaign.planet && !f.leg && key(f.owner) === key(name))
+          for (const u of f.units || []) {
+            const n = key(Array.isArray(u) ? u[0] : u?.type);
+            if (!ship && ships.includes(n)) ship = db.type(n);
+          }
+      if (!ship) return;
+    }
+    enableBombard(world, side, true, ship);
+  });
+}
+
+function revealedFor(world, side, x, y) {
+  if (world.revealUntil?.[side] > world.time) return true;
+  const T = world.team[side],
+    near = (px, py, r) => (px - x) ** 2 + (py - y) ** 2 <= r * r;
+  for (const u of world.units)
+    if (!u.dead && world.team[u.side] === T) {
+      const r = (u.sight ??= u.type.num('Land_FOW_Reveal_Range', 150)) * (u.structure || !world.sightMod ? 1 : world.sightMod(u));
+      if (near(u.x, u.y, r)) return true;
+    }
+  for (const p of world.points || [])
+    if (p.side >= 0 && world.team[p.side] === T && near(p.x, p.y, (p.sight ??= p.type.num('Land_FOW_Reveal_Range', 250)))) return true;
+  for (const p of world.pings || []) if (world.team[p.side] === T && near(p.x, p.y, p.r)) return true;
+  for (const r of world.reveals || []) if (r.until > world.time && r.team?.id === T && near(r.x, r.y, r.r)) return true;
+  return false;
+}
+
+export function bombardTargetWhy(world, side, x, y) {
+  if (world.fowOn && !revealedFor(world, side, x, y)) return 'No line of sight to that area';
+  if ((world.shields || []).some(s => Math.hypot(s.x - x, s.y - y) < s.r)) return 'A shield protects that place';
+  return null;
+}
 
 export function orbitalBombard(world, side, x, y) {
   if (!canBombard(world, side)) return 'Orbital bombardment is not ready';
-  if (world.shields.some(s => !world.ally(s.side, side) && Math.hypot(s.x - x, s.y - y) < s.r))
-    return 'An enemy shield protects that place';
-  if (side === world.viewer && world.seenNow && !world.seenNow(x, y)) return 'No line of sight to that area';
+  const blocked = bombardTargetWhy(world, side, x, y);
+  if (blocked) return blocked;
   const F = db.faction(world.factions[side]);
   const projs = F
     ? listOf(F, 'Bombardment_Projectile')
@@ -727,11 +789,17 @@ export function orbitalBombard(world, side, x, y) {
         .filter(n => !isNaN(n));
   const dist = nums(C.str('Bombardment_Distribution'));
   const off = nums(C.str('Bombardment_Offset'));
-  const ship = F
-    ? listOf(F, 'Bombardment_Required_Orbital_Ships')
-        .map(n => db.type(n))
-        .find(Boolean)
-    : null;
+  const ship =
+    bombardOf(world, side).ship ||
+    orbitalShips(F)
+      .map(n => db.type(n))
+      .find(Boolean) ||
+    null;
+  const numsOf = tag =>
+      F.list(tag)
+        .map(Number)
+        .filter(n => !isNaN(n)),
+    tint = numsOf('Bombardment_Lighting_Color_List');
   const shotDelay = F.num('Bombardment_Shot_Delay', 0.2),
     initial = F.num('Bombardment_Initial_Delay', 1),
     delay = world.bombardDelay > 0 ? world.bombardDelay : initial,
@@ -755,18 +823,58 @@ export function orbitalBombard(world, side, x, y) {
     offY: off[1] || 0,
     reach: F.num('Bombardment_Blob_Size', 200),
     projs,
-    particles: listOf(F, 'Bombardment_Particle')
+    particles: listOf(F, 'Bombardment_Particle'),
+    lightSeconds: numsOf('Bombardment_Lighting_Seconds_List'),
+    lightIntensity: numsOf('Bombardment_Lighting_Intensity_List'),
+    lightColor: Array.from({ length: Math.floor(tint.length / 3) }, (_, i) => tint.slice(i * 3, i * 3 + 3))
   };
   run.incoming = ship ? ship.str('SFXEvent_Bombard_Incoming') : '';
-  bombardOf(world, side).run = run;
+  const r = bombardOf(world, side);
+  r.run = run;
+  r.told = false;
+  r.countdownStart = world.time;
+  r.readyAt = world.time + bombardInterval();
   if (!run.cueAt) bombardCue(world, run);
   return null;
+}
+
+function bombardLight(world, run) {
+  const i = run.salvo,
+    secs = run.lightSeconds[i] || 0,
+    c = run.lightColor[i];
+  if (!(secs > 0) || !c) return;
+  const k = run.lightIntensity[i] ?? 1;
+  (world.bombardLights ||= []).push({ x: run.x, y: run.y, at: world.time, frames: secs * 30, color: c.map(v => v * k) });
+}
+
+export function bombardLightsNow(world, camX, camY) {
+  const L = world.bombardLights;
+  if (!L || !L.length) return null;
+  world.bombardLights = L.filter(l => (world.time - l.at) * 30 < l.frames);
+  if (!world.bombardLights.length) return null;
+  const out = { color: [0, 0, 0], dir: [0, 0, 0] };
+  for (const l of world.bombardLights) {
+    const f = (world.time - l.at) * 30,
+      up = l.frames * 0.85,
+      e = f < up ? f / up : Math.max(0, 1 - (f - up) / (l.frames - up)),
+      dx = (l.x - camX) / 1500,
+      dy = (l.y - camY) / 1500,
+      dz = Math.sqrt(Math.max(0, 1 - dx * dx - dy * dy)),
+      n = Math.hypot(dx, dy, dz) || 1,
+      w = (l.color[0] + l.color[1] + l.color[2]) * e;
+    for (let j = 0; j < 3; j++) out.color[j] += l.color[j] * e;
+    out.dir[0] += (dx / n) * w;
+    out.dir[1] += (dy / n) * w;
+    out.dir[2] += (dz / n) * w;
+  }
+  const n = Math.hypot(...out.dir);
+  out.dir = n > 0 ? out.dir.map(v => v / n) : [0, 0, 1];
+  return out;
 }
 
 function bombardCue(world, run) {
   run.cueAt = 0;
   if (run.particles[0] && world.onFx) world.onFx(run.particles[0], run.x, run.y, world.groundZ(run.x, run.y) + 3);
-  if (run.incoming && world.onSound) world.onSound(run.incoming, run.x, run.y);
 }
 
 function bombardShot(world, run) {
@@ -776,7 +884,8 @@ function bombardShot(world, run) {
   if ((run.salvo > 0 || run.shot > 0) && run.per > 1) {
     const q = run.dist[run.di++ % run.dist.length],
       a = ((q * 90 + simRandom() * 89) * Math.PI) / 180,
-      r = simRandom() * run.reach;
+      m = Math.max(1, P.num('Projectile_Blast_Area_Range', 0)),
+      r = m + simRandom() * Math.max(0, run.reach - 2 * m);
     ax += Math.cos(a) * r;
     ay += Math.sin(a) * r;
   }
@@ -832,13 +941,14 @@ function bombardShot(world, run) {
 }
 
 function tickBombard(world) {
-  for (let side = 0; side < world.bombard.length; side++) {
-    const r = world.bombard[side];
+  for (let side = 0; side < world.orbitals.length; side++) {
+    const r = world.orbitals[side];
     if (!r) continue;
     const run = r.run;
     if (run) {
       if (run.cueAt && world.time >= run.cueAt) bombardCue(world, run);
       while (r.run && world.time >= run.next) {
+        if (run.shot === 0) bombardLight(world, run);
         bombardShot(world, run);
         if (++run.shot < run.per) {
           run.next += run.shotDelay;
@@ -853,19 +963,15 @@ function tickBombard(world) {
         }
         r.run = null;
         r.told = false;
-        const C = db.constants,
-          lo = C.num('Min_Bombard_Interval_Seconds', 260),
-          hi = Math.max(lo, C.num('Max_Bombard_Interval_Seconds', lo));
-        r.readyAt = world.time + lo + simRandom() * (hi - lo);
         for (const n of [...world.owned[side]]) {
           const t = db.type(n);
           if (t && t.behaviors().has('DUMMY_DESTROY_AFTER_PLANETARY_BOMBARD')) world.owned[side].delete(n);
         }
       }
-    } else if (r.present && !r.told && world.time >= r.readyAt) {
+    } else if (bombardEnabled(world, side) && !r.told && world.time >= r.readyAt) {
       r.told = true;
       const v = world.viewer,
-        F = v !== undefined && v >= 0 ? db.faction(world.factions[v]) : null;
+        F = v !== undefined && v >= 0 ? db.faction(world.factions[side]) : null;
       if (F && world.onSound)
         world.onSound(
           F.str(
@@ -1170,7 +1276,7 @@ export function tickCapturables(world) {
 
 export function tickBase(world, dt) {
   if (world.bombing.length) tickBombing(world, dt);
-  if (world.bombard) tickBombard(world);
+  if (world.orbitals) tickBombard(world);
   if ((world.baseDt = (world.baseDt || 0) + dt) < 0.2) return;
   const step = world.baseDt;
   world.baseDt = 0;

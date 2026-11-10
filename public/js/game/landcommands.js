@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { bombingRun, garrison, ungarrison } from './landbase.js';
+import { bombingRun, garrison, ungarrison, orbitalBombard } from './landbase.js';
 import { SILENT } from './landabilities.js';
 import { Beacons, beaconType } from './beacons.js';
 
@@ -155,14 +155,20 @@ export function executeLand(game, side, cmd) {
       const why = bombingRun(w, side, num(cmd.x), num(cmd.y));
       return why ? { why } : {};
     }
+    case 'orbital': {
+      const why = orbitalBombard(w, side, num(cmd.x), num(cmd.y));
+      return why ? { why } : {};
+    }
     case 'build': {
       const pad = typeof cmd.b === 'string' && cmd.b.startsWith('site') ? w.sites[+cmd.b.slice(4)] : null,
         b = pad ? null : squad(cmd.b),
         t = db.type(cmd.type);
       if ((!pad && !b) || !t) return {};
       if (b && !w.ally(b.side, side)) return {};
+      const own = b ? b.members.map(u => u.padSite).find(Boolean) : null;
       const siteFor = () => {
         if (pad) return w.siteOptions(pad, side).includes(t) ? pad : null;
+        if (own) return w.siteOptions(own, side).includes(t) ? own : null;
         let best = null,
           bd = Infinity;
         for (const s of w.sites) {

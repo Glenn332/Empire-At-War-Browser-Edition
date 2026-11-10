@@ -729,8 +729,10 @@ export class Mind extends Reason {
         case 'ISBOMBINGRUNAVAILABLE':
           return [...this.owned].some(n => /BOMBING_RUN/.test(n)) && !w.bombing.some(b => b.side === side) ? 1 : 0;
         case 'ISORBITALBOMBARDMENTAVAILABLE': {
-          const r = w.bombard && w.bombard[side];
-          return r && r.present && !r.run && w.time >= r.readyAt ? 1 : 0;
+          const r = w.orbitals && w.orbitals[side],
+            p = w.sidePlayers?.[side],
+            on = p && p.bombardmentRemoved !== undefined ? !p.bombardmentRemoved : r && r.present;
+          return on && r && !r.run && !p?.bombardmentOff && w.time >= r.readyAt ? 1 : 0;
         }
         case 'ISDEFENDER': {
           if (w.defenderSide === undefined) return 0;

@@ -94,6 +94,7 @@ export function tacticalPointer(f) {
     );
   if (a === 'bombing') return 'POINTER_BOMBING_RUN_TARGET';
   if (a === 'beacon') return 'POINTER_PLACE_BEACON';
+  if (a === 'orbital') return 'POINTER_NORMAL';
   if (a === 'attackmove') return 'POINTER_ATTACK_MOVE';
   if (a === 'waypoint') return 'POINTER_WAYPOINT_PLACEMENT';
   if (a === 'guard') return 'POINTER_GUARD';

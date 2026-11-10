@@ -1109,9 +1109,10 @@ export class CommandBar {
       p = this.player,
       w = this.world;
     const sel = ui.selection.filter(s => !s.dead);
-    const units = sel.filter(
-      s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length))
-    );
+    const menu = sel.length === 1 && sel[0].player === p && !!ui.padOf?.(sel[0]);
+    const units = menu
+      ? []
+      : sel.filter(s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length)));
     const items = new Array(24).fill(null),
       columns = [];
     this.buildBar?.set(0, 12, 0);
@@ -1597,9 +1598,16 @@ export class CommandBar {
       } else {
         const why = w.cantBuild(it.builder, it.build, p);
         s.el.classList.toggle('off', !!why);
-        let q = 0;
-        for (const [, list] of w.queuesOf(it.builder, p)) for (const x of list) if (x.type === it.build) q++;
-        s.el.querySelector('.num').textContent = q || '';
+        let q = 0,
+          done = '';
+        const pad = !!this.ui.siteOf?.(it.builder);
+        for (const [, list] of w.queuesOf(it.builder, p))
+          for (const x of list)
+            if (x.type === it.build) {
+              q++;
+              if (pad && x.total > 0) done = Math.round(100 * (1 - x.left / x.total)) + '%';
+            }
+        s.el.querySelector('.num').textContent = done || q || '';
       }
     }
     for (const { b, def, units } of this.abilityButtons || []) {
