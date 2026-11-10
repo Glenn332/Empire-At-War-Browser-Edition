@@ -189,4 +189,40 @@ function squadOf(W, name, side, x, y, count = 1, member = null) {
   assert(box.hl > L, 'the team box takes in the member behind');
 }
 
-console.log('ok placement, team box, team walk');
+{
+  const W = makeWorld();
+  const a = squadOf(W, 'T2B_Tank', 0, 400, 400),
+    b = squadOf(W, 'T2B_Tank', 0, 400, 440);
+  const at = W.places([a, b], 1600, 420);
+  for (const q of [a, b]) {
+    const p = at.get(q);
+    assert(W.order(q, p.x, p.y, p.face), 'ordered');
+  }
+  const F = a.formMove;
+  assert(F && b.formMove === F, 'the two tanks move as one formation');
+  const base = F.speed;
+  W.tickGroups(1 / 30);
+  const ma = F.members.find(m => m.q === a),
+    mb = F.members.find(m => m.q === b);
+  const v0 = a.formSpeed.v;
+  assert(Math.abs(a.formSpeed.v - b.formSpeed.v) < base * 0.5, 'side by side they go about the base speed');
+  const ua = a.members[0];
+  b.members[0].speed = base * 1.5;
+  ua.x += 120;
+  W.tickGroups(1 / 30);
+  assert(ma.dev < 0 && mb.dev > 0, 'deviance: the one ahead negative, the one behind positive');
+  assert(a.formSpeed.v < base, 'the one ahead slows: ' + a.formSpeed.v + ' < ' + base);
+  assert(b.formSpeed.v > base, 'the one behind speeds up: ' + b.formSpeed.v + ' > ' + base);
+  assert(b.formSpeed.v <= b.members[0].speed + 1e-9, 'never past its own top speed');
+  assert(a.formSpeed.v >= 0.4 * base * 0.99, 'never below the floor of 0.4 of the base');
+  for (const u of [...a.members, ...b.members]) assert(u.path.length, 'each member steers along the shared path');
+  void v0;
+  const ub = b.members[0];
+  ua.x -= 120;
+  ub.y += 40;
+  W.tickGroups(1 / 30);
+  assert(Math.abs(mb.err) > 20, 'side error read against the path');
+  assert(b.formSpeed.v > a.formSpeed.v, 'a member off its line to the side goes faster to make it up');
+}
+
+console.log('ok placement, team box, team walk, formation speeds');
