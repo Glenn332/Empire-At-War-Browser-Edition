@@ -742,6 +742,7 @@ export class Unit {
               pulses: Math.max(1, fireNum(t, proj, 'Projectile_Fire_Pulse_Count', 1)),
               pulseDelay: fireNum(t, proj, 'Projectile_Fire_Pulse_Delay_Seconds', 0.1),
               recharge,
+              energy: proj.num('Projectile_Energy_Per_Shot', 0),
               cooldown: Math.floor(rand(0, recharge * LOGIC_FPS + 1)) / LOGIC_FPS,
               pulsesLeft: 0,
               pulseTimer: 0,
@@ -3672,6 +3673,7 @@ export class World {
       w.pulseTimer -= dt;
       if (w.pulseTimer <= 0) {
         if (t) {
+          if (!this.canShoot(u, w)) return;
           const m = (w.fixed >= 0 ? w.muzzles[w.fixed] : w.muzzles.length ? w.muzzles[w.muzzleIndex++ % w.muzzles.length] : null) || {
             x: 0,
             y: 0,
@@ -3682,18 +3684,21 @@ export class World {
           const x = u.x + c * m.x - s * m.y,
             y = u.y + s * m.x + c * m.y,
             z = u.z + m.z;
-          this.launch(
-            w.proj,
-            u,
-            t,
-            null,
-            x,
-            y,
-            z,
-            w.damageType,
-            w.inaccuracy,
-            (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
-          );
+          if (
+            this.launch(
+              w.proj,
+              u,
+              t,
+              null,
+              x,
+              y,
+              z,
+              w.damageType,
+              w.inaccuracy,
+              (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
+            )
+          )
+            this.spendShot(u, w);
           const sfx = fireSound(u.type, w.proj);
           if (sfx && w.pulsesLeft === w.pulses && this.viewerSees(u)) this.audio.play(sfx, x, y);
         }
@@ -3704,10 +3709,20 @@ export class World {
       return;
     }
     w.cooldown -= dt;
-    if (w.cooldown <= 0 && t) {
+    if (w.cooldown <= 0 && t && this.canShoot(u, w)) {
       w.pulsesLeft = w.pulses;
       w.pulseTimer = 0;
     }
+  }
+
+  canShoot(u, w) {
+    return !(w.energy > 0) || (u.energy !== null && u.energy.value >= w.energy);
+  }
+
+  spendShot(u, w) {
+    if (!(w.energy > 0)) return;
+    const e = u.energy;
+    e.value = Math.min(e.cap, Math.max(0, e.value - w.energy));
   }
 
   restricted(hp, t) {
@@ -5352,7 +5367,7 @@ export class World {
         w.pulsesLeft = 0;
         return;
       }
-      if (this.fireFighter(u, w, fireAt, false)) this.pulseDone(u, w);
+      if (this.canShoot(u, w) && this.fireFighter(u, w, fireAt, false)) this.pulseDone(u, w);
       return;
     }
     w.cooldown -= dt;
@@ -5363,6 +5378,7 @@ export class World {
       dy = near.y - u.y;
     const reach = w.range + near.hitRadius;
     if (!near.free && dx * dx + dy * dy > reach * reach) return;
+    if (!this.canShoot(u, w)) return;
     w.pulsesLeft = w.pulses;
     if (this.fireFighter(u, w, fireAt, true)) this.pulseDone(u, w);
     else w.pulsesLeft = 0;
@@ -5465,6 +5481,7 @@ export class World {
       (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range, cone: this.fireConeOf(u) }
     );
     if (!ok) return false;
+    this.spendShot(u, w);
     const sfx = fireSound(u.type, w.proj);
     if (sfx && first && this.viewerSees(u)) this.audio.play(sfx, x, y);
     return true;
