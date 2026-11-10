@@ -33,7 +33,7 @@ import {
   sweepBox,
   leadTurning
 } from './projflight.js';
-import { fireNum, startingWeapon, fireSound, fixedMuzzle } from './weaponswap.js';
+import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
 import { leadPoint } from './orders.js';
 import { basisOf } from '../particlesim.js';
 export const spacePop = t =>
@@ -727,7 +727,9 @@ export class Unit {
     }
     if (db.type(t.list('Projectile_Types')[0]) && !this.hardpoints.some(h => h.isWeapon)) {
       const muzzles = [],
-        inaccuracy = new Map(t.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]));
+        scatter = o => new Map(o.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])),
+        own = scatter(t),
+        swap = swapMode(t);
       if (this.model) {
         for (const [name, bone] of this.model.boneByName) {
           if (/^MUZZLE[A-Z]?_\d+$/.test(name) || /^FP_/.test(name)) muzzles.push(this.localOf(bone));
@@ -747,7 +749,7 @@ export class Unit {
               pulseTimer: 0,
               range: Math.min(this.attackRange, proj.num('Projectile_Max_Flight_Distance', 600)),
               damageType: t.str('Damage_Type') || proj.str('Damage_Type'),
-              inaccuracy,
+              inaccuracy: swap ? [own, scatter(proj)] : [own],
               muzzles,
               muzzleIndex: 0,
               fixed: -1
@@ -3676,6 +3678,14 @@ export class World {
     if (hp.fireSfx) this.audio.play(hp.fireSfx, x, y);
   }
 
+  fixedScatter(u) {
+    for (const st of (u.abilities || []).slice(0, 2)) {
+      const o = st.active && st.def.node ? st.def.node.num('Targeting_Fire_Inaccuracy_Fixed_Radius_Override', 0) : 0;
+      if (o > 0) return o;
+    }
+    return (u.type?.num('Targeting_Fire_Inaccuracy_Fixed_Radius', 0) || 0) * 2;
+  }
+
   launch(proj, shooter, target, targetHp, x, y, z, damageType, inaccuracy, opts = null) {
     const speed = proj.num('Max_Speed', 20) * LOGIC_FPS;
     if (!(speed > 0)) return;
@@ -3685,12 +3695,22 @@ export class World {
     const tv = velocityOf(target, _p5),
       lead = leadTurning(_p3, x, y, z, tp.x, tp.y, tp.z, tv.x, tv.y, tv.z, target.turnW || 0, speed);
     const dist = Math.hypot(lead.x - x, lead.y - y, lead.z - z);
+    const own = Array.isArray(inaccuracy),
+      cats = target.type?.categories?.(),
+      pick = m => {
+        if (m && cats) for (const [c, v] of m) if (cats.has(c)) return v;
+        return 0;
+      };
+    let spread = 0;
+    for (const m of own ? inaccuracy : [inaccuracy]) spread = Math.max(spread, pick(m));
     const off = offAim(
       _p4,
       dist,
-      inaccuracy.get(target.sizeClass) ?? 0,
-      shooter.type?.num('Targeting_Max_Attack_Distance', 0) || shooter.attackRange || (opts && opts.range) || dist,
-      shooter.type?.num('Targeting_Fire_Inaccuracy_Fixed_Radius_Override', 0) || 0,
+      spread * 2,
+      own
+        ? shooter.type?.num('Targeting_Max_Attack_Distance', 0) || shooter.attackRange || (opts && opts.range) || dist
+        : (opts && opts.range) || dist,
+      this.fixedScatter(shooter),
       true
     );
     for (const j of this.jammers)
