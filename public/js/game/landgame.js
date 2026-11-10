@@ -4385,6 +4385,14 @@ export class LandGame {
         rect = name && iconCanvasRect(name);
       if (rect) g.drawImage(atlas, rect.x, rect.y, rect.w, rect.h, Math.round(x - iz / 2), Math.round(y - iz - 4), iz, iz);
     };
+    const uiScale = Math.min(innerHeight / 768, innerWidth / 1024);
+    const surfaceMark = (icon, x, y, wd) => {
+      const rect = atlas && icon && iconCanvasRect(icon);
+      if (!rect) return;
+      const iw = Math.max(1, Math.round(rect.w * uiScale)),
+        ih = Math.max(1, Math.round(rect.h * uiScale));
+      g.drawImage(atlas, rect.x, rect.y, rect.w, rect.h, Math.round(x - wd / 2 - 1 - iw), Math.round(y + 1.5 - ih / 2), iw, ih);
+    };
     const teamBars = new Set();
     for (const u of w.units) {
       if (u.dead || u.seen === false || u.inside) continue;
@@ -4401,6 +4409,7 @@ export class LandGame {
         g.fillRect(s[0] - wd / 2 - 1, s[1] - 1, wd + 2, 5);
         g.fillStyle = w.ally(u.side, me) ? (f > 0.5 ? '#35e04a' : f > 0.25 ? '#e0c435' : '#e04535') : '#e04535';
         g.fillRect(s[0] - wd / 2, s[1], wd * f, 3);
+        surfaceMark(u.squad.members.find(m => !m.dead && m.surfaceIcon)?.surfaceIcon, s[0], s[1], wd);
         abilityMark(u.squad, s[0], s[1]);
         continue;
       }
@@ -4420,6 +4429,7 @@ export class LandGame {
         g.fillStyle = '#4aa8ff';
         g.fillRect(s[0] - wd / 2, s[1] + 4, wd * Math.max(0, u.shield / u.maxShield), 2);
       }
+      surfaceMark(u.surfaceIcon, s[0], s[1], wd);
       if (u.squad.members.find(m => !m.dead && !m.inside) === u) abilityMark(u.squad, s[0], s[1]);
     }
     this.drawHeroIcons(g, at);

@@ -7,6 +7,7 @@ import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
+import { surfaceAt, surfaceStatus } from './landsurface.js';
 import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
@@ -442,6 +443,7 @@ class LandUnit {
     this.deflect = undefined;
     this.mod = undefined;
     this.wade = undefined;
+    this.surfaceIcon = '';
     this.ghost = undefined;
     this.foot = undefined;
     this.body = undefined;
@@ -4168,6 +4170,14 @@ export class LandWorld {
     if (!u || u.dead || !(seconds > 0)) return;
     this.glows.push({ u, color, from: this.time, until: this.time + seconds, pulses: Math.max(1, pulses) });
   }
+  tickSurfaces() {
+    const T = this.terrain;
+    if (!this.tables || !T) return;
+    for (const u of this.units) {
+      const st = u.dead || u.inside || u.structure ? null : surfaceStatus(this.tables, u.type, surfaceAt(T, u.x, u.y));
+      u.surfaceIcon = (st && st.icon) || '';
+    }
+  }
   tickGlows() {
     if (!this.glows.length) return;
     this.glows = this.glows.filter(g => {
@@ -7890,6 +7900,7 @@ export class LandWorld {
       wx.fog = wx.fogTo;
     }
     tickAbilities(this, dt);
+    this.tickSurfaces();
     this.tickGlows();
     tickBase(this, dt);
     tickClashes(this);

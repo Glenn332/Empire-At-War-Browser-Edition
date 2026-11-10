@@ -48,6 +48,8 @@ export async function loadLandTables() {
         track: named(k, 'Dynamic_Track_Name'),
         speed: k.num('Speed_Mod', 0),
         defense: k.num('Defense_Mod', 0),
+        dealt: k.num('Damage_Mod', 0),
+        icon: named(k, 'Status_Icon_Name'),
         sight: k.num('FOW_Reveal_Range_Mod', 0),
         range: k.num('Fire_Range_Mod', 0),
         damage: k.num('Terrain_Damage', 0)
