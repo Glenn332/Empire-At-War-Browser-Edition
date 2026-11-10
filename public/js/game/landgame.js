@@ -982,7 +982,7 @@ export class LandGame {
     };
     world.onReselect = (from, to) => {
       const ui = this.ui;
-      if (ui && to && ui.selection.includes(from)) ui.select([...ui.selection.filter(s => s !== from), to]);
+      if (ui && ui.selection.includes(from)) ui.select([...ui.selection.filter(s => s !== from), ...(to ? [to] : [])]);
     };
     const transition = (pt, tag, a, b) => {
       if ((a >= 0 && world.ally(a, this.me)) || (b >= 0 && world.ally(b, this.me)))

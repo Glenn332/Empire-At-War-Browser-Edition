@@ -95,6 +95,10 @@ export function specialAttack(world, u, t, dt) {
       if (demolish(world, u, t, S, d)) return true;
       continue;
     }
+    if (S.kind === 'eat') {
+      if (eat(world, u, t, S)) return true;
+      continue;
+    }
     if (S.kind === 'quake' || d < S.min || d > S.max || !suitsSpecial(S, t) || simRandom() >= S.chance) continue;
     const a = S.a,
       rate = a.num('Attack_Animation_Speedup', 1) || 1,
@@ -121,76 +125,131 @@ export function specialAttack(world, u, t, dt) {
     );
     const secs = ok ? u.cast - world.time : 2;
     u.special = { kind: S.kind, until: world.time + secs };
-    if (S.kind === 'eat') {
-      const grab = world.time + a.num('Attachment_Frame', 14) / FPS / rate,
-        gone = world.time + a.num('Target_Destruction_Frame', 110) / FPS / rate;
-      const bone = u.inst && u.inst.bone ? u.inst.bone(a.val('Owner_Attachment_Bone').trim()) : null;
-      let held = false;
-      world.effects.push(() => {
-        if (u.dead || t.dead) {
-          if (held && !t.dead) {
-            t.lift = 0;
-            t.stunUntil = 0;
-          }
-          return true;
-        }
-        if (world.time < grab) return false;
-        if (!held) {
-          held = true;
-          t.path = [];
-          t.target = null;
-          t.stunUntil = gone + 1;
-          world.cast(t, a.val('Target_Grabbed_Animation').trim().toUpperCase());
-        }
-        if (bone) {
-          world.boneAt(u, bone, _bone);
-          t.x = _bone.x;
-          t.y = _bone.y;
-          t.lift = Math.max(0, _bone.z - world.groundZ(_bone.x, _bone.y));
-        }
-        if (world.time < gone) return false;
-        world.hurt(t, t.maxHealth * S.part + S.amount + 1e6, u, 'EATEN');
-        t.lieFor = 0;
-        t.vanish = true;
-        if (t.holder) t.holder.visible = false;
-        u.health = Math.min(u.maxHealth, u.health + a.num('Health_Per_Victim', 0));
-        return true;
-      });
-    } else {
-      const half = (a.num('Arc_Width_In_Degrees', 120) * Math.PI) / 360,
-        r0 = a.num('Arc_Min_Range', 0),
-        r1 = a.num('Arc_Max_Range', 30);
-      const from = world.time + a.num('Begin_Applying_Damage_Frame', 0) / FPS / rate,
-        over = Math.max(0.01, a.num('Damage_Sweep_Time_In_Secs', 0.2) / rate);
-      const rtl = /^(yes|true)$/i.test(a.val('Apply_Damage_Right_To_Left').trim()),
-        hit = new Set(),
-        face = u.heading;
-      world.effects.push(() => {
-        if (u.dead) return true;
-        if (world.time < from) return false;
-        const k = Math.min(1, (world.time - from) / over),
-          edge = rtl ? -half + 2 * half * k : half - 2 * half * k;
-        for (const o of world.units) {
-          if (o.dead || o.inside || hit.has(o) || o === u || world.ally(o.side, u.side) || !suitsSpecial(S, o)) continue;
-          const dx = o.x - u.x,
-            dy = o.y - u.y,
-            dd = Math.hypot(dx, dy);
-          if (dd < r0 || dd > r1 + (o.hitRadius || 0)) continue;
-          let rel = Math.atan2(dy, dx) - face;
-          rel = Math.atan2(Math.sin(rel), Math.cos(rel));
-          if (Math.abs(rel) > half || (rtl ? rel > edge : rel < edge)) continue;
-          hit.add(o);
-          world.hurt(o, o.maxHealth * S.part + S.amount, u, 'FW_DIE');
-        }
-        return k >= 1;
-      });
-    }
+    const half = (a.num('Arc_Width_In_Degrees', 120) * Math.PI) / 360,
+      r0 = a.num('Arc_Min_Range', 0),
+      r1 = a.num('Arc_Max_Range', 30);
+    const from = world.time + a.num('Begin_Applying_Damage_Frame', 0) / FPS / rate,
+      over = Math.max(0.01, a.num('Damage_Sweep_Time_In_Secs', 0.2) / rate);
+    const rtl = /^(yes|true)$/i.test(a.val('Apply_Damage_Right_To_Left').trim()),
+      hit = new Set(),
+      face = u.heading;
+    world.effects.push(() => {
+      if (u.dead) return true;
+      if (world.time < from) return false;
+      const k = Math.min(1, (world.time - from) / over),
+        edge = rtl ? -half + 2 * half * k : half - 2 * half * k;
+      for (const o of world.units) {
+        if (o.dead || o.inside || hit.has(o) || o === u || world.ally(o.side, u.side) || !suitsSpecial(S, o)) continue;
+        const dx = o.x - u.x,
+          dy = o.y - u.y,
+          dd = Math.hypot(dx, dy);
+        if (dd < r0 || dd > r1 + (o.hitRadius || 0)) continue;
+        let rel = Math.atan2(dy, dx) - face;
+        rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+        if (Math.abs(rel) > half || (rtl ? rel > edge : rel < edge)) continue;
+        hit.add(o);
+        world.hurt(o, o.maxHealth * S.part + S.amount, u, 'FW_DIE');
+      }
+      return k >= 1;
+    });
     return true;
   }
   return false;
 }
 
 const LOGIC = 30;
+
+function eat(world, u, t, S) {
+  if (u.path.length || u.stunUntil > world.time || (u.once === 'attack' && world.time < u.onceEnd)) return false;
+  const reaches = m => {
+    const d = Math.hypot(m.x - u.x, m.y - u.y) - (m.structure ? m.hitRadius || 0 : 0);
+    if (d < S.min || d > S.max) return false;
+    if (!u.turret) return true;
+    let rel = Math.atan2(m.y - u.y, m.x - u.x) - u.heading;
+    rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    return Math.abs(rel) <= u.turret.extent;
+  };
+  const fits = m => !m.dead && !m.inside && m.x !== undefined && world.enemy(u, m) && suitsSpecial(S, m) && reaches(m);
+  const group = t.squad && t.squad.members.length > 1 ? t.squad : null,
+    v = group ? group.members.find(fits) : fits(t) ? t : null;
+  if (!v || !(S.chance > 0) || simRandom() > S.chance) return false;
+  if (group) {
+    group.members = group.members.filter(m => m !== v);
+    v.squad = world.squadOf(v.type, v.side, { company: group.company });
+    v.squad.members = [v];
+  }
+  let held = false,
+    keep = null;
+  const release = () => {
+    v.stunUntil = 0;
+    v.lift = 0;
+    if (keep) Object.assign(v.squad, keep);
+    if (!group || v.squad === group || group.dead || v.dead) return;
+    v.squad = group;
+    group.members.push(v);
+  };
+  const a = S.a,
+    rate = a.num('Attack_Animation_Speedup', 1) || 1,
+    grabAt = a.num('Attachment_Frame', 0),
+    killAt = a.num('Target_Destruction_Frame', 0),
+    kind = a.val('Damage_Type').trim() || 'Damage_Normal',
+    bone = u.inst && u.inst.bone ? u.inst.bone(a.val('Owner_Attachment_Bone').trim()) : null;
+  if (!u.turret) u.heading = Math.atan2(v.y - u.y, v.x - u.x);
+  const t0 = world.time,
+    anim = world.cast(u, a.val('Attack_Animation').trim().toUpperCase() || 'ATTACK', 0, false, rate, Math.max(0, a.num('Attack_Animation_Subindex', 0)))
+      ? u.anim
+      : null,
+    end = anim ? u.cast : t0,
+    fps = anim ? anim.anim.fps : LOGIC;
+  u.special = { kind: 'eat', lock: true };
+  world.effects.push(() => {
+    const live = !u.dead && !!anim && u.anim === anim && world.time < end,
+      frame = (world.time - t0) * fps * rate;
+    if (live && !held && frame >= grabAt && !v.dead) {
+      held = true;
+      v.path = [];
+      v.target = null;
+      v.stunUntil = 1e9;
+      v.cast = 0;
+      if (!world.cast(v, a.val('Target_Grabbed_Animation').trim().toUpperCase(), 1e6)) world.cast(v, 'IDLE', 1e6, true);
+      if (v.squad.selected && world.onReselect) world.onReselect(v.squad, null);
+      v.squad.selected = false;
+      keep = { noAI: v.squad.noAI, selectable: v.squad.selectable };
+      v.squad.selectable = false;
+      v.squad.noAI = true;
+    }
+    if (held && !v.dead && bone && !u.dead) {
+      world.boneAt(u, bone, _bone);
+      v.x = _bone.x;
+      v.y = _bone.y;
+      v.lift = Math.max(0, _bone.z - world.groundZ(_bone.x, _bone.y));
+      v.z = _bone.z;
+    }
+    if (live && held && !v.dead && frame >= killAt) {
+      v.lastDamage = kind;
+      v.invulnUntil = 0;
+      world.hurt(v, 999999 * db.damageMod(kind, v.armor), u, 'EATEN');
+      if (v.dead) {
+        v.lieFor = 0;
+        v.vanish = true;
+        if (v.holder) v.holder.visible = false;
+      } else release();
+      u.health = Math.min(u.maxHealth, u.health + a.num('Health_Per_Victim', 0));
+      u.special = null;
+      return true;
+    }
+    if (live && !v.dead) return false;
+    if (held && !v.dead) {
+      v.lastDamage = 'Damage_Normal';
+      v.invulnUntil = 0;
+      world.hurt(v, 1e6 * db.damageMod('Damage_Normal', v.armor), u);
+    }
+    if (!v.dead) release();
+    if (u.special && u.special.kind === 'eat') u.special = null;
+    return true;
+  });
+  return true;
+}
 const turnBy = (u, want, dt) => {
   let da = want - u.heading;
   da = Math.atan2(Math.sin(da), Math.cos(da));

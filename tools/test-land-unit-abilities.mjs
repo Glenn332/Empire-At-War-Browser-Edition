@@ -102,7 +102,7 @@ function makeWorld() {
   return world;
 }
 const settle = async (world, secs) => {
-  for (let t = 0; t < secs; t += DT) {
+  for (let n = Math.round(secs / DT); n > 0; n--) {
     world.time += DT;
     tickAbilities(world, DT);
     await Promise.resolve();
@@ -241,9 +241,9 @@ const settle = async (world, secs) => {
   assert(!chewie.dead && chewie.inside === null && chewie.x === 120, 'Any vehicle death releases the thief at its spot');
 }
 
-const castable = world => {
+const castable = (world, length = 2) => {
   world.cast = (u, K, secs = 0, loop = false, rate = 1) => {
-    const anim = { fps: 30, frames: 60, duration: 2 };
+    const anim = { fps: 30, frames: 30 * length, duration: length };
     u.anim = { anim, time: 0, kind: K };
     u.cast = world.time + (secs || anim.duration / rate);
     (world.casts ||= []).push([u, K, rate]);
@@ -321,9 +321,105 @@ const synthetic = (base, xml) => {
   assert.equal(specialAttack(world, trooper, tank2, DT), false, 'Units without the DEMOLITION behaviour never activate it');
 }
 
+{
+  const world = castable(makeWorld(), 4);
+  const squadOf = (n, x0) => {
+    const first = world.make(db.type('Stormtrooper'), 0, x0, 0);
+    for (let i = 1; i < n; i++) {
+      const m = world.make(db.type('Stormtrooper'), 0, x0 + i, 0);
+      world.squads.splice(world.squads.indexOf(m.squad), 1);
+      m.squad = first.squad;
+      first.squad.members.push(m);
+    }
+    return first.squad;
+  };
+  const S = db.type('Rancor').sub('Abilities')[0].all('Eat_Attack_Ability')[0];
+  assert.equal(S.num('Activation_Min_Range', 0), 45);
+  const xmlOf = n => `<${n.tag} Name="Only_${n.attrs.Name}">${n.children.map(c => `<${c.tag}>${c.text}</${c.tag}>`).join('')}</${n.tag}>`;
+  const rancor = world.make(synthetic('Rancor', xmlOf(S)), 1, 0, 0);
+  assert.equal(rancor.type.sub('Abilities')[0].children.length, 1);
+  const group = squadOf(3, 0);
+  const [near, mid, last] = group.members;
+  near.x = 30;
+  mid.x = 47;
+  last.x = 48;
+  group.selected = true;
+  const swaps = [];
+  world.onReselect = (from, to) => swaps.push([from, to]);
+  rancor.health = rancor.maxHealth - 500;
+  const before = rancor.health;
+  rancor.once = 'attack';
+  rancor.onceEnd = world.time + 1;
+  specialAttack(world, rancor, near, DT);
+  assert(
+    group.members.length === 3 && !(world.casts || []).some(c => c[1] === 'EAT_ATTACK'),
+    'No eating in the middle of an attack animation'
+  );
+  rancor.special = null;
+  rancor.once = null;
+  rancor.specialAt = 0;
+  assert.equal(specialAttack(world, rancor, near, DT), true);
+  assert(
+    !group.members.includes(mid) && mid.squad !== group && group.members.length === 2,
+    'The first reachable member in squad order is taken out of its squad'
+  );
+  assert.deepEqual(world.casts.at(-1).slice(1), ['EAT_ATTACK', 1]);
+  assert(world.fight(rancor, DT), 'The rancor holds still while eating');
+  await settle(world, 13 / 30);
+  assert(!(mid.stunUntil > world.time), 'Not grabbed before Attachment_Frame');
+  await settle(world, 2 / 30);
+  assert(
+    mid.stunUntil > world.time + 100 && world.casts.at(-1)[0] === mid && world.casts.at(-1)[1] === 'EATEN_DIE',
+    'Grabbed at Attachment_Frame'
+  );
+  assert(!mid.squad.selectable);
+  await settle(world, 94 / 30);
+  assert(!mid.dead, 'Still held before Target_Destruction_Frame');
+  await settle(world, 3 / 30);
+  assert(mid.dead && mid.lastDamage === 'Damage_Eat', 'Killed with the ability damage type at Target_Destruction_Frame');
+  assert.equal(rancor.health, before + 120, 'Health_Per_Victim heals the eater');
+  assert.equal(rancor.special, null);
+
+  rancor.specialAt = 0;
+  assert.equal(specialAttack(world, rancor, near, DT), true);
+  const taken = world.casts.length;
+  await settle(world, 20 / 30);
+  assert(last.stunUntil > world.time + 100);
+  rancor.anim = { anim: { fps: 30 }, time: 0 };
+  await settle(world, 2 / 30);
+  assert(last.dead && last.lastDamage === 'Damage_Normal', 'An interrupted eat still kills the held victim');
+  assert(taken > 0 && rancor.special === null);
+
+  const lone = squadOf(2, 46);
+  rancor.specialAt = 0;
+  assert.equal(specialAttack(world, rancor, lone.members[0], DT), true);
+  const grabbedFirst = lone.members.length === 1;
+  rancor.anim = { anim: { fps: 30 }, time: 0 };
+  await settle(world, 2 / 30);
+  assert(
+    grabbedFirst && lone.members.length === 2 && lone.members.every(m => !m.dead && m.squad === lone),
+    'Interrupted before the grab, the soldier returns to its squad'
+  );
+
+  const solo = world.make(db.type('Stormtrooper'), 0, 0, -47);
+  solo.squad.selected = true;
+  rancor.specialAt = 0;
+  assert.equal(specialAttack(world, rancor, solo, DT), true);
+  await settle(world, 15 / 30);
+  assert.deepEqual(swaps.at(-1), [solo.squad, null], 'A grabbed victim is deselected');
+
+  const never = synthetic(
+    'Rancor',
+    `<Eat_Attack_Ability Name="Test_Eat"><Activation_Chance>0</Activation_Chance><Activation_Min_Range>0</Activation_Min_Range><Activation_Max_Range>60</Activation_Max_Range><Applicable_Unit_Categories>Infantry</Applicable_Unit_Categories></Eat_Attack_Ability>`
+  );
+  const picky = world.make(never, 1, 0, 300);
+  const snack = world.make(db.type('Stormtrooper'), 0, 20, 300);
+  assert.equal(specialAttack(world, picky, snack, DT), false, 'Activation_Chance 0 never eats');
+}
+
 console.log(
   JSON.stringify({
     checks:
-      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection; demolition: behaviour and category gates, turn, spawn frame, offset, timer, damage'
+      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection; demolition: behaviour and category gates, turn, spawn frame, offset, timer, damage; eat attack: squad order pick, attack-animation gate, attachment and destruction frames, fixed kill with damage type, heal, interrupted eat, chance 0'
   })
 );
