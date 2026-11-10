@@ -524,7 +524,7 @@ export class ScriptUI {
       let f = ((performance.now() - start) / 1000) * a.fps;
       if (loop && !shell.stopped && a.frames > 1) f %= a.frames - 1;
       f = Math.min(f, Math.max(0, a.frames - 1));
-        [f0, f1] = frameKeys(a, f, false),
+      const [f0, f1] = frameKeys(a, f, false),
         k = f - Math.floor(f);
       const local = new Map();
       for (const t of a.tracks) {
