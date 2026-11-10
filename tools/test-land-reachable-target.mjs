@@ -44,6 +44,11 @@ assert(
   hot.every(z => threat(z) > 0),
   'the enemy stands as threat in its zones'
 );
+assert(
+  hot.every(z => mind.threatAt(z.x, z.y) > 0),
+  'the threat map a diversion path weighs'
+);
+assert.equal(mind.threatAt(-100, -100), 0, 'nothing off the map');
 
 const G = {};
 const host = Object.assign(Object.create(ScriptHost.prototype), {
