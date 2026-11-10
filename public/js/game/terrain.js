@@ -475,6 +475,20 @@ const ICE_FRAG = `
     gl_FragColor = vec4(mix(fogTint, mix(lit, r, c.a) * seen, haze(vWorld)), 1.0);
   }`;
 
+const keptProjection = new THREE.Matrix4(),
+  keptInverse = new THREE.Matrix4();
+export function drawSky(renderer, sky, eye) {
+  const P = eye.userData.plain;
+  if (!P) return renderer.render(sky, eye);
+  keptProjection.copy(eye.projectionMatrix);
+  keptInverse.copy(eye.projectionMatrixInverse);
+  eye.projectionMatrix.copy(P);
+  eye.projectionMatrixInverse.copy(P).invert();
+  renderer.render(sky, eye);
+  eye.projectionMatrix.copy(keptProjection);
+  eye.projectionMatrixInverse.copy(keptInverse);
+}
+
 function mirrorOf(level) {
   const target = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true });
   target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter;
@@ -512,6 +526,7 @@ function mirrorOf(level) {
       eye.far = camera.far;
       eye.updateMatrixWorld();
       eye.projectionMatrix.copy(camera.projectionMatrix);
+      eye.userData.plain = camera.projectionMatrix;
       matrix
         .set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
         .multiply(eye.projectionMatrix)

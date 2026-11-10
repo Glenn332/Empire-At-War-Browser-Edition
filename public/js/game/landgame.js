@@ -12,7 +12,7 @@ import { loadModel, lighting, setPlanetEnvironment, depthMaterial, programSource
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { loadALO } from '../alo.js';
 import { iconUrl, iconCanvasRect, iconAtlas } from '../icons.js';
-import { buildTerrain, buildWater, skyMaterial, heightAt, paintFog, fogTexture, CELL } from './terrain.js';
+import { buildTerrain, buildWater, drawSky, skyMaterial, heightAt, paintFog, fogTexture, CELL } from './terrain.js';
 import { LandWorld, costOf, timeOf, isUpgrade, buildsFor, FACING, placeRotation, landPop } from './land.js';
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
@@ -3142,7 +3142,7 @@ export class LandGame {
     R.autoClear = false;
     const draw = eye => {
       for (const d of this.sky.children) d.position.setFromMatrixPosition(eye.matrixWorld);
-      R.render(this.sky, eye);
+      drawSky(R, this.sky, eye);
       R.clearDepth();
       R.render(this.scene, eye);
     };
@@ -3540,7 +3540,7 @@ export class LandGame {
           G.autoClear = false;
           const drawG = eye => {
             for (const d of this.sky.children) d.position.setFromMatrixPosition(eye.matrixWorld);
-            G.render(this.sky, eye);
+            drawSky(G, this.sky, eye);
             G.clearDepth();
             G.render(this.scene, eye);
           };
