@@ -183,6 +183,7 @@ function spaceSnapshot(game, name) {
     if (u.everSeenBy) o.seen = u.everSeenBy;
     if (u.limbo) o.limbo = 1;
     if (u.noOpportunity) o.nof = 1;
+    if (u.flagship) o.flag = 1;
     const carry = w.carriedBy ? w.carriedBy(u) : [];
     if (carry.length) o.carry = carry;
     return o;
@@ -486,6 +487,7 @@ export function restore(game, save) {
       return;
     }
     if (o.carry) w.carry?.(o.carry, p, e);
+    if (o.flag) e.flagship = true;
     if (e.isSquad) {
       while (e.fighters.length > o.f.length) {
         const f = e.fighters.pop();

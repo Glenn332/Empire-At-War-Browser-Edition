@@ -4,6 +4,8 @@ import { db } from '../gamedata.js';
 import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
 import { HYPER, LOGIC_FPS } from './sim.js';
+import { MOD } from './combatmods.js';
+import { giveFreeUpgrades } from './planetabilities.js';
 
 const CLASS = s => {
   const v = String(s || '').toLowerCase();
@@ -54,9 +56,30 @@ export function ridesFlagship(company) {
   return members.length > 0 && members.every(flagshipRider);
 }
 
-export function flagshipScore(t) {
+export function flagshipScore(t, e = null) {
   if (t.has('Squadron_Units') || t.has('Company_Units') || t.list('CategoryMask').some(c => /^super$/i.test(c.trim()))) return 0;
-  return t.num('Tactical_Health', 0) * db.constants.num('Object_Max_Health_Multiplier_Space', 1) + t.num('Shield_Points', 0);
+  const m = e && !e.isSquad && e.cmods && e.cmods.size ? e.cmods : null,
+    adj = e && e.player ? e.player.adjust : null;
+  return (
+    t.num('Tactical_Health', 0) *
+      db.constants.num('Object_Max_Health_Multiplier_Space', 1) *
+      (m ? m.factor(MOD.HEALTH) : 1) *
+      (adj ? adj.health : 1) +
+    t.num('Shield_Points', 0) * (m ? m.factor(MOD.SHIELD) : 1) * (adj ? adj.shield : 1)
+  );
+}
+
+export function pickFlagship(spawned) {
+  let best = null,
+    top = 0;
+  for (const [u, e] of spawned) {
+    const s = u.companyType ? 0 : flagshipScore(u.type, e);
+    if (s > top) {
+      best = e;
+      top = s;
+    }
+  }
+  return best;
 }
 
 export function flagshipRecord(field) {
@@ -423,8 +446,8 @@ export function placeCampaignBattle(w, map, teams, cb) {
     );
     const lead = flagshipRecord(field),
       aboard = lead ? field.filter(u => u.companyType && ridesFlagship(u.companyType)) : [];
-    let flagship = null;
-    const companies = [];
+    const companies = [],
+      spawned = [];
     const placed = field.filter(r => !aboard.includes(r));
     for (const { u, x, y } of arrange(placed, at, facing)) {
       const e = w.spawn(u.type, p, x, y, facing);
@@ -432,11 +455,14 @@ export function placeCampaignBattle(w, map, teams, cb) {
         book.absent.push(u.gid);
         continue;
       }
-      if (u === lead) flagship = e;
+      spawned.push([u, e]);
       if (u.companyType) companies.push([u.companyType, e]);
       if (hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
       book.entity.set(u.gid, e);
     }
+    const flagship = lead ? pickFlagship(spawned) : null;
+    if (flagship && (aboard.length || companies.some(([c]) => c.list('Company_Units').some(n => flagshipRider(db.type(n))))))
+      flagship.flagship = true;
     for (const [company, e] of companies)
       if (!flagship) w.carryBonuses?.(company, p, e);
       else {
@@ -460,6 +486,16 @@ export function placeCampaignBattle(w, map, teams, cb) {
       book.waiting.push({ ...u, team: s.team });
     }
   };
+  const raisesStation = t => t.sub('Abilities').some(ab => ab.children.some(a => a.tag.toLowerCase() === 'starbase_upgrade_ability'));
+  if (cb.upgrades && w.applyUpgrade)
+    for (const p of w.players)
+      if (p.id >= 0)
+        giveFreeUpgrades(
+          cb.upgrades[p.factionName]?.space,
+          p.factionName,
+          t => p.upgrades.has(t.name.toUpperCase()),
+          t => raisesStation(t) || w.applyUpgrade(p, t)
+        );
   const d = cb.defender;
   if (d.station) {
     const st = stations[Math.floor(Math.random() * stations.length)] || defend;

@@ -1214,8 +1214,8 @@ export class CommandBar {
     };
   }
 
-  showInfo(type, { builder = null, pinned = false } = {}) {
-    const key = type.name + '|' + (builder ? builder.id : '');
+  showInfo(type, { builder = null, pinned = false, flagship = false } = {}) {
+    const key = type.name + '|' + (builder ? builder.id : '') + (flagship ? '|flagship' : '');
     this.infoPinned = pinned;
     const box = this.info;
     if (this.infoKey === key) {
@@ -1270,7 +1270,7 @@ export class CommandBar {
     const q = sel => box.querySelector(sel);
     q('.etop').style.backgroundImage = css(iconUrl('e_topbar.tga'));
     q('.eicon').style.backgroundImage = css(iconUrl(iconNameFor(type)));
-    q('.etop b').textContent = name;
+    q('.etop b').textContent = flagship ? name + ' - ' + db.t('TEXT_FLAGSHIP') : name;
     q('.epop').textContent = pop ? String(Math.abs(pop)) : '';
     q('.epop').classList.toggle('adds', pop > 0);
     q('.ecost').textContent = builder ? String(cost) : '';
@@ -1415,7 +1415,9 @@ export class CommandBar {
     const h = this.ui.hover && !this.ui.hover.dead && !this.ui.hover.isPad ? this.ui.hover : null;
     if (h !== this.hoverUnit) {
       this.hoverUnit = h;
-      this.hoverTip = h ? { id: h, key: h.type.name, show: () => this.showInfo(h.type) } : null;
+      this.hoverTip = h
+        ? { id: h, key: h.type.name + (h.flagship ? '|flagship' : ''), show: () => this.showInfo(h.type, { flagship: !!h.flagship }) }
+        : null;
     }
     const target = this.tipTarget || this.hoverTip;
     if (target || !hinting) this.tips.hover(target);

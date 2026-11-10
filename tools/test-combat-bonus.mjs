@@ -308,6 +308,75 @@ const near = (a, b, why) => assert(Math.abs(a - b) < 1e-6, why + ': ' + a + ' vs
     again2.w.bonusHolders.map(h => h.keys),
     'flagship keys are built from entity ids'
   );
+
+  assert.equal(fleet.book.entity.get('e2').flagship, true, 'the ship carrying a hero is marked as the flagship');
+  assert(!escort.flagship, 'the others are not');
+  assert(!alone.book.entity.get('e0').flagship, 'a transport carrying its own hero is no flagship');
+  const plain = battle(['Victory_Destroyer', 'Star_Destroyer']);
+  assert(!plain.w.units.some(u => u.flagship), 'no rider: the engine marks no flagship');
+
+  const rebels = (upgrade, extra = {}) => {
+    const f = build();
+    if (upgrade) f.w.applyUpgrade(f.rebel, T(upgrade));
+    const cb = {
+      planet: 'Kuat',
+      attacker: { team: 0, units: [{ gid: 'i0', type: T('Victory_Destroyer') }] },
+      defender: {
+        team: 1,
+        units: ['MC30_Frigate', 'Mon_Mothma_Team', 'Pirate_Frigate_Captain'].map((n, i) => ({ gid: 'r' + i, type: T(n) }))
+      },
+      linked: null,
+      ...extra
+    };
+    return { ...f, cb, book: placeCampaignBattle(f.w, map, f.w.teams, cb) };
+  };
+  assert(
+    flagshipScore(T('Pirate_Frigate_Captain')) > flagshipScore(T('MC30_Frigate')) &&
+      flagshipScore(T('Pirate_Frigate_Captain')) < flagshipScore(T('MC30_Frigate')) + 0.25 * T('MC30_Frigate').num('Shield_Points', 0),
+    'the two frigates are close enough for a shield upgrade to decide'
+  );
+  const bare = rebels(null);
+  assert.equal(bare.book.entity.get('r1').type.name, 'Pirate_Frigate_Captain', 'no upgrade: the pirate frigate has the most hull and shields');
+  assert(bare.book.entity.get('r1').flagship);
+  const shielded = rebels('RS_Enhanced_Shielding_L2_Upgrade');
+  const mc30 = shielded.book.entity.get('r0');
+  assert.equal(shielded.book.entity.get('r1'), mc30, 'Enhanced Shielding L2 lifts the MC30 above it: Mothma rides the MC30');
+  assert(mc30.flagship && !shielded.book.entity.get('r2').flagship);
+  const hullOf = t => t.num('Tactical_Health', 0) * db.constants.num('Object_Max_Health_Multiplier_Space', 1);
+  near(
+    flagshipScore(mc30.type, mc30),
+    hullOf(mc30.type) * 1.25 + mc30.type.num('Shield_Points', 0) * 1.25,
+    'the score takes the shield upgrade and the hull bonus of Mothma aboard'
+  );
+  const free = rebels(null, { upgrades: { Rebel: { space: ['RS_Enhanced_Shielding_L1_Upgrade'] } } });
+  assert(free.rebel.upgrades.has('RS_ENHANCED_SHIELDING_L1_UPGRADE'), 'galaxy-wide upgrades are held before the fleets arrive');
+  shielded.rebel.adjust = { health: 2, shield: 0.5 };
+  near(
+    flagshipScore(mc30.type, mc30),
+    hullOf(mc30.type) * 1.25 * 2 + mc30.type.num('Shield_Points', 0) * 1.25 * 0.5,
+    'the difficulty multipliers of the owner count'
+  );
+  shielded.rebel.adjust = null;
+
+  const { snapshot, restore } = await import('../public/js/game/savegame.js');
+  const live = battle(['Victory_Destroyer', 'Grand_Moff_Tarkin_Team', 'Star_Destroyer']);
+  const game = {
+    world: live.w,
+    renderer: { rig: { x: 0, y: 0, dist: 1000, yaw: 0, pitch: 0.5 } },
+    map: { planet: 'Kuat', activeEnvironment: 0 },
+    setup: { mapFile: '', credits: 0, popCap: 0, fog: false, teamFactions: ['Empire', 'Rebel'], players: [] },
+    ui: { groups: new Map(), selection: [] },
+    speed: 1,
+    human: live.empire
+  };
+  const save = JSON.parse(JSON.stringify(snapshot(game, 'flagship')));
+  assert.equal(save.battle.entities.filter(o => o.flag).length, 1, 'the save marks one flagship');
+  const back = build();
+  const { refs } = restore({ world: back.w }, save);
+  const marked = [...refs.values()].filter(e => e && e.flagship);
+  assert.equal(marked.length, 1, 'a loaded battle keeps the flagship mark');
+  assert.equal(marked[0].type.name, 'Star_Destroyer');
+  assert.deepEqual(back.w.carriedBy(marked[0]), ['Grand_Moff_Tarkin'], 'and the hero aboard it');
 }
 
 console.log('combat bonus abilities ok');
