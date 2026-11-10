@@ -81,7 +81,7 @@ struct Draw {
   specular: vec3f, glow: f32,
   uvScroll: vec2f, uvScrollRate: vec2f,
   ghost: f32, dissolve: f32, time: f32, detailScale: f32,
-  instBase: u32, tintBase: u32, boneBase: u32, _e: u32,
+  instBase: u32, tintBase: u32, boneBase: u32, alphaRef: f32,
 }
 @group(1) @binding(0) var mapT: texture_2d<f32>;
 @group(1) @binding(1) var mapS: sampler;
@@ -279,7 +279,7 @@ fn rock(p: vec3f) -> f32 {
   if (D.dissolve > 0.0 && bayer4(fc) < D.dissolve) { discard; }
   ${on('FOW_DIM') ? 'if (P.fowSide > 0.0) { col *= mix(0.3, 1.0, textureSample(fowMap, fowS, v.vWorldPos.xy / P.fowSide).r); }' : ''}
   col = mix(P.fogTint, col, haze(v.vWorldPos));
-  ${on('ALPHA') ? 'return vec4f(col, base.a * D.opacity * ls.a);' : 'return vec4f(col, D.opacity * ls.a);'}
+  ${on('ALPHA') ? 'if (base.a * D.opacity <= D.alphaRef) { discard; }\n  return vec4f(col, base.a * D.opacity * ls.a);' : 'return vec4f(col, D.opacity * ls.a);'}
 }`);
   return L.join('');
 }
@@ -371,6 +371,7 @@ const model = {
     f[o + 25] = num(U.dissolve);
     f[o + 26] = num(U.time);
     f[o + 27] = num(U.detailScale);
+    f[o + 31] = U.alphaRef ? U.alphaRef.value : -1;
   },
   boneSource(m) {
     const U = m.uniforms;
