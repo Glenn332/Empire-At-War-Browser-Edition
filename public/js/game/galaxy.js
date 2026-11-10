@@ -129,18 +129,36 @@ export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new
       const fleet = newFleet(fleets, planetIndexOf(p), owner);
       if (transport && strategicStealth({ type }) && !strategicStealth({ type: transport }))
         fleet.slot = [1, 2].find(s => !fleets.some(f => f !== fleet && f.planet === planetIndexOf(p) && !f.leg && (f.slot ?? 0) === s)) ?? 0;
-      fleet.units.push((record = { type: transport || type, carries: type }));
+      fleet.units.push((record = { type: transport || type, carries: type, group: (p.fleetSeq = (p.fleetSeq || 0) + 1) }));
       enteredOrbit(p, owner, [record]);
     }
   } else if (kind === 'squadron' || kind === 'starship') {
     enteredOrbit(p, owner, []);
-    newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type }));
+    newFleet(fleets, planetIndexOf(p), owner).units.push((record = { type, group: (p.fleetSeq = (p.fleetSeq || 0) + 1) }));
   }
   const extra = db.type(type.str('Create_Additional_Object'));
   if (extra) placeStartingForce(p, owner, extra, fleets, depth + 1, seen);
   return record;
 }
 const planetIndexOf = p => p.index;
+
+export function replaceFirstFleet(g, p) {
+  const here = g.fleets.filter(f => f.planet === p.index && !f.leg && f.units.length),
+    first = here[0];
+  if (!first) return null;
+  const group = first.units[0].group,
+    units = group === undefined ? first.units.slice() : first.units.filter(u => u.group === group),
+    old = first.slot ?? 0;
+  let moving = first;
+  if (units.length < first.units.length) {
+    first.units = first.units.filter(u => !units.includes(u));
+    moving = { owner: first.owner, units, planet: first.planet, pos: null, path: [], dest: -1, leg: null };
+  } else g.fleets.splice(g.fleets.indexOf(first), 1);
+  const held = s => g.fleets.some(f => f !== moving && f.planet === p.index && !f.leg && f.owner === first.owner && f.units.length && (f.slot ?? 0) === s);
+  moving.slot = [old, 1, 2, 0].find(s => s >= 0 && s <= 2 && !held(s)) ?? 0;
+  g.fleets.push(moving);
+  return moving;
+}
 const startAllied = (a, b) =>
   String(a || '').toUpperCase() === String(b || '').toUpperCase() ||
   !!db

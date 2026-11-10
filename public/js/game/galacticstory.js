@@ -11,7 +11,7 @@ import { LuaVM, LuaRef, Multi, loadFengari, FORCE_ONLY_METHODS } from '../lua.js
 import { GalacticNeutralizePopup } from './galacticpopup.js';
 import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
-import { placeStartingForce, forceKind } from './galaxy.js';
+import { placeStartingForce, forceKind, replaceFirstFleet } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { planetIncome, playerIncome, adjustCredits } from './galacticeconomy.js';
 import { groundLevel, raiseTech, engineRoll } from './galacticproduction.js';
@@ -868,6 +868,14 @@ export class GalacticStoryHost extends StoryPlots {
         __wrap: true,
         __name: p.name,
         __planet: p,
+        Force_Test_Space_Conflict: () => {
+          const moved = replaceFirstFleet(this.game.galaxy, p);
+          if (!moved) return undefined;
+          this.game.fleetView?.(moved)?.catch?.(() => {});
+          this.game.mergeFleets?.();
+          const orbit = this.game.galaxy.fleets.find(f => f.units.includes(moved.units[0]));
+          return orbit ? this.game.battles?.testSpace(p.index, orbit.owner) : undefined;
+        },
         Is_Valid: () => true,
         Get_Type: () => this.type(p.type),
         Get_Owner: () => this.player(p.owner),
@@ -1083,7 +1091,12 @@ export class GalacticStoryHost extends StoryPlots {
       }
     }
     for (let i = first; i < fleets.length; i++) this.game.fleetView?.(fleets[i])?.catch?.(() => {});
-    const orbit = fleets.find(f => f.planet === at.index && !f.leg && f.units.length);
+    const moved = replaceFirstFleet(g, at);
+    if (moved) {
+      this.game.fleetView?.(moved)?.catch?.(() => {});
+      this.game.mergeFleets?.();
+    }
+    const orbit = moved && g.fleets.find(f => f.units.includes(moved.units[0]));
     if (orbit) {
       this.fleetEntered(orbit, at);
       for (const pulled of pullIn(g, at.index, orbit)) this.fleetEntered(pulled, at);
@@ -2101,7 +2114,7 @@ export class GalacticStoryHost extends StoryPlots {
     }
     const vm = this.vm;
     inst.tags = inst.history.slice();
-    inst.env = this.environment(inst, inst.extra);
+    inst.env = this.environment(inst);
     inst.values.clear();
     inst.exit = false;
     inst.starts++;
@@ -2111,7 +2124,7 @@ export class GalacticStoryHost extends StoryPlots {
       if (error) throw new Error(error);
       const definitions = vm.call(inst.env, 'Base_Definitions');
       if (!definitions.ok && !definitions.missing) throw new Error(definitions.error);
-      if (inst.extra?.Object) vm.set(inst.env, 'Object', inst.extra.Object);
+      if (inst.objectWrapper) vm.set(inst.env, 'Object', inst.objectWrapper);
       for (const [name, args] of inst.initialCallbacks || []) {
         const fn = vm.ref(inst.env, name);
         if (fn) inst.events.push({ fn, params: args, release: true });
@@ -2290,7 +2303,7 @@ export class GalacticStoryHost extends StoryPlots {
         starts: 0,
         needs: []
       };
-      inst.extra = { Object: this.object(record, planet || undefined, owner) };
+      inst.objectWrapper = this.object(record, planet || undefined, owner);
       this.objectScripts.set(record, inst);
     }
     for (const [record, inst] of this.objectScripts) {
