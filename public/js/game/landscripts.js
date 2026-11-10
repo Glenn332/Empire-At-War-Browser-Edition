@@ -201,8 +201,7 @@ class LandView {
       q.dead = true;
       if (q.prop) {
         this.w.scene.remove(q.prop.grp);
-        for (const k of q.prop.cells || []) this.w.open[k] = 1;
-        if (q.prop.cells?.length) this.w.groundChanged(q.prop.cells);
+        this.w.vacate(q.prop.cells);
         q.prop.cells = [];
       }
       return;

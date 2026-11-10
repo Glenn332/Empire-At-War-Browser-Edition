@@ -469,6 +469,7 @@ export function shieldsUp(world) {
     u.dome.color = u.dome.strong ? u.dome.colors[1] : u.dome.colors[0];
     if (u.dome.on !== u.dome.was) {
       u.dome.was = u.dome.on;
+      world.shieldCover?.(u, u.dome.on);
       world.playOnce(u, u.type.str(u.dome.on ? 'Shield_On_Anim' : 'Shield_Off_Anim'), true);
     }
     if (u.dome.on) out.push({ x: u.x, y: u.y, r: u.dome.r, side: u.side, strong: u.dome.strong });

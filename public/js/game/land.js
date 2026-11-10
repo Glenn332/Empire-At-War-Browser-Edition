@@ -777,6 +777,27 @@ export function buildsFor(type, faction, campaign = false) {
   }
   return out;
 }
+const PASS_NAMES = {
+  CLEAR: TERRAIN.CLEAR,
+  STEEP: TERRAIN.STEEP,
+  OBSTACLE: TERRAIN.OBSTACLE,
+  REBELWALL: TERRAIN.REBELWALL,
+  EMPIREWALL: TERRAIN.EMPIREWALL,
+  WATER: TERRAIN.WATER,
+  SHIELD: TERRAIN.SHIELD,
+  INFANTRYONLY: TERRAIN.INFANTRYONLY,
+  IMPASSABLE: TERRAIN.IMPASSABLE
+};
+const passBits = text => {
+  let b = 0;
+  for (const w of String(text || '').split(/[\s|,]+/)) b |= PASS_NAMES[w.toUpperCase()] || 0;
+  return b;
+};
+const obstacleProxy = t => {
+  const name = t.str('Obstacle_Proxy_Type').trim();
+  return (name && db.type(name)) || null;
+};
+const hasObstacleSize = t => t.num('Obstacle_Width', 0) > 0 && t.num('Obstacle_Height', 0) > 0;
 const revealTypes = new WeakMap();
 const landReveals = t => {
   let v = revealTypes.get(t);
@@ -898,6 +919,9 @@ export class LandWorld {
       this.open[i] = 1;
       this.wet[i] = k & TERRAIN.WATER || (T.water && T.water.on && T.heights[i] < T.water.level) ? 1 : 0;
     }
+    this.baseKind = this.kind.slice();
+    this.occ = new Map();
+    this.moveTries = new Set();
     this.paths = new LandPaths(this);
   }
 
@@ -1207,18 +1231,160 @@ export class LandWorld {
     return this.nearestOpen(u.x, u.y, 1, taken) || this.nearestOpen(u.x, u.y);
   }
 
-  route(ax, ay, bx, by, need = 1) {
-    return this.paths.route(ax, ay, bx, by, this.maskOf(need));
+  route(ax, ay, bx, by, need = 1, opt = null) {
+    return this.paths.route(ax, ay, bx, by, this.maskOf(need), (opt && opt.clearance) || 0, opt);
+  }
+
+  moveGoal(from, x, y, need = 1) {
+    return this.paths.zoneGoal(from.x, from.y, x, y, this.maskOf(need));
+  }
+
+  moveStart(lead, cx, cy, need, radius) {
+    const P = this.paths,
+      mask = this.maskOf(need),
+      cell = v => Math.trunc((v + CELL / 2) / CELL);
+    P.sync();
+    P.mask = mask;
+    const zl = P.zoneAt(cell(lead.x), cell(lead.y), mask);
+    if (zl < 0 || P.zoneAt(cell(cx), cell(cy), mask) !== zl) return { x: lead.x, y: lead.y };
+    const c = { x: cx, y: cy };
+    if (P.line({ x: lead.x, y: lead.y }, c)) return c;
+    const way = this.route(lead.x, lead.y, cx, cy, need, { clearance: radius });
+    if (!way) return { x: lead.x, y: lead.y };
+    let L = 0,
+      px = lead.x,
+      py = lead.y;
+    for (const p of way) {
+      L += Math.hypot(p.x - px, p.y - py);
+      px = p.x;
+      py = p.y;
+    }
+    return L <= Math.hypot(cx - lead.x, cy - lead.y) * 1.9 ? c : { x: lead.x, y: lead.y };
+  }
+
+  moveWidth(q, team) {
+    let lo = Infinity,
+      hi = -Infinity;
+    const k = q.spread || 1;
+    for (const u of q.members) {
+      if (u.dead || u.inside || u.flies) continue;
+      let side, half;
+      if (team) {
+        if (!u.slot) continue;
+        side = u.slot.y;
+        half = u.halfW ?? soldierExtent(u, 'Y');
+      } else {
+        side = u.off ? u.off.y * k : 0;
+        half = u.type.num('Custom_Hard_YExtent', 0) || u.body || 10;
+      }
+      if (side - half < lo) lo = side - half;
+      if (side + half > hi) hi = side + half;
+    }
+    return hi > lo ? hi - lo : 0;
+  }
+
+  moveFailed(q, x, y, facing) {
+    q.moveFailAt = this.time;
+    q.moveTry = { x, y, facing, at: this.time + 2 };
+    this.moveTries.add(q);
+    if (q.box) {
+      q.box.path.length = 0;
+      q.box.speed = 0;
+    }
+    for (const u of q.members) if (!u.flies) u.path = [];
+    return true;
+  }
+
+  retryMoves() {
+    for (const q of this.moveTries) {
+      const t = q.moveTry;
+      if (!t || q.dead || q.foe || !q.members.length || (q.box && q.box.path.length) || q.members.some(u => u.path.length)) {
+        q.moveTry = null;
+        this.moveTries.delete(q);
+        continue;
+      }
+      if (this.time < t.at) continue;
+      q.moveTry = null;
+      this.moveTries.delete(q);
+      this.order(q, t.x, t.y, t.facing);
+    }
   }
 
   stamp(u) {
-    if (/\b(WALL|LAND_OBSTACLE)\b/i.test(u.type.str('LandBehavior') + ' ' + u.type.str('Behavior')) && u.inst && u.inst.model) {
-      u.footprint = [];
-      this.blockObstacle({ type: u.type, pos: [u.x, u.y, u.z], rot: [0, 0, u.heading / DEG], scale: 1 }, u.inst.model, u.footprint);
-    } else this.stampModel(u);
-    this.groundChanged(u.footprint);
+    const t = u.type;
+    if (/\b(WALL|LAND_OBSTACLE)\b/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior')) && u.inst && u.inst.model) {
+      const fp = (u.footprint = []),
+        proxy = obstacleProxy(t),
+        at = { type: t, pos: [u.x, u.y, u.z], rot: [0, 0, u.heading / DEG], scale: 1 };
+      if (proxy && proxy.str('Land_Model_Name') && (!hasObstacleSize(proxy) || proxy.bool('Fine_Tune_Occupied_Passability', true))) {
+        loadALO(proxy.str('Land_Model_Name'))
+          .catch(() => null)
+          .then(box => {
+            if (u.dead || u.gone || u.footprint !== fp) return;
+            this.blockObstacle(at, u.inst.model, fp, box);
+            if (fp.length) this.reroute(fp);
+          });
+        this.resurface(u);
+        return;
+      }
+      this.blockObstacle(at, u.inst.model, fp);
+    } else {
+      this.stampModel(u);
+      u.footOpen = true;
+      this.groundChanged(u.footprint);
+    }
     this.resurface(u);
     if (u.footprint.length) this.reroute(u.footprint);
+  }
+
+  occupy(owner, cells, bits) {
+    for (const i of cells) {
+      let list = this.occ.get(i);
+      if (!list) this.occ.set(i, (list = []));
+      list.push(owner, bits);
+      this.reKind(i);
+    }
+  }
+  vacate(owner) {
+    if (!owner || !owner.length) return;
+    for (const i of owner) {
+      const list = this.occ.get(i);
+      if (!list) continue;
+      for (let k = list.length - 2; k >= 0; k -= 2) if (list[k] === owner) list.splice(k, 2);
+      if (!list.length) this.occ.delete(i);
+      this.reKind(i);
+    }
+    this.groundChanged(owner);
+  }
+  reKind(i) {
+    let k = this.baseKind[i];
+    const list = this.occ.get(i);
+    if (list) for (let j = 1; j < list.length; j += 2) k |= list[j];
+    this.kind[i] = k & ~TERRAIN.CLEAR || k;
+  }
+
+  shieldCover(u, on) {
+    const d = u.dome;
+    if (!d || !!d.cover === !!on) return;
+    if (!on) {
+      const cells = d.cover;
+      d.cover = null;
+      this.vacate(cells);
+      return;
+    }
+    const bits = passBits(u.type.str('SecondaryOccupationPassability')),
+      cells = (d.cover = []);
+    if (!bits) return;
+    const n = this.n,
+      r = d.r,
+      x0 = Math.max(0, Math.ceil((u.x - r) / CELL)),
+      x1 = Math.min(n - 1, Math.floor((u.x + r) / CELL)),
+      y0 = Math.max(0, Math.ceil((u.y - r) / CELL)),
+      y1 = Math.min(n - 1, Math.floor((u.y + r) / CELL));
+    for (let iy = y0; iy <= y1; iy++)
+      for (let ix = x0; ix <= x1; ix++) if ((ix * CELL - u.x) ** 2 + (iy * CELL - u.y) ** 2 <= r * r) cells.push(iy * n + ix);
+    this.occupy(cells, cells, bits);
+    if (cells.length) this.groundChanged(cells);
   }
 
   resurface(u) {
@@ -1315,85 +1481,74 @@ export class LandWorld {
           u.footprint.push(iy * n + ix);
         }
   }
-  blockObstacle(o, model, cells = null) {
-    const shownPart = m => m.bbox && !m.hidden && !/SHADOW|_ALT[1-9]/i.test(m.name);
+  blockObstacle(o, model, cells = null, boxModel = null) {
     const t = o.type,
       n = this.n,
-      scale = t.num('Scale_Factor', 1) * (o.scale || 1),
-      given = t.num('Obstacle_Width', 0) > 0;
-    let x0 = Infinity,
-      y0 = Infinity,
-      x1 = -Infinity,
-      y1 = -Infinity;
-    for (const m of model ? model.meshes : [])
-      if (shownPart(m)) {
-        x0 = Math.min(x0, m.bbox[0]);
-        y0 = Math.min(y0, m.bbox[1]);
-        x1 = Math.max(x1, m.bbox[3]);
-        y1 = Math.max(y1, m.bbox[4]);
-      }
-    const has = Number.isFinite(x0);
-    if (has && !given && Math.abs(o.rot[0] || 0) + Math.abs(o.rot[1] || 0) < 0.01) {
-      let top = -Infinity;
-      for (const m of model.meshes) if (shownPart(m)) top = Math.max(top, m.bbox[5]);
-      if (top * scale < 2) return 0;
-    }
-    const w = t.num('Obstacle_Width', 0) || (has ? (x1 - x0) * scale : 0),
-      d = t.num('Obstacle_Height', 0) || (has ? (y1 - y0) * scale : 0);
-    if (!(w > 0 && d > 0)) return 0;
-    const ox = t.num('Obstacle_X_Offset', 0) || (has ? x0 * scale : -w / 2),
-      oy = t.num('Obstacle_Y_Offset', 0) || (has ? y0 * scale : -d / 2);
-    if (has && !given && Math.abs(o.rot[0] || 0) + Math.abs(o.rot[1] || 0) > 0.01) {
-      let z0 = Infinity,
-        z1 = -Infinity;
-      for (const m of model.meshes)
-        if (shownPart(m)) {
-          z0 = Math.min(z0, m.bbox[2]);
-          z1 = Math.max(z1, m.bbox[5]);
-        }
-      const q = placeRotation(new THREE.Object3D(), o.rot).quaternion,
-        v = new THREE.Vector3(),
-        step = CELL / 2,
-        seen = new Set();
-      let closed = 0;
-      for (let lx = x0; lx <= x1 + 1e-6; lx += step / scale)
-        for (let ly = y0; ly <= y1 + 1e-6; ly += step / scale)
-          for (let lz = z0; lz <= z1 + 1e-6; lz += step / scale) {
-            v.set(lx * scale, ly * scale, lz * scale).applyQuaternion(q);
-            if (o.pos[2] + v.z > heightAt(this.terrain, o.pos[0] + v.x, o.pos[1] + v.y) + 30) continue;
-            const ix = Math.round((o.pos[0] + v.x) / CELL),
-              iy = Math.round((o.pos[1] + v.y) / CELL),
-              k = iy * n + ix;
-            if (seen.has(k)) continue;
-            seen.add(k);
-            if (ix >= 0 && iy >= 0 && ix < n && iy < n && this.open[k]) {
-              this.open[k] = 0;
-              closed++;
-              cells?.push(k);
-            }
+      T = this.terrain,
+      own = cells || [],
+      src = obstacleProxy(t) || t,
+      scale = src.num('Scale_Factor', 1) * (o.scale || 1),
+      shown = m => m.bbox && !m.hidden && !/SHADOW|_ALT[1-9]/i.test(m.name),
+      boxOf = mdl => {
+        let x0 = Infinity,
+          y0 = Infinity,
+          z0 = Infinity,
+          x1 = -Infinity,
+          y1 = -Infinity,
+          z1 = -Infinity;
+        for (const m of mdl ? mdl.meshes : [])
+          if (shown(m)) {
+            x0 = Math.min(x0, m.bbox[0]);
+            y0 = Math.min(y0, m.bbox[1]);
+            z0 = Math.min(z0, m.bbox[2]);
+            x1 = Math.max(x1, m.bbox[3]);
+            y1 = Math.max(y1, m.bbox[4]);
+            z1 = Math.max(z1, m.bbox[5]);
           }
-      if (closed) this.groundChanged(cells);
-      return closed;
-    }
-    const a = ((o.rot[2] || 0) * Math.PI) / 180 + FACING,
+        return Number.isFinite(x0) ? [(x1 - x0) / 2, (y1 - y0) / 2, (z1 - z0) / 2] : null;
+      },
+      box = boxOf(src === t ? model : boxModel || model);
+    const w = src.num('Obstacle_Width', 0) || (box ? box[0] * 2 * scale : 0),
+      d = src.num('Obstacle_Height', 0) || (box ? box[1] * 2 * scale : 0);
+    if (!(w > 0 && d > 0)) return 0;
+    const ox = src.num('Obstacle_X_Offset', 0) || -w / 2,
+      oy = src.num('Obstacle_Y_Offset', 0) || -d / 2,
+      half = (box ? box[2] : 0) * scale,
+      bits = passBits(t.str('OverridePassability')) || TERRAIN.OBSTACLE,
+      fine = src.bool('Fine_Tune_Occupied_Passability', true) ? collisionOf(src === t ? model : boxModel) : null,
+      a = ((o.rot[2] || 0) * Math.PI) / 180 + FACING,
       c = Math.cos(a),
       sn = Math.sin(a),
-      step = CELL / 2;
-    let closed = 0;
-    for (let lx = 0; lx <= w; lx += step)
-      for (let ly = 0; ly <= d; ly += step) {
-        const x = o.pos[0] + c * (lx + ox) - sn * (ly + oy),
-          y = o.pos[1] + sn * (lx + ox) + c * (ly + oy);
-        const ix = Math.round(x / CELL),
-          iy = Math.round(y / CELL);
-        if (ix >= 0 && iy >= 0 && ix < n && iy < n && this.open[iy * n + ix]) {
-          this.open[iy * n + ix] = 0;
-          closed++;
-          cells?.push(iy * n + ix);
-        }
+      water = T.water && T.water.on ? T.water.level : -Infinity,
+      seen = new Set(own),
+      added = [];
+    let top = 0,
+      depth = 0;
+    if (fine) {
+      top = fine.box[5] + 1;
+      depth = top - fine.box[2] + 1;
+    }
+    for (let s = 0; s < w; s += 10)
+      for (let q = 0; q < d; q += 10) {
+        const lx = s + ox,
+          ly = q + oy,
+          x = o.pos[0] + c * lx - sn * ly,
+          y = o.pos[1] + sn * lx + c * ly,
+          ix = Math.trunc((x + CELL / 2) / CELL),
+          iy = Math.trunc((y + CELL / 2) / CELL);
+        if (ix < 0 || iy < 0 || ix >= n || iy >= n) continue;
+        const k = iy * n + ix;
+        if (seen.has(k)) continue;
+        if (this.wet[k] && water + 5 > T.heights[k] + half) continue;
+        if (fine && meshHit(fine, lx / scale, ly / scale, top, 0, 0, -depth) < 0) continue;
+        seen.add(k);
+        added.push(k);
       }
-    if (closed) this.groundChanged(cells);
-    return closed;
+    if (!added.length) return 0;
+    for (const k of added) own.push(k);
+    this.occupy(own, added, bits);
+    this.groundChanged(added);
+    return added.length;
   }
   async blockWreck(u, t) {
     const n = this.n,
@@ -1426,15 +1581,21 @@ export class LandWorld {
           }
         }
       if (cells.length) this.groundChanged(cells);
+      u.footOpen = true;
     }
     u.footprint = cells;
     if (this.groundVer !== before) this.reroute(cells);
   }
 
   unstamp(u) {
-    for (const i of u.footprint || []) this.open[i] = 1;
-    this.groundChanged(u.footprint);
+    if (u.dome) this.shieldCover(u, false);
+    const fp = u.footprint;
+    if (u.footOpen) {
+      for (const i of fp || []) this.open[i] = 1;
+      this.groundChanged(fp);
+    } else this.vacate(fp);
     u.footprint = null;
+    u.footOpen = false;
   }
 
   groundChanged(cells = null) {
@@ -1573,12 +1734,13 @@ export class LandWorld {
         box = q.box;
       if (!box || q.ext || !box.path.length || !q.members.length) return;
       const need = Math.max(...q.members.map(u => u.need || 1)),
-        goal = box.path[box.path.length - 1];
-      const o = this.isOpen(goal.x, goal.y, need) ? goal : this.nearestOpen(goal.x, goal.y, need) || this.nearestOpen(goal.x, goal.y);
-      const way = o && this.route(box.x, box.y, o.x, o.y, need);
+        goal = box.path[box.path.length - 1],
+        lead = q.members.find(u => !u.dead && !u.inside) || q.members[0],
+        wide = this.moveWidth(q, true);
+      const o = this.moveGoal(lead, goal.x, goal.y, need),
+        way = o && this.route(box.x, box.y, o.x, o.y, need, { clearance: wide });
       if (!way) {
-        box.path.length = 0;
-        box.speed = 0;
+        this.moveFailed(q, goal.x, goal.y, box.face);
         return;
       }
       box.path = way;
@@ -2911,6 +3073,7 @@ export class LandWorld {
   }
 
   stop(squad) {
+    squad.moveTry = null;
     squad.foe = null;
     squad.leash = null;
     squad.pending = null;
@@ -3935,6 +4098,7 @@ export class LandWorld {
   }
 
   attack(squad, enemy) {
+    squad.moveTry = null;
     squad.foe = enemy;
     squad.advance = 0;
     squad.spot = null;
@@ -6258,8 +6422,19 @@ export class LandWorld {
       k = squad.spread || 1;
     const need = Math.max(...m.map(u => u.need || 1)),
       fliers = m.every(u => u.flies);
-    const goal = this.isOpen(x, y, need) ? { x, y } : this.nearestOpen(x, y, need) || this.nearestOpen(x, y);
-    if (!goal) return false;
+    squad.moveTry = null;
+    if (!fliers && this.time - (squad.moveFailAt ?? -Infinity) < 2) {
+      squad.moveTry = { x, y, facing, at: squad.moveFailAt + 2 };
+      this.moveTries.add(squad);
+      return true;
+    }
+    const lead = m.find(u => !u.dead && !u.inside && !u.flies) || m[0];
+    const goal = fliers
+      ? this.isOpen(x, y, need)
+        ? { x, y }
+        : this.nearestOpen(x, y, need) || this.nearestOpen(x, y)
+      : this.moveGoal(lead, x, y, need);
+    if (!goal) return fliers ? false : this.moveFailed(squad, x, y, facing);
     if (squad.formSpeed && (squad.formSpeed.x - x) ** 2 + (squad.formSpeed.y - y) ** 2 > 25) squad.formSpeed = null;
     const box = this.teamOf(squad);
     if (box) {
@@ -6268,7 +6443,8 @@ export class LandWorld {
         box.y = cy;
         squad.ext = false;
       }
-      const at = this.isOpen(box.x, box.y) ? box : m[0];
+      const wide = this.moveWidth(squad, true),
+        at = this.moveStart(lead, box.x, box.y, need, wide / 2);
       {
         const g = this.ground(squad),
           hx = g.hx,
@@ -6320,8 +6496,8 @@ export class LandWorld {
           }
         }
       }
-      const way = this.route(at.x, at.y, goal.x, goal.y, need);
-      if (!way) return false;
+      const way = this.route(at.x, at.y, goal.x, goal.y, need, { clearance: wide });
+      if (!way) return this.moveFailed(squad, x, y, facing);
       box.path = way.slice();
       box.face = facing;
       box.stall = 0;
@@ -6330,9 +6506,10 @@ export class LandWorld {
       for (const u of m) u.path = [(u.slotPt ||= { x: u.x, y: u.y })];
       return true;
     }
-    const from = this.isOpen(cx, cy) ? { x: cx, y: cy } : m[0];
-    const way = fliers ? [goal] : this.route(from.x, from.y, goal.x, goal.y, need);
-    if (!way) return false;
+    const wide = fliers ? 0 : this.moveWidth(squad, false),
+      from = fliers ? { x: cx, y: cy } : this.moveStart(lead, cx, cy, need, wide / 2);
+    const way = fliers ? [goal] : this.route(from.x, from.y, goal.x, goal.y, need, { clearance: wide });
+    if (!way) return this.moveFailed(squad, x, y, facing);
     for (const u of m) {
       const slot = (px, py, a) => {
         const ca = Math.cos(a),
@@ -7172,6 +7349,7 @@ export class LandWorld {
     if (this.interp) this.snapPrev();
     this.time += dt;
     this.repathSome();
+    if (this.moveTries.size) this.retryMoves();
     this.teamSight();
     if ((this.pointsDt = (this.pointsDt || 0) + dt) >= 0.2) {
       this.updatePoints(this.pointsDt);
