@@ -609,8 +609,6 @@ export class LandSquad {
     this.legs = undefined;
     this.march = undefined;
     this.marchStill = undefined;
-    this.marchFrom = undefined;
-    this.marchSkip = undefined;
     this.aiPlan = undefined;
     this.formSpeed = undefined;
     this.arriving = undefined;
@@ -2878,30 +2876,15 @@ export class LandWorld {
         continue;
       }
       if (q.march) {
-        const reach = q.members.reduce((r, m) => Math.max(r, m.range || 0, m.type.num('Attack_Move_Response_Range', 0)), 120);
-        if (q.foe && q.marchFrom && Math.hypot(lead.x - q.marchFrom.x, lead.y - q.marchFrom.y) > reach) {
-          q.marchSkip = { foe: q.foe, until: this.time + 10 };
-          q.foe = q.marchFrom = null;
-          for (const u of q.members) u.target = null;
-          this.order(q, q.march.x, q.march.y);
-          continue;
-        }
-        if (!q.foe) {
-          q.marchFrom = null;
-          const e = this.nearestFoe(lead, this.units, reach);
-          if (e && !(q.marchSkip && q.marchSkip.foe === e.squad && q.marchSkip.until > this.time)) {
-            q.marchFrom = { x: lead.x, y: lead.y };
-            this.attack(q, e.squad);
-            continue;
-          }
-          if (Math.hypot(lead.x - q.march.x, lead.y - q.march.y) < 70) q.march = null;
-          else if (!moving && !fighting) {
-            const S = q.marchStill;
-            if (S && S.of === q.march && Math.hypot(lead.x - S.x, lead.y - S.y) < 15) q.march = null;
-            else {
-              q.marchStill = { x: lead.x, y: lead.y, of: q.march };
-              this.order(q, q.march.x, q.march.y);
-            }
+        this.groupMarch(this.marchGroup(q));
+        if (!q.march || q.foe) continue;
+        if (Math.hypot(lead.x - q.march.x, lead.y - q.march.y) < 70) q.march = null;
+        else if (!moving && !fighting) {
+          const S = q.marchStill;
+          if (S && S.of === q.march && Math.hypot(lead.x - S.x, lead.y - S.y) < 15) q.march = null;
+          else {
+            q.marchStill = { x: lead.x, y: lead.y, of: q.march };
+            this.order(q, q.march.x, q.march.y);
           }
         }
         continue;
@@ -2910,6 +2893,156 @@ export class LandWorld {
         const p = q.legs.shift();
         this.order(q, p.x, p.y);
       }
+    }
+  }
+
+  marchTogether(squads) {
+    const G = { squads: [], foe: null, route: null, leash: null, checkAt: 0, at: -1 };
+    for (const q of squads)
+      if (q && q.march) {
+        q.march.g = G;
+        G.squads.push(q);
+      }
+    return G;
+  }
+
+  marchGroup(q) {
+    return q.march.g || this.marchTogether([q]);
+  }
+
+  marchSquads(G) {
+    return G.squads.filter(q => q.march && q.march.g === G && q.members.length && !q.structure);
+  }
+
+  marchNum(q, key) {
+    const t = q.type && q.type.has(key) ? q.type : q.members[0].type;
+    return t.num(key, 0);
+  }
+
+  marchRoute(u, end) {
+    const pts = [{ x: u.x, y: u.y, s: 0 }];
+    for (const p of [...(u.path || []), end]) {
+      const b = pts[pts.length - 1],
+        d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d > 1) pts.push({ x: p.x, y: p.y, s: b.s + d });
+    }
+    return pts;
+  }
+
+  routeProgress(R, x, y) {
+    let best = 0,
+      bd = Infinity;
+    for (let i = 1; i < R.length; i++) {
+      const a = R[i - 1],
+        b = R[i],
+        L = b.s - a.s,
+        k = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (L * L))),
+        d = Math.hypot(a.x + (b.x - a.x) * k - x, a.y + (b.y - a.y) * k - y);
+      if (d < bd) {
+        bd = d;
+        best = a.s + L * k;
+      }
+    }
+    return best;
+  }
+
+  leashAt(G) {
+    const R = G.route,
+      L = G.leash,
+      s = Math.min(R[R.length - 1].s, L.s + L.v * Math.max(0, this.time - L.at));
+    for (let i = 1; i < R.length; i++)
+      if (R[i].s >= s) {
+        const a = R[i - 1],
+          k = (s - a.s) / (R[i].s - a.s);
+        return { x: a.x + (R[i].x - a.x) * k, y: a.y + (R[i].y - a.y) * k };
+      }
+    return R[R.length - 1];
+  }
+
+  marchLead(live) {
+    const L = live[0];
+    return { L, u: L.members.find(m => !m.dead) || L.members[0] };
+  }
+
+  marchHit(live, foe) {
+    return live.some(q => q.members.some(m => this.attackedBy(m, foe)));
+  }
+
+  marchTake(G, live, foe) {
+    if (!foe || !foe.members.length || foe === G.foe) return false;
+    const { L, u } = this.marchLead(live),
+      f = this.marchNum(L, 'Attack_Move_Response_Range');
+    if (f < 0) return false;
+    G.route ||= this.marchRoute(u, L.march);
+    if (G.leash) {
+      const R = f + (this.marchHit(live, foe) ? this.marchNum(L, 'Autonomous_Move_Extension_Vs_Attacker') : 0),
+        P = this.leashAt(G);
+      if (Math.hypot(u.x - P.x, u.y - P.y) > R) return false;
+    }
+    let v = Infinity;
+    for (const q of live) for (const m of q.members) if (!m.dead && m.speed > 0) v = Math.min(v, m.speed);
+    G.foe = foe;
+    G.leash = { s: this.routeProgress(G.route, u.x, u.y), at: this.time, v: v === Infinity ? 0 : v };
+    G.checkAt = this.time + 1;
+    if (live.length > 1) this.attackGroup(live, foe);
+    else this.attack(live[0], foe);
+    return true;
+  }
+
+  marchPop(G, live) {
+    G.foe = null;
+    for (const q of live)
+      if (q.foe || q.members.some(u => u.target)) {
+        q.foe = null;
+        q.spot = null;
+        for (const u of q.members) u.target = null;
+        this.order(q, q.march.x, q.march.y);
+      }
+  }
+
+  chaseOver(G, live) {
+    const foe = G.foe,
+      { L, u } = this.marchLead(live),
+      R =
+        this.marchNum(L, 'Attack_Move_Response_Range') +
+        (this.marchHit(live, foe) ? this.marchNum(L, 'Autonomous_Move_Extension_Vs_Attacker') : 0),
+      P = this.leashAt(G);
+    if (Math.hypot(u.x - P.x, u.y - P.y) >= R) return true;
+    if (this.fowOn && !foe.members.some(m => !m.dead && this.sightOf(L.side, m))) return true;
+    const e = foe.members.find(m => !m.dead) || foe.members[0],
+      g = e.path && e.path.length ? e.path[e.path.length - 1] : e,
+      d = Math.hypot(g.x - P.x, g.y - P.y);
+    return d > R && d - R > (u.range || 0);
+  }
+
+  allInRange(live, foe) {
+    for (const q of live)
+      for (const m of q.members) {
+        if (m.dead || !(m.range > 0)) continue;
+        if (!foe.members.some(e => !e.dead && Math.hypot(e.x - m.x, e.y - m.y) <= m.range + Math.max(0, e.hitRadius || 0))) return false;
+      }
+    return true;
+  }
+
+  groupMarch(G) {
+    if (G.at === this.time) return;
+    G.at = this.time;
+    const live = this.marchSquads(G);
+    if (!live.length) return;
+    if (G.foe) {
+      if (!G.foe.members.length || !live.some(q => q.foe === G.foe)) this.marchPop(G, live);
+      else if (this.time >= G.checkAt) {
+        G.checkAt = this.time + 1;
+        if (this.chaseOver(G, live) && !this.allInRange(live, G.foe)) this.marchPop(G, live);
+      }
+      return;
+    }
+    for (const q of live) {
+      const f = this.marchNum(q, 'Attack_Move_Response_Range');
+      if (f < 0) continue;
+      const u = q.members.find(m => !m.dead && m.weapon) || q.members[0],
+        e = this.nearestFoe(u, this.units, q.maxRange + f);
+      if (e && this.marchTake(G, live, e.squad)) return;
     }
   }
 
@@ -3960,8 +4093,9 @@ export class LandWorld {
       reacts = /\bUNIT_AI\b/i.test(lb),
       f = Math.max(0, t.num('Idle_Chase_Range', 0)) + (reacts && /\bDAMAGE_TRACKING\b/i.test(lb) ? t.num('Autonomous_Move_Extension_Vs_Attacker', 0) : 0);
     if (q.march) {
-      q.marchFrom ||= { x: u.x, y: u.y };
-      this.attack(q, from.squad);
+      const G = this.marchGroup(q),
+        live = this.marchSquads(G);
+      if (live.length && !G.foe) this.marchTake(G, live, from.squad);
       return;
     }
     const lead = q.members.find(m => !m.dead) || u,

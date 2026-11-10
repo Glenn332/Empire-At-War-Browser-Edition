@@ -523,6 +523,7 @@ export class LandScripts {
         const l = squads(us);
         if (attack && l.length > 1) {
           for (const [q, p] of w.places(l, x, y)) march(w, q, p.x, p.y, true);
+          w.marchTogether(l);
         } else for (const q of l) march(w, q, x, y, !!attack);
       },
       attack: (us, t) => {
