@@ -6709,6 +6709,23 @@ export class LandWorld {
     return true;
   }
 
+  freeRing(x, y, R, need) {
+    const most = Math.min(10, R * 1.5 || 5);
+    R ||= 1;
+    for (let ring = 0, r = 0, step = 1; ring < 20; ring++) {
+      const k = Math.max(ring ? 4 : 1, Math.floor((r * 2 * Math.PI) / R) + 1);
+      for (let i = 0; i < k; i++) {
+        const a = (i / k) * 2 * Math.PI,
+          px = x + Math.cos(a) * r,
+          py = y + Math.sin(a) * r;
+        if (this.isOpen(px, py, need)) return { x: px, y: py };
+      }
+      r += step;
+      step = Math.min(most, step + 0.8);
+    }
+    return null;
+  }
+
   ringSpot(x, y, size, need) {
     const step = 1.5 * (size > 0 ? size : 5 / 1.5);
     for (let ring = 1; ring <= 20; ring++) {
@@ -6800,7 +6817,7 @@ export class LandWorld {
     const goal = fliers
       ? this.isOpen(x, y, need)
         ? { x, y }
-        : this.nearestOpen(x, y, need) || this.nearestOpen(x, y)
+        : this.freeRing(x, y, Math.max(...m.map(u => Math.hypot(hardExtent(u, 'X'), hardExtent(u, 'Y')))), need)
       : this.moveGoal(lead, x, y, need);
     if (!goal) return fliers ? false : this.moveFailed(squad, x, y, facing);
     if (squad.formSpeed && (squad.formSpeed.x - x) ** 2 + (squad.formSpeed.y - y) ** 2 > 25) squad.formSpeed = null;

@@ -163,6 +163,12 @@ const yield_ = u => track && track(u);
     W.isOpen(g.x, g.y, 2) && Math.hypot(g.x - 52 * CELL, g.y - 50 * CELL) < 20 * 1.5 * 40,
     'the goal goes to the first open spot of the ring search'
   );
+  const f = W.freeRing(54 * CELL, 50 * CELL, 30, 2);
+  assert(
+    f && W.isOpen(f.x, f.y, 2) && Math.hypot(f.x - 54 * CELL, f.y - 50 * CELL) < 4 * CELL,
+    'a flier goal on closed ground goes to the first open point of the rings about it'
+  );
+  assert.deepEqual(W.freeRing(70 * CELL, 50 * CELL, 30, 2), { x: 70 * CELL, y: 50 * CELL }, 'an open goal is kept');
   u.path = [{ x: 70 * CELL, y: 50 * CELL }];
   W.blocked(u, u.path[0]);
   assert.equal(u.path.length, 0, 'a unit standing on closed ground whose next step is closed gives the move up');
