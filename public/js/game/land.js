@@ -8,7 +8,7 @@ import { findFiles } from '../vfs.js';
 import { heightAt, CELL, paveTerrain } from './terrain.js';
 import { TERRAIN } from './landtables.js';
 import { surfaceAt, surfaceStatus, surfaceLight, surfaceEffect, NO_SURFACE, SURFACE_KEY } from './landsurface.js';
-import { CombatMods, MOD, combatBonus } from './combatmods.js';
+import { CombatMods, MOD, combatBonus, LAND, bonusSourceDefs, bonusTypeFits, bonusOwnerFits } from './combatmods.js';
 import { animKinds } from './animkinds.js';
 import { tacticalCost, padCost, tacticalRules } from './tacticalrules.js';
 import { LandPaths } from './landpath.js';
@@ -890,6 +890,8 @@ export class LandWorld {
     this.earned = factions.map(() => 0);
     this.bounty = new BountyBook();
     this.sideMods = factions.map(() => new CombatMods());
+    this.bonusHolders = [];
+    this.bonusSeen = 0;
     this.collected = factions.map(() => 0);
     this.ready = factions.map(() => []);
     this.sites = [];
@@ -1022,6 +1024,63 @@ export class LandWorld {
     if (!m.drop(source)) return;
     this.rescaleCombat(u, MOD.HEALTH, hp, false);
     this.rescaleCombat(u, MOD.SHIELD, sh, false);
+  }
+  bonusSource(type, side, host = null) {
+    const defs = bonusSourceDefs(type, LAND);
+    if (!defs.length) return null;
+    const h = { type, side, host, defs, keys: defs.map(() => ({})), hit: host ? [] : null, carried: false };
+    this.bonusHolders.push(h);
+    for (const u of this.units) if (!u.dead) this.giveBonus(h, u);
+    return h;
+  }
+  carryBonuses(company, host, made = []) {
+    if (!company || !host || host.dead) return;
+    for (const t of [company, ...company.list('Company_Units').map(n => db.type(n))])
+      if (t && t !== host.type && !made.includes(t) && bonusSourceDefs(t, LAND).length) {
+        const h = this.bonusSource(t, host.side, host);
+        if (h) h.carried = true;
+      }
+  }
+  giveBonus(h, u) {
+    if (u.dead || u.gone) return;
+    let hit = false;
+    for (let i = 0; i < h.defs.length; i++) {
+      const d = h.defs[i];
+      if (u === h.host && !d.self) continue;
+      if (!bonusTypeFits(d, u.type)) continue;
+      if (!bonusOwnerFits(d, u.side >= 0 ? this.factions[u.side] : '', this.ally(h.side, u.side))) continue;
+      for (const [t, v] of d.mods) {
+        const m = this.combatMods(u);
+        if (m.lists[t].get(d.key)?.some(x => x.source === h.keys[i] && x.value === v)) continue;
+        this.addCombatMod(u, t, d.key, h.keys[i], v);
+        hit = true;
+      }
+    }
+    if (hit && h.hit) h.hit.push(u);
+  }
+  syncCombatBonuses() {
+    const units = this.units,
+      list = this.bonusHolders;
+    while (this.bonusSeen < units.length) {
+      const u = units[this.bonusSeen++];
+      if (u.dead || u.gone) continue;
+      if (bonusSourceDefs(u.type, LAND).length) this.bonusSource(u.type, u.side, u);
+      for (let i = 0; i < list.length; i++) {
+        const h = list[i];
+        if (h.host !== u && !(h.host && (h.host.dead || h.host.gone))) this.giveBonus(h, u);
+      }
+    }
+    let k = 0;
+    for (let i = 0; i < list.length; i++) {
+      const h = list[i];
+      if (h.host && (h.host.dead || h.host.gone)) {
+        for (const u of h.hit) if (!u.dead) for (const key of h.keys) this.dropCombatMod(u, key);
+        h.hit.length = 0;
+        continue;
+      }
+      list[k++] = h;
+    }
+    list.length = k;
   }
   rescaleCombat(u, type, was, adding) {
     const now = u.cmods.factor(type),
@@ -2599,6 +2658,7 @@ export class LandWorld {
     site.side = side;
     site.builtFrom = uc.name;
     this.stamp(u);
+    this.syncCombatBonuses();
     return u;
   }
 
@@ -4007,6 +4067,7 @@ export class LandWorld {
           const up = db.type(n);
           if (up) this.applyUpgrade(u, up);
         }
+        this.syncCombatBonuses();
       })
     );
     const made = squads.filter(q => q.members.length);
@@ -4018,6 +4079,12 @@ export class LandWorld {
       squad.mates = made;
       this.squads.push(squad);
     }
+    if (type.has('Company_Units') && made[0])
+      this.carryBonuses(
+        type,
+        made[0].members[0],
+        made.flatMap(q => q.members.map(u => u.type))
+      );
     const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
     for (const q of squads) q.forming = false;
     this.walkOut(exits, heading);
@@ -7941,6 +8008,7 @@ export class LandWorld {
       this.pointsDt = 0;
     }
     this.updateTransports(dt);
+    this.syncCombatBonuses();
     this.updateEconomy(dt);
     tickCollisions(this);
     this.tickTeams(dt);

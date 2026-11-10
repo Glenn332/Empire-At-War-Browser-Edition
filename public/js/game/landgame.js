@@ -837,6 +837,7 @@ export class LandGame {
                 }
                 const entry = { grp, holder: grp, inst, x: o.pos[0], y: o.pos[1], scriptHidden: false };
                 (this.props ||= []).push(entry);
+                world.bonusSource(o.type, side);
                 if (o.hint) {
                   const prop = new TacticalMarker(o, () => world.sidePlayers[world.wild]);
                   prop.members = [entry];

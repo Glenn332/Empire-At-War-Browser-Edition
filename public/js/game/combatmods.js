@@ -140,3 +140,75 @@ export function combatBonus(node) {
   bonuses.set(node, out);
   return out;
 }
+
+export const SPACE = 1,
+  LAND = 2;
+const STYLE_MODES = {
+  GLOBAL_AUTOMATIC: SPACE | LAND,
+  COMBAT_AUTOMATIC: SPACE | LAND,
+  GALACTIC_AUTOMATIC: SPACE | LAND,
+  SPACE_AUTOMATIC: SPACE,
+  GROUND_AUTOMATIC: LAND
+};
+const words = s =>
+  String(s || '')
+    .split(/[\s,|]+/)
+    .filter(Boolean)
+    .map(x => x.toUpperCase());
+const sourceDefs = new WeakMap();
+const NONE = Object.freeze([]);
+
+function allSourceDefs(type) {
+  let all = sourceDefs.get(type);
+  if (all) return all;
+  all = { [SPACE]: [], [LAND]: [] };
+  const abilities = type && type.sub ? type.sub('Abilities').flatMap(x => x.all('Combat_Bonus_Ability')) : [];
+  const self = abilities.length > 0 && type.bool('Apply_Special_Ability_To_Self_On_Creation'),
+    unique = new Set([type.str('Unique_Space_Unit'), type.str('Unique_Ground_Unit')].map(s => s.trim().toUpperCase()).filter(Boolean));
+  abilities.forEach((node, index) => {
+    const b = combatBonus(node);
+    if (!b.mods.length || /^(no|false)$/i.test(node.val('Initially_Enabled').trim())) return;
+    const modes = STYLE_MODES[node.val('Activation_Style').trim().toUpperCase() || 'COMBAT_AUTOMATIC'] || 0;
+    const def = {
+      node,
+      index,
+      key: b.key,
+      mods: b.mods,
+      types: new Set(words(node.val('Applicable_Unit_Types'))),
+      cats: words(node.val('Applicable_Unit_Categories')),
+      exTypes: new Set(words(node.val('Excluded_Unit_Types'))),
+      exCats: words(node.val('Excluded_Unit_Categories')),
+      faction: node.val('Specific_Faction').trim().toUpperCase(),
+      self,
+      unique
+    };
+    if (modes & SPACE) all[SPACE].push(def);
+    if (modes & LAND) all[LAND].push(def);
+  });
+  if (!all[SPACE].length) all[SPACE] = NONE;
+  if (!all[LAND].length) all[LAND] = NONE;
+  sourceDefs.set(type, all);
+  return all;
+}
+
+export function bonusSourceDefs(type, mode) {
+  return type ? allSourceDefs(type)[mode] : NONE;
+}
+
+export function bonusTypeFits(def, type, alias = '') {
+  const cats = type.categories();
+  if (!cats.size) return false;
+  const name = type.name.toUpperCase();
+  if (def.unique.has(name)) return false;
+  if (def.types.has(name) || (alias && def.types.has(alias))) return true;
+  if (!def.cats.length || def.exTypes.has(name)) return false;
+  let any = false;
+  for (const c of def.cats) if (cats.has(c)) any = true;
+  if (!any) return false;
+  for (const c of def.exCats) if (cats.has(c)) return false;
+  return true;
+}
+
+export function bonusOwnerFits(def, targetFaction, allied) {
+  return def.faction ? String(targetFaction || '').toUpperCase() === def.faction : allied;
+}

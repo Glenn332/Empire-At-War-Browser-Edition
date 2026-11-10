@@ -191,8 +191,10 @@ export async function placeLandInvasion(w, map, cb) {
       t = db.type(r.type);
     if (t && staysInTransport(t)) {
       const home = shelters.shift();
-      if (home) book.contained.set(r.gid, home);
-      else book.absent.push(r.gid);
+      if (home) {
+        book.contained.set(r.gid, home);
+        w.carryBonuses?.(t, home);
+      } else book.absent.push(r.gid);
       continue;
     }
     await spawn(r, d.side, savedCompanyMarker(map, r.markerId) || defs[i % defs.length]);
