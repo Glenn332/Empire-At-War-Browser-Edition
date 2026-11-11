@@ -5347,13 +5347,14 @@ export class World {
     const ext = lt.num('Autonomous_Move_Extension_Vs_Attacker', 0);
     const guarded = kind === 'guard' && ord.target && !ord.target.dead ? ord.target : null;
     const anchor = kind === 'guard' ? (guarded ? this.posOf(guarded) : ord) : kind === 'idle' && s.home ? s.home : lead;
+    const hull = guarded ? guarded.radius || 0 : 0;
     const reach = lead.type.num('Targeting_Max_Attack_Distance', 0) || lead.maxRange || 400;
     const inWeapon = o => dist2(lead, o) <= (reach + o.hitRadius) ** 2;
     const respond = (o, start = true) => {
       if (range < 0) return false;
       const hurt = (ext || parked) && this.hurtBy(s, o);
       if (parked && !hurt) return false;
-      const f = range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
+      const f = hull + range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
       if (start && kind !== 'attackmove' && dist2(lead, anchor) > f * f) return false;
       return dist2(anchor, o) <= (f + reach + o.hitRadius) ** 2;
     };
