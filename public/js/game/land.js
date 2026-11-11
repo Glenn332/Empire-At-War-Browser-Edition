@@ -905,7 +905,7 @@ export class LandWorld {
     this.colors = factions.map(() => null);
     this.colorize = true;
     this.beaten = new Set();
-    this.mods = factions.map(() => ({ build: 1, credit: 1, damage: 1, health: 1 }));
+    this.mods = factions.map(() => ({ build: 1, credit: 1, damage: 1, health: 1, shield: 1 }));
     this.credits = factions.map(() => credits);
     this.earned = factions.map(() => 0);
     this.bounty = new BountyBook();
@@ -2612,8 +2612,8 @@ export class LandWorld {
       site,
       maxHealth: landHealth(type, 1000),
       health: landHealth(type, 1000),
-      maxShield: type.num('Shield_Points', 0),
-      shield: type.num('Shield_Points', 0),
+      maxShield: type.num('Shield_Points', 0) * (this.mods[side]?.shield ?? 1),
+      shield: type.num('Shield_Points', 0) * (this.mods[side]?.shield ?? 1),
       armor: type.str('Armor_Type'),
       aimZ: type.num('Ranged_Target_Z_Adjust', 6),
       range: type.num('Targeting_Max_Attack_Distance', 0),
@@ -4100,6 +4100,10 @@ export class LandWorld {
           if (dm && dm.health !== 1) {
             u.maxHealth *= dm.health;
             u.health *= dm.health;
+          }
+          if (dm && dm.shield !== undefined && dm.shield !== 1 && u.maxShield > 0) {
+            u.maxShield *= dm.shield;
+            u.shield *= dm.shield;
           }
         }
         this.setAnim(u, 'idle');

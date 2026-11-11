@@ -705,7 +705,7 @@ export class LandGame {
           { medium: 'normal' }[String(p.difficulty || 'normal').toLowerCase()] || String(p.difficulty || 'normal').toLowerCase()
         );
       if (d) {
-        world.mods[i] = { build: d.build, credit: d.credit, damage: d.damage, health: d.health };
+        world.mods[i] = { build: d.build, credit: d.credit, damage: d.damage, health: d.health, shield: d.shield };
         this.ai[i].sleep = d.sleep;
       }
     });

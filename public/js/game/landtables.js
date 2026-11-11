@@ -126,6 +126,7 @@ export async function loadLandTables() {
       credit: d.num('Credit_Multiplier', 1),
       damage: d.num('Damage_Multiplier', 1),
       health: d.num('Health_Multiplier', 1),
+      shield: d.num('Shield_Multiplier', 1),
       sleep: d.num('Land_AI_Goal_Cycle_Sleep_Duration', 0)
     });
   }
