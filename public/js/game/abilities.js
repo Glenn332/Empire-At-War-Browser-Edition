@@ -101,6 +101,10 @@ export function parseAbilities(type) {
       out.push({
         kind,
         mods,
+        noDiminish: ab.all('Mod_Flag').some(m => {
+          const [k, v = ''] = m.text.split(',');
+          return /^ALLOW_TARGET_DIMINISHING_FIREPOWER(_FLAG)?$/i.test(k.trim()) && !/^(yes|true|1)$/i.test(v.trim());
+        }),
         node: ab,
         spec,
         target,
@@ -154,8 +158,10 @@ export function refreshMods(u) {
   m.speed = 1;
   m.damageTaken = 1;
   m.damageDealt = 1;
+  m.diminish = true;
   for (const st of u.abilities) {
     if (!st.active) continue;
+    if (st.def.noDiminish) m.diminish = false;
     const g = st.def.mods;
     m.weaponDelay *= g.get('WEAPON_DELAY_MULTIPLIER') ?? 1;
     if (g.has('FIRE_RATE_MULTIPLIER')) m.weaponDelay /= Math.max(0.1, g.get('FIRE_RATE_MULTIPLIER'));
@@ -228,6 +234,7 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
       return lead.inNebula ? 'Abilities do not work inside a nebula' : 'Abilities are still recovering from the nebula';
     if (st0.active && (def.toggle || def.duration > 0)) return null;
     if (kind === 'DEFEND' && lead.ionUntil > world.time) return 'Disabled by an ion stun';
+    if (kind === 'DEFEND' && world.inIonStorm && world.inIonStorm(lead)) return 'Shields do not work inside an ion storm';
     if (st0.cooldown > 0) return `Recharging (${Math.ceil(st0.cooldown)}s)`;
     if (def.target === 'unit') {
       let t = target && target.isSquad ? target.fighters[0] : target;
@@ -585,9 +592,19 @@ export function tickAbilities(world, u, dt) {
           }
         }
         break;
-      case 'SENSOR_JAMMING':
-        world.jammers.push({ team: u.player.team, x: u.x, y: u.y, r: Math.max(300, def.node.num('Effective_Radius', 300)) + 150 });
+      case 'SENSOR_JAMMING': {
+        const r = def.node.num('Effective_Radius', 0);
+        if (r > 0)
+          for (const o of world.units)
+            if (
+              !o.dead &&
+              o.isMobile &&
+              o.player.team !== u.player.team &&
+              (o.x - u.x) ** 2 + (o.y - u.y) ** 2 + ((o.z || 0) - (u.z || 0)) ** 2 <= r * r
+            )
+              o.jammedAt = world.time;
         break;
+      }
       case 'INTERDICT':
         world.interdictors.push({ team: u.player.team, x: u.x, y: u.y });
         break;
