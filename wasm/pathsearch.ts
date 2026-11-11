@@ -2,6 +2,7 @@
 @external("env", "cos") declare function jcos(x: f64): f64;
 @external("env", "sin") declare function jsin(x: f64): f64;
 @external("env", "atan2") declare function jatan2(y: f64, x: f64): f64;
+@external("env", "acos") declare function jacos(x: f64): f64;
 
 const MOVING: i32 = 1,
   STILL: i32 = 2,
@@ -278,6 +279,92 @@ function sweep(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64): i32 {
   return a > Math.PI ? a - TAU : a < -Math.PI ? a + TAU : a;
 }
 
+let faced: bool = false,
+  face: f64 = 0,
+  rs: f64 = 0,
+  alignK: f64 = 0,
+  matchFace: f64 = 0,
+  pen180: f64 = 0,
+  TQX: f64 = 0,
+  TQY: f64 = 0,
+  TQA: f64 = 0;
+
+function arrival(px: f64, py: f64, h: f64, left: bool): void {
+  if (px == gx && py == gy) {
+    TQX = px;
+    TQY = py;
+    TQA = Math.abs(wrap(h - face));
+    return;
+  }
+  const fc = jcos(face),
+    fsn = jsin(face),
+    cx = left ? gx - fsn * rs : gx + fsn * rs,
+    cy = left ? gy + fc * rs : gy - fc * rs;
+  const ex = px - cx,
+    ey = py - cy,
+    d = Math.sqrt(ex * ex + ey * ey),
+    m = rs > d ? rs : d,
+    tl = Math.sqrt(m * m - rs * rs);
+  let beta = jacos(m > 0 ? Math.min(1, tl / m) : 1);
+  if (left) beta = -beta;
+  let ux = cx - px,
+    uy = cy - py;
+  let l = Math.sqrt(ux * ux + uy * uy);
+  if (l == 0) l = 1;
+  ux /= l;
+  uy /= l;
+  const cb = jcos(beta),
+    sb = jsin(beta),
+    qx = px + (ux * cb - uy * sb) * tl,
+    qy = py + (ux * sb + uy * cb) * tl;
+  let ax = qx - cx,
+    ay = qy - cy,
+    bx = gx - cx,
+    by = gy - cy;
+  let la = Math.sqrt(ax * ax + ay * ay),
+    lb = Math.sqrt(bx * bx + by * by);
+  if (la == 0) la = 1;
+  if (lb == 0) lb = 1;
+  ax /= la;
+  ay /= la;
+  bx /= lb;
+  by /= lb;
+  let ang = jacos(Math.max(-1, Math.min(1, bx * ax + by * ay)));
+  const sg: f64 = left ? -1 : 1;
+  if (sg * (by * ax - bx * ay) > 0) ang = TAU - ang;
+  TQX = qx;
+  TQY = qy;
+  TQA = ang;
+}
+
+function est(op: i32, x: f64, y: f64, h: f64): f64 {
+  const ddx = gx - x,
+    ddy = gy - y;
+  if (!faced) return Math.sqrt(ddx * ddx + ddy * ddy);
+  if (op == 11 || op == 12 || op == 15 || op == 16) {
+    arrival(x, y, h, op == 11 || op == 15);
+    const rx = x - TQX,
+      ry = y - TQY;
+    return TQA * rs * (TQA > Math.PI ? pen180 : 1) + Math.sqrt(rx * rx + ry * ry) * alignK;
+  }
+  return alignK * Math.sqrt(ddx * ddx + ddy * ddy);
+}
+
+function speedTime(s0: f64, vt: f64, dist: f64): f64 {
+  if (s0 == vt) return dist / Math.max(1e-6, s0);
+  const A = vt < s0 ? dec : acc,
+    reach = Math.abs(s0 * s0 - vt * vt) / (2 * A);
+  if (dist > reach) return Math.abs(vt - s0) / A + (dist - reach) / Math.max(vt, s0);
+  return Math.sqrt(2 * A * dist) / A;
+}
+
+function faceJump(n: i32, op: i32, nx: f64, ny: f64, nh: f64, ns: f64): void {
+  arrival(nx, ny, nh, op == 15);
+  const ex = TQX - nx,
+    ey = TQY - ny;
+  add(n, op, TQX, TQY, nh, speedTime(ns, slow, Math.sqrt(ex * ex + ey * ey)), slow, alignK);
+}
+
 let count: i32 = 0,
   hn: i32 = 0,
   pushed: i32 = 0;
@@ -349,14 +436,15 @@ function add(n: i32, op: i32, x: f64, y: f64, h: f64, dt: f64, s: f64, mult: f64
   const sx = f(NX, n),
     sy = f(NY, n),
     from = Math.sqrt((sx - ux) * (sx - ux) + (sy - uy) * (sy - uy));
+  const jump = op == 4 || op == 15 || op == 16;
   if (x < wminx || x > wmaxx || y < wminy || y > wmaxy) {
-    if (mapped && (op == 4 || from > nearOff)) return;
+    if (mapped && (jump || from > nearOff)) return;
     cost *= offMap;
   }
   const t0 = f(NT, n),
     bits = sweep(sx, sy, x, y, t0, t0 + dt);
   if (bits & hardMask) {
-    if (op == 4 || from > near) {
+    if (jump || from > near) {
       if (op == 4) op4hard++;
       return;
     }
@@ -393,9 +481,7 @@ function add(n: i32, op: i32, x: f64, y: f64, h: f64, dt: f64, s: f64, mult: f64
   is(NP, id, n);
   fs(NG, id, gg);
   is(NK, id, key);
-  const ddx = gx - x,
-    ddy = gy - y;
-  fs(NF, id, gg + (wh * Math.sqrt(ddx * ddx + ddy * ddy)) / v);
+  fs(NF, id, gg + (wh * est(op, x, y, h)) / v);
   heapPush(id);
 }
 
@@ -454,6 +540,12 @@ export function search(): i32 {
     FRAME = f(P, 49),
     dist0 = f(P, 50);
   nearOff = f(P, 51);
+  faced = f(P, 54) != 0;
+  face = f(P, 55);
+  rs = f(P, 56);
+  alignK = f(P, 57);
+  matchFace = f(P, 58);
+  pen180 = f(P, 59);
   const gcx = <i32>Math.floor((gx - ux) / cell),
     gcy = <i32>Math.floor((gy - uy) / cell);
   gen++;
@@ -470,7 +562,7 @@ export function search(): i32 {
   fs(NS, 0, startS);
   is(NP, 0, -1);
   fs(NG, 0, 0);
-  fs(NF, 0, dist0 / v);
+  fs(NF, 0, est(-1, ux, uy, uh) / v);
   is(NK, 0, -1);
   count = 1;
   heapPush(0);
@@ -495,7 +587,11 @@ export function search(): i32 {
       best = dGoal;
       bestNode = n;
     }
-    if (nop == 4 && <i32>Math.floor((nx - ux) / cell) == gcx && <i32>Math.floor((ny - uy) / cell) == gcy) {
+    if (
+      (faced ? n > 0 && Math.abs(wrap(nh - face)) < matchFace : nop == 4) &&
+      <i32>Math.floor((nx - ux) / cell) == gcx &&
+      <i32>Math.floor((ny - uy) / cell) == gcy
+    ) {
       found = n;
       break;
     }
@@ -521,12 +617,34 @@ export function search(): i32 {
       add(n, 5, nx + ch * dd, ny + sh * dd, nh, (v - ns) / acc, v, 1);
       continue;
     }
+    if (faced && nop >= 11) {
+      if (nop == 11 || nop == 12) faceJump(n, nop + 4, nx, ny, nh, ns);
+      else if (nop == 15 || nop == 16) {
+        arrival(nx, ny, nh, nop == 15);
+        add(n, 17, gx, gy, face, (TQA * rs) / slow, slow, slow / v);
+      }
+      continue;
+    }
     if (nop == 1) add(n, 4, gx, gy, jatan2(gy - ny, gx - nx), dGoal / v, v, 0.98);
     if (full) {
       const L = Math.min(dGoal, step);
       if (L > 1) add(n, 0, nx + ch * L, ny + sh * L, nh, L / v, v, 1);
       const phi = wrap(jatan2(gy - ny, gx - nx) - nh);
-      if (Math.abs(phi) <= th && nop != 1) {
+      if (faced) {
+        for (let side: i32 = 0; side < 2; side++) {
+          arrival(nx, ny, nh, side == 0);
+          const yy = jatan2(TQY - ny, TQX - nx),
+            dif = Math.abs(wrap(yy - nh));
+          if (dif <= th && dif >= 0.01) {
+            const qx = TQX - nx,
+              qy = TQY - ny,
+              dq = Math.sqrt(qx * qx + qy * qy),
+              dd = dq > step ? step : dq;
+            add(n, 11 + side, nx + jcos(yy) * dd, ny + jsin(yy) * dd, yy, dd / v, v, alignK);
+          }
+          faceJump(n, 15 + side, nx, ny, nh, ns);
+        }
+      } else if (Math.abs(phi) <= th && nop != 1) {
         const a = Math.abs(phi),
           sg: f64 = phi > 0 ? 1 : phi < 0 ? -1 : 1,
           fw = rr * jsin(a),

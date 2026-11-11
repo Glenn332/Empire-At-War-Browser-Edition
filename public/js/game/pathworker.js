@@ -58,7 +58,7 @@ function run() {
     u.pathExt = s.ext;
     let pts = null;
     try {
-      pts = core.find(u, m.gx, m.gy);
+      pts = core.find(u, m.gx, m.gy, m.face);
     } catch (e) {
       pts = null;
     }
@@ -84,7 +84,7 @@ function batch(m) {
     u.pathExt = f.ship.ext;
     let pts = null;
     try {
-      pts = core.find(u, f.gx, f.gy);
+      pts = core.find(u, f.gx, f.gy, f.face);
     } catch (e) {
       pts = null;
     }

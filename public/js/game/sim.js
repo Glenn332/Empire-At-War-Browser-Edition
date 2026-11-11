@@ -71,6 +71,7 @@ const LOOP_OVER = (170 * Math.PI) / 180,
   IDLE_NEAR = 90,
   IDLE_CELL = 120;
 const DEG = Math.PI / 180;
+const FACE_SLACK = 10 * DEG;
 const _dc = { x: 0, y: 0 };
 const TAU = Math.PI * 2;
 export const SHIELD_FLASH = 0.1,
@@ -92,6 +93,37 @@ const dist2 = (a, b) => {
 
 export const spaceHealthMultiplier = () => db.constants.num('Object_Max_Health_Multiplier_Space', 1);
 export const spaceHullHealth = (type, none = 100) => type.num('Tactical_Health', none) * spaceHealthMultiplier();
+const unit3 = (x, y, z) => {
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+};
+function frameOf(e, scale, b) {
+  const X = unit3(-e[1], e[0], e[2]),
+    Y = unit3(-e[5], e[4], e[6]),
+    Z = unit3(-e[9], e[8], e[10]);
+  const m = b ? 0.5 : 1;
+  return {
+    ox: (-e[13] - (b ? b[13] : 0)) * m * scale,
+    oy: (e[12] + (b ? b[12] : 0)) * m * scale,
+    oz: (e[14] + (b ? b[14] : 0)) * m * scale,
+    xx: X[0],
+    xy: X[1],
+    xz: X[2],
+    yx: Y[0],
+    yy: Y[1],
+    yz: Y[2],
+    zx: Z[0],
+    zy: Z[1],
+    zz: Z[2]
+  };
+}
+const WEAPON_HARDPOINTS = new Set([
+  'HARD_POINT_WEAPON_LASER',
+  'HARD_POINT_WEAPON_MISSILE',
+  'HARD_POINT_WEAPON_TORPEDO',
+  'HARD_POINT_WEAPON_ION_CANNON',
+  'HARD_POINT_WEAPON_MASS_DRIVER'
+]);
 
 const SIZE_CLASSES = ['FIGHTER', 'BOMBER', 'TRANSPORT', 'CORVETTE', 'FRIGATE', 'CAPITAL', 'SUPER', 'STRUCTURE'];
 
@@ -359,11 +391,17 @@ class Hardpoint {
     this.proj = db.type(def.str('Fire_Projectile_Type'));
     this.isWeapon = !!this.proj;
     this.range = def.num('Fire_Range_Distance', 0);
-    this.coneHalf = Math.min(180, def.num('Fire_Cone_Width', 360) / 2) * DEG;
+    this.coneWidth = clamp(def.num('Fire_Cone_Width', 0), 0, 360);
+    this.coneHalf = Math.min(180, this.coneWidth / 2) * DEG;
+    this.coneUp = Math.max(0, def.num('Fire_Cone_Height', 0) / 2) * DEG;
+    this.turret = def.bool('Is_Turret') ? def.num('Turret_Rotate_Extent_Degrees', 180) * DEG : -1;
+    this.frame = null;
+    this.attach = null;
+    this.fireYaw = 0;
     this.rechargeMin = def.num('Fire_Min_Recharge_Seconds', 2);
     this.rechargeMax = def.num('Fire_Max_Recharge_Seconds', this.rechargeMin);
     this.pulses = Math.max(1, def.num('Fire_Pulse_Count', 1));
-    this.pulseDelay = def.num('Fire_Pulse_Delay_Seconds', 0.2);
+    this.pulseDelay = def.num('Fire_Pulse_Delay_Seconds', 0);
     this.damageType = def.str('Damage_Type') || (this.proj ? this.proj.str('Damage_Type') : 'Damage_Default');
     this.projDamage = def.num('Projectile_Damage', 0);
     this.inaccuracy = new Map(def.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]));
@@ -1072,6 +1110,11 @@ export class Unit {
     const f = hp.fireLocal[0];
     if (fireA && Math.abs(f.ax) + Math.abs(f.ay) > 0.01) hp.facing = Math.atan2(f.ay, f.ax);
     else hp.facing = Math.atan2(hp.local.y, hp.local.x);
+    if (fireA) {
+      hp.frame = frameOf(this.modelMatrix(fireA, _m1).elements, this.scale, fireB ? this.modelMatrix(fireB, _m2).elements : null);
+      hp.fireYaw = Math.atan2(hp.frame.xy, hp.frame.xx);
+    }
+    if (anchor) hp.attach = frameOf(this.modelMatrix(anchor, _m1).elements, this.scale, null);
     hp.bone = bone;
     const attach = getModelData(def.str('Model_To_Attach'));
     const partColl = attach && bone ? collisionOf(attach) : null;
@@ -1098,12 +1141,16 @@ export class Unit {
           root = hp.model.root;
         root.updateMatrixWorld(true);
         const inv = _m3.copy(root.matrixWorld).invert();
+        const els = [];
         hp.fireLocal = own.map(b => {
           const e = _m1.copy(at).multiply(inv).multiply(b.matrixWorld).elements;
+          els.push(e.slice());
           return { x: -e[13] * this.scale, y: e[12] * this.scale, z: e[14] * this.scale, ax: -e[1], ay: e[0] };
         });
         const f0 = hp.fireLocal[0];
         if (Math.abs(f0.ax) + Math.abs(f0.ay) > 0.01) hp.facing = Math.atan2(f0.ay, f0.ax);
+        hp.frame = frameOf(els[0], this.scale, els[1] || null);
+        hp.fireYaw = Math.atan2(hp.frame.xy, hp.frame.xx);
       }
       let part = flattenModel(hp.model);
       if (!part) {
@@ -1254,8 +1301,13 @@ export class Unit {
   }
 
   engineAlive() {
-    for (const h of this.hardpoints) if (!h.alive && h.kind === 'HARD_POINT_ENGINE') return false;
-    return true;
+    let any = false;
+    for (const h of this.hardpoints)
+      if (h.kind === 'HARD_POINT_ENGINE') {
+        if (h.alive) return true;
+        any = true;
+      }
+    return !any;
   }
   shieldGenerators() {
     let n = 0,
@@ -1300,7 +1352,82 @@ const _p = { x: 0, y: 0, z: 0 },
   _p4 = { x: 0, y: 0, z: 0 },
   _p5 = { x: 0, y: 0, z: 0 },
   _ms0 = { x: 0, y: 0, z: 0 },
-  _ms1 = { x: 0, y: 0, z: 0 };
+  _ms1 = { x: 0, y: 0, z: 0 },
+  _ph = { x: 0, y: 0, z: 0 };
+const segSeg2 = (ax, ay, bx, by, cx, cy, dx, dy) => {
+  const ux = bx - ax,
+    uy = by - ay,
+    vx = dx - cx,
+    vy = dy - cy,
+    wx = ax - cx,
+    wy = ay - cy;
+  const a = ux * ux + uy * uy,
+    b = ux * vx + uy * vy,
+    c = vx * vx + vy * vy,
+    d = ux * wx + uy * wy,
+    e = vx * wx + vy * wy,
+    D = a * c - b * b;
+  let s = 0,
+    t = 0;
+  if (a <= 1e-9 && c <= 1e-9) return wx * wx + wy * wy;
+  if (a <= 1e-9) t = clamp(e / c, 0, 1);
+  else if (c <= 1e-9) s = clamp(-d / a, 0, 1);
+  else {
+    s = D > 1e-9 ? clamp((b * e - c * d) / D, 0, 1) : 0;
+    t = (b * s + e) / c;
+    if (t < 0) {
+      t = 0;
+      s = clamp(-d / a, 0, 1);
+    } else if (t > 1) {
+      t = 1;
+      s = clamp((b - d) / a, 0, 1);
+    }
+  }
+  const px = wx + s * ux - t * vx,
+    py = wy + s * uy - t * vy;
+  return px * px + py * py;
+};
+const LANE_LAYERS = { CAPITAL: 1, FRIGATE: 2, CORVETTE: 4, STATICOBJECT: 8, SUPERCAPITAL: 32 };
+const laneLayers = t =>
+  (t._laneLayers ??= t
+    .str('Space_Layer')
+    .toUpperCase()
+    .split(/[|,\s]+/)
+    .reduce((m, k) => m | (LANE_LAYERS[k] || 0), 0));
+function hardExtentsOf(t) {
+  if (t._hardExt) return t._hardExt;
+  const s = t.num('Scale_Factor', 1) || 1,
+    cx = t.num('Custom_Hard_XExtent', 0),
+    cy = t.num('Custom_Hard_YExtent', 0);
+  if (cx > 0 && cy > 0) return (t._hardExt = [cx * s, cy * s]);
+  const data = getModelData(t.str('Space_Model_Name')),
+    E = data ? extentBoxOf(data) : null,
+    out = [cx > 0 ? cx * s : E ? E[0] * s : 0, cy > 0 ? cy * s : E ? E[1] * s : 0];
+  if (data || !t.str('Space_Model_Name')) t._hardExt = out;
+  return out;
+}
+function laneExtentsOf(t) {
+  if (t._laneExt) return t._laneExt;
+  const members = t.list('Squadron_Units');
+  if (!members.length) return hardExtentsOf(t);
+  const rows = t.tuples('Squadron_Offsets');
+  let hx = 0,
+    hy = 0,
+    ready = true;
+  members.forEach((n, i) => {
+    const m = db.type(n),
+      e = m ? hardExtentsOf(m) : [0, 0];
+    if (m && !m._hardExt) ready = false;
+    const r = rows[i] || [];
+    hx = Math.max(hx, e[0] + Math.abs(parseFloat(r[0]) || 0));
+    hy = Math.max(hy, e[1] + Math.abs(parseFloat(r[1]) || 0));
+  });
+  const out = [hx, hy];
+  if (ready) t._laneExt = out;
+  return out;
+}
+const LANE_FRAMES = 115;
+
 const segNear = (x0, y0, z0, x1, y1, z1, cx, cy, cz, r) => {
   const dx = x1 - x0,
     dy = y1 - y0,
@@ -1989,20 +2116,19 @@ export class World {
     const entry = pool[pool.length - 1],
       type = entry && entry.type;
     if (!type) return null;
-    const sp = p.spawnPoints[0],
-      th = sp ? sp.heading : 0;
+    const th = this.startFacing(p);
     for (let i = 0; i < 10; i++) {
       const a = th + i * 0.6283185;
       const x = Math.min(this.max.x, Math.max(this.min.x, at.x - Math.cos(a) * st.r));
       const y = Math.min(this.max.y, Math.max(this.min.y, at.y - Math.sin(a) * st.r));
-      if (!this.cantReinforce(p, x, y, footprintOf(type))) {
+      if (!this.cantReinforce(p, x, y, footprintOf(type), type, th)) {
         pool.pop();
         const k = p.reinforcements.indexOf(type),
           j = p.aiPool ? p.aiPool.indexOf(entry) : -1;
         if (k >= 0) p.reinforcements.splice(k, 1);
         if (j >= 0) p.aiPool.splice(j, 1);
         this.onReinforce?.(p.factionName, type?.name ?? type);
-        const e = this.spawn(type, p, x, y, Math.atan2(at.y - y, at.x - x) || th, { hyperspace: true });
+        const e = this.spawn(type, p, x, y, th, { hyperspace: true });
         this.bonusArrival(p, type, e);
         this.audio.playFor(p, p.faction.str('Reinforcements_Enroute_SFXEvent'));
         this.onEvent('built', { player: p, type, entity: e });
@@ -2024,14 +2150,57 @@ export class World {
     return false;
   }
 
-  cantReinforce(player, x, y, size = 0) {
+  startFacing(p) {
+    const sp = p.spawnPoints && p.spawnPoints[0];
+    return sp && Number.isFinite(sp.heading) ? sp.heading : 0;
+  }
+
+  laneFor(type, x, y, heading) {
+    const own = laneLayers(type),
+      squad = !own && type.has('Squadron_Units');
+    if (!own && !squad) return null;
+    const L = (this._lane ||= {}),
+      [along, across] = laneExtentsOf(type),
+      K = db.constants.num('Space_Reinforcement_Collision_Check_Distance', 200),
+      c = Math.cos(heading),
+      s = Math.sin(heading),
+      back = K + Math.max(0, along - across),
+      front = Math.max(0, along - across);
+    L.layer = squad ? 4 : own;
+    L.squad = squad;
+    L.r = across;
+    L.ax = x - c * back;
+    L.ay = y - s * back;
+    L.bx = x + c * front;
+    L.by = y + s * front;
+    return L;
+  }
+
+  laneHits(L, u) {
+    if (u.isFighter || u.isSquad) return false;
+    const bits = laneLayers(u.type);
+    if (!(bits & 8)) {
+      if (!(bits & L.layer)) return false;
+      if (L.squad && bits === 4) return false;
+    }
+    const e = hardExtentsOf(u.type),
+      r = L.r + Math.max(e[0], e[1]),
+      go = !(bits & 8) && u.speed > 0.5 ? (u.speed * LANE_FRAMES) / LOGIC_FPS : 0,
+      ex = u.x + Math.cos(u.heading || 0) * go,
+      ey = u.y + Math.sin(u.heading || 0) * go;
+    return segSeg2(L.ax, L.ay, L.bx, L.by, u.x, u.y, ex, ey) < r * r;
+  }
+
+  cantReinforce(player, x, y, size = 0, type = null, heading = undefined) {
     if (x < this.min.x || x > this.max.x || y < this.min.y || y > this.max.y) return 'Outside the battle area';
     for (const f of this.fields)
       if ((f.x - x) ** 2 + (f.y - y) ** 2 < (f.r + size) ** 2)
         return f.ion ? 'Inside an ion storm' : f.nebula ? 'Inside a nebula' : 'Inside an asteroid field';
     let seen = !this.fog;
+    const lane = type ? this.laneFor(type, x, y, heading ?? this.startFacing(player)) : null;
     for (const u of this.units) {
       if (u.dead || u.hyper) continue;
+      if (lane && this.laneHits(lane, u)) return 'Something is in the way of the arrival';
       const d2 = (u.x - x) ** 2 + (u.y - y) ** 2;
       if (u.player.team === player.team) {
         if (!seen && d2 <= u.revealRange * u.revealRange) seen = true;
@@ -2049,7 +2218,7 @@ export class World {
   deployReinforcement(player, type, x, y, heading) {
     const i = player.reinforcements.indexOf(type);
     if (i < 0) return 'Not available';
-    const why = this.cantReinforce(player, x, y, footprintOf(type));
+    const why = this.cantReinforce(player, x, y, footprintOf(type), type, Number.isFinite(heading) ? heading : this.startFacing(player));
     if (why) return why;
     player.reinforcements.splice(i, 1);
     this.onReinforce?.(player.factionName, type?.name ?? type);
@@ -2394,6 +2563,12 @@ export class World {
       }
     if (hp.part) hp.part.visible = false;
     if (hp.decal) hp.decal.visible = true;
+    if (WEAPON_HARDPOINTS.has(hp.kind)) unit.sides = null;
+    if (hp.kind === 'HARD_POINT_ENGINE' && !unit.engineAlive())
+      for (const st of unit.abilities)
+        if (st.active && (st.def.kind === 'TURBO' || st.def.kind === 'SPOILER_LOCK')) useAbility(this, unit, st.def.kind, false);
+    if (hp.kind === 'HARD_POINT_GRAVITY_WELL')
+      for (const st of unit.abilities) if (st.active && st.def.kind === 'INTERDICT') useAbility(this, unit, 'INTERDICT', false);
     if (hp.kind === 'HARD_POINT_SHIELD_GENERATOR' && unit.shieldGenerators() === 0) {
       unit.shield = 0;
       if (!(unit.shieldDownTimer > 0)) unit.shieldDownTimer = db.constants.num('Depleted_Shield_Disable_Time', 5);
@@ -3011,14 +3186,9 @@ export class World {
       full = full && was && k === n;
     }
     if (u.noGarrison) return;
-    let bays = 0,
-      baysUp = 0;
-    for (const h of u.hardpoints)
-      if (h.kind === 'HARD_POINT_FIGHTER_BAY') {
-        bays++;
-        if (h.alive) baysUp++;
-      }
-    if (bays && !baysUp) return;
+    let baysUp = 0;
+    for (const h of u.hardpoints) if (h.kind === 'HARD_POINT_FIGHTER_BAY' && h.alive) baysUp++;
+    if (!baysUp) return;
     u.spawnTimer -= dt;
     if (u.spawnTimer > 0) return;
     if (!byHand && this.launches >= LAUNCHES_PER_STEP) return;
@@ -3028,8 +3198,14 @@ export class World {
       if (g.live.length >= g.want || g.remaining === 0) continue;
       if (g.remaining > 0) g.remaining--;
       g.spawned = (g.spawned || 0) + 1;
-      const bay = u.hardpoints.find(h => h.kind === 'HARD_POINT_FIGHTER_BAY');
-      const p = bay ? bay.worldPos({}) : { x: u.x, y: u.y };
+      let k = baysUp > 1 ? Math.floor(simRandom() * baysUp) : 0,
+        bay = null;
+      for (const h of u.hardpoints)
+        if (h.kind === 'HARD_POINT_FIGHTER_BAY' && h.alive && k-- === 0) {
+          bay = h;
+          break;
+        }
+      const p = bay.worldPos({});
       const out = u.heading,
         fly = parseFloat(u.type.list('Spawned_Squadron_Location_Flyout_Distances')[0]) || u.radius;
       const s = this.spawn(g.type, u.player, p.x, p.y, out);
@@ -3525,7 +3701,10 @@ export class World {
       } else {
         const sys =
           u.targetHp && u.targetHp.alive && u.targetHp.unit === t ? u.targetHp.worldPos((u.sysAt ||= { x: 0, y: 0, z: 0 })) : null;
-        const want = (ord.reach || Math.max(150, u.engageRange * 0.55)) + (sys ? 0 : t.hitRadius);
+        const ext = t.hitRadius || 0,
+          want = ord.reach
+            ? ord.reach + (sys ? 0 : ext)
+            : Math.max(u.type.num('Targeting_Min_Attack_Distance', 0) + ext, 0.9 * (u.engageRange + ext));
         const at = sys || t;
         if (ord.offset && !ord.reach) {
           const L = leadPoint(t, (ord.meetAt ?? this.time) - this.time),
@@ -3576,22 +3755,41 @@ export class World {
       }
     }
 
-    const engine = u.engineAlive() ? 1 : 0.2;
+    const engine = u.engineAlive() ? 1 : db.constants.num('Engines_Disabled_Speed_Modifier', 1);
     const maxSpeed = Math.min(
       u.maxSpeed * u.bonus.speed * u.mods.speed * engine * (ord.pace ?? 1) * this.pursuit(u),
       ord.kind === 'guard' && u.guardFollow ? Math.max(2 * (u.guardFollow.speed || 0), 20) : Infinity
     );
-    const turnRate = u.turnRate * (engine < 1 ? 0.5 : 1);
+    const turnRate = u.turnRate;
     let wantSpeed = 0,
       turn = 0;
     let via = false,
       legSpeed = Infinity;
     if (goal) {
-      const wp = this.paths.next(u, goal, stopAt < 60 && (ord.kind === 'move' || ord.kind === 'attackmove'));
+      const moving = ord.kind === 'move' || ord.kind === 'attackmove',
+        face = moving && goal === ord && ord.face !== undefined ? ord.face : undefined;
+      const wp = this.paths.next(u, goal, stopAt < 60 && moving, face);
       if (wp && wp.x >= this.min.x && wp.x <= this.max.x && wp.y >= this.min.y && wp.y <= this.max.y) {
         goal = wp;
         via = !!wp.via;
         if (wp.speed !== undefined && wp.speed < u.maxSpeed * 0.99) legSpeed = (maxSpeed * wp.speed) / Math.max(1, u.maxSpeed);
+      } else if (!wp && face !== undefined) {
+        const r = u.route,
+          L = r && r.face === face && r.pts && r.pts.length && r.i >= r.pts.length - 1 ? r.pts[r.pts.length - 1] : null;
+        if (L) {
+          const c = Math.cos(face),
+            s = Math.sin(face);
+          if ((L.x - u.x) * c + (L.y - u.y) * s <= stopAt) {
+            this.arrived(u);
+            goal = null;
+          } else {
+            goal = u.faceTo ||= { x: 0, y: 0 };
+            goal.x = u.x + c * 1000;
+            goal.y = u.y + s * 1000;
+            via = true;
+            legSpeed = (maxSpeed * L.speed) / Math.max(1, u.maxSpeed);
+          }
+        }
       }
     }
     if (goal) {
@@ -3610,11 +3808,19 @@ export class World {
         if (!via && d < brake) wantSpeed = Math.min(wantSpeed, maxSpeed * clamp((d - stopAt) / Math.max(1, brake - stopAt), 0.08, 1));
       }
     } else if (faceOnly && u.sizeClass !== 'STRUCTURE') {
-      const diff = wrapAngle(Math.atan2(faceOnly.y - u.y, faceOnly.x - u.x) - u.heading);
-      if (Math.abs(diff) > 0.5) turn = clamp(diff, -turnRate * dt * 0.6, turnRate * dt * 0.6);
+      if (u.tip === undefined) {
+        const want = this.attackFacing(u, faceOnly);
+        if (Math.abs(wrapAngle(want - u.heading)) > FACE_SLACK) u.tip = want;
+      }
+    } else if (ord.kind === 'idle' && ord.face !== undefined && u.tip === undefined && Math.abs(wrapAngle(ord.face - u.heading)) > 0.01)
+      u.tip = ord.face;
+    if (goal) u.tip = undefined;
+    else if (u.tip !== undefined) {
+      const r = (turnRate / this.turnSlowdown(u)) * dt,
+        d = wrapAngle(u.tip - u.heading);
+      turn = clamp(d, -r, r);
+      if (Math.abs(d) <= r) u.tip = undefined;
     }
-    if (!goal && !faceOnly && ord.kind === 'idle' && ord.face !== undefined)
-      turn = clamp(wrapAngle(ord.face - u.heading), -turnRate * dt, turnRate * dt);
     u.heading = wrapAngle(u.heading + turn);
     const a = u.accel * dt;
     u.speed += clamp(wantSpeed - u.speed, -a * 1.5, a);
@@ -3629,11 +3835,66 @@ export class World {
     u.syncObj();
   }
 
+  turnSlowdown(u) {
+    if (u.tipSlow !== undefined) return u.tipSlow;
+    const c = db.constants,
+      L = u.layer;
+    return (u.tipSlow =
+      L === 1
+        ? c.num('TurnInPlaceSlowdownCorvette', 2)
+        : L === 2
+          ? c.num('TurnInPlaceSlowdownFrigate', 3)
+          : L === 4 || L === 8
+            ? c.num('TurnInPlaceSlowdownCapital', 4)
+            : 1);
+  }
+
+  attackFacing(u, t) {
+    const h = u.targetHp && u.targetHp.alive && u.targetHp.unit === t ? u.targetHp.worldPos(_ph) : t;
+    const want = Math.atan2(h.y - u.y, h.x - u.x);
+    if (!(u.unitAI ??= u.type.behaviors().has('UNIT_AI'))) return want;
+    return want + this.facingOffset(u, wrapAngle(want - u.heading));
+  }
+
+  facingOffset(u, e) {
+    if (!u.hardpoints.length) return 0;
+    const S = u.sides || (u.sides = this.sideFirepower(u));
+    let best = S[0],
+      r = 0;
+    if (S[2] > best) {
+      best = S[2];
+      r = Math.PI / 2;
+    }
+    if (S[1] > best) r = -Math.PI / 2;
+    else if (S[1] === best && r !== 0 && Math.abs(e) > Math.abs(wrapAngle(Math.PI / 2 - e))) r = -Math.PI / 2;
+    return r;
+  }
+
+  sideFirepower(u) {
+    const S = [0, 0, 0, 0],
+      power = u.type.num('AI_Combat_Power', 0);
+    let sum = 0;
+    for (const h of u.hardpoints) if (WEAPON_HARDPOINTS.has(h.kind) && h.proj) sum += h.proj.num('AI_Combat_Power', 0);
+    for (const h of u.hardpoints) {
+      if (!h.alive || !WEAPON_HARDPOINTS.has(h.kind) || !h.proj || !h.proj.bool('Projectile_Does_Hitpoint_Damage', true)) continue;
+      const share = power * (h.proj.num('AI_Combat_Power', 0) / sum),
+        f = Math.cos(h.fireYaw),
+        g = -Math.sin(h.fireYaw),
+        lim = Math.cos((Math.min(180, h.coneWidth) / 2) * DEG);
+      if (f >= lim) S[0] += share;
+      if (-f >= lim) S[3] += share;
+      if (g >= lim) S[2] += share;
+      if (-g >= lim) S[1] += share;
+    }
+    return S;
+  }
+
   steerShip(u, dt) {
+    u.tip = undefined;
     const D = u.direct,
-      engine = u.engineAlive() ? 1 : 0.2;
+      engine = u.engineAlive() ? 1 : db.constants.num('Engines_Disabled_Speed_Modifier', 1);
     const maxSpeed = u.maxSpeed * u.bonus.speed * u.mods.speed * engine,
-      turnRate = u.turnRate * (engine < 1 ? 0.5 : 1);
+      turnRate = u.turnRate;
     const turn = clamp(-D.turn, -1, 1) * turnRate * dt,
       want = D.throttle > 0 ? maxSpeed * Math.min(1, D.throttle) : 0;
     u.heading = wrapAngle(u.heading + turn);
@@ -3830,31 +4091,41 @@ export class World {
     for (const hp of u.hardpoints) {
       if (!hp.isWeapon || !hp.alive) continue;
       if (hp.pulsesLeft > 0) {
-        hp.pulseTimer -= dt;
-        if (hp.pulseTimer <= 0) {
-          if (hp.target && !hp.target.dead && this.canBear(u, hp, hp.target)) this.fireHardpoint(u, hp);
-          hp.pulsesLeft--;
-          hp.pulseTimer = hp.pulseDelay;
-          if (hp.pulsesLeft === 0) hp.cooldown = rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay;
+        if (hp.pulseTimer > 0 && (hp.pulseTimer -= dt) > 0) continue;
+      } else {
+        hp.cooldown -= dt;
+        if (hp.cooldown > 0) continue;
+        const t = this.hardpointTarget(u, hp);
+        if (!t) {
+          hp.cooldown = 0.25 + simRandom() * 0.25;
+          continue;
         }
-        continue;
+        this.aimHardpoint(u, hp, t);
+        hp.pulsesLeft = hp.pulses;
+        hp.pulseTimer = 0;
       }
-      hp.cooldown -= dt;
-      if (hp.cooldown > 0) continue;
-      const t = this.hardpointTarget(u, hp);
-      if (!t) {
-        hp.cooldown = 0.25 + simRandom() * 0.25;
-        continue;
+      let fired = !!hp.target && !hp.target.dead && this.canBear(u, hp, hp.target) && this.fireHardpoint(u, hp, true);
+      if (!fired) {
+        const o = this.hardpointTarget(u, hp);
+        if (o && o !== hp.target) {
+          this.aimHardpoint(u, hp, o);
+          fired = this.fireHardpoint(u, hp, true);
+        }
       }
-      hp.target = t;
-      hp.targetHp = u.targetHp && u.targetHp.unit === t && u.targetHp.alive ? u.targetHp : null;
-      if (hp.targetHp) {
-        hp.worldPos(_p);
-        hp.targetHp.worldPos(_p2);
-        if ((_p2.x - _p.x) ** 2 + (_p2.y - _p.y) ** 2 > (hp.range + 40) ** 2) hp.targetHp = null;
-      }
-      hp.pulsesLeft = hp.pulses;
-      hp.pulseTimer = 0;
+      if (!fired) continue;
+      if (--hp.pulsesLeft > 0) hp.pulseTimer = hp.pulseDelay;
+      else hp.cooldown = rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay;
+    }
+  }
+
+  aimHardpoint(u, hp, t) {
+    hp.target = t;
+    const ord = u.order.kind === 'attack' && t.hpDriven && this.resolveTarget(u.order.target) === t;
+    hp.targetHp = u.targetHp && u.targetHp.unit === t && u.targetHp.alive ? u.targetHp : ord ? this.orderHp(u, t) : null;
+    if (hp.targetHp) {
+      hp.worldPos(_p);
+      hp.targetHp.worldPos(_p2);
+      if ((_p2.x - _p.x) ** 2 + (_p2.y - _p.y) ** 2 > (hp.range + 40) ** 2) hp.targetHp = null;
     }
   }
 
@@ -3940,13 +4211,72 @@ export class World {
 
   canBear(u, hp, t) {
     if (this.restricted(hp, t)) return false;
-    hp.worldPos(_p);
-    const dx = t.x - _p.x,
-      dy = t.y - _p.y;
+    hp.worldPos(_ph);
+    const dx = t.x - _ph.x,
+      dy = t.y - _ph.y;
     const reach = hp.range + t.hitRadius;
     if (!t.free && dx * dx + dy * dy > reach * reach) return false;
-    if (hp.coneHalf >= Math.PI * 0.99) return true;
-    return Math.abs(wrapAngle(Math.atan2(dy, dx) - (u.heading + hp.facing))) <= hp.coneHalf;
+    if (this.hpInCone(u, hp, t.x, t.y, t.z || 0)) return true;
+    if (!t.hardpoints) return false;
+    for (const h of t.hardpoints) {
+      if (!h.alive) continue;
+      h.worldPos(_ph);
+      if (this.hpInCone(u, hp, _ph.x, _ph.y, _ph.z)) return true;
+    }
+    return false;
+  }
+
+  hpInCone(u, hp, x, y, z) {
+    const c = Math.cos(u.heading),
+      s = Math.sin(u.heading),
+      turret = hp.turret >= 0,
+      F = turret ? hp.attach : hp.frame,
+      o = F ? null : hp.fireLocal[0] || hp.local;
+    const ox = F ? F.ox : o.x,
+      oy = F ? F.oy : o.y,
+      oz = F ? F.oz : o.z || 0;
+    const dx = x - (u.x + c * ox - s * oy),
+      dy = y - (u.y + s * ox + c * oy),
+      dz = z - ((u.z || 0) + oz);
+    const ax = c * dx + s * dy,
+      ay = c * dy - s * dx;
+    let lx, ly, lz;
+    if (F) {
+      lx = ax * F.xx + ay * F.xy + dz * F.xz;
+      ly = ax * F.yx + ay * F.yy + dz * F.yz;
+      lz = ax * F.zx + ay * F.zy + dz * F.zz;
+    } else {
+      const cf = Math.cos(hp.facing),
+        sf = Math.sin(hp.facing);
+      lx = ax * cf + ay * sf;
+      ly = ay * cf - ax * sf;
+      lz = dz;
+    }
+    const yaw = lx || ly ? Math.atan2(ly, lx) : 0;
+    if (turret) return Math.abs(F ? wrapAngle(yaw + Math.PI / 2) : yaw) <= hp.turret;
+    if (Math.abs(yaw) > hp.coneHalf) return false;
+    return Math.abs(Math.atan2(lz, Math.hypot(lx, ly))) <= hp.coneUp;
+  }
+
+  nearestHp(t, from) {
+    let best = null,
+      bd = Infinity;
+    for (const h of t.hardpoints) {
+      if (!h.alive || !h.targetable) continue;
+      h.worldPos(_ph);
+      const d = (_ph.x - from.x) ** 2 + (_ph.y - from.y) ** 2 + (_ph.z - (from.z || 0)) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = h;
+      }
+    }
+    return best;
+  }
+
+  orderHp(u, t) {
+    const h = u.orderHp;
+    if (h && h.alive && h.unit === t) return h;
+    return (u.orderHp = this.pickHardpoint(t, u.x, u.y, u));
   }
 
   hardpointTarget(u, hp) {
@@ -3965,7 +4295,7 @@ export class World {
     if (hp.rules.manual) return null;
     if (
       !(ord ? hp.rules.busy : hp.rules.idle) &&
-      !(!u.player.human && hp.rechargeMin <= db.constants.num('Hardpoint_Recharge_Cutoff_For_Opportunity_Fire', 3))
+      !(!u.player.human && !(hp.rechargeMax > db.constants.num('Hardpoint_Recharge_Cutoff_For_Opportunity_Fire', 3)))
     )
       return null;
     const had = hp.target;
@@ -3994,7 +4324,7 @@ export class World {
     return best;
   }
 
-  fireHardpoint(u, hp) {
+  fireHardpoint(u, hp, cone = false) {
     const L = hp.fireLocal,
       a0 = L[0] || hp.local || { x: 0, y: 0, z: 0 },
       b0 = L[1];
@@ -4012,19 +4342,27 @@ export class World {
     const x = u.x + c * fl.x - s * fl.y,
       y = u.y + s * fl.x + c * fl.y,
       z = u.z + fl.z;
-    this.launch(
+    const T = hp.target,
+      th = hp.targetHp || (cone && T.hpDriven ? this.nearestHp(T, u) : null);
+    const ok = this.launch(
       hp.proj,
       u,
-      hp.target,
-      hp.targetHp,
+      T,
+      th,
       x,
       y,
       z,
       hp.damageType,
       hp.inaccuracy,
-      hp.forward ? { range: hp.range, forward: u.heading + hp.facing, damage: hp.projDamage } : { range: hp.range, damage: hp.projDamage }
+      hp.forward
+        ? { range: hp.range, forward: u.heading + hp.facing, damage: hp.projDamage }
+        : cone
+          ? { range: hp.range, hp, damage: hp.projDamage }
+          : { range: hp.range, damage: hp.projDamage }
     );
+    if (ok === false) return false;
     if (hp.fireSfx) this.audio.play(hp.fireSfx, x, y);
+    return true;
   }
 
   fixedScatter(u) {
@@ -4048,6 +4386,7 @@ export class World {
       lead.y = tp.y;
       lead.z = tp.z;
     }
+    if (opts && opts.hp && !this.hpInCone(shooter, opts.hp, lead.x, lead.y, lead.z)) return false;
     const dist = Math.hypot(lead.x - x, lead.y - y, lead.z - z);
     const own = Array.isArray(inaccuracy),
       cats = target.type?.categories?.(),

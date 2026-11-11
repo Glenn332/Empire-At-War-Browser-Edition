@@ -1018,7 +1018,7 @@ export class UI {
     pl.ok = true;
     pl.ghosts.forEach((gh, i) => {
       const p = at[i],
-        why = this.world.cantReinforce(this.player, p.x, p.y, gh.radius || 0) || '';
+        why = this.world.cantReinforce(this.player, p.x, p.y, gh.radius || 0, pl.list[i], heading) || '';
       if (why && !pl.why) pl.why = why;
       gh.set(p.x, p.y, heading, !why);
     });

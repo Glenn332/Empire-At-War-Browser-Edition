@@ -43,11 +43,110 @@ function touch(q, qdx, qdy, ax, ay, bx, by, e, edx, edy, ex0, ey0, ex1, ey1) {
   return false;
 }
 
+export function arrivalTangent(px, py, h, gx, gy, face, rs, left, out) {
+  if (px === gx && py === gy) {
+    out[0] = px;
+    out[1] = py;
+    out[2] = Math.abs(wrap(h - face));
+    return out;
+  }
+  const fc = Math.cos(face),
+    fs = Math.sin(face),
+    cx = left ? gx - fs * rs : gx + fs * rs,
+    cy = left ? gy + fc * rs : gy - fc * rs;
+  const d = len(px - cx, py - cy),
+    m = rs > d ? rs : d,
+    tl = Math.sqrt(m * m - rs * rs);
+  let beta = Math.acos(m > 0 ? Math.min(1, tl / m) : 1);
+  if (left) beta = -beta;
+  let ux = cx - px,
+    uy = cy - py;
+  const l = len(ux, uy) || 1;
+  ux /= l;
+  uy /= l;
+  const cb = Math.cos(beta),
+    sb = Math.sin(beta),
+    qx = px + (ux * cb - uy * sb) * tl,
+    qy = py + (ux * sb + uy * cb) * tl;
+  let ax = qx - cx,
+    ay = qy - cy,
+    bx = gx - cx,
+    by = gy - cy;
+  const la = len(ax, ay) || 1,
+    lb = len(bx, by) || 1;
+  ax /= la;
+  ay /= la;
+  bx /= lb;
+  by /= lb;
+  let ang = Math.acos(Math.max(-1, Math.min(1, bx * ax + by * ay)));
+  if ((left ? -1 : 1) * (by * ax - bx * ay) > 0) ang = TAU - ang;
+  out[0] = qx;
+  out[1] = qy;
+  out[2] = ang;
+  return out;
+}
+
+export function speedTime(s0, vt, dist, acc, dec) {
+  if (s0 === vt) return dist / Math.max(1e-6, s0);
+  const A = vt < s0 ? dec : acc,
+    reach = Math.abs(s0 * s0 - vt * vt) / (2 * A);
+  if (dist > reach) return Math.abs(vt - s0) / A + (dist - reach) / Math.max(vt, s0);
+  return Math.sqrt(2 * A * dist) / A;
+}
+
+const ARC_STEP = Math.PI / 6;
+export function routeOf(NX, NY, NS, NT, NH, NOP, NP, end, now, F) {
+  const out = [];
+  for (let n = end; n > 0; n = NP[n]) {
+    out.push({ x: NX[n], y: NY[n], speed: NS[n], t: now + NT[n], h: NH[n], turn: NOP[n] === 8 || NOP[n] === 9 });
+    if ((NOP[n] === 15 || NOP[n] === 16) && F) {
+      out[out.length - 1].close = Math.max(15, F.rs * 0.5);
+      const p = NP[n],
+        s0 = NS[p],
+        dx = NX[n] - NX[p],
+        dy = NY[n] - NY[p],
+        d = len(dx, dy),
+        reach = (s0 * s0 - NS[n] * NS[n]) / (2 * F.dec);
+      if (s0 > NS[n] && d > reach && s0 > 0) {
+        const f = (d - reach) / d;
+        out.push({ x: NX[p] + dx * f, y: NY[p] + dy * f, speed: s0, t: now + NT[p] + (d - reach) / s0, h: NH[n], turn: false, close: 15 });
+      }
+    }
+    if (NOP[n] === 17 && F) {
+      const q = NP[n],
+        left = NOP[q] === 15,
+        fc = Math.cos(F.face),
+        fs = Math.sin(F.face),
+        cx = left ? F.gx - fs * F.rs : F.gx + fs * F.rs,
+        cy = left ? F.gy + fc * F.rs : F.gy - fc * F.rs,
+        a0 = Math.atan2(NY[q] - cy, NX[q] - cx),
+        T = arrivalTangent(NX[q], NY[q], NH[q], F.gx, F.gy, F.face, F.rs, left, [0, 0, 0]),
+        sweep = T[2] * (left ? 1 : -1),
+        k = Math.floor(Math.abs(sweep) / ARC_STEP);
+      for (let i = k; i >= 1; i--) {
+        const f = (i * ARC_STEP) / Math.abs(sweep);
+        if (f >= 1) continue;
+        const a = a0 + sweep * f;
+        out.push({
+          x: cx + Math.cos(a) * F.rs,
+          y: cy + Math.sin(a) * F.rs,
+          speed: NS[n],
+          t: now + NT[q] + (NT[n] - NT[q]) * f,
+          h: a + (left ? Math.PI / 2 : -Math.PI / 2),
+          turn: false,
+          arc: true
+        });
+      }
+    }
+  }
+  return out.reverse();
+}
+
 export { MOVING, STILL, FIELD, SCELL, touch };
 
 export async function loadPathWasm(url) {
   try {
-    const env = { now: () => performance.now(), cos: Math.cos, sin: Math.sin, atan2: Math.atan2 };
+    const env = { now: () => performance.now(), cos: Math.cos, sin: Math.sin, atan2: Math.atan2, acos: Math.acos };
     let r;
     try {
       r = await WebAssembly.instantiateStreaming(fetch(url), { env });
@@ -397,16 +496,16 @@ export class PathCore {
     return null;
   }
 
-  find(u, gx, gy) {
-    const pts = this.findOnce(u, gx, gy, 0);
+  find(u, gx, gy, face) {
+    const pts = this.findOnce(u, gx, gy, 0, face);
     if (!pts || pts.length) return pts;
     const used = this.statesUsed || 0,
-      again = this.findOnce(u, gx, gy, 600);
+      again = this.findOnce(u, gx, gy, 600, face);
     this.statesUsed = used + (this.statesUsed || 0);
     return again;
   }
 
-  findOnce(u, gx, gy, loose) {
+  findOnce(u, gx, gy, loose, face) {
     if (this.note) this.note('path search');
     const free = this.slot(u, gx, gy);
     if (free) {
@@ -432,7 +531,8 @@ export class PathCore {
       );
     if (this.wasm) this.wasmScene(q);
     try {
-      if (!this.sweep(u, q, u.x, u.y, gx, gy, 0, d / v)) return null;
+      const faced = Number.isFinite(face) && d >= 40;
+      if (!faced && !this.sweep(u, q, u.x, u.y, gx, gy, 0, d / v)) return null;
       const K = this.K,
         inField = this.world.fields.some(
           f =>
@@ -469,7 +569,8 @@ export class PathCore {
           v: speed,
           cutoff,
           w: 1 / wMult,
-          until
+          until,
+          face: faced && k < 2 ? face : undefined
         });
         this.statesUsed += this.dbg.pushed || 0;
         if (pts) return pts;
@@ -702,7 +803,13 @@ export class PathCore {
       dist0,
       nearOff,
       this.stillQ(q).sd,
-      this.stillQ(q).r
+      this.stillQ(q).r,
+      o.face !== undefined ? 1 : 0,
+      o.face ?? 0,
+      slow / om,
+      K.alignK ?? 0.6,
+      K.matchFace ?? (10 * Math.PI) / 180,
+      K.pen180 ?? 1.5
     ]);
     const found = ex.search();
     const R = new Float64Array(mem.buffer, L.P, 80);
@@ -715,14 +822,20 @@ export class PathCore {
       NS = new Float64Array(buf, L.NS, cap),
       NOP = new Int32Array(buf, L.NOP, cap),
       NP = new Int32Array(buf, L.NP, cap);
-    const way = end => {
-      const out = [],
-        now = this.world.time;
-      for (let n = end; n > 0; n = NP[n])
-        out.push({ x: NX[n], y: NY[n], speed: NS[n], t: now + NT[n], h: NH[n], turn: NOP[n] === 8 || NOP[n] === 9 });
-      return out.reverse();
-    };
-    return found < 0 ? null : way(found);
+    return found < 0
+      ? null
+      : routeOf(
+          NX,
+          NY,
+          NS,
+          NT,
+          NH,
+          NOP,
+          NP,
+          found,
+          this.world.time,
+          o.face !== undefined ? { gx, gy, face: o.face, rs: slow / om, dec } : null
+        );
   }
 
   room(cap) {
@@ -771,6 +884,21 @@ export class PathCore {
       arcT = th / om;
     const slow = v * K.slowK;
     const near = K.occR * (u.radius || q.r) + r;
+    const face = o.face,
+      faced = face !== undefined,
+      rs = slow / om,
+      alignK = K.alignK ?? 0.6,
+      pen180 = K.pen180 ?? 1.5,
+      matchFace = K.matchFace ?? (10 * Math.PI) / 180,
+      TT = [0, 0, 0];
+    const est = (op, x, y, h) => {
+      if (!faced) return len(gx - x, gy - y);
+      if (op === 11 || op === 12 || op === 15 || op === 16) {
+        arrivalTangent(x, y, h, gx, gy, face, rs, op === 11 || op === 15, TT);
+        return TT[2] * rs * (TT[2] > Math.PI ? pen180 : 1) + len(x - TT[0], y - TT[1]) * alignK;
+      }
+      return alignK * len(gx - x, gy - y);
+    };
     const minX = w.min.x,
       maxX = w.max.x,
       minY = w.min.y,
@@ -846,7 +974,7 @@ export class PathCore {
     NS[0] = startS;
     NP[0] = -1;
     NG[0] = 0;
-    NF[0] = dist0 / v;
+    NF[0] = est(-1, ux, uy, u.heading) / v;
     NK[0] = -1;
     count = 1;
     heapPush(0);
@@ -872,13 +1000,14 @@ export class PathCore {
       if (pushed > maxExp || dt < 0) return;
       let cost = dt * mult;
       const from = len(NX[n] - ux, NY[n] - uy);
+      const jump = op === 4 || op === 15 || op === 16;
       if (x < minX || x > maxX || y < minY || y > maxY) {
-        if (mapped && (op === 4 || from > nearOff)) return;
+        if (mapped && (jump || from > nearOff)) return;
         cost *= offMap;
       }
       const t0 = NT[n],
         bits = this.sweep(u, q, NX[n], NY[n], x, y, t0, t0 + dt);
-      if (bits & hardMask && (op === 4 || from > near)) {
+      if (bits & hardMask && (jump || from > near)) {
         if (op === 4) dbg.op4hard++;
         return;
       }
@@ -914,7 +1043,7 @@ export class PathCore {
       NP[id] = n;
       NG[id] = g;
       NK[id] = key;
-      NF[id] = g + (wh * len(gx - x, gy - y)) / v;
+      NF[id] = g + (wh * est(op, x, y, h)) / v;
       heapPush(id);
     };
     let found = -1;
@@ -930,7 +1059,11 @@ export class PathCore {
         nop = NOP[n];
       const dGoal = len(gx - nx, gy - ny);
       if (dGoal < dbg.best) dbg.best = dGoal;
-      if (nop === 4 && Math.floor((nx - ux) / cell) === gcx && Math.floor((ny - uy) / cell) === gcy) {
+      if (
+        (faced ? n > 0 && Math.abs(wrap(nh - face)) < matchFace : nop === 4) &&
+        Math.floor((nx - ux) / cell) === gcx &&
+        Math.floor((ny - uy) / cell) === gcy
+      ) {
         found = n;
         break;
       }
@@ -955,12 +1088,32 @@ export class PathCore {
         add(n, 5, nx + ch * dd, ny + sh * dd, nh, (v - ns) / acc, v, 1);
         continue;
       }
+      if (faced && nop >= 11) {
+        if (nop === 11 || nop === 12) this.faceJump(add, n, nop + 4, nx, ny, nh, ns, slow, acc, dec, alignK, gx, gy, face, rs, TT);
+        else if (nop === 15 || nop === 16) {
+          arrivalTangent(nx, ny, nh, gx, gy, face, rs, nop === 15, TT);
+          add(n, 17, gx, gy, face, (TT[2] * rs) / slow, slow, slow / v);
+        }
+        continue;
+      }
       if (nop === 1) add(n, 4, gx, gy, Math.atan2(gy - ny, gx - nx), dGoal / v, v, 0.98);
       if (full) {
         const L = Math.min(dGoal, step);
         if (L > 1) add(n, 0, nx + ch * L, ny + sh * L, nh, L / v, v, 1);
         const phi = wrap(Math.atan2(gy - ny, gx - nx) - nh);
-        if (Math.abs(phi) <= th && nop !== 1) {
+        if (faced)
+          for (let side = 0; side < 2; side++) {
+            arrivalTangent(nx, ny, nh, gx, gy, face, rs, side === 0, TT);
+            const y = Math.atan2(TT[1] - ny, TT[0] - nx),
+              dif = Math.abs(wrap(y - nh));
+            if (dif <= th && dif >= 0.01) {
+              const dq = len(TT[0] - nx, TT[1] - ny),
+                dd = dq > step ? step : dq;
+              add(n, 11 + side, nx + Math.cos(y) * dd, ny + Math.sin(y) * dd, y, dd / v, v, alignK);
+            }
+            this.faceJump(add, n, 15 + side, nx, ny, nh, ns, slow, acc, dec, alignK, gx, gy, face, rs, TT);
+          }
+        else if (Math.abs(phi) <= th && nop !== 1) {
           const a = Math.abs(phi),
             sg = Math.sign(phi) || 1,
             fw = r * Math.sin(a),
@@ -985,13 +1138,12 @@ export class PathCore {
     dbg.pushed = pushed;
     dbg.N = N;
     dbg.D = step;
-    const way = end => {
-      const out = [],
-        now = this.world.time;
-      for (let n = end; n > 0; n = NP[n])
-        out.push({ x: NX[n], y: NY[n], speed: NS[n], t: now + NT[n], h: NH[n], turn: NOP[n] === 8 || NOP[n] === 9 });
-      return out.reverse();
-    };
-    return found < 0 ? null : way(found);
+    return found < 0 ? null : routeOf(NX, NY, NS, NT, NH, NOP, NP, found, this.world.time, faced ? { gx, gy, face, rs, dec } : null);
+  }
+
+  faceJump(add, n, op, nx, ny, nh, ns, slow, acc, dec, alignK, gx, gy, face, rs, TT) {
+    arrivalTangent(nx, ny, nh, gx, gy, face, rs, op === 15, TT);
+    const d = len(TT[0] - nx, TT[1] - ny);
+    add(n, op, TT[0], TT[1], nh, speedTime(ns, slow, d, acc, dec), slow, alignK);
   }
 }
