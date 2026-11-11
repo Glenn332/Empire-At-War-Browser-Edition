@@ -5,6 +5,7 @@ import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
 import { Pathfinder, layerMask, ASTEROID_LAYERS } from './pathfind.js';
 import { prioritySet, priorityOf, setOf } from './priorities.js';
 import { BountyBook, bountyValue } from './bounty.js';
+import { losingSideBonus } from './losingbonus.js';
 import { getModelData, buildModel, flattenModel } from '../model.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import {
@@ -287,6 +288,33 @@ function destroyables(o) {
   return n;
 }
 
+const isYes = v => /^(yes|true)$/i.test(String(v).trim());
+function incomeModDefs(t) {
+  return (t._incModDefs ??= t
+    .sub('Abilities')
+    .flatMap(a => a.all('Income_Stream_Mod_Ability'))
+    .map(a => ({
+      name: String(a.attrs.Name || '').toUpperCase(),
+      mult: a.num('Income_Multiplier', 1),
+      add: a.num('Income_Additive_Value', 0),
+      every: a.num('Interval_Multiplier', 1),
+      stack: a.val('Stacking_Category').trim(),
+      source: a.val('Target_Stream_Source').trim().toUpperCase(),
+      on: isYes(a.val('Initially_Enabled')),
+      allied: isYes(a.val('Affects_All_Allied_Sources')),
+      reverse: isYes(a.val('Reverse_Application_Logic'))
+    })));
+}
+function incomeModOn(u, m) {
+  let on = m.on;
+  if (!on)
+    for (const h of u.hardpoints)
+      if (h.alive && h.kind === 'HARD_POINT_ENABLE_SPECIAL_ABILITY' && h.def.str('Special_Ability_Name').trim().toUpperCase() === m.name) {
+        on = true;
+        break;
+      }
+  return m.reverse ? !on : on;
+}
 const blastTier = (d, r, tiers) => Math.max(0, Math.min(1, 1 - Math.floor(d * (tiers / r)) / (tiers + 1)));
 
 export class Team {
@@ -915,6 +943,10 @@ export class Unit {
         source: t,
         skirmish: /^skirmish_automatic$/i.test(inc.val('Activation_Style').trim())
       };
+    if (incomeModDefs(t).length && !this.modsIncome) {
+      this.modsIncome = true;
+      (this.world.incomeModUnits ??= []).push(this);
+    }
     const heal = t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))[0];
     if (heal && (this.isStructure || this.noAI)) {
       this.heal = {
@@ -2846,6 +2878,7 @@ export class World {
           u.hurtBy = undefined;
         }
       this.units = units.filter(u => !u.dead);
+      if (this.incomeModUnits) this.incomeModUnits = this.incomeModUnits.filter(u => !u.dead);
       this.squads = this.squads.filter(s => !s.dead);
       this.unitGridN = Infinity;
     }
@@ -2992,12 +3025,30 @@ export class World {
         const pa = ba.get(m.stack);
         ba.set(m.stack, pa === undefined ? m.add : Math.max(pa, m.add));
       }
+      let every = 0;
+      const bi = (this._incEvery ??= new Map());
+      bi.clear();
+      for (const mu of this.incomeModUnits || []) {
+        if (mu.dead || mu.player.team !== u.player.team) continue;
+        for (const m of incomeModDefs(mu.type)) {
+          if (m.source !== src || (!m.allied && mu.player !== u.player) || !incomeModOn(mu, m)) continue;
+          const pm = bm.get(m.stack);
+          bm.set(m.stack, pm === undefined ? m.mult : Math.max(pm, m.mult));
+          const pa = ba.get(m.stack);
+          ba.set(m.stack, pa === undefined ? m.add : Math.max(pa, m.add));
+          if (m.every !== 1) {
+            const pi = bi.get(m.stack);
+            bi.set(m.stack, pi === undefined ? m.every - 1 : Math.max(pi, m.every - 1));
+          }
+        }
+      }
+      for (const x of bi.values()) every += x;
       if (bm.size) {
         for (const x of bm.values()) mult *= x;
         for (const x of ba.values()) add += x;
       }
       v = v * mult + add;
-      inc.rate = v / Math.max(1e-3, inc.interval);
+      inc.rate = v / Math.max(1, (every + 1) * inc.interval);
       const step = inc.rate * dt;
       for (const pl of u.player.team.players) pl.stats.earned += this.addCredits(pl, step * (pl.adjust ? pl.adjust.credit : 1));
       inc.timer += dt;
@@ -3346,32 +3397,24 @@ export class World {
   losingTeamBonus(span) {
     const k = db.constants.num('Multiplayer_Losing_Team_Bonus_Credit_Percentage', 0);
     if (!(k > 0)) return;
-    const teams = this.teams.filter(t => t.players.some(p => p.id >= 0));
-    const used = new Set(this.players.filter(p => p.id >= 0).map(p => (p.factionName || '').toUpperCase()));
-    const idle = (this.idleFactions ??= [...db.factions.values()].filter(
-      f => /^(yes|true)$/i.test(f.str('Is_Playable')) && !used.has(f.name.toUpperCase())
-    ).length);
-    if (!((teams.length === 2 && idle === 1) || (teams.length === 3 && idle === 0))) return;
+    const playable = p => p.id >= 0 && isYes(p.faction.str('Is_Playable'));
+    const groups = this.teams.map(t => t.players.filter(playable)).filter(g => g.length);
+    if (groups.length !== 3) return;
     const rate = new Map();
     for (const u of this.units)
       if (u.income && !u.dead && !u.construction && u.player.id >= 0)
         rate.set(u.player, (rate.get(u.player) || 0) + (u.income.rate ?? u.income.value / Math.max(1e-3, u.income.interval)));
-    const tot = t => t.players.reduce((a, p) => a + (rate.get(p) || 0), 0);
-    const totals = teams.map(t => [t, tot(t)]);
-    const top = Math.max(...totals.map(x => x[1]), 0);
-    if (!(top > 0)) return;
-    const richest = totals.find(x => x[1] === top)[0];
-    for (const [t, earn] of totals) {
-      if (t === richest || !t.station || t.station.dead) continue;
-      const bonus = (top - earn) * k * span,
-        ps = t.players.filter(p => p.id >= 0 && !p.defeated);
-      for (const p of ps) {
-        const v = bonus * (ps.length === 1 ? 1 : earn > 0 ? 1 - (rate.get(p) || 0) / earn : 1 / ps.length);
-        const g = v * (p.adjust ? p.adjust.credit : 1);
-        p.credits += g;
-        p.stats.earned += g;
-      }
-    }
+    losingSideBonus(
+      groups.map(g => ({ players: g, earn: g.reduce((a, p) => a + (rate.get(p) || 0), 0), paid: !!g[0].station && !g[0].station.dead })),
+      p => rate.get(p) || 0,
+      k * span,
+      (p, g) => {
+        const v = g * (p.adjust ? p.adjust.credit : 1);
+        p.credits += v;
+        p.stats.earned += v;
+      },
+      p => p.defeated
+    );
   }
 
   updateVisibility() {

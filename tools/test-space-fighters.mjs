@@ -169,7 +169,17 @@ if (station) {
   const st = w.spawn(station, empire, 0, 0);
   assert(st.income, station.name + ' has an income stream');
   st.income.skirmish = false;
-  const rate = st.income.value / st.income.interval,
+  const dock = st.type
+    .sub('Abilities')
+    .flatMap(a => a.all('Income_Stream_Mod_Ability'))
+    .filter(
+      m =>
+        m.val('Target_Stream_Source').trim().toUpperCase() === station.name.toUpperCase() &&
+        st.hardpoints.some(h => h.alive && h.def.str('Special_Ability_Name').trim().toUpperCase() === String(m.attrs.Name).toUpperCase())
+    )
+    .reduce((a, m) => a + m.num('Income_Additive_Value', 0), 0);
+  assert(dock > 0, 'the station supply dock hardpoint adds to its income');
+  const rate = (st.income.value + dock) / st.income.interval,
     c0 = empire.credits;
   w.update(DT);
   near(empire.credits - c0, rate * DT, 1e-6, 'income is paid a little every frame');

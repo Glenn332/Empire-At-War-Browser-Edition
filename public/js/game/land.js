@@ -19,6 +19,7 @@ import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks 
 import { landAbilities, useAbility, abilityBlocked, refreshMods, tickAbilities, blastFactor } from './landabilities.js';
 import { tickClashes } from './landclash.js';
 import { BountyBook, bountyValue } from './bounty.js';
+import { losingSideBonus } from './losingbonus.js';
 import { simRandom } from './simrandom.js';
 import { diminishedHit, normalDamage } from './diminishing.js';
 import { setOf, priorityOf } from './priorities.js';
@@ -3463,7 +3464,41 @@ export class LandWorld {
     }
   }
 
+  losingTeamBonus(span) {
+    const k = db.constants.num('Multiplayer_Losing_Team_Bonus_Credit_Percentage', 0);
+    if (!(k > 0)) return;
+    const n = Math.min(this.playerSides ?? this.factions.length, this.factions.length),
+      byTeam = new Map();
+    for (let s = 0; s < n; s++) {
+      if (!/^(yes|true)$/i.test(String(db.faction(this.factions[s])?.str('Is_Playable') || '').trim())) continue;
+      const T = this.team[s] ?? s;
+      (byTeam.get(T) || byTeam.set(T, []).get(T)).push(s);
+    }
+    if (byTeam.size !== 3) return;
+    const rate = new Array(n).fill(0);
+    for (const u of this.units) {
+      if (!u.structure || u.dead || u.side < 0 || !u.income || (u.income.skirmish && this.campaign)) continue;
+      for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side])
+        if (s < n) rate[s] += (u.income.value * this.incomeMod(u, s)) / Math.max(1e-3, u.income.every);
+    }
+    losingSideBonus(
+      [...byTeam.values()].map(g => ({ players: g, earn: g.reduce((a, s) => a + rate[s], 0), paid: true })),
+      s => rate[s],
+      k * span,
+      (s, g) => {
+        const v = g * ((this.mods[s] && this.mods[s].credit) ?? 1);
+        this.credits[s] += v;
+        if (this.earned) this.earned[s] += v;
+      },
+      s => this.beaten.has(this.team[s])
+    );
+  }
+
   updateEconomy(dt) {
+    if (!this.campaign && (this.bonusTimer = (this.bonusTimer ?? 0.5) - dt) <= 0) {
+      this.bonusTimer += 0.5;
+      this.losingTeamBonus(0.5);
+    }
     for (const u of this.units) {
       if (!u.structure || u.dead || u.side < 0) continue;
       if (u.income && !(u.income.skirmish && this.campaign) && (u.income.timer += dt) >= u.income.every) {
