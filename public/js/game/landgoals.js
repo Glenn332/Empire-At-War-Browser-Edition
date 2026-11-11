@@ -316,12 +316,14 @@ export class GoalSystem {
       const running = this.active(cmdr).filter(p => p.gdef.category === cat);
       const fresh = [...S.proposed.values()]
         .filter(p => p.def.category === cat)
-        .sort((a, b) => b.d - a.d)
-        .slice(0, ext + running.length);
+        .sort((a, b) => b.d - a.d);
       if (!fresh.length) {
         for (const p of running)
           if (!this.isOn(S, p.goal, p.gdef) || (!(p.gd > 0) && p.removable !== false)) {
             dropped(p, p.gd > 0 ? 'its goal is off' : 'no longer wanted');
+            P.stop(p);
+          } else if (P.retain?.(p) === false) {
+            dropped(p, 'its units are held by another plan');
             P.stop(p);
           }
         continue;
