@@ -585,12 +585,15 @@ class Game {
         for (const p of world.players) {
           const t = p.id >= 0 && cbk.treasury[String(p.factionName).toUpperCase()];
           if (!t) continue;
+          const cap = !cbk.skirmishRules && Number.isFinite(t.cap) ? t.cap : Infinity;
           if (!t.ai) {
             p.credits = t.credits;
+            p.creditCap = cap;
             world.tacticalSessions[p.id] = { ai: false };
             continue;
           }
           p.credits = t.share;
+          p.creditCap = Math.max(0, cap - Math.max(0, t.credits - t.share));
           world.tacticalSessions[p.id] = {
             ai: true,
             reserve: Math.max(0, t.credits - t.share),

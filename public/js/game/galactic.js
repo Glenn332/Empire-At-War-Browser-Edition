@@ -76,7 +76,7 @@ import { GalacticStoryDialog } from './galacticstorydialog.js';
 import { GalacticMovies } from './galacticmovies.js';
 import { GalacticLog } from './galacticlog.js';
 import { Menus } from './menus.js';
-import { stepIncome, orbitFleets, cycleNumber } from './galacticeconomy.js';
+import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticeconomy.js';
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
 import { packContrast } from './galacticautoresolve.js';
@@ -2675,7 +2675,8 @@ export class GalacticGame {
         ai: !!c,
         share: parts.reduce((n, [, v]) => n + v, 0),
         parts,
-        adjust: c?.adjustment?.credit ?? 1
+        adjust: c?.adjustment?.credit ?? 1,
+        cap: creditCap(this.galaxy, side)
       };
     }
     return out;

@@ -329,3 +329,143 @@ export function leadTurning(out, x, y, z, tx, ty, tz, vx, vy, vz, turn, speed) {
   at(hi);
   return out;
 }
+
+function straightLead(out, sx, sy, sz, T, ox, oy, oz, speed) {
+  const vx = (T.x - T.l1x) * 30,
+    vy = (T.y - T.l1y) * 30,
+    vz = (T.z - T.l1z) * 30;
+  const dx = T.x + ox - sx,
+    dy = T.y + oy - sy,
+    dz = T.z + oz - sz;
+  const a = vx * vx + vy * vy + vz * vz - speed * speed,
+    b = 2 * (vx * dx + vy * dy + vz * dz),
+    c = dx * dx + dy * dy + dz * dz;
+  const D = b * b - 4 * a * c;
+  if (D < 0) return null;
+  let t;
+  if (a === 0) {
+    if (b === 0) return null;
+    t = -c / b;
+    if (t < 0) return null;
+  } else {
+    const r = Math.sqrt(D),
+      t1 = (r - b) / (2 * a),
+      t2 = (-b - r) / (2 * a);
+    if (t1 > 0) t = t2 > 0 ? Math.min(t1, t2) : t1;
+    else if (t2 > 0) t = t2;
+    else return null;
+  }
+  out.x = T.x + vx * t + ox;
+  out.y = T.y + vy * t + oy;
+  out.z = T.z + vz * t + oz;
+  return out;
+}
+
+let cR = 0,
+  cW = 0,
+  cL0 = 0,
+  cL1 = 0,
+  cL2 = 0,
+  cS = 0;
+function circleMiss(t) {
+  const a = cW * t,
+    x = cR * Math.cos(a) - cL0,
+    y = cR * Math.sin(a) - cL1;
+  return Math.sqrt(x * x + y * y + cL2 * cL2) - cS * t;
+}
+
+export function leadCircle(out, sx, sy, sz, T, ox, oy, oz, speed) {
+  const cx = T.x,
+    cy = T.y,
+    cz = T.z,
+    ax = T.l1x,
+    ay = T.l1y,
+    az = T.l1z,
+    bx = T.l2x,
+    by = T.l2y,
+    bz = T.l2z;
+  const ux = ax - bx,
+    uy = ay - by,
+    uz = az - bz,
+    vx = cx - bx,
+    vy = cy - by,
+    vz = cz - bz;
+  const lu = Math.hypot(ux, uy, uz),
+    lv = Math.hypot(vx, vy, vz);
+  if (lu < 0.001 && lv < 0.001) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  const dot = lu > 0 && lv > 0 ? (ux * vx + uy * vy + uz * vz) / (lu * lv) : 0;
+  if (Math.abs(dot - 1) < 0.001) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  const wx = uy * vz - uz * vy,
+    wy = uz * vx - ux * vz,
+    wz = ux * vy - uy * vx,
+    w2 = wx * wx + wy * wy + wz * wz;
+  if (!(w2 > 0)) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  const u2 = lu * lu,
+    v2 = lv * lv,
+    px = u2 * vx - v2 * ux,
+    py = u2 * vy - v2 * uy,
+    pz = u2 * vz - v2 * uz,
+    k = 1 / (2 * w2);
+  const Ox = bx + (py * wz - pz * wy) * k,
+    Oy = by + (pz * wx - px * wz) * k,
+    Oz = bz + (px * wy - py * wx) * k;
+  let rx = cx - Ox,
+    ry = cy - Oy,
+    rz = cz - Oz;
+  const qx = bx - Ox,
+    qy = by - Oy,
+    qz = bz - Oz;
+  let nx = ry * qz - rz * qy,
+    ny = rz * qx - rx * qz,
+    nz = rx * qy - ry * qx;
+  let tx = ry * nz - rz * ny,
+    ty = rz * nx - rx * nz,
+    tz = rx * ny - ry * nx;
+  const lr = Math.hypot(rx, ry, rz),
+    lt = Math.hypot(tx, ty, tz),
+    ln = Math.hypot(nx, ny, nz);
+  if (!(lr > 0) || !(lt > 0) || !(ln > 0)) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  rx /= lr;
+  ry /= lr;
+  rz /= lr;
+  tx /= lt;
+  ty /= lt;
+  tz /= lt;
+  nx /= ln;
+  ny /= ln;
+  nz /= ln;
+  const R = Math.hypot(qx, qy, qz);
+  if (R > 1000) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  const ex = sx - Ox,
+    ey = sy - Oy,
+    ez = sz - Oz;
+  cR = R;
+  cW = (Math.hypot(cx - ax, cy - ay, cz - az) * 30) / R;
+  cL0 = ex * rx + ey * ry + ez * rz;
+  cL1 = ex * tx + ey * ty + ez * tz;
+  cL2 = ex * nx + ey * ny + ez * nz;
+  cS = speed;
+  let x0 = 1000,
+    x1 = 0.1,
+    f0 = circleMiss(x0),
+    it = 0;
+  for (;;) {
+    if (it >= 15) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+    it++;
+    const f1 = circleMiss(x1);
+    if (f1 - f0 === 0) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+    const xn = x1 - ((x1 - x0) * f1) / (f1 - f0);
+    x0 = x1;
+    f0 = f1;
+    x1 = xn;
+    if (!(Math.abs(xn - x0) >= 0.001)) break;
+  }
+  if (it >= 15) return straightLead(out, sx, sy, sz, T, ox, oy, oz, speed);
+  const th = cW * x1,
+    sn = Math.sin(th) * R,
+    cs = Math.cos(th) * R;
+  out.x = Ox + tx * sn + rx * cs + ox;
+  out.y = Oy + ty * sn + ry * cs + oy;
+  out.z = Oz + tz * sn + rz * cs + oz;
+  return out;
+}

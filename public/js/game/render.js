@@ -1149,13 +1149,24 @@ export class Renderer {
     if (a) this.idlers.push(new AnimState(inst, a, { loop: true, time: Math.random() * a.duration }));
   }
 
-  deathClone(u) {
-    const tuple = u.type.tuples('Death_Clone')[0];
-    const type = tuple && db.type(tuple[1]);
-    const file = type && type.str('Space_Model_Name');
-    const data = file && getModelData(file),
-      anim = file && getALA(animName(file, 'DIE'));
-    if (!data || !anim || !u.obj.visible || this.clones.length > 24) return;
+  deathClone(u, name, spin = false, vx = 0, vy = 0, vz = 0, boom = '', size = 0) {
+    const type = (name && db.type(name)) || u.type,
+      file = type.str('Space_Model_Name'),
+      data = file && getModelData(file),
+      anim = file && getALA(animName(file, 'DIE')),
+      end = type.list('Death_Explosions_End')[0] || '',
+      speed = Math.hypot(vx, vy, vz),
+      T = type.num('Spin_Away_On_Death_Time', 0),
+      rolled = spin;
+    spin = spin && speed > 0 && T > 0;
+    const per = type.num('Death_Persistence_Duration', 0),
+      limit = spin ? T : per < 0 ? Infinity : (anim ? anim.duration : 0) + per + (end ? 0 : type.num('Death_Fade_Time', 0));
+    const kept = spin || ((!!anim || !type.bool('Remove_Upon_Death')) && limit > 0);
+    if (!kept || !data || !u.obj.visible || this.clones.length >= 24) {
+      if (rolled) this.explosion(u.x, u.y, u.z, size, false, boom);
+      if (end && u.obj.visible) this.explosion(u.x, u.y, u.z, size, false, this.particleOf(end));
+      return;
+    }
     const inst = buildModel(data, { teamColor: u.player && u.player.id >= 0 ? u.player.color : null });
     const holder = new THREE.Group();
     u.syncObj();
@@ -1166,8 +1177,100 @@ export class Renderer {
     for (const [name, mesh] of inst.meshByName) if (/BLAST/.test(name)) mesh.visible = true;
     this.scene.add(holder);
     const proxies = inst.proxies.filter(p => !/engine/i.test(p.name)).map(p => ({ name: p.name, bone: p.bone, on: false }));
-    const state = new AnimState(inst, anim, {});
-    this.clones.push({ holder, inst, state, proxies, age: 0, limit: Math.min(anim.duration, 40) });
+    const state = anim ? new AnimState(inst, anim, {}) : null;
+    let path = null;
+    if (spin) {
+      const x0 = u.x,
+        y0 = u.y,
+        z0 = u.z,
+        ex = x0 + vx * T,
+        ey = y0 + vy * T,
+        ez = z0 + vz * T,
+        dx = ex - x0,
+        dy = ey - y0,
+        dz = ez - z0,
+        mx = (x0 + ex) / 2,
+        my = (y0 + ey) / 2,
+        mz = (z0 + ez) / 2;
+      let ax = (my + 1) * dz - (mz + 1) * dy,
+        ay = (mz + 1) * dx - (mx + 1) * dz,
+        az = (mx + 1) * dy - (my + 1) * dx;
+      let bx = ay * dz - az * dy,
+        by = az * dx - ax * dz,
+        bz = ax * dy - ay * dx;
+      const la = Math.hypot(ax, ay, az) || 1,
+        lb = Math.hypot(bx, by, bz) || 1,
+        L = Math.hypot(dx, dy, dz),
+        th = Math.random() * Math.PI * 2,
+        s = Math.sin(th),
+        k = Math.cos(th),
+        r = L * 0.3;
+      ax /= la;
+      ay /= la;
+      az /= la;
+      bx /= lb;
+      by /= lb;
+      bz /= lb;
+      path = {
+        p: [x0, y0, z0, mx, my, mz, ex + (s * bx + k * ax) * r, ey + (s * by + k * ay) * r, ez + Math.abs(s * bz + k * az) * r, ex, ey, ez],
+        speed,
+        done: 0,
+        length: speed * T,
+        heading: u.heading || 0,
+        pitch: u.pitch || 0,
+        roll: u.roll || 0,
+        rate: type.num('Max_Rate_Of_Turn', 2.3) * 30 * (Math.PI / 180) * db.constants.num('Object_Max_Speed_Multiplier_Space', 1),
+        boom,
+        size
+      };
+    }
+    this.clones.push({ holder, inst, state, proxies, age: 0, limit, path, end: end ? this.particleOf(end) : '', size: size || 40 });
+  }
+
+  particleOf(name) {
+    const t = db.type(name);
+    return t ? t.str('Space_Model_Name') || t.str('Land_Model_Name') : '';
+  }
+
+  spinStep(c, dt) {
+    const P = c.path,
+      p = P.p;
+    P.done += P.speed * dt;
+    if (P.done >= P.length) return false;
+    const f = (P.done / P.length) * 3,
+      i = Math.min(2, Math.floor(f)),
+      t = f - i,
+      at = (j, o) => p[Math.max(0, Math.min(3, j)) * 3 + o],
+      cr = o => {
+        const a = at(i - 1, o),
+          b = at(i, o),
+          c2 = at(i + 1, o),
+          d = at(i + 2, o);
+        return 0.5 * (2 * b + (c2 - a) * t + (2 * a - 5 * b + 4 * c2 - d) * t * t + (3 * b - a - 3 * c2 + d) * t * t * t);
+      };
+    const x = cr(0),
+      y = cr(1),
+      z = cr(2),
+      h = c.holder.position,
+      dx = x - h.x,
+      dy = y - h.y,
+      dz = z - h.z,
+      step = P.rate * dt,
+      turn = (want, cur) => {
+        const e = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+        return cur + Math.max(-step, Math.min(step, e));
+      };
+    if (dx || dy) P.heading = turn(Math.atan2(dy, dx), P.heading);
+    P.pitch = turn(Math.atan2(dz, Math.hypot(dx, dy)), P.pitch);
+    P.roll += ((20 * Math.PI) / 180) * 30 * dt;
+    h.set(x, y, z);
+    _sq.setFromAxisAngle(_sZ, P.heading + Math.PI / 2);
+    _sr.setFromAxisAngle(_sX, -P.pitch);
+    _sq.multiply(_sr);
+    _sr.setFromAxisAngle(_sY, P.roll);
+    _sq.multiply(_sr);
+    c.holder.quaternion.copy(_sq);
+    return true;
   }
 
   makeGhost(models) {
@@ -1457,7 +1560,8 @@ export class Renderer {
     let n = 0;
     for (const c of this.clones) {
       c.age += dt;
-      const playing = c.state.step(dt);
+      if (c.state) c.state.step(dt);
+      const flying = !c.path || this.spinStep(c, dt);
       for (const p of c.proxies) {
         let on = true;
         for (let b = p.bone; b && b !== c.inst.root; b = b.parent)
@@ -1493,9 +1597,10 @@ export class Renderer {
         }
         p.on = on;
       }
-      if (!playing || c.age > c.limit) {
-        c.inst.box.getCenter(_cv).applyMatrix4(c.holder.matrixWorld);
-        this.explosion(_cv.x, _cv.y, _cv.z, Math.min(300, c.inst.radius * 0.6 * c.holder.scale.x), false);
+      if (!flying || c.age > c.limit) {
+        const h = c.holder.position;
+        if (c.path) this.explosion(h.x, h.y, h.z, c.path.size, false, c.path.boom);
+        if (c.end) this.explosion(h.x, h.y, h.z, c.size, false, c.end);
         for (const p of c.proxies) if (p.sys) p.sys.release();
         this.scene.remove(c.holder);
         continue;
@@ -1928,5 +2033,9 @@ const _frustum = new THREE.Frustum(),
   _pm = new THREE.Matrix4(),
   _sphere = new THREE.Sphere();
 const _tq = new THREE.Quaternion(),
-  _up = new THREE.Vector3(0, 0, 1),
-  _cv = new THREE.Vector3();
+  _up = new THREE.Vector3(0, 0, 1);
+const _sq = new THREE.Quaternion(),
+  _sr = new THREE.Quaternion(),
+  _sX = new THREE.Vector3(1, 0, 0),
+  _sY = new THREE.Vector3(0, 1, 0),
+  _sZ = new THREE.Vector3(0, 0, 1);

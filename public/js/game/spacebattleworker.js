@@ -101,6 +101,7 @@ async function setUp(m, events) {
     );
     if (p.adjust) pl.adjust = p.adjust;
     if (p.campaignTech !== undefined) pl.campaignTech = p.campaignTech;
+    if (Number.isFinite(p.creditCap)) pl.creditCap = p.creditCap;
     if (p.autofire !== undefined) pl.autofire = p.autofire;
     if (p.spawn) pl.spawn = p.spawn;
     if (p.upgrades) for (const u of p.upgrades) pl.upgrades.add(u);

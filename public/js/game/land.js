@@ -4992,8 +4992,9 @@ export class LandWorld {
       value,
       (x, y) => this.ally(x, y)
     )) {
-      this.credits[s] += n * this.mods[s].credit;
+      this.credits[s] = Math.max(0, Math.min(this.creditCap?.[s] ?? Infinity, this.credits[s] + n * this.mods[s].credit));
       this.collected[s] += n;
+      if (s === this.viewer && this.onBounty) this.onBounty(u, n);
     }
   }
 

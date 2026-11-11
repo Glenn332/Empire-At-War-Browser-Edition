@@ -673,6 +673,8 @@ export class LandGame {
       world.tacticalSessions = this.factions.map((f, side) => {
         const t = treasury[String(f).toUpperCase()];
         if (!t) return null;
+        const cap = !setup.campaign.skirmishRules && Number.isFinite(t.cap) ? t.cap : Infinity;
+        (world.creditCap ||= [])[side] = t.ai ? Math.max(0, cap - Math.max(0, t.credits - t.share)) : cap;
         if (!t.ai) {
           world.credits[side] = t.credits;
           return { ai: false };
@@ -974,6 +976,7 @@ export class LandGame {
         this.audio.play(p.str('Projectile_SFXEvent_Detonate') || p.str('Projectile_SFXEvent_Detonate_Reduced_By_Armor'), s.ax, s.ay);
     };
     this.losses = new Map();
+    this.floats = [];
     world.onDeath = u => {
       if (this.invasionBook) invasionStructureDeath(world, this.invasionBook, u);
       this.reportView?.landDeath(u);
@@ -991,6 +994,9 @@ export class LandGame {
       const f = db.faction(this.factions[this.me]);
       if (u.structure && world.ally(u.side, this.me)) this.audio.play(u.type.str('SFXEvent_Unit_Lost'));
       if (!world.fog || world.ally(u.side, this.me) || u.seen !== false) this.ui.radar?.event('Default_Unit_Die', u.x, u.y);
+    };
+    world.onBounty = (u, n) => {
+      if (this.floats.length < 64) this.floats.push({ x: u.x, y: u.y, z: u.z + (u.aimZ || 6) * 2, text: '+' + n, at: performance.now() });
     };
     world.onReselect = (from, to) => {
       const ui = this.ui;
@@ -4507,6 +4513,25 @@ export class LandGame {
         this.pings[n++] = pg;
       }
       this.pings.length = n;
+      g.globalAlpha = 1;
+    }
+    if (this.floats && this.floats.length) {
+      const now = performance.now();
+      let n = 0;
+      g.font = 'bold 13px "Segoe UI", sans-serif';
+      g.textAlign = 'center';
+      g.fillStyle = '#ffe27a';
+      for (const t of this.floats) {
+        const age = (now - t.at) / 1000;
+        if (age > 1.6) continue;
+        const s2 = at(t.x, t.y, t.z);
+        if (s2) {
+          g.globalAlpha = 1 - age / 1.6;
+          g.fillText(t.text, s2[0], s2[1] - 20 - age * 22);
+        }
+        this.floats[n++] = t;
+      }
+      this.floats.length = n;
       g.globalAlpha = 1;
     }
     const dn = this.down,

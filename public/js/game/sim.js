@@ -31,7 +31,7 @@ import {
   pathAt,
   sweep,
   sweepBox,
-  leadTurning
+  leadCircle
 } from './projflight.js';
 import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
 import { leadPoint } from './orders.js';
@@ -220,11 +220,13 @@ const NEBULA_KEEPS = new Set([
 const isFieldType = t => t.bool('Is_Asteroid_Field') || t.bool('Is_Nebula') || t.bool('Is_Ion_Storm');
 const LOOK_LAYERS = new Set(['CAPITAL', 'FRIGATE', 'CORVETTE', 'STATICOBJECT', 'SUPERCAPITAL']);
 const inLookTree = t =>
-  (t._look ??= t
-    .str('Space_Layer')
-    .toUpperCase()
-    .split(/[|,\s]+/)
-    .some(k => LOOK_LAYERS.has(k)));
+  (t._look ??=
+    !isFieldType(t) &&
+    t
+      .str('Space_Layer')
+      .toUpperCase()
+      .split(/[|,\s]+/)
+      .some(k => LOOK_LAYERS.has(k)));
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
 const shadowModels = new WeakMap();
@@ -283,6 +285,7 @@ export class Player {
     this.stats = { built: 0, lost: 0, killed: 0, earned: 0 };
     this.bounty = 0;
     this.campaignTech = undefined;
+    this.creditCap = Infinity;
     this.basePos = { x: 0, y: 0 };
     this.reinforcements = [];
     this.adjust = null;
@@ -526,8 +529,12 @@ export class Unit {
     this.hitF = undefined;
     this.hitL = undefined;
     this.hitReach = undefined;
-    this.turnW = undefined;
-    this.lastH = undefined;
+    this.l1x = undefined;
+    this.l1y = undefined;
+    this.l1z = undefined;
+    this.l2x = undefined;
+    this.l2y = undefined;
+    this.l2z = undefined;
     this.coll = undefined;
     this.lookBox = undefined;
     this.extBox = undefined;
@@ -1271,6 +1278,13 @@ const velocityOf = (u, out) => {
   out.y = Math.sin(h) * f;
   out.z = u.isFighter ? Math.sin(p) * s : 0;
   return out;
+};
+const leadOf = (out, x, y, z, T, ax, ay, az, speed) => {
+  if (T.l1x === undefined) {
+    const v = velocityOf(T, _p5);
+    return intercept(out, x, y, z, ax, ay, az, v.x, v.y, v.z, speed);
+  }
+  return leadCircle(out, x, y, z, T, ax - T.x, ay - T.y, az - (T.z || 0), speed);
 };
 
 export class Squad {
@@ -2297,6 +2311,27 @@ export class World {
     }
   }
 
+  cloneType(t) {
+    let l = t._clones;
+    if (!l) {
+      const all = t.list('Death_Clone'),
+        of = k => {
+          const out = [];
+          for (let i = 0; i + 1 < all.length; i += 2) if (all[i].toUpperCase() === k && db.type(all[i + 1])) out.push(db.type(all[i + 1]));
+          return out;
+        };
+      l = t._clones = of('DAMAGE_NORMAL');
+    }
+    if (!l.length) return t;
+    return l.length === 1 ? l[0] : l[Math.min(l.length - 1, Math.floor(simRandom() * l.length))];
+  }
+
+  addCredits(p, v) {
+    const was = p.credits;
+    p.credits = Math.max(0, Math.min(p.creditCap, was + v));
+    return p.credits - was;
+  }
+
   collectBounty(entity, at, killer) {
     const b = this.bounty;
     if (!b.enabled || !killer || killer.id < 0 || entity.isPad || entity.underConstruction) return;
@@ -2311,9 +2346,9 @@ export class World {
       (x, y) => x.team === y.team
     )) {
       const got = n * (p.adjust ? p.adjust.credit : 1);
-      p.credits += got;
+      this.addCredits(p, got);
       p.bounty += n;
-      if (p.human) this.fx.floatText(at.x, at.y, at.z + at.height, '+' + n);
+      if (p === this.viewer) this.fx.floatText(at.x, at.y, at.z + at.height, '+' + n);
     }
   }
 
@@ -2324,16 +2359,36 @@ export class World {
       return;
     }
     this.removeUnit(u);
-    const big = u.visualRadius;
+    const big = u.visualRadius,
+      size = clamp(big * 1.1, 14, 600),
+      ct = this.cloneType(u.type),
+      spin = ct.bool('Spin_Away_On_Death') && simRandom() <= ct.num('Spin_Away_On_Death_Chance', 0),
+      boom = particleFile(u.type.list('Death_Explosions')[0]);
     if (this.viewerSees(u)) {
-      this.fx.explosion(u.x, u.y, u.z, clamp(big * 1.1, 14, 600), big > 120, particleFile(u.type.list('Death_Explosions')[0]));
-      this.audio.play(
-        u.type.str('Death_SFXEvent_Start_Die') || (big > 120 ? 'Unit_Star_Destroyer_Death_SFX' : 'Unit_Fighter_Death_SFX'),
-        u.x,
-        u.y
-      );
+      if (spin) {
+        this.fx.explosion(u.x, u.y, u.z, size, false, particleFile(ct.list('Spin_Away_On_Death_Explosion')[0]));
+        const sfx = ct.str('Spin_Away_On_Death_SFXEvent_Start_Die');
+        if (sfx) this.audio.play(sfx, u.x, u.y);
+      } else {
+        this.fx.explosion(u.x, u.y, u.z, size, big > 120, boom);
+        this.audio.play(
+          u.type.str('Death_SFXEvent_Start_Die') || (big > 120 ? 'Unit_Star_Destroyer_Death_SFX' : 'Unit_Fighter_Death_SFX'),
+          u.x,
+          u.y
+        );
+      }
     }
-    this.fx.deathClone(u);
+    const seen = u.l1x !== undefined;
+    this.fx.deathClone(
+      u,
+      ct.name,
+      spin,
+      seen ? (u.x - u.l1x) * LOGIC_FPS : 0,
+      seen ? (u.y - u.l1y) * LOGIC_FPS : 0,
+      seen ? (u.z - u.l1z) * LOGIC_FPS : 0,
+      spin ? boom : '',
+      size
+    );
     if (u.player && u.player.id >= 0 && !u.underConstruction) {
       u.player.stats.lost++;
       if (u.player.human && !u.isFighter && this.time - (this.lastLossVoice ?? -99) > 8) {
@@ -2355,7 +2410,6 @@ export class World {
         s.dead = true;
         this.dogRemove(s);
         this.onEvent('died', { entity: s });
-        this.collectBounty(s, u, attacker);
       }
     } else {
       this.onEvent('died', { entity: u });
@@ -2463,6 +2517,17 @@ export class World {
     for (; i < units.length && i < upTo; i++) {
       const u = units[i];
       if (u.dead) continue;
+      if (u.l1x === undefined) {
+        u.l1x = u.x;
+        u.l1y = u.y;
+        u.l1z = u.z;
+      }
+      u.l2x = u.l1x;
+      u.l2y = u.l1y;
+      u.l2z = u.l1z;
+      u.l1x = u.x;
+      u.l1y = u.y;
+      u.l1z = u.z;
       if (u.hyper) {
         this.updateHyper(u, dt);
         continue;
@@ -2623,40 +2688,39 @@ export class World {
     }
     if (u.heal && u.player.id >= 0 && !u.construction) this.updateHeal(u, dt);
     if (u.income && u.player.id >= 0 && !(u.income.skirmish && this.campaign)) {
-      u.income.timer += dt;
-      if (u.income.timer >= u.income.interval) {
-        u.income.timer -= u.income.interval;
-        let v = u.income.value,
-          add = 0,
-          mult = 1;
-        const src = u.type.name.toUpperCase();
-        const best = new Map();
-        for (const m of u.player.incomeMods) {
-          if (m.source && !m.source.includes(src)) continue;
-          if (!m.stack) {
-            mult *= m.mult;
-            add += m.add;
-            continue;
-          }
-          const b = best.get(m.stack);
-          if (!b) best.set(m.stack, { mult: m.mult, add: m.add });
-          else {
-            b.mult = Math.max(b.mult, m.mult);
-            b.add = Math.max(b.add, m.add);
-          }
+      const inc = u.income;
+      let v = inc.value,
+        add = 0,
+        mult = 1;
+      const src = (u.type._src ??= u.type.name.toUpperCase()),
+        bm = (this._incMult ??= new Map()),
+        ba = (this._incAdd ??= new Map());
+      bm.clear();
+      ba.clear();
+      for (const m of u.player.incomeMods) {
+        if (m.source && !m.source.includes(src)) continue;
+        if (!m.stack) {
+          mult *= m.mult;
+          add += m.add;
+          continue;
         }
-        for (const b of best.values()) {
-          mult *= b.mult;
-          add += b.add;
-        }
-        v = v * mult + add;
-        u.income.rate = v / Math.max(1e-3, u.income.interval);
-        for (const pl of u.player.team.players) {
-          const g = v * (pl.adjust ? pl.adjust.credit : 1);
-          pl.credits += g;
-          pl.stats.earned += g;
-        }
-        if (u.player.team.players.some(pl => pl.human)) this.fx.floatText(u.x, u.y, u.z + u.height, '+' + Math.round(v));
+        const pm = bm.get(m.stack);
+        bm.set(m.stack, pm === undefined ? m.mult : Math.max(pm, m.mult));
+        const pa = ba.get(m.stack);
+        ba.set(m.stack, pa === undefined ? m.add : Math.max(pa, m.add));
+      }
+      if (bm.size) {
+        for (const x of bm.values()) mult *= x;
+        for (const x of ba.values()) add += x;
+      }
+      v = v * mult + add;
+      inc.rate = v / Math.max(1e-3, inc.interval);
+      const step = inc.rate * dt;
+      for (const pl of u.player.team.players) pl.stats.earned += this.addCredits(pl, step * (pl.adjust ? pl.adjust.credit : 1));
+      inc.timer += dt;
+      if (inc.timer >= inc.interval) {
+        inc.timer -= inc.interval;
+        if (this.viewer && this.viewer.team === u.player.team) this.fx.floatText(u.x, u.y, u.z + u.height, '+' + Math.round(v));
       }
     }
     if (u.capture) this.updateCapture(u, dt);
@@ -3853,8 +3917,13 @@ export class World {
     if (!targetHp && target.hpDriven) targetHp = this.pickHardpoint(target, x, y, shooter);
     const cat = categoryOf(proj),
       tp = targetHp ? targetHp.worldPos(_p2) : { x: target.x, y: target.y, z: target.z };
-    const tv = velocityOf(target, _p5),
-      lead = leadTurning(_p3, x, y, z, tp.x, tp.y, tp.z, tv.x, tv.y, tv.z, target.turnW || 0, speed);
+    let lead = leadOf(_p3, x, y, z, target, tp.x, tp.y, tp.z, speed);
+    if (!lead) {
+      lead = _p3;
+      lead.x = tp.x;
+      lead.y = tp.y;
+      lead.z = tp.z;
+    }
     const dist = Math.hypot(lead.x - x, lead.y - y, lead.z - z);
     const own = Array.isArray(inaccuracy),
       cats = target.type?.categories?.(),
@@ -4118,12 +4187,6 @@ export class World {
 
   updateProjectiles(dt) {
     const ps = this.projectiles;
-    if (dt > 0)
-      for (const u of this.units) {
-        const h = u.heading || 0;
-        u.turnW = u.lastH === undefined ? 0 : Math.atan2(Math.sin(h - u.lastH), Math.cos(h - u.lastH)) / dt;
-        u.lastH = h;
-      }
     if (ps.length) this.makeHitGrid();
     const deflect = (this._deflect ||= []);
     deflect.length = 0;
@@ -4583,6 +4646,8 @@ export class World {
         key,
         gx,
         gy,
+        sx: lead.x,
+        sy: lead.y,
         dx: d ? dx / d : Math.cos(lead.heading),
         dy: d ? dy / d : Math.sin(lead.heading),
         done: d < 40
@@ -4590,6 +4655,28 @@ export class World {
     }
     if (!r.done && r.dx * (lead.x - gx) + r.dy * (lead.y - gy) >= -0.001) r.done = true;
     return !r.done;
+  }
+
+  sideError(u, r) {
+    const lo = (this.sideMin ??= db.constants.num('FormationMinimumSideError', 0.1)),
+      e = -(r.dx * (u.y - r.sy) - r.dy * (u.x - r.sx));
+    if (!(Math.abs(e) > lo)) return 0;
+    return (e - Math.sign(e) * lo) / (this.sideMax ??= db.constants.num('FormationMaximumSideError', 30));
+  }
+
+  sideCruise(u, lat, v, top) {
+    const t = u.type,
+      od = (t._dec ??= t.num('OverrideDeceleration', 0)),
+      tm = t.num('Max_Speed', 0),
+      dec = tm ? (top / LOGIC_FPS / tm) * od : od,
+      x = Math.sqrt(dec * 2 * Math.abs(lat * (this.sideMax ??= db.constants.num('FormationMaximumSideError', 30)))) * LOGIC_FPS,
+      cap = Math.min(x + v, top),
+      s = Math.sqrt(lat * lat + 1),
+      k = 1 / s,
+      l = k * lat;
+    v /= k;
+    if (l > 0 && cap / l <= v) v = cap / l;
+    return clamp(v, 0, top);
   }
 
   matchSpeed(u, s, lead, v, lo, hi, F) {
@@ -5119,7 +5206,7 @@ export class World {
     u.roll ||= 0;
     tx = clamp(tx, this.min.x, this.max.x);
     ty = clamp(ty, this.min.y, this.max.y);
-    const err = wrapAngle(Math.atan2(ty - u.y, tx - u.x) - u.heading);
+    let err = wrapAngle(Math.atan2(ty - u.y, tx - u.x) - u.heading);
     if (st.loop && Math.abs(err) < LOOP_KEEP) st.loop = undefined;
     if (!st.loop && over && F.lift > 0 && Math.abs(err) > LOOP_OVER) {
       st.loop = Math.atan2(tz - u.z, Math.hypot(tx - u.x, ty - u.y)) - (u.pitch || 0) > 0 ? 1 : -1;
@@ -5128,13 +5215,14 @@ export class World {
       u.pitch = (u.pitch || 0) + st.loop * F.lift * dt * k;
       u.roll += clamp(-u.roll, -F.roll * dt, F.roll * dt);
       if (Math.abs(u.pitch) >= Math.PI / 2) {
-        u.pitch = st.loop * Math.PI - u.pitch;
+        u.pitch = (Math.PI - Math.abs(u.pitch) - F.lift / LOGIC_FPS) * Math.sign(u.pitch);
         u.heading = wrapAngle(u.heading + Math.PI);
         u.roll = wrapAngle(u.roll + Math.PI);
         st.loop = undefined;
         u.flip = true;
       }
     } else {
+      if (Math.abs((u.turnRate * wrapAngle(u.roll)) / F.roll + err) > Math.PI) err -= Math.sign(err) * 2 * Math.PI;
       const bank = -clamp(err, -F.bank, F.bank);
       u.roll += clamp(bank - u.roll, -F.roll * dt, F.roll * dt);
       if (!(u.roll * bank < 0) || Math.abs(u.roll) < 0.02)
@@ -5225,7 +5313,7 @@ export class World {
     const lead = s ? s.fighters[0] : u,
       mode = s ? s.mode || 'idle' : 'idle',
       own = u.bonus.speed * u.mods.speed * this.pursuit(u);
-    const top = (s ? s.speed : u.maxSpeed) * own,
+    const top = (s && mode === 'move' ? s.speed : u.maxSpeed) * own,
       low = u.minSpeed * own;
     const tgt = mode === 'combat' && s.target && !s.target.dead ? s.target : null;
     let gx = 0,
@@ -5268,9 +5356,12 @@ export class World {
     } else if (mode === 'move' && !form) {
       want = top * (s.order.pace ?? 1);
       if (s.routed && s.route) {
+        const r = s.route,
+          lat = this.sideError(u, r);
+        if (lat) want = this.sideCruise(u, lat, want, top);
         const R = Math.max(want, u.speed) / Math.max(0.1, u.turnRate);
-        gx = u.x + s.route.dx * R;
-        gy = u.y + s.route.dy * R;
+        gx = u.x + r.dx * R - lat * r.dy;
+        gy = u.y + r.dy * R + lat * r.dx;
       } else {
         gx = s.goal.x;
         gy = s.goal.y;
@@ -5290,6 +5381,16 @@ export class World {
     if (mode === 'idle' && s && !tgt) {
       const c = s.about || lead,
         m = Math.max(1, Math.hypot(lead.x - c.x, lead.y - c.y));
+      if (lead !== u) {
+        form = false;
+        const ch = Math.cos(lead.heading),
+          sh = Math.sin(lead.heading),
+          ox = u.slot.x - lead.slot.x,
+          oy = u.slot.y - lead.slot.y,
+          ahead = ((lead.speed * Math.cos(lead.pitch || 0)) / LOGIC_FPS) * 40;
+        gx = lead.x + ch * ahead + 0.75 * (ch * ox - sh * oy);
+        gy = lead.y + sh * ahead + 0.75 * (sh * ox + ch * oy);
+      }
       if (m < 90) {
         form = false;
         let dx = u.x - c.x,
@@ -5302,17 +5403,10 @@ export class World {
             uy = dy / nd;
           gx = c.x + 60 * (Math.cos(a) * ux - Math.sin(a) * uy);
           gy = c.y + 60 * (Math.sin(a) * ux + Math.cos(a) * uy);
-        } else {
-          const ch = Math.cos(lead.heading),
-            sh = Math.sin(lead.heading),
-            ox = u.slot.x - lead.slot.x,
-            oy = u.slot.y - lead.slot.y,
-            ahead = (lead.speed / LOGIC_FPS) * 40;
-          gx = lead.x + ch * ahead + 0.75 * (ch * ox - sh * oy);
-          gy = lead.y + sh * ahead + 0.75 * (sh * ox + ch * oy);
         }
         want = (nd / m) * 0.5 * LOGIC_FPS;
-      } else if (lead === u) {
+      } else if (lead !== u) want = low > 0 ? low : top;
+      else {
         gx = c.x;
         gy = c.y;
         want = low > 0 ? low : top;
@@ -5421,10 +5515,9 @@ export class World {
     if ((w.forward ??= u.type.bool('Fires_Forward'))) return true;
     const speed = w.proj.num('Max_Speed', 20) * LOGIC_FPS;
     if (!(speed > 0)) return false;
-    const tv = velocityOf(o, _p5),
-      L = leadTurning(_p3, u.x, u.y, u.z, o.x, o.y, o.z, tv.x, tv.y, tv.z, o.turnW || 0, speed),
+    const L = leadOf(_p3, u.x, u.y, u.z, o, o.x, o.y, o.z, speed),
       cone = this.fireConeOf(u);
-    if (!L.x && !L.y && !L.z) return false;
+    if (!L || (!L.x && !L.y && !L.z)) return false;
     return this.inCone(u, L.x, L.y, L.z, cone.yaw, cone.pitch, Infinity);
   }
 

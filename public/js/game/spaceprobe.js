@@ -79,6 +79,7 @@ export function battleSnapshot(game, save = null, refs = null) {
         name: p.name,
         adjust: p.adjust || null,
         campaignTech: p.campaignTech,
+        creditCap: Number.isFinite(p.creditCap) ? p.creditCap : null,
         autofire: p.autofire,
         spawn: p.spawn || null,
         upgrades: [...(p.upgrades || [])]
