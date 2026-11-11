@@ -128,7 +128,7 @@ import { lightningState, stepLightning } from './weatherlightning.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { simRandom, seedSim, simRandomState } from './simrandom.js';
 import { resetLandIds, preloadLand } from './land.js';
-import { resetBrainIds } from './landbrain.js';
+import { resetBrainIds, adjustmentKey } from './landbrain.js';
 import { executeLand } from './landcommands.js';
 import { Lockstep, TURN, CHAT_MAX, chatText } from './netgame.js';
 import { unitHash } from './desyncreport.js';
@@ -701,9 +701,7 @@ export class LandGame {
       const d =
         !p.human &&
         world.tables &&
-        world.tables.difficulty.get(
-          { medium: 'normal' }[String(p.difficulty || 'normal').toLowerCase()] || String(p.difficulty || 'normal').toLowerCase()
-        );
+        world.tables.difficulty.get(adjustmentKey(this.brains[i], p.difficulty));
       if (d) {
         world.mods[i] = { build: d.build, credit: d.credit, damage: d.damage, health: d.health };
         this.ai[i].sleep = d.sleep;
