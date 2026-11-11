@@ -639,6 +639,7 @@ class LandUnit {
   }
 }
 export const landUnit = fields => Object.assign(new LandUnit(), fields);
+export const landHealth = (type, none) => type.num('Tactical_Health', none) * db.constants.num('Object_Max_Health_Multiplier_Land', 1);
 
 export class LandSquad {
   constructor(world, type, side, extra = {}) {
@@ -2608,8 +2609,8 @@ export class LandWorld {
       target: null,
       structure: true,
       site,
-      maxHealth: type.num('Tactical_Health', 1000),
-      health: type.num('Tactical_Health', 1000),
+      maxHealth: landHealth(type, 1000),
+      health: landHealth(type, 1000),
       maxShield: type.num('Shield_Points', 0),
       shield: type.num('Shield_Points', 0),
       armor: type.str('Armor_Type'),
@@ -3628,8 +3629,8 @@ export class LandWorld {
       builds: [],
       income: null,
       isBase: false,
-      maxHealth: craft.num('Tactical_Health', 300),
-      health: craft.num('Tactical_Health', 300),
+      maxHealth: landHealth(craft, 300),
+      health: landHealth(craft, 300),
       maxShield: 0,
       shield: 0,
       armor: craft.str('Armor_Type'),
@@ -3790,8 +3791,8 @@ export class LandWorld {
           gone: false,
           target: null,
           repath: 0,
-          maxHealth: t.num('Tactical_Health', 50),
-          health: t.num('Tactical_Health', 50),
+          maxHealth: landHealth(t, 50),
+          health: landHealth(t, 50),
           maxShield: t.num('Shield_Points', 0),
           shield: t.num('Shield_Points', 0),
           armor: t.str('Armor_Type'),

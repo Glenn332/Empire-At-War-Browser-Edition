@@ -510,8 +510,17 @@ export function tickAbilities(world, u, dt) {
           stop(world, u, st);
           continue;
         }
+        if (d.hpOf !== tgt) {
+          d.hpOf = tgt;
+          d.hp = world.nearestHardpoint(tgt, u.x, u.y, u.z || 0);
+        }
+        if (d.hp && d.hp.destroyable && !d.hp.alive) {
+          stop(world, u, st);
+          continue;
+        }
         world.damage(tgt, (def.spec ? def.spec.num('Damage_Per_Frame', 50) : 50) * 30 * dt, {
           damageType: 'Damage_Default',
+          hp: d.hp,
           attacker: u.player,
           x: tgt.x,
           y: tgt.y,

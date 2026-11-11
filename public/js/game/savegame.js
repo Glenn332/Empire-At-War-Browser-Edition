@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { buildListFor } from './sim.js';
+import { buildListFor, spaceHealthMultiplier } from './sim.js';
 import { useAbility, refreshMods } from './abilities.js';
 import { BUILD } from '../build.js';
 import { expansion } from '../edition.js';
@@ -150,7 +150,7 @@ function spaceSnapshot(game, name) {
   const body = u => {
     const x = u.hyper ? u.hyper.tx : u.x,
       y = u.hyper ? u.hyper.ty : u.y;
-    const o = { x: r1(x), y: r1(y), z: r1(u.z), h: +u.heading.toFixed(3), hp: r1(u.health), sh: r1(u.shield) };
+    const o = { x: r1(x), y: r1(y), z: r1(u.z), h: +u.heading.toFixed(3), hu: r1(u.health), sh: r1(u.shield) };
     if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
     if (u.energy) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
     return o;
@@ -226,8 +226,8 @@ function spaceSnapshot(game, name) {
       if (u.padOwner) o.owner = u.padOwner.id;
       if (u.capture && (u.capture.progress > 0 || u.capture.by))
         o.cap = { progress: r1(u.capture.progress), by: u.capture.by ? u.capture.by.id : -1 };
-      if (u.health < u.maxHealth - 0.5) {
-        o.hp = r1(u.health);
+      if (u.health < u.maxHealth - 0.5 || u.hardpoints.some(h => h.health < h.maxHealth - 0.5)) {
+        o.hu = r1(u.health);
         if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
       }
       if (u.energy && u.energy.value < u.energy.cap) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
@@ -427,6 +427,8 @@ export function restore(game, save) {
     }
 
   const damage = (u, o) => {
+    const legacy = o.hu === undefined && o.hp !== undefined,
+      k = legacy ? spaceHealthMultiplier() : 1;
     if (o.hps && o.hps.length === u.hardpoints.length) {
       u.hardpoints.forEach((h, i) => {
         if (o.hps[i] < 0) {
@@ -435,10 +437,11 @@ export function restore(game, save) {
           h.smoke = true;
           if (h.part) h.part.visible = false;
           if (h.decal) h.decal.visible = true;
-        } else h.health = Math.min(h.maxHealth, o.hps[i]);
+        } else h.health = Math.min(h.maxHealth, o.hps[i] * k);
       });
     }
-    if (o.hp !== undefined) u.health = Math.max(1, Math.min(u.maxHealth, o.hp));
+    if (o.hu !== undefined) u.health = Math.max(1, Math.min(u.maxHealth, o.hu));
+    else if (legacy) u.health = Math.max(1, Math.min(u.maxHealth, u.hpDriven ? u.maxHealth * u.hardpointShare() : o.hp * k));
     if (o.sh !== undefined) u.shield = Math.max(0, Math.min(u.maxShield, o.sh));
     if (o.en && u.energy) {
       u.energy.value = Math.max(0, Math.min(u.energy.cap, o.en[0]));

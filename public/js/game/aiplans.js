@@ -302,7 +302,7 @@ export class Plans {
       let h = 0,
         m = 0;
       for (const u of e.isSquad ? e.fighters : e.members || [e]) {
-        h += u.health || 0;
+        h += u.hpDies ? u.healthFrac * u.maxHealth : u.health || 0;
         m += u.maxHealth || 0;
       }
       return m > 0 ? h / m : 1;
@@ -415,7 +415,7 @@ export class Plans {
       let h = 0,
         m = 0;
       for (const u of parts(e)) {
-        h += u.health || 0;
+        h += u.hpDies ? u.healthFrac * u.maxHealth : u.health || 0;
         m += u.maxHealth || 0;
       }
       return m > 0 ? Math.min(1, h / m) : 1;
