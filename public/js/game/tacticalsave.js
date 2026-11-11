@@ -213,7 +213,7 @@ function recipeOut(B, r) {
   if (r.cur && r.x && r.x.hardpoints) out.curI = r.x.hardpoints.indexOf(r.cur);
   return out;
 }
-const BLOCK_KEYS = ['mode', 'hp', 'rep', 'through', 'hears', 'done', 'dir', 'dist', 'tol', 'last', 'lists', 'result', 'start', 'repick'];
+const BLOCK_KEYS = ['mode', 'hp', 'rep', 'through', 'hears', 'done', 'dir', 'dist', 'tol', 'last', 'lists', 'result', 'start', 'repick', 'keep'];
 function recipeIn(B, host, o) {
   const inst = host.instances.find(i => i.sid === o.s),
     f = inst?.forces?.find(x => x.name === o.f);

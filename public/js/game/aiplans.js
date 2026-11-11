@@ -461,7 +461,7 @@ export class Plans {
       if (!e.isSquad && !e.members && hf0(e) < floor) continue;
       if (e.x !== undefined && (!e.aiPlan || o.all) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
       if (heroesAttach && !e.isSpecialWeapon && scriptedHero(e)) continue;
-      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan) || !(D.engaged || !this.engaged(e))) continue;
+      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan || this.open(e, ai)) || !(D.engaged || !this.engaged(e))) continue;
       const ls = lines.filter(l => fits(e, l.s));
       if (ls.length) mine.set(e, ls);
     }
@@ -746,6 +746,26 @@ export class Plans {
     return got;
   }
 
+  beginSelection(ai) {
+    this.pass = { ai, held: new Set() };
+  }
+  canRetain(inst) {
+    return inst.state !== 'over';
+  }
+  retain(inst) {
+    if (inst.state === 'over') return false;
+    if (this.pass) this.pass.held.add(inst);
+    return true;
+  }
+  endSelection() {
+    this.pass = null;
+  }
+  open(e, ai) {
+    const p = this.pass,
+      v = e.aiPlan;
+    return !!p && p.ai === ai && v.ai === ai && (v.state === 'over' || (!!v.gdef && !p.held.has(v)));
+  }
+
   dbg(kind, inst, text) {
     D.log(kind, this.host.land ? 'L' : 'S', this.world.time, who(inst.ai), (inst.goal ? inst.goal + ': ' : '') + text, 'plan');
   }
@@ -799,7 +819,7 @@ export class Plans {
         }
         const v = e.aiPlan;
         if (v && v !== inst) {
-          if (v.staffed && [...v.staffed.values()].some(l => l.includes(e))) robbed.add(v);
+          if (v.state !== 'over' && (v.gdef || (v.staffed && [...v.staffed.values()].some(l => l.includes(e))))) robbed.add(v);
           for (const f of v.forces) f.units = f.units.filter(x => x !== e);
           unset(e);
         }
@@ -809,6 +829,7 @@ export class Plans {
       v.stolen = true;
       this.stop(v);
     }
+    if (this.pass) this.pass.held.add(inst);
     this.host.add(inst);
     this.live.push(inst);
     if (D.on)
@@ -1186,7 +1207,7 @@ export class Plans {
       case 'build':
         return this.block(() => !r.pad.padChild || !r.pad.padChild.construction, undefined, r, born);
       case 'reinforce':
-        return this.reinforceWait(f, r.at, r.until, born);
+        return this.reinforceWait(f, r.at, r.until, born, r.keep);
       case 'tgt':
         this.claim(r);
         return this.block(
@@ -1220,12 +1241,17 @@ export class Plans {
     );
   }
 
-  reinforceWait(f, at, until, born = this.world.time) {
+  reinforceWait(f, at, until, born = this.world.time, keep) {
     const w = this.world,
       inst = f.inst,
       p = inst.ai.player,
       recipe = { f, k: 'reinforce', at, until };
-    if (this.host.land)
+    if (this.host.land) {
+      if (keep === undefined) {
+        keep = inst.removable !== false;
+        inst.removable = false;
+      }
+      recipe.keep = keep;
       return this.block(
         () => {
           if (
@@ -1239,12 +1265,14 @@ export class Plans {
             })
           )
             f.pool.pop();
+          if (!f.pool.length) inst.removable = recipe.keep;
           return !f.pool.length || w.time > until;
         },
         () => !f.pool.length,
         recipe,
         born
       );
+    }
     const st = { r: w.insidePrevention(p, at) ? 1000 : 0 };
     return this.block(
       () => {
