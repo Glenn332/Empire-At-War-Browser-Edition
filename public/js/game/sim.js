@@ -661,6 +661,7 @@ export class Unit {
     this._iconFrame = undefined;
     this.darkHooked = undefined;
     this.spotted = undefined;
+    this.spotLine = undefined;
     this.revealSize = undefined;
     this.lastSeen = undefined;
     this.px = undefined;
@@ -1555,6 +1556,7 @@ export class Squad {
     this.scripted = undefined;
     this.noAI = undefined;
     this.spotted = undefined;
+    this.spotLine = undefined;
     this.aiPower = undefined;
     this.aiPlan = undefined;
     this.goalTarget = undefined;

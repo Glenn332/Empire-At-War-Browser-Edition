@@ -113,13 +113,24 @@ export class FrontEnd {
     const skirmish = box('IDC_SKIRMISH_GAMES_BUTTON'),
       back = box('IDC_BACK_BUTTON_MAIN');
     if (!skirmish || !back) return;
-    const step = back.y - skirmish.y;
-    for (const id of ['IDC_STATIC_OPTIONS', 'IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON']) {
-      const c = box(id),
-        e = dlg.ctl(id);
-      if (c && e) e.style.top = c.y - step + 'px';
+    const ys = ['IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON']
+      .map(box)
+      .filter(Boolean)
+      .map(c => c.y)
+      .sort((a, b) => a - b);
+    const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter(d => d > 0),
+      gap = gaps.length ? Math.min(...gaps) : back.y - skirmish.y,
+      fits = back.y - skirmish.y >= 2 * gap;
+    let y = skirmish.y + gap;
+    if (!fits) {
+      y = skirmish.y;
+      for (const id of ['IDC_STATIC_OPTIONS', 'IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON']) {
+        const c = box(id),
+          e = dlg.ctl(id);
+        if (c && e) e.style.top = c.y - gap + 'px';
+      }
     }
-    this.menus.extra(dlg, 'IDC_SKIRMISH_GAMES_BUTTON', 'Instant Battle', skirmish.x, skirmish.y, skirmish.w, async () => {
+    this.menus.extra(dlg, 'IDC_SKIRMISH_GAMES_BUTTON', 'Instant Battle', skirmish.x, y, skirmish.w, async () => {
       this.game.audio.unlock();
       show(false);
       const ok = await this.instant(() => show(true)).catch(e => {

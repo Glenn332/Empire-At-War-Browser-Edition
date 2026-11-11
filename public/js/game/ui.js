@@ -1177,8 +1177,10 @@ export class UI {
         if (s.dead || s.player !== me || !s.fighters.length) continue;
         const z = this.boxCentre(s, (this._bc ||= {})).z,
           q = this.r.pickGround(x, y + ICON_LIFT * this.r.height, {}, z);
-        q.z = z;
-        want.set(s, q);
+        if (q) {
+          q.z = z;
+          want.set(s, q);
+        }
         x += P;
         if (++k % cols === 0) {
           x = x0;

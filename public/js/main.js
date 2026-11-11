@@ -1850,10 +1850,10 @@ class Game {
       }
     }
     for (const u of w.units) {
-      if (u.dead || u.hyper || u.spotted || u.player.id < 0 || u.player.team === me.team) continue;
+      if (u.dead || u.hyper || u.spotLine || u.player.id < 0 || u.player.team === me.team) continue;
       const ev = this.spotLines.get(u.type.name.toUpperCase());
       if (!ev || (w.fog && !w.canSee(me, u))) continue;
-      u.spotted = true;
+      u.spotLine = true;
       audio.playFor(me, ev);
     }
   }
