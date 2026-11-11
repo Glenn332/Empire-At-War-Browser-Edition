@@ -122,7 +122,7 @@ export async function aiSets(faction) {
           land: tag('LandFreeStoreScript'),
           galactic: tag('GalacticFreeStoreScript'),
           templates: { land: tpl('Land'), space: tpl('Space'), galactic: tpl('Galactic') },
-          ext: parseInt(tag('GoalSetExtensionSize'), 10) || 0,
+          ext: extension(tag('GoalSetExtensionSize')),
           adjust: { easy: adj('Easy'), normal: adj('Normal'), hard: adj('Hard') }
         });
     }
@@ -148,6 +148,20 @@ export async function aiPlayerTypes() {
   return [...(await PLAYERS).values()];
 }
 
+export const extension = text => {
+  if (!String(text ?? '').trim()) return 2;
+  const n = parseInt(String(text).trim(), 10) || 0;
+  return n >>> 0 < 5 ? n : 5;
+};
+
+const level = difficulty => ({ easy: 'easy', medium: 'normal', normal: 'normal', hard: 'hard' })[String(difficulty || 'normal').toLowerCase()] || 'normal';
+export const adjustmentKey = (brain, difficulty) => {
+  const lv = level(difficulty);
+  return String((brain && brain.player && brain.player.adjust && brain.player.adjust[lv]) || lv)
+    .replace(/_Default$/i, '')
+    .toLowerCase();
+};
+
 let ADJUST = null;
 export async function difficultyAdjustment(faction, difficulty, playerType = null) {
   ADJUST ||= fetchText('Data/XML/DifficultyAdjustments.xml')
@@ -160,6 +174,10 @@ export async function difficultyAdjustment(faction, difficulty, playerType = nul
           const v = new RegExp('<' + k + '>\\s*([-\\d.]+)', 'i').exec(m[2]);
           return v ? +v[1] : 1;
         };
+        const z = k => {
+          const v = new RegExp('<' + k + '>\\s*([-\\d.]+)', 'i').exec(m[2]);
+          return v ? +v[1] : 0;
+        };
         out.set(m[1].toUpperCase(), {
           credit: n('Credit_Multiplier'),
           damage: n('Damage_Multiplier'),
@@ -168,6 +186,10 @@ export async function difficultyAdjustment(faction, difficulty, playerType = nul
           bribe: n('Bribe_Cost_Multiplier'),
           galacticSleep: n('Galactic_AI_Goal_Cycle_Sleep_Duration'),
           galacticContrast: n('Galactic_AI_Contrast_Multiplier'),
+          spaceSleep: z('Space_AI_Goal_Cycle_Sleep_Duration'),
+          landSleep: z('Land_AI_Goal_Cycle_Sleep_Duration'),
+          spaceContrast: n('Space_AI_Contrast_Multiplier'),
+          landContrast: n('Land_AI_Contrast_Multiplier'),
           build: {
             space: n('Space_Build_Time_Multiplier'),
             land: n('Land_Build_Time_Multiplier'),
@@ -305,7 +327,49 @@ export async function readBrain(FILES, SETS, GOALS = null, shared = null) {
         });
     }
   }
-  return { eq, fnOf, goals, defs, templates };
+  const enumText = strip((await fetchText('Data/XML/Enum/AIGoalCategoryType.xml').catch(() => null)) || '');
+  const catOrder = hashOrder(
+    [...enumText.matchAll(/<([A-Za-z_0-9]+)>\s*(-?\d+)\s*<\/\1>/g)].map(m => [+m[2], m[1].toUpperCase()])
+  );
+  return { eq, fnOf, goals, defs, templates, catOrder };
+}
+
+const pmHash = v => {
+  const u = ((v ^ 0xdeadbeef) & 0x7fffffff) >>> 0;
+  let h = (u % 127773) * 16807 - Math.floor(u / 127773) * 2836;
+  if (h < 0) h += 0x7fffffff;
+  return h >>> 0;
+};
+export function hashOrder(entries) {
+  let buckets = 8;
+  const name = new Map(),
+    list = [];
+  const place = (l, k) => {
+    const b = pmHash(k) & (buckets - 1);
+    let first = -1,
+      last = -1;
+    for (let i = 0; i < l.length; i++)
+      if ((pmHash(l[i]) & (buckets - 1)) === b) {
+        if (first < 0) first = i;
+        last = i + 1;
+      }
+    if (first < 0) return l.push(k);
+    let at = first;
+    while (at < last && l[at] < k) at++;
+    l.splice(at, 0, k);
+  };
+  for (const [k, n] of entries) {
+    if (name.has(k)) continue;
+    name.set(k, n);
+    if ((list.length + 1) / buckets > 1) {
+      buckets = buckets < 512 ? buckets * 8 : buckets * 2;
+      const re = [];
+      for (const x of list) place(re, x);
+      list.splice(0, list.length, ...re);
+    }
+    place(list, k);
+  }
+  return list.map(k => name.get(k));
 }
 
 async function readGoalFunctions(sets) {
@@ -366,7 +430,7 @@ export async function loadBrain(faction = null) {
   const brain = await BRAINS.get(key),
     p = faction ? await aiPlayer(faction) : null,
     hints = (await loadHintSets().catch(() => null))?.get('TEST_HINT_SET') || null;
-  return Object.assign(Object.create(brain), { player: p ? { land: p.templates.land, ext: p.ext } : null, sleep: 1, hints });
+  return Object.assign(Object.create(brain), { player: p ? { land: p.templates.land, ext: p.ext, adjust: p.adjust } : null, sleep: 1, hints });
 }
 
 const power = u => (u.aiPower ??= Math.max(0, u.type.num('AI_Combat_Power', 0)));

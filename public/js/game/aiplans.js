@@ -5,6 +5,7 @@ import { simRandom } from './simrandom.js';
 import { zonePaths, zoneThreat } from './landzones.js';
 import { namedSet } from './priorities.js';
 import { aidebug as D, who, group, targetOf, nameOf } from '../aidebug.js';
+import { difficultyAdjustment } from './landbrain.js';
 
 const lead = e => (e && e.isSquad ? e.fighters[0] : e);
 const gone = e => !e || e.dead || (e.isSquad && !e.fighters.length);
@@ -77,6 +78,7 @@ const attackable = t =>
   !gone(t) &&
   (t.isSquad || (t.type.bool('Collidable_By_Projectile_Living') && t.type.bool('Is_Valid_Target', true))) &&
   !(t.type.behaviors().has('SPECIAL_WEAPON') && !t.type.behaviors().has('DUMMY_STAR_BASE'));
+const adjustKey = (faction, difficulty) => String(faction || '').toUpperCase() + '|' + String(difficulty || 'normal').toLowerCase();
 
 function fits(e, spec) {
   const u = lead(e);
@@ -182,6 +184,7 @@ function readPlan(code) {
     min: num('MinContrastScale', 1.1),
     max: num('MaxContrastScale', 1.5),
     perFail: num('PerFailureContrastAdjust', 0.1),
+    extraCost: num('MinimumCost', 0) + num('AdditionalCost', 0),
     required: req
       ? [...req[1].matchAll(/"([^"]*)"/g)]
           .map(y =>
@@ -205,8 +208,7 @@ export class Plans {
     this.failed = new Map();
     this.buys = new Map();
     this.defs = new Map();
-    this.sleepBy = null;
-    this.contrastBy = [1, 1, 1];
+    this.adjusts = new Map();
     this.otherMode = new Set();
     this.needs = new Map();
     this.builds = new Map();
@@ -229,16 +231,13 @@ export class Plans {
         if (other.test(file)) this.otherMode.add(key);
       }
     while (host.fetching) await new Promise(r => setTimeout(r, 50));
-    const adj = await fetchText('Data/XML/DifficultyAdjustments.xml').catch(() => null);
-    if (adj) {
-      const v = [...adj.matchAll(new RegExp('<' + (host.land ? 'Land' : 'Space') + '_AI_Contrast_Multiplier>\\s*([\\d.]+)', 'gi'))].map(
-        m => +m[1]
-      );
-      if (v.length >= 3) this.contrastBy = v.slice(0, 3);
-      const z = [
-        ...adj.matchAll(new RegExp('<' + (host.land ? 'Land' : 'Space') + '_AI_Goal_Cycle_Sleep_Duration>\\s*([\\d.]+)', 'gi'))
-      ].map(m => +m[1]);
-      if (z.length >= 3) this.sleepBy = z.slice(0, 3);
+    const g = host.game || {},
+      sides = host.land
+        ? (g.factions || []).map((f, side) => [f, g.players?.[side]?.difficulty])
+        : (this.world.players || []).filter(p => p.id >= 0).map(p => [p.factionName, p.difficulty]);
+    for (const [f, lv] of sides) {
+      const k = adjustKey(f, lv);
+      if (f && !this.adjusts.has(k)) this.adjusts.set(k, await difficultyAdjustment(f, lv).catch(() => null));
     }
     for (const key of keys) {
       const src = host.sources.get(key);
@@ -318,6 +317,38 @@ export class Plans {
     setTimeout(step, 30);
   }
 
+  adjustment(ai) {
+    const p = ai && ai.player;
+    if (p && p.adjust) return p.adjust;
+    return (p && this.adjusts.get(adjustKey(p.factionName, ai.difficulty || p.difficulty))) || null;
+  }
+
+  contrastScale(ai) {
+    const a = this.adjustment(ai),
+      v = a && (this.host.land ? a.landContrast : a.spaceContrast);
+    return Number.isFinite(v) ? v : 1;
+  }
+
+  sleep(ai) {
+    const a = this.adjustment(ai),
+      v = a && (this.host.land ? a.landSleep : a.spaceSleep);
+    return Number.isFinite(v) ? Math.max(0, Math.trunc(30 * v)) / 30 : 0;
+  }
+
+  draw(goal, S) {
+    const list = this.byGoal.get(String(goal).toUpperCase());
+    if (!list || !list.length) return null;
+    const stats = (S && (S.planStats ||= new Map())) || this.stats;
+    let sum = 0;
+    const cum = list.map(key => {
+      const s = stats.get(key);
+      return (sum += (s && s.total > 0 ? s.wins / s.total : 1) + 1);
+    });
+    const r = simRandom() * sum;
+    for (let i = 0; i < list.length; i++) if (r < cum[i]) return list[i];
+    return list[list.length - 1];
+  }
+
   can(goal) {
     return this.ready && this.byGoal.has(String(goal).toUpperCase()) && (this.failed.get(String(goal).toUpperCase()) || 0) < 3;
   }
@@ -331,7 +362,7 @@ export class Plans {
   }
 
   staffable(ai, goal, thing = null, o = {}) {
-    const list = this.byGoal.get(String(goal).toUpperCase()) || [],
+    const list = o.key ? [o.key] : this.byGoal.get(String(goal).toUpperCase()) || [],
       w = this.world;
     return list.some(key => {
       const jobs = this.builds.get(key);
@@ -346,6 +377,32 @@ export class Plans {
       if (b) return b.bare || this.choose(ai.player, b.specs, b.required).chosen.length > 0;
       return !!this.staff(ai, key, thing, { ...o, all: true });
     });
+  }
+
+  heroes(ai, D, got) {
+    const w = this.world,
+      p = ai.player,
+      sellers = w.buildersOf ? w.buildersOf(p) : [];
+    if (!sellers.length) return got;
+    const taken = new Set();
+    for (const f of D.forces)
+      for (const sp of f.specs)
+        for (const e of ai.mine()) {
+          const u = lead(e);
+          if (taken.has(e) || e.aiPlan || gone(e) || e.noAI || !u || !(u.type.bool('Is_Named_Hero') || e.type.bool('Is_Named_Hero'))) continue;
+          if (!fits(e, sp) || !sellers.some(b => w.buildOptions(b, p).includes(e.type) && !w.cantBuild(b, e.type, p))) continue;
+          taken.add(e);
+          if (!got.has(f.name)) got.set(f.name, []);
+          got.get(f.name).push(e);
+          break;
+        }
+    return got;
+  }
+
+  engaged(e) {
+    if (!e.isSquad && !e.members) return false;
+    const t = e.target || e.fireTarget;
+    return !!t && !gone(t);
   }
 
   fieldsUnits(key) {
@@ -371,7 +428,8 @@ export class Plans {
     const D = this.defs.get(key),
       got = new Map(),
       w0 = this.world;
-    if (!D || D.magic || !D.freeStore) return got;
+    if (!D || D.magic) return got;
+    if (!D.freeStore) return this.heroes(ai, D, got);
     const lines = [];
     for (const f of D.forces)
       for (const sp of f.specs)
@@ -383,7 +441,7 @@ export class Plans {
     const at = t && t.x !== undefined ? t : null;
     const stolen = e => {
       const v = e.aiPlan;
-      return o.desire !== undefined && !!v.plan && v.ai === ai && v.removable !== false && v.gd !== undefined && v.gd < o.desire;
+      return !!v.plan && v.ai === ai && v.state !== 'over' && v.removable === true;
     };
     const mine = new Map();
     const pool = ai.mine();
@@ -398,10 +456,12 @@ export class Plans {
         !!(t.str('Lua_Script') || e.type.str('Lua_Script'))
       );
     };
+    let far = 0;
     for (const e of pool) {
-      if (hf0(e) < floor) continue;
+      if (!e.isSquad && !e.members && hf0(e) < floor) continue;
+      if (e.x !== undefined && (!e.aiPlan || o.all || stolen(e)) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
       if (heroesAttach && !e.isSpecialWeapon && scriptedHero(e)) continue;
-      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan || stolen(e)) || !(D.engaged || idle(e))) continue;
+      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan || stolen(e)) || !(D.engaged || !this.engaged(e))) continue;
       const ls = lines.filter(l => fits(e, l.s));
       if (ls.length) mine.set(e, ls);
     }
@@ -499,6 +559,7 @@ export class Plans {
         dOf.set(e, d);
         if (d > maxD) maxD = d;
       }
+    if (far > maxD) maxD = far;
     for (const e of units) if (e.pooled) dOf.set(e, maxD);
     for (const l of lines) if (l.s.pct && l.s.pct < 100) l.fit = units.filter(e => mine.get(e).includes(l)).length;
     const room = l => (l.s.pct ? l.s.pct >= 100 || l.n < Math.ceil((l.fit * l.s.pct) / 100) : l.n < l.s.max);
@@ -506,7 +567,7 @@ export class Plans {
       cs = table ? [...table.keys()] : [];
     const fails = o.fails || 0,
       lv = String(ai.difficulty || (ai.player && ai.player.difficulty) || 'normal').toLowerCase();
-    const scale = (D.max + fails * D.perFail) * this.contrastBy[lv === 'easy' ? 0 : lv === 'hard' ? 2 : 1],
+    const scale = (D.max + fails * D.perFail) * this.contrastScale(ai),
       thr = 1 - (fails * D.perFail + D.min) / (fails * D.perFail + D.max);
     const about = c => (t && mind && mind.at ? mind.at(t, true, 'force', c ? [c] : null, 0) : 0);
     const own = c => (t && t.unit && !t.zone ? (!c || kinds(t.unit).has(c) ? pow(t.unit) : 0) : about(c));
@@ -583,8 +644,9 @@ export class Plans {
         if (!open.length) continue;
         let k = first.get(e.type);
         if (k === undefined) first.set(e.type, (k = Math.floor(simRandom() * 8)));
-        const l = open[k % open.length];
-        let sc = (l.s.pct ? 1 : 1 - l.n / l.s.max) + (maxD > 0 ? 1 - dOf.get(e) / maxD : 0) + (tech(e) / 5) * 2,
+        const l = open[k % open.length],
+          head = open.find(x => !x.s.pct || !D.ignoreTarget) || l;
+        let sc = (head.s.pct ? 1 : 1 - head.n / head.s.max) + (maxD > 0 ? 1 - dOf.get(e) / maxD : 0) + (tech(e) / 5) * 2,
           idx = -1,
           f = 0,
           P = 0,
@@ -613,6 +675,7 @@ export class Plans {
           else if (!sat(T)) continue;
           else if (
             !(
+              D.extraCost > 0 ||
               (T.left > 0 && fc.some(x => x > 0)) ||
               ls.some(x => !x.s.pct && x.n < x.s.min) ||
               short(l.f) ||
@@ -698,7 +761,7 @@ export class Plans {
     const g = String(goal).toUpperCase(),
       list = this.byGoal.get(g);
     if (!list) return null;
-    const key = list[Math.floor(simRandom() * list.length)];
+    const key = o.key && list.includes(o.key) ? o.key : list[Math.floor(simRandom() * list.length)];
     const staffed = this.staff(ai, key, thing, o);
     if (!staffed) return null;
     const inst = {
@@ -719,12 +782,13 @@ export class Plans {
       forces: [],
       born: this.world.time,
       result: null,
-      removable: true,
+      removable: false,
       begin: () => this.begin(inst),
       poll: () => this.poll(inst)
     };
     inst.staffed = staffed;
     inst.gd = o.desire;
+    if (!this.reserve(inst)) return null;
     const robbed = new Set();
     for (const list of staffed.values())
       for (const e of list) {
@@ -800,10 +864,34 @@ export class Plans {
     return inst.threads.length > 0;
   }
 
+  reserve(inst) {
+    const b = this.buys.get(inst.key);
+    if (!b || b.bare || this.builds.has(inst.key) || this.defs.get(inst.key)?.magic) return true;
+    const p = inst.ai.player,
+      got = this.choose(p, b.specs, b.required);
+    if (!got.chosen.length) return false;
+    const w = this.world,
+      cost = got.chosen.reduce((a, t) => a + (w.costOf ? w.costOf(t) : buildCost(t)), 0);
+    p.credits -= cost;
+    inst.reserved = cost;
+    return true;
+  }
+
+  refund(inst, most = Infinity) {
+    const n = Math.min(inst.reserved || 0, most);
+    if (!(n > 0)) return 0;
+    inst.reserved -= n;
+    inst.ai.player.credits += n;
+    return n;
+  }
+
   buy(inst, f) {
     const w = this.world,
-      p = inst.ai.player,
-      got = this.choose(p, f.specs, inst.flags?.required);
+      p = inst.ai.player;
+    this.refund(inst);
+    const got = this.choose(p, f.specs, inst.flags?.required);
+    for (const e of (inst.staffed && inst.staffed.get(f.name)) || [])
+      if (!gone(e) && e.aiPlan === inst && !f.units.includes(e) && f.take) f.take(e);
     if (D.on && !got.chosen.length)
       this.dbg('build', inst, 'nothing could be bought for ' + f.name + ' (credits ' + Math.round(p.credits) + ')');
     return got.chosen.filter(t => {
@@ -2019,6 +2107,7 @@ export class Plans {
         }
       }
       if (inst.state !== 'over') continue;
+      this.refund(inst);
       for (const f of inst.forces)
         for (const e of f.units)
           if (e.aiPlan === inst) {

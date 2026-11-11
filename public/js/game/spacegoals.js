@@ -19,6 +19,7 @@ export class SpaceGoals extends GoalSystem {
     this.world = world;
     this.ais = ais;
     this.mode = 'SPACE';
+    this.paced = true;
     const S = Math.max(200, db.constants.num('AI_SpaceEvaluatorRegionSize', 2000));
     const nx = Math.max(1, Math.ceil((world.max.x - world.min.x) / S)),
       ny = Math.max(1, Math.ceil((world.max.y - world.min.y) / S));

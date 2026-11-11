@@ -41,6 +41,9 @@ export class SpaceMind extends Reason {
     const counted = u => !u.dead && u.player.id >= 0 && !u.isPad && !u.hyper && u !== u.player.team.firstStation;
     this.friends = world.units.filter(u => counted(u) && u.player.team === player.team);
     this.foes = world.units.filter(u => counted(u) && u.player.team !== player.team);
+    const firsts = world.teams.map(t => t.firstStation).filter(u => u && !u.dead && !u.hyper);
+    this.friendsAll = this.friends.concat(firsts.filter(u => u.player.team === player.team));
+    this.foesAll = this.foes.concat(firsts.filter(u => u.player.team !== player.team));
     this.total = this.sum(this.friends, null, [], 0) + this.sum(this.foes, null, [], 0);
     const c = db.constants;
     this.cell = Math.max(50, c.num('DesiredSpaceFOWCellSize', 100) * Math.max(1, c.num('AI_FogCellsPerThreatCell', 4)));
@@ -283,9 +286,9 @@ export class SpaceMind extends Reason {
         case 'ISBUILDPAD':
           return u && u.isPad ? 1 : 0;
         case 'DISTANCETONEARESTFRIENDLY':
-          return this.nearest(this.friends, t, c, types);
+          return this.nearest(this.friendsAll, t, c, types);
         case 'DISTANCETONEARESTENEMY':
-          return this.nearest(this.foes, t, c, types);
+          return this.nearest(this.foesAll, t, c, types);
         case 'HEALTH':
           return u ? u.healthFrac : 1;
         case 'SHIELD':

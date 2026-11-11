@@ -405,6 +405,7 @@ function savePlan(B, s, inst) {
     tryKey: inst.tryKey ?? null,
     emptySince: inst.emptySince ?? null,
     gd: inst.gd ?? null,
+    reserved: inst.reserved || 0,
     stolen: !!inst.stolen,
     flags: inst.flags ? s.js(inst.flags) : null,
     staffed: inst.staffed ? [...inst.staffed].map(([n, list]) => [n, list.map(e => (e.pooled ? null : ref(e))).filter(Boolean)]) : null,
@@ -643,6 +644,7 @@ function makePlan(B, host, si) {
     blocksGoals: pl.blocksGoals,
     toldLost: pl.toldLost,
     stolen: pl.stolen,
+    reserved: pl.reserved || 0,
     begin: () => plans.begin(inst),
     poll: () => plans.poll(inst)
   };

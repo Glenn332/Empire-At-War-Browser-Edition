@@ -2147,7 +2147,17 @@ export class World {
     if (this.reinforcementsOff?.has(String(p.factionName || '').toUpperCase())) return null;
     const entry = pool[pool.length - 1],
       type = entry && entry.type;
-    if (!type) return null;
+    if (!type) {
+      if (pool.length) pool.pop();
+      return null;
+    }
+    if (!p.reinforcements.includes(type)) {
+      pool.pop();
+      return null;
+    }
+    let fielded = p.pop;
+    if (!this.campaign) for (const t of p.reinforcements) fielded -= spacePop(t);
+    if (p.popCap - fielded < Math.trunc(spacePop(type) + 0.5)) return null;
     const th = this.startFacing(p);
     for (let i = 0; i < 10; i++) {
       const a = th + i * 0.6283185;
