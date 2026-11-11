@@ -35,7 +35,7 @@ import {
   leadCircle
 } from './projflight.js';
 import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
-import { leadPoint } from './orders.js';
+import { leadPoint, fieldPassed } from './orders.js';
 import { basisOf } from '../particlesim.js';
 import { CombatMods, MOD, SPACE, bonusSourceDefs, bonusTypeFits, bonusOwnerFits } from './combatmods.js';
 export const spacePop = t =>
@@ -2313,7 +2313,16 @@ export class World {
     this.recountPop();
   }
 
-  damage(
+  damage(target, amount, opts) {
+    const hook = this.onUnitHit,
+      from = opts && opts.from;
+    if (!hook || !from || target.dead || target.hyper || target.invulnerable || target.limbo) return this.applyDamage(target, amount, opts);
+    const before = target.health + (target.shield || 0);
+    this.applyDamage(target, amount, opts);
+    hook(target, from, before - target.health - (target.shield || 0));
+  }
+
+  applyDamage(
     target,
     amount,
     {
@@ -3275,7 +3284,11 @@ export class World {
     if (neb) {
       u.abilityLock = this.time + c.num('Nebula_Ability_Disable_Time', 5);
       if (entered)
-        for (const st of u.abilities) if (st.active && !NEBULA_KEEPS.has(st.def.kind)) useAbility(this, u.squad || u, st.def.kind, false);
+        for (const st of u.abilities)
+          if (st.active && !NEBULA_KEEPS.has(st.def.kind)) {
+            useAbility(this, u.squad || u, st.def.kind, false);
+            this.onUnitSignal?.(u.squad || u, 'Unit_Ability_Cancelled', st.def.kind);
+          }
     }
     if (ast && u.asteroidDamage && u.speed > 0 && !u.hyper) {
       const p = c.num('Asteroid_Field_Damage_Rate', 0.2);
@@ -3964,18 +3977,21 @@ export class World {
   }
 
   hazardous(f, e) {
-    const lead = e.isSquad ? e.fighters[0] : e;
-    return !!lead && ((f.asteroid && lead.asteroidDamage) || (f.ion && lead.maxShield > 0));
+    const lead = e.isSquad ? e.fighters[0] : e,
+      o = (e.squad || e).order;
+    return !!lead && ((f.asteroid && lead.asteroidDamage) || (f.ion && lead.maxShield > 0)) && !(o && o.through && fieldPassed(f, o.through));
   }
 
   inHazard(e) {
     return this.fields.some(f => this.hazardous(f, e) && (e.x - f.x) ** 2 + (e.y - f.y) ** 2 < f.r * f.r);
   }
 
-  clearOf(e, x, y) {
+  clearOf(e, x, y, through = 0) {
     const pad = (e.radius || 40) + 60;
     for (let pass = 0; pass < 6; pass++) {
-      const f = this.fields.find(f => this.hazardous(f, e) && (x - f.x) ** 2 + (y - f.y) ** 2 < (f.r + pad * 0.5) ** 2);
+      const f = this.fields.find(
+        f => this.hazardous(f, e) && !fieldPassed(f, through) && (x - f.x) ** 2 + (y - f.y) ** 2 < (f.r + pad * 0.5) ** 2
+      );
       if (!f) break;
       let dx = x - f.x,
         dy = y - f.y,

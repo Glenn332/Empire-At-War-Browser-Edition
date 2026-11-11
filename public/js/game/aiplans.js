@@ -20,6 +20,63 @@ const unset = e => {
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const idle = e => !e.order || e.order.kind === 'idle' || !!e.order.fs || (!!e.fsKind && e.fsKind === e.order.kind);
 const SERVICE = 0.5;
+const HP_KINDS = [
+  'HARD_POINT_ENGINE',
+  'HARD_POINT_SHIELD_GENERATOR',
+  'HARD_POINT_GRAVITY_WELL',
+  'HARD_POINT_FIGHTER_BAY',
+  'HARD_POINT_TRACTOR_BEAM',
+  'HARD_POINT_WEAPON_LASER',
+  'HARD_POINT_WEAPON_MISSILE',
+  'HARD_POINT_WEAPON_TORPEDO',
+  'HARD_POINT_WEAPON_ION_CANNON',
+  'HARD_POINT_WEAPON_MASS_DRIVER',
+  'HARD_POINT_WEAPON_SPECIAL',
+  'HARD_POINT_ENABLE_SPECIAL_ABILITY',
+  'HARD_POINT_DUMMY_ART'
+];
+const COLLISION = { NONE: 0, MOVING: 1, STATIC: 2, ASTEROID: 4, ION_STORM: 8, NEBULA: 16 };
+const AMBUSH_DIRS = { FRONT: 0, LEFT: 1, RIGHT: 2, BACK: 3 };
+
+export function hardpointKind(name) {
+  let t = String(name ?? '')
+    .trim()
+    .toUpperCase();
+  if (!t.startsWith('HARD_POINT_')) t = 'HARD_POINT_' + t;
+  return HP_KINDS.indexOf(t);
+}
+
+export function collisionBits(text) {
+  let m = 0;
+  for (const part of String(text ?? '').split('|')) {
+    const k = part.trim().toUpperCase();
+    if (!k) continue;
+    if (!(k in COLLISION)) return null;
+    m |= COLLISION[k];
+  }
+  return m;
+}
+
+export function weakestHardpoint(t, kind) {
+  let best = null,
+    m = Infinity;
+  for (const h of (t && t.hardpoints) || []) {
+    if (h.kind !== HP_KINDS[kind] || !(h.alive || !h.destroyable)) continue;
+    const hp = (h.route || h).health,
+      f = h.maxHealth > 0 ? Math.max(0, Math.min(1, hp / h.maxHealth)) : 0;
+    if (f < m) {
+      m = f;
+      best = h;
+    }
+  }
+  return best;
+}
+
+const attackable = t =>
+  !!t &&
+  !gone(t) &&
+  (t.isSquad || (t.type.bool('Collidable_By_Projectile_Living') && t.type.bool('Is_Valid_Target', true))) &&
+  !(t.type.behaviors().has('SPECIAL_WEAPON') && !t.type.behaviors().has('DUMMY_STAR_BASE'));
 
 function fits(e, spec) {
   const u = lead(e);
@@ -154,6 +211,10 @@ export class Plans {
     this.needs = new Map();
     this.builds = new Map();
     this.goalName = new Map();
+    if (!host.land && this.world && typeof this.world.applyDamage === 'function') {
+      this.world.onUnitHit = (t, from, loss) => this.hit(t, from, loss);
+      this.world.onUnitSignal = (e, name, extra) => this.signal(e, name, extra);
+    }
     this.find();
   }
 
@@ -709,7 +770,7 @@ export class Plans {
     };
     vm.set(env, 'PlayerObject', host.player(inst.ai.player));
     const t = inst.thing,
-      target = !t ? undefined : t.type ? host.wrap(t) : host.pos(t.x, t.y, 0);
+      target = !t ? undefined : t.type ? host.wrap(t) : host.pos(t.x, t.y, 0, t.name || 'Position');
     vm.set(env, 'AITarget', target);
     vm.set(env, 'Target', target);
     for (const def of Array.isArray(defs) ? defs : []) {
@@ -916,6 +977,30 @@ export class Plans {
         return this.block(() => !r.pad.padChild || !r.pad.padChild.construction, undefined, r, born);
       case 'reinforce':
         return this.reinforceWait(f, r.at, r.until, born);
+      case 'tgt':
+        this.claim(r);
+        return this.block(
+          () => this.checkTarget(r) || !alive().length,
+          () => undefined,
+          r,
+          born
+        );
+      case 'exp':
+        this.claim(r);
+        return this.block(
+          () => this.checkExplore(r),
+          () => undefined,
+          r,
+          born
+        );
+      case 'amb':
+        this.claim(r);
+        return this.block(
+          () => this.checkAmbush(r),
+          () => r.result,
+          r,
+          born
+        );
     }
     return this.block(
       () => true,
@@ -992,14 +1077,410 @@ export class Plans {
     }
   }
 
-  signal(e, name) {
+  signal(e, name, extra) {
     const inst = e && e.aiPlan,
       f = inst && inst.forces && inst.forces.find(x => x.units.includes(e));
-    if (f) (f.signals ||= []).push([name, e]);
+    if (!f) return;
+    const s = (f.signals ||= []);
+    if (!s.some(x => x[0] === name && x[1] === e && x[2] === extra)) s.push([name, e, extra]);
   }
 
   free(inst) {
     return inst.ai.mine().filter(e => !e.aiPlan && !e.noAI && !this.host.locked(e) && (inst.flags?.engaged || idle(e)));
+  }
+
+  handler(inst, name) {
+    if (inst.env === undefined) return null;
+    const c = (inst.fns ||= new Map());
+    if (!c.has(name)) c.set(name, this.host.vm.ref(inst.env, name));
+    return c.get(name);
+  }
+
+  say(inst, name, ...params) {
+    const r = this.handler(inst, name);
+    if (r) inst.events.push({ fn: r, params });
+    return !!r;
+  }
+
+  tell(inst, f, event, ...params) {
+    return this.say(inst, f.name + '_' + event, ...params) || this.say(inst, 'Default_' + event, ...params);
+  }
+
+  queueOnce(inst, f, event, params) {
+    const r = this.handler(inst, f.name + '_' + event) || this.handler(inst, 'Default_' + event);
+    if (!r || inst.events.some(ev => ev.fn === r)) return false;
+    inst.events.push({ fn: r, params: params() });
+    return true;
+  }
+
+  neutral(q) {
+    return !q || q === this.world.neutral || q.id < 0 || !!q.faction?.bool?.('Is_Neutral');
+  }
+
+  enemy(t, p) {
+    const o = this.host.owner(t);
+    return !this.neutral(o) && !this.neutral(p) && o.team !== p.team;
+  }
+
+  hidden(t, p) {
+    const w = this.world,
+      u = lead(t);
+    if (!w.fog || !u || !w.canSee) return false;
+    const T = u.type;
+    if (T.bool('Last_State_Visible_Under_FOW') || T.bool('Initial_State_Visible_Under_FOW')) return false;
+    return !w.canSee(p, t);
+  }
+
+  hit(t, from, loss) {
+    const e = t.squad || t,
+      inst = e.aiPlan;
+    if (!inst || !inst.forces || inst.state !== 'run' || gone(e) || !from || from.dead) return;
+    const f = inst.forces.find(x => x.units.includes(e));
+    if (!f) return;
+    const a = from.squad || from,
+      aim = a.isSquad ? a.target : from.target,
+      deliberate = !!aim && (aim === e || aim === t || aim.squad === e);
+    if (!gone(a)) this.queueOnce(inst, f, 'Unit_Damaged', () => [f.wrapper, this.host.wrap(e), this.host.wrap(a), deliberate]);
+    if (
+      loss > 0 &&
+      !t.squad &&
+      t.type.behaviors().has('DAMAGE_TRACKING') &&
+      from.type.bool('Is_Valid_Target', true) &&
+      from.type.bool('Collidable_By_Projectile_Living')
+    ) {
+      const k = (t.threats ||= { map: new Map(), next: this.world.time + 1 });
+      k.map.set(a, (k.map.get(a) || 0) + loss);
+    }
+  }
+
+  decayThreats(inst, f, e) {
+    const k = e.threats;
+    if (!k || !k.map.size) return;
+    const w = this.world,
+      step = db.constants.num('AI_SpaceThreatDecayStep', 0.05),
+      drop = ((e.maxHealth || 0) + (e.maxShield || 0)) * step;
+    while (k.next <= w.time && k.map.size) {
+      k.next += 1;
+      for (const [a, v] of k.map) {
+        if (v - drop > 0) k.map.set(a, v - drop);
+        else {
+          k.map.delete(a);
+          if (!k.map.size) this.tell(inst, f, 'Unit_No_Threat', f.wrapper, this.host.wrap(e));
+        }
+      }
+    }
+    if (!k.map.size) k.next = w.time + 1;
+  }
+
+  claim(r) {
+    for (const e of r.us) e.planBlock = r;
+    const inst = r.f.inst;
+    if (!(inst.blocks ||= []).includes(r)) inst.blocks.push(r);
+  }
+
+  members(r) {
+    const inst = r.f.inst;
+    return (r.us = r.us.filter(e => !gone(e) && e.aiPlan === inst && e.planBlock === r));
+  }
+
+  aimTarget(r) {
+    const t = r.x;
+    if (r.mode !== 'g' && r.hp >= 0 && r.hp < 11) {
+      r.cur = t && !gone(t) ? weakestHardpoint(t, r.hp) : null;
+      if (!r.cur) {
+        r.hears = false;
+        r.done = true;
+        return;
+      }
+    }
+    const us = this.members(r);
+    r.pend = us.slice();
+    if (!us.length || !t || gone(t)) return;
+    if (r.mode === 'g') this.host.cmd.guard(us, t, r.through);
+    else this.host.cmd.attack(us, t, r.cur || null, r.through);
+  }
+
+  reached(e, t, mode) {
+    if (idle(e)) return true;
+    const u = lead(e),
+      T = lead(t);
+    if (!u || !T) return true;
+    const R =
+      mode === 'g'
+        ? (T.radius || 60) + (u.radius || 0) + 180
+        : Math.max(u.maxRange || 0, u.engageRange || 0, (u.weapon && u.weapon.range) || 0, 300) + (T.hitRadius || 0);
+    return (u.x - T.x) ** 2 + (u.y - T.y) ** 2 <= R * R;
+  }
+
+  checkTarget(r) {
+    const w = this.world,
+      f = r.f,
+      inst = f.inst,
+      p = inst.ai.player;
+    if (r.done) return true;
+    if (r.seenAt === w.time) return false;
+    r.seenAt = w.time;
+    const us = this.members(r),
+      t = r.x;
+    if (!us.length) return (r.done = true);
+    if (r.hears) {
+      if (gone(t)) {
+        r.hears = false;
+        r.done = true;
+        for (const g of inst.forces) this.tell(inst, g, 'Current_Target_Destroyed', g.wrapper);
+        return true;
+      }
+      const o = this.host.owner(t);
+      if (o !== r.owner) {
+        r.hears = false;
+        r.owner = o;
+        const foe = this.enemy(t, p);
+        if (r.mode === 'g' ? foe : !foe) return (r.done = true);
+      }
+    }
+    if (r.cur && (gone(t) || (r.cur.destroyable && !r.cur.alive))) {
+      if (!r.rep) return (r.done = true);
+      this.aimTarget(r);
+      if (r.done) return true;
+    }
+    if (r.pend.length) {
+      const left = [];
+      for (const e of r.pend)
+        if (!us.includes(e)) continue;
+        else if (gone(t) || this.reached(e, t, r.mode)) (f.arrived ||= []).push(e);
+        else left.push(e);
+      r.pend = left;
+      if (!left.length) {
+        if (!t || gone(t)) r.done = true;
+        else if (r.mode !== 'g' && (!this.enemy(t, p) || !attackable(t))) r.done = true;
+        else if (this.hidden(t, p)) r.done = true;
+      }
+    }
+    return r.done;
+  }
+
+  seenGrid(p) {
+    const w = this.world,
+      G = (this.seenGrids ||= new Map());
+    let g = G.get(p);
+    if (!g) {
+      const c = db.constants,
+        cell = Math.max(50, c.num('DesiredSpaceFOWCellSize', 100) * Math.max(1, c.num('AI_FogCellsPerThreatCell', 4)));
+      const nx = Math.max(1, Math.ceil((w.max.x - w.min.x) / cell)),
+        ny = Math.max(1, Math.ceil((w.max.y - w.min.y) / cell));
+      g = { cell, nx, ny, at: new Float64Array(nx * ny).fill(-1), next: -Infinity };
+      G.set(p, g);
+    }
+    if (w.time < g.next) return g;
+    g.next = w.time + 1;
+    const { cell, nx, ny, at } = g,
+      x0 = w.min.x,
+      y1 = w.max.y,
+      now = w.time;
+    for (const u of w.units) {
+      if (u.dead || u.hyper || u.player !== p || !(u.revealRange > 0)) continue;
+      const R = u.revealRange,
+        c0 = Math.max(0, Math.floor((u.x - R - x0) / cell)),
+        c1 = Math.min(nx - 1, Math.floor((u.x + R - x0) / cell)),
+        r0 = Math.max(0, Math.floor((y1 - (u.y + R)) / cell)),
+        r1 = Math.min(ny - 1, Math.floor((y1 - (u.y - R)) / cell));
+      for (let row = r0; row <= r1; row++) {
+        const cy = y1 - (row + 0.5) * cell,
+          dy = (cy - u.y) ** 2;
+        for (let col = c0; col <= c1; col++) {
+          const cx = x0 + (col + 0.5) * cell;
+          if ((cx - u.x) ** 2 + dy <= R * R) at[row * nx + col] = now;
+        }
+      }
+    }
+    return g;
+  }
+
+  explorePick(r) {
+    const w = this.world,
+      p = r.f.inst.ai.player,
+      us = this.members(r);
+    r.repick = false;
+    const t = r.x && !gone(r.x) ? r.x : null;
+    if (!us.length || (!t && !r.at) || !w.fog) return void (r.done = true);
+    let rect;
+    if (t) {
+      const u = lead(t),
+        R = (u && (u.maxRange || (u.weapon && u.weapon.range))) || 0;
+      rect = [t.x - R, t.y - R, R + R, R + R];
+    } else {
+      const S = db.constants.num('AI_SpaceEvaluatorRegionSize', 2000);
+      rect = [r.at.x - S / 2, r.at.y - S / 2, S, S];
+    }
+    const g = this.seenGrid(p),
+      { cell, nx, ny, at } = g;
+    const c0 = Math.max(0, Math.floor((rect[0] - w.min.x) / cell)),
+      c1 = Math.min(nx - 1, Math.floor((rect[0] - w.min.x + rect[2]) / cell)),
+      r0 = Math.max(0, Math.floor((w.max.y - (rect[3] + rect[1])) / cell)),
+      r1 = Math.min(ny - 1, Math.floor((w.max.y - rect[1]) / cell));
+    let before = r.start,
+      pick = null;
+    for (let row = r0; row <= r1; row++)
+      for (let col = c0; col <= c1; col++) {
+        const x = (col + 0.5) * cell + w.min.x,
+          y = w.max.y - (row + 0.5) * cell;
+        if (x < w.min.x || x > w.max.x || y < w.min.y || y > w.max.y) continue;
+        const s = at[row * nx + col];
+        if (s >= w.time - 1.5) continue;
+        if (s < before) {
+          before = s;
+          pick = { x, y };
+        }
+      }
+    if (!pick) return void (r.done = true);
+    this.host.cmd.move(us, pick.x, pick.y, false, true);
+    r.goal = pick;
+  }
+
+  checkExplore(r) {
+    if (r.done) return true;
+    const us = this.members(r);
+    if (!us.length) return (r.done = true);
+    if (!r.repick && us.some(e => idle(e))) r.repick = true;
+    if (r.repick) this.explorePick(r);
+    return r.done;
+  }
+
+  ambushPoint(r) {
+    const w = this.world,
+      t = r.x;
+    if (!t || gone(t)) return null;
+    const u = lead(t),
+      a = u.heading || 0,
+      sn = Math.sin(a),
+      cs = Math.cos(a);
+    const D = [
+        [cs, sn],
+        [-sn, cs],
+        [sn, -cs],
+        [-cs, -sn]
+      ][r.dir],
+      T = t.isSquad ? t.type : u.scriptType || u.type;
+    let R = T.num('Space_FOW_Reveal_Range', 0);
+    if (!(R > 0)) R = db.constants.num('AI_SpaceEvaluatorRegionSize', 2000);
+    let x = t.x + r.dist * D[0],
+      y = t.y + r.dist * D[1];
+    const cx = (w.min.x + w.max.x) / 2,
+      cy = (w.min.y + w.max.y) / 2,
+      hx = (w.max.x - w.min.x) / 2,
+      hy = (w.max.y - w.min.y) / 2,
+      mind = r.f.inst.ai.mind;
+    for (;;) {
+      if (Math.abs(x - cx) > hx || Math.abs(y - cy) > hy) return null;
+      const th = mind && mind.at ? mind.at({ rect: { x: x - R / 2, y: y - R / 2, w: R, h: R } }, true, 'force', null, 0) : 0;
+      if (th <= r.tol) return { x, y };
+      x += D[0] * R;
+      y += D[1] * R;
+    }
+  }
+
+  ambushPlan(r) {
+    r.last = this.world.time;
+    const P = this.ambushPoint(r);
+    if (!P) {
+      r.done = true;
+      r.result = false;
+      return;
+    }
+    r.lists = true;
+    const us = this.members(r);
+    for (const e of us) if (!r.pend.includes(e)) r.pend.push(e);
+    if (!us.length) return;
+    this.host.cmd.move(us, P.x, P.y, false, true);
+    r.goal = P;
+  }
+
+  checkAmbush(r) {
+    if (r.done) return true;
+    const f = r.f,
+      us = this.members(r);
+    if (r.hears && gone(r.x)) {
+      r.hears = false;
+      r.result = true;
+      return (r.done = true);
+    }
+    const before = r.pend.length;
+    r.pend = r.pend.filter(e => us.includes(e));
+    if (!us.length || (before && !r.pend.length)) {
+      r.result = us.length > 0;
+      return (r.done = true);
+    }
+    for (const e of r.pend.slice())
+      if (idle(e)) {
+        r.pend.splice(r.pend.indexOf(e), 1);
+        (f.arrived ||= []).push(e);
+        if (!r.pend.length) {
+          r.result = true;
+          return (r.done = true);
+        }
+      }
+    if (this.world.time - r.last > 5) this.ambushPlan(r);
+    return r.done;
+  }
+
+  chase(e, x) {
+    const p = e.player,
+      st = { pend: true };
+    this.host.cmd.attack([e], x);
+    return this.block(() => {
+      if (gone(e) || gone(x) || !this.enemy(x, p)) return true;
+      if (st.pend && this.reached(e, x, 'a')) {
+        st.pend = false;
+        if (!attackable(x) || this.hidden(x, p)) return true;
+      }
+      return false;
+    });
+  }
+
+  spaceOrder(f, kind, v, us, o) {
+    const host = this.host,
+      inst = f.inst,
+      p = inst.ai.player;
+    let t = host.of(v);
+    if (kind === 'guard' && v && v.__force) {
+      const g = v.__force,
+        list = g.units.filter(e => !gone(e) && e.aiPlan === g.inst);
+      if (!list.length) return undefined;
+      t = list[Math.floor(simRandom() * list.length)];
+    }
+    if (t && gone(t)) return undefined;
+    const x = t && t.isPad && kind !== 'guard' ? t.padChild : t;
+    if (x && !gone(x) && (kind === 'attack' || (kind === 'amove' && this.enemy(x, p)) || kind === 'guard')) {
+      if (kind === 'attack' && !this.enemy(x, p)) return this.waitFor({ f, k: 'now', r: false });
+      if (us.includes(x)) return undefined;
+      const r = {
+        f,
+        k: 'tgt',
+        mode: kind === 'guard' ? 'g' : kind === 'amove' ? 'm' : 'a',
+        x,
+        hp: kind === 'attack' ? o.hp ?? -1 : -1,
+        rep: kind === 'amove' || !!o.rep,
+        through: kind === 'guard' ? 0 : o.through | 0,
+        us: us.slice(),
+        pend: [],
+        owner: host.owner(x),
+        hears: true,
+        done: false
+      };
+      this.claim(r);
+      this.aimTarget(r);
+      if (r.done) return undefined;
+      return this.waitFor(r);
+    }
+    if (kind === 'attack') return this.waitFor({ f, k: 'now', r: false });
+    const at = this.at(v);
+    if (!at) return this.waitFor({ f, k: 'now', r: false });
+    const attack = kind === 'amove';
+    host.cmd.move(us, at.x, at.y, attack, !attack, o.through | 0);
+    this.moved(f, us);
+    const r = { f, k: 'move', at: { x: at.x, y: at.y }, us: us.slice() };
+    for (const e of us) e.planBlock = r;
+    return this.waitFor(r);
   }
 
   force(f) {
@@ -1018,10 +1499,11 @@ export class Plans {
       f.units.push(e);
       f.had = true;
     });
-    const go = (kind, v, attack, tol, zonePath) => {
+    const go = (kind, v, attack, tol, zonePath, o = null) => {
       const t = host.of(v),
         at = this.at(v),
         us = alive();
+      if (o && us.length) return this.spaceOrder(f, kind, v, us, o);
       if (!us.length || (!t && !at)) return this.waitFor({ f, k: 'now', r: false });
       if (zonePath === true && host.land && (kind === 'move' || kind === 'attack')) {
         const b = byZones(kind, v, t, at, attack, tol);
@@ -1041,6 +1523,52 @@ export class Plans {
       host.cmd.move(us, spot.x, spot.y, !!attack, !attack);
       this.moved(f, us);
       return this.waitFor({ f, k: 'move', at: { x: spot.x, y: spot.y } });
+    };
+    const avoid = a => (typeof a === 'string' ? collisionBits(a) || 0 : 0);
+    const attackArgs = a => {
+      const n = a.length + 1,
+        o = { hp: -1, rep: false, through: 0 };
+      let i = 0;
+      if (a.length && typeof a[0] === 'string') {
+        const k = hardpointKind(a[0]);
+        if (k >= 0) o.hp = k;
+        else if (a[0] === 'Random') {
+          const r = Math.floor(simRandom() * 14);
+          o.hp = r === 13 ? -1 : r;
+        } else if (n === 2) {
+          const b = collisionBits(a[0]);
+          if (b === null) return null;
+          o.through = b;
+        } else return null;
+        i = 1;
+      } else if (n >= 2 && n !== 2 && n !== 3) return null;
+      if (i < a.length && typeof a[i] === 'boolean') o.rep = a[i++];
+      if (i < a.length && typeof a[i] === 'number') o.threat = a[i++];
+      if (i < a.length) {
+        const b = typeof a[i] === 'string' ? collisionBits(a[i]) : null;
+        if (b === null) return null;
+        o.through = b;
+      }
+      return o;
+    };
+    const explore = v => {
+      const us = alive(),
+        t = host.of(v),
+        at = !t && v && v.__pos ? { x: v.x, y: v.y } : null;
+      if (!t && !at) return undefined;
+      const r = { f, k: 'exp', x: t, at, us: us.slice(), start: w.time, done: false, repick: false };
+      this.claim(r);
+      this.explorePick(r);
+      return this.waitFor(r);
+    };
+    const ambush = (v, dir, far, tol) => {
+      const t = host.of(v),
+        d = AMBUSH_DIRS[String(dir ?? '').toUpperCase()];
+      if (!t || gone(t) || d === undefined || typeof dir !== 'string' || !(+far > 0) || typeof tol !== 'number') return undefined;
+      const r = { f, k: 'amb', x: t, dir: d, dist: +far, tol, us: alive().slice(), pend: [], last: w.time, lists: false, hears: true, result: false, done: false };
+      this.claim(r);
+      this.ambushPlan(r);
+      return this.waitFor(r);
     };
     const byZones = (kind, v, t, at, attack, tol) => {
       const L = w.w,
@@ -1198,14 +1726,28 @@ export class Plans {
         if (!at || !f.pool.length || (w.skirmish && (!p.station || p.station.dead))) return undefined;
         return this.reinforceWait(f, at, most > 0 ? w.time + +most : Infinity);
       },
-      Move_To: (v, tol, zones) => go('move', v, false, tol, zones),
-      Attack_Move: (v, tol, zones) => go('move', v, true, tol, zones),
-      Explore_Area: v => go('move', v, false),
-      Prepare_Ambush: v => go('move', v, false),
-      Attack_Target: (v, tol, zones) => go('attack', v, false, tol, zones),
-      Guard_Target: v => go('guard', v),
+      Move_To: (v, tol, zones) =>
+        host.land ? go('move', v, false, tol, zones) : go('move', v, false, tol, undefined, { through: avoid(zones) }),
+      Attack_Move: (v, tol, zones) =>
+        host.land ? go('move', v, true, tol, zones) : go('amove', v, true, tol, undefined, { through: avoid(zones) }),
+      Explore_Area: v => (host.land ? go('move', v, false) : explore(v)),
+      Prepare_Ambush: (v, dir, far, tol) => (host.land ? go('move', v, false) : ambush(v, dir, far, tol)),
+      Attack_Target: (v, ...rest) => {
+        if (host.land) return go('attack', v, false, rest[0], rest[1]);
+        const o = attackArgs(rest);
+        return o ? go('attack', v, false, undefined, undefined, o) : undefined;
+      },
+      Guard_Target: v => {
+        if (host.land) return go('guard', v);
+        const t = host.of(v);
+        if (!(v && v.__force) && !t) return go('move', v, false, undefined, undefined, {});
+        return go('guard', v, false, undefined, undefined, {});
+      },
       Activate_Ability: (name, on) => {
-        for (const e of alive()) host.wrap(e).Activate_Ability(name, on);
+        for (const e of alive()) {
+          const ok = host.wrap(e).Activate_Ability(name, on);
+          if (ok === false) this.tell(inst, f, 'Unit_Ability_Finished', wrapper, host.wrap(e));
+        }
         if (!host.land || String(name || '').toUpperCase() !== 'DEPLOY') return undefined;
         return this.waitFor({ f, k: 'deploy', want: on !== false, t0: w.time });
       },
@@ -1354,28 +1896,35 @@ export class Plans {
 
   poll(inst) {
     const host = this.host,
-      vm = host.vm,
       w = this.world;
-    const fn = name => {
-      const c = (inst.fns ||= new Map());
-      if (!c.has(name)) c.set(name, vm.ref(inst.env, name));
-      return c.get(name);
-    };
-    const say = (name, ...params) => {
-      const r = fn(name);
-      if (r) inst.events.push({ fn: r, params });
-      return !!r;
-    };
-    const tell = (f, event, ...params) => say(f.name + '_' + event, ...params) || say('Default_' + event, ...params);
+    const say = (name, ...params) => this.say(inst, name, ...params);
+    const tell = (f, event, ...params) => this.tell(inst, f, event, ...params);
     const t = inst.thing && inst.thing.type ? inst.thing : null;
     const lost = t && gone(t) && !inst.toldLost;
     if (lost) inst.toldLost = true;
+    let moved = null;
+    if (t && !host.land && !lost && !inst.toldLost) {
+      const o = host.owner(t);
+      if (inst.thingOwner === undefined) inst.thingOwner = o;
+      else if (o !== inst.thingOwner) {
+        moved = [host.player(inst.thingOwner), host.player(o)];
+        inst.thingOwner = o;
+      }
+    }
+    if (inst.blocks && inst.blocks.length) {
+      for (const r of inst.blocks.slice())
+        if (r.k === 'tgt') this.checkTarget(r);
+        else if (r.k === 'exp') this.checkExplore(r);
+        else if (r.k === 'amb') this.checkAmbush(r);
+      inst.blocks = inst.blocks.filter(r => !r.done);
+    }
     for (const f of inst.forces) {
       f.units = f.units.filter(e => !gone(e) && e.aiPlan === inst);
       if (lost) {
         say(f.name + '_Target_Destroyed');
         tell(f, 'Original_Target_Destroyed', f.wrapper);
       }
+      if (moved) tell(f, 'Original_Target_Owner_Changed', f.wrapper, moved[0], moved[1]);
       if (f.had && !f.units.length && !f.toldEmpty) {
         f.toldEmpty = true;
         tell(f, 'No_Units_Remaining');
@@ -1384,7 +1933,10 @@ export class Plans {
       if (f.signals && f.signals.length) {
         const sent = f.signals;
         f.signals = [];
-        for (const [name, e] of sent) if (!gone(e) && e.aiPlan === inst) tell(f, name, f.wrapper, host.wrap(e));
+        for (const [name, e, extra] of sent)
+          if (!gone(e) && e.aiPlan === inst)
+            if (extra === undefined) tell(f, name, f.wrapper, host.wrap(e));
+            else tell(f, name, f.wrapper, host.wrap(e), extra);
       }
       if (f.arrived && f.arrived.length) {
         const done = f.arrived;
@@ -1425,6 +1977,10 @@ export class Plans {
           st.online = on;
         }
         st.seen = true;
+        if (!host.land) {
+          this.decayThreats(inst, f, e);
+          continue;
+        }
         const u = lead(e),
           total = u ? u.health + (u.shield || 0) : 0,
           was = f.seen.get(e);
@@ -1449,6 +2005,7 @@ export class Plans {
 
   update() {
     const w = this.world;
+    if (!this.host.land && w.fog && w.units) for (const inst of this.live) if (inst.ai && inst.ai.player) this.seenGrid(inst.ai.player);
     for (const inst of this.live) {
       if (inst.state === 'run' && (inst.purged || w.time - inst.born > 900)) {
         this.host.drop(inst);

@@ -93,14 +93,14 @@ export class ScriptHost {
     this.vm.pairsLua50();
     this.land = !!game.land;
     this.cmd = game.cmd || {
-      move: (us, x, y, attack, exact) => orderMove(us, x, y, !!attack, false, !!exact),
-      attack: (us, t) => {
+      move: (us, x, y, attack, exact, through) => orderMove(us, x, y, !!attack, false, !!exact, through | 0),
+      attack: (us, t, hp, through) => {
         const x = t && t.isPad ? t.padChild : t,
           p = us[0] && us[0].player;
         if (!x || x.dead || !p || x.player.team === p.team) return;
-        orderAttack(us, x);
+        orderAttack(us, x, hp || null, through | 0);
       },
-      guard: (us, t) => orderGuard(us, t),
+      guard: (us, t, through) => orderGuard(us, t, undefined, undefined, through | 0),
       stop: us => orderStop(us),
       ability: (e, kind, on, target) => useAbility(this.world, e, kind, on, target),
       build: (e, type, check) => !!(this.world.scriptBuild && this.world.scriptBuild(e, type, check)),
@@ -453,16 +453,19 @@ export class ScriptHost {
   of(v) {
     return v && v.__entity ? v.__entity : null;
   }
+  owner(e) {
+    return (e && e.isPad && e.padOwner) || (e && e.player);
+  }
   at(v) {
     if (v && v.__force) return this.plans.at(v);
     const e = this.of(v);
     return e ? { x: e.x, y: e.y, z: e.z || 0 } : v && v.__pos ? v : null;
   }
-  pos(x, y, z = 0) {
+  pos(x, y, z = 0, name = 'Position') {
     return {
       __wrap: true,
       __pos: true,
-      __name: 'Position',
+      __name: name,
       x,
       y,
       z,
@@ -682,7 +685,7 @@ export class ScriptHost {
       __name: e.type.name,
       Is_Valid: () => !gone(e) || self.dying === e,
       Service_Wrapper: () => {},
-      Get_Owner: () => self.player(e.player),
+      Get_Owner: () => self.player(self.owner(e)),
       Get_Type: () => self.type(e.scriptType || e.type),
       Get_Game_Scoring_Type: () => self.type(e.type),
       Get_Position: () => self.pos(e.x, e.y, e.z || 0),
@@ -907,14 +910,13 @@ export class ScriptHost {
         return !!s && !!s.auto;
       },
       Activate_Ability: (name, arg) => {
-        const kind = String(name || '').toUpperCase();
-        if (!ab(kind)) return;
-        if (arg === false) self.cmd.ability(e, kind, false);
-        else if (arg === true || arg === undefined) self.cmd.ability(e, kind, true);
-        else {
-          const t = self.of(arg) || self.at(arg);
-          if (t) self.cmd.ability(e, kind, true, t);
-        }
+        const kind = String(name || '').toUpperCase(),
+          said = v => (self.land ? undefined : v);
+        if (!ab(kind)) return said(false);
+        if (arg === false) return said(self.cmd.ability(e, kind, false) == null);
+        if (arg === true || arg === undefined) return said(self.cmd.ability(e, kind, true) == null);
+        const t = self.of(arg) || self.at(arg);
+        return said(!!t && self.cmd.ability(e, kind, true, t) == null);
       },
       Move_To: o => {
         const p = self.at(o);
@@ -923,6 +925,9 @@ export class ScriptHost {
         return self.plans.block(() => gone(e) || !e.order || e.order.kind === 'idle' || dist(e, p) < 300);
       },
       Attack_Move: o => {
+        const t = self.land ? null : self.of(o),
+          x = t && t.isPad ? t.padChild : t;
+        if (x && !gone(x) && x !== e && x !== e.squad && e.player && self.plans.enemy(x, e.player)) return self.plans.chase(e, x);
         const p = self.at(o);
         if (!p) return undefined;
         self.cmd.move([e], p.x, p.y, true, false);
@@ -1409,6 +1414,16 @@ export class ScriptHost {
     const typeOf = n => (n && n.__type) || db.type(String(n || ''));
     const playerOf = n => (n && n.__player) || null;
     const live = () => [...w.selectables()].filter(e => !gone(e));
+    const objects = () => {
+      if (this.land || !w.squads) return live();
+      const out = [];
+      for (const s of w.squads) if (!gone(s)) out.push(s);
+      for (const u of w.units) if (!u.dead) out.push(u);
+      out.sort((a, b) => a.id - b.id);
+      for (const s of w.specialWeapons || []) if (!s.dead) out.push(s);
+      return out;
+    };
+    const ofType = (e, t) => e.type === t || e.scriptType === t || (!e.isSquad || this.land ? lead(e) && lead(e).type === t : false);
     vm.global('Hide_Sub_Object', (o, hide, name) => {
       const e = this.of(o),
         want = String(name || '').toUpperCase(),
@@ -1513,7 +1528,7 @@ export class ScriptHost {
     vm.global('Find_Object_Type', n => this.type(typeOf(n)));
     vm.global('Find_First_Object', n => {
       const t = typeOf(n);
-      return t ? this.wrap(live().find(e => e.type === t || e.scriptType === t || (lead(e) && lead(e).type === t))) : undefined;
+      return t ? this.wrap(objects().find(e => ofType(e, t))) : undefined;
     });
     vm.global('Find_All_Objects_Of_Type', (a, b) => {
       const p = playerOf(a),
@@ -1521,17 +1536,13 @@ export class ScriptHost {
         cat = p && b ? String(b).toUpperCase() : null;
       if (!p && !t && typeof a === 'string') {
         const of = playerOf(b);
-        return live()
-          .filter(e => lead(e) && hasProp(e.scriptType || lead(e).type, a) && (!of || e.player === of))
+        return objects()
+          .filter(e => lead(e) && hasProp(e.scriptType || lead(e).type, a) && (!of || this.owner(e) === of))
           .map(e => this.wrap(e));
       }
-      return live()
+      return objects()
         .filter(e =>
-          t
-            ? e.type === t || e.scriptType === t || (lead(e) && lead(e).type === t)
-            : p
-              ? e.player === p && (!cat || lead(e).type.categories().has(cat))
-              : false
+          t ? ofType(e, t) : p ? this.owner(e) === p && (!cat || (lead(e) && lead(e).type.categories().has(cat))) : false
         )
         .map(e => this.wrap(e));
     });
@@ -2059,19 +2070,19 @@ export class ScriptHost {
     };
     const out = { ...cmd };
     if (cmd.move)
-      out.move = (us, x, y, attack, exact) => {
+      out.move = (us, x, y, attack, exact, through) => {
         if (D.on) log(attack ? 'attackmove' : 'move', us, (attack ? 'attack-move' : 'move') + ' to ' + targetOf({ x, y }));
-        return cmd.move(us, x, y, attack, exact);
+        return cmd.move(us, x, y, attack, exact, through);
       };
     if (cmd.attack)
-      out.attack = (us, t) => {
-        if (D.on) log('attack', us, 'attack ' + nameOf(t));
-        return cmd.attack(us, t);
+      out.attack = (us, t, hp, through) => {
+        if (D.on) log('attack', us, 'attack ' + nameOf(t) + (hp ? ' at ' + hp.kind : ''));
+        return cmd.attack(us, t, hp, through);
       };
     if (cmd.guard)
-      out.guard = (us, t) => {
+      out.guard = (us, t, through) => {
         if (D.on) log('guard', us, 'guard ' + nameOf(t));
-        return cmd.guard(us, t);
+        return cmd.guard(us, t, through);
       };
     if (cmd.stop)
       out.stop = us => {
