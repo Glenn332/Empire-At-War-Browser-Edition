@@ -210,6 +210,7 @@ function goalState(S, controller) {
     owed: S.owed,
     wake: S.wake,
     learn: [...S.learn].map(([k, l]) => [k, l.slice()]),
+    kept: (S.kept || []).filter(p => p.state === 'over').map(p => [p.goal, p.tkey ?? '']),
     log: S.log.map(r => r.slice()),
     last: S.last ? { ...S.last, cats: S.last.cats.slice() } : null,
     pairs: S.pairs.map((x, i) => (i % 2 ? planetOf(x) : x)),
@@ -235,6 +236,7 @@ function setGoalState(plans, side, S, saved) {
     log: saved.log || [],
     last: saved.last ?? null
   });
+  S.kept = (saved.kept || []).map(([goal, tkey]) => ({ goal, tkey, state: 'over' }));
   S.pairs = saved.pairs.map((x, i) => (i % 2 ? target(x) : x));
   S.proposed = new Map(saved.proposed.map(([k, p]) => [k, { name: p.name, t: target(p.t), d: p.d, def: brain.defs.get(p.name) }]));
   S.on = saved.on && { cats: new Map(saved.on.cats), goals: new Map(saved.on.goals), budget: new Map(saved.on.budget) };

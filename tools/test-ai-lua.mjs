@@ -24,7 +24,7 @@ const { loadMap } = await import('../public/js/ted.js');
 const { preloadModels } = await import('../public/js/model.js');
 const { seedSim, simRandom, simRandomState, setSimRandomState } = await import('../public/js/game/simrandom.js');
 const { ScriptHost } = await import('../public/js/game/scripts.js');
-const { hardpointKind, collisionBits, weakestHardpoint } = await import('../public/js/game/aiplans.js');
+const { Plans, hardpointKind, collisionBits, weakestHardpoint } = await import('../public/js/game/aiplans.js');
 const { SpaceMind, loadSpaceBrain } = await import('../public/js/game/spacebrain.js');
 const { SpaceGoals } = await import('../public/js/game/spacegoals.js');
 const { SpecialWeapon } = await import('../public/js/game/superweapon.js');
@@ -50,7 +50,10 @@ const used = [
   'TIE_Fighter_Squadron',
   'Mineral_Extractor_Pad',
   'Empire_Mineral_Extractor',
-  'Skirmish_Empire_Star_Base_2'
+  'Skirmish_Empire_Star_Base_2',
+  'UC_Empire_Mineral_Extractor',
+  'Defense_Satellite_Laser_Pad',
+  'TIE_Bomber_Squadron'
 ];
 {
   const names = new Set(),
@@ -419,6 +422,134 @@ for (const u of [sd, cal, neb]) for (const h of u.hardpoints) h.isWeapon = false
   assert.equal(m.sum([station], ['STRUCTURE']), 0, 'the station counts by its category mask only, not as a Structure');
   assert(m.sum([station], ['CAPITAL']) > 0, 'it is a Capital');
   console.log('Lua object view: ok');
+}
+
+{
+  const P = Object.create(Plans.prototype);
+  Object.assign(P, {
+    byGoal: new Map([['G', ['K']]]),
+    staff: () => new Map(),
+    reserve: () => true,
+    host: { add: () => {} },
+    live: [],
+    world: { time: 0 }
+  });
+  assert.equal(P.start(aiOf(empire), 'G').removable, true, 'a plan starts goal-system removable, as the engine plan behaviour');
+
+  const unitless = plan(empire, ['MainForce']),
+    kept = plan(empire, ['MainForce']),
+    caller = plan(empire, ['MainForce']),
+    theirs = plan(rebel, ['MainForce']);
+  unitless.removable = true;
+  kept.removable = false;
+  caller.removable = true;
+  theirs.removable = true;
+  plans.live.push(unitless, kept, caller, theirs);
+  host.current = caller;
+  const env = vm.environment({});
+  assert.equal(vm.run('function Go() Purge_Goals(Find_Player("Empire")) end', 'purge', env), null);
+  assert(vm.call(env, 'Go').ok);
+  host.current = null;
+  assert.equal(unitless.purged, true, 'Purge_Goals ends a removable plan even with no units, like FireDeathStar waiting for its weapon');
+  assert(!kept.purged, 'a plan whose script set itself not removable stays');
+  assert(!caller.purged, 'the calling plan stays');
+  assert(!theirs.purged, "another player's plans stay");
+  for (const x of [unitless, kept, caller, theirs]) plans.live.splice(plans.live.indexOf(x), 1);
+  console.log('removable and Purge_Goals: ok');
+}
+
+{
+  const goals = new SpaceGoals(w, () => []);
+  w.skirmish = true;
+  const slots = new Set(w.players.filter(p => p.id >= 0 && !p.team.mapSide).map(p => p.factionName.toUpperCase()));
+  const extra = [...db.factions.values()].filter(
+    f => !slots.has(f.name.toUpperCase()) && f.bool('Create_Player_In_Multiplayer_Games', !f.bool('Is_Playable'))
+  ).length;
+  assert(extra > 0, 'the stock factions make players of their own in a multiplayer game');
+  assert.equal(goals.computerPlayers(), w.players.filter(p => p.id >= 0 && !p.human && !p.team.mapSide).length + extra, 'computer players count the map factions the engine makes players of');
+  w.skirmish = false;
+  delete goals.cpus;
+  assert.equal(goals.computerPlayers(), 0, 'outside a skirmish the AI list counts');
+
+  const fog = w.fog;
+  w.fog = true;
+  const far = w.spawn(T('Mineral_Extractor_Pad'), w.neutral || rebel, 9000, 9000, 0);
+  far.seenBy = 0;
+  for (const f of cal.isSquad ? cal.fighters : [cal]) f.seenBy = 0;
+  cal.seenBy = 0;
+  const ai = { player: empire, known: () => [] };
+  assert(goals.targets(ai, 0x800).some(t => t.unit === far), 'a pad (Last_State_Visible_Under_FOW) is a goal target before it is seen');
+  assert(!goals.targets(ai, 0x40).some(t => t.unit === cal), 'an enemy ship under fog is not');
+  w.fog = fog;
+  console.log('goal targets and computer players: ok');
+}
+
+{
+  const brain = await loadSpaceBrain('Empire');
+  const count = () => new SpaceMind(brain, w, empire, { enemies: [] }).fn('NUMBER_RESOURCE_STRUCTURES_SPACE', null);
+  const before = count();
+  const pad = w.spawn(T('Mineral_Extractor_Pad'), empire, 6000, -2000, 0);
+  pad.padOwner = empire;
+  const uc = w.raiseOnPad(pad, T('UC_Empire_Mineral_Extractor'), empire);
+  assert(uc.construction, 'the refinery is under construction');
+  assert.equal(count(), before + 1, 'TacticalBuiltStructureCount counts a structure still under construction by the type it becomes');
+  console.log('built structure count: ok');
+}
+
+{
+  const station = w.units.find(u => !u.dead && u.player === empire && u.isStation);
+  assert(station, 'the Empire station sells');
+  const types = ['TIE_Fighter_Squadron', 'TIE_Bomber_Squadron'].map(T);
+  const specs = [{ types, cats: null, min: 0, max: 40 }];
+  const D = { ignoreTarget: false, max: 1.5, min: 1.1, perFail: 0.1, extraCost: 0 };
+  const credits = empire.credits;
+  empire.credits = 1e6;
+  const aiE = { player: empire, difficulty: 'medium' };
+  const vette = w.spawn(T('Corellian_Corvette'), rebel, -3000, -1500, 0),
+    target = { unit: vette, x: vette.x, y: vette.y, key: 'vette' };
+  empire.popCap = 1000;
+  const stock = host.contrastTable;
+  host.contrastTable = new Map([['CORVETTE', { types: new Map([[types[0], 0], [types[1], 2]]), kinds: [] }]]);
+  const withContrast = plans.choose(empire, specs, [], { D, t: target, mind, ai: aiE });
+  const bomberPower = types[1].num('AI_Combat_Power', 0) || [...new Set(types[1].list('Squadron_Units'))].reduce((a, n) => a + T(n).num('AI_Combat_Power', 0), 0);
+  assert(bomberPower > 0);
+  assert(withContrast.chosen.length > 0 && withContrast.chosen.every(t => t === types[1]), 'a buy plan with a target buys what counters it');
+  assert.equal(
+    withContrast.chosen.length,
+    Math.min(40, Math.ceil(vette.type.num('AI_Combat_Power', 0) / bomberPower)),
+    'and stops once the contrast is met and the force at the target is matched'
+  );
+  assert.equal(plans.choose(empire, specs, [], { D: { ...D, ignoreTarget: true }, t: target, mind, ai: aiE }).chosen.length, 40, 'without a target it fills its lines');
+  const big = { ...D, min: 1.4 };
+  empire.credits = Math.max(...types.map(t => (w.costOf ? w.costOf(t) : S.buildCost(t)))) * 1.5;
+  host.contrastTable = new Map([['CORVETTE', { types: new Map([[types[0], 1], [types[1], 1]]), kinds: [] }]]);
+  assert.equal(plans.choose(empire, specs, [], { D: big, t: target, mind, ai: aiE }).chosen.length, 0, 'a purchase that cannot meet the contrast is no plan');
+  const free = plans.choose(empire, specs, [], { D: { ...big, ignoreTarget: true }, t: target, mind, ai: aiE });
+  assert(free.chosen.length > 0, 'an IgnoreTarget buy plan has no contrast test');
+  host.contrastTable = stock;
+  empire.credits = credits;
+  console.log('contrast on purchases: ok');
+}
+
+{
+  const target = w.spawn(T('Defense_Satellite_Laser_Pad'), empire, -8000, 3000, 0),
+    near = w.spawn(T('Defense_Satellite_Laser_Pad'), empire, -8000, 3600, 0),
+    farther = w.spawn(T('Defense_Satellite_Laser_Pad'), empire, -8000, 6000, 0);
+  for (const u of [target, near, farther]) u.padOwner = empire;
+  const key = [...plans.builds.keys()].find(k => /^BUILDSTRUCTURESPACE$/i.test(k));
+  assert(key, 'the structure build plan');
+  const inst = plan(empire, ['MainForce']);
+  inst.key = key;
+  inst.thing = target;
+  const credits = empire.credits;
+  empire.credits = 1e6;
+  const f = inst.forces[0],
+    pads = plans.force(f).Get_Reserved_Build_Pads().map(x => host.of(x));
+  empire.credits = credits;
+  assert.equal(pads.length, 1, 'one pad for the one structure the plan picks (a line per faction, one of them affiliated)');
+  assert.equal(pads[0], target, 'the open pad offering it nearest the goal target');
+  assert(f.padTypes[0] && f.padTypes[0].name.toUpperCase().startsWith('UC_EMPIRE_DEFENSE_SATELLITE'), 'and the type picked for it');
+  console.log('pad reservation: ok');
 }
 
 console.log('ai lua: ok');

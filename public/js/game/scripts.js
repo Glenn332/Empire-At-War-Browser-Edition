@@ -1862,8 +1862,7 @@ export class ScriptHost {
       const p = playerOf(player),
         me = this.current;
       for (const inst of this.plans.live)
-        if (inst !== me && inst.ai.player === p && inst.state === 'run' && !inst.flags?.buys && inst.forces.some(f => f.specs.length))
-          inst.purged = true;
+        if (inst !== me && inst.ai.player === p && inst.state === 'run' && inst.removable !== false) inst.purged = true;
     });
     vm.global('FindTarget', {
       __wrap: true,

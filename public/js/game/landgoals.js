@@ -182,6 +182,7 @@ export class GoalSystem {
       S.owed = this.paced ? Math.min(S.owed + S.rate * dt * FPS, S.rate * FPS) : S.owed + (total / SWEEP) * dt;
       const mind = this.mind(side, S),
         act = this.active(cmdr);
+      if (S.kept) for (const p of S.kept) if (p.state === 'over') act.push(p);
       for (; S.owed >= 1 && S.at < total && !late(); S.at++) {
         if (this.budget !== undefined) this.budget--;
         const name = S.pairs[S.at * 2],
@@ -317,7 +318,14 @@ export class GoalSystem {
         .filter(p => p.def.category === cat)
         .sort((a, b) => b.d - a.d)
         .slice(0, ext + running.length);
-      if (!fresh.length) continue;
+      if (!fresh.length) {
+        for (const p of running)
+          if (!this.isOn(S, p.goal, p.gdef) || (!(p.gd > 0) && p.removable !== false)) {
+            dropped(p, p.gd > 0 ? 'its goal is off' : 'no longer wanted');
+            P.stop(p);
+          }
+        continue;
+      }
       const cap = running.length + ext,
         top = fresh[0].d;
       const keep = [],
@@ -466,6 +474,7 @@ export class GoalSystem {
           'plan'
         );
     S.log = wanted.concat(S.log).slice(0, 30);
+    S.kept = this.active(cmdr);
     S.last = { time: w.time, pairs: S.pairs.length / 2, proposed: S.proposed.size, cats: cats.map(c => c[0]) };
   }
 

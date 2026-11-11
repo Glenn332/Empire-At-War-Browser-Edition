@@ -419,6 +419,7 @@ function savePlan(B, s, inst) {
       toldEmpty: !!f.toldEmpty,
       moving: [...f.moving].map(ref).filter(Boolean),
       pads: f.pads ? f.pads.map(ref).filter(Boolean) : null,
+      padTypes: f.padTypes ? f.padTypes.map(t => (t ? t.name : null)) : null,
       pool: poolOf(f)
     }))
   };
@@ -437,7 +438,12 @@ function saveGoals(B) {
   for (const [k, S] of G.sides) {
     const i = B.land ? k : B.cmdrs.indexOf(k);
     if (i < 0 || i === undefined) continue;
-    out.push({ i, wake: S.wake, learn: [...S.learn] });
+    out.push({
+      i,
+      wake: S.wake,
+      learn: [...S.learn],
+      kept: (S.kept || []).filter(p => p.state === 'over').map(p => [p.goal, p.tkey ?? ''])
+    });
   }
   return out;
 }
@@ -687,7 +693,11 @@ function finishPlan(B, host, inst, si) {
     f.units = sf.units.map(r => B.thing(r)).filter(e => e && !e.dead);
     for (const e of f.units) e.aiPlan = inst;
     f.moving = new Set(sf.moving.map(r => B.thing(r)).filter(Boolean));
-    if (sf.pads) f.pads = sf.pads.map(r => B.thing(r)).filter(Boolean);
+    if (sf.pads) {
+      const kept = sf.pads.map((r, i) => [B.thing(r), sf.padTypes ? db.type(sf.padTypes[i] || '') || null : null]).filter(x => x[0]);
+      f.pads = kept.map(x => x[0]);
+      if (sf.padTypes) f.padTypes = kept.map(x => x[1]);
+    }
     for (const n of sf.pool) {
       const x = pool.find(x => x.type?.name === n && (!x.owner || x.owner === inst) && !f.pool.includes(x));
       if (x) {
@@ -711,6 +721,7 @@ function restoreGoals(B, list) {
     const S = G.state(k);
     S.wake = g.wake;
     S.learn = new Map(g.learn);
+    S.kept = (g.kept || []).map(([goal, tkey]) => ({ goal, tkey, state: 'over' }));
     S.phase = 'idle';
   }
 }

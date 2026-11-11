@@ -374,7 +374,11 @@ export class Plans {
       if (thing && thing.isSite && !this.fieldsUnits(key))
         return w.buildOptions(thing, ai.player).some(t => !w.cantBuild(thing, t, ai.player));
       const b = this.buys.get(key);
-      if (b) return b.bare || this.choose(ai.player, b.specs, b.required).chosen.length > 0;
+      if (b)
+        return (
+          b.bare ||
+          this.choose(ai.player, b.specs, b.required, { D: this.defs.get(key), t: o.t, mind: o.mind, ai, fails: o.fails }).chosen.length > 0
+        );
       return !!this.staff(ai, key, thing, { ...o, all: true });
     });
   }
@@ -439,10 +443,6 @@ export class Plans {
     const mind = o.mind || ai.mind || null,
       t = o.t || (thing && thing.type ? { unit: thing, x: thing.x, y: thing.y } : thing) || null;
     const at = t && t.x !== undefined ? t : null;
-    const stolen = e => {
-      const v = e.aiPlan;
-      return !!v.plan && v.ai === ai && v.state !== 'over' && v.removable === true;
-    };
     const mine = new Map();
     const pool = ai.mine();
     if (lines.some(l => l.s.types && l.s.types.some(t => t.bool('Is_Special_Weapon_In_Space'))))
@@ -459,9 +459,9 @@ export class Plans {
     let far = 0;
     for (const e of pool) {
       if (!e.isSquad && !e.members && hf0(e) < floor) continue;
-      if (e.x !== undefined && (!e.aiPlan || o.all || stolen(e)) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
+      if (e.x !== undefined && (!e.aiPlan || o.all) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
       if (heroesAttach && !e.isSpecialWeapon && scriptedHero(e)) continue;
-      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan || stolen(e)) || !(D.engaged || !this.engaged(e))) continue;
+      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan) || !(D.engaged || !this.engaged(e))) continue;
       const ls = lines.filter(l => fits(e, l.s));
       if (ls.length) mine.set(e, ls);
     }
@@ -782,12 +782,13 @@ export class Plans {
       forces: [],
       born: this.world.time,
       result: null,
-      removable: false,
+      removable: true,
       begin: () => this.begin(inst),
       poll: () => this.poll(inst)
     };
     inst.staffed = staffed;
     inst.gd = o.desire;
+    inst.aim = { t: o.t, mind: o.mind, fails: o.fails || 0 };
     if (!this.reserve(inst)) return null;
     const robbed = new Set();
     for (const list of staffed.values())
@@ -868,7 +869,7 @@ export class Plans {
     const b = this.buys.get(inst.key);
     if (!b || b.bare || this.builds.has(inst.key) || this.defs.get(inst.key)?.magic) return true;
     const p = inst.ai.player,
-      got = this.choose(p, b.specs, b.required);
+      got = this.choose(p, b.specs, b.required, this.aimOf(inst));
     if (!got.chosen.length) return false;
     const w = this.world,
       cost = got.chosen.reduce((a, t) => a + (w.costOf ? w.costOf(t) : buildCost(t)), 0);
@@ -889,7 +890,7 @@ export class Plans {
     const w = this.world,
       p = inst.ai.player;
     this.refund(inst);
-    const got = this.choose(p, f.specs, inst.flags?.required);
+    const got = this.choose(p, f.specs, inst.flags?.required, this.aimOf(inst, f));
     for (const e of (inst.staffed && inst.staffed.get(f.name)) || [])
       if (!gone(e) && e.aiPlan === inst && !f.units.includes(e) && f.take) f.take(e);
     if (D.on && !got.chosen.length)
@@ -915,7 +916,19 @@ export class Plans {
     });
   }
 
-  choose(p, specs, required) {
+  aimOf(inst, f = null) {
+    const a = inst.aim || {};
+    return {
+      D: this.defs.get(inst.key),
+      t: a.t,
+      mind: (inst.ai && inst.ai.mind) || a.mind,
+      ai: inst.ai,
+      fails: a.fails || 0,
+      escort: !!(f && f.flags && f.flags.has && f.flags.has('ESCORTFORCE'))
+    };
+  }
+
+  choose(p, specs, required, o = {}) {
     const w = this.world,
       f = { specs },
       none = { chosen: [], at: new Map() };
@@ -936,6 +949,67 @@ export class Plans {
     for (const b of sellers)
       for (const t of w.buildOptions(b, p)) if (!at.has(t) && f.specs.some(s => takes(s, t)) && !w.cantBuild(b, t, p)) at.set(t, b);
     const open = [...at.keys()];
+    const D = o.D,
+      table = D && !D.ignoreTarget && o.t ? this.host.contrast() : null,
+      cs = table ? [...table.keys()] : [];
+    let T = null,
+      thr = 1;
+    const facs = new Map();
+    const fac = t => {
+      let a = facs.get(t);
+      if (a) return a;
+      const k = new Set();
+      for (const x of [t, ...craft(t)]) for (const c of x.categories()) k.add(c);
+      a = cs.map(c => {
+        const en = table.get(c),
+          v = en.types.get(t) ?? (craft(t)[0] ? en.types.get(craft(t)[0]) : undefined);
+        if (v !== undefined) return v;
+        let n = 0,
+          sum = 0,
+          one = false;
+        for (const [kc, x] of en.kinds)
+          if (k.has(kc)) {
+            if (x === 1) one = true;
+            else {
+              n++;
+              sum += x;
+            }
+          }
+        return n ? sum / n : one ? 1 : 0;
+      });
+      if (this.host.land && this.host.terrainEffect) {
+        const e = this.host.terrainEffect(t);
+        if (e !== 1) for (let i = 0; i < a.length; i++) a[i] *= e;
+      }
+      facs.set(t, a);
+      return a;
+    };
+    if (cs.length) {
+      const fails = o.fails || 0,
+        scale = (D.max + fails * D.perFail) * this.contrastScale(o.ai),
+        g = o.t,
+        mind = o.mind;
+      thr = 1 - (fails * D.perFail + D.min) / (fails * D.perFail + D.max);
+      const about = c => (mind && mind.at ? mind.at(g, true, 'force', c ? [c] : null, 0) : 0);
+      const own = c => {
+        const u = g.unit;
+        if (!u || g.zone) return about(c);
+        const parts = u.isSquad ? u.fighters : u.members || [u];
+        const k = new Set([
+          ...(typeof u.cats === 'function' ? u.cats() : (lead(u) || u).type.categories()),
+          ...(u.isSquad ? [u.isBomber ? 'BOMBER' : 'FIGHTER'] : [])
+        ]);
+        if (c && !k.has(c)) return 0;
+        let n = 0;
+        for (const x of parts) n += Math.max(0, x.type.num('AI_Combat_Power', 0));
+        return n;
+      };
+      const by = o.escort ? about : own,
+        E = cs.map(c => by(c) * scale),
+        tot = by(null);
+      T = { E, R: E.slice(), tot, left: tot, can: open.some(t => fac(t).some((x, i) => x > 0 && E[i] > 0)) };
+    }
+    const met = () => !T || !T.can || !T.R.some(x => x > 0);
     const filled = f.specs.map(() => 0),
       picks = new Map(),
       chosen = [],
@@ -957,13 +1031,57 @@ export class Plans {
       const rest = cands.filter(t => (picks.get(t) || 0) / chosen.length < 0.5);
       if (chosen.length && rest.length) cands = rest;
       let best = null,
-        top = -Infinity;
+        top = -Infinity,
+        row = -1;
       for (const t of cands) {
-        const s = 0.4 * tech(t) + (simRandom() * power(t)) / 500;
+        const li = f.specs.findIndex((s, i) => takes(s, t) && filled[i] < s.max);
+        let s = 0.4 * tech(t) + (li >= 0 ? 1 - filled[li] / f.specs[li].max : 0),
+          r = -1;
+        if (!T) s += (simRandom() * power(t)) / 500;
+        else {
+          const fc = fac(t),
+            P = power(t);
+          let g = 0;
+          for (let i = 0; i < cs.length; i++) {
+            const R = T.R[i],
+              x = fc[i] * P;
+            if (!(R > 0) || !(x > 0)) continue;
+            const v = fc[i] * (1 - (Math.max(R - x, 0) / Math.max(R, x)) ** 2);
+            if (v > g) {
+              g = v;
+              r = i;
+            }
+          }
+          if (g > 0) s += 2 * g;
+          else if (
+            !met() ||
+            !(
+              D.extraCost > 0 ||
+              (T.left > 0 && fc.some(x => x > 0)) ||
+              f.specs.some((sp, i) => takes(sp, t) && filled[i] < sp.min) ||
+              (Array.isArray(required) &&
+                required.some(line => {
+                  const q = String(line)
+                    .split('|')
+                    .map(x => x.trim().toUpperCase())
+                    .filter(Boolean);
+                  return q.length && kind(t, q) && !chosen.some(x => kind(x, q));
+                }))
+            )
+          )
+            continue;
+        }
         if (s > top) {
           top = s;
           best = t;
+          row = r;
         }
+      }
+      if (!best) break;
+      if (T) {
+        const P = power(best);
+        if (row >= 0) T.R[row] -= fac(best)[row] * P;
+        T.left -= P;
       }
       const lines = f.specs.map((s, i) => i).filter(i => takes(f.specs[i], best) && filled[i] < f.specs[i].max);
       const line = lines[Math.floor(simRandom() * lines.length)];
@@ -975,6 +1093,10 @@ export class Plans {
       if (!isUpgradeType(best)) pop += best.num('Population_Value', 0);
     }
     if (f.specs.some((s, i) => filled[i] < s.min)) return none;
+    if (T && T.can && chosen.length) {
+      if (T.tot > 0 && T.left / T.tot > thr) return none;
+      for (let i = 0; i < cs.length; i++) if (T.E[i] > 0 && T.R[i] / T.E[i] > thr) return none;
+    }
     for (const line of Array.isArray(required) ? required : []) {
       const cats = String(line)
         .split('|')
@@ -1718,16 +1840,44 @@ export class Plans {
     const reserved = () => {
       if (f.pads) return f.pads.filter(u => w.buildOptions(u, p).length);
       const jobs = this.builds.get(inst.key) || [],
-        mine = jobs.flatMap(x => x.types),
-        most = Math.max(
-          1,
-          jobs.reduce((a, x) => a + x.max, 0)
-        );
-      const at = inst.thing && inst.thing.x !== undefined ? inst.thing : null;
-      const every = w.openPads ? w.openPads(p) : w.units.filter(u => !u.dead && u.isPad && !u.padChild && u.padOwner === p);
-      const can = every.filter(u => w.buildOptions(u, p).some(t => mine.includes(t) && !w.cantBuild(u, t, p)));
-      if (at) can.sort((a, b) => (a.x - at.x) ** 2 + (a.y - at.y) ** 2 - (b.x - at.x) ** 2 - (b.y - at.y) ** 2);
-      return (f.pads = can.slice(0, most));
+        at = inst.thing && inst.thing.x !== undefined ? inst.thing : null,
+        free = (w.openPads ? w.openPads(p) : w.units.filter(u => !u.dead && u.isPad && !u.padChild && u.padOwner === p)).slice(),
+        offers = (u, t) => w.buildOptions(u, p).includes(t) && !w.cantBuild(u, t, p),
+        tech = t => Math.max(0, t.num('Tech_Level', 0)),
+        power = t => Math.max(0, t.num('AI_Combat_Power', 0));
+      f.pads = [];
+      f.padTypes = [];
+      if (!at) return f.pads;
+      let spent = 0;
+      for (const job of jobs)
+        for (let n = 0; n < job.max; n++) {
+          let best = null,
+            top = -Infinity;
+          for (const t of job.types) {
+            if (spent + (w.costOf ? w.costOf(t) : buildCost(t)) > p.credits || !free.some(u => offers(u, t))) continue;
+            const v = 0.4 * tech(t) + (1 - n / job.max) + (simRandom() * power(t)) / 500;
+            if (v > top) {
+              top = v;
+              best = t;
+            }
+          }
+          if (!best) break;
+          let pad = null,
+            d = Infinity;
+          for (const u of free) {
+            if (!offers(u, best)) continue;
+            const e = (u.x - at.x) ** 2 + (u.y - at.y) ** 2;
+            if (e < d) {
+              d = e;
+              pad = u;
+            }
+          }
+          free.splice(free.indexOf(pad), 1);
+          spent += w.costOf ? w.costOf(best) : buildCost(best);
+          f.pads.push(pad);
+          f.padTypes.push(best);
+        }
+      return f.pads;
     };
     const wrapper = {
       __wrap: true,
@@ -1905,8 +2055,12 @@ export class Plans {
       Build_All: () => {
         const mine = f.specs.flatMap(s => s.types || []);
         let n = 0;
-        for (const u of this.builds.has(inst.key) ? reserved() : openPads()) {
-          const can = w.buildOptions(u, p).filter(t => (!mine.length || mine.includes(t)) && !w.cantBuild(u, t, p));
+        const held = this.builds.has(inst.key);
+        for (const u of held ? reserved() : openPads()) {
+          const kept = held && f.padTypes ? f.padTypes[f.pads.indexOf(u)] : null;
+          const can = kept
+            ? [kept].filter(t => w.buildOptions(u, p).includes(t) && !w.cantBuild(u, t, p))
+            : w.buildOptions(u, p).filter(t => (!mine.length || mine.includes(t)) && !w.cantBuild(u, t, p));
           if (!can.length) continue;
           const t = can[Math.floor(simRandom() * can.length)],
             why = w.startBuild(u, t, p);

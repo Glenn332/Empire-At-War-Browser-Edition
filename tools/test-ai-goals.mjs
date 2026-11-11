@@ -139,8 +139,35 @@ function rig({ defs, desire, budget, ext = 1, catOrder = [], removable = {} }) {
   const r = rig({ defs: [cat('A', 'C1'), cat('B', 'C2')], desire: { B: 5 }, budget: { C1: 1, C2: 1 } });
   const a = r.keep('A', 0);
   r.run();
-  assert.equal(a.state, 'run', 'a category with no proposal of its own is left alone: its goal runs on at desire 0');
+  assert.equal(a.state, 'over', 'a category with no proposal of its own drops a removable goal whose desire fell to 0');
   assert(r.started.includes('B'));
+}
+{
+  const r = rig({ defs: [cat('A', 'C1'), cat('B', 'C2')], desire: { B: 5 }, budget: { C1: 1, C2: 1 }, removable: { A: false } });
+  const a = r.keep('A', 0);
+  r.run();
+  assert.equal(a.state, 'run', 'a goal at desire 0 whose plan is not removable runs on');
+}
+{
+  const r = rig({ defs: [cat('A', 'C1'), cat('B', 'C2')], desire: { B: 5 }, budget: { C1: 1, C2: 1 } });
+  const a = r.keep('A', 3);
+  r.run();
+  assert.equal(a.state, 'run', 'a category with no proposal of its own keeps a goal still wanted');
+}
+{
+  const r = rig({ defs: [cat('A', 'C1')], desire: {}, budget: { C1: 1 } });
+  const a = r.keep('A', 3);
+  r.G.tick(0, 1 / 30);
+  const S = r.G.sides.get(0);
+  S.kept = [a];
+  S.phase = 'idle';
+  S.wake = 0;
+  a.state = 'over';
+  r.started.length = 0;
+  r.G.tick(0, 1 / 30);
+  assert(!r.started.includes('A'), 'a goal whose plan ended stays active until the next activation: not proposed in the sweep before it');
+  for (let i = 0; i < 10 && !r.started.includes('A'); i++) r.G.tick(0, 1 / 30);
+  assert(r.started.includes('A'), 'and proposed again in the sweep after it');
 }
 {
   const r = rig({ defs: [cat('A', 'C1'), cat('B', 'C1')], desire: { B: 30 }, budget: { C1: 1 }, removable: { A: false } });
