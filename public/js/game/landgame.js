@@ -3102,18 +3102,23 @@ export class LandGame {
     const wx = w.weather;
     if (wx.emitter && wx.level > 0.01 && !this.wxFx)
       this.wxFx = this.fx.spawn(wx.emitter, f => {
-        f.x = this.view.x;
-        f.y = this.view.y;
-        f.z = heightAt(this.terrain, this.view.x, this.view.y);
+        const c = this.camera,
+          d = c.getWorldDirection((this.wxDir ||= new THREE.Vector3()));
+        f.x = c.position.x;
+        f.y = c.position.y;
+        f.z = c.position.z;
+        f.dx = d.x;
+        f.dy = d.y;
+        f.dz = d.z;
         f.rot = 0;
         f.scale = 1;
         f.vx = f.vy = 0;
+        f.energy = Math.min(1, w.weather.level);
       });
     else if (this.wxFx && (wx.level <= 0.01 || this.wxFx.dead)) {
       this.wxFx.stop();
       this.wxFx = null;
     }
-    if (this.wxFx) this.wxFx.density = Math.min(1, wx.level);
     const WA = w.tables && w.tables.weatherAudio;
     if (WA && dt > 0 && !this.weatherAudioPaused) {
       const at = list => list.filter(e => e.weather === wx.name && wx.level >= e.from).sort((a, b) => b.from - a.from)[0];

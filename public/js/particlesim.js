@@ -54,6 +54,7 @@ class Batch {
     this.tint = new Float32Array(this.cap * 4);
     this.cell = new Float32Array(this.cap * 4);
     this.slot = new Float32Array(this.cap);
+    this.dir = desc.stretch ? new Float32Array(this.cap * 4) : null;
   }
   grow() {
     const n = (this.cap *= 2),
@@ -66,10 +67,19 @@ class Batch {
     this.tint = g(this.tint, 4);
     this.cell = g(this.cell, 4);
     this.slot = g(this.slot, 1);
+    if (this.dir) this.dir = g(this.dir, 4);
+  }
+  stretchLast(x, y, z, w) {
+    const i = (this.count - 1) * 4,
+      d = this.dir;
+    d[i] = x;
+    d[i + 1] = y;
+    d[i + 2] = z;
+    d[i + 3] = w;
   }
   add(x, y, z, half, r, g, b, a, col, row, cellSize, angle, slot) {
     if (this.count >= this.cap) {
-      if (this.cap >= 16384) return;
+      if (this.cap >= 16384) return false;
       this.grow();
     }
     const n = this.count++,
@@ -90,6 +100,7 @@ class Batch {
     u[i + 2] = cellSize;
     u[i + 3] = angle;
     this.slot[n] = slot;
+    return true;
   }
 }
 
@@ -117,6 +128,41 @@ const turn = (B, v) => {
   return v;
 };
 const cl = v => (v < 0 ? 0 : v > 255 ? 1 : v / 255);
+
+export function wrapCube(h, v) {
+  const e = h + h;
+  let d;
+  if (v < -h) {
+    d = -h - v;
+    if (e <= d) d -= Math.trunc(d / e);
+    v = h - d;
+  }
+  if (h < v) {
+    d = v - h;
+    if (e <= d) d -= Math.trunc(d / e);
+    v = d - h;
+  }
+  return v;
+}
+
+export function weatherOrigin(e, f, out) {
+  const o = e.weatherOffset,
+    h = e.pos.cube;
+  out[0] = f.x + (f.dx || 0) * o;
+  out[1] = f.y + (f.dy || 0) * o;
+  out[2] = f.z + (f.dz || 0) * o;
+  for (let i = 0; i < 3; i++) out[3 + i] = h > 0 ? out[i] - 2 * h * Math.trunc((0.5 / h) * out[i]) : 0;
+  return out;
+}
+
+export function weatherFade(e, dist) {
+  const a = e.weatherFadeStart,
+    b = e.weatherFadeLength;
+  if (dist < a) return 0;
+  return dist < a + b && b !== 0 ? (dist - a) / b : 1;
+}
+
+const _o = new Float64Array(6);
 
 export const WIND = 9;
 const _near = [];
@@ -181,7 +227,71 @@ class System {
         accel: this.basis ? turn(this.basis, [...e.accel]) : e.accel
       }));
     for (const s of this.emitters) s.trailState = s.e.trail ? this.emitters.find(o => o.e === s.e.trail) : null;
+    for (const s of this.emitters) if (s.e.weather) for (let i = emitterPoolSize(s.e); i > 0 && sim.total <= sim.cap; i--) this.spawnWeather(s);
     for (const s of this.emitters) if (s.e.skipTime > 0) for (let t = 0; t <= s.e.skipTime; t += 0.1) this.stepEmitter(s, 0.1);
+  }
+
+  spawnWeather(s) {
+    const e = s.e;
+    sampleGroup(e.pos, _v);
+    const p = {
+      life: e.lifetime * (1 - Math.random() * e.randLife),
+      age: Math.random() * e.lifetime,
+      x: _v[0],
+      y: _v[1],
+      z: _v[2],
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+      size: 1 + (Math.random() * 2 - 1) * e.randScale,
+      angle: 0,
+      flip: e.randRotDir && Math.random() < 0.5,
+      cr: (Math.random() * e.randColor[0] * 100) | 0,
+      cg: 0,
+      cb: 0,
+      ca: -((Math.random() * e.randColor[3] * 100) | 0),
+      world: true
+    };
+    sampleGroup(e.vel, _v);
+    p.vx = _v[0];
+    p.vy = _v[1];
+    p.vz = _v[2];
+    p.cg = e.greyRand ? p.cr : (Math.random() * e.randColor[1] * 100) | 0;
+    p.cb = e.greyRand ? p.cr : (Math.random() * e.randColor[2] * 100) | 0;
+    if (e.staticRot) p.angle = e.tracks[6][0] * TAU * (1 + (Math.random() * 2 - 1) * e.randRot);
+    s.parts.push(p);
+    this.sim.total++;
+  }
+
+  stepWeather(s, dt) {
+    const e = s.e,
+      h = e.pos.cube,
+      parts = s.parts,
+      wrap = this.emitting;
+    let n = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      p.x = wrapCube(h, p.x + p.vx * dt);
+      p.y = wrapCube(h, p.y + p.vy * dt);
+      p.z = wrapCube(h, p.z + p.vz * dt);
+      p.age += dt;
+      if (p.age > p.life) {
+        if (!wrap) {
+          this.sim.total--;
+          continue;
+        }
+        p.age %= p.life;
+      }
+      if (!e.staticRot) {
+        const rs = sampleTrack(e.tracks[6], p.age / p.life);
+        if (rs) p.angle += rs * TAU * dt * (1 + (Math.random() * 2 - 1) * e.randRot);
+      }
+      parts[n++] = p;
+    }
+    parts.length = n;
   }
 
   spawn(s, age, at) {
@@ -352,6 +462,7 @@ class System {
     const e = s.e,
       f = this.f;
     s.time += dt;
+    if (e.weather) return this.stepWeather(s, dt);
     if (this.emitting && !e.slave) {
       while (s.time >= s.next && (!e.burst || e.nBursts === 0 || s.bursts < e.nBursts)) {
         const n = (e.burst ? e.perBurst : 1) * (e.emitMode === 3 && this.points ? this.points.length : 1);
@@ -463,6 +574,13 @@ class System {
       const T = e.tracks,
         cell = 1 / e.grid;
       const cap = energyCap(e, this.f.energy ?? 1);
+      const wx = e.weather,
+        h = e.pos.cube,
+        fadeRGB = e.blend === 1 || e.blend === 4,
+        fadeA = e.blend === 2 || e.blend === 5 || e.blend === 7,
+        stretch = e.stretch ? e.stretchFactor : 0,
+        sk = e.maxSpeed > 0 ? 1 / (e.maxSpeed * (wx ? 1 : sc)) : 1e6;
+      if (wx) weatherOrigin(e, f, _o);
       for (let pi = 0; pi < s.parts.length && pi < cap; pi++) {
         const p = s.parts[pi];
         const k = p.age / p.life;
@@ -470,8 +588,17 @@ class System {
         let x = p.x,
           y = p.y,
           z = p.z,
-          at = -1;
-        if (!p.world) {
+          at = -1,
+          fade = 1;
+        if (wx) {
+          const dx = wrapCube(h, p.x - _o[3]),
+            dy = wrapCube(h, p.y - _o[4]),
+            dz = wrapCube(h, p.z - _o[5]);
+          x = _o[0] + dx;
+          y = _o[1] + dy;
+          z = _o[2] + dz;
+          fade = weatherFade(e, Math.hypot(_o[0] + _o[0] - dx, _o[1] + _o[1] - dy, _o[2] + _o[2] - dz));
+        } else if (!p.world) {
           if (slot >= 0) at = slot;
           else {
             const lx = p.x * co + p.z * so,
@@ -481,22 +608,33 @@ class System {
             z = f.z + lz;
           }
         }
-        const bright = f.bright;
-        batch.add(
+        const bright = f.bright,
+          lit = fadeRGB ? bright * fade : bright;
+        const added = batch.add(
           x,
           y,
           z,
-          0.5 * sampleTrack(T[4], k) * p.size * sc,
-          cl(sampleTrack(T[0], k) + p.cr) * bright,
-          cl(sampleTrack(T[1], k) + p.cg) * bright,
-          cl(sampleTrack(T[2], k) + p.cb) * bright,
-          cl(sampleTrack(T[3], k) + p.ca) * bright,
+          0.5 * sampleTrack(T[4], k) * p.size * (wx ? 1 : sc),
+          cl(sampleTrack(T[0], k) + p.cr) * lit,
+          cl(sampleTrack(T[1], k) + p.cg) * lit,
+          cl(sampleTrack(T[2], k) + p.cb) * lit,
+          cl(sampleTrack(T[3], k) + p.ca) * (fadeA ? bright * fade : bright),
           idx % e.grid,
           ((idx / e.grid) | 0) % e.grid,
           cell,
           p.flip ? -p.angle : p.angle,
           at
         );
+        if (stretch && added) {
+          let vx = p.vx + p.rx,
+            vy = p.vy + p.ry;
+          if (!p.world) {
+            const t = vx;
+            vx = cr * t - sr * vy;
+            vy = sr * t + cr * vy;
+          }
+          batch.stretchLast(vx * sk, vy * sk, (p.vz + p.rz) * sk, stretch);
+        }
       }
     }
   }
@@ -531,9 +669,10 @@ export class ParticleSim {
     if (b && b.heat === (e.heat && this.heatScene)) return b.batch;
     const additive = e.blend === 1 || e.blend === 4,
       heat = e.heat && this.heatScene;
-    const key = e.texture.toUpperCase() + (heat ? '|H' : additive ? '|A' : '|B') + (e.noDepth ? 'N' : '');
+    const stretch = !!e.stretch && !heat;
+    const key = e.texture.toUpperCase() + (heat ? '|H' : additive ? '|A' : '|B') + (e.noDepth ? 'N' : '') + (stretch ? 'S' : '');
     let batch = this.batches.get(key);
-    if (!batch) this.batches.set(key, (batch = new Batch(key, { key, texture: e.texture, additive, noDepth: !!e.noDepth, heat: !!heat })));
+    if (!batch) this.batches.set(key, (batch = new Batch(key, { key, texture: e.texture, additive, noDepth: !!e.noDepth, heat: !!heat, stretch })));
     e._batch = { heat, batch };
     return batch;
   }

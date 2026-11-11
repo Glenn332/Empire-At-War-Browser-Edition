@@ -516,14 +516,14 @@ struct Draw { model: mat4x4f, modelView: mat4x4f }
 @group(1) @binding(1) var mapS: sampler;
 @group(1) @binding(2) var framesT: texture_2d<f32>;
 @group(2) @binding(0) var<uniform> D: Draw;
-struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) tint: vec4f, @location(3) cell: vec4f, @location(4) slot: f32 }
+struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) tint: vec4f, @location(3) cell: vec4f, @location(4) slot: f32, @location(5) dir: vec4f }
 struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f }
 @vertex fn vs(i: VIn) -> VOut {
   var o: VOut;
   o.vTint = i.tint;
   o.vUv = (i.cell.xy + vec2f(i.position.x * 0.5 + 0.5, 0.5 - i.position.y * 0.5)) * i.cell.z;
   let c = cos(i.cell.w); let s = sin(i.cell.w);
-  let corner = vec2f(i.position.x * c - i.position.y * s, i.position.x * s + i.position.y * c) * i.center.w;
+  var corner = vec2f(i.position.x * c - i.position.y * s, i.position.x * s + i.position.y * c) * i.center.w;
   var at = i.center.xyz;
   if (i.slot >= 0.0) {
     let row = clamp(i32(i.slot + 0.5), 0, i32(textureDimensions(framesT).y) - 1);
@@ -532,7 +532,23 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
     let lx = at.x * co + at.z * so; let lz = at.z * co - at.x * so;
     at = vec3f(fa.x + cr * lx - sr * at.y, fa.y + sr * lx + cr * at.y, fa.z + lz);
   }
-  var mv = P.view * vec4f(at, 1.0); mv = vec4f(mv.xy + corner, mv.zw);
+  var mv = P.view * vec4f(at, 1.0);
+  if (i.dir.w > 0.0) {
+    let v = (P.view * vec4f(i.dir.xyz, 0.0)).xyz;
+    let sp = length(v.xy);
+    if (sp > 0.0) {
+      let c0 = P.proj * mv; let c1 = P.proj * vec4f(mv.xyz + normalize(v) * 100.0, 1.0);
+      let d = (c1.xy / c1.w - c0.xy / c0.w) / vec2f(P.proj[0][0], P.proj[1][1]);
+      let dl = length(d);
+      if (dl > 0.0) {
+        let u = d / dl; let w = vec2f(u.y, -u.x);
+        let a = 0.5 * (i.position.x + i.position.y); let b = 0.5 * (i.position.y - i.position.x);
+        let k = select(1.0, 1.0 + i.dir.w * sp / max(sp, 1.0), b > 0.0);
+        corner = (-a * w - b * k * u) * i.center.w;
+      }
+    }
+  }
+  mv = vec4f(mv.xy + corner, mv.zw);
   o.pos = glDepth(P.proj * mv);
   return o;
 }
@@ -562,7 +578,8 @@ const particles = {
       ['center', 4, 1],
       ['tint', 4, 2],
       ['cell', 4, 3],
-      ['slot', 1, 4]
+      ['slot', 1, 4],
+      ['dir', 4, 5]
     ]
   }),
   layout: [...texBinding(0), { binding: 2, visibility: 3, texture: { sampleType: 'unfilterable-float' } }],

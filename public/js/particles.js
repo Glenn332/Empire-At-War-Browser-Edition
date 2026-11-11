@@ -29,6 +29,24 @@ function parseGroup(r, c) {
   return { type: 0, point: [0, 0, 0] };
 }
 
+export function groupSpeed(g) {
+  switch (g.type) {
+    case 1: {
+      const m = i => (Math.abs(g.min[i]) <= Math.abs(g.max[i]) ? Math.abs(g.max[i]) : Math.abs(g.min[i]));
+      return Math.hypot(m(0), m(1), m(2));
+    }
+    case 2:
+      return Math.sqrt(3 * g.cube * g.cube);
+    case 3:
+      return g.sphereR;
+    case 4:
+    case 5:
+      return Math.hypot(g.cylH, g.cylR);
+    default:
+      return Math.hypot(...g.point);
+  }
+}
+
 function bakeTrack(start, end, interp, keys) {
   const pts = [[0, start], ...keys.sort((a, b) => a[0] - b[0]), [1, end]];
   const table = new Float32Array(SAMPLES);
@@ -76,6 +94,12 @@ function parseEmitter(r, c) {
     emitMode: 0,
     heat: false,
     weather: false,
+    weatherCube: 500,
+    weatherFadeStart: 50,
+    weatherFadeLength: 100,
+    weatherOffset: 0,
+    stretch: false,
+    stretchFactor: 50,
     wind: false,
     windDisturb: false,
     noDepth: false,
@@ -182,6 +206,24 @@ function parseEmitter(r, c) {
           case 0x3d:
             e.weather = dv.getUint8(p) !== 0;
             break;
+          case 0x3e:
+            e.weatherCube = r.f32(p);
+            break;
+          case 0x3f:
+            e.weatherFadeStart = r.f32(p);
+            break;
+          case 0x40:
+            e.weatherFadeLength = r.f32(p);
+            break;
+          case 0x41:
+            e.stretch = dv.getUint8(p) !== 0;
+            break;
+          case 0x42:
+            e.stretchFactor = r.f32(p);
+            break;
+          case 0x47:
+            e.weatherOffset = r.f32(p);
+            break;
           case 0x43:
             e.inherit = dv.getUint8(p) !== 0;
             break;
@@ -225,6 +267,15 @@ function parseEmitter(r, c) {
     }
   }
   for (let t = 0; t < 7; t++) e.tracks[t] ||= new Float32Array(SAMPLES).fill(trackDefaults[t]);
+  if (e.weather) {
+    e.pos = { type: 2, min: [0, 0, 0], max: [0, 0, 0], cube: e.weatherCube * 0.5, sphereR: 0, sphereEdge: false, cylR: 0, cylEdge: false, cylH: 0, point: [0, 0, 0] };
+    e.accel = [0, 0, 0];
+    e.gravity = 0;
+    e.radialAccel = 0;
+    e.burst = false;
+    e.inherit = false;
+  }
+  e.maxSpeed = e.inherit ? 1000 : Math.hypot(...e.accel) + groupSpeed(e.vel) + e.gravity;
   e.grid = Math.max(1, Math.floor(Math.sqrt(e.nTextures)));
   e.interval = e.burst ? Math.max(0.001, e.burstDelay) : 1 / Math.max(1, e.perSecond);
   return e;
@@ -341,7 +392,7 @@ class Batch {
     if (heat) additive = false;
     this.material = new THREE.ShaderMaterial({
       uniforms: { map: { value: texture }, frames },
-      vertexShader: `attribute vec4 center; attribute vec4 tint; attribute vec4 cell; attribute float slot;
+      vertexShader: `attribute vec4 center; attribute vec4 tint; attribute vec4 cell; attribute float slot; attribute vec4 dir;
         uniform highp sampler2D frames;
         varying vec2 vUv; varying vec4 vTint;
         void main() { vTint = tint;
@@ -355,7 +406,22 @@ class Batch {
             float lx = at.x * co + at.z * so, lz = at.z * co - at.x * so;
             at = vec3(fa.x + cr * lx - sr * at.y, fa.y + sr * lx + cr * at.y, fa.z + lz);
           }
-          vec4 mv = viewMatrix * vec4(at, 1.0); mv.xy += corner;
+          vec4 mv = viewMatrix * vec4(at, 1.0);
+          if (dir.w > 0.0) {
+            vec3 v = mat3(viewMatrix) * dir.xyz;
+            float sp = length(v.xy);
+            if (sp > 0.0) {
+              vec4 c0 = projectionMatrix * mv, c1 = projectionMatrix * vec4(mv.xyz + normalize(v) * 100.0, 1.0);
+              vec2 d = (c1.xy / c1.w - c0.xy / c0.w) / vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
+              float dl = length(d);
+              if (dl > 0.0) {
+                vec2 u = d / dl, w = vec2(u.y, -u.x);
+                float a = 0.5 * (position.x + position.y), b = 0.5 * (position.y - position.x);
+                corner = (-a * w - b * (b > 0.0 ? 1.0 + dir.w * sp / max(sp, 1.0) : 1.0) * u) * center.w;
+              }
+            }
+          }
+          mv.xy += corner;
           gl_Position = projectionMatrix * mv; }`,
       fragmentShader: heat
         ? `uniform sampler2D map; varying vec2 vUv; varying vec4 vTint;
@@ -392,11 +458,12 @@ class Batch {
     this.tint = mk('tint', 4);
     this.cell = mk('cell', 4);
     this.slot = mk('slot', 1);
+    this.dir = mk('dir', 4);
     geo.instanceCount = 0;
     this.mesh.geometry = geo;
     old.dispose();
   }
-  set(count, center, tint, cell, slot) {
+  set(count, center, tint, cell, slot, dir) {
     if (count > this.cap) {
       while (this.cap < count) this.cap *= 2;
       this.alloc();
@@ -409,8 +476,10 @@ class Batch {
       [this.center, center, 4],
       [this.tint, tint, 4],
       [this.cell, cell, 4],
-      [this.slot, slot, 1]
+      [this.slot, slot, 1],
+      [this.dir, dir, 4]
     ]) {
+      if (!src) continue;
       a.array.set(src);
       a.clearUpdateRanges();
       a.addUpdateRange(0, count * per);
@@ -492,7 +561,10 @@ export class ParticleManager {
     this.total = m.total;
     if (m.framesBuf) this.framesSpare = m.framesBuf;
     const spare = (this.spare ||= []);
-    for (const o of m.batches) spare.push(o.center.buffer, o.tint.buffer, o.cell.buffer, o.slot.buffer);
+    for (const o of m.batches) {
+      spare.push(o.center.buffer, o.tint.buffer, o.cell.buffer, o.slot.buffer);
+      if (o.dir) spare.push(o.dir.buffer);
+    }
     for (const b of this.batches.values()) if (b.count) b.set(0);
     for (const o of m.batches) {
       let b = this.batches.get(o.key);
@@ -503,7 +575,7 @@ export class ParticleManager {
         this.batches.set(o.key, b);
         (d.heat && this.heatScene ? this.heatScene : this.scene).add(b.mesh);
       }
-      b.set(o.count, o.center, o.tint, o.cell, o.slot);
+      b.set(o.count, o.center, o.tint, o.cell, o.slot, o.dir);
     }
     for (const id of m.dead) {
       const h = this.byId.get(id);

@@ -44,7 +44,8 @@ onmessage = ev => {
           center: copy(b.center, n * 4),
           tint: copy(b.tint, n * 4),
           cell: copy(b.cell, n * 4),
-          slot: copy(b.slot, n)
+          slot: copy(b.slot, n),
+          dir: b.dir ? copy(b.dir, n * 4) : null
         };
       if (!b.told) {
         out.desc = b.desc;
@@ -52,6 +53,7 @@ onmessage = ev => {
       }
       batches.push(out);
       move.push(out.center.buffer, out.tint.buffer, out.cell.buffer, out.slot.buffer);
+      if (out.dir) move.push(out.dir.buffer);
     }
     const framesBuf = m.frames.buffer;
     move.push(framesBuf);
