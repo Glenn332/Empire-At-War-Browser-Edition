@@ -417,6 +417,11 @@ function start(world, u, st, target) {
   sound(world, u, def.sfxOn);
 }
 
+function ended(world, u, st) {
+  stop(world, u, st);
+  world.onUnitSignal?.(u.squad || u, 'Unit_Ability_Finished');
+}
+
 function stop(world, u, st) {
   const def = st.def;
   st.active = false;
@@ -494,7 +499,7 @@ export function tickAbilities(world, u, dt) {
         break;
       case 'TRACTOR_BEAM':
         if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.15)) {
-          stop(world, u, st);
+          ended(world, u, st);
           continue;
         }
         if (!tgt.statuses.some(s => s.kind === 'TRACTOR' && s.source === u)) {
@@ -509,7 +514,7 @@ export function tickAbilities(world, u, dt) {
         break;
       case 'ENERGY_WEAPON':
         if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.2)) {
-          stop(world, u, st);
+          ended(world, u, st);
           continue;
         }
         if (d.hpOf !== tgt) {
@@ -517,7 +522,7 @@ export function tickAbilities(world, u, dt) {
           d.hp = world.nearestHardpoint(tgt, u.x, u.y, u.z || 0);
         }
         if (d.hp && d.hp.destroyable && !d.hp.alive) {
-          stop(world, u, st);
+          ended(world, u, st);
           continue;
         }
         world.damage(tgt, (def.spec ? def.spec.num('Damage_Per_Frame', 50) : 50) * 30 * dt, {
@@ -535,7 +540,7 @@ export function tickAbilities(world, u, dt) {
         const sp = def.spec,
           fireAt = (sp ? sp.num('Fire_Frame', 60) : 60) / 30;
         if (!tgt || tgt.dead) {
-          stop(world, u, st);
+          ended(world, u, st);
           continue;
         }
         if (d.t < fireAt) break;
@@ -568,7 +573,7 @@ export function tickAbilities(world, u, dt) {
       }
       case 'LEECH_SHIELDS': {
         if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.1)) {
-          stop(world, u, st);
+          ended(world, u, st);
           continue;
         }
         const take = Math.min(tgt.shield, (def.spec ? def.spec.num('Shield_Damage_Per_Second', 100) : 100) * dt);
@@ -629,7 +634,7 @@ export function tickAbilities(world, u, dt) {
         if (proj) world.detonate(proj, u.player, x, y, z, 1, true);
         return;
       }
-      stop(world, u, st);
+      ended(world, u, st);
     }
   }
 }

@@ -28,7 +28,7 @@ export async function loadSpaceBrain(faction = null) {
 const power = u => (u.aiPower ??= Math.max(0, u.type.num('AI_Combat_Power', 0)));
 const cats = u => u.type.categories();
 const inCats = (u, want) =>
-  !want || want.some(c => cats(u).has(c) || (c === 'HERO' && cats(u).has('SPACEHERO')) || (c === 'STRUCTURE' && u.isStructure));
+  !want || want.some(c => cats(u).has(c) || (c === 'HERO' && cats(u).has('SPACEHERO')));
 const fits = (u, c, types) => inCats(u, c) && (!types.length || types.includes(u.type.name.toUpperCase()));
 
 export class SpaceMind extends Reason {

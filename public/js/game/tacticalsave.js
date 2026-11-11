@@ -79,7 +79,7 @@ function describe(host, o) {
   }
   if (o.__player) return { k: 'pl', i: B.players.indexOf(o.__player), f: o.__player.factionName || '' };
   if (o.__type) return { k: 'ty', n: o.__type.name };
-  if (o.__pos) return { k: 'ps', x: o.x, y: o.y, z: o.z || 0 };
+  if (o.__pos) return o.__name !== 'Position' ? { k: 'ps', x: o.x, y: o.y, z: o.z || 0, n: o.__name } : { k: 'ps', x: o.x, y: o.y, z: o.z || 0 };
   if (o.__force) return { k: 'tf', s: o.__force.inst.sid, n: o.__force.name };
   if (o.__block) return { k: 'bk', r: recipeOut(B, o.__block.recipe), b: o.__block.born };
   if (o.__fsOf) return { k: 'fs', s: o.__fsOf.sid };
@@ -110,7 +110,7 @@ function resolve(host, d) {
     case 'ty':
       return host.type(db.type(d.n));
     case 'ps':
-      return host.pos(d.x, d.y, d.z);
+      return host.pos(d.x, d.y, d.z, d.n || 'Position');
     case 'tf':
       return host.instances.find(i => i.sid === d.s)?.forces?.find(f => f.name === d.n)?.wrapper;
     case 'bk': {
@@ -205,8 +205,15 @@ function recipeOut(B, r) {
   if (r.at) out.at = { x: r.at.x, y: r.at.y };
   if (r.types) out.types = r.types.map(t => t.name);
   for (const k of ['want', 'why', 't0', 'until']) if (r[k] !== undefined) out[k] = r[k] === Infinity ? 'inf' : r[k];
+  for (const k of BLOCK_KEYS) if (r[k] !== undefined) out[k] = r[k];
+  if (r.us) out.us = r.us.map(e => B.ref(e)).filter(Boolean);
+  if (r.pend) out.pend = r.pend.map(e => B.ref(e)).filter(Boolean);
+  if (r.goal) out.goal = { x: r.goal.x, y: r.goal.y };
+  if (r.owner !== undefined) out.ow = r.owner ? B.players.indexOf(r.owner) : -1;
+  if (r.cur && r.x && r.x.hardpoints) out.curI = r.x.hardpoints.indexOf(r.cur);
   return out;
 }
+const BLOCK_KEYS = ['mode', 'hp', 'rep', 'through', 'hears', 'done', 'dir', 'dist', 'tol', 'last', 'lists', 'result', 'start', 'repick'];
 function recipeIn(B, host, o) {
   const inst = host.instances.find(i => i.sid === o.s),
     f = inst?.forces?.find(x => x.name === o.f);
@@ -219,6 +226,12 @@ function recipeIn(B, host, o) {
   if (o.at) r.at = { x: o.at.x, y: o.at.y };
   if (o.types) r.types = o.types.map(n => db.type(n)).filter(Boolean);
   for (const k of ['want', 'why', 't0', 'until']) if (o[k] !== undefined) r[k] = o[k] === 'inf' ? Infinity : o[k];
+  for (const k of BLOCK_KEYS) if (o[k] !== undefined) r[k] = o[k];
+  if (o.us) r.us = o.us.map(x => B.thing(x)).filter(Boolean);
+  if (o.pend) r.pend = o.pend.map(x => B.thing(x)).filter(Boolean);
+  if (o.goal) r.goal = { x: o.goal.x, y: o.goal.y };
+  if (o.ow !== undefined) r.owner = o.ow >= 0 ? B.players[o.ow] : host.world?.neutral;
+  if (o.curI >= 0 && r.x && r.x.hardpoints) r.cur = r.x.hardpoints[o.curI] || null;
   return r;
 }
 

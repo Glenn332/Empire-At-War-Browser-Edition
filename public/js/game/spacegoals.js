@@ -28,6 +28,7 @@ export class SpaceGoals extends GoalSystem {
         const x0 = world.min.x + i * S,
           y0 = world.min.y + j * S;
         const r = target.region(j * nx + i, x0, y0, Math.min(S, world.max.x - x0), Math.min(S, world.max.y - y0), S);
+        r.name = 'CELL_' + i + '_' + j;
         r.r = S / 2;
         this.regions.push(r);
       }
@@ -79,6 +80,6 @@ export class SpaceGoals extends GoalSystem {
   }
 
   thingOf(t) {
-    return !t ? null : t.unit ? t.unit : { x: t.x, y: t.y, key: t.key };
+    return !t ? null : t.unit ? t.unit : { x: t.x, y: t.y, key: t.key, name: t.name };
   }
 }

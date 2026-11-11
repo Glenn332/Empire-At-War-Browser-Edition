@@ -105,7 +105,10 @@ const centreOf = list => {
   return { x: x / Math.max(1, list.length), y: y / Math.max(1, list.length) };
 };
 
-export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false) {
+export const fieldPassed = (f, through) =>
+  !!through && ((f.asteroid && (through & 4) !== 0) || (f.ion && (through & 8) !== 0) || (f.nebula && (through & 16) !== 0));
+
+export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false, through = 0) {
   const movers = entities.filter(e => e.isSquad || e.isMobile);
   const kind = attackMove ? 'attackmove' : 'move';
   const moving = e => e.order.kind === 'move' || e.order.kind === 'attackmove';
@@ -121,6 +124,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
       speeds = formationSpeeds(from, { x, y });
     movers.forEach((e, i) => {
       const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
+      if (through) leg.through = through;
       if (moving(e)) (e.queue ||= []).push(leg);
       else e.setOrder(leg);
     });
@@ -129,10 +133,16 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
   const slots = formationSlots(movers, x, y);
   if (safe)
     movers.forEach((e, i) => {
-      if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y);
+      if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y, through);
     });
   const speeds = formationSpeeds(movers, { x, y });
-  movers.forEach((e, i) => e.setOrder({ kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length }));
+  movers.forEach((e, i) =>
+    e.setOrder(
+      through
+        ? { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length, through }
+        : { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length }
+    )
+  );
   return movers.length;
 }
 
@@ -144,23 +154,24 @@ export function orderPlaced(placed, face, attackMove = false) {
   return placed.length;
 }
 
-export function orderAttack(entities, target, hardpoint = null) {
+export function orderAttack(entities, target, hardpoint = null, through = 0) {
   let n = 0;
   const placed = attackSlots(
     entities.filter(e => !e.isSquad && e.hasWeapons && e.isMobile),
-    target
+    target,
+    through
   );
   for (const e of entities) {
     if (e.isSquad) {
-      e.setOrder({ kind: 'attack', target, hp: hardpoint });
+      e.setOrder(through ? { kind: 'attack', target, hp: hardpoint, through } : { kind: 'attack', target, hp: hardpoint });
       n++;
     } else if (e.hasWeapons) {
-      const at = placed.get(e);
-      e.setOrder(
-        at
+      const at = placed.get(e),
+        o = at
           ? { kind: 'attack', target, offset: at.offset, pace: at.pace, meetAt: at.meetAt, startAt: at.startAt }
-          : { kind: 'attack', target }
-      );
+          : { kind: 'attack', target };
+      if (through) o.through = through;
+      e.setOrder(o);
       e.targetHp = hardpoint;
       e.target = target.isSquad ? target.fighters[0] : target;
       n++;
@@ -259,7 +270,8 @@ function obstacleAt(world, e, p, r, group, T) {
   const inside = (q, kind) => world.fields.some(f => f[kind] && (q.x - f.x) ** 2 + (q.y - f.y) ** 2 < f.r * f.r);
   for (const f of world.fields) {
     const kind = f.asteroid ? 'asteroid' : f.ion ? 'ion' : f.nebula ? 'nebula' : null;
-    if (!kind || (kind === 'asteroid' && !world.hazardous(f, e)) || inside(e, kind) || inside(T, kind)) continue;
+    if (!kind || fieldPassed(f, group.through) || (kind === 'asteroid' && !world.hazardous(f, e)) || inside(e, kind) || inside(T, kind))
+      continue;
     if ((p.x - f.x) ** 2 + (p.y - f.y) ** 2 < (f.r + r) ** 2) return true;
   }
   return false;
@@ -280,12 +292,13 @@ function nearPath(k, p) {
   return best;
 }
 
-export function attackSlots(ships, target) {
+export function attackSlots(ships, target, through = 0) {
   const out = new Map();
   if (!ships.length || !target) return out;
   const world = ships[0].world,
     now = world.time,
     group = new Set(ships);
+  group.through = through;
   const every = db.constants.num('SpacePathfindFrameDelayDelta', 2) / 30;
   const T0 = posOf(target),
     longest = Math.max(0, ...ships.map(e => eta(e, T0)));
@@ -475,14 +488,14 @@ function ring(ships, T, cx, cy, d, taken, world, group) {
   return { ok: true, places, outR };
 }
 
-export function orderGuard(entities, target, x, y) {
+export function orderGuard(entities, target, x, y, through = 0) {
   const movers = entities.filter(e => e.isSquad || e.isMobile);
   if (target) {
-    for (const e of movers) e.setOrder({ kind: 'guard', target });
+    for (const e of movers) e.setOrder(through ? { kind: 'guard', target, through } : { kind: 'guard', target });
     return movers.length;
   }
   const slots = formationSlots(movers, x, y);
-  movers.forEach((e, i) => e.setOrder({ kind: 'guard', x: slots[i].x, y: slots[i].y }));
+  movers.forEach((e, i) => e.setOrder(through ? { kind: 'guard', x: slots[i].x, y: slots[i].y, through } : { kind: 'guard', x: slots[i].x, y: slots[i].y }));
   return movers.length;
 }
 

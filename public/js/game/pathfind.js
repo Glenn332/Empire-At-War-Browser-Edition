@@ -203,8 +203,8 @@ export class Pathfinder extends PathCore {
         radius: u.radius,
         layer: u.layer,
         ext: this.ext(u),
-        asteroidDamage: !!u.asteroidDamage,
-        shielded: (u.maxShield || 0) > 0
+        asteroidDamage: !!u.asteroidDamage && !((u.order?.through | 0) & 4),
+        shielded: (u.maxShield || 0) > 0 && !((u.order?.through | 0) & 8)
       }
     });
   }
