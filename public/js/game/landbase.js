@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { db } from '../gamedata.js';
 import { loadModel } from '../model.js';
-import { buildsFor, isUpgrade, landUnit } from './land.js';
+import { buildsFor, isUpgrade, landUnit, landHealth } from './land.js';
 import { FORCE, blast } from './landabilities.js';
 import { simRandom } from './simrandom.js';
 import { categoryOf } from './projflight.js';
@@ -779,8 +779,8 @@ export function bombingRun(world, side, x, y) {
           dead: false,
           gone: false,
           target: null,
-          maxHealth: type.num('Tactical_Health', 100),
-          health: type.num('Tactical_Health', 100),
+          maxHealth: landHealth(type, 100),
+          health: landHealth(type, 100),
           maxShield: 0,
           shield: 0,
           armor: type.str('Armor_Type'),
