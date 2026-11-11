@@ -228,6 +228,8 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
       return lead.inNebula ? 'Abilities do not work inside a nebula' : 'Abilities are still recovering from the nebula';
     if (st0.active && (def.toggle || def.duration > 0)) return null;
     if (kind === 'DEFEND' && lead.ionUntil > world.time) return 'Disabled by an ion stun';
+    if (kind === 'INTERDICT' && lead.hardpoints?.some(h => h.kind === 'HARD_POINT_GRAVITY_WELL' && !h.alive))
+      return 'The gravity well is destroyed';
     if (st0.cooldown > 0) return `Recharging (${Math.ceil(st0.cooldown)}s)`;
     if (def.target === 'unit') {
       let t = target && target.isSquad ? target.fighters[0] : target;

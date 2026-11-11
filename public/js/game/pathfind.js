@@ -52,7 +52,10 @@ export class Pathfinder extends PathCore {
         slowK: n('WaitOperatorSpeedCoefficient', 0.2),
         cutK: n('SpacePathFailureDistanceCutoffCoefficient', 0.25),
         offMap: n('OffMapCostPenalty', 20),
-        horizon: (n('SpaceObjectTrackingInterval', 90) / 30) * n('SpaceObjectTrackingTreeCount', 45)
+        horizon: (n('SpaceObjectTrackingInterval', 90) / 30) * n('SpaceObjectTrackingTreeCount', 45),
+        alignK: n('SpecialAlignedOperatorBonus', 0.6),
+        matchFace: (n('MatchFacingDeltaSpace', 10) * Math.PI) / 180,
+        pen180: n('FinalFacing180Penalty', 1.5)
       },
       Math.max(10, n('DestinationSearchRadiusIncrementSpace', 50))
     );
@@ -174,19 +177,20 @@ export class Pathfinder extends PathCore {
     };
   }
 
-  ask(u, goal) {
+  ask(u, goal, face) {
     const t = this.world.time,
       a = this.asked.get(u.id);
-    if (a && a.gx === goal.x && a.gy === goal.y && (t - a.at < 2 || this.fixed)) return;
+    if (a && a.gx === goal.x && a.gy === goal.y && a.face === face && (t - a.at < 2 || this.fixed)) return;
     if (this.fixed && this.batch.length >= BATCH_MAX) return;
     if (!this.fixed) this.sendWorld();
     const rid = ++this.rid;
-    this.asked.set(u.id, { rid, u, gx: goal.x, gy: goal.y, ver: this.version, at: t });
+    this.asked.set(u.id, { rid, u, gx: goal.x, gy: goal.y, face, ver: this.version, at: t });
     (this.fixed ? m => this.batch.push(m) : m => this.worker.postMessage(m))({
       kind: 'find',
       rid,
       gx: goal.x,
       gy: goal.y,
+      face,
       ship: {
         id: u.id,
         x: u.x,
@@ -218,6 +222,7 @@ export class Pathfinder extends PathCore {
     const r = (u.route = {
       gx: a.gx,
       gy: a.gy,
+      face: a.face,
       ver: a.ver,
       pts,
       i: 0,
@@ -373,7 +378,7 @@ export class Pathfinder extends PathCore {
     return this.trackBy.get(o) || null;
   }
 
-  next(u, goal, park = false) {
+  next(u, goal, park = false, face = undefined) {
     const t = this.world.time;
     let r = u.route;
     if (park && (t >= (u.slotCheck || 0) || t < (u.slotCheck || 0) - 2 || u.slotX !== goal.x || u.slotY !== goal.y)) {
@@ -386,11 +391,11 @@ export class Pathfinder extends PathCore {
     }
     const end = park ? u.slotAt : null;
     if (end) {
-      const wp = this.next(u, end);
+      const wp = this.next(u, end, false, face);
       if (u.route) u.route.end = end;
       return wp || end;
     }
-    const moved = r && (r.gx - goal.x) ** 2 + (r.gy - goal.y) ** 2 > 150 * 150;
+    const moved = r && ((r.gx - goal.x) ** 2 + (r.gy - goal.y) ** 2 > 150 * 150 || r.face !== face);
     if (!r || r.ver !== this.version || (moved && t >= r.again) || t >= r.check) {
       const keep = r && r.ver === this.version && !moved && !(r.pts && !r.pts.length) && this.stillGood(u, r, goal);
       if (this.stepAt !== t) {
@@ -398,7 +403,7 @@ export class Pathfinder extends PathCore {
         this.spent = 0;
       }
       if (!keep && this.worker) {
-        this.ask(u, goal);
+        this.ask(u, goal, face);
         if (r) {
           r.check = t + 0.05;
           r.again = t + 0.05;
@@ -410,7 +415,7 @@ export class Pathfinder extends PathCore {
         let held = false;
         if (!keep) {
           const t0 = this.fixed ? 0 : performance.now(),
-            pts = this.find(u, goal.x, goal.y);
+            pts = this.find(u, goal.x, goal.y, face);
           this.spent += this.fixed ? 1 : performance.now() - t0;
           held = !!pts && !pts.length && this.holdOld(u, t);
           if (held) r = u.route;
@@ -418,6 +423,7 @@ export class Pathfinder extends PathCore {
             r = u.route = {
               gx: goal.x,
               gy: goal.y,
+              face,
               ver: this.version,
               pts,
               i: 0,
@@ -443,15 +449,22 @@ export class Pathfinder extends PathCore {
     for (;;) {
       if (r.i >= last) break;
       const p = r.pts[r.i];
-      if (p.turn ? Math.abs(wrap(u.heading - p.h)) < 0.09 : (u.x - p.x) ** 2 + (u.y - p.y) ** 2 < near * near) r.i++;
+      const d2 = (u.x - p.x) ** 2 + (u.y - p.y) ** 2;
+      if (
+        p.turn || p.arc
+          ? Math.abs(wrap(u.heading - p.h)) < 0.09
+          : d2 < (p.close || near) ** 2 ||
+            (p.close && d2 < near * near && (p.x - u.x) * Math.cos(u.heading) + (p.y - u.y) * Math.sin(u.heading) < 0)
+      )
+        r.i++;
       else break;
     }
     if (r.i >= last) return null;
     const p = r.pts[r.i];
-    if (p.turn) {
+    if (p.turn || p.arc) {
       r.wp.x = u.x + Math.cos(p.h) * 1000;
       r.wp.y = u.y + Math.sin(p.h) * 1000;
-      r.wp.speed = 0;
+      r.wp.speed = p.turn ? 0 : p.speed;
     } else {
       r.wp.x = p.x;
       r.wp.y = p.y;
