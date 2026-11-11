@@ -93,15 +93,19 @@ export class SkirmishAI {
   update(dt) {
     const p = this.player;
     if (p.defeated) return;
-    const gained = p.credits - this.lastCredits;
-    if (gained > 0 && this.cfg.income !== 1) p.credits += gained * (this.cfg.income - 1);
+    const goals = this.world.goals,
+      h = this.world.scripts,
+      leads = !!goals && !(h && h.plansOff);
+    if (!goals) {
+      const gained = p.credits - this.lastCredits;
+      if (gained > 0 && this.cfg.income !== 1) p.credits += gained * (this.cfg.income - 1);
+    }
     this.lastCredits = p.credits;
-    const goals = this.world.goals;
     this.led = !!(goals && this.brain && goals.tick(this, dt));
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = this.cfg.think * (0.8 + simRandom() * 0.4);
-    if (this.led) {
+    if (this.led || leads) {
       this.lastCredits = p.credits;
       return;
     }
