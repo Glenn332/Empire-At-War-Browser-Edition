@@ -220,7 +220,13 @@ export class SpaceMind extends Reason {
         case 'HASUNIT':
           return types.length && own.some(u => types.includes(u.type.name.toUpperCase())) ? 1 : 0;
         case 'TACTICALBUILTSTRUCTURECOUNT':
-          return own.filter(u => u.isStructure && !u.construction && (!types.length || types.includes(u.type.name.toUpperCase()))).length;
+          return own.filter(
+            u =>
+              u.isStructure &&
+              (!types.length ||
+                types.includes(u.type.name.toUpperCase()) ||
+                (u.construction && u.construction.result && types.includes(u.construction.result.name.toUpperCase())))
+          ).length;
         case 'OPENBUILDPADCOUNT':
           return self
             ? w.units.filter(

@@ -38,7 +38,23 @@ export class SpaceGoals extends GoalSystem {
   env(ai) {
     const P = ai.scripted();
     if (!P) return null;
-    return { w: this.world, brain: ai.brain, cmdr: ai, P, ais: this.ais().length };
+    return { w: this.world, brain: ai.brain, cmdr: ai, P, ais: this.computerPlayers() };
+  }
+
+  computerPlayers() {
+    const w = this.world;
+    if (!w.skirmish) return this.ais().length;
+    if (this.cpus !== undefined) return this.cpus;
+    let n = 0;
+    const slots = new Set();
+    for (const p of w.players)
+      if (p.id >= 0 && !p.team.mapSide) {
+        slots.add(String(p.factionName).toUpperCase());
+        if (!p.human) n++;
+      }
+    for (const f of db.factions.values())
+      if (!slots.has(f.name.toUpperCase()) && f.bool('Create_Player_In_Multiplayer_Games', !f.bool('Is_Playable'))) n++;
+    return (this.cpus = n);
   }
 
   newMind(ai) {
@@ -59,7 +75,14 @@ export class SpaceGoals extends GoalSystem {
         if (u.dead || u.hyper || u.suspended || !u.type.bool('Has_Space_Evaluator')) continue;
         const owner = u.isPad ? u.padOwner || (u.player.id >= 0 ? u.player : null) : u.player.id >= 0 ? u.player : null;
         const mine = !!owner && owner.team === p.team;
-        if (!mine && !known.has(u) && !(u.seenBy & p.bit)) continue;
+        if (
+          !mine &&
+          !known.has(u) &&
+          !(u.seenBy & p.bit) &&
+          !u.type.bool('Last_State_Visible_Under_FOW') &&
+          !u.type.bool('Initial_State_Visible_Under_FOW')
+        )
+          continue;
         const kind = u.isPad
           ? mine
             ? FLAG.FRIENDLY_BUILD_PAD
