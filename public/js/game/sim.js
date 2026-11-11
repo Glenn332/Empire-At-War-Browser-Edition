@@ -36,7 +36,7 @@ import {
   leadCircle
 } from './projflight.js';
 import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
-import { leadPoint, fieldPassed } from './orders.js';
+import { leadPoint, fieldPassed, mergeWings, recheckForces, wingSpeed, dropEscort } from './orders.js';
 import { basisOf } from '../particlesim.js';
 import { CombatMods, MOD, SPACE, bonusSourceDefs, bonusTypeFits, bonusOwnerFits } from './combatmods.js';
 export const spacePop = t =>
@@ -716,6 +716,8 @@ export class Unit {
     this.guardFollow = undefined;
     this.guardAt = undefined;
     this.guardOf = undefined;
+    this.going = false;
+    this.cruise = 0;
     this.homeOf = undefined;
     this.home = undefined;
     this.huntTimer = undefined;
@@ -1542,6 +1544,7 @@ export class Squad {
     this.guardFollow = undefined;
     this.guardAt = undefined;
     this.guardOf = undefined;
+    this.cruise = undefined;
     this.huntTimer = undefined;
     this.pendingAbility = undefined;
     this._iconName = undefined;
@@ -1677,6 +1680,10 @@ export class World {
     this.time = 0;
     this.units = [];
     this.squads = [];
+    this.wings = [];
+    this.forces = [];
+    this.wingSeq = 0;
+    this.forceSeq = 0;
     this.projectiles = [];
     this.obstacles = [];
     this.specialWeapons = [];
@@ -2875,6 +2882,8 @@ export class World {
     const units = this.units,
       dt = this.stepDt;
     this.ahead?.clear();
+    if (this.wings.length) mergeWings(this);
+    if (this.forces.length) recheckForces(this);
     for (const s of this.squads) if (!s.dead) this.updateSquad(s, dt);
     if (this.bonusHolders.length) this.tickBonuses();
     for (const sw of this.specialWeapons) sw.update();
@@ -3752,9 +3761,11 @@ export class World {
     const ord = u.order;
     let goal = null,
       stopAt = 12,
-      faceOnly = null;
+      faceOnly = null,
+      hold = false;
     u.facesAuto ??= !u.hardpoints.length || db.constants.bool('Auto_Rotate_For_Space_Targeting');
-    if (ord.kind === 'move' || ord.kind === 'attackmove') {
+    if ((ord.kind === 'move' || ord.kind === 'attackmove') && ord.startAt > this.time) hold = true;
+    else if (ord.kind === 'move' || ord.kind === 'attackmove') {
       goal = ord;
       if (ord.kind === 'attackmove' && u.target && !u.target.dead && dist2(u, u.target) < (u.engageRange * 0.8) ** 2) {
         goal = null;
@@ -3777,7 +3788,7 @@ export class World {
             p = (u.slotAt ||= { x: 0, y: 0 });
           p.x = L.x + ord.offset.x;
           p.y = L.y + ord.offset.y;
-          if (ord.startAt > this.time) faceOnly = t;
+          if (ord.startAt > this.time) hold = true;
           else if (dist2(u, p) > 40 * 40) {
             goal = p;
             stopAt = 30;
@@ -3827,8 +3838,10 @@ export class World {
       ord.kind === 'guard' && u.guardFollow ? Math.max(2 * (u.guardFollow.speed || 0), 20) : Infinity
     );
     const turnRate = u.turnRate;
+    u.cruise = maxSpeed;
     let wantSpeed = 0,
-      turn = 0;
+      turn = 0,
+      done = false;
     let via = false,
       legSpeed = Infinity;
     if (goal) {
@@ -3863,6 +3876,7 @@ export class World {
         dy = goal.y - u.y;
       const d = Math.hypot(dx, dy);
       if (!via && d <= stopAt) {
+        done = true;
         if (ord.kind === 'move' || ord.kind === 'attackmove') this.arrived(u);
       } else {
         const diff = wrapAngle(Math.atan2(dy, dx) - u.heading);
@@ -3887,6 +3901,8 @@ export class World {
       turn = clamp(d, -r, r);
       if (Math.abs(d) <= r) u.tip = undefined;
     }
+    if (hold) wantSpeed = Math.min(u.speed, maxSpeed);
+    u.going = (!!goal && !done) || (hold && u.speed > 1);
     u.heading = wrapAngle(u.heading + turn);
     const a = u.accel * dt;
     u.speed += clamp(wantSpeed - u.speed, -a * 1.5, a);
@@ -3957,6 +3973,7 @@ export class World {
 
   steerShip(u, dt) {
     u.tip = undefined;
+    u.going = u.speed > 1;
     const D = u.direct,
       engine = u.engineAlive() ? 1 : db.constants.num('Engines_Disabled_Speed_Modifier', 1);
     const maxSpeed = u.maxSpeed * u.bonus.speed * u.mods.speed * engine,
@@ -5556,8 +5573,11 @@ export class World {
       s.scanTimer = 0;
       s.homeOf = null;
     }
-    if (ord.kind === 'attack') tgt = ord.target && !ord.target.dead ? ord.target : null;
-    if (!tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
+    s.cruise = undefined;
+    const wing = ord.wing && (ord.kind === 'move' || ord.kind === 'attackmove' || ord.kind === 'attack') ? ord.wing : null,
+      esc = wing && wing.escort && s.fighters[0] ? this.escortGoal(s, wing) : null;
+    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead ? ord.target : null;
+    if (!esc && !tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
         if (ord.kind === 'attack') s.setOrder({ ...ord, target: e }, true);
@@ -5566,12 +5586,12 @@ export class World {
         tgt = e;
       }
     }
-    if (ord.kind === 'attack' && !tgt) {
+    if (ord.kind === 'attack' && !tgt && !esc) {
       this.attackOver(s);
       ord = s.order;
     }
     const lead = s.fighters[0];
-    if (ord.kind === 'attack') s.fireTarget = tgt;
+    if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
     else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
@@ -5641,7 +5661,21 @@ export class World {
     } else {
       this.dogRemove(s);
       s.chase = null;
-      if (ord.kind === 'move' || ord.kind === 'attackmove') {
+      if (esc) {
+        s.cruise = this.escortSpeed(s, wing, lead);
+        if (wing.follow) {
+          mode = 'move';
+          s.goal = esc;
+        } else if (this.squadRoute(s, lead, esc.x, esc.y, wing)) {
+          mode = 'move';
+          s.goal = esc;
+          s.routed = true;
+        } else {
+          about = esc;
+          wing.reached = true;
+        }
+      } else if (ord.kind === 'move' || ord.kind === 'attackmove') {
+        if (wing) s.cruise = wingSpeed(wing, this.time);
         if (this.squadRoute(s, lead, ord.x, ord.y, ord)) {
           mode = 'move';
           s.goal = ord;
@@ -5690,6 +5724,60 @@ export class World {
       if (Math.abs(e) > Math.abs(worst)) worst = e;
     }
     s.err = worst;
+  }
+
+  escortGoal(s, w) {
+    const sh = w.escort;
+    if (sh.dead || sh.hyper) {
+      dropEscort(w);
+      return null;
+    }
+    if (this.time >= w.check) {
+      w.check = this.time + 1;
+      if (!sh.going) {
+        dropEscort(w);
+        return null;
+      }
+      let L = null;
+      for (const q of w.squads)
+        if (!q.dead && q.fighters[0] && q.order.wing === w) {
+          L = q.fighters[0];
+          break;
+        }
+      if (!L) L = s.fighters[0];
+      const R = Math.min(
+        (L.type.num('Targeting_Max_Attack_Distance', 0) || L.maxRange || 0) / 2,
+        db.constants.num('Space_Guard_Range', 750)
+      );
+      w.follow = (L.x - sh.x) ** 2 + (L.y - sh.y) ** 2 + ((L.z || 0) - (sh.z || 0)) ** 2 < R * R;
+      if (!w.follow) {
+        const at = (w.at ||= { x: sh.x, y: sh.y });
+        if (w.reached) {
+          const reach = (L.type.num('Targeting_Max_Attack_Distance', 0) || L.maxRange || 0) + (sh.hitRadius || 0),
+            px = sh.x + Math.cos(sh.heading) * sh.speed,
+            py = sh.y + Math.sin(sh.heading) * sh.speed;
+          if ((L.x - px) ** 2 + (L.y - py) ** 2 > reach * reach) {
+            at.x = sh.x;
+            at.y = sh.y;
+            w.reached = false;
+          }
+        }
+      }
+    }
+    if (!w.follow) return w.at;
+    const o = sh.order;
+    if (o.kind === 'attack' && sh.slotAt && o.offset) return sh.slotAt;
+    if ((o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined) return o;
+    return sh;
+  }
+
+  escortSpeed(s, w, lead) {
+    const group = wingSpeed(w, this.time);
+    if (!w.follow) return group;
+    const sh = w.escort,
+      v = sh.cruise || sh.maxSpeed || 0,
+      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading);
+    return Math.min(group, ahead > 20 ? v * 0.5 : v * 2);
   }
 
   idleCell(s, p) {
@@ -5947,7 +6035,7 @@ export class World {
         }
       }
     } else if (mode === 'move' && !form) {
-      want = top * (s.order.pace ?? 1);
+      want = (s.cruise !== undefined && s.cruise < top ? s.cruise : top) * (s.order.pace ?? 1);
       if (s.routed && s.route) {
         const r = s.route,
           lat = this.sideError(u, r);

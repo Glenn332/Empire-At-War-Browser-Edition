@@ -95,6 +95,286 @@ function formationSpeeds(movers, goal) {
   });
 }
 
+const layered = e => !e.isSquad && !e.isFighter && !!e.type.str('Space_Layer').trim();
+const layerOrder = [1, 2, 4, 8];
+
+function wingTop(s) {
+  let v = Infinity;
+  for (const f of s.fighters) if (!f.dead && f.maxSpeed < v) v = f.maxSpeed;
+  return v === Infinity ? 0 : v;
+}
+
+function wingLow(s) {
+  let v = 0;
+  for (const f of s.fighters) if (!f.dead && f.minSpeed > v) v = f.minSpeed;
+  return v;
+}
+
+const typeSpeeds = s => {
+  const t = s.type;
+  if (!t._wingV) {
+    let hi = Infinity,
+      lo = 0;
+    for (const n of s.members || []) {
+      const m = db.type(n);
+      if (!m) continue;
+      hi = Math.min(hi, m.num('Max_Speed', 0));
+      lo = Math.max(lo, m.num('Min_Speed', 0));
+    }
+    t._wingV = { hi: hi === Infinity ? 0 : hi, lo };
+  }
+  return t._wingV;
+};
+
+function boxOf(s, out) {
+  let x0 = Infinity,
+    y0 = Infinity,
+    z0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity,
+    z1 = -Infinity;
+  for (const f of s.fighters) {
+    if (f.dead) continue;
+    const r = f.radius || f.hitRadius || 0,
+      z = f.z || 0;
+    if (f.x - r < x0) x0 = f.x - r;
+    if (f.x + r > x1) x1 = f.x + r;
+    if (f.y - r < y0) y0 = f.y - r;
+    if (f.y + r > y1) y1 = f.y + r;
+    if (z - r < z0) z0 = z - r;
+    if (z + r > z1) z1 = z + r;
+  }
+  if (x0 === Infinity) return null;
+  out.cx = (x0 + x1) / 2;
+  out.cy = (y0 + y1) / 2;
+  out.cz = (z0 + z1) / 2;
+  out.ex = (x1 - x0) / 2;
+  out.ey = (y1 - y0) / 2;
+  out.ez = (z1 - z0) / 2;
+  return out;
+}
+const _ba = { cx: 0, cy: 0, cz: 0, ex: 0, ey: 0, ez: 0 },
+  _bb = { cx: 0, cy: 0, cz: 0, ex: 0, ey: 0, ez: 0 };
+
+const wingKey = w => w.kind + '|' + w.tx + '|' + w.ty + '|' + (w.target ? w.target.id : '') + '|' + (w.escort ? w.escort.id : '');
+
+function newWing(world, first, kind, gx, gy, target) {
+  const id = (world.wingSeq = (world.wingSeq || 0) + 1);
+  const w = {
+    id,
+    squads: [first],
+    kind,
+    tx: gx,
+    ty: gy,
+    target: target || null,
+    escort: null,
+    check: world.time + 1 + ((id % 30) + 1) / 30,
+    follow: false,
+    at: null,
+    reached: false,
+    key: '',
+    v: 0,
+    vAt: -1,
+    next: null,
+    tail: null,
+    gone: false
+  };
+  w.key = wingKey(w);
+  return w;
+}
+
+function composeWings(movers, kind, gx, gy, target) {
+  const world = movers[0] && movers[0].world;
+  const out = new Map();
+  if (!world) return out;
+  const squads = movers.filter(e => e.isSquad && !e.dead && e.fighters.length),
+    ships = movers.filter(e => layered(e) && !e.dead);
+  if (!squads.length) return out;
+  const gz = target ? posOf(target).z || 0 : 0;
+  const pending = squads.slice(),
+    wings = [];
+  while (pending.length) {
+    let li = 0,
+      bd = Infinity;
+    pending.forEach((s, i) => {
+      const p = posOf(s),
+        d = Math.hypot(gx - p.x, gy - p.y, gz - (p.z || 0));
+      if (d < bd) {
+        bd = d;
+        li = i;
+      }
+    });
+    const L = pending.splice(li, 1)[0],
+      w = newWing(world, L, kind, gx, gy, target),
+      bL = boxOf(L, _ba),
+      vL = wingTop(L),
+      sL = wingLow(L);
+    wings.push(w);
+    if (!bL || !(vL > 0)) continue;
+    const d = bd * 0.33,
+      ex = Math.max(bL.ex * 2, d),
+      ey = Math.max(bL.ey * 2, d);
+    for (let i = 0; i < pending.length; ) {
+      const u = pending[i],
+        b = boxOf(u, _bb),
+        vu = wingTop(u);
+      if (
+        b &&
+        Math.abs(b.cx - bL.cx) <= ex + b.ex &&
+        Math.abs(b.cy - bL.cy) <= ey + b.ey &&
+        vu !== 0 &&
+        wingLow(u) / vL <= 0.9 &&
+        sL / vu <= 0.9
+      ) {
+        w.squads.push(u);
+        pending.splice(i, 1);
+      } else i++;
+    }
+  }
+  for (const w of wings) {
+    if (ships.length) {
+      const p = posOf(w.squads[0]);
+      let best = Infinity;
+      for (const e of ships) {
+        const q = (e.x - p.x) ** 2 + (e.y - p.y) ** 2 + ((e.z || 0) - (p.z || 0)) ** 2;
+        if (q < best) {
+          best = q;
+          w.escort = e;
+        }
+      }
+      if (w.escort) {
+        w.at = { x: w.escort.x, y: w.escort.y };
+        w.reached = false;
+        w.key = wingKey(w);
+      }
+    }
+    (world.wings ||= []).push(w);
+    for (const s of w.squads) out.set(s, w);
+  }
+  return out;
+}
+
+function staggerStarts(movers, gx, gy) {
+  const out = new Map(),
+    ships = movers.filter(e => layered(e) && !e.dead);
+  if (!ships.length) return out;
+  const now = ships[0].world ? ships[0].world.time : 0,
+    every = db.constants.num('SpacePathfindFrameDelayDelta', 2) / 30;
+  for (const layer of layerOrder) {
+    const list = ships.filter(e => e.layer === layer);
+    if (!list.length) continue;
+    const c = centreOf(list);
+    let dx = gx - c.x,
+      dy = gy - c.y;
+    const l = Math.hypot(dx, dy);
+    if (l > 0) {
+      dx /= l;
+      dy /= l;
+    }
+    const ahead = e => (e.x - c.x) * dx + (e.y - c.y) * dy;
+    list
+      .map((e, i) => ({ e, i, a: ahead(e) }))
+      .sort((p, q) => q.a - p.a || p.i - q.i)
+      .forEach((o, k) => out.set(o.e, now + k * every));
+  }
+  return out;
+}
+
+export function wingSpeed(w, now) {
+  if (w.vAt !== now) {
+    let v = Infinity;
+    for (const s of w.squads) if (!s.dead && s.order.wing === w && s.speed < v) v = s.speed;
+    w.v = v;
+    w.vAt = now;
+  }
+  return w.v;
+}
+
+export function dropEscort(w) {
+  w.escort = null;
+  w.follow = false;
+  w.at = null;
+  w.key = wingKey(w);
+}
+
+const inWing = (s, w) => !s.dead && s.fighters.length && (s.order.wing === w || (s.order.resume && s.order.resume.wing === w));
+
+function canMergeWings(a, b) {
+  const A = a.squads[0],
+    B = b.squads[0];
+  if (!A || !B || (A.queue && A.queue.length) || (B.queue && B.queue.length)) return false;
+  const sa = typeSpeeds(A),
+    sb = typeSpeeds(B);
+  if (!(sa.hi >= 0.0001) || !(sb.hi >= 0.0001) || !(sb.lo / sa.hi <= 0.9) || !(sa.lo / sb.hi <= 0.9)) return false;
+  const p = boxOf(A, _ba),
+    q = boxOf(B, _bb);
+  return (
+    !!p &&
+    !!q &&
+    Math.abs(q.cx - p.cx) <= q.ex * 2 + p.ex * 2 &&
+    Math.abs(q.cy - p.cy) <= q.ey * 2 + p.ey * 2 &&
+    Math.abs(q.cz - p.cz) <= q.ez * 2 + p.ez * 2
+  );
+}
+
+function absorbWing(a, b) {
+  for (const s of b.squads) {
+    if (!inWing(s, b)) continue;
+    a.squads.push(s);
+    if (s.order.wing === b) s.order.wing = a;
+    if (s.order.resume && s.order.resume.wing === b) s.order.resume.wing = a;
+  }
+  b.squads.length = 0;
+  b.gone = true;
+  a.vAt = -1;
+}
+
+export function mergeWings(world) {
+  const W = world.wings;
+  if (!W || !W.length) return;
+  let n = 0;
+  for (const w of W) {
+    let k = 0;
+    for (const s of w.squads) if (inWing(s, w)) w.squads[k++] = s;
+    w.squads.length = k;
+    if (k) W[n++] = w;
+  }
+  W.length = n;
+  if (n < 2) return;
+  const first = (world.wingBuckets ||= new Map());
+  first.clear();
+  let gone = 0;
+  for (const w of W) {
+    w.next = null;
+    w.gone = false;
+    const h = first.get(w.key);
+    if (!h) {
+      first.set(w.key, w);
+      w.tail = w;
+      continue;
+    }
+    let into = null;
+    for (let a = h; a; a = a.next)
+      if (!a.gone && canMergeWings(a, w)) {
+        into = a;
+        break;
+      }
+    if (into) {
+      absorbWing(into, w);
+      gone++;
+    } else {
+      h.tail.next = w;
+      h.tail = w;
+    }
+  }
+  if (gone) {
+    n = 0;
+    for (const w of W) if (!w.gone) W[n++] = w;
+    W.length = n;
+  }
+  first.clear();
+}
+
 const centreOf = list => {
   let x = 0,
     y = 0;
@@ -135,42 +415,79 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     movers.forEach((e, i) => {
       if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y, through);
     });
-  const speeds = formationSpeeds(movers, { x, y });
-  movers.forEach((e, i) =>
-    e.setOrder(
-      through
-        ? { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length, through }
-        : { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length }
-    )
-  );
+  const speeds = formationSpeeds(movers, { x, y }),
+    wings = composeWings(movers, kind, x, y, null),
+    starts = staggerStarts(movers, x, y);
+  movers.forEach((e, i) => {
+    const o = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
+    if (through) o.through = through;
+    if (wings.has(e)) o.wing = wings.get(e);
+    if (starts.has(e)) o.startAt = starts.get(e);
+    e.setOrder(o);
+  });
   return movers.length;
 }
 
 export function orderPlaced(placed, face, attackMove = false) {
   const kind = attackMove ? 'attackmove' : 'move',
     movers = placed.map(o => o.e),
-    speeds = formationSpeeds(movers, centreOf(placed));
-  placed.forEach((o, i) => o.e.setOrder({ kind, x: o.x, y: o.y, pace: speeds[i], group: placed.length, ...(o.e.isSquad ? {} : { face }) }));
+    c = centreOf(placed),
+    speeds = formationSpeeds(movers, c),
+    wings = composeWings(movers, kind, c.x, c.y, null),
+    starts = staggerStarts(movers, c.x, c.y);
+  placed.forEach((o, i) => {
+    const ord = { kind, x: o.x, y: o.y, pace: speeds[i], group: placed.length, ...(o.e.isSquad ? {} : { face }) };
+    if (wings.has(o.e)) ord.wing = wings.get(o.e);
+    if (starts.has(o.e)) ord.startAt = starts.get(o.e);
+    o.e.setOrder(ord);
+  });
   return placed.length;
 }
 
 export function orderAttack(entities, target, hardpoint = null, through = 0) {
   let n = 0;
-  const placed = attackSlots(
-    entities.filter(e => !e.isSquad && e.hasWeapons && e.isMobile),
-    target,
-    through
-  );
+  const ships = entities.filter(e => !e.isSquad && e.hasWeapons && e.isMobile),
+    placed = attackSlots(ships, target, through);
+  const T = posOf(target),
+    wings = composeWings(
+      entities.filter(e => e.isSquad || (e.hasWeapons && e.isMobile)),
+      'attack',
+      T.x,
+      T.y,
+      target
+    );
+  const world = (ships[0] || entities[0] || {}).world;
+  let force = null;
+  if (world && ships.length) {
+    const per = new Map();
+    for (const e of ships) per.set(e.layer, (per.get(e.layer) || 0) + 1);
+    const most = Math.max(...per.values());
+    force = {
+      id: (world.forceSeq = (world.forceSeq || 0) + 1),
+      target,
+      hp: hardpoint,
+      through,
+      ships: ships.slice(),
+      squads: entities.filter(e => e.isSquad),
+      staggerEnd: world.time + (most * db.constants.num('SpacePathfindFrameDelayDelta', 2)) / 30
+    };
+    (world.forces ||= []).push(force);
+  }
   for (const e of entities) {
     if (e.isSquad) {
-      e.setOrder(through ? { kind: 'attack', target, hp: hardpoint, through } : { kind: 'attack', target, hp: hardpoint });
+      const o = { kind: 'attack', target, hp: hardpoint };
+      if (through) o.through = through;
+      if (wings.has(e)) o.wing = wings.get(e);
+      if (force) o.force = force;
+      e.setOrder(o);
       n++;
     } else if (e.hasWeapons) {
-      const at = placed.get(e),
-        o = at
-          ? { kind: 'attack', target, offset: at.offset, pace: at.pace, meetAt: at.meetAt, startAt: at.startAt }
-          : { kind: 'attack', target };
+      const at = placed.get(e);
+      const o = at
+        ? { kind: 'attack', target, offset: at.offset, pace: at.pace, meetAt: at.meetAt, startAt: at.startAt }
+        : { kind: 'attack', target };
       if (through) o.through = through;
+      if (force && e.isMobile) o.force = force;
       e.setOrder(o);
       e.targetHp = hardpoint;
       e.target = target.isSquad ? target.fighters[0] : target;
@@ -292,7 +609,7 @@ function nearPath(k, p) {
   return best;
 }
 
-export function attackSlots(ships, target, through = 0) {
+export function attackSlots(ships, target, through = 0, maxEta) {
   const out = new Map();
   if (!ships.length || !target) return out;
   const world = ships[0].world,
@@ -301,7 +618,7 @@ export function attackSlots(ships, target, through = 0) {
   group.through = through;
   const every = db.constants.num('SpacePathfindFrameDelayDelta', 2) / 30;
   const T0 = posOf(target),
-    longest = Math.max(0, ...ships.map(e => eta(e, T0)));
+    longest = maxEta ?? Math.max(0, ...ships.map(e => eta(e, T0)));
   const floor = db.constants.num('SpaceIdleMovementSpeed', 0);
   const pace = e => (longest > 0 ? Math.max(floor / Math.max(1, e.maxSpeed), Math.min(1, eta(e, T0) / longest)) : 1);
   const layers = new Map();
@@ -394,6 +711,88 @@ export function attackSlots(ships, target, through = 0) {
     });
   }
   return out;
+}
+
+const _rp = { x: 0, y: 0, z: 0 };
+
+function recheckLayer(world, F, list, T) {
+  const now = world.time;
+  let ok = true;
+  for (const e of list) {
+    const o = e.order;
+    if (world.fog !== false && e.player && !(T.seenBy & e.player.bit)) return;
+    if (F.target.isSquad) {
+      const X = F.target.target;
+      if (X && !X.dead && ((X.order && X.order.force === F) || (X.squad && X.squad.order.force === F))) return;
+    }
+    const hp = F.hp && F.hp.alive && F.hp.unit === T ? F.hp : null,
+      P = hp ? hp.worldPos(_rp) : T,
+      reach = reachOf(e, T),
+      near = tooCloseOf(e, T),
+      r = e.route && e.route.pts && e.route.pts.length ? e.route.pts[e.route.pts.length - 1] : e.slotAt || e,
+      G = leadPoint(F.target, Math.max(0, (o.meetAt ?? now) - now)),
+      dG = Math.hypot(G.x - r.x, G.y - r.y),
+      dP = Math.hypot(P.x - e.x, P.y - e.y);
+    if (!(dG <= reach || dP <= reach) || dP < near) ok = false;
+  }
+  if (ok) return;
+  const first = list[0],
+    ref = (first.maxSpeed * (first.order.pace ?? 1)) / 900,
+    placed = attackSlots(list, F.target, F.through || 0, ref);
+  let most = 0;
+  for (const e of list) {
+    const at = placed.get(e);
+    if (!at) continue;
+    const o = e.order;
+    o.offset = at.offset;
+    o.meetAt = at.meetAt;
+    o.startAt = at.startAt;
+    if (at.pace !== undefined) o.pace = at.pace;
+    else delete o.pace;
+    most++;
+  }
+  F.staggerEnd = Math.max(F.staggerEnd, now + (most * db.constants.num('SpacePathfindFrameDelayDelta', 2)) / 30);
+  F.replans = (F.replans || 0) + 1;
+}
+
+export function recheckForces(world) {
+  const L = world.forces;
+  if (!L || !L.length) return;
+  const N = db.constants.num('MovementReevaluationFrameCount', 10);
+  if (!(N > 0)) return;
+  const frame = Math.round(world.time * 30);
+  let n = 0;
+  for (const F of L) {
+    if (F.id % N !== frame % N) {
+      L[n++] = F;
+      continue;
+    }
+    let k = 0;
+    for (const e of F.ships) if (!e.dead && e.order.force === F) F.ships[k++] = e;
+    F.ships.length = k;
+    let q = 0;
+    for (const s of F.squads) if (!s.dead && s.order.force === F) F.squads[q++] = s;
+    F.squads.length = q;
+    if (!k && !q) continue;
+    L[n++] = F;
+    if (!k || F.staggerEnd > world.time + 1e-6) continue;
+    const T = posOf(F.target);
+    if (!T || T.dead || F.target.dead) continue;
+    if (!F.target.isSquad && (!F.hp || !F.hp.alive)) {
+      const a = F.ships[0],
+        h = world.pickHardpoint ? world.pickHardpoint(F.target, a.x, a.y, a) : null;
+      if (h) {
+        F.hp = h;
+        for (const e of F.ships) e.targetHp = h;
+        for (const s of F.squads) s.order.hp = h;
+      }
+    }
+    for (const layer of layerOrder) {
+      const list = F.ships.filter(e => e.layer === layer && e.order.offset);
+      if (list.length) recheckLayer(world, F, list, T);
+    }
+  }
+  L.length = n;
 }
 
 function ring(ships, T, cx, cy, d, taken, world, group) {
