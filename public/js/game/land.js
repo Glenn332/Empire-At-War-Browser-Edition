@@ -16,10 +16,11 @@ import { POSE_MARGIN } from './landinstances.js';
 import { cachedPose, settlePose } from './posecache.js';
 
 import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks } from './landbase.js';
-import { landAbilities, useAbility, abilityBlocked, refreshMods, tickAbilities } from './landabilities.js';
+import { landAbilities, useAbility, abilityBlocked, refreshMods, tickAbilities, blastFactor } from './landabilities.js';
 import { tickClashes } from './landclash.js';
 import { BountyBook, bountyValue } from './bounty.js';
 import { simRandom } from './simrandom.js';
+import { diminishedHit, normalDamage } from './diminishing.js';
 import { setOf, priorityOf } from './priorities.js';
 import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
@@ -3876,7 +3877,7 @@ export class LandWorld {
             if (!P) continue;
             (u.guns ||= []).push({
               proj: P,
-              damage: P.num('Projectile_Damage', 2),
+              damage: h.num('Projectile_Damage', 0) > 0 ? h.num('Projectile_Damage', 0) : P.num('Projectile_Damage', 2),
               damageType: P.str('Damage_Type'),
               speed: P.num('Max_Speed', 10) * LOGIC_FPS,
               pulses: Math.max(1, h.num('Fire_Pulse_Count', 1)),
@@ -4066,7 +4067,7 @@ export class LandWorld {
           }
         }
         this.setAnim(u, 'idle');
-        u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1 };
+        u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1, noDiminish: false };
         u.ghost = inst.meshByName.get('STEALTH') || null;
         if (u.ghost) u.ghost.visible = false;
         u.foot = /infantry/i.test(t.str('MovementClass')) || inCategory(t, 'INFANTRY');
@@ -4997,7 +4998,7 @@ export class LandWorld {
     }
   }
 
-  hurt(u, amount, from, how = '') {
+  hurt(u, amount, from, how = '', shot = null) {
     if (u.dead || u.invulnUntil > this.time || u.limbo) return;
     if (u.noOpportunity) u.noOpportunity = false;
     if (from?.noOpportunity) from.noOpportunity = false;
@@ -5005,6 +5006,7 @@ export class LandWorld {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(u.side);
     }
+    if (shot && from && from.type && !(from.mod && from.mod.noDiminish) && normalDamage(shot)) amount *= diminishedHit(u, this.time);
     amount *=
       (from instanceof LandUnit && !from.dead ? this.combatFactor(from, MOD.DAMAGE) : 1) *
       (2 - this.combatFactor(u, MOD.DEFENSE)) *
@@ -5254,6 +5256,7 @@ export class LandWorld {
       ax,
       ay,
       damage: w.damage * (u.mod ? u.mod.dealt : 1) * (this.mods[u.side] ? this.mods[u.side].damage : 1),
+      mult: (u.mod ? u.mod.dealt : 1) * (this.mods[u.side] ? this.mods[u.side].damage : 1),
       cat,
       sx,
       sy,
@@ -5539,7 +5542,7 @@ export class LandWorld {
       if (r > 0)
         for (const o of this.foesNear(s.x, s.y, r).slice()) {
           if (!this.shotMeets(o, s) || (o.x - s.x) ** 2 + (o.y - s.y) ** 2 + (o.z + o.aimZ * 0.6 - s.z) ** 2 > r * r) continue;
-          this.hurt(o, s.damage * db.damageMod(s.w.damageType, o.armor), s.from);
+          this.hurt(o, s.damage * db.damageMod(s.w.damageType, o.armor), s.from, '', s.w.proj);
         }
     } else if (cat !== CAT.STATIC_BOMB) {
       let hit = null,
@@ -5654,23 +5657,46 @@ export class LandWorld {
     return side >= 0 && o.side >= 0 && !this.ally(side, o.side) && (o.side !== this.wild || !!o.squad?.native);
   }
 
+  shotDamage(s) {
+    const sw = s.w;
+    sw.blastR ??= sw.proj.num('Projectile_Blast_Area_Range', 0);
+    sw.blastD ??= sw.proj.num('Projectile_Blast_Area_Damage', 0);
+    return s.damage === 0 && sw.blastR > 0 && sw.blastD > 0 ? sw.blastD * (s.mult ?? 1) : s.damage;
+  }
+
+  shotBlast(s, x, y, hit) {
+    const sw = s.w;
+    sw.blastR ??= sw.proj.num('Projectile_Blast_Area_Range', 0);
+    sw.blastD ??= sw.proj.num('Projectile_Blast_Area_Damage', 0);
+    if (!(sw.blastR > 0 && sw.blastD > 0) || s.dud) return;
+    sw.blastTiers ??= sw.proj.bool('Projectile_Blast_Area_Dropoff') ? sw.proj.num('Projectile_Blast_Area_Dropoff_Tiers', 5) : 0;
+    sw.blastMax ??= sw.proj.num('Projectile_Blast_Area_Max_Victims', 5000);
+    const r2 = sw.blastR * sw.blastR,
+      amount = sw.blastD * (s.mult ?? 1);
+    let n = 0;
+    for (const o of this.foesNear(x, y, sw.blastR).slice()) {
+      if (o === hit || o.dead || o.flies || !this.blastReaches(o, s.from.side, sw.proj)) continue;
+      const d2 = (o.x - x) ** 2 + (o.y - y) ** 2;
+      if (d2 > r2) continue;
+      this.hurt(
+        o,
+        amount * blastFactor(Math.sqrt(d2), sw.blastR, sw.blastTiers) * db.damageMod(sw.damageType, o.armor),
+        s.from,
+        '',
+        sw.proj
+      );
+      if (++n >= sw.blastMax) break;
+    }
+  }
+
   shotEnds(s, hit) {
     s.struck = hit || null;
     if (hit) {
       if (!hit.spot) hit.lastDamage = s.w.damageType;
-      if (!this.deflects(hit, s)) this.hurt(hit, s.damage * db.damageMod(s.w.damageType, hit.armor) * this.absorbs(hit, s), s.from);
+      if (!this.deflects(hit, s))
+        this.hurt(hit, this.shotDamage(s) * db.damageMod(s.w.damageType, hit.armor) * this.absorbs(hit, s), s.from, '', s.w.proj);
     } else this.misses = (this.misses || 0) + 1;
-    const sw = s.w;
-    sw.blastR ??= sw.proj.num('Projectile_Blast_Area_Range', 0);
-    sw.blastD ??= sw.proj.num('Projectile_Blast_Area_Damage', 0);
-    if (sw.blastR > 0 && sw.blastD > 0 && !s.dud) {
-      const r2 = sw.blastR * sw.blastR;
-      for (const o of this.foesNear(s.x, s.y, sw.blastR).slice()) {
-        if (o.dead || o.flies || !this.blastReaches(o, s.from.side, sw.proj)) continue;
-        const d2 = (o.x - s.x) ** 2 + (o.y - s.y) ** 2;
-        if (d2 <= r2) this.hurt(o, sw.blastD * (1 - (0.5 * Math.sqrt(d2)) / sw.blastR) * db.damageMod(sw.damageType, o.armor), s.from);
-      }
-    }
+    this.shotBlast(s, s.x, s.y, hit);
     if (s.onLand) s.onLand(s);
     else if (this.onImpact) this.onImpact(s);
     s.done = true;
@@ -8163,20 +8189,10 @@ export class LandWorld {
       }
       const t = s.target;
       if (!t.dead && !t.spot) t.lastDamage = s.w.damageType;
-      if (!s.ground && !s.expired && !t.dead && Math.hypot(t.x - s.ax, t.y - s.ay) <= t.hitRadius && !this.deflects(t, s))
-        this.hurt(t, s.damage * db.damageMod(s.w.damageType, t.armor) * this.absorbs(t, s), s.from);
+      const lands = !s.ground && !s.expired && !t.dead && Math.hypot(t.x - s.ax, t.y - s.ay) <= t.hitRadius && !this.deflects(t, s);
+      if (lands) this.hurt(t, this.shotDamage(s) * db.damageMod(s.w.damageType, t.armor) * this.absorbs(t, s), s.from, '', s.w.proj);
       else this.misses = (this.misses || 0) + 1;
-      const sw = s.w;
-      sw.blastR ??= sw.proj.num('Projectile_Blast_Area_Range', 0);
-      sw.blastD ??= sw.proj.num('Projectile_Blast_Area_Damage', 0);
-      if (sw.blastR > 0 && sw.blastD > 0 && !s.dud) {
-        const r2 = sw.blastR * sw.blastR;
-        for (const o of this.foesNear(s.ax, s.ay, sw.blastR).slice()) {
-          if (o.dead || o.flies || !this.blastReaches(o, s.from.side, sw.proj)) continue;
-          const d2 = (o.x - s.ax) ** 2 + (o.y - s.ay) ** 2;
-          if (d2 <= r2) this.hurt(o, sw.blastD * (1 - (0.5 * Math.sqrt(d2)) / sw.blastR) * db.damageMod(sw.damageType, o.armor), s.from);
-        }
-      }
+      this.shotBlast(s, s.ax, s.ay, lands ? t : null);
       if (s.onLand) s.onLand(s);
       else if (this.onImpact) this.onImpact(s);
       s.done = true;

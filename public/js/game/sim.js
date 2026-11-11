@@ -18,6 +18,7 @@ import {
   inRange
 } from './abilities.js';
 import { simRandom } from './simrandom.js';
+import { diminishedHit, normalDamage } from './diminishing.js';
 import { tacticalCost, padCost, buildListTag } from './tacticalrules.js';
 import { collisionOf, extentBoxOf, meshHit } from './collmesh.js';
 import {
@@ -236,6 +237,21 @@ const castsShadow = m => {
 };
 const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
 
+function shotDamage(proj, override) {
+  const d = override > 0 ? override : proj.num('Projectile_Damage', 5);
+  if (d !== 0) return d;
+  const blast = proj.num('Projectile_Blast_Area_Damage', 0);
+  return blast > 0 && proj.num('Projectile_Blast_Area_Range', 0) > 0 ? blast : 0;
+}
+
+function destroyables(o) {
+  let n = 0;
+  for (const h of o.hardpoints) if (h.destroyable) n++;
+  return n;
+}
+
+const blastTier = (d, r, tiers) => Math.max(0, Math.min(1, 1 - Math.floor(d * (tiers / r)) / (tiers + 1)));
+
 export class Team {
   constructor(id, factionName) {
     this.id = id;
@@ -341,6 +357,7 @@ class Hardpoint {
     this.pulses = Math.max(1, def.num('Fire_Pulse_Count', 1));
     this.pulseDelay = def.num('Fire_Pulse_Delay_Seconds', 0.2);
     this.damageType = def.str('Damage_Type') || (this.proj ? this.proj.str('Damage_Type') : 'Damage_Default');
+    this.projDamage = def.num('Projectile_Damage', 0);
     this.inaccuracy = new Map(def.tuples('Fire_Inaccuracy_Distance').map(([c, v]) => [c.toUpperCase(), parseFloat(v)]));
     this.fireSfx = def.str('Fire_SFXEvent');
     this.restrict = new Set(def.list('Fire_Category_Restrictions').map(c => c.toUpperCase()));
@@ -428,6 +445,9 @@ export class Unit {
     this.shieldRate = type.num('Shield_Refresh_Rate', 0) / db.constants.num('ShieldRechargeIntervalInSecs', 3);
     this.shieldDownTimer = 0;
     this.shieldTick = 0;
+    this.ionStormAt = -1;
+    this.lastNormalHit = -1;
+    this.jammedAt = -1;
     const cap = type.behaviors().has('POWERED') ? type.num('Energy_Capacity', 0) : 0;
     this.energy =
       cap > 0
@@ -480,7 +500,8 @@ export class Unit {
       energyInterval: 1,
       speed: 1,
       damageTaken: 1,
-      damageDealt: 1
+      damageDealt: 1,
+      diminish: true
     };
     this.revealRange = type.num('Space_FOW_Reveal_Range', 600);
     this.seenBy = 0;
@@ -766,6 +787,7 @@ export class Unit {
               pulseTimer: 0,
               range: Math.min(this.attackRange, proj.num('Projectile_Max_Flight_Distance', 600)),
               damageType: t.str('Damage_Type') || proj.str('Damage_Type'),
+              damage: t.num('Projectile_Damage', 0),
               inaccuracy: swap ? [own, scatter(proj)] : [own],
               muzzles,
               muzzleIndex: 0,
@@ -1479,7 +1501,6 @@ export class World {
     this.beams = [];
     this.reveals = [];
     this.fogLifted = 0;
-    this.jammers = [];
     this.interdictors = [];
     this.timers = [];
     this.fields = [];
@@ -2113,6 +2134,7 @@ export class World {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(target.player);
     }
+    if (proj && from && from.mods && from.mods.diminish !== false && normalDamage(proj)) amount *= diminishedHit(target, this.time);
     amount *= target.mods.damageTaken * target.bonus.defense;
     {
       const by = attacker && (attacker.player || attacker);
@@ -2151,7 +2173,9 @@ export class World {
       this.audio.playFor(hearer, target.player.faction.str('SFXEvent_Space_Base_Under_Attack_Announcement'));
       this.onEvent('baseAttacked', { unit: target });
     }
-    if (shields && target.maxShield > 0 && target.shieldDownTimer > 0) {
+    if (shields && target.maxShield > 0 && this.inIonStorm(target)) {
+      if (target.isActive('DEFEND')) useAbility(this, target, 'DEFEND', false);
+    } else if (shields && target.maxShield > 0 && target.shieldDownTimer > 0) {
       const inc = Math.trunc(LOGIC_FPS * db.constants.num('Depleted_Shield_Damage_Increment', 0.25)) / LOGIC_FPS;
       if (inc > 0) target.shieldDownTimer = Math.min(db.constants.num('Depleted_Shield_Disable_Time', 5), target.shieldDownTimer + inc);
     } else if (shields && target.shield > 0 && target.maxShield > 0) {
@@ -2394,7 +2418,6 @@ export class World {
     this.launches = 0;
     if (this.repairs && this.repairs.size) this.tickRepairs(dt);
     const units = this.units;
-    this.jammers.length = 0;
     this.interdictors.length = 0;
     this.obstacles = units.filter(o => !o.dead && !o.hyper && inLookTree(o.type));
     const grid = this.obstacleGrid || (this.obstacleGrid = new Map());
@@ -2589,6 +2612,7 @@ export class World {
       if (u.shieldDownTimer > 0) u.shieldDownTimer -= dt;
       const base = (this.shieldInterval ??= Math.max(0.05, db.constants.num('ShieldRechargeIntervalInSecs', 3)));
       const every = Math.max(0.05, base * u.mods.shieldInterval);
+      if (u.shieldTick + dt >= every) u.ionStormAt = this.ionFieldAt(u) ? this.time : -1;
       if ((u.shieldTick += dt) >= every && u.ionUntil > this.time) u.shieldTick -= every;
       else if (u.shieldTick >= every) {
         u.shieldTick -= every;
@@ -2893,6 +2917,19 @@ export class World {
     this.fields.push({ x, y, r, asteroid, nebula, ion, radar: !type.has('Is_Visible_On_Radar') || type.bool('Is_Visible_On_Radar') });
   }
 
+  jammed(u) {
+    return u.jammedAt >= 0 && this.time - u.jammedAt < (this.jamTime ??= db.constants.num('Sensor_Jamming_Time', 0.5));
+  }
+
+  ionFieldAt(u) {
+    for (const f of this.fields) if (f.ion && (u.x - f.x) ** 2 + (u.y - f.y) ** 2 <= f.r * f.r) return true;
+    return false;
+  }
+
+  inIonStorm(u) {
+    return u.ionStormAt >= 0 && this.time - u.ionStormAt < (this.ionShieldTime ??= db.constants.num('Ion_Storm_Shield_Disable_Time', 5));
+  }
+
   updateFields(u, step) {
     let ast = 0,
       neb = false,
@@ -2915,10 +2952,6 @@ export class World {
       u.abilityLock = this.time + c.num('Nebula_Ability_Disable_Time', 5);
       if (entered)
         for (const st of u.abilities) if (st.active && !NEBULA_KEEPS.has(st.def.kind)) useAbility(this, u.squad || u, st.def.kind, false);
-    }
-    if (ion && u.maxShield > 0) {
-      u.shield = 0;
-      u.shieldDownTimer = Math.max(u.shieldDownTimer || 0, c.num('Ion_Storm_Shield_Disable_Time', 5));
     }
     if (ast && u.asteroidDamage) {
       const p = c.num('Asteroid_Field_Damage_Rate', 0.2);
@@ -3713,7 +3746,7 @@ export class World {
               z,
               w.damageType,
               w.inaccuracy,
-              (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range }
+              (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading, damage: w.damage } : { range: w.range, damage: w.damage }
             )
           )
             this.spendShot(u, w);
@@ -3834,7 +3867,7 @@ export class World {
       z,
       hp.damageType,
       hp.inaccuracy,
-      hp.forward ? { range: hp.range, forward: u.heading + hp.facing } : { range: hp.range }
+      hp.forward ? { range: hp.range, forward: u.heading + hp.facing, damage: hp.projDamage } : { range: hp.range, damage: hp.projDamage }
     );
     if (hp.fireSfx) this.audio.play(hp.fireSfx, x, y);
   }
@@ -3874,15 +3907,6 @@ export class World {
       this.fixedScatter(shooter),
       true
     );
-    for (const j of this.jammers)
-      if (j.team === target.player.team && (target.x - j.x) ** 2 + (target.y - j.y) ** 2 < j.r * j.r) {
-        if (simRandom() < 0.65) {
-          const a = simRandom() * TAU;
-          off.x += Math.cos(a) * target.hitRadius * 2;
-          off.y += Math.sin(a) * target.hitRadius * 2;
-        }
-        break;
-      }
     const aim = aimsOff(cat) ? { x: lead.x + off.x, y: lead.y + off.y, z: lead.z + off.z } : { x: lead.x, y: lead.y, z: lead.z };
     if (opts && opts.cone && opts.forward === undefined && cat !== CAT.BOMB) {
       if (!aim.x && !aim.y && !aim.z) return false;
@@ -3906,6 +3930,7 @@ export class World {
     const col = proj.vec('Projectile_Laser_Color', [255, 255, 255, 255]);
     const homing = cat === CAT.MISSILE;
     const reach = ((opts && opts.range) || proj.num('Projectile_Max_Flight_Distance', 2000)) + (target.hitRadius || 0) + Math.abs(tp.z - z);
+    const mult = shooter.bonus.damage * shooter.mods.damageDealt * (opts && opts.mult ? opts.mult : 1);
     this.projectiles.push({
       id: ++shotIds,
       def: proj,
@@ -3932,7 +3957,8 @@ export class World {
       team: shooter.player.team,
       path:
         cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET ? rocketPath(proj, x, y, z, dx / len, dy / len, dz / len, aim.x, aim.y, aim.z) : null,
-      damage: proj.num('Projectile_Damage', 5) * shooter.bonus.damage * shooter.mods.damageDealt * (opts && opts.mult ? opts.mult : 1),
+      damage: shotDamage(proj, opts && opts.damage) * mult,
+      mult,
       blastRange: proj.num('Projectile_Blast_Area_Range', 0),
       blastDamage: proj.num('Projectile_Blast_Area_Damage', 0),
       ion: opts ? opts.ion || 0 : 0,
@@ -4020,6 +4046,7 @@ export class World {
       reach: len + 50,
       team: shooter.player.team,
       damage: proj.num('Projectile_Damage', 20) * shooter.bonus.damage * shooter.mods.damageDealt,
+      mult: shooter.bonus.damage * shooter.mods.damageDealt,
       damageType: proj.str('Damage_Type'),
       owner: shooter.player,
       shields: proj.bool('Projectile_Does_Shield_Damage', true),
@@ -4047,19 +4074,74 @@ export class World {
     shot.hidden = this.shotHidden(shot);
   }
 
-  areaDamage(x, y, radius, amount, damageType, owner, { shields = true, hull = true, proj = null } = {}) {
+  areaDamage(
+    x,
+    y,
+    radius,
+    amount,
+    damageType,
+    owner,
+    { shields = true, hull = true, proj = null, z = 0, from = null, exclude = null, hitHp = null } = {}
+  ) {
     const immune = proj ? (proj._blastImmune ??= proj.str('Projectile_Blast_Area_Immune_Faction').trim().toUpperCase()) : '';
+    const tiers = proj ? (proj._blastTiers ??= proj.bool('Projectile_Blast_Area_Dropoff') ? proj.num('Projectile_Blast_Area_Dropoff_Tiers', 5) : 0) : 0,
+      most = proj ? (proj._blastMax ??= proj.num('Projectile_Blast_Area_Max_Victims', 5000)) : Infinity,
+      late = proj ? (proj._aeDelay ??= proj.num('Max_Secs_For_AE_Delayed_Damage', 0)) : 0;
+    let victims = 0;
     for (const o of this.units.slice()) {
       if (o.dead || o.hyper || !o.targetableUnit) continue;
       if (immune) {
         if (String(o.player.factionName || '').toUpperCase() === immune) continue;
       } else if (o.player.id < 0 || (owner && o.player.team === owner.team)) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
-      const d = Math.hypot(o.x - x, o.y - y) - o.hitRadius;
-      if (d > radius) continue;
-      const k = d <= 0 ? 1 : 1 - 0.7 * (d / radius);
-      this.damage(o, amount * k, { damageType, attacker: owner, shields, hull, x: o.x, y: o.y, z: o.z, proj });
+      const dc = Math.hypot(o.x - x, o.y - y);
+      if (dc - o.hitRadius > radius) continue;
+      const split = destroyables(o) > 0;
+      if (o === exclude && !split) continue;
+      victims++;
+      let f = 1,
+        dd = dc;
+      if (tiers > 0 && radius > 0) {
+        dd = this.blastSurface(o, x, y, z, dc);
+        f = blastTier(dd, radius, tiers);
+      }
+      if (!split) this.blastHit(o, f * amount, null, late > 0 && dd >= 1 ? (dd / radius) * late : 0, damageType, owner, from, shields, hull, proj);
+      else {
+        let n = 0;
+        for (const h of o.hardpoints) {
+          if (!h.destroyable || (o === exclude && h === hitHp)) continue;
+          h.worldPos(_p);
+          if ((x - _p.x) ** 2 + (y - _p.y) ** 2 + (z - _p.z) ** 2 < radius * radius) n++;
+        }
+        if (n > 0)
+          for (const h of o.hardpoints) {
+            if (!h.destroyable || (o === exclude && h === hitHp)) continue;
+            h.worldPos(_p);
+            const d3 = Math.hypot(x - _p.x, y - _p.y, z - _p.z);
+            if (!(d3 < radius) || !h.alive) continue;
+            this.blastHit(o, (f * amount) / n, h, (d3 / radius) * late, damageType, owner, from, shields, hull, proj);
+            if (o.dead) break;
+          }
+      }
+      if (victims >= most) return;
     }
+  }
+
+  blastSurface(o, x, y, z, dc) {
+    if (!o.coll) return Math.max(0, dc - o.hitRadius);
+    const t = this.meshStep(o, x, y, z, o.x, o.y, o.z, true);
+    return t >= 0 && t < 1 ? Math.min(dc, t * dc) : dc;
+  }
+
+  blastHit(o, amount, hp, delay, damageType, owner, from, shields, hull, proj) {
+    if (delay > 0) {
+      const kind = proj.str('Internal_Damage_Type').trim() || 'Damage_Normal';
+      this.delayed(delay, o.x, o.y, o.z, () => {
+        if (!o.dead) this.damage(o, amount, { damageType: kind, x: o.x, y: o.y, z: o.z });
+      });
+      return;
+    }
+    this.damage(o, amount, { damageType, hp, attacker: owner, from, shields, hull, x: o.x, y: o.y, z: o.z, proj });
   }
 
   detonate(proj, owner, x, y, z, scale = 1, big = false) {
@@ -4077,7 +4159,8 @@ export class World {
     this.areaDamage(x, y, range, dmg, proj.str('Damage_Type'), owner, {
       shields: proj.bool('Projectile_Does_Shield_Damage', true),
       hull: proj.bool('Projectile_Does_Hitpoint_Damage', true),
-      proj
+      proj,
+      z
     });
   }
 
@@ -4132,6 +4215,7 @@ export class World {
         if (u.dead) continue;
         let r = (u.type._missileShield ??= u.type.num('Passive_Missile_Shield_Radius', 0));
         if (u.abilities.length && u.isActive('MISSILE_SHIELD')) r = u.abilityState('MISSILE_SHIELD').def.node.num('Effective_Radius', r);
+        if (u.abilities.length && u.isActive('SENSOR_JAMMING')) r = u.abilityState('SENSOR_JAMMING').def.node.num('Effective_Radius', r);
         if (r > 0) deflect.push(u, r);
       }
     let n = 0;
@@ -4155,10 +4239,11 @@ export class World {
           const range = p.blastRange || 60;
           if (!this.viewFogged(p.point.x, p.point.y))
             this.fx.explosion(p.point.x, p.point.y, p.point.z, Math.min(160, range * 0.7), false, p.fx.hit);
-          this.areaDamage(p.point.x, p.point.y, range, p.blastDamage || p.damage, p.damageType, p.owner, {
+          this.areaDamage(p.point.x, p.point.y, range, p.blastDamage ? p.blastDamage * p.mult : p.damage, p.damageType, p.owner, {
             shields: p.shields,
             hull: p.hull,
-            proj: p.def
+            proj: p.def,
+            z: p.point.z
           });
           continue;
         }
@@ -4177,7 +4262,7 @@ export class World {
           let best = null,
             bd = p.scan * p.scan;
           for (const o of this.units)
-            if (!o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== p.team) {
+            if (!o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== p.team && !this.jammed(o)) {
               const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
               if (d2 < bd) {
                 bd = d2;
@@ -4201,26 +4286,31 @@ export class World {
         p.vz = _p.dz * p.speed;
         if (p.flown >= p.path.total) keep = false;
       } else {
-        if (p.homing && p.target) {
-          const tt = p.target,
-            tp =
+        if (p.homing && (p.target || deflect.length)) {
+          const tt = p.target && !this.jammed(p.target) ? p.target : null;
+          let wx = p.vx,
+            wy = p.vy,
+            wz = p.vz;
+          if (tt) {
+            const tp =
               p.targetHp && p.targetHp.alive && p.targetHp.unit === tt
                 ? p.targetHp.worldPos(_p)
                 : ((_p.x = tt.x), (_p.y = tt.y), (_p.z = tt.z), _p);
-          let gx = tp.x,
-            gy = tp.y,
-            gz = tp.z;
-          if (p.ox && p.oy && p.oz) {
-            const h = tt.heading || 0,
-              c = Math.cos(h),
-              s = Math.sin(h);
-            gx += p.ox * c - p.oy * s;
-            gy += p.ox * s + p.oy * c;
-            gz += p.oz;
-          }
-          let wx = gx - p.x,
-            wy = gy - p.y,
+            let gx = tp.x,
+              gy = tp.y,
+              gz = tp.z;
+            if (p.ox && p.oy && p.oz) {
+              const h = tt.heading || 0,
+                c = Math.cos(h),
+                s = Math.sin(h);
+              gx += p.ox * c - p.oy * s;
+              gy += p.ox * s + p.oy * c;
+              gz += p.oz;
+            }
+            wx = gx - p.x;
+            wy = gy - p.y;
             wz = gz - p.z;
+          }
           for (let k = 0; k < deflect.length; k += 2) {
             const d = deflect[k],
               r = deflect[k + 1];
@@ -4329,10 +4419,14 @@ export class World {
           });
           if (p.def.bool('Projectile_Ion_Stun_On_Detonation')) this.ionHit(p, hit, hx, hy);
           if (p.blastRange > 0 && p.blastDamage > 0)
-            this.areaDamage(hx, hy, p.blastRange, p.blastDamage * 0.5, p.damageType, p.owner, {
+            this.areaDamage(hx, hy, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
               shields: p.shields,
               hull: p.hull,
-              proj: p.def
+              proj: p.def,
+              z: hz,
+              from: p.from,
+              exclude: hit,
+              hitHp: hp || hitPart
             });
           keep = false;
           p.hitDone = true;
@@ -4349,7 +4443,13 @@ export class World {
       if (!keep && p.reach !== undefined && !p.hitDone) {
         if (p.end && !p.hidden) this.fx.hit(p.x, p.y, p.z, 8, p.end);
         if (p.blastRange > 0 && p.blastDamage > 0)
-          this.areaDamage(p.x, p.y, p.blastRange, p.blastDamage, p.damageType, p.owner, { shields: p.shields, hull: p.hull, proj: p.def });
+          this.areaDamage(p.x, p.y, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
+            shields: p.shields,
+            hull: p.hull,
+            proj: p.def,
+            z: p.z,
+            from: p.from
+          });
       }
       if (keep) ps[n++] = p;
     }
@@ -5496,7 +5596,9 @@ export class World {
       z,
       w.damageType,
       w.inaccuracy,
-      (w.forward ??= u.type.bool('Fires_Forward')) ? { range: w.range, forward: u.heading } : { range: w.range, cone: this.fireConeOf(u) }
+      (w.forward ??= u.type.bool('Fires_Forward'))
+        ? { range: w.range, forward: u.heading, damage: w.damage }
+        : { range: w.range, cone: this.fireConeOf(u), damage: w.damage }
     );
     if (!ok) return false;
     this.spendShot(u, w);

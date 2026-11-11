@@ -158,6 +158,10 @@ export function landAbilities(type) {
         gui: ab.val('GUI_Activated_Ability_Name').trim(),
         kind,
         mods,
+        noDiminish: ab.all('Mod_Flag').some(m => {
+          const [k, v = ''] = m.text.split(',');
+          return /^ALLOW_TARGET_DIMINISHING_FIREPOWER(_FLAG)?$/i.test(k.trim()) && !/^(yes|true|1)$/i.test(v.trim());
+        }),
         node: ab,
         spec,
         blast,
@@ -585,9 +589,10 @@ function toggled(world, q, st) {
 
 export function refreshMods(world, q) {
   for (const u of q.members) {
-    const m = (u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1 });
+    const m = (u.mod = { speed: 1, taken: 1, delay: 1, dealt: 1, energy: 1, energyInterval: 1, noDiminish: false });
     for (const st of q.abilities) {
       if (!st.active || !u.abilityKinds.has(st.def.kind)) continue;
+      if (st.def.noDiminish) m.noDiminish = true;
       for (const [k, v] of st.def.mods) {
         if (k === 'SPEED_MULTIPLIER') m.speed *= v;
         else if (k === 'TAKE_DAMAGE_MULTIPLIER') m.taken *= v;
