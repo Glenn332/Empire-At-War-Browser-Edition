@@ -89,6 +89,9 @@ const dist2 = (a, b) => {
   return dx * dx + dy * dy;
 };
 
+export const spaceHealthMultiplier = () => db.constants.num('Object_Max_Health_Multiplier_Space', 1);
+export const spaceHullHealth = (type, none = 100) => type.num('Tactical_Health', none) * spaceHealthMultiplier();
+
 const SIZE_CLASSES = ['FIGHTER', 'BOMBER', 'TRANSPORT', 'CORVETTE', 'FRIGATE', 'CAPITAL', 'SUPER', 'STRUCTURE'];
 
 export function sizeClass(type) {
@@ -327,9 +330,11 @@ class Hardpoint {
     this.unit = unit;
     this.def = def;
     this.kind = def.str('Type').toUpperCase();
-    this.maxHealth = def.num('Health', 100);
+    this.maxHealth = def.num('Health', 100) * spaceHealthMultiplier();
     this.health = this.maxHealth;
     this.alive = true;
+    this.mesh = def.str('Collision_Mesh').trim().toUpperCase();
+    this.route = null;
     this.targetable = def.bool('Is_Targetable', true);
     this.destroyable = def.bool('Is_Destroyable', true);
     this.proj = db.type(def.str('Fire_Projectile_Type'));
@@ -443,7 +448,7 @@ export class Unit {
     this.attackRange = type.num('Targeting_Max_Attack_Distance', 800);
     this.pop = spacePop(type);
     this.hardpoints = [];
-    this.baseHealth = type.num('Tactical_Health', 100);
+    this.baseHealth = spaceHullHealth(type);
     this.maxHealth = this.baseHealth;
     this.health = this.maxHealth;
     this.order = { kind: 'idle' };
@@ -505,6 +510,7 @@ export class Unit {
     this.shieldAt = undefined;
     this.selectScale = undefined;
     this.hpDriven = undefined;
+    this.hpDies = false;
     this.maxRange = undefined;
     this.engageRange = undefined;
     this.hasWeapons = undefined;
@@ -737,10 +743,8 @@ export class Unit {
     if (this.hpColl) this.collR = Math.max(this.collR || 0, ...this.hpColl.map(p => p.r * this.scale));
     const destroyable = this.hardpoints.filter(h => h.destroyable);
     this.hpDriven = destroyable.length > 0;
-    if (this.hpDriven) {
-      this.maxHealth = destroyable.reduce((a, h) => a + h.maxHealth, 0);
-      this.health = this.maxHealth;
-    }
+    this.hpDies = this.hpDriven && t.bool('Should_Be_Destroyed_When_All_Hardpoints_Destroyed', true);
+    for (const h of this.hardpoints) h.route = h.mesh ? this.hardpoints.find(o => o.mesh === h.mesh) : null;
     if (db.type(t.list('Projectile_Types')[0]) && !this.hardpoints.some(h => h.isWeapon)) {
       const muzzles = [],
         scatter = o => new Map(o.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])),
@@ -1142,23 +1146,6 @@ export class Unit {
 
   rescaleHealth(k) {
     const raise = k > 1;
-    if (this.hpDriven) {
-      let max = 0,
-        sum = 0;
-      for (const h of this.hardpoints) {
-        h.maxHealth *= k;
-        if (raise) {
-          if (h.health > 0 && h.destroyable) h.health = Math.min(h.health * k, h.maxHealth);
-        } else if (h.health > h.maxHealth) h.health = h.maxHealth;
-        if (h.destroyable) {
-          max += h.maxHealth;
-          if (h.alive) sum += h.health;
-        }
-      }
-      this.maxHealth = max;
-      this.health = sum;
-      return;
-    }
     const next = this.maxHealth * k;
     for (const h of this.hardpoints) {
       h.maxHealth *= k;
@@ -1175,7 +1162,42 @@ export class Unit {
     return !this.dead;
   }
   get healthFrac() {
-    return this.maxHealth > 0 ? clamp(this.health / this.maxHealth, 0, 1) : 0;
+    if (!(this.maxHealth > 0)) return 0;
+    const f = clamp(this.health / this.maxHealth, 0, 1);
+    if (!this.hpDies) return f;
+    const s = this.hardpointShare();
+    return s < f ? s : f;
+  }
+  hardpointShare() {
+    let h = 0,
+      m = 0,
+      live = 0;
+    for (const p of this.hardpoints)
+      if (p.destroyable) {
+        m += p.maxHealth;
+        if (p.alive && p.health > 0) {
+          h += p.health;
+          live++;
+        }
+      }
+    return live && h > 0 && m > 0 ? h / m : 0;
+  }
+  healShare() {
+    if (!this.hpDies) return this.maxHealth > 0 ? Math.min(1, this.health / this.maxHealth) : 0;
+    let h = 0,
+      m = 0;
+    for (const p of this.hardpoints)
+      if (p.destroyable && p.alive && p.health > 0) {
+        h += p.health;
+        m += p.maxHealth;
+      }
+    return h > 0 && m > 0 ? Math.min(1, h / m) : 0;
+  }
+  get toKill() {
+    if (!this.hpDriven) return this.health;
+    let s = 0;
+    for (const p of this.hardpoints) if (p.destroyable && p.health > 0) s += p.health;
+    return s;
   }
   get name() {
     return db.t(this.type.str('Text_ID')) || this.type.name;
@@ -2203,22 +2225,20 @@ export class World {
     }
     let d = amount * db.damageMod(damageType, target.armor);
     if (this.viewerSees(target)) this.fx.hit(x, y, z, Math.min(40, 6 + d * 0.5), fx && fx.hit);
-    if (target.hpDriven) {
-      if (!hp || !hp.alive || !hp.destroyable) hp = this.pickHardpoint(target, x, y);
-      if (!hp) {
-        this.kill(target, attacker);
-        return;
+    const part = hp && hp.unit === target ? hp.route : null;
+    if (part && part.destroyable) {
+      if (!part.alive) return;
+      part.health -= d;
+      if (part.health <= 0) {
+        this.destroyHardpoint(target, part, attacker);
+        if (target.hpDies && !target.hardpoints.some(h => h.destroyable && h.alive)) {
+          target.health = 0;
+          this.kill(target, attacker);
+          return;
+        }
       }
-      hp.health -= d;
-      if (hp.health <= 0) this.destroyHardpoint(target, hp, attacker);
-      let sum = 0;
-      for (const h of target.hardpoints) if (h.destroyable && h.alive) sum += h.health;
-      target.health = sum;
-      if (sum <= 0) this.kill(target, attacker);
-      else {
-        this.damageProxies(target);
-        this.healthVoice(target, before, attacker);
-      }
+      this.damageProxies(target);
+      this.healthVoice(target, before, attacker);
     } else {
       target.health -= d;
       if (target.health <= 0) this.kill(target, attacker);
@@ -2227,6 +2247,37 @@ export class World {
         this.healthVoice(target, before, attacker);
       }
     }
+  }
+
+  pullPools(u) {
+    const M = u.maxHealth;
+    if (!(M > 0)) return;
+    const k = (this.hullGap ??= db.constants.num('Hull_Vs_Hard_Points_Health_Constraint', 0.2));
+    let sumH = 0,
+      sumM = 0,
+      live = 0;
+    for (const h of u.hardpoints)
+      if (h.destroyable) {
+        sumM += h.maxHealth;
+        if (h.alive && h.health > 0) {
+          sumH += h.health;
+          live++;
+        }
+      }
+    if (!(sumM > 0)) return;
+    const share = live && sumH > 0 ? sumH / sumM : 0,
+      lim = Math.min(1, share + k);
+    if (u.hpDies && u.health / M > lim) u.health = Math.min(M, Math.max(0, M * lim));
+    const e = Math.max((share - Math.min(u.health / M + k, 1)) * sumM, 0);
+    if (e > 0)
+      for (const h of u.hardpoints)
+        if (h.destroyable && h.alive && h.health > 0) {
+          const a = (h.health / sumM) * e;
+          if (a > 0) {
+            h.health -= a;
+            if (h.health <= 0) this.destroyHardpoint(u, h, null);
+          }
+        }
   }
 
   damageProxies(u) {
@@ -2238,6 +2289,33 @@ export class World {
         loose[i].on = true;
         u.pendingProxies.push(loose[i]);
       }
+  }
+
+  randomHardpoint(u) {
+    const hs = u.hardpoints,
+      n = hs.length;
+    if (!u.hpDriven || !n) return null;
+    const s = Math.min(n - 1, Math.floor(simRandom() * n));
+    for (let k = 0; k < n; k++) {
+      const h = hs[(s + k) % n];
+      if (h.destroyable && h.alive) return h;
+    }
+    return null;
+  }
+
+  nearestHardpoint(target, x, y, z = 0) {
+    let best = null,
+      bd = Infinity;
+    for (const h of target.hardpoints) {
+      if (!h.targetable || (h.destroyable && !h.alive)) continue;
+      h.worldPos(_p);
+      const d = (_p.x - x) ** 2 + (_p.y - y) ** 2 + (_p.z - z) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = h;
+      }
+    }
+    return best;
   }
 
   pickHardpoint(target, x, y, by = null) {
@@ -2324,6 +2402,11 @@ export class World {
       return;
     }
     this.removeUnit(u);
+    for (const h of u.hardpoints)
+      if (h.destroyable && h.alive) {
+        h.alive = false;
+        h.health = 0;
+      }
     const big = u.visualRadius;
     if (this.viewerSees(u)) {
       this.fx.explosion(u.x, u.y, u.z, clamp(big * 1.1, 14, 600), big > 120, particleFile(u.type.list('Death_Explosions')[0]));
@@ -2603,6 +2686,7 @@ export class World {
         u.shield = next;
       }
     }
+    if (u.hpDriven) this.pullPools(u);
     if (u.construction) {
       u.construction.left -= dt;
       if (u.construction.left <= 0) this.finishConstruction(u);
@@ -2920,7 +3004,7 @@ export class World {
       u.shield = 0;
       u.shieldDownTimer = Math.max(u.shieldDownTimer || 0, c.num('Ion_Storm_Shield_Disable_Time', 5));
     }
-    if (ast && u.asteroidDamage) {
+    if (ast && u.asteroidDamage && u.speed > 0 && !u.hyper) {
       const p = c.num('Asteroid_Field_Damage_Rate', 0.2);
       let hits = 0;
       for (let k = Math.round(step * 30) * ast; k > 0; k--) if (simRandom() <= p) hits++;
@@ -2934,14 +3018,18 @@ export class World {
         u.asteroidFx = this.time + rand(0.6, 1.2);
         this.audio.playAt(u.player, t.str('SFXEvent_Damaged_By_Asteroid'), x, y);
       }
-      this.damage(u, hits * c.num('Asteroid_Field_Damage', 20), {
-        damageType: 'Damage_Asteroid',
-        x,
-        y,
-        z: u.z + u.height * 0.3,
-        quiet: !show,
-        fx: { hit: particleFile(t.str('Asteroid_Damage_Hit_Particles')) }
-      });
+      const dmg = c.num('Asteroid_Field_Damage', 20),
+        fx = { hit: particleFile(t.str('Asteroid_Damage_Hit_Particles')) };
+      for (let i = 0; i < hits && !u.dead; i++)
+        this.damage(u, dmg, {
+          damageType: 'Damage_Asteroid',
+          hp: this.randomHardpoint(u),
+          x,
+          y,
+          z: u.z + u.height * 0.3,
+          quiet: i > 0 || !show,
+          fx
+        });
     }
   }
 
@@ -3254,7 +3342,7 @@ export class World {
         ? u.target
         : null;
     if (cur) {
-      const left = (cur.health + (cur.shield || 0)) / Math.max(1e-6, this.damageRate(cur));
+      const left = (cur.toKill + (cur.shield || 0)) / Math.max(1e-6, this.damageRate(cur));
       if (rate(cur) === 1 || left <= u.type.num('Targeting_Stickiness_Time_Threshold', 0)) {
         u.target = cur;
         return;
@@ -3577,13 +3665,13 @@ export class World {
         if (!(p.credits >= cost)) return false;
         p.credits -= cost;
         hp.health = Math.min(hp.maxHealth, hp.health + heal);
+        const M = u.maxHealth;
+        if (u.health > M) u.health = M;
+        const hull = u.health / M,
+          share = u.hardpointShare();
+        if (hull < share) u.health = Math.min(Math.max(0, u.health * (share - hull + 1)), M);
         return true;
       });
-      if (u.hpDriven) {
-        let sum = 0;
-        for (const h of u.hardpoints) if (h.destroyable && h.alive) sum += h.health;
-        u.health = sum;
-      }
       if (hp.health >= hp.maxHealth || !hp.repairers.length) {
         hp.repairers = null;
         this.repairs.delete(hp);
@@ -3596,26 +3684,29 @@ export class World {
     if ((h.timer -= dt) > 0) return;
     h.timer = h.interval;
     const mend = t => {
-      if (t.hpDriven) {
-        let sum = 0;
-        for (const p of t.hardpoints)
-          if (p.destroyable && p.alive) {
-            p.health = Math.min(p.maxHealth, p.health + p.maxHealth * h.percent + h.amount);
-            sum += p.health;
+      let worst = null,
+        wf = 1;
+      for (const p of t.hardpoints)
+        if (p.destroyable && p.alive && p.health > 0) {
+          const f = p.health / p.maxHealth;
+          if (f < wf) {
+            wf = f;
+            worst = p;
           }
-        t.health = sum;
-      } else t.health = Math.min(t.maxHealth, t.health + t.maxHealth * h.percent + h.amount);
+        }
+      if (worst) worst.health = Math.min(worst.maxHealth, Math.max(0, worst.health + worst.maxHealth * h.percent + h.amount));
+      else t.health = Math.min(t.maxHealth, Math.max(0, t.health + t.maxHealth * h.percent + h.amount));
     };
     if (h.range <= 0) {
-      if (u.health < u.maxHealth - 0.5) mend(u);
+      if (u.healthFrac < 1) mend(u);
       return;
     }
     let best = null,
       bf = 1;
     for (const t of this.units) {
       if (t.dead || t === u || t.hyper || t.player.team !== u.player.team || t.isStructure) continue;
-      const f = t.healthFrac;
-      if (f >= 0.999 || (t.x - u.x) ** 2 + (t.y - u.y) ** 2 > h.range * h.range) continue;
+      const f = t.healShare();
+      if (f >= 1 || (t.x - u.x) ** 2 + (t.y - u.y) ** 2 > h.range * h.range) continue;
       const cats = t.type.categories();
       if (h.cats.length && !h.cats.some(c => cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))) continue;
       if (!h.single) {
@@ -4307,13 +4398,7 @@ export class World {
           const hx = x0 + (p.x - x0) * ht,
             hy = y0 + (p.y - y0) * ht,
             hz = z0 + (p.z - z0) * ht;
-          const hp = hit.hpDriven
-            ? p.targetHp && p.targetHp.alive && p.target === hit
-              ? p.targetHp
-              : hitPart && hitPart.alive && hitPart.destroyable
-                ? hitPart
-                : this.pickHardpoint(hit, hx, hy, p.from)
-            : null;
+          const hp = p.target === hit && p.targetHp ? p.targetHp : hitPart;
           this.damage(hit, p.damage, {
             damageType: p.damageType,
             hp,
@@ -4669,7 +4754,7 @@ export class World {
       br = 0,
       bp;
     if (was && (inWeapon(was) || respond(was)) && rate(was) >= 0) {
-      const left = (was.health + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
+      const left = (was.toKill + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
     }
     if (!best) {

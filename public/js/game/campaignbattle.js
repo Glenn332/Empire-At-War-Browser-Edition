@@ -3,7 +3,7 @@ import { isTacticalSuperweapon } from './tacticalsuperweapon.js';
 import { db } from '../gamedata.js';
 import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
-import { HYPER, LOGIC_FPS } from './sim.js';
+import { HYPER, LOGIC_FPS, spaceHullHealth } from './sim.js';
 import { MOD } from './combatmods.js';
 import { giveFreeUpgrades } from './planetabilities.js';
 
@@ -61,8 +61,7 @@ export function flagshipScore(t, e = null) {
   const m = e && !e.isSquad && e.cmods && e.cmods.size ? e.cmods : null,
     adj = e && e.player ? e.player.adjust : null;
   return (
-    t.num('Tactical_Health', 0) *
-      db.constants.num('Object_Max_Health_Multiplier_Space', 1) *
+    spaceHullHealth(t, 0) *
       (m ? m.factor(MOD.HEALTH) : 1) *
       (adj ? adj.health : 1) +
     t.num('Shield_Points', 0) * (m ? m.factor(MOD.SHIELD) : 1) * (adj ? adj.shield : 1)
