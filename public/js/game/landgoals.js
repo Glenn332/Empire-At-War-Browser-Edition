@@ -18,12 +18,23 @@ export const FLAG = {
   FRIENDLY_REINFORCEMENT_POINT: 0x4000,
   ENEMY_REINFORCEMENT_POINT: 0x8000
 };
-const SWEEP = 5;
+const SWEEP = 5,
+  FPS = 30;
 
 export class GoalSystem {
   constructor() {
     this.sides = new Map();
     this.mode = 'LAND';
+    this.paced = false;
+  }
+
+  perFrame(evals, ais) {
+    return Math.max(1, Math.min(Math.ceil(evals / (FPS * SWEEP)), Math.trunc(20 / Math.max(1, ais) + 0.5)));
+  }
+
+  credits(E) {
+    const p = E.cmdr && E.cmdr.player;
+    return (p && +p.credits) || 0;
   }
 
   state(side) {
@@ -150,26 +161,37 @@ export class GoalSystem {
       S.owed = 0;
       S.proposed = new Map();
       if (this.budget !== undefined) this.budget -= 5;
+      let goals = 0;
+      const seen = new Set();
       for (const [name, def] of brain.defs) {
         if (def.mode && def.mode !== this.mode) continue;
-        if (!brain.fnOf.has(name) || !this.isOn(S, name, def) || !P.can(name)) continue;
-        for (const t of this.targets(side, def.bits)) S.pairs.push(name, t);
+        if (!brain.fnOf.has(name)) continue;
+        goals++;
+        if (!this.isOn(S, name, def) || !P.can(name)) continue;
+        for (const t of this.targets(side, def.bits)) {
+          S.pairs.push(name, t);
+          if (t) seen.add(t);
+        }
       }
+      if (this.paced && S.rate === undefined) S.rate = this.perFrame(goals * Math.max(1, seen.size), E.ais || 1);
+      S.evals = 0;
       S.phase = 'sweep';
     }
     if (S.phase === 'sweep') {
-      const total = S.pairs.length / 2,
-        ais = Math.max(1, E.ais || 1);
-      S.owed += (total / SWEEP) * dt;
+      const total = S.pairs.length / 2;
+      S.owed = this.paced ? Math.min(S.owed + S.rate * dt * FPS, S.rate * FPS) : S.owed + (total / SWEEP) * dt;
       const mind = this.mind(side, S),
         act = this.active(cmdr);
-      for (; S.owed >= 1 && S.at < total && !late(); S.owed--, S.at++) {
+      for (; S.owed >= 1 && S.at < total && !late(); S.at++) {
         if (this.budget !== undefined) this.budget--;
         const name = S.pairs[S.at * 2],
           t = S.pairs[S.at * 2 + 1],
           def = brain.defs.get(name);
+        if (!this.paced) S.owed--;
         if (t && t.unit && (t.unit.dead || t.unit.gone)) continue;
         if (this.blocked(S, cmdr, name) || this.likeOn(act, def, name, t)) continue;
+        if (this.paced) S.owed--;
+        S.evals++;
         const d = Math.min(
           1e18,
           mind.desire(name, t) +
@@ -178,12 +200,15 @@ export class GoalSystem {
         );
         if (!(d > 0)) continue;
         if (!this.reachable(def, t, mind)) continue;
-        if (!P.staffable(cmdr, name, this.thingOf(t), { mind, t, fails: this.failures(S, 'plan', name, t) })) continue;
+        const plan = P.draw ? P.draw(name, S) : undefined;
+        if (P.draw && !plan) continue;
+        if (!P.staffable(cmdr, name, this.thingOf(t), { mind, t, fails: this.failures(S, 'plan', name, t), key: plan })) continue;
         const key = name + '|' + (t ? t.key : ''),
           had = S.proposed.get(key);
-        if (!had || d > had.d) S.proposed.set(key, { name, t, d, def });
+        if (!had || d > had.d) S.proposed.set(key, { name, t, d, def, plan });
       }
       if (S.at >= total && !late()) {
+        if (this.paced) S.rate = this.perFrame(S.evals, E.ais || 1);
         if (this.deadline === undefined && this.budget === undefined) {
           this.select(side, S, cmdr, P);
           S.phase = 'idle';
@@ -215,9 +240,7 @@ export class GoalSystem {
   }
 
   rest(cmdr, brain, P) {
-    const lv = String(cmdr.difficulty || 'normal').toLowerCase(),
-      by = P.sleepBy;
-    return by ? by[lv === 'easy' ? 0 : lv === 'hard' ? 2 : 1] : (brain.sleep ?? 1);
+    return P.sleep ? P.sleep(cmdr) : (brain.sleep ?? 1);
   }
 
   reachable() {
@@ -239,8 +262,20 @@ export class GoalSystem {
       brain = E.brain,
       mind = this.mind(side, S);
     P.beginSelection?.(cmdr);
-    const ext = Math.max(1, Math.min(5, (brain.player && brain.player.ext) || 2));
-    const cats = [...S.on.budget].map(([c, eq]) => [c, mind.fn(String(eq).toUpperCase(), null)]).sort((a, b) => b[1] - a[1]);
+    const ext = brain.player && Number.isFinite(brain.player.ext) ? brain.player.ext : 2;
+    const weights = [...S.on.budget].map(([c, eq]) => {
+      const v = mind.fn(String(eq).toUpperCase(), null);
+      return [c, v > 0 ? v : 0];
+    });
+    const sum = weights.reduce((a, x) => a + x[1], 0),
+      share = new Map(weights.map(([c, v]) => [c, sum === 0 ? 1 / weights.length : v / sum]));
+    if (!S.alloc) {
+      const money = this.credits(E);
+      S.alloc = new Map([...share].map(([c, f]) => [c, money * f]));
+    }
+    const order = this.categories(brain, S);
+    const cats = order.map(c => [c, share.get(c) || 0]);
+    cats.sort((a, b) => b[1] - a[1]);
     const wanted = [];
     const M = this.mode[0],
       unbegun = new Map(),
@@ -269,45 +304,66 @@ export class GoalSystem {
             : ''),
         'plan'
       );
+    for (const p of this.active(cmdr)) {
+      p.gd = this.held(mind.desire(p.goal, p.tgt));
+      yield;
+    }
+    const like = (a, b) => (a.t ? a.t.key : '') === (b.t ? b.t.key : '') && (a.name === b.name || a.def.like.includes(b.name));
+    const likeIn = (list, c) => list.some(x => like(c, x));
+    const asCand = p => ({ name: p.goal, t: p.tgt, d: p.gd, def: p.gdef, inst: p });
     for (const [cat] of cats) {
       const running = this.active(cmdr).filter(p => p.gdef.category === cat);
-      const fresh = [...S.proposed.values()].filter(p => p.def.category === cat).sort((a, b) => b.d - a.d);
-      const best = fresh.length ? fresh[0].d : -Infinity;
-      const kept = [],
-        list = fresh.slice();
-      for (const p of running) {
-        const d = mind.desire(p.goal, p.tgt),
-          eff = this.held(d);
-        yield;
-        if (eff <= 0 && p.removable !== false) {
-          dropped(p, 'not wanted any more (desire ' + d.toFixed(1) + ')');
-          P.stop(p);
-          continue;
-        }
-        p.gd = eff;
-        if (eff >= best || p.removable === false) {
-          if (P.retain?.(p) !== false) kept.push(p);
+      const fresh = [...S.proposed.values()]
+        .filter(p => p.def.category === cat)
+        .sort((a, b) => b.d - a.d)
+        .slice(0, ext + running.length);
+      if (!fresh.length) continue;
+      const cap = running.length + ext,
+        top = fresh[0].d;
+      const keep = [],
+        drop = [];
+      for (const p of running.sort((a, b) => b.gd - a.gd)) {
+        if (top <= p.gd || p.removable === false) {
+          if (P.retain?.(p) !== false) keep.push(asCand(p));
           else {
             dropped(p, 'its units are held by another plan');
             P.stop(p);
           }
-        } else list.push({ name: p.goal, t: p.tgt, d: eff, def: p.gdef, inst: p });
+        } else drop.push(asCand(p));
       }
-      list.sort((a, b) => b.d - a.d);
-      const cap = running.length + ext;
+      const pool = [];
+      for (const c of [...drop, ...fresh]) {
+        const i = pool.findIndex(x => (x.t ? x.t.key : '') === (c.t ? c.t.key : '') && x.name === c.name);
+        if (i < 0) pool.push(c);
+        else if (c.d > pool[i].d) pool[i].d = c.d;
+      }
+      pool.sort((a, b) => b.d - a.d);
+      const lowest = drop.length ? drop[drop.length - 1] : null;
+      const others = () => this.active(cmdr).filter(p => p.gdef.category !== cat).map(asCand);
+      const allowed = c => this.isOn(S, c.name, c.def) && !this.blocked(S, cmdr, c.name);
       const fits = c =>
-        this.isOn(S, c.name, c.def) &&
-        !this.likeOn(kept, c.def, c.name, c.t) &&
-        (c.inst
+        c.inst
           ? P.canRetain?.(c.inst) !== false
-          : P.staffable(cmdr, c.name, this.thingOf(c.t), { mind, t: c.t, fails: this.failures(S, 'plan', c.name, c.t), waiting: true }));
+          : P.staffable(cmdr, c.name, this.thingOf(c.t), {
+              mind,
+              t: c.t,
+              fails: this.failures(S, 'plan', c.name, c.t),
+              waiting: true,
+              key: c.plan
+            });
       const take = c => {
         if (c.inst) {
           if (P.retain?.(c.inst) === false) return false;
-          kept.push(c.inst);
+          keep.push(c);
           return true;
         }
-        const inst = P.start(cmdr, c.name, this.thingOf(c.t), { mind, t: c.t, fails: this.failures(S, 'plan', c.name, c.t), desire: c.d });
+        const inst = P.start(cmdr, c.name, this.thingOf(c.t), {
+          mind,
+          t: c.t,
+          fails: this.failures(S, 'plan', c.name, c.t),
+          desire: c.d,
+          key: c.plan
+        });
         if (!inst) {
           if (D.on) {
             const n = unbegun.get(c.name);
@@ -319,7 +375,6 @@ export class GoalSystem {
               }
             } else unbegun.set(c.name, { n: 1, d: c.d, t: goalTarget(c.t) });
           }
-          this.remember(S, 'start', c.name, c.t, c.def.startTrack);
           return false;
         }
         inst.gdef = c.def;
@@ -327,7 +382,8 @@ export class GoalSystem {
         inst.tkey = c.t ? c.t.key : '';
         inst.gside = side;
         inst.gsys = this;
-        kept.push(inst);
+        inst.gd = this.held(c.d);
+        keep.push({ ...c, inst });
         if (D.on)
           D.log(
             'decision',
@@ -340,52 +396,54 @@ export class GoalSystem {
         wanted.push([c.name, c.t && c.t.type ? c.t.type.name : c.t && c.t.zone ? 'zone' + c.t.zone.index : '', +c.d.toFixed(1)]);
         return true;
       };
-      while (kept.length < cap && list.length) {
-        const c = list[0],
-          ok = fits(c);
+      let spent = this.exhausted(S, cat);
+      while (!spent && pool.length) {
+        const c = pool[0];
+        if (!allowed(c) || likeIn(keep, c) || likeIn(others(), c)) break;
+        const ok = fits(c);
         yield;
         if (!ok) {
           if (!c.inst) this.remember(S, 'start', c.name, c.t, c.def.startTrack);
           break;
         }
-        list.shift();
+        pool.shift();
         const took = take(c);
         yield;
-        if (!took) break;
+        if (!took) {
+          if (!c.inst) this.remember(S, 'start', c.name, c.t, c.def.startTrack);
+          break;
+        }
+        if (lowest && like(c, lowest)) break;
+        if (keep.length >= cap) break;
+        spent = this.exhausted(S, cat);
       }
-      const aside = [];
-      while (kept.length < cap && list.length) {
-        let pick = null;
-        while (list.length) {
-          const sum = list.reduce((a, c) => a + Math.max(0, c.d), 0);
-          let c = list[0];
-          if (sum > 0) {
-            let r = simRandom() * sum;
-            c = list[list.length - 1];
-            for (const x of list) {
-              r -= Math.max(0, x.d);
-              if (r <= 0) {
-                c = x;
-                break;
-              }
-            }
-          }
-          list.splice(list.indexOf(c), 1);
-          const ok = fits(c);
-          yield;
-          if (ok) {
-            pick = c;
+      while (keep.length < cap && pool.length) {
+        const live = pool.filter(c => c.d > 0 && allowed(c) && !likeIn(keep, c) && !likeIn(others(), c));
+        if (!live.length) break;
+        const total = live.reduce((a, c) => a + c.d, 0);
+        let r = simRandom() * total,
+          c = live[live.length - 1];
+        for (const x of live) {
+          r -= x.d;
+          if (r < 0) {
+            c = x;
             break;
           }
-          aside.push(c);
         }
-        if (!pick) break;
-        take(pick);
+        pool.splice(pool.indexOf(c), 1);
+        const ok = fits(c);
+        yield;
+        if (!ok || !take(c)) {
+          if (c.inst) {
+            dropped(c.inst, 'its plan can no longer go on');
+            P.stop(c.inst);
+          }
+          if (!c.inst) this.remember(S, 'start', c.name, c.t, c.def.startTrack);
+        }
         yield;
       }
-      list.push(...aside);
-      for (const c of list)
-        if (c.inst && !kept.includes(c.inst)) {
+      for (const c of pool)
+        if (c.inst && !keep.some(k => k.inst === c.inst)) {
           dropped(c.inst, 'outbid by goals wanted more (desire ' + c.d.toFixed(1) + ')');
           P.stop(c.inst);
         }
@@ -411,10 +469,28 @@ export class GoalSystem {
     S.last = { time: w.time, pairs: S.pairs.length / 2, proposed: S.proposed.size, cats: cats.map(c => c[0]) };
   }
 
+  categories(brain, S) {
+    const order = (brain.catOrder || []).slice().reverse();
+    for (const c of S.on.budget.keys()) if (!order.includes(c)) order.push(c);
+    for (const def of brain.defs.values()) if (def.category && !order.includes(def.category)) order.push(def.category);
+    return order;
+  }
+
+  exhausted(S, cat) {
+    const a = S.alloc && S.alloc.get(cat);
+    return !(a > 0);
+  }
+
   ended(inst) {
-    if (!inst.gdef || inst.gside === undefined || inst.stolen) return;
+    if (!inst.gdef || inst.gside === undefined) return;
     if (inst.gsys && inst.gsys !== this) return inst.gsys.ended(inst);
-    const S = this.state(inst.gside);
+    const S = this.state(inst.gside),
+      stats = (S.planStats ||= new Map()),
+      st = stats.get(inst.key) || { total: 0, wins: 0 };
+    st.total++;
+    if (inst.result === true) st.wins++;
+    stats.set(inst.key, st);
+    if (inst.stolen) return;
     if (inst.result !== true) this.remember(S, 'plan', inst.goal, inst.tgt, inst.gdef.track);
   }
 }
@@ -427,6 +503,7 @@ export class LandGoals extends GoalSystem {
     super();
     this.game = game;
     this.mode = 'LAND';
+    this.paced = true;
   }
 
   reachable(def, t, mind) {
