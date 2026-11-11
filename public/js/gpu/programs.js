@@ -557,12 +557,12 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
     kind === 'heat'
       ? 'let t = textureSample(mapT, mapS, v.vUv); return vec4f(t.rg, 0.0, t.a * v.vTint.a);'
       : kind === 'add'
-        ? 'let t = textureSample(mapT, mapS, v.vUv) * v.vTint; return vec4f(t.rgb * t.a, 1.0);'
+        ? 'return vec4f(textureSample(mapT, mapS, v.vUv).rgb * v.vTint.rgb, 1.0);'
         : 'return textureSample(mapT, mapS, v.vUv) * v.vTint;'
   }
 }`;
 const particleKind = m =>
-  m.fragmentShader.includes('t.rg, 0.0') ? 'heat' : m.fragmentShader.includes('t.rgb * t.a, 1.0') ? 'add' : 'normal';
+  m.fragmentShader.includes('t.rg, 0.0') ? 'heat' : m.fragmentShader.includes('.rgb * vTint.rgb, 1.0') ? 'add' : 'normal';
 const particles = {
   name: 'particles',
   match: m =>

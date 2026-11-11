@@ -428,7 +428,7 @@ class Batch {
            void main() { vec4 t = texture2D(map, vUv); gl_FragColor = vec4(t.rg, 0.0, t.a * vTint.a); }`
         : additive
           ? `uniform sampler2D map; varying vec2 vUv; varying vec4 vTint;
-           void main() { vec4 t = texture2D(map, vUv) * vTint; gl_FragColor = vec4(t.rgb * t.a, 1.0); }`
+           void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb * vTint.rgb, 1.0); }`
           : `uniform sampler2D map; varying vec2 vUv; varying vec4 vTint;
            void main() { gl_FragColor = texture2D(map, vUv) * vTint; }`,
       transparent: true,
