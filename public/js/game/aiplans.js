@@ -379,7 +379,7 @@ export class Plans {
           b.bare ||
           this.choose(ai.player, b.specs, b.required, { D: this.defs.get(key), t: o.t, mind: o.mind, ai, fails: o.fails }).chosen.length > 0
         );
-      return !!this.staff(ai, key, thing, { ...o, all: true });
+      return !!this.staff(ai, key, thing, this.pass ? o : { ...o, all: true });
     });
   }
 
@@ -459,9 +459,9 @@ export class Plans {
     let far = 0;
     for (const e of pool) {
       if (!e.isSquad && !e.members && hf0(e) < floor) continue;
-      if (e.x !== undefined && (!e.aiPlan || o.all) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
+      if (e.x !== undefined && this.unheld(e, ai, o) && t && t.x !== undefined) far = Math.max(far, (e.x - t.x) ** 2 + (e.y - t.y) ** 2);
       if (heroesAttach && !e.isSpecialWeapon && scriptedHero(e)) continue;
-      if (e.noAI || gone(e) || this.host.locked(e) || !(o.all || !e.aiPlan || this.open(e, ai)) || !(D.engaged || !this.engaged(e))) continue;
+      if (e.noAI || gone(e) || this.host.locked(e) || !this.unheld(e, ai, o) || !(D.engaged || !this.engaged(e))) continue;
       const ls = lines.filter(l => fits(e, l.s));
       if (ls.length) mine.set(e, ls);
     }
@@ -759,6 +759,9 @@ export class Plans {
   }
   endSelection() {
     this.pass = null;
+  }
+  unheld(e, ai, o = {}) {
+    return !!o.all || !e.aiPlan || e.aiPlan.state === 'over' || this.open(e, ai);
   }
   open(e, ai) {
     const p = this.pass,
