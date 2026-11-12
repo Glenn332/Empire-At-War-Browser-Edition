@@ -18,6 +18,7 @@ import { categoryOf, CAT } from './projflight.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
+import { TERRAIN } from './landtables.js';
 
 const REACH = 1600,
   STRAY = 500,
@@ -80,7 +81,7 @@ const REACH = 1600,
   SHORT = { range: 80, weight: 0.15 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
   SCORE = { foot: 100, car: 250, assistMin: 10, assistMax: 90, assistStep: 5 },
-  WALK = { slope: 1, wet: 6 },
+  WALK = { slope: 1, wet: 6, drive: 0.9 },
   THROW = { time: 0.55, up: 1.7, down: -0.5, peak: 0.4 },
   MUZZLE = 0.55,
   REPOS = { hits: 3, still: 7, moved: 15, rings: [35, 60, 90], turns: [0, 0.5, -0.5, 1, -1, 1.5, -1.5], wait: 4 },
@@ -127,7 +128,7 @@ const REACH = 1600,
     normal: { damage: 1, strafe: 0.2, cover: 0.6, aim: 1, react: [0.25, 0.6] },
     hard: { damage: 1.4, strafe: 0.3, cover: 0.85, aim: 0.7, react: [0.18, 0.4] }
   },
-  TEAM = { size: 4, join: 450, tick: 2, bound: 260, swap: 4, slot: 24, follow: 45, hop: [40, 75], guard: 350, look: 300 },
+  TEAM = { size: 4, join: 450, tick: 2, bound: 260, swap: 4, slot: 24, follow: 45, hop: [40, 75], guard: 350, look: 300, reroute: 80, routeAge: 12, offRoute: 140 },
   SUPP = { near: 26, add: 0.3, decay: 2.5, cover: 0.55, aim: 2 },
   ACC = { base: 0.012, tSpeed: 60, own: 40, settle: 0.35, settleT: 2.5 },
   VEH = { bail: 0.2, halt: 2.5, gap: 2, fast: 160, overshoot: 180, run: 5 },
@@ -1885,11 +1886,61 @@ export class Shooter {
     return T.spot;
   }
 
-  boundTo(L, gx, gy) {
+  alongRoute(T, L, gx, gy, need, fresh = false) {
+    const w = this.world,
+      now = w.time;
+    let R = T.route;
+    if (fresh || !R || Math.hypot(R.gx - gx, R.gy - gy) > TEAM.reroute || now - R.at > TEAM.routeAge) {
+      const way = w.route(L.x, L.y, gx, gy, need);
+      if (!way || !way.length) {
+        T.route = null;
+        return null;
+      }
+      R = T.route = { gx, gy, at: now, pts: [{ x: L.x, y: L.y }, ...way] };
+    }
+    const P = R.pts;
+    let bi = 0,
+      bt = 0,
+      bd = Infinity;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i],
+        b = P[i + 1],
+        vx = b.x - a.x,
+        vy = b.y - a.y,
+        t = Math.max(0, Math.min(1, ((L.x - a.x) * vx + (L.y - a.y) * vy) / (vx * vx + vy * vy || 1))),
+        dx = L.x - (a.x + vx * t),
+        dy = L.y - (a.y + vy * t),
+        dd = dx * dx + dy * dy;
+      if (dd < bd) {
+        bd = dd;
+        bi = i;
+        bt = t;
+      }
+    }
+    if (bd > TEAM.offRoute * TEAM.offRoute) return fresh ? null : this.alongRoute(T, L, gx, gy, need, true);
+    let ax = P[bi].x + (P[bi + 1].x - P[bi].x) * bt,
+      ay = P[bi].y + (P[bi + 1].y - P[bi].y) * bt,
+      left = TEAM.bound;
+    for (let i = bi; i < P.length - 1; i++) {
+      const b = P[i + 1],
+        seg = Math.hypot(b.x - ax, b.y - ay);
+      if (seg >= left) return { x: ax + ((b.x - ax) * left) / seg, y: ay + ((b.y - ay) * left) / seg };
+      left -= seg;
+      ax = b.x;
+      ay = b.y;
+    }
+    return { x: gx, y: gy };
+  }
+
+  boundTo(L, gx, gy, T = null) {
     const w = this.world,
       d = Math.hypot(gx - L.x, gy - L.y),
       need = (L.need & ~3) | 1;
     if (d <= TEAM.bound * 1.3) return { x: gx, y: gy };
+    if (T) {
+      const p = this.alongRoute(T, L, gx, gy, need);
+      if (p) return p;
+    }
     const ux = (gx - L.x) / d,
       uy = (gy - L.y) / d,
       bx = L.x + ux * TEAM.bound,
@@ -1951,7 +2002,7 @@ export class Shooter {
       if (!modeOf(L) && now >= T.moveAt) {
         T.moveAt = now + (there ? 2 : 1.5);
         if (!there && (!dest || T.role === 'hunt' || Math.hypot(dest.x - goal.x, dest.y - goal.y) > TEAM.bound * 1.5 + 10)) {
-          const b = this.boundTo(L, goal.x, goal.y);
+          const b = this.boundTo(L, goal.x, goal.y, T);
           if (b && this.send(L.squad, b.x, b.y, null, 0.5)) T.fails = 0;
           else if (++T.fails >= STALL.fails) {
             this.giveUp(T);
@@ -5578,6 +5629,21 @@ export class Shooter {
       this.heroSaid = true;
       this.announce('Hero unlocked - choose one at your next deploy', 'good');
     }
+  }
+
+  driveOk(u, x, y) {
+    const w = this.world,
+      ix = Math.round(x / 20),
+      iy = Math.round(y / 20);
+    if (ix < 0 || iy < 0 || ix >= w.n || iy >= w.n) return false;
+    const k = iy * w.n + ix;
+    if (!w.open[k] || w.kind[k] & ~(TERRAIN.CLEAR | TERRAIN.STEEP | TERRAIN.SHIELD)) return false;
+    const T = w.terrain,
+      h = heightAt(T, x, y),
+      wet = T.water;
+    if (wet && wet.on && wet.level !== undefined && h < wet.level - WALK.wet) return false;
+    const s = Math.max(Math.abs(heightAt(T, x + 10, y) - heightAt(T, x - 10, y)), Math.abs(heightAt(T, x, y + 10) - heightAt(T, x, y - 10))) / 20;
+    return s <= WALK.drive;
   }
 
   walkable(x, y, need) {

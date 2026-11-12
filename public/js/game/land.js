@@ -6236,6 +6236,9 @@ export class LandWorld {
     });
   }
 
+  driveOpen(u, x, y) {
+    return this.isOpen(x, y, (u.need & ~3) | 1) || !!(this.shooter && this.shooter.driveOk(u, x, y));
+  }
   directStep(u, dt) {
     const D = u.direct,
       w = u.weapon;
@@ -6251,7 +6254,7 @@ export class LandWorld {
       if (go) {
         const fx = u.x + Math.cos(u.heading) * go,
           fy = u.y + Math.sin(u.heading) * go;
-        if (u.flies || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+        if (u.flies || this.driveOpen(u, fx, fy)) {
           u.x = fx;
           u.y = fy;
         }
@@ -6275,7 +6278,7 @@ export class LandWorld {
         const step = Math.min(d, u.speed * (d > 20 ? 1.33 : 1) * dt),
           fx = u.x + (dx / d) * step,
           fy = u.y + (dy / d) * step;
-        if (u.flies || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+        if (u.flies || this.driveOpen(u, fx, fy)) {
           u.x = fx;
           u.y = fy;
           go = step;
