@@ -565,7 +565,6 @@ export class Overlord {
     body.target = null;
     sh.teamOf.delete(body);
     sh.bots.delete(body);
-    if (!hero) sh.buffPlayer(body);
     body.remote = { peer, s: [], kind: '', hero };
     sh.remotes.set(peer, body);
     if (ride) {

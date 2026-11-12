@@ -33,11 +33,6 @@ const REACH = 1600,
   ZOOM_FOV = 32,
   MOD_KEY = 917001,
   RANGE_UP = { INFANTRY: 1.5, VEHICLE: 1, AIR: 0.5 },
-  PLAYER_HEALTH = 1,
-  PLAYER_DAMAGE = 1.5,
-  PLAYER_FIRE_RATE = 3,
-  FOOT_DAMAGE = 1,
-  FOOT_FIRE_RATE = 1,
   VISION = 1.4,
   IDLE_GO = 1.5,
   BOT_TICK = 0.25,
@@ -76,8 +71,6 @@ const REACH = 1600,
   GUN_POSE = { face: 0.3, hold: 1.2 },
   SLOT_ROUTE = { every: 1.5 },
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
-  BONUS = { damage: 8, recharge: 1.5 },
-  EVEN = { key: 917003, source: 'shooter-even', minRange: 80 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
@@ -125,9 +118,9 @@ const REACH = 1600,
   SEP = { gap: 1.7, min: 11, speed: 20 },
   COVER = { health: 0.55, hurt: 2, ring: [35, 60, 90], hold: [3, 5.5] },
   SKILL = {
-    easy: { damage: 0.6, strafe: 0.1, cover: 0.3, aim: 1.5, react: [0.45, 0.8] },
-    normal: { damage: 1, strafe: 0.2, cover: 0.6, aim: 1, react: [0.25, 0.6] },
-    hard: { damage: 1.4, strafe: 0.3, cover: 0.85, aim: 0.7, react: [0.18, 0.4] }
+    easy: { strafe: 0.1, cover: 0.3, aim: 1.5, react: [0.45, 0.8] },
+    normal: { strafe: 0.2, cover: 0.6, aim: 1, react: [0.25, 0.6] },
+    hard: { strafe: 0.3, cover: 0.85, aim: 0.7, react: [0.18, 0.4] }
   },
   TEAM = { size: 4, join: 450, tick: 2, bound: 260, swap: 4, slot: 24, follow: 45, hop: [40, 75], guard: 350, look: 300, reroute: 80, routeAge: 12, offRoute: 140 },
   SUPP = { near: 26, add: 0.3, decay: 2.5, cover: 0.55, aim: 2 },
@@ -426,9 +419,7 @@ export class Shooter {
     this.rocksClosed = false;
     this.closedCells = null;
     this.structN = undefined;
-    this.even = null;
     this.evenAt = 0;
-    this.evened = new WeakSet();
     this.ammoOf = new WeakMap();
     this.ammoAt = new WeakMap();
     this.fpZ = undefined;
@@ -576,12 +567,6 @@ export class Shooter {
       const up = RANGE_UP[m.kind];
       if (!up || q.native || q.side < 0 || q.side === this.world.wild || m.structure || !(m.speed > 0) || m.minRange > 0 || !(m.range >= 60)) continue;
       this.world.addCombatMod(m, MOD.RANGE, MOD_KEY, 'shooter', up);
-      const wp = m.weapon,
-        plain = !this.antiArmor(m) && !!wp && !(wp.damage > BONUS.damage) && !((wp.recharge || 0) > BONUS.recharge),
-        dmg = (plain ? 1 + FOOT_DAMAGE : 1) * this.skill(q.side).damage - 1;
-      if (m.kind === 'INFANTRY' && dmg !== 0) this.world.addCombatMod(m, MOD.DAMAGE, MOD_KEY, 'shooter', dmg);
-      if (m.kind === 'INFANTRY' && FOOT_FIRE_RATE > 0 && plain) this.world.addCombatMod(m, MOD.FIRE_RATE, MOD_KEY, 'shooter', FOOT_FIRE_RATE);
-      if (this.evenStats()) this.evenUnit(m);
     }
     if (!u || q.structure || q.craft || q.native || u.structure || !(u.speed > 0)) return;
     if ((u.kind !== 'VEHICLE' && u.kind !== 'AIR') || u.foot) return;
@@ -671,47 +656,6 @@ export class Shooter {
     }
     q.members.length = 0;
     return true;
-  }
-
-  evenStats() {
-    if (this.even) return this.even;
-    if (this.world.time < (this.evenAt || 0)) return null;
-    this.evenAt = this.world.time + 1;
-    const n = this.game.factions.length,
-      base = [];
-    for (let s = 0; s < n; s++) {
-      if (this.world.beaten.has(this.world.team[s])) continue;
-      const cls = this.classes(s);
-      let best = null;
-      for (const c of cls) {
-        const t = c.unit;
-        if (c.hero || c.heroSpawn || !/infantry/i.test(t.str('MovementClass')) || this.roleOf(c, cls) === 'rocket') continue;
-        if (!(t.num('Targeting_Max_Attack_Distance', 0) >= EVEN.minRange) || !(t.num('Tactical_Health', 0) > 0)) continue;
-        if (!best || c.cost < best.cost) best = c;
-      }
-      if (!best) return null;
-      if (!base.includes(best.unit)) base.push(best.unit);
-    }
-    if (base.length < 2) return null;
-    const mean = f => base.reduce((a, t) => a + f(t), 0) / base.length,
-      H = mean(t => t.num('Tactical_Health', 0)),
-      R = mean(t => t.num('Targeting_Max_Attack_Distance', 0));
-    this.even = new Map(base.map(t => [t, { h: H / t.num('Tactical_Health', 1), r: R / t.num('Targeting_Max_Attack_Distance', 1) }]));
-    for (const u of this.world.units) if (!u.dead) this.evenUnit(u);
-    return this.even;
-  }
-
-  evenUnit(u) {
-    const e = this.even && this.even.get(u.type);
-    if (!e || this.evened.has(u) || u.dead) return;
-    this.evened.add(u);
-    const w = this.world;
-    if (Math.abs(e.h - 1) > 1e-3) {
-      const was = u.maxHealth > 0 ? u.health / u.maxHealth : 1;
-      w.addCombatMod(u, MOD.HEALTH, EVEN.key, EVEN.source, e.h - 1);
-      if (u.maxHealth > 0) u.health = Math.min(u.maxHealth, u.maxHealth * was);
-    }
-    if (Math.abs(e.r - 1) > 1e-3) w.addCombatMod(u, MOD.RANGE, EVEN.key, EVEN.source, (1 + (RANGE_UP[u.kind] || 0)) * (e.r - 1));
   }
 
   respawnDelay(side) {
@@ -3691,7 +3635,6 @@ export class Shooter {
       this.claimCrews();
       this.homeDrops();
       this.lastStand();
-      this.evenStats();
       let ns = 0;
       for (const u of w.units) if (u.structure && !u.dead && !u.gone) ns++;
       if (ns !== this.structN) {
@@ -5038,9 +4981,6 @@ export class Shooter {
       sq.foe = null;
       u.path.length = 0;
       u.target = null;
-      if (PLAYER_HEALTH > 0) w.addCombatMod(u, MOD.HEALTH, MOD_KEY + 1, 'shooter-player', PLAYER_HEALTH);
-      w.addCombatMod(u, MOD.DAMAGE, MOD_KEY, 'shooter-player', PLAYER_DAMAGE);
-      w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY, 'shooter-player', PLAYER_FIRE_RATE);
       u.remote = { peer, s: [], kind: '', hero: false };
       this.remotes.set(peer, u);
       if (!q.dead && !q.crew.in) this.remoteEnter(peer, v);
@@ -5070,9 +5010,6 @@ export class Shooter {
     u.path.length = 0;
     u.target = null;
     if (!hero) {
-      if (PLAYER_HEALTH > 0) w.addCombatMod(u, MOD.HEALTH, MOD_KEY + 1, 'shooter-player', PLAYER_HEALTH);
-      w.addCombatMod(u, MOD.DAMAGE, MOD_KEY, 'shooter-player', PLAYER_DAMAGE);
-      w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY, 'shooter-player', PLAYER_FIRE_RATE);
     }
     u.remote = { peer, s: [], kind: '', hero };
     this.remotes.set(peer, u);
@@ -5370,13 +5307,6 @@ export class Shooter {
     else this.openDeploy();
   }
 
-  buffPlayer(u) {
-    const w = this.world;
-    if (PLAYER_HEALTH > 0) w.addCombatMod(u, MOD.HEALTH, MOD_KEY + 1, 'shooter-player', PLAYER_HEALTH);
-    w.addCombatMod(u, MOD.DAMAGE, MOD_KEY, 'shooter-player', PLAYER_DAMAGE);
-    w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY, 'shooter-player', PLAYER_FIRE_RATE);
-  }
-
   untwist() {
     const T = this.twist;
     if (T.head) T.head.scale.setScalar(1);
@@ -5394,7 +5324,6 @@ export class Shooter {
   }
 
   possess(q, u, hero) {
-    const w = this.world;
     q.noAI = true;
     q.selectable = false;
     q.foe = null;
@@ -5408,7 +5337,6 @@ export class Shooter {
     u.pilot = this.P;
     settlePose(u.inst);
     this.body = u;
-    if (!hero) this.buffPlayer(u);
     this.spread = SPREAD.still;
     this.bloom = 0;
     this.hurtMarks.length = 0;
