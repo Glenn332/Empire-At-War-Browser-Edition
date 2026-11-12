@@ -43,6 +43,7 @@ const MODEL_DEFINES = [
   'COLORIZE',
   'BUMP',
   'GLOSSMAP',
+  'SPECGLOW',
   'GLOSS',
   'USE_VCOLOR',
   'FOW_DIM',
@@ -240,9 +241,11 @@ fn rock(p: vec3f) -> f32 {
   var n = normalize(v.vNormal);
   var gloss = 0.25;
   ${
+    on('BUMP') || on('SPECGLOW') ? 'let nt = textureSample(normalT, normalS, v.vUv);' : ''
+  }
+  ${
     on('BUMP')
-      ? `let nt = textureSample(normalT, normalS, v.vUv);
-  let tn = nt.xyz * 2.0 - 1.0;
+      ? `let tn = nt.xyz * 2.0 - 1.0;
   n = normalize(tn.x * normalize(v.vTangent) + tn.y * normalize(v.vBinormal) + tn.z * n);
   gloss = nt.a;`
       : ''
@@ -282,7 +285,11 @@ fn rock(p: vec3f) -> f32 {
   ${
     on('NATIVE_MESH_GLOSS_EMISSIVE')
       ? 'var col = albedo * D.emissive * 2.0;'
-      : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunSpecular * sp * gloss;'
+      : on('SPECGLOW')
+        ? `let st = textureSample(glossT, glossS, v.vUv);
+  let sh = pow(max(dot(n, normalize(P.sunDir + vv)), 1e-4), st.a * 32.0) * sun;
+  var col = albedo * D.diffuse * light * ls.rgb + P.sunSpecular * st.rgb * sh + D.emissive * nt.a;`
+        : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunSpecular * sp * gloss;'
   }
   col = tinted(col, D.tint);
   col = tinted(col, v.vTint);

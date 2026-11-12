@@ -75,7 +75,8 @@ export function setPlanetEnvironment(env) {
 
 const SKIP = /collision|shadowvolume|lightvisualize|meshheat/;
 const ADDITIVE = /additive|nebula|meshshield/;
-const FOW_DIMMED = /^(terrainmeshgloss|terrainmeshbump|batchmeshgloss|batchmeshalpha|grass)\.fx$/;
+const SPEC_GLOW = /^(mesh|rskin)bumpspecglowcolorize\.fx$/;
+const FOW_DIMMED =/^(terrainmeshgloss|terrainmeshbump|batchmeshgloss|batchmeshalpha|grass)\.fx$/;
 const ALPHA = /alpha|tree\.fx|grass/;
 const UNLIT = /skydome|nebula/;
 
@@ -169,7 +170,7 @@ void main() {
 const FRAG = `
 uniform sampler2D map;
 uniform sampler2D normalMap;
-#ifdef GLOSSMAP
+#if defined(GLOSSMAP) || defined(SPECGLOW)
 uniform sampler2D glossMap;
 #endif
 uniform vec3 sunDir, sunColor, sunSpecular, fillDir, fillColor, fillDir2, fillColor2, ambient;
@@ -271,8 +272,10 @@ void main() {
 #else
   vec3 n = normalize(vNormal);
   float gloss = 0.25;
-  #ifdef BUMP
+  #if defined(BUMP) || defined(SPECGLOW)
   vec4 nt = texture2D(normalMap, vUv);
+  #endif
+  #ifdef BUMP
   vec3 tn = nt.xyz * 2.0 - 1.0;
   n = normalize(tn.x * normalize(vTangent) + tn.y * normalize(vBinormal) + tn.z * n);
   gloss = nt.a;
@@ -319,6 +322,10 @@ void main() {
   vec4 ls = objectTint(tint) * objectTint(vTint);
   #ifdef NATIVE_MESH_GLOSS_EMISSIVE
   vec3 col = albedo * emissive * 2.0;
+  #elif defined(SPECGLOW)
+  vec4 st = texture2D(glossMap, vUv);
+  float sh = pow(max(dot(n, normalize(sunDir + v)), 1e-4), st.a * 32.0) * sun;
+  vec3 col = albedo * diffuse * light * ls.rgb + sunSpecular * st.rgb * sh + emissive * nt.a;
   #else
   vec3 col = albedo * (2.0 * emissive + diffuse * light * ls.rgb) + specular * sunSpecular * sp * gloss;
   #endif
@@ -581,6 +588,7 @@ function makeMaterial(mat, format, teamColor) {
           p.BaseTexture,
           p.NormalTexture,
           p.GlossTexture,
+          p.SpecularTexture,
           format.replace(/RSkin|B4I4/, 'S').endsWith('C'),
           skinned,
           teamColor ? teamColor.getHexString() : '-',
@@ -622,8 +630,10 @@ function makeMaterial(mat, format, teamColor) {
   if (shader.includes('colorize') && teamColor) defines.COLORIZE = 1;
   const detail = gfx.shader | 0;
   if (shader.includes('bump') && p.NormalTexture && detail >= 2) defines.BUMP = 1;
+  const specGlow = SPEC_GLOW.test(shader) && !unlit;
   if (detail < 1) {
-  } else if (p.GlossTexture && !unlit) defines.GLOSSMAP = 1;
+  } else if (specGlow) defines.SPECGLOW = 1;
+  else if (p.GlossTexture && !unlit) defines.GLOSSMAP = 1;
   else if (shader.includes('gloss')) defines.GLOSS = 1;
   if (format.endsWith('C')) defines.USE_VCOLOR = 1;
   if (FOW_DIMMED.test(shader) && p.FowDimAllowed !== 0 && p.FowDimAllowed !== false) defines.FOW_DIM = 1;
@@ -642,10 +652,19 @@ function makeMaterial(mat, format, teamColor) {
       ...lighting,
       ...boltLights,
       map: { value: rock4k ? rock4k.map : p.BaseTexture ? loadTexture(p.BaseTexture) : whiteTexture() },
-      normalMap: { value: rock4k ? rock4k.normalMap : defines.BUMP ? loadTexture(p.NormalTexture) : whiteTexture() },
+      normalMap: {
+        value: rock4k
+          ? rock4k.normalMap
+          : (defines.BUMP || defines.SPECGLOW) && p.NormalTexture
+            ? loadTexture(p.NormalTexture)
+            : defines.SPECGLOW
+              ? blackTexture()
+              : whiteTexture()
+      },
       ...(defines.GLOSSMAP ? { glossMap: { value: loadTexture(p.GlossTexture) } } : {}),
+      ...(defines.SPECGLOW ? { glossMap: { value: p.SpecularTexture ? loadTexture(p.SpecularTexture) : blackTexture() } } : {}),
       colorization: { value: new THREE.Vector4(teamColor?.r ?? 1, teamColor?.g ?? 1, teamColor?.b ?? 1, 1) },
-      emissive: { value: c3(p.Emissive, 0) },
+      emissive: { value: specGlow && !defines.SPECGLOW ? new THREE.Color(0, 0, 0) : c3(p.Emissive, 0) },
       diffuse: { value: diffuse },
       specular: { value: c3(p.Specular, 1) },
       shininess: { value: p.Shininess ?? 32 },
