@@ -357,15 +357,18 @@ export function paintNativeText(el, text, font, { scaleX = 1, scaleY = scaleX, p
       canvas.style.cssText = `display:block;width:${bitmap.width / scaleX}px;height:${bitmap.height / scaleY}px;max-width:none;flex:none;pointer-events:none`;
       return canvas;
     };
-    el.replaceChildren(make(bitmap.pixels));
+    const base = make(bitmap.pixels);
     if (bitmap.shine) {
-      const shine = make(bitmap.shine);
+      const shine = make(bitmap.shine),
+        pair = document.createElement('span');
+      pair.style.cssText = 'display:block;position:relative;flex:none;max-width:none;pointer-events:none';
       shine.style.position = 'absolute';
       shine.style.left = '0';
       shine.style.top = '0';
       shine.style.mixBlendMode = 'plus-lighter';
-      el.appendChild(shine);
-    }
+      pair.append(base, shine);
+      el.replaceChildren(pair);
+    } else el.replaceChildren(base);
     queueSnap(el);
   };
   render();
