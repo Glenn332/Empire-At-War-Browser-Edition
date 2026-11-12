@@ -22,6 +22,14 @@ const loadSetup = () => {
     return null;
   }
 };
+const shooterPref = on => {
+  globalThis.shooterMode = on;
+  try {
+    localStorage.setItem('swr-shooter', on ? '1' : '0');
+  } catch {}
+  const box = document.getElementById('optShooter');
+  if (box) box.checked = on;
+};
 const saveSetup = setup => {
   try {
     localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
@@ -54,7 +62,8 @@ export async function openLobby({
     teamFactions: init.teamFactions.map((f, i) => (factions.includes(saved.teamFactions?.[i]) ? saved.teamFactions[i] : f)),
     credits: Number.isFinite(saved.credits) ? saved.credits : init.credits,
     popCap: Number.isFinite(saved.popCap) ? saved.popCap : init.popCap,
-    fog: typeof saved.fog === 'boolean' ? saved.fog : init.fog
+    fog: typeof saved.fog === 'boolean' ? saved.fog : init.fog,
+    shooter: !!globalThis.shooterMode
   };
   const lastMap = { space: init.mapFile, land: landMaps.find(m => /TATOOINE/i.test(m)) || landMaps[0] };
   const mapsOf = () => listFor(st.custom, st.mode);
@@ -444,6 +453,7 @@ export async function openLobby({
 export async function advancedOptions(st) {
   const dlg = await openDialog('IDD_INTERNET_STAGING_DIALOG_ADVANCED_SKIRMISH_OPTIONS');
   if (!dlg) return;
+  if (typeof st.shooter !== 'boolean') st.shooter = !!globalThis.shooterMode;
   const was = { ...st };
   const LO = 2000,
     HI = 15000,
@@ -510,6 +520,7 @@ export async function advancedOptions(st) {
   show();
   return new Promise(done => {
     dlg.on('IDC_BUTTON_ACCEPT', () => {
+      shooterPref(!!st.shooter);
       dlg.close();
       done(true);
     });

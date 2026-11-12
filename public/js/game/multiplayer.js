@@ -877,6 +877,7 @@ async function openStaging(args) {
     credits: type0 === 'campaign' ? C.num('MP_Default_Credits', 6000) : 6000,
     popCap: 0,
     fog: true,
+    shooter: !!globalThis.shooterMode,
     preBuilt: true,
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
