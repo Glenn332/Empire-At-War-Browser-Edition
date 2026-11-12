@@ -117,6 +117,11 @@ async function image(name) {
   return loose.get(key);
 }
 
+export async function skinImage(key) {
+  if (!(await loadDialogs())) return null;
+  return image(tex(null, null, key));
+}
+
 function tex(dlgId, ctlId, key) {
   const T = data.textures;
   for (const id of [ctlId, dlgId, 'DEFAULT']) {

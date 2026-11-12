@@ -58,20 +58,19 @@ export class Overlord {
   dom() {
     const css = document.createElement('style');
     css.textContent = `
-.ov-banner{position:fixed;left:50%;top:46px;transform:translate(-50%,-8px);z-index:46;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;padding:6px 14px 7px;background:linear-gradient(180deg,rgba(10,18,28,.86),rgba(6,10,16,.72));border:1px solid rgba(120,190,255,.45);border-radius:3px;color:#cfe6ff;font:600 11px "Segoe UI",sans-serif;letter-spacing:.08em;text-transform:uppercase;text-shadow:0 0 6px rgba(80,160,255,.55);pointer-events:none;opacity:0;transition:opacity .45s ease .35s,transform .45s ease .35s;white-space:nowrap;box-shadow:0 0 18px rgba(40,120,220,.25)}
-.ov-banner b{color:#fff;letter-spacing:.24em;margin-right:10px}
-.ov-banner i{font-style:normal;color:#8fb6e0;margin:0 8px}
-.ov-k{display:inline-block;margin:0 4px 0 0;padding:0 5px;border:1px solid rgba(160,210,255,.6);border-radius:2px;color:#fff;font-weight:700}
-.shooter-command .ov-banner{opacity:1;transform:translate(-50%,0)}
-.ov-hint{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:46;padding:5px 14px;background:rgba(8,14,22,.78);border:1px solid rgba(120,190,255,.4);color:#cfe6ff;font:600 12px "Segoe UI",sans-serif;letter-spacing:.08em;pointer-events:none;display:none;white-space:nowrap}
-.ov-tip{position:fixed;z-index:47;padding:4px 10px;background:rgba(8,14,22,.88);border:1px solid rgba(255,215,106,.65);color:#ffd76a;font:600 12px "Segoe UI",sans-serif;letter-spacing:.05em;pointer-events:none;transform:translate(16px,16px);display:none;white-space:nowrap;box-shadow:0 0 10px rgba(255,200,80,.25)}
-.ov-tip span{color:#e8eef6;font-weight:400;margin-left:8px}
-.ov-veil{position:fixed;inset:0;z-index:44;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 30%,rgba(3,9,18,.8) 100%)}
-.ov-scan{position:fixed;inset:0;z-index:44;pointer-events:none;opacity:0;background:repeating-linear-gradient(0deg,rgba(120,190,255,.07) 0 1px,transparent 1px 4px)}
-.ov-card{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:47;pointer-events:none;color:#eaf4ff;font:300 30px "Segoe UI",sans-serif;letter-spacing:.5em;text-transform:uppercase;text-shadow:0 0 18px rgba(90,170,255,.9);opacity:0;white-space:nowrap;text-align:center}
-.ov-card small{display:block;margin-top:8px;font:600 12px "Segoe UI",sans-serif;letter-spacing:.32em;color:#9fc6ff}
+.ov-banner{position:fixed;left:50%;top:48px;transform:translateX(-50%);z-index:46;max-width:calc(100vw - 32px);overflow:hidden;padding:2px 12px 3px;font:400 calc(12px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.06em;color:var(--eaw-cream);pointer-events:none;opacity:0;transition:opacity .4s linear .35s;white-space:nowrap}
+.ov-banner b{font:400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold);letter-spacing:.02em;color:var(--eaw-gold);margin-right:12px}
+.ov-banner i{font-style:normal;color:var(--eaw-dim);margin:0 9px}
+.shooter-command .ov-banner{opacity:1}
+.ov-hint{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:46;padding:2px 12px 3px;font:400 calc(12px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.06em;color:var(--eaw-cream);pointer-events:none;display:none;white-space:nowrap}
+.ov-tip{position:fixed;z-index:47;padding:2px 10px 3px;font:400 calc(12px * var(--eaw-k, 1)) var(--eaw-bold);color:var(--eaw-gold);pointer-events:none;transform:translate(16px,16px);display:none;white-space:nowrap}
+.ov-tip span{font:400 calc(11px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.06em;color:var(--eaw-cream);margin-left:10px}
+.ov-veil{position:fixed;inset:0;z-index:44;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 35%,rgba(0,0,0,.75) 100%)}
+.ov-scan{position:fixed;inset:0;z-index:44;pointer-events:none;opacity:0}
+.ov-card{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:47;pointer-events:none;font:400 calc(30px * var(--eaw-k, 1)) var(--eaw-bold);color:var(--eaw-gold);text-shadow:2px 2px 0 rgba(0,0,0,.8);opacity:0;white-space:nowrap;text-align:center}
+.ov-card small{display:block;margin-top:6px;font:400 calc(13px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.08em;color:var(--eaw-cream);text-shadow:1px 1px 0 #000}
 .ov-canvas{position:fixed;inset:0;z-index:3;pointer-events:none}
-.shooter-command #hud{animation:ov-hud .6s ease .3s both}
+.shooter-command #hud{animation:ov-hud .5s linear .3s both}
 @keyframes ov-hud{from{opacity:0}to{opacity:1}}`;
     const mk = (cls, parent = document.body) => {
       const e = document.createElement('div');
@@ -81,13 +80,13 @@ export class Overlord {
     };
     this.els = [css];
     document.head.appendChild(css);
-    this.banner = mk('ov-banner');
-    this.banner.innerHTML = `<b>Overlord</b>Order your squads<i>|</i>Scroll in on a unit to take it<i>|</i><span class="ov-k">${this.key()}</span>take selected<i>|</i><span class="ov-k">Enter</span>deploy`;
-    this.hint = mk('ov-hint');
-    this.hint.innerHTML = `<span class="ov-k">${this.key()}</span> tactical view`;
-    this.tip = mk('ov-tip');
+    this.banner = mk('ov-banner eaw-frame-s');
+    this.banner.innerHTML = `<b>Overlord</b>Order your squads<i>|</i>Scroll in on a unit to take it<i>|</i><span class="eaw-key">${this.key()}</span>Take selected<i>|</i><span class="eaw-key">Enter</span>Deploy`;
+    this.hint = mk('ov-hint eaw-frame-s');
+    this.hint.innerHTML = `<span class="eaw-key">${this.key()}</span>Tactical view`;
+    this.tip = mk('ov-tip eaw-frame-s');
     this.veil = mk('ov-veil');
-    this.scan = mk('ov-scan');
+    this.scan = mk('ov-scan eaw-scan');
     this.card = mk('ov-card');
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'ov-canvas';
@@ -365,9 +364,8 @@ export class Overlord {
       cam.updateProjectionMatrix();
     }
     this.veil.style.opacity = (s * 0.95).toFixed(3);
-    this.scan.style.opacity = (s * 0.8).toFixed(3);
+    this.scan.style.opacity = (s * 0.6).toFixed(3);
     this.card.style.opacity = (B.kind === 'out' ? Math.max(0, Math.sin(Math.PI * Math.min(1, k * 1.25))) : Math.max(0, Math.sin(Math.PI * Math.min(1, k * 1.4)))).toFixed(3);
-    this.card.style.letterSpacing = (0.62 - 0.14 * e).toFixed(3) + 'em';
     const blur = s * 1.6;
     this.sh.canvas().style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px) saturate(${(1 - s * 0.25).toFixed(3)})` : '';
     if (k >= 1) {
@@ -642,7 +640,7 @@ export class Overlord {
       this.tip.style.left = m.x + 'px';
       this.tip.style.top = m.y + 'px';
       const near = g.view.dist <= this.minDist() * OV.takeDist;
-      this.tip.innerHTML = `${sh.nameOf(this.hover.type)}<span>${near ? 'scroll in' : 'zoom in'} or ${this.key()} to take control</span>`;
+      this.tip.innerHTML = `${sh.nameOf(this.hover.type)}<span>${near ? 'Scroll in' : 'Zoom in'} or ${this.key()} to take control</span>`;
     } else this.tip.style.display = 'none';
   }
 

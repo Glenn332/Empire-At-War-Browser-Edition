@@ -18,6 +18,7 @@ import { categoryOf, CAT } from './projflight.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
+import { eawSkin } from './eawskin.js';
 import { TERRAIN } from './landtables.js';
 
 const REACH = 1600,
@@ -173,58 +174,58 @@ const PAD = { dead: 0.16, look: 2.8, adsLook: 0.5, assist: 0.45, cone: 0.07, tri
 const LOWER_BONES = /ROOT|PELVIS|HIP|THIGH|CALF|SHIN|FOOT|TOE|LEG/i;
 
 const SHOOTER_CSS = `
-.sh-hit { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; opacity: 0; transition: opacity .18s ease-out; filter: drop-shadow(0 0 2px #000); }
-.sh-hit.pop { animation: sh-pop .16s ease-out; }
-.sh-hit.kill svg { transform: scale(1.25); }
-@keyframes sh-pop { from { transform: scale(1.5); } to { transform: scale(1); } }
-.sh-banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 55; pointer-events: none; font: 700 30px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #ff5a3a; text-shadow: 0 0 12px #000, 0 0 3px #000; opacity: 0; }
-.sh-banner.show { animation: sh-banner 3.2s ease-out forwards; }
-@keyframes sh-banner { 0% { opacity: 0; transform: translateX(-50%) scale(1.15); } 12% { opacity: 1; transform: translateX(-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
-.sh-cap { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: 320px; padding: 6px 12px 8px; background: rgba(8,10,14,.72); border: 1px solid rgba(255,215,106,.45); font: 13px "Segoe UI", sans-serif; color: #e8dcb8; text-align: center; text-shadow: 0 0 3px #000; }
-.sh-cap-t { margin-bottom: 5px; letter-spacing: .5px; }
-.sh-cap-bar { height: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,215,106,.3); }
-.sh-cap-bar i { display: block; height: 100%; width: 0; transition: width .2s linear; }
-.sh-vig { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(170,0,0,.55) 85%, rgba(120,0,0,.85) 100%); }
-.sh-wpn { position: absolute; right: 210px; bottom: 26px; width: 210px; padding: 6px 10px 7px; background: rgba(8,10,14,.6); border: 1px solid rgba(255,215,106,.4); font: 12px "Segoe UI", sans-serif; color: #e8dcb8; text-shadow: 0 0 3px #000; }
-.sh-wpn-n { font: 700 12px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 1px; color: #ffd76a; margin-bottom: 4px; text-transform: uppercase; }
-.sh-wpn-bar { height: 7px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,215,106,.3); }
-.sh-wpn-bar i { display: block; height: 100%; width: 0; }
-.sh-wpn-s { margin-top: 3px; font-size: 11px; letter-spacing: 1px; color: #c9b98a; }
-.sh-wpn.hot .sh-wpn-s { color: #ff6a50; animation: sh-blink .4s steps(2) infinite; }
-@keyframes sh-blink { 50% { opacity: .35; } }
-.sh-pop.assist { color: #9fd8ff; font-size: 15px; }
-.sh-pop.kill { color: #ffd76a; }
-.sh-pop { position: absolute; left: 50%; top: 50%; margin: -54px 0 0 22px; font: 700 18px "EmpireAtWar-Bold", "Segoe UI", sans-serif; color: #ffd76a; text-shadow: 0 0 6px #000; pointer-events: none; animation: sh-pop-up .9s ease-out forwards; }
-@keyframes sh-pop-up { 0% { opacity: 0; transform: translateY(6px) scale(1.3); } 15% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-26px); } }
-.sh-compass { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); width: 460px; height: 30px; background: linear-gradient(90deg, transparent, rgba(8,10,14,.55) 20%, rgba(8,10,14,.55) 80%, transparent); }
-.sh-feed { position: absolute; right: 18px; top: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font: 12px "Segoe UI", sans-serif; text-shadow: 0 0 3px #000; }
-.sh-feed-row { padding: 2px 8px; background: rgba(8,10,14,.55); border-right: 2px solid rgba(255,215,106,.35); }
-.sh-feed-row.mine { border-right-color: #ffd76a; background: rgba(60,48,18,.7); }
-.sh-feed-row i { font-style: normal; color: #e8dcb8; margin: 0 7px; opacity: .8; }
-.sh-ann { position: fixed; left: 50%; top: 168px; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
-.sh-ann-row { padding: 4px 16px; font: 700 15px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 0 8px #000; background: rgba(8,10,14,.55); animation: sh-ann 4s ease-out forwards; }
-.sh-ann-row.good { color: var(--sh-ally-soft, #7cc7ff); } .sh-ann-row.bad { color: var(--sh-enemy-soft, #ff7a64); } .sh-ann-row.info { color: #ffd76a; }
-@keyframes sh-ann { 0% { opacity: 0; transform: scale(1.15); } 8% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
-.sh-bigmap { position: fixed; inset: 0; z-index: 58; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); pointer-events: none; }
-.sh-bigmap-box { padding: 12px 16px 10px; background: rgba(8,10,14,.92); border: 1px solid rgba(255,215,106,.5); }
-.sh-bigmap canvas { display: block; width: min(76vh, 76vw); height: min(76vh, 76vw); margin-top: 8px; border: 1px solid rgba(255,215,106,.35); }
-.sh-intro { position: fixed; inset: 0; z-index: 62; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 14vh; pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,.45), transparent 25%, transparent 60%, rgba(0,0,0,.6)); }
-.sh-intro-t { font: 700 64px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 6px; text-transform: uppercase; color: #ffd76a; text-shadow: 0 0 20px rgba(0,0,0,.9); animation: sh-intro 1.4s ease-out; }
-.sh-intro-s { margin-top: 6px; font: 16px "Segoe UI", sans-serif; letter-spacing: 2px; color: #e8dcb8; text-shadow: 0 0 6px #000; }
-.sh-intro-c { margin-top: 18px; font: 700 20px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 3px; color: #fff; text-shadow: 0 0 8px #000; }
-.sh-intro-k { margin-top: 8px; font: 12px "Segoe UI", sans-serif; color: #a99c78; }
-@keyframes sh-intro { from { opacity: 0; letter-spacing: 24px; } to { opacity: 1; letter-spacing: 6px; } }
-.sh-end { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,.45), rgba(0,0,0,.85)); font: 14px "Segoe UI", sans-serif; color: #e8dcb8; }
-.sh-end-box { width: min(980px, 96vw); }
-.sh-end-body { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 18px 22px; }
-.sh-end-body canvas { width: 100%; height: auto; border: 1px solid rgba(255,215,106,.3); }
-.sh-end-you { margin-top: 10px; color: #ffd76a; }
-.sh-end-t { width: 100%; border-collapse: collapse; font-size: 13px; }
-.sh-end-t th { text-align: left; color: #c9b98a; font-weight: 600; padding: 4px 6px; border-bottom: 1px solid rgba(255,215,106,.25); }
-.sh-end-t td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
-.sh-end-t tr.me td { background: rgba(255,215,106,.12); }
-.sh-end-aw div { margin: 3px 0; }
-.sh-end .sh-foot { padding: 0 22px 18px; }
+.sh-hit { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; opacity: 0; transition: opacity .18s ease-out; filter: drop-shadow(0 0 1px #000); }
+.sh-hit.pop { animation: sh-pop .14s ease-out; }
+.sh-hit.kill svg { transform: scale(1.2); }
+@keyframes sh-pop { from { transform: scale(1.35); } to { transform: scale(1); } }
+.sh-banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 55; pointer-events: none; font: 400 calc(26px * var(--eaw-k, 1)) var(--eaw-bold); color: rgb(225,70,45); text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; opacity: 0; white-space: nowrap; }
+.sh-banner.show { animation: sh-fade 3.2s linear forwards; }
+@keyframes sh-fade { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+.sh-cap { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: 320px; padding: 4px 10px 6px; text-align: center; }
+.sh-cap-t { margin-bottom: 4px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-cap-bar { width: 100%; }
+.sh-cap-bar i { transition: width .2s linear; }
+.sh-vig { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(150,0,0,.5) 85%, rgba(110,0,0,.8) 100%); }
+.sh-wpn { position: absolute; right: 222px; bottom: 26px; width: 250px; padding: 4px 10px 6px; }
+.sh-wpn-n { font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 4px; }
+.sh-wpn-bar { width: 100%; }
+.sh-wpn-s, .sh-wpn-x { margin-top: 3px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-wpn-x { color: var(--eaw-dim); }
+.sh-wpn.hot .sh-wpn-s { color: rgb(235,80,50); animation: sh-blink .5s steps(2) infinite; }
+@keyframes sh-blink { 50% { opacity: .4; } }
+.sh-pop { position: absolute; left: 50%; top: 50%; margin: -52px 0 0 22px; font: 400 calc(16px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); text-shadow: 1px 1px 0 #000; pointer-events: none; animation: sh-pop-up .9s linear forwards; }
+.sh-pop.assist { color: var(--eaw-cream); font-size: calc(13px * var(--eaw-k, 1)); }
+.sh-pop.kill { color: var(--eaw-gold); }
+@keyframes sh-pop-up { 0% { opacity: 0; transform: translateY(4px); } 12% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-22px); } }
+.sh-compass { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); width: 460px; height: 30px; background: rgba(0,0,0,.35); }
+.sh-feed { position: absolute; right: 18px; top: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-list); text-shadow: 1px 1px 0 #000; }
+.sh-feed-row { padding: 1px 8px; background: rgba(0,0,0,.45); }
+.sh-feed-row.mine { background: rgba(80,70,0,.55); }
+.sh-feed-row i { font-style: normal; color: var(--eaw-cream); margin: 0 7px; opacity: .75; }
+.sh-ann { position: fixed; left: 50%; top: 168px; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; }
+.sh-ann-row { font: 400 calc(15px * var(--eaw-k, 1)) var(--eaw-bold); text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; animation: sh-fade 4s linear forwards; }
+.sh-ann-row.good { color: var(--sh-ally-soft, #7cc7ff); } .sh-ann-row.bad { color: var(--sh-enemy-soft, #ff7a64); } .sh-ann-row.info { color: var(--eaw-gold); }
+.sh-bigmap { position: fixed; inset: 0; z-index: 58; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); pointer-events: none; }
+.sh-bigmap-box { padding: 0 6px 6px; }
+.sh-bigmap canvas { display: block; width: min(74vh, 74vw); height: min(74vh, 74vw); margin-top: 6px; }
+.sh-intro { position: fixed; inset: 0; z-index: 62; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 14vh; pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,.4), transparent 22%, transparent 64%, rgba(0,0,0,.55)); }
+.sh-intro-t { font: 400 calc(46px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); text-shadow: 2px 2px 0 rgba(0,0,0,.75); animation: sh-fade-in 1s linear; }
+.sh-intro-s { margin-top: 6px; font: 400 calc(14px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); text-shadow: 1px 1px 0 #000; }
+.sh-intro-c { margin-top: 16px; font: 400 calc(17px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-cream); text-shadow: 1px 1px 0 #000; }
+.sh-intro-k { margin-top: 8px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-dim); }
+@keyframes sh-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.sh-end { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+.sh-frame.sh-end-box { width: min(980px, 96vw); }
+.sh-end-body { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 10px 6px 12px; }
+.sh-end-body canvas { width: 100%; height: auto; display: block; }
+.sh-end-you { margin-top: 10px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-tbl { width: 100%; border-collapse: collapse; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-list); color: #fff; }
+.sh-tbl th { text-align: left; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); padding: 3px 6px; border-bottom: 1px solid rgba(195,171,2,.45); }
+.sh-tbl td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.sh-tbl tr.me td { background: rgba(195,171,2,.18); }
+.sh-tbl td:not(:first-child), .sh-tbl th:not(:first-child) { text-align: right; }
+.sh-end-aw div { margin: 3px 0; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-end .sh-foot { padding: 6px 6px 2px; }
 .sh-ret-rocket { border-radius: 3px !important; border-style: dashed !important; }
 .sh-ret-scout { border-width: 1px !important; }
 .sh-ret-scout::before { content: ''; position: absolute; left: 50%; top: -9px; bottom: -9px; width: 1px; background: rgba(255,215,106,.85); }
@@ -234,71 +235,82 @@ const SHOOTER_CSS = `
 .sh-scope { position: fixed; inset: 0; z-index: 39; pointer-events: none; display: none; background: radial-gradient(circle at center, transparent 0, transparent 34vmin, rgba(0,0,0,.94) calc(34vmin + 2px)); }
 .sh-scope::before { content: ''; position: absolute; left: 50%; top: 16vmin; bottom: 16vmin; width: 1px; background: rgba(0,0,0,.85); }
 .sh-scope::after { content: ''; position: absolute; top: 50%; left: calc(50% - 34vmin); right: calc(50% - 34vmin); height: 1px; background: rgba(0,0,0,.85); }
-.sh-card.ride::after { content: 'RIDE'; position: absolute; top: 4px; right: 4px; font: 700 9px "Segoe UI", sans-serif; letter-spacing: 1px; color: #111; background: #7cc7ff; padding: 1px 4px; }
+.sh-card.ride::after, .sh-card.hero::after { position: absolute; top: 3px; right: 5px; font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); text-shadow: 1px 1px 0 #000; }
+.sh-card.ride::after { content: 'Ride'; }
+.sh-card.hero::after { content: 'Hero'; }
 .sh-card.locked { opacity: .45; }
-.sh-vhud { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: 300px; padding: 8px 12px 9px; background: rgba(8,10,14,.72); border: 1px solid rgba(255,215,106,.45); font: 12px "Segoe UI", sans-serif; color: #e8dcb8; text-shadow: 0 0 3px #000; }
-.sh-vh-n { font: 700 13px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 1.5px; text-transform: uppercase; color: #ffd76a; margin-bottom: 5px; }
+.sh-vhud { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: 300px; padding: 4px 10px 6px; }
+.sh-vh-n { font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 4px; }
 .sh-vh-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-.sh-vh-row span { width: 58px; font-size: 10px; letter-spacing: 1px; color: #c9b98a; }
-.sh-vh-row .sh-bar { flex: 1; height: 6px; background: rgba(255,255,255,.1); }
-.sh-vh-row .sh-bar i { display: block; height: 100%; width: 0; background: #ffd76a; }
-.sh-vh-row i.s { background: #7cc7ff; }
-.sh-vh-info { margin-top: 5px; font-size: 11px; letter-spacing: 1px; color: #e8dcb8; }
-.sh-vh-warn { display: none; margin-top: 6px; padding: 3px 0; text-align: center; font: 700 13px "Segoe UI", sans-serif; letter-spacing: 2px; color: #fff; background: rgba(200,40,30,.8); animation: sh-blink .5s steps(1) infinite; }
+.sh-vh-row span { width: 62px; font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); }
+.sh-vh-row .sh-bar { flex: 1; }
+.sh-vh-row i.s { filter: hue-rotate(170deg) saturate(1.4); }
+.sh-vh-info { margin-top: 4px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-vh-warn { display: none; margin-top: 5px; text-align: center; font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: rgb(235,80,50); text-shadow: 1px 1px 0 #000; animation: sh-blink .5s steps(1) infinite; }
 .sh-ch-dot { border-color: transparent !important; }
 .sh-ch-cross { border-color: transparent !important; }
 .sh-ch-cross::before { content: ''; position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: rgba(255,215,106,.85); box-shadow: 0 0 2px #000; }
 .sh-ch-cross::after { content: ''; position: absolute; top: 50%; left: -6px; right: -6px; height: 2px; margin-top: -1px; background: rgba(255,215,106,.85); box-shadow: 0 0 2px #000; }
-.sh-set { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.6); font: 13px "Segoe UI", sans-serif; color: #e8dcb8; }
-.sh-set-box { width: min(520px, 94vw); }
-.sh-set-body { padding: 12px 20px; display: flex; flex-direction: column; gap: 8px; }
-.sh-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.sh-set-row select { background: #14161c; color: #e8dcb8; border: 1px solid rgba(255,215,106,.35); padding: 3px 6px; }
+.sh-set { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+.sh-frame.sh-set-box { width: min(560px, 94vw); }
+.sh-set-body { padding: 8px 6px 4px; display: flex; flex-direction: column; gap: 7px; }
+.sh-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: calc(24px * var(--eaw-k, 1)); font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); }
+.sh-set-row .eaw-select { width: calc(200px * var(--eaw-k, 1)); }
 .sh-set-range { display: flex; align-items: center; gap: 10px; }
-.sh-set-range input { width: 200px; }
-.sh-set-range b { width: 64px; text-align: right; font-weight: 600; color: #ffd76a; }
-.sh-set .sh-foot { padding: 0 20px 16px; }
-.sh-setbtn { margin-right: 10px; padding: 7px 16px; background: rgba(20,22,28,.9); color: #e8dcb8; border: 1px solid rgba(255,215,106,.4); cursor: pointer; font: 12px "Segoe UI", sans-serif; letter-spacing: 1px; text-transform: uppercase; }
-.sh-tip { padding: 0 20px 8px; font: italic 12px "Segoe UI", sans-serif; color: #c9b98a; }
-.sh-hints { position: fixed; right: 18px; top: 120px; z-index: 46; padding: 10px 14px 8px; background: rgba(8,10,14,.82); border: 1px solid rgba(255,215,106,.45); font: 12px "Segoe UI", sans-serif; color: #e8dcb8; pointer-events: none; }
-.sh-hints-t { font: 700 13px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 1.5px; text-transform: uppercase; color: #ffd76a; margin-bottom: 6px; }
-.sh-hints td { padding: 2px 10px 2px 0; }
-.sh-hints td:first-child { color: #c9b98a; }
-.sh-hints td:last-child { color: #8fa6b8; }
-.sh-hints-k { margin-top: 6px; font-size: 11px; color: #8f8466; }
-.sh-deploy { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,.35), rgba(0,0,0,.8)); font: 14px "Segoe UI", sans-serif; color: #e8dcb8; }
-.sh-frame { width: min(1040px, 96vw); background: linear-gradient(180deg, rgba(18,22,28,.96), rgba(8,10,14,.97)); border: 1px solid rgba(255,215,106,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.8), 0 18px 60px rgba(0,0,0,.8); }
-.sh-head { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 22px 10px; border-bottom: 1px solid rgba(255,215,106,.25); background: linear-gradient(90deg, rgba(255,215,106,.12), transparent 60%); }
-.sh-title { font: 700 26px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #ffd76a; text-shadow: 0 0 10px rgba(255,190,60,.35); }
-.sh-sub { font-size: 14px; color: #c9b98a; letter-spacing: 1px; }
-.sh-body { display: flex; gap: 20px; padding: 18px 22px 20px; }
+.sh-set-range input { width: calc(200px * var(--eaw-k, 1)); }
+.sh-set-range b { width: 62px; text-align: right; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-list); color: #fff; }
+.sh-set .sh-foot { padding: 10px 6px 2px; }
+.sh-setbtn { margin-right: 10px; }
+.sh-tip { padding: 0 6px 6px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-dim); }
+.sh-hints { position: fixed; right: 18px; top: 120px; z-index: 46; padding: 4px 12px 8px; pointer-events: none; }
+.sh-hints-t { font: 400 calc(14px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 5px; }
+.sh-hints table { font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-list); color: #fff; }
+.sh-hints td { padding: 2px 12px 2px 0; }
+.sh-hints td:first-child { font-family: var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-hints td:last-child { color: var(--eaw-dim); }
+.sh-hints-k { margin-top: 6px; font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-dim); }
+.sh-deploy { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); }
+.sh-frame { width: min(1040px, 96vw); }
+.sh-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 6px 8px; }
+.sh-title { font: 400 calc(24px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); text-shadow: 1px 1px 0 rgba(0,0,0,.6); }
+.sh-sub { font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); }
+.sh-body { display: flex; gap: 16px; padding: 4px 6px 6px; }
 .sh-mapbox { flex: 0 0 auto; }
-.sh-map { display: block; width: min(460px, 44vw); height: min(460px, 44vw); border: 1px solid rgba(255,215,106,.4); box-shadow: inset 0 0 30px #000; }
-.sh-maphint { margin-top: 8px; font-size: 12px; color: #a99c78; }
+.sh-mapwrap { line-height: 0; }
+.sh-map { display: block; width: min(440px, 42vw); height: min(440px, 42vw); }
+.sh-maphint { margin-top: 6px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-dim); }
 .sh-side { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
-.sh-label { font: 700 13px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #ffd76a; margin-bottom: 8px; }
-.sh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; max-height: 236px; overflow: auto; }
-.sh-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px 7px; background: linear-gradient(180deg, rgba(40,44,52,.9), rgba(20,22,28,.95)); border: 1px solid rgba(255,215,106,.25); color: #e8dcb8; cursor: pointer; font: 12px "Segoe UI", sans-serif; transition: border-color .12s, transform .12s, background .12s; }
-.sh-card:hover { border-color: rgba(255,215,106,.7); transform: translateY(-1px); }
-.sh-card.on { border-color: #ffd76a; background: linear-gradient(180deg, rgba(90,74,30,.95), rgba(40,32,12,.95)); box-shadow: 0 0 12px rgba(255,200,80,.3); }
-.sh-card.hero::after { content: 'HERO'; position: absolute; top: 4px; right: 4px; font: 700 9px "Segoe UI", sans-serif; letter-spacing: 1px; color: #111; background: #ffd76a; padding: 1px 4px; }
-.sh-icon { width: 54px; height: 54px; background: #000 center / cover no-repeat; border: 1px solid rgba(255,215,106,.35); }
+.sh-label { font: 400 calc(14px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 6px; }
+.sh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; max-height: 250px; overflow: auto; }
+.sh-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px 5px; cursor: pointer; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .05em; color: var(--eaw-cream); }
+.sh-card:hover:not(.locked) { filter: brightness(1.25); }
+.sh-card.on { outline: 2px solid var(--eaw-gold); outline-offset: -1px; filter: brightness(1.3); }
+.sh-icon { width: 54px; height: 54px; background: #000 center / cover no-repeat; outline: 1px solid rgba(195,171,2,.55); }
 .sh-cname { text-align: center; line-height: 1.2; min-height: 2.4em; }
-.sh-cost { font-size: 11px; color: #ffd76a; }
-.sh-detail { display: flex; gap: 14px; margin-top: 14px; padding: 12px; border: 1px solid rgba(255,215,106,.2); background: rgba(0,0,0,.3); }
-.sh-portrait { flex: 0 0 96px; height: 96px; background: #000 center / cover no-repeat; border: 1px solid rgba(255,215,106,.45); }
+.sh-cost { font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-list); color: var(--eaw-gold); }
+.sh-detail { display: flex; gap: 12px; margin-top: 10px; padding: 6px 8px; }
+.sh-portrait { flex: 0 0 92px; height: 92px; background: #000 center / cover no-repeat; outline: 1px solid rgba(195,171,2,.6); }
 .sh-dtext { flex: 1 1 auto; min-width: 0; }
-.sh-dname { font: 700 17px "EmpireAtWar-Bold", "Segoe UI", sans-serif; color: #ffd76a; letter-spacing: 1px; }
-.sh-dkind { font-size: 12px; color: #a99c78; margin: 2px 0 8px; }
-.sh-stat { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
-.sh-stat span { flex: 0 0 72px; color: #c9b98a; }
-.sh-bar { flex: 1 1 auto; height: 7px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,215,106,.2); }
-.sh-bar i { display: block; height: 100%; background: linear-gradient(90deg, #b8892a, #ffd76a); }
-.sh-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 14px; }
-.sh-status { font-size: 13px; color: #c9b98a; }
-.sh-go { padding: 10px 34px; font: 700 16px "EmpireAtWar-Bold", "Segoe UI", sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #111; background: linear-gradient(180deg, #ffe08a, #d9a83a); border: 1px solid #fff2c4; cursor: pointer; box-shadow: 0 0 16px rgba(255,200,80,.35); }
-.sh-go:hover:not(:disabled) { filter: brightness(1.1); }
-.sh-go:disabled { opacity: .45; cursor: default; box-shadow: none; }
+.sh-dname { font: 400 calc(16px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); }
+.sh-dkind { margin: 2px 0 7px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-stat { display: flex; align-items: center; gap: 8px; margin: 4px 0; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-stat span { flex: 0 0 76px; }
+.sh-stat .sh-bar { flex: 1 1 auto; }
+.sh-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; }
+.sh-status { font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-go { min-width: calc(150px * var(--eaw-k, 1)); }
+.sh-tickets { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 45; display: flex; gap: 18px; padding: 3px 14px 4px; pointer-events: none; white-space: nowrap; font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-cream); }
+.sh-tickets span.mine { color: var(--eaw-gold); }
+.sh-tickets b { font: 400 1em var(--eaw-list); margin-left: 6px; color: #fff; }
+.sh-me { position: absolute; left: 22px; bottom: 22px; width: 240px; padding: 4px 10px 6px; }
+.sh-me-n { margin-bottom: 4px; font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); }
+.sh-me .eaw-bar { margin-top: 3px; }
+.sh-me-s { margin-top: 5px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-hudtext { font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.sh-credit { font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); text-shadow: 1px 1px 0 #000; }
+.sh-board { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 65; min-width: 460px; padding: 0 6px 8px; display: none; pointer-events: none; }
+.sh-board-line { margin-top: 8px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
+.sh-radar { border-radius: 50%; background: rgba(0,0,0,.55); box-shadow: 0 0 0 2px rgba(195,171,2,.75), 0 0 0 3px rgba(0,0,0,.8); }
 `;
 
 const _fwd = new THREE.Vector3(),
@@ -1157,18 +1169,27 @@ export class Shooter {
 
   ticketBar() {
     const e = (this.ticketEl = document.createElement('div'));
-    e.style.cssText =
-      'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:45;padding:4px 14px;background:rgba(8,10,14,.7);border:1px solid rgba(255,215,106,.45);font:15px "Segoe UI",sans-serif;color:#ffd76a;text-shadow:0 0 3px #000;pointer-events:none;white-space:pre';
+    e.className = 'sh-tickets eaw-frame-s';
     document.body.appendChild(e);
   }
 
   drawTickets() {
     if (!this.ticketEl) return;
-    const g = this.game,
-      text = this.teamTickets()
-        .map(e => `${e.mine ? '> ' : ''}${e.label} ${e.t}`)
-        .join('     ');
-    if (this.ticketEl.textContent !== text) this.ticketEl.textContent = text;
+    const T = this.teamTickets(),
+      key = T.map(e => `${e.mine ? 1 : 0}${e.label}:${e.t}`).join('|');
+    if (this.ticketKey === key) return;
+    this.ticketKey = key;
+    this.ticketEl.replaceChildren(
+      ...T.map(e => {
+        const sp = document.createElement('span'),
+          b = document.createElement('b');
+        if (e.mine) sp.className = 'mine';
+        sp.textContent = e.label;
+        b.textContent = String(e.t);
+        sp.appendChild(b);
+        return sp;
+      })
+    );
   }
 
   skill(side) {
@@ -2519,7 +2540,7 @@ export class Shooter {
     const E = (this.setEl = document.createElement('div'));
     E.className = 'sh-set';
     E.style.display = 'none';
-    E.innerHTML = '<div class="sh-frame sh-set-box"><div class="sh-head"><div class="sh-title">Shooter settings</div></div><div class="sh-set-body"></div><div class="sh-foot"><div></div><button class="sh-go">Done</button></div></div>';
+    E.innerHTML = '<div class="sh-frame sh-set-box eaw-frame"><div class="sh-head"><div class="sh-title">Shooter Settings</div></div><div class="sh-set-body"></div><div class="sh-foot"><div></div><button class="sh-go eaw-btn">Done</button></div></div>';
     document.body.appendChild(E);
     const body = E.querySelector('.sh-set-body'),
       C = this.cfg;
@@ -2538,6 +2559,7 @@ export class Shooter {
         v = document.createElement('b');
       wrapEl.className = 'sh-set-range';
       i.type = 'range';
+      i.className = 'eaw-range';
       i.min = min;
       i.max = max;
       i.step = step;
@@ -2553,12 +2575,14 @@ export class Shooter {
     const check = (label, get, set) => {
       const i = document.createElement('input');
       i.type = 'checkbox';
+      i.className = 'eaw-check';
       i.checked = get();
       i.onchange = () => set(i.checked);
       row(label, i);
     };
     const pick = (label, key, opts) => {
       const i = document.createElement('select');
+      i.className = 'eaw-select';
       for (const [v, t] of opts) {
         const o = document.createElement('option');
         o.value = v;
@@ -2591,6 +2615,7 @@ export class Shooter {
         txt = n => (n > 0 ? `${n}%` : 'Off');
       wrapEl.className = 'sh-set-range';
       i.type = 'range';
+      i.className = 'eaw-range';
       i.min = 0;
       i.max = 100;
       i.step = 5;
@@ -2738,7 +2763,7 @@ export class Shooter {
     } catch {}
     const K = id => this.keyText(id),
       E = document.createElement('div');
-    E.className = 'sh-hints';
+    E.className = 'sh-hints eaw-frame-s';
     const rows = [
       ['Move', `${K('SCROLL_UP')} ${K('SCROLL_LEFT')} ${K('SCROLL_DOWN')} ${K('SCROLL_RIGHT')}`, 'Left stick'],
       ['Look, fire, aim', 'Mouse, left and right button', 'Right stick, RT, LT'],
@@ -5988,7 +6013,7 @@ export class Shooter {
           x.lineTo(px + sx * (r - c), py + sy * r);
         }
         x.stroke();
-        x.font = `bold ${11 * dpr}px "Segoe UI",sans-serif`;
+        x.font = `bold ${11 * dpr}px Arial,sans-serif`;
         x.textAlign = 'center';
         x.textBaseline = 'top';
         x.fillStyle = x.strokeStyle;
@@ -6617,13 +6642,13 @@ export class Shooter {
       won = w.winner === g.myTeam,
       el = document.createElement('div');
     el.className = 'sh-end';
-    el.innerHTML = `<div class="sh-frame sh-end-box"><div class="sh-head"><div class="sh-title"></div><div class="sh-sub"></div></div>
-      <div class="sh-end-body"><div><div class="sh-label">Reinforcements</div><canvas width="420" height="200"></canvas><div class="sh-end-you"></div><div class="sh-end-pl" style="margin-top:10px;white-space:pre;font:12px monospace"></div></div>
-      <div><div class="sh-label">Top soldiers</div><table class="sh-end-t"></table><div class="sh-label" style="margin-top:12px">Awards</div><div class="sh-end-aw"></div></div></div>
-      <div class="sh-foot"><div></div><button class="sh-go">Continue</button></div></div>`;
+    el.innerHTML = `<div class="sh-frame sh-end-box eaw-frame"><div class="sh-head"><div class="sh-title"></div><div class="sh-sub"></div></div>
+      <div class="sh-end-body"><div><div class="sh-label">Reinforcements</div><div class="eaw-frame-s" style="line-height:0"><canvas width="420" height="200"></canvas></div><div class="sh-end-you"></div><div class="sh-end-pl" style="margin-top:10px"></div></div>
+      <div><div class="sh-label">Top Soldiers</div><table class="sh-end-t sh-tbl"></table><div class="sh-label" style="margin-top:12px">Awards</div><div class="sh-end-aw"></div></div></div>
+      <div class="sh-foot"><div></div><button class="sh-go eaw-btn">Continue</button></div></div>`;
     el.querySelector('.sh-title').textContent = this.endTitle || (won ? 'Victory' : 'Defeat');
     el.querySelector('.sh-sub').textContent = this.tickets ? this.teamTickets().map(e => `${e.label} ${e.t}`).join('   ') : g.factions.join('   ');
-    el.querySelector('.sh-end-pl').textContent = this.playerTable();
+    el.querySelector('.sh-end-pl').replaceChildren(...this.rowsTable(this.playerTable()));
     el.querySelector('.sh-end-you').textContent = `You: ${this.kills} kills, ${this.assists} assists, ${this.stats.heads} headshots, ${this.stats.vehicles} vehicles, ${this.caps} captures, ${this.deaths} deaths, score ${this.matchScore}`;
     const rows = [...this.ledger.values()].sort((p, q) => q.kills + q.vkills * 2 + q.caps - (p.kills + p.vkills * 2 + p.caps)),
       t = el.querySelector('.sh-end-t');
@@ -6704,7 +6729,7 @@ export class Shooter {
       parent.appendChild(e);
       return e;
     };
-    const font = 'font:13px "Segoe UI",sans-serif;color:#ffd76a;text-shadow:0 0 3px #000,0 0 3px #000;';
+    eawSkin();
     if (!document.getElementById('shooter-css')) {
       const st = document.createElement('style');
       st.id = 'shooter-css';
@@ -6719,10 +6744,10 @@ export class Shooter {
     );
     this.dot = el('div', 'position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px 0 0 -1.5px;background:#ffd76a', this.hud);
     this.vhud = el('div', '', this.hud);
-    this.vhud.className = 'sh-vhud';
+    this.vhud.className = 'sh-vhud eaw-frame-s';
     this.vhud.style.display = 'none';
     this.vhud.innerHTML =
-      '<div class="sh-vh-n"></div><div class="sh-vh-row"><span>HULL</span><div class="sh-bar"><i class="h"></i></div></div><div class="sh-vh-row s"><span>SHIELD</span><div class="sh-bar"><i class="s"></i></div></div><div class="sh-vh-row"><span>WEAPON</span><div class="sh-bar"><i class="w"></i></div></div><div class="sh-vh-info"></div><div class="sh-vh-warn"></div>';
+      '<div class="sh-vh-n"></div><div class="sh-vh-row"><span>Hull</span><div class="sh-bar eaw-bar"><i class="h"></i></div></div><div class="sh-vh-row s"><span>Shield</span><div class="sh-bar eaw-bar"><i class="s"></i></div></div><div class="sh-vh-row"><span>Weapon</span><div class="sh-bar eaw-bar"><i class="w"></i></div></div><div class="sh-vh-info"></div><div class="sh-vh-warn"></div>';
     this.vhN = this.vhud.querySelector('.sh-vh-n');
     this.vhHull = this.vhud.querySelector('i.h');
     this.vhSh = this.vhud.querySelector('i.s');
@@ -6744,7 +6769,7 @@ export class Shooter {
     this.bigMap = el('div', '', document.body);
     this.bigMap.className = 'sh-bigmap';
     this.bigMap.style.display = 'none';
-    this.bigMap.innerHTML = '<div class="sh-bigmap-box"><div class="sh-title">Battlefield</div><canvas width="760" height="760"></canvas><div class="sh-maphint">M to close</div></div>';
+    this.bigMap.innerHTML = '<div class="sh-bigmap-box eaw-frame"><div class="sh-title">Battlefield</div><canvas width="760" height="760"></canvas><div class="sh-maphint">M to close</div></div>';
     this.bigCv = this.bigMap.querySelector('canvas');
     this.introEl = el('div', '', document.body);
     this.introEl.className = 'sh-intro';
@@ -6752,12 +6777,13 @@ export class Shooter {
     this.vig = el('div', '', this.hud);
     this.vig.className = 'sh-vig';
     this.wpn = el('div', '', this.hud);
-    this.wpn.className = 'sh-wpn';
-    this.wpn.innerHTML = '<div class="sh-wpn-n"></div><div class="sh-wpn-bar"><i></i></div><div class="sh-wpn-s"></div>';
+    this.wpn.className = 'sh-wpn eaw-frame-s';
+    this.wpn.innerHTML = '<div class="sh-wpn-n"></div><div class="sh-wpn-bar eaw-bar"><i></i></div><div class="sh-wpn-s"></div>';
     this.wpnN = this.wpn.querySelector('.sh-wpn-n');
     this.wpnBar = this.wpn.querySelector('i');
     this.wpnS = this.wpn.querySelector('.sh-wpn-s');
-    this.wpnX = el('div', 'font:11px "Segoe UI",sans-serif;color:#c9b98a;margin-top:4px;letter-spacing:.5px', this.wpn);
+    this.wpnX = el('div', '', this.wpn);
+    this.wpnX.className = 'sh-wpn-x';
     this.mark = el('div', '', this.hud);
     this.mark.className = 'sh-hit';
     this.mark.innerHTML =
@@ -6771,52 +6797,59 @@ export class Shooter {
         this.hud
       )
     );
-    this.bars = el('div', 'position:absolute;left:24px;bottom:24px;width:240px;' + font, this.hud);
-    this.name = el('div', 'margin-bottom:4px;font-size:14px', this.bars);
+    this.bars = el('div', '', this.hud);
+    this.bars.className = 'sh-me eaw-frame-s';
+    this.name = el('div', '', this.bars);
+    this.name.className = 'sh-me-n';
     const bar = color => {
-      const o = el('div', 'height:9px;margin-top:3px;background:rgba(0,0,0,.55);border:1px solid rgba(255,215,106,.5)', this.bars);
-      return el('div', `height:100%;width:100%;background:${color}`, o);
+      const o = el('div', '', this.bars);
+      o.className = 'eaw-bar';
+      return el('i', `width:100%;background:${color}`, o);
     };
     this.hpBar = bar('#5fd35f');
     this.shBar = bar('#5fb3ff');
     this.shBar.parentElement.style.display = 'none';
-    this.score = el('div', 'margin-top:6px;font-size:12px;color:#e8d9a8', this.bars);
-    this.hint = el('div', 'position:absolute;left:50%;top:62%;transform:translateX(-50%);' + font, this.hud);
-    this.tip = el('div', 'position:absolute;left:50%;top:56px;transform:translateX(-50%);' + font, this.hud);
-    this.credit = el('div', 'position:absolute;right:24px;bottom:24px;font-size:14px;' + font, this.hud);
+    this.score = el('div', '', this.bars);
+    this.score.className = 'sh-me-s';
+    this.hint = el('div', 'position:absolute;left:50%;top:62%;transform:translateX(-50%)', this.hud);
+    this.hint.className = 'sh-hudtext';
+    this.tip = el('div', 'position:absolute;left:50%;top:86px;transform:translateX(-50%);white-space:nowrap', this.hud);
+    this.tip.className = 'sh-hudtext';
+    this.credit = el('div', 'position:absolute;right:24px;bottom:24px', this.hud);
+    this.credit.className = 'sh-credit';
     this.radar = el(
       'canvas',
-      `position:absolute;right:20px;bottom:50px;width:${RADAR.size}px;height:${RADAR.size}px;border-radius:50%;background:rgba(6,10,12,.6);border:1px solid rgba(255,215,106,.55)`,
+      `position:absolute;right:20px;bottom:50px;width:${RADAR.size}px;height:${RADAR.size}px`,
       this.hud
     );
+    this.radar.className = 'sh-radar';
     this.radar.width = this.radar.height = RADAR.size;
     this.tagCv = el('canvas', 'position:absolute;inset:0;width:100%;height:100%', this.hud);
     this.cap = el('div', '', this.hud);
-    this.cap.className = 'sh-cap';
-    this.cap.innerHTML = '<div class="sh-cap-t"></div><div class="sh-cap-bar"><i></i></div>';
+    this.cap.className = 'sh-cap eaw-frame-s';
+    this.cap.innerHTML = '<div class="sh-cap-t"></div><div class="sh-cap-bar eaw-bar"><i></i></div>';
     this.capT = this.cap.querySelector('.sh-cap-t');
     this.capBar = this.cap.querySelector('i');
-    this.abil = el('div', 'position:absolute;left:24px;bottom:110px;font-size:12px;line-height:18px;' + font, this.hud);
-    this.scoreEl = el(
-      'div',
-      'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:65;min-width:420px;padding:14px 20px;background:rgba(8,10,14,.9);border:1px solid rgba(255,215,106,.6);display:none;white-space:pre;font:14px Consolas,monospace;color:#ffd76a;text-shadow:0 0 3px #000;pointer-events:none'
-    );
+    this.abil = el('div', 'position:absolute;left:22px;bottom:122px;line-height:18px', this.hud);
+    this.abil.className = 'sh-hudtext';
+    this.scoreEl = el('div', '');
+    this.scoreEl.className = 'sh-board eaw-frame';
     this.panel = el('div', '');
     this.panel.className = 'sh-deploy';
     this.panel.style.display = 'none';
     this.panel.innerHTML = `
-      <div class="sh-frame">
+      <div class="sh-frame eaw-frame">
         <div class="sh-head"><div class="sh-title">Deploy</div><div class="sh-sub"></div></div>
         <div class="sh-body">
-          <div class="sh-mapbox"><canvas class="sh-map" width="460" height="460"></canvas><div class="sh-maphint">Click a reinforcement point you hold to spawn there</div></div>
+          <div class="sh-mapbox"><div class="sh-mapwrap eaw-frame-s"><canvas class="sh-map" width="460" height="460"></canvas></div><div class="sh-maphint">Click a reinforcement point you hold to spawn there</div></div>
           <div class="sh-side">
             <div class="sh-label">Soldier</div>
             <div class="sh-cards"></div>
-            <div class="sh-detail">
+            <div class="sh-detail eaw-frame-s">
               <div class="sh-portrait"></div>
               <div class="sh-dtext"><div class="sh-dname"></div><div class="sh-dkind"></div><div class="sh-stats"></div></div>
             </div>
-            <div class="sh-foot"><div class="sh-status"></div><button class="sh-go">Deploy</button></div>
+            <div class="sh-foot"><div class="sh-status"></div><button class="sh-go eaw-btn">Deploy</button></div>
           </div>
         </div>
       </div>`;
@@ -6952,7 +6985,7 @@ export class Shooter {
         x.fill();
         x.stroke();
         x.fillStyle = '#05080b';
-        x.font = 'bold 12px "Segoe UI",sans-serif';
+        x.font = 'bold 12px "EmpireAtWar-Bold","Segoe UI",sans-serif';
         x.textAlign = 'center';
         x.textBaseline = 'middle';
         x.fillText(p.home ? 'H' : p.squad ? 'S' + p.n : this.letterOf(p) || String(mine.indexOf(p) + 1), px, py + 0.5);
@@ -6967,7 +7000,7 @@ export class Shooter {
         x.fill();
         if (p.reinforce) {
           x.fillStyle = '#05080b';
-          x.font = 'bold 9px "Segoe UI",sans-serif';
+          x.font = 'bold 9px "EmpireAtWar-Bold","Segoe UI",sans-serif';
           x.textAlign = 'center';
           x.textBaseline = 'middle';
           x.fillText(this.letterOf(p), px, py + 0.5);
@@ -7016,7 +7049,7 @@ export class Shooter {
           py = F.Y(u.y),
           ally = w.ally(u.side, this.me);
         this.playerMark(x, px, py, ally, 7);
-        x.font = '700 12px "Segoe UI",sans-serif';
+        x.font = '700 12px "EmpireAtWar-Bold","Segoe UI",sans-serif';
         x.textAlign = 'left';
         x.textBaseline = 'middle';
         const tw = x.measureText(p.n).width;
@@ -7073,7 +7106,7 @@ export class Shooter {
       for (const c of cls) {
         const b = document.createElement('button');
         const heroic = c.hero || c.heroSpawn;
-        b.className = 'sh-card' + (c === this.pick ? ' on' : '') + (heroic ? ' hero' : '') + (c.vehicle ? ' ride' : '') + (heroic && !heroOk ? ' locked' : '');
+        b.className = 'sh-card eaw-frame-s' + (c === this.pick ? ' on' : '') + (heroic ? ' hero' : '') + (c.vehicle ? ' ride' : '') + (heroic && !heroOk ? ' locked' : '');
         const icon = this.iconOf(c.unit);
         b.innerHTML = `<div class="sh-icon"${icon ? ` style="background-image:url('${icon}')"` : ''}></div><div class="sh-cname"></div><div class="sh-cost"></div>`;
         b.querySelector('.sh-cname').textContent = this.cardName(c);
@@ -7109,7 +7142,7 @@ export class Shooter {
           const max = Math.max(1e-6, ...all.map(s => s[key2])),
             row = document.createElement('div');
           row.className = 'sh-stat';
-          row.innerHTML = '<span></span><div class="sh-bar"><i></i></div>';
+          row.innerHTML = '<span></span><div class="sh-bar eaw-bar"><i></i></div>';
           row.querySelector('span').textContent = label;
           row.querySelector('i').style.width = `${Math.round((mine[key2] / max) * 100)}%`;
           this.statBars.appendChild(row);
@@ -7135,7 +7168,7 @@ export class Shooter {
       this.tipEl.textContent = `Tip: ${TIPS[this.tipN]}`;
       foot.parentElement.insertBefore(this.tipEl, foot);
       const b = document.createElement('button');
-      b.className = 'sh-setbtn';
+      b.className = 'sh-setbtn eaw-btn';
       b.textContent = 'Settings';
       b.onclick = () => this.openSettings();
       foot.insertBefore(b, this.go);
@@ -7293,11 +7326,11 @@ export class Shooter {
         x.stroke();
       }
       x.fillStyle = `rgb(${col})`;
-      x.font = `bold ${13 * dpr}px "Segoe UI",sans-serif`;
+      x.font = `bold ${13 * dpr}px Arial,sans-serif`;
       x.textAlign = 'center';
       x.textBaseline = 'middle';
       x.fillText(this.letterOf(p), px, py + dpr);
-      x.font = `${10 * dpr}px "Segoe UI",sans-serif`;
+      x.font = `${10 * dpr}px Arial,sans-serif`;
       x.fillStyle = 'rgba(232,220,184,0.85)';
       x.fillText(`${Math.round(d / 8)} m`, px, py + r + 9 * dpr);
     }
@@ -7333,7 +7366,7 @@ export class Shooter {
       x.fill();
       x.stroke();
       if (d < MARKERS.names && !players?.has(u)) {
-        x.font = `${10 * dpr}px "Segoe UI",sans-serif`;
+        x.font = `${10 * dpr}px Arial,sans-serif`;
         x.textAlign = 'center';
         x.textBaseline = 'bottom';
         x.fillStyle = 'rgba(150,240,170,0.9)';
@@ -7368,7 +7401,7 @@ export class Shooter {
         k = Math.max(0.75, 1 - (d / PLAYER_TAG.reach) * 0.4),
         fs = Math.round(PLAYER_TAG.font * k * dpr),
         label = p.n + (ally && d > PLAYER_TAG.showDist ? `  ${Math.round(d / 8)} m` : '');
-      x.font = `700 ${fs}px "Segoe UI",sans-serif`;
+      x.font = `700 ${fs}px Arial,sans-serif`;
       const tw = x.measureText(label).width,
         bw = tw + 14 * dpr,
         bh = fs + 8 * dpr,
@@ -7420,13 +7453,13 @@ export class Shooter {
       if (this.wpnN.textContent !== g.name) this.wpnN.textContent = g.name || '';
       if (g.kind === 'heat') {
         this.wpnBar.style.width = `${Math.round(g.heat * 100)}%`;
-        this.wpnBar.style.background = g.hot ? '#ff4a32' : g.heat > 0.7 ? '#ffa040' : '#ffd76a';
+        this.wpnBar.style.background = g.hot ? '#ff4a32' : g.heat > 0.7 ? '#ffa040' : '';
         const t = g.hot ? 'OVERHEATED' : 'HEAT';
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', g.hot);
       } else {
         this.wpnBar.style.width = `${Math.round((g.ammo / Math.max(1, g.max)) * 100)}%`;
-        this.wpnBar.style.background = g.ammo ? '#ffd76a' : '#ff4a32';
+        this.wpnBar.style.background = g.ammo ? '' : '#ff4a32';
         const t = `${g.ammo} / ${g.max}${g.ammo < g.max && this.healing ? '  restocking' : ''}`;
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', !g.ammo);
@@ -7475,7 +7508,7 @@ export class Shooter {
       const card = { 90: 'N', 0: 'E', 270: 'S', 180: 'W' }[deg];
       if (card) {
         x.fillStyle = '#ffd76a';
-        x.font = 'bold 13px "Segoe UI",sans-serif';
+        x.font = 'bold 13px "EmpireAtWar-Bold","Segoe UI",sans-serif';
         x.fillText(card, px, H / 2 + 1);
       } else {
         x.fillStyle = 'rgba(232,220,184,0.55)';
@@ -7487,7 +7520,7 @@ export class Shooter {
       const px = toX(Math.atan2(p.y - at.y, p.x - at.x));
       if (px < 8 || px > W - 8) continue;
       x.fillStyle = p.side < 0 ? '#bbb' : w.ally(p.side, this.me) ? PAL.ally : PAL.enemy;
-      x.font = 'bold 11px "Segoe UI",sans-serif';
+      x.font = 'bold 11px "EmpireAtWar-Bold","Segoe UI",sans-serif';
       x.fillText(this.letterOf(p), px, 7);
     }
     const now = performance.now();
@@ -7710,8 +7743,7 @@ export class Shooter {
     const w = this.world,
       g = this.game,
       rows = [];
-    const pad = (t, n) => String(t).padEnd(n);
-    rows.push(pad('Side', 22) + pad('Soldiers', 10) + pad('Vehicles', 10) + pad('Lost', 7) + 'Points');
+    rows.push(['Side', 'Soldiers', 'Vehicles', 'Lost', 'Points']);
     for (let s = 0; s < g.factions.length; s++) {
       let foot = 0,
         cars = 0;
@@ -7720,30 +7752,72 @@ export class Shooter {
         if (u.kind === 'INFANTRY') foot++;
         else cars++;
       }
-      const pts = w.points.filter(p => p.side === s).length,
-        name = (s === this.me ? '> ' : '  ') + String(g.factions[s] || 'Side ' + s);
-      rows.push(pad(name, 22) + pad(foot, 10) + pad(cars, 10) + pad(this.losses[s] || 0, 7) + pts);
+      const pts = w.points.filter(p => p.side === s).length;
+      rows.push([String(g.factions[s] || 'Side ' + s), foot, cars, this.losses[s] || 0, pts, s === this.me]);
     }
-    rows.push('');
-    if (this.tickets) rows.push('Tickets: ' + this.teamTickets().map(e => `${e.label} ${e.t}`).join('   '));
-    rows.push(`You: ${this.kills} kills   ${this.stats.heads} headshots   ${this.stats.vehicles} vehicles   ${this.deaths} deaths`);
-    const table = this.playerTable();
-    if (table) rows.push('', table);
-    const text = rows.join('\n');
-    if (this.scoreEl.textContent !== text) this.scoreEl.textContent = text;
+    const lines = [];
+    if (this.tickets) lines.push('Tickets: ' + this.teamTickets().map(e => `${e.label} ${e.t}`).join('   '));
+    lines.push(`You: ${this.kills} kills   ${this.stats.heads} headshots   ${this.stats.vehicles} vehicles   ${this.deaths} deaths`);
+    const players = this.playerTable(),
+      key = JSON.stringify([rows, lines, players]);
+    if (this.boardKey === key) return;
+    this.boardKey = key;
+    const head = document.createElement('div'),
+      t = document.createElement('table');
+    head.className = 'sh-title';
+    head.textContent = 'Scores';
+    t.className = 'sh-tbl';
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      if (r[5]) tr.className = 'me';
+      for (const v of r.slice(0, 5)) {
+        const c = document.createElement(i ? 'td' : 'th');
+        c.textContent = String(v);
+        tr.appendChild(c);
+      }
+      t.appendChild(tr);
+    });
+    const out = [head, t];
+    for (const l of lines) {
+      const d = document.createElement('div');
+      d.className = 'sh-board-line';
+      d.textContent = l;
+      out.push(d);
+    }
+    out.push(...this.rowsTable(players));
+    this.scoreEl.replaceChildren(...out);
+  }
+
+  rowsTable(rows) {
+    if (!rows || rows.length < 2) return [];
+    const t = document.createElement('table');
+    t.className = 'sh-tbl';
+    t.style.marginTop = '8px';
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      if (r.me) tr.className = 'me';
+      for (const v of r) {
+        const c = document.createElement(i ? 'td' : 'th');
+        c.textContent = String(v);
+        tr.appendChild(c);
+      }
+      t.appendChild(tr);
+    });
+    return [t];
   }
 
   playerTable() {
     const N = this.game.shooterNet,
       P = N ? N.playerRows() : null;
-    if (!P || P.length < 2) return '';
-    const pad = (t, n) => String(t).padEnd(n),
-      out = [pad('Player', 22) + pad('Kills', 8) + pad('Assists', 9) + pad('Deaths', 8) + 'Score'];
+    if (!P || P.length < 2) return [];
+    const out = [['Player', 'Kills', 'Assists', 'Deaths', 'Score']];
     for (const p of [...P].sort((a, b) => (b.st?.[3] || 0) - (a.st?.[3] || 0))) {
-      const st = p.st || [0, 0, 0, 0, 0];
-      out.push(pad((N.isMe(p) ? '> ' : '  ') + String(p.n || '').slice(0, 19), 22) + pad(st[0], 8) + pad(st[1], 9) + pad(st[2], 8) + st[3]);
+      const st = p.st || [0, 0, 0, 0, 0],
+        row = [String(p.n || '').slice(0, 24), st[0], st[1], st[2], st[3]];
+      row.me = N.isMe(p);
+      out.push(row);
     }
-    return out.join('\n');
+    return out;
   }
 
   dispose() {
