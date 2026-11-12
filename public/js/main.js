@@ -3065,6 +3065,23 @@ async function boot() {
     };
   }
   {
+    const box = $('optExtraFx');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-extra-fx') === '1';
+    } catch {}
+    box.checked = on;
+    window.extraFx = on;
+    box.parentElement.title =
+      'The effects of the shooter mode in regular space and land battles: laser bolts and beams light the ships, units and ground they pass, rocket and bomb blasts flash on land, and land battles get a soft bloom; both get a light colour grade. Off: the look of the original.';
+    box.onchange = () => {
+      window.extraFx = box.checked;
+      try {
+        localStorage.setItem('swr-extra-fx', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
     const box = $('optShooter');
     let on = false;
     try {

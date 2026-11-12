@@ -820,6 +820,11 @@ const GROUPS = [
         'a wall or obstacle prop whose model has no collision mesh closes only the ground its visible model stands on at walking height, tested in the world with the full placed tilt, height and scale of the prop, so a wall sunk into the ground or laid on its side closes the line it makes and not its whole box. Props with a collision mesh are fine-tuned against it as before. Before this such props closed their whole box turned only by heading, which cut Bespin into 33 pieces so that a command centre reached 1 of 6 posts; all 24 maps now reach every post from both sides. Ours: the walking height band (18 high, tested at the feet, the middle and across the cell) is our choice, the engine rule for props without a collision mesh is not read'
       ],
       [
+        'Extra effects tweak for space and land battles',
+        D,
+        'our own extension, off by default (Tweaks: Extra effects in space and land battles): the eight laser bolts, beams and blasts nearest the camera light the ships, units and ground around them in their colour, in the WebGL and WebGPU model shaders, space explosions light the hulls next to them for a moment, land battles get the soft bloom of the shooter mode, and both get its light colour grade (a touch of sun colour, saturation, contrast and vignette). The shooter mode now lights units with its bolts as well as the ground. Measured: space frames cost the same with it on, land about 0.2 ms more for the bloom passes; off, nothing is spent'
+      ],
+      [
         'Land: shield domes on mod models',
         D,
         'a unit whose model carries a shield mesh gets its dome drawn from that mesh in the shield colour from the data. Before this the dome code expected colour and steady settings that the shield material does not have, so every frame stopped partway on mods with such units (seen on Thrawns Revenge), which also froze the benchmark counter'

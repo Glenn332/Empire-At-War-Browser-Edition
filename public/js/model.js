@@ -8,6 +8,7 @@ import { planetVertex, planetFragment } from './planetshader.js';
 import { effectInfo, effectLOD, selectEffectTechnique } from './fxo.js';
 import { fetchBinary } from './vfs.js';
 import { planetEnvironment } from './planetlighting.js';
+import { env as gpuEnv } from './gpu/env.js';
 
 const noShadow = new THREE.DepthTexture(1, 1);
 noShadow.compareFunction = THREE.LessEqualCompare;
@@ -39,6 +40,12 @@ export const lighting = {
   },
   fowSide: { value: 0 }
 };
+export const boltLights = {
+  boltAt: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+  boltTint: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+  boltN: { value: 0 }
+};
+gpuEnv.bolts = boltLights;
 const lightingAtStart = Object.fromEntries(
   Object.entries(lighting).map(([k, u]) => [k, u.value?.isTexture || typeof u.value !== 'object' ? u.value : u.value.clone()])
 );
@@ -167,6 +174,8 @@ uniform sampler2D glossMap;
 #endif
 uniform vec3 sunDir, sunColor, sunSpecular, fillDir, fillColor, fillDir2, fillColor2, ambient;
 uniform float fillWrap;
+uniform vec4 boltAt[8], boltTint[8];
+uniform float boltN;
 float fillTerm(vec3 n, vec3 d) {
   float x = dot(n, d);
   return fillWrap > 0.5 ? max(0.0, 0.25 + 0.5 * x + 0.3125 * (1.5 * x * x - 0.5)) : max(x, 0.0);
@@ -297,6 +306,12 @@ void main() {
   float sunTerm = fillTerm(gn, sunDir);
   #endif
   vec3 light = ambient + fillColor * fillTerm(gn, fillDir) + fillColor2 * fillTerm(gn, fillDir2) + sunColor * sunTerm * sun;
+  for (int i = 0; i < 8; i++) {
+    if (float(i) >= boltN) break;
+    vec3 bd = boltAt[i].xyz - vWorldPos;
+    float bl = length(bd), br = bl / boltAt[i].w;
+    if (br < 1.0) light += boltTint[i].rgb * boltTint[i].a * (1.0 - br) * (1.0 - br) * (0.3 + 0.7 * max(dot(gn, bd / max(bl, 0.001)), 0.0));
+  }
   vec3 v = normalize(cameraPosition - vWorldPos);
   float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), 16.0) * sun;
   vec4 ls = objectTint(tint) * objectTint(vTint);
@@ -623,6 +638,7 @@ function makeMaterial(mat, format, teamColor) {
     defines,
     uniforms: {
       ...lighting,
+      ...boltLights,
       map: { value: rock4k ? rock4k.map : p.BaseTexture ? loadTexture(p.BaseTexture) : whiteTexture() },
       normalMap: { value: rock4k ? rock4k.normalMap : defines.BUMP ? loadTexture(p.NormalTexture) : whiteTexture() },
       ...(defines.GLOSSMAP ? { glossMap: { value: loadTexture(p.GlossTexture) } } : {}),

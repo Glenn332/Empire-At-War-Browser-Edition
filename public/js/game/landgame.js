@@ -64,6 +64,9 @@ import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
 import { gfx, pixelRatio, shadowSize, gammaOn } from '../gfx.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
+import { PostFX } from './post.js';
+import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade, GRADE } from './extrafx.js';
+import { categoryOf, CAT } from './projflight.js';
 import { placeLandInvasion, invasionWinner, landInvasionResult, invasionStructureDeath, restoreSheltered } from './campaignland.js';
 import { campaignSetup } from './savegame.js';
 import { saveBattleScripts, restoreBattleScripts } from './tacticalsave.js';
@@ -267,6 +270,7 @@ function readyDrawsOnly(R) {
   };
 }
 
+const LAND_BOLT = { radius: 45, power: 0.9, blast: 110, blastPower: 1.6, blastTime: 0.18 };
 export class LandGame {
   constructor(setup, { audio, progress }) {
     this.setup = setup;
@@ -998,6 +1002,7 @@ export class LandGame {
     world.onImpact = s => {
       const p = s.w.proj;
       if (s.target && !s.target.dead && s.target.side !== undefined ? s.target.seen === false : world.viewFogged(s.ax, s.ay)) return;
+      if (!this.shooter && extraFxOn()) this.blastAt(s);
       const first = s.ground ? 'Projectile_Ground_Detonation_Particle' : 'Projectile_Object_Detonation_Particle',
         second = s.ground ? 'Projectile_Object_Detonation_Particle' : 'Projectile_Ground_Detonation_Particle';
       if (s.expired) burst(particle(p.str('Projectile_Lifetime_Detonation_Particle')), s.ax, s.ay, s.z);
@@ -3262,9 +3267,10 @@ export class LandGame {
       this.scene.matrixWorldAutoUpdate = false;
     }
     if (!skip) {
+      if (!this.shooter) this.extraBolts(cam);
       this.castShadows();
       if (this.water) this.water.userData.mirror(R, cam, eye => this.mirrorCards(() => draw(eye)));
-      const fx = this.shooter ? this.shooter.postFor(R) : null,
+      const fx = this.shooter ? this.shooter.postFor(R) : this.extraPost(R),
         off = fx ? fx.begin() : false;
       R.clear();
       draw(cam);
@@ -3699,6 +3705,91 @@ export class LandGame {
     const brief = d =>
       d.img ? { differ: d.differ, share: +d.share.toFixed(5), max: d.max, mean: +d.mean.toFixed(2), hist: d.hist.join(' ') } : d;
     return { size: [W, H], webglVsWebgpu: brief(ab), webglVsWebgl: brief(ac), unsupported: Object.fromEntries(this.gpu.unsupported) };
+  }
+
+  groundGlow() {
+    const list = [];
+    this.ground?.traverse?.(o => {
+      const U = o.material && o.material.uniforms;
+      if (U && U.glowAt) list.push(U);
+    });
+    for (let i = 1; i < list.length; i++) {
+      list[i].glowAt.value = list[0].glowAt.value;
+      list[i].glowTint.value = list[0].glowTint.value;
+    }
+    return list[0] || null;
+  }
+
+  blastAt(s) {
+    const c = s.w && s.w.proj ? categoryOf(s.w.proj) : -1;
+    if (c !== CAT.ROCKET && c !== CAT.MPTL_ROCKET && c !== CAT.MISSILE && c !== CAT.GRENADE && c !== CAT.BOMB) return;
+    const list = (this.blasts ||= []);
+    list.push({ x: s.ax ?? s.x, y: s.ay ?? s.y, z: (s.z ?? heightAt(this.terrain, s.ax ?? s.x, s.ay ?? s.y)) + 6, until: performance.now() + LAND_BOLT.blastTime * 1000 });
+    if (list.length > 6) list.shift();
+  }
+
+  extraBolts(cam) {
+    const w = this.world,
+      U = this.groundU === undefined ? (this.groundU = this.groundGlow()) : this.groundU;
+    if (!extraFxOn() || !w) {
+      if (this.boltsWere) clearBolts(U);
+      this.boltsWere = false;
+      return;
+    }
+    this.boltsWere = true;
+    const F = (this.boltFeed ||= new BoltFeed()),
+      fr = (this.boltFrustum ||= new THREE.Frustum()),
+      at = (this.boltAt ||= new THREE.Vector3()),
+      now = performance.now();
+    fr.setFromProjectionMatrix((this.boltPm ||= new THREE.Matrix4()).multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    F.begin(cam.position.x, cam.position.y, cam.position.z);
+    if (this.blasts) {
+      this.blasts = this.blasts.filter(b => now < b.until);
+      for (const b of this.blasts) F.add(b.x, b.y, b.z, LAND_BOLT.blast, 1, 0.7, 0.35, LAND_BOLT.blastPower * ((b.until - now) / (LAND_BOLT.blastTime * 1000)));
+    }
+    for (const s of w.shots) {
+      if (s.done || s.hidden || !s.w || !s.w.proj) continue;
+      const z = s.z ?? heightAt(this.terrain, s.x, s.y) + 6;
+      if (!fr.containsPoint(at.set(s.x, s.y, z))) continue;
+      const t = boltTint(s.w.proj);
+      F.add(s.x, s.y, z, LAND_BOLT.radius, t[0], t[1], t[2], LAND_BOLT.power);
+    }
+    F.end(U);
+  }
+
+  extraPost(R) {
+    if (!extraFxOn()) return null;
+    if (this.gpuOn && !this.extraGpu) {
+      this.extraGpuLoad ||= Promise.all([import('../gpu/programs-space.js'), import('../gpu/programs-lens.js')]).then(
+        () => (this.extraGpu = true),
+        () => {}
+      );
+      return null;
+    }
+    let P = this.extraFx;
+    if (!P) {
+      P = this.extraFx = new PostFX(R);
+      P.strength = GRADE.bloom;
+      P.mBright.uniforms.cutoff.value = GRADE.cutoff;
+      useGrade(P, true);
+      this.extraCompiled = !R.compileAsync || !!R.isMirror || R === this.gpu;
+      if (!this.extraCompiled)
+        (async () => {
+          for (const m of [P.mBright, P.mBlur, P.mCombine, P.extraLens]) {
+            P.quad.material = m;
+            await Promise.resolve(R.compileAsync(P.quad, P.quadCam, P.quadScene)).catch(() => {});
+          }
+          this.extraCompiled = true;
+        })();
+    }
+    if (!this.extraCompiled) return null;
+    P.r = R;
+    if (P.w !== innerWidth || P.h !== innerHeight || P.pr !== R.getPixelRatio()) {
+      P.resize(innerWidth, innerHeight);
+      P.pr = R.getPixelRatio();
+    }
+    P.bloom = !!gfx.bloom;
+    return P;
   }
 
   castShadows() {

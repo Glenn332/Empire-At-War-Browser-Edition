@@ -5,7 +5,7 @@ import { env, webkit } from './env.js';
 
 const SLOT = 256;
 const SLOTS = 4096;
-const PASS = 512;
+const PASS = 768;
 const PASSES = 64;
 const BONES = 1536;
 const ARENA = 8 << 20;
@@ -665,6 +665,23 @@ export class GPURenderer {
     f[o + 83] = L.fillWrap.value;
     v3(84, L.fillColor2.value);
     v3(88, L.sunSpecular.value);
+    const B = env.bolts,
+      bn = B && L === this.lighting ? B.boltN.value : 0;
+    f[o + 91] = bn;
+    for (let i = 0; i < bn; i++) {
+      const a = B.boltAt.value[i],
+        t = B.boltTint.value[i],
+        k = o + 92 + i * 4,
+        q = o + 124 + i * 4;
+      f[k] = a.x;
+      f[k + 1] = a.y;
+      f[k + 2] = a.z;
+      f[k + 3] = a.w;
+      f[q] = t.x;
+      f[q + 1] = t.y;
+      f[q + 2] = t.z;
+      f[q + 3] = t.w;
+    }
     const drawingIt = !!this.target && this.target.depthTexture === L.shadowMap.value;
     const sh = drawingIt ? undefined : this.depthViews.get(L.shadowMap.value),
       fow = this.texture(L.fowMap.value, '2d');

@@ -6,7 +6,7 @@ import { AnimState } from '../ala.js';
 import { setParticleDepth } from '../particles.js';
 import { PostFX } from './post.js';
 import { lensMaterial } from './lens.js';
-import { lighting } from '../model.js';
+import { lighting, boltLights } from '../model.js';
 import { gfx } from '../gfx.js';
 import { surfaceAt, SURFACES } from './landsurface.js';
 import { activeLoadScreen } from './loadscreen.js';
@@ -2797,6 +2797,15 @@ export class Shooter {
         G[n].set(s.x, s.y, s.z ?? heightAt(w.terrain, s.x, s.y) + 6, GLOW.radius);
         C[n++].set(t[0], t[1], t[2], GLOW.power);
       }
+    }
+    {
+      const A = boltLights.boltAt.value,
+        B = boltLights.boltTint.value;
+      for (let i = 0; i < n; i++) {
+        A[i].copy(G[i]);
+        B[i].copy(C[i]);
+      }
+      boltLights.boltN.value = n;
     }
     for (; n < GLOW.slots; n++) G[n].w = 0;
     let m = 0;
@@ -7589,6 +7598,7 @@ export class Shooter {
     this.hintEl?.remove();
     for (const U of this.groundU) {
       for (const v of U.glowAt.value) v.w = 0;
+      boltLights.boltN.value = 0;
       for (const v of U.occAt.value) v.z = 0;
     }
     if (this.game.props) {

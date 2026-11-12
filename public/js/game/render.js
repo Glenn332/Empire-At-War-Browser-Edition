@@ -15,6 +15,7 @@ import { Instances } from './instances.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
+import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade } from './extrafx.js';
 
 const DEG = Math.PI / 180;
 const NO_FX = [];
@@ -546,7 +547,7 @@ async function startGPU() {
   gpuEnv.programSources = programSources;
   gpuEnv.lighting = lighting;
   try {
-    const [{ GPURenderer }] = await Promise.all([import('../gpu/renderer.js'), import('../gpu/programs-space.js')]);
+    const [{ GPURenderer }] = await Promise.all([import('../gpu/renderer.js'), import('../gpu/programs-space.js'), import('../gpu/programs-lens.js')]);
     const gpu = await GPURenderer.create();
     if (!gpu) console.warn('webgpu: not available here, drawn with WebGL');
     return gpu;
@@ -1443,6 +1444,11 @@ export class Renderer {
 
   explosion(x, y, z, size, big = false, file = '') {
     if (x === undefined) return;
+    if (extraFxOn()) {
+      const list = (this.blasts ||= []);
+      list.push({ x, y, z, r: Math.max(SPACE_BOLT.blastMin, size * SPACE_BOLT.blastScale), until: performance.now() + SPACE_BOLT.blastTime * 1000 });
+      if (list.length > 12) list.shift();
+    }
     if (file && this.fxParticles.state(file) === 'ready') {
       this.fxParticles.burst(file, x, y, z);
       this.spawnParticle(x, y, z, 0, 0, 0, size * 1.2, size * 1.5, 0.22, 1, 0.9, 0.7, 1.1);
@@ -1687,12 +1693,28 @@ export class Renderer {
       const L = LaserBatch.lookOf(p.def);
       (L.kite ? kites : pills).add(p.x, p.y, p.z, p.vx * inv, p.vy * inv, p.vz * inv, p.length, p.width, L);
     };
+    const lit = world && extraFxOn() ? (this.boltFeed ||= new BoltFeed()) : null;
+    if (lit) {
+      _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+      lit.begin(cam.position.x, cam.position.y, cam.position.z);
+      if (this.blasts) {
+        const now = performance.now();
+        this.blasts = this.blasts.filter(b => now < b.until);
+        for (const b of this.blasts)
+          if (_frustum.intersectsSphere(_sphere.set(_boltAt.set(b.x, b.y, b.z), b.r)))
+            lit.add(b.x, b.y, b.z, b.r, 1, 0.7, 0.4, SPACE_BOLT.blastPower * ((b.until - now) / (SPACE_BOLT.blastTime * 1000)), SPACE_BOLT.blastBias);
+      }
+    } else this.blasts = null;
     if (world) {
       const stamp = ++this.shotStamp;
       for (const p of world.projectiles) {
         p.fxSeen = stamp;
         if (p.hidden) continue;
         const P = p.def;
+        if (lit && _frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) {
+          const t = boltTint(P, p.r, p.g, p.b);
+          lit.add(p.x, p.y, p.z, p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius, t[0], t[1], t[2], SPACE_BOLT.power);
+        }
         if (!(P._cr ??= P.num('Projectile_Custom_Render', 0)) && !(P._sm ??= P.str('Space_Model_Name'))) continue;
         const inv = 1 / p.speed;
         const look = this.shotModels.lookOf(p.def);
@@ -1825,7 +1847,10 @@ export class Renderer {
           b.color[2]
         );
         sp.add(t.x, t.y, tz, b.width * 2.2, b.color[0], b.color[1], b.color[2], 0.7);
+        if (lit) lit.add(t.x, t.y, tz, SPACE_BOLT.beam, b.color[0], b.color[1], b.color[2], SPACE_BOLT.power);
       }
+    if (lit) lit.end();
+    else clearBolts();
     if (pulls.length || this.tractor) (this.tractor ||= new TractorBeams(this.scene)).update(dt || 0, pulls, cam, sp);
     sp.end();
     bolts.end();
@@ -1870,6 +1895,7 @@ export class Renderer {
     diag.lap('shadows');
     const post = this.post;
     post.r = r;
+    useGrade(post, !!world && extraFxOn());
     const offscreen = post.begin();
     r.clear();
     if (this.skyFar > cam.far) {
@@ -2029,6 +2055,8 @@ export class Renderer {
 const _v = new THREE.Vector3(),
   _w = { x: 0, y: 0, z: 0 },
   _s = { x: 0, y: 0, behind: false };
+const SPACE_BOLT = { radius: 220, missile: 150, beam: 260, power: 1.4, blastMin: 200, blastScale: 4, blastTime: 0.45, blastPower: 2.4, blastBias: 0.05 },
+  _boltAt = new THREE.Vector3();
 const _frustum = new THREE.Frustum(),
   _pm = new THREE.Matrix4(),
   _sphere = new THREE.Sphere();
