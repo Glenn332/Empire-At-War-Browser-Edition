@@ -72,6 +72,12 @@ export const rockTextures = () => baked;
 let bakedOn = null,
   bakes = 0;
 export const rockBake = () => bakes;
+export function dropRockTextures() {
+  if (!baked && !bakedOn) return;
+  baked = null;
+  bakedOn = null;
+  bakes++;
+}
 
 export async function bakeRockTextures(renderer, base = 'w_asteroid00.tga', normal = 'w_asteroid00_bc.tga') {
   if (baked && bakedOn === renderer) return baked;

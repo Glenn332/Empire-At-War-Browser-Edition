@@ -764,6 +764,76 @@ function makeGeometry(model, g) {
   return geo;
 }
 
+function deriveTangents(pos, nrm, uv, idx, n) {
+  const T = new Float32Array(n * 3),
+    B = new Float32Array(n * 3);
+  for (let i = 0; i + 2 < idx.length; i += 3) {
+    const a = idx[i],
+      b = idx[i + 1],
+      c = idx[i + 2],
+      e1x = pos[b * 3] - pos[a * 3],
+      e1y = pos[b * 3 + 1] - pos[a * 3 + 1],
+      e1z = pos[b * 3 + 2] - pos[a * 3 + 2],
+      e2x = pos[c * 3] - pos[a * 3],
+      e2y = pos[c * 3 + 1] - pos[a * 3 + 1],
+      e2z = pos[c * 3 + 2] - pos[a * 3 + 2],
+      du1 = uv[b * 2] - uv[a * 2],
+      dv1 = uv[b * 2 + 1] - uv[a * 2 + 1],
+      du2 = uv[c * 2] - uv[a * 2],
+      dv2 = uv[c * 2 + 1] - uv[a * 2 + 1],
+      det = du1 * dv2 - du2 * dv1;
+    if (Math.abs(det) < 1e-12) continue;
+    const r = 1 / det,
+      tx = (e1x * dv2 - e2x * dv1) * r,
+      ty = (e1y * dv2 - e2y * dv1) * r,
+      tz = (e1z * dv2 - e2z * dv1) * r,
+      bx = (e2x * du1 - e1x * du2) * r,
+      by = (e2y * du1 - e1y * du2) * r,
+      bz = (e2z * du1 - e1z * du2) * r;
+    for (const v of [a, b, c]) {
+      T[v * 3] += tx;
+      T[v * 3 + 1] += ty;
+      T[v * 3 + 2] += tz;
+      B[v * 3] += bx;
+      B[v * 3 + 1] += by;
+      B[v * 3 + 2] += bz;
+    }
+  }
+  for (let v = 0; v < n; v++) {
+    const k = v * 3,
+      nx = nrm[k],
+      ny = nrm[k + 1],
+      nz = nrm[k + 2];
+    let tx = T[k],
+      ty = T[k + 1],
+      tz = T[k + 2];
+    const d = nx * tx + ny * ty + nz * tz;
+    tx -= nx * d;
+    ty -= ny * d;
+    tz -= nz * d;
+    let l = Math.hypot(tx, ty, tz);
+    if (l < 1e-8) {
+      if (Math.abs(nx) < 0.9) [tx, ty, tz] = [0, -nz, ny];
+      else [tx, ty, tz] = [nz, 0, -nx];
+      l = Math.hypot(tx, ty, tz) || 1;
+    }
+    tx /= l;
+    ty /= l;
+    tz /= l;
+    const cx = ny * tz - nz * ty,
+      cy = nz * tx - nx * tz,
+      cz = nx * ty - ny * tx,
+      s = cx * B[k] + cy * B[k + 1] + cz * B[k + 2] < 0 ? -1 : 1;
+    T[k] = tx;
+    T[k + 1] = ty;
+    T[k + 2] = tz;
+    B[k] = cx * s;
+    B[k + 1] = cy * s;
+    B[k + 2] = cz * s;
+  }
+  return { tan: T, bin: B };
+}
+
 function buildGeometry(model, g) {
   let geo;
   const n = g.nVerts;
@@ -782,6 +852,7 @@ function buildGeometry(model, g) {
     pos = pos.slice();
     for (let i = 0; i < n; i++) if (bad[i]) for (let k = 0; k < 3; k++) pos[i * 3 + k] = at >= 0 ? pos[at + k] : 0;
   }
+  if (tan && bin && nrm && uv && !tan.some(v => v !== 0)) ({ tan, bin } = deriveTangents(pos, nrm, uv, indices, n));
   geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
