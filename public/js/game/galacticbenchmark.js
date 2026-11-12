@@ -47,6 +47,7 @@ function observe(game) {
   const neutral = [...db.factions.values()].find(f => f.bool('Is_Neutral'));
   game.observer = true;
   g.observer = true;
+  game.autoResolveOption = true;
   game.me = neutral?.name || game.me;
   game.storyDialog?.close?.();
   game.pendingBattle?.close?.();
