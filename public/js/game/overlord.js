@@ -62,7 +62,6 @@ export class Overlord {
 .ov-banner b{font:400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold);letter-spacing:.02em;color:var(--eaw-gold);margin-right:12px}
 .ov-banner i{font-style:normal;color:var(--eaw-dim);margin:0 9px}
 .shooter-command .ov-banner{opacity:1}
-.ov-hint{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:46;padding:2px 12px 3px;font:400 calc(12px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.06em;color:var(--eaw-cream);pointer-events:none;display:none;white-space:nowrap}
 .ov-tip{position:fixed;z-index:47;padding:2px 10px 3px;font:400 calc(12px * var(--eaw-k, 1)) var(--eaw-bold);color:var(--eaw-gold);pointer-events:none;transform:translate(16px,16px);display:none;white-space:nowrap}
 .ov-tip span{font:400 calc(11px * var(--eaw-k, 1)) var(--eaw-font);letter-spacing:.06em;color:var(--eaw-cream);margin-left:10px}
 .ov-veil{position:fixed;inset:0;z-index:44;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 35%,rgba(0,0,0,.75) 100%)}
@@ -82,8 +81,6 @@ export class Overlord {
     document.head.appendChild(css);
     this.banner = mk('ov-banner eaw-frame-s');
     this.banner.innerHTML = `<b>Overlord</b>Order your squads<i>|</i>Scroll in on a unit to take it<i>|</i><span class="eaw-key">${this.key()}</span>Take selected<i>|</i><span class="eaw-key">Enter</span>Deploy`;
-    this.hint = mk('ov-hint eaw-frame-s');
-    this.hint.innerHTML = `<span class="eaw-key">${this.key()}</span>Tactical view`;
     this.tip = mk('ov-tip eaw-frame-s');
     this.veil = mk('ov-veil');
     this.scan = mk('ov-scan eaw-scan');
@@ -92,7 +89,7 @@ export class Overlord {
     this.canvas.className = 'ov-canvas';
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
-    this.els.push(this.banner, this.hint, this.tip, this.veil, this.scan, this.card, this.canvas);
+    this.els.push(this.banner, this.tip, this.veil, this.scan, this.card, this.canvas);
   }
 
   dispose() {
@@ -647,8 +644,6 @@ export class Overlord {
   after(cam) {
     if (!this.on) return;
     this.applyBlend(cam);
-    const sh = this.sh;
-    this.hint.style.display = (sh.state === 'deploy' || sh.state === 'dead') && sh.panel.style.display !== 'none' ? 'block' : 'none';
   }
 
   paint() {

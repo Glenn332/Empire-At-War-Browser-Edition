@@ -7172,6 +7172,14 @@ export class Shooter {
       b.textContent = 'Settings';
       b.onclick = () => this.openSettings();
       foot.insertBefore(b, this.go);
+      if (this.ov?.on) {
+        const t = document.createElement('button');
+        t.className = 'sh-setbtn eaw-btn';
+        t.textContent = 'Tactical View';
+        t.title = `${this.ov.key()}: command your squads from the tactical view`;
+        t.onclick = () => this.ov.keyPress();
+        foot.insertBefore(t, b);
+      }
     }
     this.wait.textContent = out
       ? 'No tickets left'
