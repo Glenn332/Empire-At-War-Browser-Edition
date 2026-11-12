@@ -799,6 +799,8 @@ export class ModelInstance {
     this.poseVersion = 0;
     this.lazy = false;
     this.dirty = false;
+    this.skinMask = null;
+    this.skinPin = null;
   }
   bone(name) {
     return name ? this.boneByName.get(name.toUpperCase()) : undefined;
@@ -832,7 +834,7 @@ export class ModelInstance {
         if (!b) continue;
         if (b !== root) g.matrix.copy(b.matrixWorld);
         g.matrixWorldNeedsUpdate = true;
-        let on = b.visible;
+        let on = b.visible && !(this.skinMask && this.skinMask.has(b));
         for (let p = b.parent; on && p && p !== root; p = p.parent) if (!p.visible && p.userData.animHid) on = false;
         if (!on && g.visible) {
           g.visible = false;
@@ -845,6 +847,11 @@ export class ModelInstance {
     }
     let off = null;
     if (this.skins.length) for (const b of this.bones) if (b.userData.animHid || (off && off.has(b.parent))) (off ||= new Set()).add(b);
+    const mask = this.skins.length ? this.skinMask : null;
+    if (mask) {
+      _pin.setFromMatrixPosition((this.skinPin || root).matrixWorld);
+      if (rel) _pin.applyMatrix4(rel);
+    }
     for (const s of this.skins) {
       s.mats ||= new Float32Array(IDENTITY_BONES);
       const n = Math.min(MAX_BONES, s.boneMap.length);
@@ -853,6 +860,14 @@ export class ModelInstance {
         if (!bone) continue;
         if (off && off.has(bone)) {
           s.mats.fill(0, i * 16, i * 16 + 16);
+          s.mats[i * 16 + 15] = 1;
+          continue;
+        }
+        if (mask && mask.has(bone)) {
+          s.mats.fill(0, i * 16, i * 16 + 16);
+          s.mats[i * 16 + 12] = _pin.x;
+          s.mats[i * 16 + 13] = _pin.y;
+          s.mats[i * 16 + 14] = _pin.z;
           s.mats[i * 16 + 15] = 1;
           continue;
         }
@@ -1052,7 +1067,8 @@ export function flattenModel(inst) {
 const _q = new THREE.Quaternion(),
   _pq = new THREE.Quaternion();
 const _rel = new THREE.Matrix4(),
-  _m = new THREE.Matrix4();
+  _m = new THREE.Matrix4(),
+  _pin = new THREE.Vector3();
 const _bx = new THREE.Vector3(),
   _by = new THREE.Vector3(),
   _bz = new THREE.Vector3();

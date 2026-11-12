@@ -1479,6 +1479,7 @@ async function openStaging(args) {
             ['Fog of War', st.fog ? yes : no]
           ];
       if (isLand(st.mapFile)) rows.push([T('TEXT_PRE_BUILT_BASE', 'Pre-built base'), st.preBuilt !== false ? yes : no]);
+      if (isLand(st.mapFile)) rows.push(['Shooter mode', st.shooter ? yes : no]);
       if (st.save) rows.unshift(['Saved game', st.save.name]);
       for (const e of extraRows.splice(0)) e.remove();
       ['IDC_GAME_OPTIONS_CLIENT_DISPLAY_LEFT', 'IDC_GAME_OPTIONS_CLIENT_DISPLAY_RIGHT'].forEach((cid, side) => {
@@ -1617,6 +1618,7 @@ async function openStaging(args) {
         campaign: variant.name,
         singlePlayerCampaign: !!entry.variants,
         humanTypes,
+        ...(globalThis.shooterMode ? { shooter: true } : {}),
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
         options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve, randomEvents: !!st.randomEvents },
         players: players.map(s =>
@@ -1654,6 +1656,7 @@ async function openStaging(args) {
       teamFactions: used.map(t => st.teamFactions[t]),
       seed,
       spaceWorker: !new URLSearchParams(location.search).has('nospaceworker'),
+      ...(isLand(st.mapFile) && st.shooter ? { shooter: true } : {}),
       players: fighters.map(s =>
         s.kind === 'human'
           ? { human: true, peer: s.peer, name: s.name, team: used.indexOf(s.team), color: s.color, auto: false }
@@ -1675,6 +1678,10 @@ async function openStaging(args) {
     dlg.close();
     audio?.unlock?.();
     if (host && !campaign()) kept = { st: JSON.parse(JSON.stringify({ ...st, save: null })), slots: JSON.parse(JSON.stringify(slots)) };
+    if (setup.shooter && setup.mode === 'land') {
+      launch({ ...setup, shooterNet: { role: host ? 'host' : 'client', session: net, me: net.id, name } });
+      return;
+    }
     const link = !campaign() ? netFor() : { session: net, me: net.id, relaunch };
     if (setup.spectators) link.spectators = setup.spectators;
     launch({ ...setup, net: link });

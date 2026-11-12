@@ -815,6 +815,26 @@ const GROUPS = [
         'read: the team slows for any member more than its half length plus 2 behind the container, whatever he is doing (10 behind that brings it to a stop); a team setting off gives each standing member a start delay of up to Max_Move_Frame_Delay frames; members steer straight for their places, and a stopped member far from his place turns and walks straight to it. Ours, kept on purpose: a soldier whose place is on closed ground takes a way round, and the team waits for a straggler at most 4 seconds'
       ],
       [
+        'Land: map props without a collision mesh',
+        D,
+        'a wall or obstacle prop whose model has no collision mesh closes only the ground its visible model stands on at walking height, tested in the world with the full placed tilt, height and scale of the prop, so a wall sunk into the ground or laid on its side closes the line it makes and not its whole box. Props with a collision mesh are fine-tuned against it as before. Before this such props closed their whole box turned only by heading, which cut Bespin into 33 pieces so that a command centre reached 1 of 6 posts; all 24 maps now reach every post from both sides. Ours: the walking height band (18 high, tested at the feet, the middle and across the cell) is our choice, the engine rule for props without a collision mesh is not read'
+      ],
+      [
+        'Land: shield domes on mod models',
+        D,
+        'a unit whose model carries a shield mesh gets its dome drawn from that mesh in the shield colour from the data. Before this the dome code expected colour and steady settings that the shield material does not have, so every frame stopped partway on mods with such units (seen on Thrawns Revenge), which also froze the benchmark counter'
+      ],
+      [
+        'Land: battle music',
+        D,
+        'land battles pick the faction music by the planet Terrain key (Desert, Temperate, Arctic and so on), as the Music_Event_List tuples are keyed by climate. Ambient music plays until combat involves our side, then battle music, and ambient returns after Music_Land_Battle_To_Ambient_Peace_Seconds from Audio.xml. Before this the lookup used a LAND key that no faction has, so land battles were silent. Ours: the switch rule copies the space one (combat where our side shoots or is shot at)'
+      ],
+      [
+        'Land: destroyed structures',
+        D,
+        'structures die by the same death routine as units, as the engine applies one death behaviour to every object: a turret with Remove_Upon_Death goes on the death frame under its explosion, a death clone or DIE animation is used where the type has one, and Death_Persistence_Duration and Death_Fade_Time set how long the model stays and how it fades. Before this a destroyed building or turret stayed standing. Ours: a structure without Death_Persistence_Duration fades out at once under its explosion; the engine default for that tag was not found'
+      ],
+      [
         'Infantry animation sets',
         D,
         'the whole of a model set is used, with its variants: an idle loop broken by fidgets, three gaits, a walk when slowed, turns on the spot, an aiming stance with each shot played over it, flinches from the side the hit came from, crouched versions under cover, a cheer when the battle is won, and the deaths for being shot, crushed, thrown by the Force or struck by lightning. How often a soldier fidgets or flinches is ours. Not used: the clips for things the battle does not have yet (sliding down a rope from the transport, being eaten, being choked, flying through the air) and the talk clips of the cinematics'

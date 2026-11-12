@@ -498,6 +498,15 @@ export async function advancedOptions(st) {
     fog.classList.toggle('on', st.fog);
   };
   dlg.el.appendChild(fog);
+  const gun = fog.cloneNode(true);
+  gun.style.top = parseFloat(fog.style.top || like.y) + 30 + 'px';
+  gun.lastChild.textContent = 'Shooter mode (land)';
+  gun.classList.toggle('on', !!st.shooter);
+  gun.onclick = () => {
+    st.shooter = !st.shooter;
+    gun.classList.toggle('on', st.shooter);
+  };
+  dlg.el.appendChild(gun);
   show();
   return new Promise(done => {
     dlg.on('IDC_BUTTON_ACCEPT', () => {
@@ -513,6 +522,8 @@ export async function advancedOptions(st) {
       st.credits = 6000;
       st.popCap = 0;
       st.fog = true;
+      st.shooter = false;
+      gun.classList.toggle('on', false);
       show();
     });
   });

@@ -49,6 +49,7 @@ export class MpBattles {
       net = game.setup.net;
     b.humans = humans;
     b.setup = b.mode === 'land' ? game.landBattleSetup() : game.battleSetup();
+    if (b.mode === 'land' && game.setup.shooter) b.setup.shooter = true;
     b.local = humans.some(f => key(f) === key(game.me));
     if (humans.length >= 2 || (game.setup.singlePlayerCampaign && humans.length)) {
       const peers = f => game.setup.players.filter(p => p.human && !p.left && key(p.faction) === key(f)).map(p => p.peer);
@@ -65,7 +66,15 @@ export class MpBattles {
       b.setup.spectatorNames = watching.map(p => p.name);
       b.spectator = b.setup.spectators.includes(net.me);
       b.local = b.local || b.spectator;
-      if (b.local) b.setup.net = { session: channel(net.session, b.tag), me: net.me, spectators: b.setup.spectators };
+      if (b.local && b.setup.shooter)
+        b.setup.shooterNet = {
+          role: net.me === 0 ? 'host' : 'client',
+          session: channel(net.session, b.tag),
+          me: net.me,
+          name: game.playerName?.(game.me) || 'Host',
+          spectator: b.spectator
+        };
+      else if (b.local) b.setup.net = { session: channel(net.session, b.tag), me: net.me, spectators: b.setup.spectators };
     }
     this.current = b;
   }
@@ -147,7 +156,9 @@ export class MpBattles {
   result(faction, id, r) {
     const game = this.game,
       b = this.current;
-    if (!b || b.id !== id || b.done || !b.humans.some(f => key(f) === key(faction)) || !r || typeof r !== 'object') return;
+    const hostFaction = game.setup.players?.find(p => p.human && p.peer === 0)?.faction;
+    const allowed = b?.setup?.shooterNet ? key(faction) === key(hostFaction) : b?.humans.some(f => key(f) === key(faction));
+    if (!b || b.id !== id || b.done || !allowed || !r || typeof r !== 'object') return;
     b.done = true;
     this.closeFrame(b);
 

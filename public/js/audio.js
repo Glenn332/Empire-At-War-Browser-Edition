@@ -18,6 +18,8 @@ export class Audio {
     this.active = new Map();
     this.lastPlay = new Map();
     this.listener = { x: 0, y: 0, dist: 1500 };
+    this.falloff = 1;
+    this.forceNext = false;
     this.sfxVolume = 0.7;
     this.musicVolume = 0.45;
     this.voiceVolume = 0.9;
@@ -41,6 +43,7 @@ export class Audio {
     this.loops = new Map();
     this.speech = new SpeechPlayer(this);
     this.space3D = null;
+    this.spatial = null;
   }
 
   async useAudioMode(prefix) {
@@ -68,6 +71,7 @@ export class Audio {
     this.menuOnly = false;
     this.movieUp = false;
     this.space3D = null;
+    this.spatial = null;
   }
 
   audioXml() {
@@ -151,7 +155,7 @@ export class Audio {
     const dx = x - ex,
       dy = y - ey,
       d = Math.hypot(dx, dy, ez);
-    const gain = sat > 0 && d > sat ? sat / d : 1;
+    const gain = sat > 0 && d > sat ? (sat / d) ** this.falloff : 1;
     let fx = L.x - cx,
       fy = L.y - cy;
     const fl = Math.hypot(fx, fy);
@@ -190,9 +194,11 @@ export class Audio {
     const samples = ev.list('Samples');
     if (!samples.length) return true;
     const key = ev.name,
-      now = this.ctx.currentTime;
+      now = this.ctx.currentTime,
+      force = this.forceNext;
+    this.forceNext = false;
     const live = this.active.get(key) || 0;
-    if (live >= ev.num('Max_Instances', 4)) return true;
+    if (live >= ev.num('Max_Instances', 4) && !force) return true;
     if (this.ambientVOOff && ev.bool('Is_Ambient_VO')) return true;
     if (this.hudVOOff && ev.bool('Is_HUD_VO')) return true;
     if (this.unitResponseOff && ev.bool('Is_Unit_Response_VO')) return true;
@@ -208,9 +214,9 @@ export class Audio {
       if (this.hud.length < 4 && !this.hud.some(h => h.name === name)) this.hud.push({ name, at: now, language });
       return true;
     }
-    if (!voice && now - (this.lastPlay.get(key) || -1) < 0.04) return true;
+    if (!voice && !force && now - (this.lastPlay.get(key) || -1) < 0.04) return true;
     const prio = ev.num('Priority', 3);
-    if (!voice && ((this.total >= 40 && prio >= 3) || (this.total >= 28 && prio >= 4) || this.total >= 56)) return true;
+    if (!voice && !force && ((this.total >= 40 && prio >= 3) || (this.total >= 28 && prio >= 4) || this.total >= 56)) return true;
     this.lastPlay.set(key, now);
 
     let gain = (ev.num('Min_Volume', 80) + Math.random() * (ev.num('Max_Volume', 80) - ev.num('Min_Volume', 80))) / 100;
@@ -254,14 +260,16 @@ export class Audio {
       const g = this.ctx.createGain();
       g.gain.value = gain;
       let node = g;
-      if (positional && this.ctx.createStereoPanner) {
+      const S = positional ? this.spatial : null;
+      if (!S && positional && this.ctx.createStereoPanner) {
         const p = this.ctx.createStereoPanner();
         p.pan.value = pan;
         g.connect(p);
         node = p;
       }
       src.connect(g);
-      node.connect(this.master);
+      if (S) S.route(g, x, y);
+      else node.connect(this.master);
       const at = this.ctx.currentTime + delay,
         end = at + buf.duration / rate;
       if (voice && group) this.groups.set(group, end);

@@ -385,7 +385,7 @@ const terrainCode = () =>
   PASS_WGSL +
   `
 struct Draw { model: mat4x4f, modelView: mat4x4f }
-struct Terrain { texU: array<vec4f, ${TERRAIN_SLOTS}>, texV: array<vec4f, ${TERRAIN_SLOTS}>, matDiffuse: array<vec4f, ${TERRAIN_SLOTS}>, matSpecular: array<vec4f, ${TERRAIN_SLOTS}>, cloudAt: vec4f, side: vec4f }
+struct Terrain { texU: array<vec4f, ${TERRAIN_SLOTS}>, texV: array<vec4f, ${TERRAIN_SLOTS}>, matDiffuse: array<vec4f, ${TERRAIN_SLOTS}>, matSpecular: array<vec4f, ${TERRAIN_SLOTS}>, cloudAt: vec4f, side: vec4f, glowAt: array<vec4f, 8>, glowTint: array<vec4f, 8>, occAt: array<vec4f, 16> }
 @group(1) @binding(0) var mapT: texture_2d_array<f32>;
 @group(1) @binding(1) var mapS: sampler;
 @group(1) @binding(2) var bumpT: texture_2d_array<f32>;
@@ -421,13 +421,22 @@ var<private> dPx: vec3f;
 var<private> dPy: vec3f;
 var<private> soft: vec3f;
 var<private> vWorld: vec3f;
+var<private> nearK: f32;
 fn layer(slot: f32) -> vec3f {
   let i = clamp(i32(slot + 0.5), 0, ${TERRAIN_SLOTS - 1});
   let U = T.texU[i].xyz; let V = T.texV[i].xyz;
   let at = vec2f(dot(U, vWorld), dot(V, vWorld));
   let gx = vec2f(dot(U, dPx), dot(V, dPx)); let gy = vec2f(dot(U, dPy), dot(V, dPy));
-  let t = textureSampleGrad(mapT, mapS, at, i, gx, gy);
-  let b = textureSampleGrad(bumpT, bumpS, at, i, gx, gy).xyz * 2.0 - 1.0;
+  var t = textureSampleGrad(mapT, mapS, at, i, gx, gy);
+  var b = textureSampleGrad(bumpT, bumpS, at, i, gx, gy).xyz * 2.0 - 1.0;
+  if (nearK > 0.0) {
+    let Y = vec3f(0.299, 0.587, 0.114);
+    let tf = textureSampleGrad(mapT, mapS, at * 7.0, i, gx * 7.0, gy * 7.0).rgb;
+    let avg = textureSampleLevel(mapT, mapS, at, i, 9.0).rgb;
+    t = vec4f(t.rgb * mix(1.0, clamp(dot(tf, Y) / max(dot(avg, Y), 0.04), 0.55, 1.6), nearK), t.a);
+    let bd = textureSampleGrad(bumpT, bumpS, at * 7.0, i, gx * 7.0, gy * 7.0).xyz * 2.0 - 1.0;
+    b = normalize(b + vec3f(bd.xy, 0.0) * nearK * 0.8);
+  }
   let Tv = normalize(vec3f(U.xy, -dot(U.xy, n.xy) / n.z)); let Bv = normalize(vec3f(V.xy, -dot(V.xy, n.xy) / n.z));
   let L = normalize(vec3f(dot(P.sunDir, Tv), dot(P.sunDir, Bv), dot(P.sunDir, n)));
   let h = normalize(toEye + P.sunDir); let H = normalize(vec3f(dot(h, Tv), dot(h, Bv), dot(h, n)));
@@ -438,6 +447,7 @@ fn layer(slot: f32) -> vec3f {
   vWorld = v.vWorld;
   n = normalize(v.vNormal); toEye = normalize(P.cameraPosition - vWorld);
   dPx = dpdx(vWorld); dPy = dpdy(vWorld);
+  nearK = T.side.y * (1.0 - smoothstep(25.0, 260.0, distance(P.cameraPosition, vWorld)));
   soft = P.ambient + P.fillColor * max(dot(n, P.fillDir), 0.0) + P.fillColor2 * max(dot(n, P.fillDir2), 0.0);
   let cl = textureSample(cloudsT, cloudsS, (vWorld.xy + T.cloudAt.xy) / T.cloudAt.z).rgb;
   let seen = textureSample(fogT, fogS, vWorld.xy / T.side.x).r;
@@ -456,6 +466,17 @@ fn layer(slot: f32) -> vec3f {
     if (w.w > 0.004) { c += layer(Ly.w) * w.w; }
   }
   c *= cl * sunlit(vWorld);
+  var glow = vec3f(0.0);
+  for (var i = 0; i < 8; i++) {
+    let G = T.glowAt[i];
+    if (G.w > 0.0) { let d = distance(vWorld, G.xyz) / G.w; if (d < 1.0) { glow += T.glowTint[i].rgb * T.glowTint[i].a * (1.0 - d) * (1.0 - d); } }
+  }
+  var occ = 1.0;
+  for (var i = 0; i < 16; i++) {
+    let O = T.occAt[i];
+    if (O.z > 0.0) { let d = distance(vWorld.xy, O.xy) / O.z; if (d < 1.0) { occ *= 1.0 - O.w * (1.0 - d) * (1.0 - d); } }
+  }
+  c = c * occ + glow * (vec3f(0.35) + c);
   let clear = select(1.0, clamp((P.fogRange.y - distance(P.cameraPosition, vWorld)) / max(1.0, P.fogRange.y - P.fogRange.x), 0.0, 1.0), P.fogRange.y > 0.0);
   return vec4f(mix(P.fogTint, c * v.vShade * mix(0.3, 1.0, seen), clear), 1.0);
 }`;
@@ -484,7 +505,7 @@ const terrain = {
   ],
   textures: m => [m.uniforms.map.value, m.uniforms.bump.value, m.uniforms.clouds.value, m.uniforms.fog.value],
   block: {
-    size: (TERRAIN_SLOTS * 4 + 2) * 16,
+    size: (TERRAIN_SLOTS * 4 + 2 + 32) * 16,
     fill(m, f) {
       const U = m.uniforms,
         S = TERRAIN_SLOTS * 4;
@@ -503,6 +524,19 @@ const terrain = {
       f[4 * S + 1] = c.y;
       f[4 * S + 2] = c.z;
       f[4 * S + 4] = num(U.side);
+      f[4 * S + 5] = num(U.detail);
+      const lights = (list, at, n) => {
+        for (let k = 0; k < n; k++) {
+          const v = list && list[k];
+          f[at + k * 4] = v ? v.x : 0;
+          f[at + k * 4 + 1] = v ? v.y : 0;
+          f[at + k * 4 + 2] = v ? v.z : 0;
+          f[at + k * 4 + 3] = v ? v.w : 0;
+        }
+      };
+      lights(U.glowAt && U.glowAt.value, 4 * S + 8, 8);
+      lights(U.glowTint && U.glowTint.value, 4 * S + 40, 8);
+      lights(U.occAt && U.occAt.value, 4 * S + 72, 16);
     }
   },
   params() {}

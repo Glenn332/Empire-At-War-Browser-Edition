@@ -40,7 +40,19 @@ function setInput(id, value) {
   }
 }
 
-const TWEAK_EXTRA = ['IDC_TWEAK_PARTICLE_LABEL', 'IDC_TWEAK_PARTICLE_COUNT', 'IDC_TWEAK_PARTICLE_VALUE'];
+const TWEAK_SLIDERS = [
+  { id: 'IDC_TWEAK_SHOOTER_CAP', input: 'optShooterCap', label: 'Shooter: soldiers per side', min: 10, max: 200, step: 5, show: v => String(v) },
+  { id: 'IDC_TWEAK_SHOOTER_TICKETS', input: 'optShooterTickets', label: 'Shooter: tickets', min: 50, max: 500, step: 10, show: v => String(v) },
+  { id: 'IDC_TWEAK_SHOOTER_CONQUEST', input: 'optShooterConquest', label: 'Shooter: conquest tickets per soldier', min: 10, max: 50, step: 5, show: v => `${(v / 10).toFixed(1)}x` },
+  { id: 'IDC_TWEAK_SHOOTER_FOCUS', input: 'optShooterFocus', label: 'Shooter: aim focus blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') },
+  { id: 'IDC_TWEAK_SHOOTER_BLUR', input: 'optShooterBlur', label: 'Shooter: motion blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') }
+];
+const TWEAK_EXTRA = [
+  'IDC_TWEAK_PARTICLE_LABEL',
+  'IDC_TWEAK_PARTICLE_COUNT',
+  'IDC_TWEAK_PARTICLE_VALUE',
+  ...TWEAK_SLIDERS.flatMap(s => [s.id + '_LABEL', s.id, s.id + '_VALUE'])
+];
 const TWEAKS = [
   { id: 'IDC_TWEAK_CAPTURE_BARS', input: 'optCaptureBars', label: 'Show capture progress bars' },
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
@@ -49,7 +61,8 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
-  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' }
+  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
+  { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Land battles as a shooter' }
 ];
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
@@ -384,7 +397,8 @@ export class Menus {
         }
         const k = r.combo;
         if (!r.add && work[a.id].length === 1 && sameCombo(work[a.id][0], k)) return;
-        const from = ACTIONS.find(o => o !== a && work[o.id].some(x => sameCombo(x, k)));
+        const own = id => id.startsWith('SHOOTER_');
+        const from = ACTIONS.find(o => o !== a && own(o.id) === own(a.id) && work[o.id].some(x => sameCombo(x, k)));
         if (!from) {
           set(a, k, null, r.add);
           return;
@@ -615,7 +629,15 @@ export class Menus {
         })),
         { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_LABEL', x: 4, y: TWEAKS.length * row + 4, w: 150, h: 20, style: '' },
         { kind: 'CONTROL', text: '', id: 'IDC_TWEAK_PARTICLE_COUNT', cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 160, y: TWEAKS.length * row + 2, w: W - 300, h: 20 },
-        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_VALUE', x: W - 130, y: TWEAKS.length * row + 4, w: 70, h: 20, style: '' }
+        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_VALUE', x: W - 130, y: TWEAKS.length * row + 4, w: 70, h: 20, style: '' },
+        ...TWEAK_SLIDERS.flatMap((s, i) => {
+          const y = (TWEAKS.length + 1 + i) * row;
+          return [
+            { kind: 'LTEXT', text: '', id: s.id + '_LABEL', x: 4, y: y + 4, w: 205, h: 20, style: '' },
+            { kind: 'CONTROL', text: '', id: s.id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 212, y: y + 2, w: W - 352, h: 20 },
+            { kind: 'LTEXT', text: '', id: s.id + '_VALUE', x: W - 130, y: y + 4, w: 70, h: 20, style: '' }
+          ];
+        })
       ],
       adjust: c =>
         c.id === 'IDC_OK_IN_GAME'
@@ -642,7 +664,7 @@ export class Menus {
       `position:absolute;left:20px;top:${top}px;width:${W - 40}px;height:${panelH}px;overflow-y:auto;overflow-x:hidden;` +
       'box-sizing:border-box;background:rgba(0,0,0,0.35);border:1px solid rgba(140,170,200,0.35);scrollbar-width:thin;scrollbar-color:rgba(160,190,220,0.6) transparent';
     const inner = document.createElement('div');
-    inner.style.cssText = `position:relative;left:8px;top:4px;height:${(TWEAKS.length + 1) * row + 4}px`;
+    inner.style.cssText = `position:relative;left:8px;top:4px;height:${(TWEAKS.length + 1 + TWEAK_SLIDERS.length) * row + 4}px`;
     panel.appendChild(inner);
     dlg.el.appendChild(panel);
     for (const t of TWEAKS) {
@@ -668,6 +690,25 @@ export class Menus {
     }
     showCap(particleCap());
     dlg.slider('IDC_TWEAK_PARTICLE_COUNT', (particleCap() - P.min) / span, v => showCap(setParticleCap(P.min + v * span)), span / P.step + 1);
+    for (const s of TWEAK_SLIDERS) {
+      const input = $(s.input),
+        range = s.max - s.min,
+        now = Math.max(s.min, Math.min(s.max, +(input?.value ?? s.min) || s.min));
+      dlg.setText(s.id + '_LABEL', s.label);
+      dlg.setText(s.id + '_VALUE', s.show(now));
+      const tip = input?.parentElement?.title;
+      if (tip) for (const id of [s.id + '_LABEL', s.id]) dlg.ctl(id) && (dlg.ctl(id).title = tip);
+      dlg.slider(
+        s.id,
+        (now - s.min) / range,
+        v => {
+          const val = Math.round((s.min + v * range) / s.step) * s.step;
+          setInput(s.input, val);
+          dlg.setText(s.id + '_VALUE', s.show(val));
+        },
+        range / s.step + 1
+      );
+    }
     dlg.on('IDC_OK_IN_GAME', () => this.pop());
   }
 

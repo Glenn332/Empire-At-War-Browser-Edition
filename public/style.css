@@ -1576,6 +1576,14 @@ body:not(.original-hud) .heroframe {
 .cinematic #view canvas {
   cursor: none;
 }
+.shooter-on #hud > *:not(#bench),
+.shooter-on #buildTag,
+.shooter-on .objective-panel {
+  display: none !important;
+}
+.shooter-on #view canvas.overlay {
+  display: none;
+}
 .hud-hidden #hud > *,
 .hud-hidden #buildTag {
   display: none !important;

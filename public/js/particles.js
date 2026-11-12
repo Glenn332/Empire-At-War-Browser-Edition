@@ -371,6 +371,12 @@ try {
   const v = +localStorage.getItem('swr-particle-cap');
   if (v >= PARTICLE_CAP.min && v <= PARTICLE_CAP.max) cap = v;
 } catch {}
+let depthAlways = false;
+const liveBatches = new Set();
+export const setParticleDepth = on => {
+  depthAlways = !!on;
+  for (const b of liveBatches) if (b.mesh && !b.heat) b.mesh.material.depthTest = depthAlways || !b.noDepth;
+};
 export const particleCap = () => cap;
 export const setParticleCap = v => {
   cap = Math.max(PARTICLE_CAP.min, Math.min(PARTICLE_CAP.max, Math.round(v / PARTICLE_CAP.step) * PARTICLE_CAP.step));
@@ -389,6 +395,9 @@ class Batch {
     this.cap = 256;
     this.count = 0;
     this.additive = additive;
+    this.noDepth = !!noDepth;
+    this.heat = !!heat;
+    liveBatches.add(this);
     if (heat) additive = false;
     this.material = new THREE.ShaderMaterial({
       uniforms: { map: { value: texture }, frames },
@@ -433,7 +442,7 @@ class Batch {
            void main() { gl_FragColor = texture2D(map, vUv) * vTint; }`,
       transparent: true,
       depthWrite: false,
-      depthTest: !noDepth && !heat,
+      depthTest: (!noDepth || depthAlways) && !heat,
       blending: additive ? THREE.CustomBlending : THREE.NormalBlending,
       blendSrc: THREE.OneFactor,
       blendDst: THREE.OneFactor

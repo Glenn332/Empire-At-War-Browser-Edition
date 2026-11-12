@@ -27,7 +27,7 @@ import { swapMode } from './weaponswap.js';
 import { fireNum, startingWeapon, thrownReach, fixedMuzzle } from './weaponswap.js';
 import { tickCollisions, resetCollideIds, collisionClass, terrainRound } from './landcollide.js';
 import { isSpawner } from './landgarrison.js';
-import { collisionOf, collisionBoxOf, meshHit } from './collmesh.js';
+import { collisionOf, collisionBoxOf, meshHit, shapeOf } from './collmesh.js';
 import { SPACE_LAYER } from './tacticalcinematics.js';
 import {
   CAT,
@@ -48,6 +48,7 @@ const LOGIC_FPS = 30,
 const ROPE_SLIDE = 3.9 * LOGIC_FPS;
 export const landSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Land', 1);
 const SLICE_MS = 1.5;
+const SHAPE = { head: 18, waist: 8, foot: 1, step: 10 };
 const FOE_CELL = 128,
   FOE_PAD = 24,
   CLUTTER_CELL = 128;
@@ -127,6 +128,11 @@ function variants(type, kind) {
   }
   return c && c.length ? c : null;
 }
+export const animReady = (type, kind) => !!variants(type, kind);
+export const animClip = (type, kind) => {
+  const v = variants(type, kind);
+  return v ? v[0] : null;
+};
 const any = list => list[Math.floor(simRandom() * list.length)];
 const WALK_ENDS = ['MOVE_ENDONE', 'MOVE_ENDTWO', 'MOVE_ENDTHREE', 'MOVE_ENDFOUR'];
 const OPEN_CAP = 24;
@@ -503,6 +509,7 @@ class LandUnit {
     this.markAt = undefined;
     this.gravHit = undefined;
     this.direct = undefined;
+    this.pilot = undefined;
     this.mvx = undefined;
     this.mvy = undefined;
     this.mvz = undefined;
@@ -671,6 +678,7 @@ export class LandSquad {
     this.formSpeed = undefined;
     this.arriving = undefined;
     this.direct = undefined;
+    this.crew = undefined;
     this.craft = undefined;
     this.noAI = undefined;
     this.selectable = undefined;
@@ -886,6 +894,7 @@ export const timeOf = t => t.num('Tactical_Build_Time_Seconds', 10);
 export class LandWorld {
   constructor(map, scene, { factions = ['Empire', 'Rebel'], teams = null, credits = 6000, popCap = 0 } = {}) {
     this.map = map;
+    this.shooter = null;
     this.terrain = map.terrain;
     this.scene = scene;
     this.n = this.terrain.size;
@@ -1079,6 +1088,7 @@ export class LandWorld {
     return !!e && e.value >= w.energy;
   }
   burst(u, t, w, dt) {
+    if (this.shooter && !this.shooter.ready(u, t)) return;
     if (w.left > 0) {
       if ((w.timer -= dt) <= 0 && this.canShoot(u, w)) {
         this.fire(u, t, w);
@@ -1341,6 +1351,12 @@ export class LandWorld {
       this.masks.push(mask);
     }
     return room + i * 4;
+  }
+  freeOk(x, y) {
+    if (!this.shooter) return true;
+    const ix = Math.round(x / CELL),
+      iy = Math.round(y / CELL);
+    return ix >= 0 && iy >= 0 && ix < this.n && iy < this.n && !!this.open[iy * this.n + ix];
   }
   isOpen(x, y, need = 1) {
     const ix = Math.round(x / CELL),
@@ -1687,8 +1703,12 @@ export class LandWorld {
       oy = src.num('Obstacle_Y_Offset', 0) || -d / 2,
       half = (box ? box[2] : 0) * scale,
       bits = passBits(t.str('OverridePassability')) || TERRAIN.OBSTACLE,
-      fine = src.bool('Fine_Tune_Occupied_Passability', true) ? collisionOf(src === t ? model : boxModel) : null,
-      a = ((o.rot[2] || 0) * Math.PI) / 180 + FACING,
+      fineModel = src === t ? model : boxModel,
+      tune = src.bool('Fine_Tune_Occupied_Passability', true),
+      fine = tune ? collisionOf(fineModel) : null,
+      shape = tune && !fine ? shapeOf(fineModel) : null;
+    if (shape) return this.blockShape(o, shape, scale, half, bits, own);
+    const a = ((o.rot[2] || 0) * Math.PI) / 180 + FACING,
       c = Math.cos(a),
       sn = Math.sin(a),
       water = T.water && T.water.on ? T.water.level : -Infinity,
@@ -1713,6 +1733,57 @@ export class LandWorld {
         if (seen.has(k)) continue;
         if (this.wet[k] && water + 5 > T.heights[k] + half) continue;
         if (fine && meshHit(fine, lx / scale, ly / scale, top, 0, 0, -depth) < 0) continue;
+        seen.add(k);
+        added.push(k);
+      }
+    if (!added.length) return 0;
+    for (const k of added) own.push(k);
+    this.occupy(own, added, bits);
+    this.groundChanged(added);
+    return added.length;
+  }
+  blockShape(o, shape, scale, half, bits, own) {
+    const n = this.n,
+      T = this.terrain,
+      water = T.water && T.water.on ? T.water.level : -Infinity,
+      obj = placeRotation(new THREE.Object3D(), o.rot || [0, 0, 0]);
+    obj.position.set(o.pos[0], o.pos[1], o.pos[2] || 0);
+    obj.scale.setScalar(scale);
+    obj.updateMatrix();
+    const inv = obj.matrix.clone().invert(),
+      b = shape.box,
+      v = new THREE.Vector3(),
+      e = new THREE.Vector3();
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      v.set(b[i & 1 ? 3 : 0], b[i & 2 ? 4 : 1], b[i & 4 ? 5 : 2]).applyMatrix4(obj.matrix);
+      x0 = Math.min(x0, v.x);
+      y0 = Math.min(y0, v.y);
+      x1 = Math.max(x1, v.x);
+      y1 = Math.max(y1, v.y);
+    }
+    const hit = (ax, ay, az, bx, by, bz) => {
+      v.set(ax, ay, az).applyMatrix4(inv);
+      e.set(bx, by, bz).applyMatrix4(inv).sub(v);
+      return meshHit(shape, v.x, v.y, v.z, e.x, e.y, e.z) >= 0;
+    };
+    const seen = new Set(own),
+      added = [],
+      h = SHAPE.step / 2;
+    for (let x = x0; x <= x1 + h; x += SHAPE.step)
+      for (let y = y0; y <= y1 + h; y += SHAPE.step) {
+        const ix = Math.trunc((x + CELL / 2) / CELL),
+          iy = Math.trunc((y + CELL / 2) / CELL);
+        if (ix < 0 || iy < 0 || ix >= n || iy >= n) continue;
+        const k = iy * n + ix;
+        if (seen.has(k)) continue;
+        if (this.wet[k] && water + 5 > T.heights[k] + half) continue;
+        const g = heightAt(T, x, y),
+          z = g + SHAPE.waist;
+        if (!hit(x, y, g + SHAPE.head, x, y, g + SHAPE.foot) && !hit(x - h, y, z, x + h, y, z) && !hit(x, y - h, z, x, y + h, z)) continue;
         seen.add(k);
         added.push(k);
       }
@@ -2281,7 +2352,11 @@ export class LandWorld {
     return true;
   }
 
+  popOf(t) {
+    return this.shooter ? this.shooter.sizeOf(t) : landPop(t);
+  }
   popCap(side) {
+    if (this.shooter) return this.shooter.fieldCap(side);
     if (this.popOverride) return this.popOverride;
     if (this.campaign && side !== this.campaignAttacker) return db.constants.num('Max_Ground_Forces_On_Planet', 10);
     if (this.campaign) {
@@ -2290,12 +2365,14 @@ export class LandWorld {
       for (const u of this.units) if (!u.dead && u.side === side) capacity += u.type.num('Additional_Population_Capacity', 0);
       return Math.min(db.constants.num('Max_Ground_Forces_On_Planet', 10), capacity);
     }
-    return Math.min(
+    const cap = Math.min(
       this.popLimit,
       this.points.reduce((a, p) => a + (p.side >= 0 && this.ally(p.side, side) && p.reinforce ? p.cap : 0), 0)
     );
+    return cap;
   }
   popUsed(side) {
+    if (this.shooter) return this.shooter.popUsed(side);
     const seen = new Set();
     let n = 0;
     for (const q of this.squads) {
@@ -2307,16 +2384,19 @@ export class LandWorld {
     return n;
   }
   popPlanned(side) {
-    let n = this.popUsed(side) + this.ready[side].reduce((a, t) => a + landPop(t), 0);
-    for (const q of this.queues[side] ? this.queues[side].units : []) n += landPop(q.type);
+    let n = this.popUsed(side) + this.ready[side].reduce((a, t) => a + this.popOf(t), 0);
+    for (const q of this.queues[side] ? this.queues[side].units : []) n += this.popOf(q.type);
     return n;
   }
 
   cantReinforce(side, typeName, x, y, extraPop = 0) {
     const t = db.type(typeName);
     if (!t) return 'Unknown unit';
-    if (this.popUsed(side) + extraPop + landPop(t) > this.popCap(side)) return 'Population limit reached - hold more reinforcement points';
-    if (!this.points.some(p => p.reinforce && p.side >= 0 && this.ally(p.side, side) && Math.hypot(p.x - x, p.y - y) <= p.enable))
+    if (this.popUsed(side) + extraPop + this.popOf(t) > this.popCap(side)) return this.shooter ? 'Too many units on the field' : 'Population limit reached - hold more reinforcement points';
+    if (
+      !this.points.some(p => p.reinforce && p.side >= 0 && this.ally(p.side, side) && Math.hypot(p.x - x, p.y - y) <= p.enable) &&
+      !(this.shooter && this.shooter.nearHome(side, x, y))
+    )
       return 'Not near a reinforcement point you hold';
     if (!this.nearestOpen(x, y)) return 'No room there';
     if (
@@ -2823,6 +2903,7 @@ export class LandWorld {
 
   cantBuy(u, type, side = u.side) {
     if (u.dead || !this.ally(u.side, side) || !buildsFor(u.type, this.factions[side], this.campaign).includes(type)) return 'Not sold here';
+    if (this.shooter && !isUpgrade(type)) return 'Units arrive by respawning';
     if (this.queueOf(side, type).length >= 5) return 'The queue is full';
     if (isHeroCompany(type)) {
       const team = this.teamSides(side);
@@ -2841,7 +2922,7 @@ export class LandWorld {
         return 'Already bought';
       return null;
     }
-    if (this.popPlanned(side) + landPop(type) > this.popCap(side)) return 'Population limit reached - hold more reinforcement points';
+    if (this.popPlanned(side) + this.popOf(type) > this.popCap(side)) return this.shooter ? 'Too many units on the field' : 'Population limit reached - hold more reinforcement points';
     return null;
   }
 
@@ -3495,13 +3576,14 @@ export class LandWorld {
   }
 
   updateEconomy(dt) {
-    if (!this.campaign && (this.bonusTimer = (this.bonusTimer ?? 0.5) - dt) <= 0) {
+    if (this.shooter) this.shooter.income(dt);
+    else if (!this.campaign && (this.bonusTimer = (this.bonusTimer ?? 0.5) - dt) <= 0) {
       this.bonusTimer += 0.5;
       this.losingTeamBonus(0.5);
     }
     for (const u of this.units) {
       if (!u.structure || u.dead || u.side < 0) continue;
-      if (u.income && !(u.income.skirmish && this.campaign) && (u.income.timer += dt) >= u.income.every) {
+      if (u.income && !this.shooter && !(u.income.skirmish && this.campaign) && (u.income.timer += dt) >= u.income.every) {
         u.income.timer -= u.income.every;
         for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side]) {
           const g = u.income.value * this.incomeMod(u, s) * this.mods[s].credit;
@@ -3759,7 +3841,8 @@ export class LandWorld {
     const lone = !saved && kinds.some(k => k !== kinds[0]) ? kinds.map(stand) : kinds.map(() => false);
     const pack = kinds.filter((k, n) => !lone[n]).length,
       alone = kinds.length - pack;
-    const max = saved ? 0 : type.num('Max_Squad_Size', 0),
+    const solo = !!this.shooter && !saved && kinds.length > 1;
+    const max = saved ? 0 : solo ? 1 : type.num('Max_Squad_Size', 0),
       per = max > 0 ? max : Math.max(1, pack),
       packs = pack ? Math.ceil(pack / per) : 0,
       groups = Math.max(1, packs + alone);
@@ -3776,7 +3859,7 @@ export class LandWorld {
     const foot = kinds[0] && /infantry/i.test(kinds[0].str('MovementClass'));
     const gap = foot ? 14 : 55,
       cols = foot ? 3 : per,
-      apart = foot ? gap * 4.5 : 60;
+      apart = foot ? gap * (solo ? 1.1 : 4.5) : 60;
     await Promise.all(
       kinds.map(async (t, n) => {
         const { gi, i, inGroup } = slots[n],
@@ -4216,6 +4299,7 @@ export class LandWorld {
         made[0].members[0],
         made.flatMap(q => q.members.flatMap(u => (u.rider ? [u.type, u.rider] : [u.type])))
       );
+    if (this.shooter && !saved) for (const q of made) this.shooter.made(q);
     const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
     for (const q of squads) q.forming = false;
     this.walkOut(exits, heading);
@@ -4432,7 +4516,7 @@ export class LandWorld {
       }
       const st = u.surfSt;
       u.surfaceIcon = (st && st.icon) || '';
-      const tint = st && u.holder && st.tint;
+      const tint = st && u.holder && !this.shooter && st.tint;
       if (tint) {
         if (u.surfaceLit !== tint) {
           u.surfaceLit = tint;
@@ -4466,6 +4550,7 @@ export class LandWorld {
     if (!a) return false;
     u.anim = new AnimState(u.inst, a, { loop: false, speed: this.animRate(u, KIND) });
     u.once = during;
+    u.onceKind = KIND;
     u.onceEnd = this.time + a.duration / u.anim.speed;
     u.animKind = '~';
     return true;
@@ -4759,6 +4844,7 @@ export class LandWorld {
       if (gun && gun.spare.has(e.flies ? 'AIR' : e.kind)) continue;
       const d = (e.x - u.x) ** 2 + (e.y - u.y) ** 2;
       if (d >= reach * reach) continue;
+      if (this.shooter && !this.shooter.sees(u, e)) continue;
       if (gun && !gun.turret && gun.cone < Math.PI * 2) {
         let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading - (gun.facing || 0);
         a = Math.atan2(Math.sin(a), Math.cos(a));
@@ -4978,7 +5064,7 @@ export class LandWorld {
     let KIND = (clone && clone.str('Specific_Death_Anim_Type').toUpperCase()) || (how && u.foot ? how : 'DIE');
     const index = clone && clone.str('Specific_Death_Anim_Index') !== '' ? clone.num('Specific_Death_Anim_Index', 0) : -1;
     const P = 'Death_Persistence_Duration',
-      lie = inCategory(u.type, 'INFANTRY') ? db.constants.num('Override_Death_Persistence_Duration', 30) : src.has(P) ? src.num(P, -1) : -1;
+      lie = inCategory(u.type, 'INFANTRY') ? db.constants.num('Override_Death_Persistence_Duration', 30) : src.has(P) ? src.num(P, -1) : u.structure ? 0 : -1;
     u.endFx = src.list('Death_Explosions_End');
     u.endSfx = src.str('Death_SFXEvent_End_Die');
     u.fadeTime = src.num('Death_Fade_Time', 0.25);
@@ -5153,6 +5239,8 @@ export class LandWorld {
           }
         }
         if (this.onDestroyed) this.onDestroyed(u);
+        u.died = this.time;
+        this.die(u, how);
       } else {
         if (u.holds && u.holds.length) ungarrison(this, u);
         this.die(u, how);
@@ -5216,6 +5304,7 @@ export class LandWorld {
           fixed,
           false
         );
+    if (this.shooter) this.shooter.aimError(u, t, dist, off);
     const ax = aimsOff(cat) ? lead.x + off.x : lead.x,
       ay = aimsOff(cat) ? lead.y + off.y : lead.y,
       z1 = aimsOff(cat) ? lead.z + off.z : lead.z;
@@ -5272,10 +5361,11 @@ export class LandWorld {
         this.flashes.push({ mesh: f, until: this.time + 0.07 });
       }
     if (!(speed > 0) && cat !== CAT.STATIC_BOMB) {
-      if (u.foot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
+      if (u.foot && !u.pilot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
       return;
     }
     const reach =
+      (this.shooter ? this.shooter.reach(u, w) : 0) +
       (w.reach || P.num('Projectile_Max_Flight_Distance', 0)) * this.combatFactor(u, MOD.RANGE) +
       (this.meshOf(t) ? t.collR : t.hitRadius > 0 ? t.hitRadius : 0) +
       Math.abs(tz - z0);
@@ -5338,7 +5428,7 @@ export class LandWorld {
     this.shots.push(shot);
     shot.hidden = this.shotHidden(shot);
     if (!w.quiet && (u.revealsFiring ??= landReveals(u.type))) this.firedOn(u, t);
-    if (u.foot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
+    if (u.foot && !u.pilot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
     if (this.onShot) this.onShot(shot);
   }
 
@@ -5589,14 +5679,19 @@ export class LandWorld {
       let hit = null,
         ht = 2;
       for (const o of this.foesNear(s.x, s.y, step + this.hitMax)) {
-        if (!this.shotMeets(o, s)) continue;
+        if (!this.shotMeets(o, s) && !(this.shooter && this.shooter.blocks(o, s))) continue;
         const C = this.meshOf(o),
           r = C ? o.collR : o.hitRadius,
           h = Math.max(r, o.aimZ * 0.6),
           reach = Math.max(r, o.collBall || 0) + step;
         if ((o.x - s.x) ** 2 + (o.y - s.y) ** 2 > reach * reach) continue;
         if (C && (Math.max(z0, s.z) < o.holder.position.z + o.collLo - r || Math.min(z0, s.z) > o.holder.position.z + o.collHi + r)) continue;
-        let tt = C ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z) : sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
+        const tall = !C && this.shooter && o.kind === 'INFANTRY' ? this.shooter.heightOf(o) : 0;
+        let tt = C
+          ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z)
+          : tall
+            ? sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + tall * 0.5, 0, r, r, tall * 0.5)
+            : sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z + o.aimZ * 0.6, 0, r, r, h);
         if (tt < 0 && o.collBall > 0) tt = sweep(x0, y0, z0, s.x, s.y, s.z, o.x, o.y, o.z, 0, o.collBall, o.collBall, o.collBall);
         if (tt >= 0 && tt < ht) {
           ht = tt;
@@ -5622,7 +5717,16 @@ export class LandWorld {
           s.ground = true;
         }
       }
-      if (hit || s.ground) {
+      let rock = false;
+      if (this.shooter && !s.ground) {
+        const rt = this.shooter.rockCut(s, x0, y0, z0, s.x, s.y, s.z);
+        if (rt >= 0 && (!hit || rt < ht)) {
+          hit = null;
+          ht = rt;
+          rock = true;
+        }
+      }
+      if (hit || s.ground || rock) {
         s.x = x0 + (s.x - x0) * ht;
         s.y = y0 + (s.y - y0) * ht;
         s.z = z0 + (s.z - z0) * ht;
@@ -5732,11 +5836,18 @@ export class LandWorld {
 
   shotEnds(s, hit) {
     s.struck = hit || null;
-    if (hit) {
+    const blocked = !!hit && !!this.shooter && !this.shotMeets(hit, s);
+    if (hit && !blocked) {
       if (!hit.spot) hit.lastDamage = s.w.damageType;
       if (!this.deflects(hit, s))
-        this.hurt(hit, this.shotDamage(s) * db.damageMod(s.w.damageType, hit.armor) * this.absorbs(hit, s), s.from, '', s.w.proj);
-    } else this.misses = (this.misses || 0) + 1;
+        this.hurt(
+          hit,
+          this.shotDamage(s) * db.damageMod(s.w.damageType, hit.armor) * this.absorbs(hit, s) * (this.shooter ? this.shooter.hitScale(s, hit) : 1),
+          s.from,
+          '',
+          s.w.proj
+        );
+    } else if (!hit) this.misses = (this.misses || 0) + 1;
     this.shotBlast(s, s.x, s.y, hit);
     if (s.onLand) s.onLand(s);
     else if (this.onImpact) this.onImpact(s);
@@ -5746,15 +5857,16 @@ export class LandWorld {
 
   fireGuns(u, dt) {
     if (this.aiSuspended) return;
+    if (this.shooter && !this.shooter.manned(u)) return;
     let hidden = null,
       hideG = null,
       seen = false;
     for (const g of u.guns) {
       g.cooldown -= dt;
-      const D = u.squad.direct,
+      const D = u.squad.direct || (this.shooter ? this.shooter.gunner(u) : null),
         a = D && D.firing && D.target;
       let t = D
-        ? a && !a.dead && Math.hypot(a.x - u.x, a.y - u.y) <= g.range + (a.hitRadius > 0 ? a.hitRadius : 0)
+        ? a && (a.spot && D.far ? true : !a.dead && Math.hypot(a.x - u.x, a.y - u.y) <= g.range + (a.hitRadius > 0 ? a.hitRadius : 0))
           ? a
           : null
         : g.target &&
@@ -5832,7 +5944,7 @@ export class LandWorld {
         g.left = 0;
         continue;
       }
-      if (this.clearShooting() && this.shotBlocked(u, t, g)) {
+      if (this.clearShooting() && !t.spot && this.shotBlocked(u, t, g)) {
         g.left = 0;
         g.target = null;
         if (!hidden) {
@@ -5842,6 +5954,7 @@ export class LandWorld {
         continue;
       }
       seen = true;
+      if (this.shooter && !this.shooter.footGun(u, t, dt)) continue;
       this.burst(u, t, g, dt);
     }
     if (hidden && !seen && !u.weapon && this.repositions(u.squad)) this.seekClear(u.squad, u, hidden, hideG);
@@ -6175,7 +6288,7 @@ export class LandWorld {
     const t = D.firing ? D.target : null;
     if (w && !(u.needsDeploy && !u.deployed)) {
       w.cooldown -= dt;
-      if (t && !t.dead && Math.hypot(t.x - u.x, t.y - u.y) <= u.range + (t.hitRadius > 0 ? t.hitRadius : 0)) {
+      if (t && (t.spot && D.far ? true : !t.dead && Math.hypot(t.x - u.x, t.y - u.y) <= u.range + (t.hitRadius > 0 ? t.hitRadius : 0))) {
         let rel = Math.atan2(t.y - u.y, t.x - u.x) - u.heading;
         rel = Math.atan2(Math.sin(rel), Math.cos(rel));
         let aimed;
@@ -6215,8 +6328,10 @@ export class LandWorld {
 
   aimHead(u, dt) {
     const T = u.turret,
-      g = u.guns.find(g => g.onHead && g.target && !g.target.dead),
-      t = g ? g.target : null;
+      D = this.shooter ? this.shooter.gunner(u) : null,
+      aimAt = D && D.target && (D.target.spot || !D.target.dead) ? D.target : null,
+      g = aimAt ? null : u.guns.find(g => g.onHead && g.target && !g.target.dead),
+      t = aimAt || (g ? g.target : null);
     T.target = t;
     if (!t) {
       T.wantPitch = 0;
@@ -6266,7 +6381,7 @@ export class LandWorld {
 
   pose(u, dt) {
     u.lagDt = 0;
-    if (this.poseCache && cachedPose(u, dt, this)) {
+    if (this.poseCache && !u.pilot && cachedPose(u, dt, this)) {
       if (u.looksOf !== false) looks(this, u, dt);
       return;
     }
@@ -6856,6 +6971,7 @@ export class LandWorld {
       pt = (u.slotPt ||= { x: 0, y: 0 });
     pt.x = box.x + c * lx - s * ly + (box.ox || 0);
     pt.y = box.y + s * lx + c * ly + (box.oy || 0);
+    if (this.shooter && u.foot) this.shooter.fitSlot(u, pt, box.x + (box.ox || 0), box.y + (box.oy || 0));
     if (u.rooted) {
       u.v = 0;
       return false;
@@ -6967,12 +7083,20 @@ export class LandWorld {
       sx = u.x + (ax / ad) * Math.min(ad, go),
       sy = u.y + (ay / ad) * Math.min(ad, go);
     if (!box.path.length) u.freeLeg = false;
-    if (u.freeLeg || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+    const sh = this.shooter && u.foot ? this.shooter : null,
+      can = (x, y) => (sh ? sh.footOk(u, x, y, (u.need & ~3) | 1) : this.isOpen(x, y, (u.need & ~3) | 1));
+    if ((!sh && u.freeLeg && this.freeOk(fx, fy)) || can(fx, fy)) {
       u.x = fx;
       u.y = fy;
-    } else if (go > 0 && this.isOpen(sx, sy, (u.need & ~3) | 1)) {
+    } else if (go > 0 && can(sx, sy)) {
       u.x = sx;
       u.y = sy;
+    } else if (sh && go > 0 && can(sx, u.y)) {
+      u.x = sx;
+      u.freeLeg = false;
+    } else if (sh && go > 0 && can(u.x, sy)) {
+      u.y = sy;
+      u.freeLeg = false;
     } else {
       const foot = (u.need & ~3) | 1,
         there = this.isOpen(pt.x, pt.y, foot);
@@ -8104,20 +8228,23 @@ export class LandWorld {
   update(dt) {
     if (this.interp) this.snapPrev();
     this.time += dt;
-    this.repathSome();
-    if (this.moveTries.size) this.retryMoves();
-    this.teamSight();
-    if ((this.pointsDt = (this.pointsDt || 0) + dt) >= 0.2) {
-      this.updatePoints(this.pointsDt);
-      this.pointsDt = 0;
+    const sim = !this.puppet;
+    if (sim) {
+      this.repathSome();
+      if (this.moveTries.size) this.retryMoves();
+      this.teamSight();
+      if ((this.pointsDt = (this.pointsDt || 0) + dt) >= 0.2) {
+        this.updatePoints(this.pointsDt);
+        this.pointsDt = 0;
+      }
+      this.updateTransports(dt);
+      this.syncCombatBonuses();
+      this.updateEconomy(dt);
+      tickCollisions(this);
+      this.tickTeams(dt);
+      this.tickGroups(dt);
     }
-    this.updateTransports(dt);
-    this.syncCombatBonuses();
-    this.updateEconomy(dt);
-    tickCollisions(this);
-    this.tickTeams(dt);
-    this.tickGroups(dt);
-    if (this.campaign && (this.overrunDt = (this.overrunDt || 0) + dt) >= 0.5) {
+    if (sim && this.campaign && (this.overrunDt = (this.overrunDt || 0) + dt) >= 0.5) {
       this.overrunDt = 0;
       this.checkOverrun();
     }
@@ -8143,16 +8270,18 @@ export class LandWorld {
       wx.lightning = mix(a.lightning, b.lightning);
       wx.fog = mix(a.fog, b.fog);
     }
-    tickAbilities(this, dt);
+    if (sim) tickAbilities(this, dt);
     this.tickSurfaces();
     this.tickGlows();
-    tickBase(this, dt);
-    tickClashes(this);
-    if (this.time >= (this.sepAt || 0)) {
-      this.sepAt = this.time + 0.2;
-      this.crushPass();
+    if (sim) {
+      tickBase(this, dt);
+      tickClashes(this);
+      if (this.time >= (this.sepAt || 0)) {
+        this.sepAt = this.time + 0.2;
+        this.crushPass();
+      }
+      this.tickOrders(dt);
     }
-    this.tickOrders(dt);
     if (dt > 0)
       for (const u of this.units) {
         if (u.lastX !== undefined) {
@@ -8216,7 +8345,7 @@ export class LandWorld {
       }
       if (s.left > 8 && s.left < s.total * 0.95) {
         const gz = heightAt(this.terrain, s.x, s.y);
-        if (s.z < gz - 2) {
+        if (s.z < gz - 2 || (this.shooter && this.shooter.solidAt(s.x, s.y, s.z))) {
           s.ax = s.x;
           s.ay = s.y;
           s.z = gz;
@@ -8308,6 +8437,10 @@ export class LandWorld {
         continue;
       }
       this.units[alive++] = u;
+      if (!sim) {
+        this.puppet(u, dt);
+        continue;
+      }
       if (u.energy !== null) this.serviceEnergy(u, dt);
       if (u.cinematicTransport) continue;
       if (u.structure) {
@@ -8345,8 +8478,21 @@ export class LandWorld {
         u.holder.position.set(u.x, u.y, u.z);
         continue;
       }
+      if (u.remote) {
+        this.shooter.remoteStep(u, dt);
+        continue;
+      }
+      if (u.pilot) {
+        this.shooter.pilotStep(u, dt);
+        continue;
+      }
+      if (u.squad.crew && !u.squad.crew.in && !u.direct) {
+        this.shooter.parked(u, dt);
+        continue;
+      }
       if (u.direct) {
         this.directStep(u, dt);
+        if (this.shooter) this.shooter.vehicleFeel(u, dt);
         continue;
       }
       if (u.flies && !u.rooted && u.scriptZ === undefined) {
@@ -8453,13 +8599,34 @@ export class LandWorld {
           u.v = dt > 0 ? go / dt : 0;
           const fx = u.x + Math.cos(u.heading) * go,
             fy = u.y + Math.sin(u.heading) * go;
-          if (u.flies || next.free || this.isOpen(fx, fy, (u.need & ~3) | 1)) {
+          const sh = this.shooter && u.foot && !u.flies ? this.shooter : null,
+            can = (x, y) => (sh ? sh.footOk(u, x, y, (u.need & ~3) | 1) : this.isOpen(x, y, (u.need & ~3) | 1)),
+            gx = u.x + (dx / d) * go,
+            gy = u.y + (dy / d) * go;
+          if (u.flies || (!sh && next.free && this.freeOk(fx, fy)) || can(fx, fy)) {
             u.x = fx;
             u.y = fy;
             u.blockFails = 0;
-          } else if (this.isOpen(u.x + (dx / d) * go, u.y + (dy / d) * go, (u.need & ~3) | 1)) {
-            u.x += (dx / d) * go;
-            u.y += (dy / d) * go;
+          } else if (can(gx, gy)) {
+            u.x = gx;
+            u.y = gy;
+            u.blockFails = 0;
+          } else if (sh && can(gx, u.y)) {
+            u.x = gx;
+            u.blockFails = (u.blockFails || 0) + 0.25;
+            if (u.blockFails >= 5) {
+              u.path = [];
+              u.blockFails = 0;
+            }
+          } else if (sh && can(u.x, gy)) {
+            u.y = gy;
+            u.blockFails = (u.blockFails || 0) + 0.25;
+            if (u.blockFails >= 5) {
+              u.path = [];
+              u.blockFails = 0;
+            }
+          } else if (sh && !sh.stepOk(u, gx, gy) && (u.blockFails = (u.blockFails || 0) + 1) >= 5) {
+            u.path = [];
             u.blockFails = 0;
           } else if (this.time >= (u.detourAt || 0) && !this.blocked(u, next) && (u.blockFails = (u.blockFails || 0) + 1) >= 5) {
             u.path = [];
@@ -8477,7 +8644,7 @@ export class LandWorld {
         u.preTurn = null;
         u.stopping = null;
         u.mv = 0;
-        this.setAnim(u, 'idle');
+        this.setAnim(u, this.shooter && this.shooter.gunPose(u) ? 'attack' : 'idle');
         if (u.foot && u.animKind === 'idle' && this.time > (u.fidgetAt ??= this.time + 5 + simRandom() * 15)) {
           u.fidgetAt = this.time + 8 + simRandom() * 16;
           this.oneShot(u, 'IDLE', 'idle', vs => (vs.length > 1 ? vs[1 + Math.floor(simRandom() * (vs.length - 1))] : null));

@@ -20,7 +20,8 @@ const FRAG = `
   uniform sampler2DArray map, bump;
   uniform vec4 texU[${SLOTS}], texV[${SLOTS}];
   uniform vec3 matDiffuse[${SLOTS}], matSpecular[${SLOTS}];
-  uniform sampler2D fog, clouds; uniform float side; uniform vec3 cloudAt;
+  uniform sampler2D fog, clouds; uniform float side, detail; uniform vec3 cloudAt;
+  uniform vec4 glowAt[8], glowTint[8], occAt[16];
   uniform vec3 sunDir, sunColor, fillDir, fillColor, fillDir2, fillColor2, ambient, fogTint; uniform vec2 fogRange;
   uniform highp sampler2DShadow shadowMap; uniform mat4 shadowMatrix; uniform float shadowOn, shadowTexel;
   float sunlit(vec3 wp) {
@@ -35,6 +36,7 @@ const FRAG = `
   in vec2 vCorner; in vec3 vNormal; in vec3 vWorld; in float vShade; flat in vec4 vLayers;
   out vec4 outColor;
   vec3 n, toEye, dPx, dPy, soft;
+  float nearK;
   vec3 layer(float slot) {
     int i = int(slot + 0.5);
     vec3 U = texU[i].xyz, V = texV[i].xyz;
@@ -42,6 +44,14 @@ const FRAG = `
     vec2 gx = vec2(dot(U, dPx), dot(V, dPx)), gy = vec2(dot(U, dPy), dot(V, dPy));
     vec4 t = textureGrad(map, at, gx, gy);
     vec3 b = textureGrad(bump, at, gx, gy).xyz * 2.0 - 1.0;
+    if (nearK > 0.0) {
+      vec3 fine = vec3(at.xy * 7.0, slot);
+      vec3 tf = textureGrad(map, fine, gx * 7.0, gy * 7.0).rgb, avg = textureLod(map, at, 9.0).rgb;
+      const vec3 Y = vec3(0.299, 0.587, 0.114);
+      t.rgb *= mix(1.0, clamp(dot(tf, Y) / max(dot(avg, Y), 0.04), 0.55, 1.6), nearK);
+      vec3 bd = textureGrad(bump, fine, gx * 7.0, gy * 7.0).xyz * 2.0 - 1.0;
+      b = normalize(b + vec3(bd.xy, 0.0) * nearK * 0.8);
+    }
     vec3 T = normalize(vec3(U.xy, -dot(U.xy, n.xy) / n.z)), B = normalize(vec3(V.xy, -dot(V.xy, n.xy) / n.z));
     vec3 L = normalize(vec3(dot(sunDir, T), dot(sunDir, B), dot(sunDir, n)));
     vec3 h = normalize(toEye + sunDir), H = normalize(vec3(dot(h, T), dot(h, B), dot(h, n)));
@@ -51,6 +61,7 @@ const FRAG = `
   void main() {
     n = normalize(vNormal); toEye = normalize(cameraPosition - vWorld);
     dPx = dFdx(vWorld); dPy = dFdy(vWorld);
+    nearK = detail * (1.0 - smoothstep(25.0, 260.0, distance(cameraPosition, vWorld)));
     soft = ambient + fillColor * max(dot(n, fillDir), 0.0) + fillColor2 * max(dot(n, fillDir2), 0.0);
     vec3 c;
     if (vLayers.x == vLayers.y && vLayers.x == vLayers.z && vLayers.x == vLayers.w) c = layer(vLayers.x);
@@ -66,6 +77,21 @@ const FRAG = `
       if (w.w > 0.004) c += layer(vLayers.w) * w.w;
     }
     c *= texture(clouds, (vWorld.xy + cloudAt.xy) / cloudAt.z).rgb * sunlit(vWorld);
+    vec3 glow = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+      vec4 G = glowAt[i];
+      if (G.w <= 0.0) continue;
+      float d = distance(vWorld, G.xyz) / G.w;
+      if (d < 1.0) glow += glowTint[i].rgb * glowTint[i].a * (1.0 - d) * (1.0 - d);
+    }
+    float occ = 1.0;
+    for (int i = 0; i < 16; i++) {
+      vec4 O = occAt[i];
+      if (O.z <= 0.0) continue;
+      float d = distance(vWorld.xy, O.xy) / O.z;
+      if (d < 1.0) occ *= 1.0 - O.w * (1.0 - d) * (1.0 - d);
+    }
+    c = c * occ + glow * (vec3(0.35) + c);
     float seen = texture(fog, vWorld.xy / side).r;
     float clear = fogRange.y > 0.0 ? clamp((fogRange.y - distance(cameraPosition, vWorld)) / max(1.0, fogRange.y - fogRange.x), 0.0, 1.0) : 1.0;
     outColor = vec4(mix(fogTint, c * vShade * mix(0.3, 1.0, seen), clear), 1.0);
@@ -206,7 +232,17 @@ export function heightAt(t, x, y) {
     b = h[iy * n + ix + 1],
     c = h[(iy + 1) * n + ix],
     d = h[(iy + 1) * n + ix + 1];
-  return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  const v = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy,
+    L = t.padTop;
+  if (L && x >= 0 && y >= 0) {
+    const i = (x / L.cell) | 0,
+      j = (y / L.cell) | 0;
+    if (i < L.w && j < L.w) {
+      const top = L.a[j * L.w + i];
+      if (top > v) return top;
+    }
+  }
+  return v;
 }
 
 export function fogTexture(t) {
@@ -365,6 +401,10 @@ export async function buildTerrain(t) {
       cloudAt: { value: cloudAt },
       fog: { value: fogTexture(t) },
       side: { value: (n - 1) * CELL },
+      detail: { value: 0 },
+      glowAt: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+      glowTint: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+      occAt: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) },
       sunDir: lighting.sunDir,
       sunColor: lighting.sunColor,
       fillDir: lighting.fillDir,

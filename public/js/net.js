@@ -3,7 +3,8 @@ import { LOBBY } from './deploy.js';
 const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 const DIRECT_TIMEOUT = 8000;
 const PING_EVERY = 25000;
-const PART = 20000;
+const PART = 20000,
+  FAST_MAX = 15000;
 
 export function lobbyUrl() {
   const q = new URLSearchParams(location.search).get('lobby');
@@ -87,13 +88,14 @@ class Link {
     };
     if (initiator) {
       this.attach(this.pc.createDataChannel('game', { ordered: true }));
+      this.attachFast(this.pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }));
       this.pc
         .createOffer()
         .then(o => this.pc.setLocalDescription(o))
         .then(() => this.signal({ sdp: this.pc.localDescription.toJSON() }))
         .catch(() => this.useRelay());
     } else {
-      this.pc.ondatachannel = e => this.attach(e.channel);
+      this.pc.ondatachannel = e => (e.channel.label === 'fast' ? this.attachFast(e.channel) : this.attach(e.channel));
     }
     this.timer = setTimeout(() => {
       if (this.mode === 'connecting') this.useRelay();
@@ -127,6 +129,17 @@ class Link {
     dc.onclose = () => {
       if (this.mode === 'direct') this.session.lost(this.peer);
     };
+  }
+
+  attachFast(dc) {
+    this.fast = dc;
+    dc.onmessage = e => this.session.receive(this.peer, JSON.parse(e.data));
+  }
+
+  sendFast(msg) {
+    const s = this.fast && this.mode === 'direct' && this.fast.readyState === 'open' ? JSON.stringify(msg) : null;
+    if (s && s.length <= FAST_MAX) this.fast.send(s);
+    else this.send(msg);
   }
 
   useRelay() {
@@ -316,6 +329,9 @@ export class NetSession extends Emitter {
 
   send(peer, msg) {
     this.links.get(peer)?.send(msg);
+  }
+  sendFast(peer, msg) {
+    this.links.get(peer)?.sendFast(msg);
   }
   broadcast(msg, except = null) {
     for (const [p, l] of this.links) if (p !== except) l.send(msg);

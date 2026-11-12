@@ -78,10 +78,12 @@ export class PostFX {
     });
     this.flares = null;
     this.flareLevel = 0;
+    this.finish = null;
+    this.strength = BLOOM_STRENGTH;
   }
 
   get active() {
-    return this.bloom || this.heat;
+    return this.bloom || this.heat || !!this.finish;
   }
 
   resize(w, h) {
@@ -111,6 +113,7 @@ export class PostFX {
       a2: rt(W >> 2, H >> 2),
       heat: rt(W >> 2, H >> 2)
     };
+    if (this.finish) this.targets.mid = rt(W, H);
     return this.targets;
   }
 
@@ -155,9 +158,12 @@ export class PostFX {
     u.glow.value = t.a1.texture;
     u.heat.value = t.heat.texture;
     u.texel.value.set(1 / t.scene.width, 1 / t.scene.height);
-    u.bloom.value = this.bloom ? BLOOM_STRENGTH : 0;
+    u.bloom.value = this.bloom ? this.strength : 0;
     u.haze.value = this.heat ? 0.035 : 0;
-    this.pass(this.mCombine, null);
+    if (this.finish && t.mid) {
+      this.pass(this.mCombine, t.mid);
+      this.finish(t.mid);
+    } else this.pass(this.mCombine, null);
   }
 
   async loadFlares() {

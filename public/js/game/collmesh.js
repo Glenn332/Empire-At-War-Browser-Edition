@@ -20,12 +20,22 @@ function restBones(model) {
 }
 
 export function collisionOf(model) {
+  return meshSet(model, cache, mesh => mesh.collision && !/shield/i.test(mesh.name));
+}
+
+const shapeCache = new WeakMap();
+
+export function shapeOf(model) {
+  return meshSet(model, shapeCache, mesh => !mesh.collision && !mesh.hidden && !/SHADOW|LIGHT|_ALT[1-9]|SHIELD|STEALTH/i.test(mesh.name || ''));
+}
+
+function meshSet(model, store, keep) {
   if (!model) return null;
-  if (cache.has(model)) return cache.get(model);
+  if (store.has(model)) return store.get(model);
   const bones = restBones(model),
     tri = [];
   for (const mesh of model.meshes) {
-    if (!mesh.collision || /shield/i.test(mesh.name)) continue;
+    if (!keep(mesh)) continue;
     const bm = bones[mesh.bone] || null;
     for (const sub of mesh.subs) {
       const g = sub.geometry;
@@ -60,7 +70,7 @@ export function collisionOf(model) {
     }
   }
   const out = tri.length ? build(tri) : null;
-  cache.set(model, out);
+  store.set(model, out);
   return out;
 }
 

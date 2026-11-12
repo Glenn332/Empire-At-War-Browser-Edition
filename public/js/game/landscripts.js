@@ -688,8 +688,10 @@ export class LandScripts {
       o = w.isOpen(at.x, at.y) ? at : w.nearestOpen(at.x, at.y) || at;
     w.spawning = null;
     w.spawn(type.name, o.x, o.y, 0, player.id).catch(e => console.warn('script spawn', type.name, e));
-    const q = w.spawning?.[0];
+    const q = w.spawning?.[0],
+      by = this.host?.current?.e;
     if (q) q.scriptPosition = { x: o.x, y: o.y, z: at.z, preserveFormation: true };
+    if (q && by && w.onScriptSpawn) w.onScriptSpawn(q, by);
     return q || null;
   }
 

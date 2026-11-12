@@ -17,6 +17,8 @@ import { LandWorld, costOf, timeOf, isUpgrade, buildsFor, FACING, placeRotation,
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
+import { Shooter, shooterWanted } from './shooter.js';
+import { ShooterNet } from './shooternet.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { Menus } from './menus.js';
 import { loadHudAssets } from './hud.js';
@@ -275,6 +277,7 @@ export class LandGame {
     this.paused = false;
     this.over = false;
     this.landBattle = true;
+    this.netRole = setup.shooterNet?.role || null;
     this.speed = setup.net || setup.benchmark || setup.attract ? 1 : tacticalSpeed();
     this.tacticalWinner = undefined;
     if (setup.net) {
@@ -282,8 +285,9 @@ export class LandGame {
       resetBrainIds();
       seedSim(setup.seed >>> 0);
     }
+    const netMe = setup.net ? setup.net.me : setup.shooterNet && (setup.shooterNet.role === 'client' || setup.campaign) ? setup.shooterNet.me : undefined;
     const human =
-      (setup.net && setup.players.find(p => p.human && (p.peer === setup.net.me || p.peers?.includes(setup.net.me)))) ||
+      (netMe !== undefined && setup.players.find(p => p.human && (p.peer === netMe || p.peers?.includes(netMe)))) ||
       setup.players.find(p => p.human) ||
       setup.players[0];
     this.observer = !!setup.spectate || (!setup.campaign && !!setup.net?.spectators?.includes(setup.net.me));
@@ -309,6 +313,7 @@ export class LandGame {
   }
 
   dispose() {
+    this.shooter?.dispose();
     this.modeSuspended = true;
     this.over = true;
     this.life.abort();
@@ -336,7 +341,27 @@ export class LandGame {
   }
 
   resumeModeMusic() {
-    if (this.modeMusic?.length && this.audio.setPlaylist) this.audio.setPlaylist(this.modeMusic, false);
+    if (!this.music) return;
+    const mode = this.music.mode || 'ambient';
+    this.music.mode = '';
+    this.setMusic(mode);
+  }
+
+  setMusic(mode, fade = false) {
+    const m = this.music;
+    if (!m || !this.audio.setPlaylist) return;
+    const list = m[mode] && m[mode].length ? m[mode] : m.battle.length ? m.battle : m.ambient;
+    if (m.mode === mode || !list.length) return;
+    m.mode = mode;
+    this.audio.setPlaylist(list, fade);
+  }
+
+  updateMusic() {
+    const m = this.music,
+      w = this.world;
+    if (!m || this.over || !w) return;
+    if (m.mode !== 'battle' && w.time - m.fought < 1) this.setMusic('battle', true);
+    else if (m.mode === 'battle' && w.time - m.fought >= m.peace) this.setMusic('ambient', true);
   }
 
   scriptEffect(kind, d) {
@@ -654,6 +679,7 @@ export class LandGame {
     if (this.water) scene.add(this.water);
     await this.applyEnvironment(env);
 
+    if (shooterWanted(setup)) setup.fog = false;
     const world = (this.world = new LandWorld(map, scene, {
       factions: this.factions,
       teams: this.teams,
@@ -666,6 +692,7 @@ export class LandGame {
     world.playerSides = this.players.length;
     world.clearShots = !setup.net;
     world.fowOn = setup.fog !== false;
+    if (shooterWanted(setup)) world.shooter = this.shooter = new Shooter(this);
     world.autofireSides = new Set(!setup.net && !this.observer && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
     world.isHumanSide = s => !!this.players?.[s]?.human;
     const treasury = setup.campaign?.treasury;
@@ -861,7 +888,7 @@ export class LandGame {
       })
     );
 
-    if (!(setup.restore && setup.restore.battle)) await spawnMapLoadTables(this, world, map);
+    if (!(setup.restore && setup.restore.battle) && this.netRole !== 'client') await spawnMapLoadTables(this, world, map);
     const save = setup.restore && setup.restore.battle;
     const marks = team =>
       map.objects
@@ -915,7 +942,7 @@ export class LandGame {
           return this.loadedLand.squads[q]?.members[m] || null;
         });
     } else if (save) this.loadedLand = await this.landRestore(save);
-    else
+    else if (this.netRole !== 'client')
       await Promise.all(
         sides.flatMap(side => {
           const enemy = sides.find(o => !world.ally(o, side)) ?? side,
@@ -950,8 +977,15 @@ export class LandGame {
     world.onShot = s => {
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
       if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
-      if (s.from?.seen === false || world.time - lastFire < 0.07) return;
-      lastFire = world.time;
+      const own = !!this.shooter && this.shooter.mine(s.from);
+      if (this.music && s.from && (this.shooter ? own || this.shooter.nearFight(s.x, s.y) : world.ally(s.from.side, this.me) || (s.target && s.target.side >= 0 && world.ally(s.target.side, this.me))))
+        this.music.fought = world.time;
+      if (!own && (s.from?.seen === false || world.time - lastFire < 0.07)) return;
+      if (own) {
+        this.audio.forceNext = true;
+        this.shooter.recoil(s.from, s);
+      }
+      else lastFire = world.time;
       this.audio.play(fireSound(s.from.type, s.w.proj), s.x, s.y);
     };
     world.onSound = (name, x, y, side) => {
@@ -1047,13 +1081,20 @@ export class LandGame {
     this.viewHome = { ...this.view };
     this.bindInput();
     const me = db.faction(this.factions[this.me]);
+    const climate = String(db.type(this.map.planet || '')?.str('Terrain') || '').toUpperCase();
     const tracks = tag => {
-      const tu = me.tuples(tag).find(x => x[0].toUpperCase() === 'LAND');
+      const all = me.tuples(tag),
+        tu = all.find(x => x[0].toUpperCase() === climate) || all.find(x => x[0].toUpperCase() === 'LAND') || all.find(x => x[0].toUpperCase() !== 'SPACE');
       const ev = tu && db.music.get(tu[1].toUpperCase());
       return ev ? ev.list('Files') : [];
     };
-    const music = (this.modeMusic = tracks('Music_Event_List_Ambient').concat(tracks('Music_Event_List_Battle')));
-    if (music.length && this.audio.setPlaylist) this.audio.setPlaylist(music, false);
+    this.music = { ambient: tracks('Music_Event_List_Ambient'), battle: tracks('Music_Event_List_Battle'), mode: '', fought: -1e9, peace: 15 };
+    this.modeMusic = this.music.ambient.length ? this.music.ambient : this.music.battle;
+    this.setMusic(this.music.ambient.length ? 'ambient' : 'battle');
+    this.audio.audioXml?.().then(x => {
+      const m = x && /<Music_Land_Battle_To_Ambient_Peace_Seconds>\s*([\d.]+)/i.exec(x);
+      if (m && this.music) this.music.peace = parseFloat(m[1]);
+    });
 
     const q = new URLSearchParams(location.search);
     this.noBatch = q.has('nobatch');
@@ -1157,18 +1198,28 @@ export class LandGame {
       }
     }
     if (setup.net) await this.prepareLockstep();
+    if (setup.shooterNet) {
+      this.progress(this.netRole === 'client' ? 'Joining the battle' : 'Opening the battle to other players', 1);
+      this.shooterNet = new ShooterNet(this, setup.shooterNet);
+      try {
+        await this.shooterNet.start();
+      } catch (e) {
+        console.warn('shooter net', e);
+        this.say('Could not open the battle to other players: ' + e.message, 'bad');
+      }
+    }
     this.fit();
     this.listen('resize', () => this.fit());
     if (this.observer) this.spectatorView = new SpectatorView(this, 'land');
     this.reportView = this.spectatorView || (this.setup.benchmark ? null : new SpectatorView(this, 'land', { quiet: true }));
     window.game = this;
     if (this.setup.benchmark) await this.startBenchmark(this.setup.benchmark);
-    if (this.scripts && !setup.net && !q.has('nowarm') && !this.savedScripts)
+    if (this.scripts && !setup.net && this.netRole !== 'client' && !q.has('nowarm') && !this.savedScripts)
       await this.scripts.host.settle().catch(e => console.warn('scripts settle', e));
     if (!q.has('nowarm')) await this.warmFrames().catch(e => console.warn('warm frames', e));
     if (!setup.attract) hideSplash();
     $('loading').classList.add('hidden');
-    await endLoadScreen({ direct: setup.benchmark || setup.restore || setup.direct || setup.net, unlock: () => this.audio.unlock?.() });
+    await endLoadScreen({ direct: setup.benchmark || setup.restore || setup.direct || setup.net || setup.shooterNet, unlock: () => this.audio.unlock?.() });
     this.bench?.restart();
     this.last = performance.now();
     requestAnimationFrame(this.frame);
@@ -2197,7 +2248,7 @@ export class LandGame {
     return list.map((t, i) => {
       const p = pts[i];
       p.why = w.cantReinforce(this.me, t.name, p.x, p.y, extra);
-      extra += landPop(t);
+      extra += w.popOf(t);
       return p;
     });
   }
@@ -2842,7 +2893,7 @@ export class LandGame {
       }
       ai.wait = { credits: [2000, 3000, 4000][Math.min(2, tech)], until: w.time + [30, 45, 60][Math.min(2, tech)] };
     }
-    const home = w.points.find(p => p.reinforce && p.side >= 0 && w.ally(p.side, side));
+    const home = w.points.find(p => p.reinforce && p.side >= 0 && w.ally(p.side, side)) || this.shooter?.home(side) || null;
     if (
       home &&
       w.ready[side].length &&
@@ -2864,9 +2915,10 @@ export class LandGame {
 
   stepCommanders(dt) {
     const w = this.world;
-    if (this.setup.benchmark) this.benchOrders(dt);
+    if (this.setup.benchmark && !this.shooter) this.benchOrders(dt);
+    this.shooter?.tick(dt);
     this.players.forEach((p, i) => {
-      if (p.human || w.aiSuspended || w.beaten.has(this.teams[i]) || this.setup.benchmark) return;
+      if ((p.human && !(this.shooter && i === this.me)) || w.aiSuspended || w.beaten.has(this.teams[i]) || this.setup.benchmark) return;
       const ai = this.ai[i];
       const led = this.goals ? this.goals.tick(i, dt) : false;
       ai.led = led;
@@ -2919,7 +2971,7 @@ export class LandGame {
       }
     } else if (this.invasionBook && !this.over) {
       const winner = invasionWinner(w, this.invasionBook, this.setup.campaign);
-      if (winner !== null) {
+      if (winner !== null && !this.shooter?.conquestHolds(winner)) {
         w.winner = this.teams[winner];
         this.end(w.winner === this.myTeam);
       }
@@ -2976,7 +3028,9 @@ export class LandGame {
     if (w.look && !this.noCull) w.look.see = viewTest(this.camera);
     w.lerpOut();
     if (this.lock) this.lockFrame(real);
-    else if (dt > 0 && w.interp) {
+    else if (this.netRole === 'client') {
+      if (dt > 0) this.shooterNet?.clientStep(dt);
+    } else if (dt > 0 && w.interp) {
       this.acc = Math.min((this.acc || 0) + dt, 0.1 * (this.speed || 1) + LAND_TICK);
       while (this.acc >= LAND_TICK && !this.over) {
         w.update(LAND_TICK);
@@ -2997,6 +3051,7 @@ export class LandGame {
       this.stepCommanders(dt);
       this.stepEnd(dt);
     }
+    if (this.netRole === 'host') this.shooterNet?.hostStep();
     if (!w.interp) w.poseQueued();
     if (!this.lock) this.scripts?.host.updateStory(dt);
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
@@ -3019,14 +3074,14 @@ export class LandGame {
       this.ui.refresh();
       if (this.setup.fog !== false && !this.reveal && !this.tacticalCinematics?.on) {
         w.updateSight(this.me);
-        for (const u of w.units) u.holder.visible = u.seen && !u.inside && !u.scriptHidden;
+        for (const u of w.units) u.holder.visible = u.seen && !u.inside && !u.scriptHidden && !u.netHidden;
         paintFog(this.terrain, w.eyes, true, this.paused ? 0 : 0.25 * (this.speed || 1), db.constants.num('LandFOWRegrowTime', 6));
         for (const p of this.props || []) p.grp.visible = !p.scriptHidden;
       } else {
         w.viewSide = undefined;
         for (const u of w.units) {
           u.seen = true;
-          u.holder.visible = !u.inside && !u.scriptHidden;
+          u.holder.visible = !u.inside && !u.scriptHidden && !u.netHidden;
         }
         for (const prop of this.props || []) prop.grp.visible = !prop.scriptHidden;
         paintFog(this.terrain, null, false);
@@ -3064,6 +3119,7 @@ export class LandGame {
       cam.position.set(cx, cy, Math.max(z + Math.sin(v.pitch) * v.dist, heightAt(this.terrain, cx, cy) + 8));
       cam.lookAt(v.x, v.y, z);
       if (this.chase && this.chase.active) this.chase.frame(cam, v.x, v.y, z, (x, y) => heightAt(this.terrain, x, y) + 3);
+      if (this.shooter) this.shooter.frame(real, cam);
     }
     this.tacticalCinematics?.update(dt);
     this.tacticalCinematics?.paint();
@@ -3150,6 +3206,8 @@ export class LandGame {
       L.cy = cam.position.y;
       L.cz = cam.position.z;
     }
+    if (L && this.shooter) this.shooter.listen(L, cam);
+    this.updateMusic();
     if (this.audio.setLoops && (this.loopTimer = (this.loopTimer || 0) - real) <= 0) {
       this.loopTimer = 0.25;
       const ear = cineLook && L ? L : v,
@@ -3206,8 +3264,11 @@ export class LandGame {
     if (!skip) {
       this.castShadows();
       if (this.water) this.water.userData.mirror(R, cam, eye => this.mirrorCards(() => draw(eye)));
+      const fx = this.shooter ? this.shooter.postFor(R) : null,
+        off = fx ? fx.begin() : false;
       R.clear();
       draw(cam);
+      if (off) fx.end(cam);
       if (R === this.gpu) R.endFrame();
       if (this.sameFrame) this.sameFrame(cam);
     }
@@ -3272,6 +3333,10 @@ export class LandGame {
   }
 
   async startBenchmark(n) {
+    if (this.shooter) {
+      this.bench = this.benchOverlay(`${n} v ${n} soldiers, shooter`, { shooter: `${n} vs ${n}` });
+      return;
+    }
     const w = this.world,
       m = this.map,
       lo = m.playMin || [0, 0],
@@ -3672,19 +3737,22 @@ export class LandGame {
       const v = look ? { x: look.x, y: look.y, dist: Math.hypot(eye.x - look.x, eye.y - look.y, eye.z - (look.z || 0)) } : this.view;
       const R = this.gpuOn ? this.gpu : this.renderer,
         cam = S.camera,
-        half = Math.max(350, v.dist * 1.25),
+        box = this.shooter ? this.shooter.shadowBox(S.size) : null,
+        cx = box ? box.x : v.x,
+        cy = box ? box.y : v.y,
+        half = box ? box.half : Math.max(350, v.dist * 1.25),
         far = half * 3,
         dir = lighting.sunDir.value,
-        z0 = heightAt(this.terrain, v.x, v.y);
+        z0 = heightAt(this.terrain, cx, cy);
       const dz = Math.max(0.3, dir.z),
         k = 1 / Math.hypot(dir.x, dir.y, dz);
       cam.left = cam.bottom = -half;
       cam.right = cam.top = half;
       cam.near = 1;
       cam.far = far * 2;
-      cam.position.set(v.x + dir.x * k * far, v.y + dir.y * k * far, z0 + dz * k * far);
+      cam.position.set(cx + dir.x * k * far, cy + dir.y * k * far, z0 + dz * k * far);
       cam.up.set(0, 0, 1);
-      cam.lookAt(v.x, v.y, z0);
+      cam.lookAt(cx, cy, z0);
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
       const hidden = [],
@@ -3978,7 +4046,8 @@ export class LandGame {
       : won
         ? db.t('TEXT_WIN_TACTICAL') || db.t('TEXT_VICTORY') || 'Victory'
         : db.t('TEXT_LOSE_TACTICAL') || db.t('TEXT_DEFEAT') || 'Defeat';
-    if (!suppress) document.body.appendChild(d);
+    const ownEnd = !!this.shooter;
+    if (!suppress && !ownEnd) document.body.appendChild(d);
     const f = db.faction(this.factions[this.me]);
     if (!suppress) this.audio.play(f.str(won ? 'SFXEvent_HUD_Won_Land_Battle' : 'SFXEvent_HUD_Lost_Land_Battle'));
     const ev = db.music.get(f.str(won ? 'Music_Event_Tactical_Win' : 'Music_Event_Tactical_Lose').toUpperCase());
@@ -3994,6 +4063,15 @@ export class LandGame {
         );
       if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
       if (this.campaignOutcome && this.world.builtUpgrades?.length) this.campaignOutcome.upgradesBuilt = this.world.builtUpgrades.slice();
+      if (this.campaignOutcome && this.shooter) this.shooter.conquestOutcome(this.campaignOutcome);
+      if (ownEnd) {
+        this.over = true;
+        if (this.netRole === 'host' && this.campaignOutcome && mpBattleParent())
+          setTimeout(() => {
+            if (!this.returned) this.returnToGalaxy();
+          }, 15000);
+        return;
+      }
       showSummary(this, won, this.myTeam).then(shown => {
         if (shown) d.remove();
       });
@@ -4009,6 +4087,11 @@ export class LandGame {
       return;
     }
     if (mpBattleParent()) {
+      if (this.netRole === 'client') {
+        this.say?.('Waiting for the host to close the battle', 'info');
+        return;
+      }
+      this.returned = true;
       mpBattleParent().mpBattles.returned(this.campaignOutcome);
       return;
     }
@@ -4269,7 +4352,7 @@ export class LandGame {
           if (!m || Array.isArray(m) || !m.userData.shield) return;
           const c = m.clone();
           for (const k of ['time', 'map', 'waveMap', 'distortMap']) c.uniforms[k] = m.uniforms[k];
-          c.uniforms.steady.value = 1;
+          if (c.uniforms.steady) c.uniforms.steady.value = 1;
           c.userData = { ...m.userData };
           const d = new THREE.Mesh(o.geometry, c);
           d.matrixAutoUpdate = false;
@@ -4289,7 +4372,7 @@ export class LandGame {
         const c = u.dome.color.split(/[\s,]+/).map(Number);
         for (const o of u.dome.meshes) {
           o.visible = (on || !!this.warmDomes) && u.seen !== false;
-          o.material.uniforms.tint.value.setRGB(c[0] || 0.2, c[1] || 0.2, c[2] ?? 0.8);
+          (o.material.uniforms.tint || o.material.uniforms.shieldColor)?.value.setRGB(c[0] || 0.2, c[1] || 0.2, c[2] ?? 0.8);
           if (o.visible) {
             const s = o.userData.src;
             s.updateWorldMatrix(true, false);
@@ -4365,7 +4448,7 @@ export class LandGame {
           u.fogV = 0;
         }
       }
-      u.holder.visible = u.fogA > 0.025;
+      u.holder.visible = u.fogA > 0.025 && !u.netHidden;
       if (u.cloakFade || (u.fogA >= 1 && !u.fogFading)) continue;
       u.fogFading = u.fogA < 1;
       w.skin(u).fade = u.fogFading ? 1 - u.fogA : -1;

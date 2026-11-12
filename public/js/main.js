@@ -21,7 +21,7 @@ import { loadTacticalCamera } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { seedSim } from './game/simrandom.js';
 import { Lockstep, TURN, CHAT_MAX, chatText } from './game/netgame.js';
-import { ticker } from './net.js';
+import { ticker, NetSession } from './net.js';
 import { execute } from './game/commands.js';
 import { SkirmishAI } from './game/ai.js';
 import { loadSpaceBrain } from './game/spacebrain.js';
@@ -143,7 +143,7 @@ function resetPage() {
   });
   $('view').replaceChildren();
   for (const id of ['menu', 'lobby']) $(id).classList.add('hidden');
-  document.body.classList.remove('attract', 'cinematic', 'commandbar-hidden', 'hud-hidden', 'letterboxed', 'original-hud', 'track-cam');
+  document.body.classList.remove('attract', 'cinematic', 'commandbar-hidden', 'hud-hidden', 'shooter-on', 'letterboxed', 'original-hud', 'track-cam');
   document.documentElement.style.removeProperty('--letterbox');
 }
 function endGame(next) {
@@ -2858,7 +2858,8 @@ async function boot() {
         fog: lbench ? false : getFog(),
         teamFactions: [getTeam1(), getTeam2()],
         players: all,
-        ...(params.has('spectate') ? { spectate: true } : {})
+        ...(params.has('spectate') ? { spectate: true } : {}),
+        ...(params.has('mphost') ? { shooterNet: { role: 'host', room: params.get('mphost') } } : {})
       });
       return;
     }
@@ -3064,6 +3065,51 @@ async function boot() {
     };
   }
   {
+    const box = $('optShooter');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-shooter') === '1';
+    } catch {}
+    box.checked = on;
+    window.shooterMode = on;
+    box.parentElement.title =
+      'Land skirmish battles become a shooter: you fight as one soldier in first or third person, the AI runs both armies, soldiers fight alone, vehicles need someone inside, no fog of war and long range shots. Takes effect from the next land battle. Not in multiplayer or the campaign.';
+    box.onchange = () => {
+      window.shooterMode = box.checked;
+      try {
+        localStorage.setItem('swr-shooter', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  for (const [id, key, flag, def, min, max, scale, old, tip] of [
+    ['optShooterCap', 'swr-shooter-cap', 'shooterCap', 50, 10, 200, 1, {}, 'With the shooter on: the most soldiers each side has on the field at once. Fallen soldiers respawn until a side is back at this number. Vehicles and units from buildings are not counted.'],
+    ['optShooterTickets', 'swr-shooter-tickets', 'shooterTickets', 150, 50, 500, 1, { 0: 150, 1: 150 }, 'With the shooter on: each side starts with this many reinforcement tickets. Every soldier lost costs one, every vehicle two, and a side holding more than half the points drains the others by one every 5 s. A side out of tickets loses.'],
+    ['optShooterConquest', 'swr-shooter-conquest', 'shooterConquest', 20, 10, 50, 10, {}, 'With the shooter on, in conquest land battles: each infantry company a side sends is worth its soldier count times this many tickets. Vehicles are worth one each and do not respawn.'],
+    ['optShooterFocus', 'swr-shooter-focus', 'shooterFocus', 100, 0, 100, 100, { 0: 0, 1: 100 }, 'With the shooter on: how much the edges of the view soften while you aim down the sights. All the way left is off.'],
+    ['optShooterBlur', 'swr-shooter-blur', 'shooterBlur', 0, 0, 100, 100, { 0: 0, 1: 100 }, 'With the shooter on: how much fast camera turns smear the view. All the way left is off.']
+  ]) {
+    const box = $(id);
+    let v = def;
+    try {
+      const got = localStorage.getItem(key);
+      if (got !== null) v = got in old ? old[got] : +got;
+    } catch {}
+    if (!Number.isFinite(v)) v = def;
+    v = Math.max(min, Math.min(max, v));
+    box.value = v;
+    window[flag] = v / scale;
+    box.parentElement.title = tip;
+    const save = () => {
+      const n = Math.max(min, Math.min(max, +box.value || 0));
+      window[flag] = n / scale;
+      try {
+        localStorage.setItem(key, String(n));
+      } catch {}
+    };
+    box.oninput = save;
+    box.onchange = save;
+  }
+  {
     const box = $('optAutofire');
     let on = true;
     try {
@@ -3254,6 +3300,28 @@ async function boot() {
       startFromSave(snap);
       return;
     }
+  }
+  if (params.has('mpjoin')) {
+    const room = params.get('mpjoin'),
+      S = new NetSession();
+    try {
+      await S.connect(room, { host: false, name: params.get('name') || 'Player' });
+    } catch (e) {
+      showMessage('Could not join: ' + e.message);
+      return;
+    }
+    const setup = await new Promise(res => {
+      const off = S.on('message', (from, m) => {
+        if (m && m.k === 'sh-setup') {
+          off();
+          res(m.setup);
+        }
+      });
+      S.send(0, { k: 'sh-hello' });
+    });
+    audio.unlock?.();
+    launch({ ...setup, direct: true, shooterNet: { role: 'client', session: S, room } });
+    return;
   }
   if (params.has('autostart') || params.has('benchmark')) {
     go();

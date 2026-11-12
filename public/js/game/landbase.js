@@ -1390,9 +1390,11 @@ function tickHouses(world, dt) {
       .then(q => {
         h.busy = false;
         if (!q) return;
-        for (const m of q.members) m.captures = false;
-        q.native = true;
-        h.out.push(q);
+        for (const p of q.mates && q.mates.length ? q.mates : [q]) {
+          for (const m of p.members) m.captures = false;
+          p.native = true;
+          h.out.push(p);
+        }
       })
       .catch(() => {
         h.busy = false;
