@@ -864,7 +864,50 @@ export class Shooter {
       return;
     }
     if (!T || T[side] <= 0) return;
-    T[side] = Math.max(0, T[side] - n);
+    this.setTickets(side, Math.max(0, T[side] - n));
+  }
+
+  ticketTeam(s) {
+    const t = this.world.team?.[s];
+    return t === undefined ? 's' + s : t;
+  }
+
+  setTickets(side, v) {
+    const k = this.ticketTeam(side);
+    for (let s = 0; s < this.tickets.length; s++) if (this.ticketTeam(s) === k) this.tickets[s] = v;
+  }
+
+  teamTickets() {
+    const T = this.tickets,
+      g = this.game,
+      out = [],
+      seen = new Map();
+    if (!T) return out;
+    for (let s = 0; s < T.length; s++) {
+      const k = this.ticketTeam(s);
+      let e = seen.get(k);
+      if (!e) {
+        e = { team: k, side: s, names: [], t: T[s], mine: false };
+        seen.set(k, e);
+        out.push(e);
+      }
+      const n = String(g.factions[s] || 'Side ' + s);
+      if (!e.names.includes(n)) e.names.push(n);
+      if (s === this.me) e.mine = true;
+    }
+    for (const e of out) e.label = e.names.join(' / ');
+    return out;
+  }
+
+  warnLow() {
+    const w = this.world;
+    for (const e of this.teamTickets()) {
+      const key = 't' + e.team;
+      if (this.lowWarned[key] || e.t > this.ticketStart * LOW_TICKETS) continue;
+      this.lowWarned[key] = true;
+      const ours = w.ally(e.side, this.me) || e.mine;
+      this.announce(ours ? 'Our reinforcements are running low' : 'Enemy reinforcements are running low', ours ? 'bad' : 'good');
+    }
   }
 
   nominalSoldiers(t, depth = 0) {
@@ -950,12 +993,17 @@ export class Shooter {
       if (P) P.alive++;
       else if (u.squad && this.crewed.has(u.squad) && u === u.squad.members[0] && u.side >= 0) cars.set(u.side, (cars.get(u.side) || 0) + 1);
     }
-    const cb = this.game.setup.campaign;
-    for (const s of [cb.attacker.side, cb.defender.side]) {
+    const cb = this.game.setup.campaign,
+      teams = new Set([this.ticketTeam(cb.attacker.side), this.ticketTeam(cb.defender.side)]),
+      sum = new Map();
+    for (let s = 0; s < T.length; s++) {
+      const k = this.ticketTeam(s);
+      if (!teams.has(k)) continue;
       let n = cars.get(s) || 0;
       for (const P of C.pools.values()) if (P.side === s) n += P.lives;
-      T[s] = n;
+      sum.set(k, (sum.get(k) || 0) + n);
     }
+    for (let s = 0; s < T.length; s++) if (sum.has(this.ticketTeam(s))) T[s] = sum.get(this.ticketTeam(s));
   }
 
   conquestClasses(side) {
@@ -1092,9 +1140,16 @@ export class Shooter {
     if (!pts.length) return;
     const held = new Map();
     for (const p of pts) if (p.side >= 0) held.set(w.team[p.side], (held.get(w.team[p.side]) || 0) + 1);
-    for (const [team, n] of held)
-      if (n * 2 > pts.length)
-        for (let s = 0; s < this.tickets.length; s++) if (w.team[s] !== team && this.tickets[s] > 0) this.spend(s, 1);
+    for (const [team, n] of held) {
+      if (n * 2 <= pts.length) continue;
+      const done = new Set();
+      for (let s = 0; s < this.tickets.length; s++) {
+        const k = this.ticketTeam(s);
+        if (w.team[s] === team || done.has(k) || this.tickets[s] <= 0) continue;
+        done.add(k);
+        this.spend(s, 1);
+      }
+    }
   }
 
   ticketBar() {
@@ -1107,7 +1162,9 @@ export class Shooter {
   drawTickets() {
     if (!this.ticketEl) return;
     const g = this.game,
-      text = this.tickets.map((t, s) => `${s === this.me ? '> ' : ''}${g.factions[s]} ${t}`).join('     ');
+      text = this.teamTickets()
+        .map(e => `${e.mine ? '> ' : ''}${e.label} ${e.t}`)
+        .join('     ');
     if (this.ticketEl.textContent !== text) this.ticketEl.textContent = text;
   }
 
@@ -3555,11 +3612,7 @@ export class Shooter {
     if (w.time >= this.historyAt && this.tickets) {
       this.historyAt = w.time + 5;
       this.history.push([w.time, ...this.tickets]);
-      for (let s = 0; s < this.tickets.length; s++) {
-        if (this.lowWarned[s] || this.tickets[s] > this.ticketStart * LOW_TICKETS) continue;
-        this.lowWarned[s] = true;
-        this.announce(w.ally(s, this.me) ? 'Our reinforcements are running low' : 'Enemy reinforcements are running low', w.ally(s, this.me) ? 'bad' : 'good');
-      }
+      this.warnLow();
     }
     if (w.time >= this.regenAt) {
       this.regenAt = w.time + REGEN.tick;
@@ -3610,11 +3663,7 @@ export class Shooter {
     if (w.time >= this.historyAt && this.tickets) {
       this.historyAt = w.time + 5;
       this.history.push([w.time, ...this.tickets]);
-      for (let s = 0; s < this.tickets.length; s++) {
-        if (this.lowWarned[s] || this.tickets[s] > this.ticketStart * LOW_TICKETS) continue;
-        this.lowWarned[s] = true;
-        this.announce(w.ally(s, this.me) ? 'Our reinforcements are running low' : 'Enemy reinforcements are running low', w.ally(s, this.me) ? 'bad' : 'good');
-      }
+      this.warnLow();
     }
     if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.openDeploy();
     this.refreshDeploy();
@@ -6461,7 +6510,7 @@ export class Shooter {
       <div><div class="sh-label">Top soldiers</div><table class="sh-end-t"></table><div class="sh-label" style="margin-top:12px">Awards</div><div class="sh-end-aw"></div></div></div>
       <div class="sh-foot"><div></div><button class="sh-go">Continue</button></div></div>`;
     el.querySelector('.sh-title').textContent = this.endTitle || (won ? 'Victory' : 'Defeat');
-    el.querySelector('.sh-sub').textContent = g.factions.map((f, s) => `${f} ${this.tickets ? this.tickets[s] : ''}`).join('   ');
+    el.querySelector('.sh-sub').textContent = this.tickets ? this.teamTickets().map(e => `${e.label} ${e.t}`).join('   ') : g.factions.join('   ');
     el.querySelector('.sh-end-pl').textContent = this.playerTable();
     el.querySelector('.sh-end-you').textContent = `You: ${this.kills} kills, ${this.assists} assists, ${this.stats.heads} headshots, ${this.stats.vehicles} vehicles, ${this.caps} captures, ${this.deaths} deaths, score ${this.matchScore}`;
     const rows = [...this.ledger.values()].sort((p, q) => q.kills + q.vkills * 2 + q.caps - (p.kills + p.vkills * 2 + p.caps)),
@@ -6499,8 +6548,9 @@ export class Shooter {
       const t0 = H[0][0],
         t1 = H[H.length - 1][0] || 1,
         top = Math.max(1, ...H.flatMap(r => r.slice(1)));
-      for (let s = 0; s < g.factions.length; s++) {
-        x.strokeStyle = w.ally(s, this.me) ? PAL.ally : PAL.enemy;
+      for (const e of this.teamTickets()) {
+        const s = e.side;
+        x.strokeStyle = w.ally(s, this.me) || e.mine ? PAL.ally : PAL.enemy;
         x.lineWidth = 2.5;
         x.beginPath();
         H.forEach((r, i) => {
@@ -7563,7 +7613,7 @@ export class Shooter {
       rows.push(pad(name, 22) + pad(foot, 10) + pad(cars, 10) + pad(this.losses[s] || 0, 7) + pts);
     }
     rows.push('');
-    if (this.tickets) rows.push('Tickets: ' + this.tickets.map((t, s) => `${g.factions[s]} ${t}`).join('   '));
+    if (this.tickets) rows.push('Tickets: ' + this.teamTickets().map(e => `${e.label} ${e.t}`).join('   '));
     rows.push(`You: ${this.kills} kills   ${this.stats.heads} headshots   ${this.stats.vehicles} vehicles   ${this.deaths} deaths`);
     const table = this.playerTable();
     if (table) rows.push('', table);
