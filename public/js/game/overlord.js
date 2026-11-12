@@ -13,6 +13,8 @@ const OV = {
   arc: 0.28,
   startDist: 620,
   takeDist: 1.08,
+  zoomIn: 0.89,
+  zoomOut: 1.12,
   tick: 0.25,
   holdMin: 0.6,
   holdStop: 3,
@@ -278,12 +280,29 @@ export class Overlord {
   }
 
   wheelCommand(e) {
-    if (!this.on || this.blend || e.deltaY >= 0) return false;
-    const v = this.sh.game.view;
-    if (v.dist > this.minDist() * OV.takeDist) return false;
-    const u = this.hover || this.picked();
-    if (!u) return false;
-    this.takeOver(u);
+    const sh = this.sh,
+      g = sh.game,
+      v = g.view,
+      ui = g.ui;
+    if (!this.on || this.blend || e.target !== sh.canvas() || !e.deltaY) return false;
+    if (ui?.placing || g.moveDragOn || g.chase?.on || g.track?.on || g.controlsLocked) return false;
+    if (e.deltaY < 0 && v.dist <= this.minDist() * OV.takeDist) {
+      const u = this.hover || this.picked();
+      if (u) {
+        this.takeOver(u);
+        return true;
+      }
+    }
+    const nd = g.viewDist ? g.viewDist(v.dist * (e.deltaY > 0 ? OV.zoomOut : OV.zoomIn)) : v.dist;
+    if (nd === v.dist) return true;
+    const p = ui?.mouse ? g.groundAt(ui.mouse.x, ui.mouse.y) : null;
+    if (p) {
+      const k = 1 - nd / v.dist;
+      v.x += (p.x - v.x) * k;
+      v.y += (p.y - v.y) * k;
+    }
+    v.dist = nd;
+    if (g.viewTilt) v.pitch = g.viewTilt(nd);
     return true;
   }
 
@@ -628,10 +647,15 @@ export class Overlord {
   }
 
   after(cam) {
+    if (!this.on) return;
     this.applyBlend(cam);
     const sh = this.sh;
-    this.hint.style.display = this.on && (sh.state === 'deploy' || sh.state === 'dead') && sh.panel.style.display !== 'none' ? 'block' : 'none';
-    if (sh.state === 'command') this.draw(cam);
+    this.hint.style.display = (sh.state === 'deploy' || sh.state === 'dead') && sh.panel.style.display !== 'none' ? 'block' : 'none';
+  }
+
+  paint() {
+    if (!this.on) return;
+    if (this.sh.state === 'command') this.draw(this.sh.game.camera);
     else if (this.drawn) this.clearCanvas();
   }
 
@@ -681,8 +705,10 @@ export class Overlord {
         m = q.members && q.members.find(u => !u.dead);
       if (!H0 || !m || q.side !== this.sh.me) continue;
       const foe = q.foe && !q.foe.dead ? q.foe.members?.find(u => !u.dead) || null : null,
-        tx = foe ? foe.x : H0.x,
-        ty = foe ? foe.y : H0.y,
+        way = q.box && !q.ext && q.box.path && q.box.path.length ? q.box.path : m.path || [],
+        end = way.length ? way[way.length - 1] : H0,
+        tx = foe ? foe.x : end.x,
+        ty = foe ? foe.y : end.y,
         z0 = (m.z || 0) + 2,
         z1 = foe ? (foe.z || 0) + 2 : this.groundZ(tx, ty) + 2,
         a = proj(m.x, m.y, z0),

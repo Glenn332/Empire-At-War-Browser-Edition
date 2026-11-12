@@ -3282,7 +3282,10 @@ export class LandGame {
       this.scene.matrixWorldAutoUpdate = true;
       B.restore();
     }
-    if (!skip) this.drawBars();
+    if (!skip) {
+      this.drawBars();
+      this.shooter?.ov?.paint();
+    }
     w.lerpOut();
     if (R.isMirror) {
       this.skipped = (this.skipped || 0) + raw;
