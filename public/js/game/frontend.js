@@ -4,6 +4,7 @@ import { openCampaignMenu } from './campaignmenu.js';
 import { openMainCampaignMenu, suggestTutorial, tutorialSuggested, markTutorialSuggested } from './storycampaignmenu.js';
 import { TacticalMovies } from './tacticalmovies.js';
 import { tutorialFinished } from './tutorialprofile.js';
+import { loadDialogs } from './dialogs.js';
 
 const PANEL = { cls: 'front', stretch: true };
 
@@ -43,8 +44,8 @@ export class FrontEnd {
     removeEventListener('keydown', this.onKey, true);
   }
 
-  async screen(id, hide = []) {
-    const dlg = await this.menus.push(id, PANEL);
+  async screen(id, hide = [], opts = {}) {
+    const dlg = await this.menus.push(id, { ...PANEL, ...opts });
     if (!dlg) return null;
     for (const c of ['IDC_MENU_PETRO_LOGO', ...hide]) dlg.show(c, false);
     dlg.on('IDC_MENU_CREDITS', () => this.credits(dlg));
@@ -155,8 +156,18 @@ export class FrontEnd {
   }
 
   async options() {
-    const dlg = await this.screen('IDD_MAIN_OPTIONS_DIALOG');
+    const def = (await loadDialogs())?.dialogs.get('IDD_MAIN_OPTIONS_DIALOG'),
+      okC = def && def.controls.find(c => c.id === 'IDC_OK_MAIN'),
+      above = okC && def.controls.filter(c => /^IDC_MAIN_OPTIONS_/.test(c.id) && c.y < okC.y).sort((a, b) => b.y - a.y)[0],
+      ok = okC || { x: 265, y: 706, w: 236, h: 21 },
+      step = above ? ok.y - above.y : 36;
+    const dlg = await this.screen('IDD_MAIN_OPTIONS_DIALOG', [], {
+      extra: [{ kind: 'PUSHBUTTON', text: '', id: 'IDC_MAIN_OPTIONS_TWEAKS', x: ok.x, y: ok.y - step, w: ok.w, h: ok.h, style: '' }],
+      adjust: c => (c.id !== 'IDC_OK_MAIN' && c.id !== 'IDC_MAIN_OPTIONS_TWEAKS' && c.id !== 'IDC_MENU_PETRO_LOGO' && c.y < ok.y ? { ...c, y: c.y - step } : null)
+    });
     if (!dlg) return;
+    dlg.setText('IDC_MAIN_OPTIONS_TWEAKS', 'Tweaks');
+    dlg.on('IDC_MAIN_OPTIONS_TWEAKS', () => this.menus.tweaks());
     dlg.on('IDC_MAIN_OPTIONS_KEYBOARD', () => this.menus.keyboard());
     dlg.enable('IDC_MAIN_OPTIONS_MODS', false);
     dlg.on('IDC_MAIN_OPTIONS_AUDIO', () => this.menus.audio());

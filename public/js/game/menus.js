@@ -62,7 +62,8 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
   { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
-  { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Land battles as a shooter' }
+  { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Land battles as a shooter' },
+  { id: 'IDC_TWEAK_EXTRA_FX', input: 'optExtraFx', label: 'Extra effects in space and land battles' }
 ];
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
