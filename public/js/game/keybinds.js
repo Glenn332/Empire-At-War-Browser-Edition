@@ -63,7 +63,8 @@ export const ACTIONS = [
   { id: 'SHOOTER_DODGE', page: 5, extra: { col: 0, y: 390 }, label: 'Shooter: Dodge', keys: ['KeyV'] },
   { id: 'SHOOTER_MAP', page: 5, extra: { col: 1, y: 390 }, label: 'Shooter: Map', keys: ['KeyM'] },
   { id: 'SHOOTER_GRENADE', page: 5, extra: { col: 0, y: 415 }, label: 'Shooter: Thermal Detonator', keys: ['KeyT'] },
-  { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, y: 415 }, label: 'Shooter: Settings', keys: ['KeyO'] }
+  { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, y: 415 }, label: 'Shooter: Settings', keys: ['KeyO'] },
+  { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, y: 440 }, label: 'Shooter: Tactical View', keys: ['KeyL'] }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 

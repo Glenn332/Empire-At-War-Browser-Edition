@@ -152,6 +152,14 @@ export class ShooterNet {
       this.session.send(from, got ? { k: 'sh-in', r: m.r, ok: 1, seat: got.seat, id: this.idOf(got.id) } : { k: 'sh-in', r: m.r, ok: 0 });
     }
     else if (m.k === 'sh-deploy') this.deployFor(from, m);
+    else if (m.k === 'sh-cmd') this.game.shooter?.ov?.remoteCommand(from, m.cmd);
+    else if (m.k === 'sh-free') this.game.shooter?.ov?.remoteFree(from);
+    else if (m.k === 'sh-take') {
+      const sh = this.game.shooter,
+        got = sh?.ov?.remoteTake(from, +m.id || 0);
+      if (got) sh.names.set(got.unit, this.peerName(from));
+      this.session.send(from, { k: 'sh-you', id: got ? this.idOf(got.unit) : 0, seat: got ? got.seat : '', r: m.r });
+    }
     else if (m.k === 'sh-ready') {
       if (this.peers.has(from)) return;
       const roster = [],
@@ -186,6 +194,35 @@ export class ShooterNet {
     if (u.dead) return;
     u.remote = null;
     if (u.squad) u.squad.noAI = false;
+  }
+
+  async requestTake(id) {
+    const r = (this.req = (this.req || 0) + 1);
+    this.session.send(0, { k: 'sh-take', id, r });
+    const W = (this.wantYou = { r, id: null, seat: '' }),
+      unit = await this.awaitYou(r);
+    return unit ? { unit, seat: W.seat } : null;
+  }
+
+  awaitYou(r) {
+    return new Promise(res => {
+      const until = performance.now() + SEND.wait * 1000;
+      const look = () => {
+        const W = this.wantYou;
+        if (!W || W.r !== r || W.id === 0) return res(null);
+        const u = W.id ? this.byId.get(W.id) : null;
+        if (u && !u.dead) {
+          this.wantYou = null;
+          return res(u);
+        }
+        if (performance.now() > until) {
+          this.wantYou = null;
+          return res(null);
+        }
+        setTimeout(look, 50);
+      };
+      look();
+    });
   }
 
   requestDeploy(name, x, y, v = 0) {
@@ -364,7 +401,10 @@ export class ShooterNet {
     if (m.k === 'sh-all') this.roster(m);
     else if (m.k === 'sh-s') this.snapshot(m);
     else if (m.k === 'sh-e' && Array.isArray(m.e)) for (const ev of m.e) this.event(ev, +m.t || this.hostT);
-    else if (m.k === 'sh-you' && this.wantYou && this.wantYou.r === m.r) this.wantYou.id = +m.id || 0;
+    else if (m.k === 'sh-you' && this.wantYou && this.wantYou.r === m.r) {
+      this.wantYou.seat = String(m.seat || '');
+      this.wantYou.id = +m.id || 0;
+    }
     else if (m.k === 'sh-cr') this.game.shooter?.netCredit(m);
     else if (m.k === 'sh-in' && this.wantIn && this.wantIn.r === m.r) {
       const W = this.wantIn;

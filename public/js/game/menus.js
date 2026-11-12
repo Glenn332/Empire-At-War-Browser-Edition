@@ -63,6 +63,7 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
   { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
   { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Land battles as a shooter' },
+  { id: 'IDC_TWEAK_SHOOTER_OVERLORD', input: 'optShooterOverlord', label: 'Shooter: overlord mode' },
   { id: 'IDC_TWEAK_EXTRA_FX', input: 'optExtraFx', label: 'Extra effects in space and land battles' }
 ];
 

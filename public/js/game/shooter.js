@@ -17,6 +17,7 @@ import { MOD } from './combatmods.js';
 import { categoryOf, CAT } from './projflight.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
+import { Overlord } from './overlord.js';
 
 const REACH = 1600,
   STRAY = 500,
@@ -522,6 +523,7 @@ export class Shooter {
     this.hooked = false;
     this.dom();
     this.input();
+    this.ov = new Overlord(this);
     if (game.audio) game.audio.falloff = SOUND_FALLOFF;
     setParticleDepth(true);
     game.ground?.traverse?.(o => {
@@ -2695,7 +2697,8 @@ export class Shooter {
       ['Enter or leave', K('SHOOTER_ENTER'), 'X'],
       ['Abilities', `${K('SHOOTER_ABILITY_1')} ${K('SHOOTER_ABILITY_2')} ${K('SHOOTER_ABILITY_3')}`, 'D-pad'],
       ['View, map, scores', `${K('DIRECT_VIEW')}, ${K('SHOOTER_MAP')}, ${K('SHOOTER_SCORES')}`, 'Y, D-pad down, View'],
-      ['Settings', K('SHOOTER_SETTINGS'), 'Menu']
+      ['Settings', K('SHOOTER_SETTINGS'), 'Menu'],
+      ...(this.ov?.on ? [['Tactical view', `${K('SHOOTER_OVERLORD')}, scroll out`, '-']] : [])
     ];
     E.innerHTML = '<div class="sh-hints-t">Controls</div><table></table><div class="sh-hints-k">Click or press any key to close</div>';
     const t = E.querySelector('table');
@@ -3622,8 +3625,9 @@ export class Shooter {
       this.respawnAt = w.time + 0.5;
       this.respawnBots();
     }
-    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.openDeploy();
+    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.respawnView();
     this.refreshDeploy();
+    this.ov?.tickHeld();
     this.drawTickets();
   }
 
@@ -3665,8 +3669,9 @@ export class Shooter {
       this.history.push([w.time, ...this.tickets]);
       this.warnLow();
     }
-    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.openDeploy();
+    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.respawnView();
     this.refreshDeploy();
+    this.ov?.tickHeld();
     this.drawTickets();
   }
 
@@ -5272,6 +5277,34 @@ export class Shooter {
     this.role = 'hero';
   }
 
+  respawnView() {
+    if (this.ov?.on && !this.ov.wantDeploy) this.ov.enterCommand();
+    else this.openDeploy();
+  }
+
+  buffPlayer(u) {
+    const w = this.world;
+    if (PLAYER_HEALTH > 0) w.addCombatMod(u, MOD.HEALTH, MOD_KEY + 1, 'shooter-player', PLAYER_HEALTH);
+    w.addCombatMod(u, MOD.DAMAGE, MOD_KEY, 'shooter-player', PLAYER_DAMAGE);
+    w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY, 'shooter-player', PLAYER_FIRE_RATE);
+  }
+
+  untwist() {
+    const T = this.twist;
+    if (T.head) T.head.scale.setScalar(1);
+    if (this.body && this.body.inst) {
+      this.body.inst.skinMask = null;
+      this.body.inst.skinPin = null;
+      for (const o of T.rigid || []) o.visible = true;
+      this.body.inst.syncFromBones();
+    }
+    T.mask = null;
+    T.rigid = [];
+    T.bone = T.head = null;
+    T.arms = [];
+    T.live = [];
+  }
+
   possess(q, u, hero) {
     const w = this.world;
     q.noAI = true;
@@ -5287,11 +5320,7 @@ export class Shooter {
     u.pilot = this.P;
     settlePose(u.inst);
     this.body = u;
-    if (!hero) {
-      if (PLAYER_HEALTH > 0) w.addCombatMod(u, MOD.HEALTH, MOD_KEY + 1, 'shooter-player', PLAYER_HEALTH);
-      w.addCombatMod(u, MOD.DAMAGE, MOD_KEY, 'shooter-player', PLAYER_DAMAGE);
-      w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY, 'shooter-player', PLAYER_FIRE_RATE);
-    }
+    if (!hero) this.buffPlayer(u);
     this.spread = SPREAD.still;
     this.bloom = 0;
     this.hurtMarks.length = 0;
@@ -5351,6 +5380,7 @@ export class Shooter {
     T.gunRel = null;
     this.panel.style.display = 'none';
     this.hud.style.display = 'block';
+    this.ov?.possessed(u);
     this.lock();
     this.hints();
   }
@@ -5363,19 +5393,7 @@ export class Shooter {
     this.killerName = this.killer ? this.nameOf(this.killer.type) : '';
     this.deathCam = null;
     this.leave(true);
-    const T = this.twist;
-    if (T.head) T.head.scale.setScalar(1);
-    if (this.body && this.body.inst) {
-      this.body.inst.skinMask = null;
-      this.body.inst.skinPin = null;
-      for (const o of T.rigid || []) o.visible = true;
-      this.body.inst.syncFromBones();
-    }
-    T.mask = null;
-    T.rigid = [];
-    T.bone = T.head = null;
-    T.arms = [];
-    T.live = [];
+    this.untwist();
     const w = this.world;
     this.deaths++;
     this.state = 'dead';
@@ -6060,6 +6078,19 @@ export class Shooter {
         e.stopImmediatePropagation();
         return;
       }
+      if (this.ov?.on && pressed(e, 'SHOOTER_OVERLORD')) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (!e.repeat) this.ov.keyPress();
+        return;
+      }
+      if (this.state === 'command') {
+        if (e.code === 'Enter') {
+          e.stopImmediatePropagation();
+          this.ov.deployMenu();
+        }
+        return;
+      }
       if (this.state !== 'alive') {
         if (pressed(e, 'SHOOTER_SETTINGS')) {
           this.openSettings();
@@ -6117,6 +6148,7 @@ export class Shooter {
     on('mousedown', e => {
       if (this.introUntil > performance.now()) this.introUntil = 0;
       if (!this.owns(e)) return;
+      if (this.state === 'command') return;
       if (e.target !== this.canvas()) return;
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -6134,7 +6166,11 @@ export class Shooter {
       if (this.state === 'alive' && this.owns(e)) e.stopImmediatePropagation();
     });
     on('wheel', e => {
-      if (this.state === 'alive' && this.owns(e)) e.stopImmediatePropagation();
+      if (!this.owns(e)) return;
+      if (this.state === 'alive') {
+        e.stopImmediatePropagation();
+        this.ov?.wheelAlive(e);
+      } else if (this.state === 'command' && this.ov?.wheelCommand(e)) e.stopImmediatePropagation();
     });
     on('contextmenu', e => {
       if (this.state === 'alive') e.preventDefault();
@@ -6202,6 +6238,15 @@ export class Shooter {
   }
 
   frame(real, cam) {
+    if (this.state === 'command' && this.ov?.on) this.ov.frame(real, cam);
+    else {
+      if (this.state === 'alive') this.ov?.tickAlive(real);
+      this.frameCore(real, cam);
+    }
+    this.ov?.after(cam);
+  }
+
+  frameCore(real, cam) {
     const g = this.game,
       w = this.world,
       v = g.view,
@@ -6281,7 +6326,8 @@ export class Shooter {
       sp = Math.sin(this.pitch);
     const d = _v.set(cy * cp, sy * cp, sp);
     const scoped = !seat && this.zoom && this.role === 'scout',
-      fp = !seat && (!this.third || scoped);
+      pk = this.ov ? this.ov.pull * this.ov.pull : 0,
+      fp = !seat && (!this.third || scoped) && pk < 0.02;
     {
       const r = Math.min(this.kickDebt, this.kickDebt * KICK.recover * real);
       this.pitch -= r;
@@ -6298,11 +6344,11 @@ export class Shooter {
       bobZ = Math.abs(Math.sin(this.bobPhase)) * bobA - this.dip,
       bobX = Math.sin(this.bobPhase) * bobA * 0.6,
       bz = this.smoothZ ?? b.z;
-    const inner = !!seat && !this.post && this.cockpit;
+    const inner = !!seat && !this.post && this.cockpit && pk < 0.02;
     if (inner) cam.position.copy(this.seatView(seat, d));
     else if (seat) {
       const big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
-        back = Math.max(this.post ? 40 : 60, big) * (this.zoom ? 0.6 : 1),
+        back = Math.max(this.post ? 40 : 60, big) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
         pz = seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
       cam.position.set(seat.x - d.x * back, seat.y - d.y * back, pz - d.z * back);
     } else if (fp) {
@@ -6316,9 +6362,9 @@ export class Shooter {
       const ez = bz + this.fpZ;
       cam.position.set(b.x - cy * back + sy * (side + bobX), b.y - sy * back - cy * (side + bobX), ez + bobZ);
     } else {
-      const back = this.camBack * (this.zoom ? 0.55 : 1),
+      const back = this.camBack * (this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
         side = this.eye * 0.35,
-        pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5;
+        pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5 + pk * this.camBack * 1.2;
       cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
     }
     if (this.shake > 0.01) {
@@ -7658,6 +7704,7 @@ export class Shooter {
       this.game.props.push(...keep);
     }
     this.scopeEl?.remove();
+    this.ov?.dispose();
     if (this.game.audio && this.game.audio.spatial === this) this.game.audio.spatial = null;
     this.verbIn?.disconnect();
     this.verbNode?.disconnect();

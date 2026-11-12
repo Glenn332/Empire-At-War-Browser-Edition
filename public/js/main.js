@@ -3098,6 +3098,23 @@ async function boot() {
       } catch {}
     };
   }
+  {
+    const box = $('optShooterOverlord');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-shooter-overlord') === '1';
+    } catch {}
+    box.checked = on;
+    window.shooterOverlord = on;
+    box.parentElement.title =
+      'With the shooter on: scroll out of your soldier (or press L) to the tactical view, select and order your squads as in a normal battle, then scroll in on any of your soldiers or vehicles to take it over. Squads you order finish that order before the AI gives them new ones. In multiplayer every player commands the squads of their own slot. Takes effect from the next land battle; in multiplayer the host decides.';
+    box.onchange = () => {
+      window.shooterOverlord = box.checked;
+      try {
+        localStorage.setItem('swr-shooter-overlord', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
   for (const [id, key, flag, def, min, max, scale, old, tip] of [
     ['optShooterCap', 'swr-shooter-cap', 'shooterCap', 50, 10, 200, 1, {}, 'With the shooter on: the most soldiers each side has on the field at once. Fallen soldiers respawn until a side is back at this number. Vehicles and units from buildings are not counted.'],
     ['optShooterTickets', 'swr-shooter-tickets', 'shooterTickets', 150, 50, 500, 1, { 0: 150, 1: 150 }, 'With the shooter on: each side starts with this many reinforcement tickets. Every soldier lost costs one, every vehicle two, and a side holding more than half the points drains the others by one every 5 s. A side out of tickets loses.'],
