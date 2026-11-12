@@ -3740,7 +3740,7 @@ export class LandGame {
       return;
     }
     this.boltsWere = true;
-    const F = (this.boltFeed ||= new BoltFeed()),
+    const F = (this.boltFeed ||= new BoltFeed(8)),
       fr = (this.boltFrustum ||= new THREE.Frustum()),
       at = (this.boltAt ||= new THREE.Vector3()),
       now = performance.now();

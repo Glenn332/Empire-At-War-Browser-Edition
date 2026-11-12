@@ -15,8 +15,8 @@ struct Pass {
   fillDir2: vec3f, fillWrap: f32,
   fillColor2: vec3f, _e: f32,
   sunSpecular: vec3f, boltN: f32,
-  boltAt: array<vec4f, 8>,
-  boltTint: array<vec4f, 8>,
+  boltAt: array<vec4f, 16>,
+  boltTint: array<vec4f, 16>,
 }
 @group(0) @binding(0) var<uniform> P: Pass;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
@@ -267,13 +267,15 @@ fn rock(p: vec3f) -> f32 {
   let sun = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
   let sunTerm = ${on('BUMP') ? 'max(dot(n, P.sunDir), 0.0)' : 'fillTerm(gn, P.sunDir)'};
   var light = P.ambient + P.fillColor * fillTerm(gn, P.fillDir) + P.fillColor2 * fillTerm(gn, P.fillDir2) + P.sunColor * sunTerm * sun;
-  for (var bi = 0; bi < 8; bi++) {
+  var boltSum = vec3f(0.0);
+  for (var bi = 0; bi < 16; bi++) {
     if (f32(bi) >= P.boltN) { break; }
     let bd = P.boltAt[bi].xyz - v.vWorldPos;
     let bl = length(bd);
     let br = bl / P.boltAt[bi].w;
-    if (br < 1.0) { light += P.boltTint[bi].rgb * P.boltTint[bi].a * (1.0 - br) * (1.0 - br) * (0.3 + 0.7 * max(dot(gn, bd / max(bl, 0.001)), 0.0)); }
+    if (br < 1.0) { boltSum += P.boltTint[bi].rgb * P.boltTint[bi].a * (1.0 - br) * (1.0 - br) * (0.3 + 0.7 * max(dot(gn, bd / max(bl, 0.001)), 0.0)); }
   }
+  light += min(boltSum, vec3f(1.4));
   let vv = normalize(P.cameraPosition - v.vWorldPos);
   let sp = pow(max(dot(n, normalize(P.sunDir + vv)), 0.0), 16.0) * sun;
   let ls = objectTint(D.tint) * objectTint(v.vTint);

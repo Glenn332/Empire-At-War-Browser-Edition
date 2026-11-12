@@ -1693,16 +1693,31 @@ export class Renderer {
       const L = LaserBatch.lookOf(p.def);
       (L.kite ? kites : pills).add(p.x, p.y, p.z, p.vx * inv, p.vy * inv, p.vz * inv, p.length, p.width, L);
     };
-    const lit = world && extraFxOn() ? (this.boltFeed ||= new BoltFeed()) : null;
+    const lit = world && extraFxOn() ? (this.boltFeed ||= new BoltFeed()) : null,
+      hulls = (this.hullList ||= []),
+      cpos = cam.position;
+    const cand = (this.boltCand ||= []);
+    let zk = 1;
+    hulls.length = 0;
+    cand.length = 0;
     if (lit) {
       _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
-      lit.begin(cam.position.x, cam.position.y, cam.position.z);
+      lit.begin(cpos.x, cpos.y, cpos.z);
+      zk = Math.min(SPACE_BOLT.zoomMax, Math.max(1, (this.rig?.dist || 0) / SPACE_BOLT.zoomAt));
+      for (const u of world.units) {
+        if (u.dead || !(u.visualRadius >= SPACE_BOLT.hull) || (u.obj && !u.obj.visible)) continue;
+        _sphere.center.set(u.x, u.y, u.z || 0);
+        _sphere.radius = u.visualRadius;
+        if (_frustum.intersectsSphere(_sphere)) hulls.push(u.x, u.y, u.z || 0, u.visualRadius);
+      }
       if (this.blasts) {
         const now = performance.now();
         this.blasts = this.blasts.filter(b => now < b.until);
-        for (const b of this.blasts)
-          if (_frustum.intersectsSphere(_sphere.set(_boltAt.set(b.x, b.y, b.z), b.r)))
-            lit.add(b.x, b.y, b.z, b.r, 1, 0.7, 0.4, SPACE_BOLT.blastPower * ((b.until - now) / (SPACE_BOLT.blastTime * 1000)), SPACE_BOLT.blastBias);
+        for (const b of this.blasts) {
+          const r = b.r * zk;
+          if (_frustum.intersectsSphere(_sphere.set(_boltAt.set(b.x, b.y, b.z), r)))
+            lit.add(b.x, b.y, b.z, r, 1, 0.7, 0.4, SPACE_BOLT.blastPower * ((b.until - now) / (SPACE_BOLT.blastTime * 1000)), 1, (cpos.distanceTo(_boltAt) * SPACE_BOLT.camK * 0.5) ** 2);
+        }
       }
     } else this.blasts = null;
     if (world) {
@@ -1711,9 +1726,24 @@ export class Renderer {
         p.fxSeen = stamp;
         if (p.hidden) continue;
         const P = p.def;
-        if (lit && _frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) {
-          const t = boltTint(P, p.r, p.g, p.b);
-          lit.add(p.x, p.y, p.z, p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius, t[0], t[1], t[2], SPACE_BOLT.power);
+        if (lit && hulls.length && _frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) {
+          const reach = (p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius) * zk;
+          let gap = Infinity,
+            hi = -1;
+          for (let i = 0; i < hulls.length; i += 4) {
+            const dx = p.x - hulls[i],
+              dy = p.y - hulls[i + 1],
+              dz = p.z - hulls[i + 2],
+              out = hulls[i + 3] + reach,
+              d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= out * out) continue;
+            const g = Math.sqrt(d2) - hulls[i + 3];
+            if (g < gap) {
+              gap = g;
+              hi = i;
+            }
+          }
+          if (hi >= 0) cand.push({ p, hi, reach, prio: (Math.max(0, gap) + cpos.distanceTo(_boltAt) * SPACE_BOLT.camK) ** 2 });
         }
         if (!(P._cr ??= P.num('Projectile_Custom_Render', 0)) && !(P._sm ??= P.str('Space_Model_Name'))) continue;
         const inv = 1 / p.speed;
@@ -1727,6 +1757,23 @@ export class Renderer {
           sp.add(p.x, p.y, p.z, 7 + p.width, p.r, p.g, p.b, 1.2);
           if (Math.random() < dt * 40) this.spawnParticle(p.x, p.y, p.z, 0, 0, 0, 4, 6, 0.5, p.r * 0.6, p.g * 0.6, p.b * 0.6, 0.6);
         } else laser(p, inv);
+      }
+      if (lit && cand.length) {
+        cand.sort((a, b) => a.prio - b.prio);
+        const seen = new Set();
+        for (const c of cand) seen.add(c.hi);
+        const cap = Math.max(SPACE_BOLT.perHull, Math.ceil(lit.slots / seen.size)),
+          used = new Map();
+        let n = 0;
+        for (const c of cand) {
+          const k = used.get(c.hi) || 0;
+          if (k >= cap) continue;
+          used.set(c.hi, k + 1);
+          const p = c.p,
+            t = boltTint(p.def, p.r, p.g, p.b);
+          lit.add(p.x, p.y, p.z, c.reach, t[0], t[1], t[2], SPACE_BOLT.power / Math.sqrt(zk), 1, c.prio);
+          if (++n >= lit.slots) break;
+        }
       }
       const fx = this.shotFx;
       let fn = 0;
@@ -1847,7 +1894,7 @@ export class Renderer {
           b.color[2]
         );
         sp.add(t.x, t.y, tz, b.width * 2.2, b.color[0], b.color[1], b.color[2], 0.7);
-        if (lit) lit.add(t.x, t.y, tz, SPACE_BOLT.beam, b.color[0], b.color[1], b.color[2], SPACE_BOLT.power);
+        if (lit) lit.add(t.x, t.y, tz, SPACE_BOLT.beam * zk, b.color[0], b.color[1], b.color[2], SPACE_BOLT.power, 1, (cpos.distanceTo(_boltAt.set(t.x, t.y, tz)) * SPACE_BOLT.camK + SPACE_BOLT.beamLag) ** 2);
       }
     if (lit) lit.end();
     else clearBolts();
@@ -2055,7 +2102,7 @@ export class Renderer {
 const _v = new THREE.Vector3(),
   _w = { x: 0, y: 0, z: 0 },
   _s = { x: 0, y: 0, behind: false };
-const SPACE_BOLT = { radius: 220, missile: 150, beam: 260, power: 1.4, blastMin: 200, blastScale: 4, blastTime: 0.45, blastPower: 2.4, blastBias: 0.05 },
+const SPACE_BOLT = { radius: 220, missile: 150, beam: 260, power: 1.4, blastMin: 200, blastScale: 4, blastTime: 0.45, blastPower: 2.4, hull: 60, zoomAt: 1500, zoomMax: 2.5, camK: 0.02, perHull: 2, beamLag: 120 },
   _boltAt = new THREE.Vector3();
 const _frustum = new THREE.Frustum(),
   _pm = new THREE.Matrix4(),

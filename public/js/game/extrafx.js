@@ -2,7 +2,7 @@ import { lighting, boltLights } from '../model.js';
 import { lensMaterial } from './lens.js';
 
 export const GRADE = { bloom: 0.4, cutoff: 0.96, sun: 0.12, sat: 1.08, contrast: 1.06, vignette: 0.22 };
-export const BOLT = { slots: 8 };
+export const BOLT = { slots: 16 };
 
 export const extraFxOn = () => !!globalThis.extraFx;
 
@@ -62,8 +62,8 @@ export class BoltFeed {
     this.n = 0;
     this.worst = 0;
   }
-  add(x, y, z, radius, r, g, b, power, bias = 1) {
-    const d2 = ((x - this.ex) ** 2 + (y - this.ey) ** 2 + (z - this.ez) ** 2) * bias;
+  add(x, y, z, radius, r, g, b, power, bias = 1, prio = -1) {
+    const d2 = prio >= 0 ? prio : ((x - this.ex) ** 2 + (y - this.ey) ** 2 + (z - this.ez) ** 2) * bias;
     if (d2 > this.r2) return;
     let i;
     if (this.n < this.slots) i = this.n++;
@@ -88,7 +88,7 @@ export class BoltFeed {
   end(ground = null) {
     const A = boltLights.boltAt.value,
       T = boltLights.boltTint.value,
-      n = Math.min(this.n, A.length);
+      n = Math.min(this.n, A.length, this.slots);
     for (let i = 0; i < n; i++) {
       const v = this.v[i];
       A[i].set(v[0], v[1], v[2], v[3]);

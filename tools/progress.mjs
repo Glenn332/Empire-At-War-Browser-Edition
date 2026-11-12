@@ -822,7 +822,7 @@ const GROUPS = [
       [
         'Extra effects tweak for space and land battles',
         D,
-        'our own extension, off by default (Tweaks: Extra effects in space and land battles): the eight laser bolts, beams and blasts nearest the camera light the ships, units and ground around them in their colour, in the WebGL and WebGPU model shaders, space explosions light the hulls next to them for a moment, land battles get the soft bloom of the shooter mode, and both get its light colour grade (a touch of sun colour, saturation, contrast and vignette). The shooter mode now lights units with its bolts as well as the ground. Measured: space frames cost the same with it on, land about 0.2 ms more for the bloom passes; off, nothing is spent'
+        'our own extension, off by default (Tweaks: Extra effects in space and land battles): laser bolts, beams and blasts light the ships, units and ground around them in their colour (in space the sixteen bolts closest to the hulls on screen, at most a fair share per ship, wider and softer when zoomed out; on land the eight nearest the camera), in the WebGL and WebGPU model shaders, space explosions light the hulls next to them for a moment, land battles get the soft bloom of the shooter mode, and both get its light colour grade (a touch of sun colour, saturation, contrast and vignette). The shooter mode now lights units with its bolts as well as the ground. Measured: space frames cost the same with it on, land about 0.2 ms more for the bloom passes; off, nothing is spent'
       ],
       [
         'Land: shield domes on mod models',

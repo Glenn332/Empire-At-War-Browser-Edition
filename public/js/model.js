@@ -41,8 +41,8 @@ export const lighting = {
   fowSide: { value: 0 }
 };
 export const boltLights = {
-  boltAt: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
-  boltTint: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+  boltAt: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) },
+  boltTint: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) },
   boltN: { value: 0 }
 };
 gpuEnv.bolts = boltLights;
@@ -174,7 +174,7 @@ uniform sampler2D glossMap;
 #endif
 uniform vec3 sunDir, sunColor, sunSpecular, fillDir, fillColor, fillDir2, fillColor2, ambient;
 uniform float fillWrap;
-uniform vec4 boltAt[8], boltTint[8];
+uniform vec4 boltAt[16], boltTint[16];
 uniform float boltN;
 float fillTerm(vec3 n, vec3 d) {
   float x = dot(n, d);
@@ -306,12 +306,14 @@ void main() {
   float sunTerm = fillTerm(gn, sunDir);
   #endif
   vec3 light = ambient + fillColor * fillTerm(gn, fillDir) + fillColor2 * fillTerm(gn, fillDir2) + sunColor * sunTerm * sun;
-  for (int i = 0; i < 8; i++) {
+  vec3 boltSum = vec3(0.0);
+  for (int i = 0; i < 16; i++) {
     if (float(i) >= boltN) break;
     vec3 bd = boltAt[i].xyz - vWorldPos;
     float bl = length(bd), br = bl / boltAt[i].w;
-    if (br < 1.0) light += boltTint[i].rgb * boltTint[i].a * (1.0 - br) * (1.0 - br) * (0.3 + 0.7 * max(dot(gn, bd / max(bl, 0.001)), 0.0));
+    if (br < 1.0) boltSum += boltTint[i].rgb * boltTint[i].a * (1.0 - br) * (1.0 - br) * (0.3 + 0.7 * max(dot(gn, bd / max(bl, 0.001)), 0.0));
   }
+  light += min(boltSum, vec3(1.4));
   vec3 v = normalize(cameraPosition - vWorldPos);
   float sp = pow(max(dot(n, normalize(sunDir + v)), 0.0), 16.0) * sun;
   vec4 ls = objectTint(tint) * objectTint(vTint);

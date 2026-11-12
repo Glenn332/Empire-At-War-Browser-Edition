@@ -5,7 +5,7 @@ import { env, webkit } from './env.js';
 
 const SLOT = 256;
 const SLOTS = 4096;
-const PASS = 768;
+const PASS = 1024;
 const PASSES = 64;
 const BONES = 1536;
 const ARENA = 8 << 20;
@@ -672,7 +672,7 @@ export class GPURenderer {
       const a = B.boltAt.value[i],
         t = B.boltTint.value[i],
         k = o + 92 + i * 4,
-        q = o + 124 + i * 4;
+        q = o + 156 + i * 4;
       f[k] = a.x;
       f[k + 1] = a.y;
       f[k + 2] = a.z;
