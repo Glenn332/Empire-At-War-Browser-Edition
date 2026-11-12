@@ -246,6 +246,7 @@ export class Overlord {
     const N = sh.game.shooterNet;
     if (N && N.playerUnits && N.playerUnits().has(u)) return false;
     if (q.crew) return sh.netClient || !!(q.crew.in && !q.crew.in.dead && !q.crew.in.remote && q.crew.in !== sh.body);
+    if (u.thief) return !u.thief.dead && !u.thief.remote && u.thief !== sh.body;
     if (sh.netClient && u.kind !== 'INFANTRY' && !u.foot) return true;
     return !u.inside && u.speed > 0 && (u.kind === 'INFANTRY' || u.foot);
   }
@@ -494,9 +495,9 @@ export class Overlord {
     }
     let body = u,
       ride = null;
-    if (u.squad.crew) {
+    if (u.squad.crew || u.thief) {
       ride = u.squad;
-      body = ride.crew.in;
+      body = u.thief || ride.crew.in;
       if (!body || body.dead || body.remote) return false;
     }
     this.possessFrom(body, ride, u);
@@ -549,9 +550,9 @@ export class Overlord {
     if (had && !had.dead) this.remoteFree(peer);
     let body = u,
       ride = null;
-    if (u.squad.crew) {
+    if (u.squad.crew || u.thief) {
       ride = u.squad;
-      body = ride.crew.in;
+      body = u.thief || ride.crew.in;
       if (!body || body.dead || body.remote || body === sh.body) return null;
     }
     const q = body.squad,

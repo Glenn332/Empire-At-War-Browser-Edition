@@ -1488,13 +1488,20 @@ function board(world, c, v, side) {
   });
 }
 
+export const thiefOut = (world, v) => leave(world, v);
+
 function leave(world, v) {
   const c = v.thief;
   v.thief = null;
   if (!c || c.dead) return;
   c.inside = null;
-  c.x = v.x;
-  c.y = v.y;
+  const a = (v.heading || 0) + Math.PI / 2,
+    r = (v.hitRadius || 10) + (c.hitRadius || 2) + 14,
+    o = world.nearestOpen(v.x + Math.cos(a) * r, v.y + Math.sin(a) * r) || { x: v.x, y: v.y };
+  c.x = o.x;
+  c.y = o.y;
+  c.z = world.groundZ(o.x, o.y);
+  if (c.holder) c.holder.position.set(c.x, c.y, c.z);
   c.heading = v.heading;
   c.path = [];
   c.target = null;

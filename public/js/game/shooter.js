@@ -20,6 +20,7 @@ import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
 import { eawSkin } from './eawskin.js';
 import { TERRAIN } from './landtables.js';
+import { thiefOut } from './landabilities.js';
 
 const REACH = 1600,
   STRAY = 500,
@@ -3007,12 +3008,17 @@ export class Shooter {
 
   heightOfSeat(v) {
     const B = this.seatBox;
-    if (B.u !== v) {
-      B.u = v;
+    const now = this.world.time;
+    if (B.u !== v || now - B.at < 2 || now >= B.next) {
+      if (B.u !== v) {
+        B.u = v;
+        B.at = now;
+        B.z = null;
+      }
+      B.next = now + 1;
       _box.setFromObject(v.holder);
       B.top = Math.max(4, _box.max.z - v.z);
       B.len = Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5);
-      B.z = null;
     }
     return B.top;
   }
@@ -3414,6 +3420,11 @@ export class Shooter {
         return;
       }
       tgt = { unit: hit };
+      const c = sq.members.find(u => !u.dead && u.abilityKinds?.has(def.kind)) || this.body;
+      if (!this.rideQ && def.range > 0 && c && Math.hypot(hit.x - c.x, hit.y - c.y) > def.range) {
+        this.flash('Get closer');
+        return;
+      }
     }
     if (this.netClient) {
       const Nn = this.game.shooterNet,
@@ -3546,6 +3557,7 @@ export class Shooter {
     if (this.gunQ && (this.gunQ.dead || !this.gunQ.members.length)) this.leave(true);
     if (this.post && this.post.dead) this.leave(true);
     const b0 = this.body;
+    if (this.state === 'alive' && b0 && !b0.dead && !this.rideQ && b0.inside?.thief === b0 && !b0.inside.dead && b0.inside.squad) this.drive(b0.inside.squad);
     if (this.post && b0 && !b0.dead && b0.weapon) {
       const wp = b0.weapon;
       wp.cooldown -= dt;
@@ -3870,7 +3882,11 @@ export class Shooter {
       this.note(
         `${this.nameOf(lead.type)}: mouse to steer and climb, W S speed, ${this.keyText('SHOOTER_SPRINT')} boost, ${this.keyText('SHOOTER_DODGE')} barrel roll, ${this.keyText('SHOOTER_JUMP')} ${this.keyText('SHOOTER_CROUCH')} up and down, ${this.keyText('SHOOTER_ENTER')} to get out`
       );
-    } else this.note(`${this.nameOf(lead.type)}: W S to drive, A D to turn, mouse to aim, ${this.keyText('DIRECT_VIEW')} cockpit view, ${this.keyText('SHOOTER_ENTER')} to get out`);
+    } else {
+      this.pitch = -0.05;
+      this.kickDebt = 0;
+      this.note(`${this.nameOf(lead.type)}: W S to drive, A D to turn, mouse to aim, ${this.keyText('DIRECT_VIEW')} cockpit view, ${this.keyText('SHOOTER_ENTER')} to get out`);
+    }
   }
 
   takeGun(q) {
@@ -3915,7 +3931,12 @@ export class Shooter {
       q.direct = null;
       this.rideQ = null;
       this.rideLead = null;
-      if (alive && b.inside) {
+      if (alive && b.inside && v && v.thief === b) {
+        if (!lost && !v.dead && w.useAbility(q, 'EJECT_VEHICLE_THIEF') !== null) {
+          thiefOut(w, v);
+          this.eject(b, q, false);
+        }
+      } else if (alive && b.inside) {
         if (lost && this.light(v)) {
           b.inside = undefined;
           b.holder.visible = true;
@@ -6378,7 +6399,7 @@ export class Shooter {
         big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
         back = Math.max(this.post ? 40 : 60, big, tall ? top * RIDE_CAM.back : 0) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
         side = tall ? top * RIDE_CAM.side : 0,
-        pz = tall ? seat.z + top * RIDE_CAM.lift + back * 0.12 : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
+        pz = tall ? seat.z + top * RIDE_CAM.lift : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
       cam.position.set(seat.x - d.x * back + sy * side, seat.y - d.y * back - cy * side, pz - d.z * back);
     } else if (fp && this.big) {
       const G = this.big,
@@ -7586,7 +7607,7 @@ export class Shooter {
     const text = list
       .map((st, i) => {
         const name = st.def.kind.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase());
-        const left = st.cooldown > 0 ? ` (${Math.ceil(st.cooldown)} s)` : st.active ? ' (on)' : '';
+        const left = st.waitExit ? ' (in use)' : st.cooldown > 0 ? ` (${Math.ceil(st.cooldown)} s)` : st.active ? ' (on)' : '';
         return `${this.keyText('SHOOTER_ABILITY_' + (i + 1))}  ${name}${left}`;
       })
       .join('\n');
