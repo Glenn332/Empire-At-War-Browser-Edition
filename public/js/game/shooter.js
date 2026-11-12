@@ -173,6 +173,9 @@ const PAD = { dead: 0.16, look: 2.8, adsLook: 0.5, assist: 0.45, cone: 0.07, tri
 
 const LOWER_BONES = /ROOT|PELVIS|HIP|THIGH|CALF|SHIN|FOOT|TOE|LEG/i;
 
+const RIDE_CAM = { tall: 1.6, back: 1.9, side: 0.32, lift: 1.12, eye: 1.04, ahead: 0.62, settle: 7 },
+  SHOT_GAIN = { foot: 1.7, ride: 1.35 };
+
 const SHOOTER_CSS = `
 .sh-hit { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; opacity: 0; transition: opacity .18s ease-out; filter: drop-shadow(0 0 1px #000); }
 .sh-hit.pop { animation: sh-pop .14s ease-out; }
@@ -3058,14 +3061,21 @@ export class Shooter {
     return name;
   }
 
-  seatView(v, d) {
+  heightOfSeat(v) {
     const B = this.seatBox;
     if (B.u !== v) {
       B.u = v;
       _box.setFromObject(v.holder);
       B.top = Math.max(4, _box.max.z - v.z);
       B.len = Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5);
+      B.z = null;
     }
+    return B.top;
+  }
+
+  seatView(v, d, real = 0.016) {
+    const B = this.seatBox;
+    this.heightOfSeat(v);
     if (this.gunQ && v === this.gunQ.members[0]) {
       const bone = v.turret?.barrel || v.guns?.find(g => g.muzzles && g.muzzles.length)?.muzzles[0]?.bone || v.weapon?.muzzles?.[0]?.bone;
       if (bone) {
@@ -3075,8 +3085,12 @@ export class Shooter {
       }
     }
     const c = Math.cos(v.heading),
-      s = Math.sin(v.heading);
-    return _sv.set(v.x + c * B.len * 0.35, v.y + s * B.len * 0.35, v.z + B.top * 0.95 + 1.5);
+      s = Math.sin(v.heading),
+      tall = !v.flies && B.top > v.hitRadius * RIDE_CAM.tall,
+      want = v.z + B.top * (tall ? RIDE_CAM.eye : 0.95) + 1.5;
+    B.z = B.z === null || Math.abs(want - B.z) > B.top * 0.5 ? want : B.z + (want - B.z) * Math.min(1, real * RIDE_CAM.settle);
+    const ahead = B.len * (tall ? RIDE_CAM.ahead : 0.35);
+    return _sv.set(v.x + c * ahead, v.y + s * ahead, B.z);
   }
 
   damageFx() {
@@ -3494,7 +3508,6 @@ export class Shooter {
     this.killUntil = now + 900;
     this.kills++;
     this.matchScore += pts;
-    this.sfx('kill');
     this.popup(`${now < this.headUntil && u.kind === 'INFANTRY' ? 'HEADSHOT' : 'KILL'} +${pts}`, 'kill');
   }
 
@@ -5235,8 +5248,7 @@ export class Shooter {
       this.matchScore += pts;
       if (m.head) this.stats.heads++;
       if (m.car) this.stats.vehicles++;
-      this.sfx('kill');
-      this.popup(`${m.head && m.inf ? 'HEADSHOT' : 'KILL'} +${pts}`, 'kill');
+        this.popup(`${m.head && m.inf ? 'HEADSHOT' : 'KILL'} +${pts}`, 'kill');
     } else if (m.c === 'assist') {
       this.assists++;
       this.matchScore += pts;
@@ -5415,6 +5427,7 @@ export class Shooter {
     const h = Math.max(6, Math.min(40, _box.max.z - _box.min.z || u.aimZ * 1.6 || 10));
     this.eye = h * 0.9;
     this.camBack = h * 2.6;
+    this.big = u.kind !== 'INFANTRY' && !u.foot ? { top: Math.max(4, _box.max.z - u.z), len: Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5), z: null } : null;
     const T = this.twist;
     T.bone = u.inst?.bone('B_CHEST') || u.inst?.bone('B_SPINE') || u.inst?.bone('B_TORSO') || null;
     T.head = u.inst?.bone('B_HEAD') || null;
@@ -5569,11 +5582,14 @@ export class Shooter {
     this.setFov(cam, Math.round((D.fov + (want - D.fov) * ease) * 10) / 10, 1);
   }
 
+  shotBoost(s) {
+    return this.seatOf() && s && s.w !== this.body?.weapon ? SHOT_GAIN.ride : SHOT_GAIN.foot;
+  }
+
   recoil(from, s) {
     if (from !== this.body) return;
     if (s && s.w === this.nadeW) return;
     if (s && this.role === 'scout' && this.zoom) this.scopedShots.add(s);
-    this.sfx('shot');
     this.twist.kick = Math.min(0.3, this.twist.kick + RECOIL);
     const g = this.gun,
       w = this.world;
@@ -5932,7 +5948,7 @@ export class Shooter {
     } else if (best) {
       const was = this.lockK;
       this.lockK = Math.min(1, this.lockK + real / LOCK.time);
-      if (was < 1 && this.lockK >= 1) this.sfx('head');
+      if (was < 1 && this.lockK >= 1) this.sfx('lock');
     }
   }
 
@@ -6100,22 +6116,14 @@ export class Shooter {
         src.start(t, 0, Math.min(1, n / ctx.sampleRate));
         src.stop(t + d);
       };
-    if (kind === 'hit') tone(1900, 0.045, 'square', 0.07);
-    else if (kind === 'head') {
+    if (kind === 'lock') {
       tone(2300, 0.05, 'square', 0.08);
       tone(3100, 0.07, 'square', 0.07, 0.045);
-    } else if (kind === 'kill') {
-      tone(160, 0.2, 'sine', 0.35, 0, 70);
-      tone(1250, 0.14, 'triangle', 0.12, 0.03);
     } else if (kind === 'vent') noise(0.6, 0.25, 2600);
     else if (kind === 'noise') noise(0.001, 0.0002, 1000);
     else if (kind === 'warn') {
       tone(1350, 0.06, 'square', 0.07);
       tone(1350, 0.06, 'square', 0.07, 0.11);
-    }
-    else if (kind === 'shot') {
-      noise(0.07, 0.35, 900);
-      tone(95, 0.08, 'sine', 0.3, 0, 55);
     }
     else if (kind === 'empty') tone(320, 0.03, 'square', 0.06);
     else if (kind === 'beat') {
@@ -6140,7 +6148,6 @@ export class Shooter {
     if (!this.mine(s.from)) return;
     const now = performance.now();
     this.hitUntil = now + 120;
-    if (!s.struck.dead) this.sfx(now < this.headUntil ? 'head' : 'hit');
   }
 
   owns(e) {
@@ -6436,12 +6443,23 @@ export class Shooter {
       bobX = Math.sin(this.bobPhase) * bobA * 0.6,
       bz = this.smoothZ ?? b.z;
     const inner = !!seat && !this.post && this.cockpit && pk < 0.02;
-    if (inner) cam.position.copy(this.seatView(seat, d));
+    if (inner) cam.position.copy(this.seatView(seat, d, real));
     else if (seat) {
-      const big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
-        back = Math.max(this.post ? 40 : 60, big) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
-        pz = seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
-      cam.position.set(seat.x - d.x * back, seat.y - d.y * back, pz - d.z * back);
+      const top = this.heightOfSeat(seat),
+        tall = !seat.structure && !seat.flies && !this.post && top > seat.hitRadius * RIDE_CAM.tall,
+        big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
+        back = Math.max(this.post ? 40 : 60, big, tall ? top * RIDE_CAM.back : 0) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
+        side = tall ? top * RIDE_CAM.side : 0,
+        pz = tall ? seat.z + top * RIDE_CAM.lift + back * 0.12 : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
+      cam.position.set(seat.x - d.x * back + sy * side, seat.y - d.y * back - cy * side, pz - d.z * back);
+    } else if (fp && this.big) {
+      const G = this.big,
+        want = bz + G.top * RIDE_CAM.eye + 1.5,
+        ahead = G.len * RIDE_CAM.ahead,
+        hc = Math.cos(b.heading),
+        hs = Math.sin(b.heading);
+      G.z = G.z === null || Math.abs(want - G.z) > G.top * 0.5 ? want : G.z + (want - G.z) * Math.min(1, real * RIDE_CAM.settle);
+      cam.position.set(b.x + hc * ahead, b.y + hs * ahead, G.z);
     } else if (fp) {
       const h = this.eye / 0.9,
         back = h * FP_EYE.back,
@@ -6452,6 +6470,12 @@ export class Shooter {
       this.fpZ = this.fpZ === undefined ? off : this.fpZ + (off - this.fpZ) * Math.min(1, real * 10);
       const ez = bz + this.fpZ;
       cam.position.set(b.x - cy * back + sy * (side + bobX), b.y - sy * back - cy * (side + bobX), ez + bobZ);
+    } else if (this.big) {
+      const G = this.big,
+        back = Math.max(this.camBack, G.top * RIDE_CAM.back) * (this.zoom ? 0.6 : 1) * (1 + pk * 2.6),
+        side = G.top * RIDE_CAM.side,
+        pz = bz + G.top * RIDE_CAM.lift + pk * back * 0.5;
+      cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
     } else {
       const back = this.camBack * (this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
         side = this.eye * 0.35,
@@ -6477,7 +6501,7 @@ export class Shooter {
     }
     b.holder.visible = !b.inside;
     this.eyeAt.copy(cam.position);
-    this.pose(b, fp);
+    this.pose(b, fp && !this.big);
     if (scoped) b.holder.visible = false;
     this.scopeEl.style.display = scoped ? 'block' : 'none';
     this.feedGround();

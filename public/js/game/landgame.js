@@ -987,6 +987,7 @@ export class LandGame {
       if (!own && (s.from?.seen === false || world.time - lastFire < 0.07)) return;
       if (own) {
         this.audio.forceNext = true;
+        this.audio.boostNext = this.shooter.shotBoost(s);
         this.shooter.recoil(s.from, s);
       }
       else lastFire = world.time;

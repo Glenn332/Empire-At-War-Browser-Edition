@@ -20,6 +20,7 @@ export class Audio {
     this.listener = { x: 0, y: 0, dist: 1500 };
     this.falloff = 1;
     this.forceNext = false;
+    this.boostNext = 0;
     this.sfxVolume = 0.7;
     this.musicVolume = 0.45;
     this.voiceVolume = 0.9;
@@ -195,8 +196,10 @@ export class Audio {
     if (!samples.length) return true;
     const key = ev.name,
       now = this.ctx.currentTime,
-      force = this.forceNext;
+      force = this.forceNext,
+      boost = this.boostNext || 1;
     this.forceNext = false;
+    this.boostNext = 0;
     const live = this.active.get(key) || 0;
     if (live >= ev.num('Max_Instances', 4) && !force) return true;
     if (this.ambientVOOff && ev.bool('Is_Ambient_VO')) return true;
@@ -229,7 +232,7 @@ export class Audio {
       pan = h.pan;
       if (gain * far < 0.02) return true;
     }
-    gain = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * far;
+    gain = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * far * boost;
     let file;
     if (ev.bool('Play_Sequentially')) {
       const i = this.seq.get(key) || 0;
