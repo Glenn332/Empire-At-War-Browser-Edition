@@ -309,6 +309,22 @@ finishSpawn({ members: [] });
 await Promise.resolve();
 await Promise.resolve();
 assert(!fake.squads.includes(pending));
+{
+  const { GalacticBattles } = await import('../public/js/game/galacticbattles.js');
+  const og = G(),
+    home = og.planets.find(q => q.garrison.filter(u => db.type(u.type.list('Company_Transport_Unit')[0])).length >= 2);
+  assert(home, 'Planet with two transportable companies');
+  const b = embarkGround(og, home.index, home.owner),
+    a = b && { owner: b.owner, planet: b.planet, units: b.units.splice(b.units.findIndex(u => u.carries), 1), pos: null, path: [], dest: -1, leg: null };
+  if (a) og.fleets.push(a);
+  assert(a && b && a !== b, 'Two orbiting fleets');
+  const battles = new GalacticBattles({ galaxy: og });
+  const picked = b.units.find(u => u.carries);
+  const roster = battles.landForces(home.index, home.owner, { records: [picked] });
+  assert.deepEqual(roster.leads, [picked], 'The dragged company lands first');
+  assert.equal(roster.records.length, invasionForces(og, home.index, home.owner).length, 'Every ground company in orbit is in the reinforcement pool');
+  assert(a.units.every(u => !u.carries || roster.records.includes(u)), 'Companies in the other fleet are reinforcements too');
+}
 console.log(
-  `PASS: ${mod < 0 ? 'base game' : 'mod'} ${campaign.name}; selective embark/landing, fleet slots, record identity, tactical transports, clear-orbit gate, capture, losses, ship retention, reward once and snapshot round trip`
+  `PASS: ${mod < 0 ? 'base game' : 'mod'} ${campaign.name}; selective embark/landing, fleet slots, record identity, tactical transports, clear-orbit gate, capture, orbit reinforcement pool, losses, ship retention, reward once and snapshot round trip`
 );

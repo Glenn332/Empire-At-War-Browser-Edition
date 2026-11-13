@@ -220,11 +220,12 @@ export async function placeLandInvasion(w, map, cb) {
     stay(u, t, a.side);
     return false;
   });
-  const first = pathfinder(landing, cb.linked?.hero);
+  const leads = landing.filter(u => u.lead);
+  const starting = new Set(a.raid && leads.length ? leads : [pathfinder(leads.length ? leads : landing, cb.linked?.hero)]);
   for (const u of landing) {
     const type = db.type(u.type);
     if (!type) continue;
-    if (u === first) await spawn(u, a.side, entry);
+    if (starting.has(u)) await spawn(u, a.side, entry);
     else {
       w.ready[a.side].push(type);
       book.waiting.push({ ...u, side: a.side, type });

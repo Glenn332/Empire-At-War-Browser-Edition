@@ -2921,7 +2921,7 @@ export class GalacticGame {
       this.galacticBattleChanged();
       return true;
     }
-    if (this.isHuman(former)) return !this.busy && !!this.battles.engage(p, owner, former, 'land', { records: units });
+    if (this.isHuman(former)) return !this.busy && !!this.battles.engage(p, owner, former, 'land', { records: units, raid: true });
     return !!this.battles.invade(p, owner, former, units);
   }
 
@@ -2972,7 +2972,7 @@ export class GalacticGame {
         });
       } else {
         if (!pl.type.str('Land_Tactical_Map').trim()) return false;
-        this.battles.engage(p, fleet.owner, pl.owner, 'land', { invasionIds: troops.map(u => u.gid) });
+        this.battles.engage(p, fleet.owner, pl.owner, 'land', { invasionIds: troops.map(u => u.gid), raid });
       }
       return true;
     }
@@ -3022,7 +3022,12 @@ export class GalacticGame {
         upgrades: battleUpgrades(this.galaxy, pl),
         attacker: {
           side: myTeam === 0 ? 0 : 1,
-          units: invasionForces(g, b.p, b.attacker).filter(u => !b.invasionIds || b.invasionIds.includes(u.gid))
+          raid: !!b.raid,
+          units: invasionForces(g, b.p, b.attacker).flatMap(u => {
+            const record = this.battles.landRecords([u.gid])[0];
+            if (b.records ? !b.records.includes(record) : b.invasionIds && !b.invasionIds.includes(u.gid)) return [];
+            return [b.leads?.includes(record) ? { ...u, lead: true } : u];
+          })
         },
         defender: {
           side: myTeam === 0 ? 1 : 0,

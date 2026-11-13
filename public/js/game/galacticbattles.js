@@ -226,7 +226,15 @@ export class GalacticBattles {
     const game = this.game;
     if (game.busy || !game.pendingBattle) return false;
     if (options.invasionIds && !options.records) options = { ...options, records: this.landRecords(options.invasionIds) };
+    if (mode === 'land' && options.records && !options.leads) options = this.landForces(p, attacker, options);
     return game.pendingBattle.begin({ p, attacker, defender, mode, options });
+  }
+  landForces(p, attacker, options) {
+    const g = this.game.galaxy,
+      leads = options.records.filter(Boolean),
+      orbit = this.landRecords(invasionForces(g, p, attacker).map(u => u.gid)),
+      records = [...leads, ...orbit.filter(u => !leads.includes(u))];
+    return { ...options, leads, records, invasionIds: undefined };
   }
   landRecords(ids) {
     const g = this.game.galaxy;
