@@ -7,7 +7,7 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
 | **Space skirmish** | **94.1%** | 172 | 23 | 0 | 195 |
-| **Whole game** | **93.6%** | 319 | 40 | 3 | 362 |
+| **Whole game** | **93.5%** | 318 | 41 | 3 | 362 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -29,7 +29,7 @@ Regenerate with `node tools/progress.mjs`.
 | Platform | space skirmish | 90.0% | 12 | 3 | 0 |
 | What a mod can change | rest of the game | 71.9% | 8 | 7 | 1 |
 | Game modes | rest of the game | 46.2% | 1 | 10 | 2 |
-| Land battles | rest of the game | 100.0% | 77 | 0 | 0 |
+| Land battles | rest of the game | 99.4% | 76 | 1 | 0 |
 | Galactic conquest | rest of the game | 100.0% | 61 | 0 | 0 |
 
 ## What we have, and what we do not
@@ -290,7 +290,7 @@ Regenerate with `node tools/progress.mjs`.
 - ⬜ Replays
 - ⬜ Map editor
 
-### Land battles — 100.0%
+### Land battles — 99.4%
 
 - ✅ Terrain and heightmaps
 - ✅ Terrain textures and blending — *each layer is the game terrain material: texture and bump map at their own size, turn and tilt (the projection is the loader arithmetic read from the program), diffuse and specular colour, lit by the formula of the game terrain shader, under the drifting cloud shadows; the four corner layers of a grid square are mixed in one pass where the game draws a pass per layer; a grid square is left out only when all four corners have a layer with the map hole flag (chunk 0x23), a layer merely without a texture is drawn (with a neighbouring texture, a guess); scenery is drawn under the fog everywhere (props have no HIDE_WHEN_FOGGED) and the terrain-style object shaders (TerrainMeshGloss, TerrainMeshBump, BatchMesh, Grass) are darkened by the fog texture as the ground is; ordinary mesh shaders are not*
@@ -318,7 +318,6 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Artillery and indirect fire — *rounds of the GRENADE category are thrown as the engine lob solver throws them (read from the engine): gravity times Lob_Mod, the steeper of the two angles at full Max_Speed, and with Can_Lob_Slower tried again at four fifths the speed while it still reaches; nothing that reaches, no shot. Time in the air and height follow, counted in the engine logic frames (30 a game second, read from the engine). Other categories fly straight whatever their gravity, as in the engine. They hurt everything around where they land and cannot be fired inside the minimum range*
 - ✅ Turrets and build pads — *pads are captured and built on, turrets fire, bacta tanks and repair stations heal, sensor nodes see; what stands on a pad can be sold again from the bar own Sell button for the credits its type gives back*
 - ✅ Buildings and base layout — *each team base stands at the start (MP_Default_Pre_Built_Base) or is its build pads, as the setup screen says, and is shared by the team; an unbuilt or fallen building is its pad - the building own model in its ruined state - and is bought on it, the command centre included; buildings show their damage states as they are shot down (they do not go back when repaired until hit again)*
-- ✅ Garrisoning buildings and transports — *what holds a garrison has so many slots and takes certain kinds (Num_Garrison_Slots, Garrison_Category), and each soldier or vehicle fills what its type says (Garrison_Value): a slot holds a squad, so an infantry company goes in whole (ours, from the data: the game soldiers carry no Garrison_Value and bunkers have four or five slots, so counted by the soldier no company would fit). Bunkers let infantry fire out through their ports at longer range; the transports (Juggernaut, HTT, F9-TZ, Gargantuan) carry infantry and light vehicles about. Letting them out of a transport is a button of ours on the bar; out of a bunker, an order to go somewhere*
 - ✅ Landing zones and reinforcement points
 - ✅ Reinforcement landings (transports)
 - ✅ Population by landing zone
@@ -369,6 +368,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Land maps (.ted terrain chunks)
 - ✅ Land audio (footsteps, vehicles, ambience) — *weapon fire, impacts, deaths, unit replies, announcer lines, music and engine loops; footfalls and the other sounds of the animations at the moments AnimationSFXMaps.txt gives (a company footsteps thinned to one in five); the weather loops and gusts. The game own table of map ambience (AmbientMapSounds.xml) is a stub its makers never filled in, so there is none to play*
 - ✅ Land victory conditions — *the land win condition GameConstants names: a side is beaten when every counted building of its base is destroyed; the game end-of-battle screen follows*
+- 🟡 Garrisoning buildings and transports — *what holds a garrison has so many slots and takes certain kinds (Num_Garrison_Slots, Garrison_Category), and each soldier or vehicle fills what its type says (Garrison_Value): a slot holds a squad, so an infantry company goes in whole (ours, from the data: the game soldiers carry no Garrison_Value and bunkers have four or five slots, so counted by the soldier no company would fit). Bunkers let infantry fire out through their ports at longer range; the transports (Juggernaut, HTT, F9-TZ, Gargantuan) carry infantry and light vehicles about. Letting them out is as the engine (read): with only the holder selected and someone inside, the pointer over the holder itself shows POINTER_GARRISON_OUT and the order click there lets everyone out; with units selected that can go in, the pointer over a friendly holder with room shows POINTER_GARRISON_IN. Still to do: the engine also lists the garrisoned units in the selection slots (st_garrison_icon on their portrait, garrison_slot_icon pips on the holder), and a click on such a slot lets that one squad out; that bar row is not drawn yet*
 
 ### Galactic conquest — 100.0%
 

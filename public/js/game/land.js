@@ -3006,10 +3006,6 @@ export class LandWorld {
   }
 
   useAbility(squad, kind, tgt = null) {
-    if (kind === 'UNLOAD') {
-      for (const u of squad.members) if (u.holds && u.holds.length) ungarrison(this, u);
-      return null;
-    }
     return kind === 'SELL' ? this.sell(squad.members[0]) : useAbility(this, squad, kind, tgt);
   }
 
@@ -4283,16 +4279,7 @@ export class LandWorld {
               secs: ab.num('Owner_Light_Effect_Duration', 0.5)
             };
         }
-        if (t.num('Num_Garrison_Slots', 0) > 0) {
-          hostOf(u);
-          if (!squad.abilityState('UNLOAD'))
-            squad.abilities.push({
-              def: { kind: 'UNLOAD', label: 'Let out everyone inside', text: 'Out', aim: 'none', target: 'none', recharge: 0 },
-              active: false,
-              cooldown: 0,
-              auto: false
-            });
-        }
+        if (t.num('Num_Garrison_Slots', 0) > 0) hostOf(u);
         {
           const at = t.list('Land_Damage_Thresholds').map(Number),
             sfx = t.list('Land_Damage_SFX');

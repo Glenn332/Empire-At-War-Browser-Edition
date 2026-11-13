@@ -1575,7 +1575,7 @@ export function aiAbilities(world, q, bribeScore = null) {
   const fighting = q.members.find(u => u.target && !u.target.dead);
   for (const st of q.abilities) {
     const def = st.def;
-    if (def.kind === 'SELL' || def.kind === 'UNLOAD') continue;
+    if (def.kind === 'SELL') continue;
     const c = casterOf(q, def.kind);
     if (!c) continue;
     if (def.kind === 'DEPLOY') {

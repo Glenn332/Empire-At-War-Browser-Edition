@@ -6,7 +6,7 @@ import {
   canBomb,
   bombingRun,
   garrison,
-  ungarrison,
+  canGarrison,
   bombardEnabled,
   canBombard,
   bombardCharge,
@@ -458,13 +458,17 @@ export class LandUI {
     this.game.command({ c: 'garrison', u: m.map(q => q.id), t: host.squad.id });
     return true;
   }
-  leave(g) {
-    const full = this.mine().filter(s => {
-      const u = s.structure && s.members[0];
-      return u && u.holds && u.holds.length;
-    });
-    if (full.length) this.game.command({ c: 'ungarrison', u: full.map(q => q.id), x: g.x, y: g.y });
-    return full.length > 0;
+  canEnter(host) {
+    return !!host && !host.dead && host.slots > 0 && this.movers().some(q => q !== host.squad && canGarrison(this.world, q, host));
+  }
+  canLeave(host) {
+    const m = this.mine();
+    return !!host && !host.dead && m.length === 1 && m[0] === host.squad && host.squad.members.some(u => u.holds && u.holds.length);
+  }
+  leave(host) {
+    if (!this.canLeave(host)) return false;
+    this.game.command({ c: 'ungarrison', u: [host.squad.id] });
+    return true;
   }
 
   padAt(x, y) {

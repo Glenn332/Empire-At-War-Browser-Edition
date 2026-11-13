@@ -101,6 +101,8 @@ export function tacticalPointer(f) {
   if (a === 'move') return 'POINTER_MOVE';
   if (a === 'attack') return f.hover === 'enemy' ? 'POINTER_ATTACK' : 'POINTER_CANT_ATTACK';
   if (f.placing) return 'POINTER_REINFORCEMENTS_LANDING_POINT';
+  if (f.garrison === 'out') return 'POINTER_GARRISON_OUT';
+  if (f.garrison === 'in') return 'POINTER_GARRISON_IN';
   if (f.hover === 'enemy' && f.attack) return 'POINTER_ATTACK';
   if (f.hover) return 'POINTER_SELECT';
   if (f.act) return f.force && f.attack ? 'POINTER_ATTACK_MOVE' : 'POINTER_MOVE';

@@ -2738,11 +2738,9 @@ export class LandGame {
         } else {
           const on = this.unitAt(cx, cy),
             g = this.groundAt(cx, cy);
-          if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
-          else {
-            if (g && !(on && !w.ally(on.side, me))) ui.leave(g);
-            send(cx, cy);
-          }
+          if (on && ui.canLeave(on)) ui.leave(on);
+          else if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
+          else send(cx, cy);
         }
       }
     });
@@ -4467,7 +4465,8 @@ export class LandGame {
         dn = this.down,
         h = ui.hover,
         k = this.keys,
-        sel = ui.selection.filter(s => !s.dead && !s.isPad && s.side === this.me);
+        sel = ui.selection.filter(s => !s.dead && !s.isPad && s.side === this.me),
+        hu = h && m.inside && !ui.armed && !ui.placing ? this.unitAt(m.x, m.y) : null;
       (this.pointers ||= new Pointers(this.renderer.domElement)).set(
         tacticalPointer({
           land: true,
@@ -4476,6 +4475,7 @@ export class LandGame {
           box: dn && dn[2] === 0 && !ui.placing && !ui.armed && Math.hypot(m.x - dn[0], m.y - dn[1]) > 5,
           armed: ui.armed,
           placing: ui.placing,
+          garrison: hu && ui.canLeave(hu) ? 'out' : hu && w.ally(hu.side, this.me) && ui.canEnter(hu) ? 'in' : null,
           hover: !h ? null : h.side === this.me ? 'own' : h.side >= 0 && !w.ally(h.side, this.me) ? 'enemy' : 'other',
           act: sel.length > 0,
           attack: sel.length > 0,

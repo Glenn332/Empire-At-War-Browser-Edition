@@ -872,8 +872,8 @@ const GROUPS = [
       ],
       [
         'Garrisoning buildings and transports',
-        D,
-        'what holds a garrison has so many slots and takes certain kinds (Num_Garrison_Slots, Garrison_Category), and each soldier or vehicle fills what its type says (Garrison_Value): a slot holds a squad, so an infantry company goes in whole (ours, from the data: the game soldiers carry no Garrison_Value and bunkers have four or five slots, so counted by the soldier no company would fit). Bunkers let infantry fire out through their ports at longer range; the transports (Juggernaut, HTT, F9-TZ, Gargantuan) carry infantry and light vehicles about. Letting them out of a transport is a button of ours on the bar; out of a bunker, an order to go somewhere'
+        P,
+        'what holds a garrison has so many slots and takes certain kinds (Num_Garrison_Slots, Garrison_Category), and each soldier or vehicle fills what its type says (Garrison_Value): a slot holds a squad, so an infantry company goes in whole (ours, from the data: the game soldiers carry no Garrison_Value and bunkers have four or five slots, so counted by the soldier no company would fit). Bunkers let infantry fire out through their ports at longer range; the transports (Juggernaut, HTT, F9-TZ, Gargantuan) carry infantry and light vehicles about. Letting them out is as the engine (read): with only the holder selected and someone inside, the pointer over the holder itself shows POINTER_GARRISON_OUT and the order click there lets everyone out; with units selected that can go in, the pointer over a friendly holder with room shows POINTER_GARRISON_IN. Still to do: the engine also lists the garrisoned units in the selection slots (st_garrison_icon on their portrait, garrison_slot_icon pips on the holder), and a click on such a slot lets that one squad out; that bar row is not drawn yet'
       ],
       ['Landing zones and reinforcement points', D],
       ['Reinforcement landings (transports)', D],

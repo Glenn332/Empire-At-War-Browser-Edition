@@ -3407,7 +3407,7 @@ export class Shooter {
     const w = this.world,
       sq = this.rideQ || (this.body && this.body.squad);
     if (!sq) return;
-    const list = sq.abilities.filter(a => !/^(SELL|UNLOAD|SPREAD_OUT)$/.test(a.def.kind));
+    const list = sq.abilities.filter(a => !/^(SELL|SPREAD_OUT)$/.test(a.def.kind));
     const st = list[n];
     if (!st) return;
     const def = st.def,
@@ -5163,7 +5163,7 @@ export class Shooter {
     if (!u || u.dead || !u.remote) return;
     const sq = u.remote.ride || u.squad;
     if (!sq) return;
-    const list = sq.abilities.filter(a => !/^(SELL|UNLOAD|SPREAD_OUT)$/.test(a.def.kind)),
+    const list = sq.abilities.filter(a => !/^(SELL|SPREAD_OUT)$/.test(a.def.kind)),
       st = list[m.n | 0];
     if (!st) return;
     const def = st.def,
@@ -7603,7 +7603,7 @@ export class Shooter {
 
   drawAbilities() {
     const sq = this.rideQ || (this.body && this.body.squad);
-    const list = sq ? sq.abilities.filter(a => !/^(SELL|UNLOAD|SPREAD_OUT)$/.test(a.def.kind)).slice(0, 3) : [];
+    const list = sq ? sq.abilities.filter(a => !/^(SELL|SPREAD_OUT)$/.test(a.def.kind)).slice(0, 3) : [];
     const text = list
       .map((st, i) => {
         const name = st.def.kind.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase());

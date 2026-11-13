@@ -94,10 +94,8 @@ export function executeLand(game, side, cmd) {
       return !any && why ? { why } : {};
     }
     case 'ungarrison': {
-      for (const s of own()) {
-        const u = s.structure && s.members[0];
-        if (u && u.holds && u.holds.length) ungarrison(w, u, num(cmd.x), num(cmd.y));
-      }
+      const at = cmd.x == null ? [null, null] : [num(cmd.x), num(cmd.y)];
+      for (const s of own()) for (const u of s.members) if (u.holds && u.holds.length) ungarrison(w, u, at[0], at[1]);
       return {};
     }
     case 'ability': {
