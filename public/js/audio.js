@@ -1,4 +1,5 @@
 import { diag } from './diag.js';
+import { playableWave } from './wavadpcm.js';
 import { db } from './gamedata.js';
 import { fetchBinary, fetchText, mediaUrl } from './vfs.js';
 import { SpeechPlayer } from './speech.js';
@@ -113,7 +114,7 @@ export class Audio {
     let p = this.buffers.get(key);
     if (!p) {
       p = fetchBinary(file, { language, keep: false })
-        .then(buf => (buf ? diag.task('sound ' + file.split('/').pop(), () => this.ctx.decodeAudioData(buf.slice(0))) : null))
+        .then(buf => (buf ? diag.task('sound ' + file.split('/').pop(), () => this.ctx.decodeAudioData(playableWave(buf.slice(0)))) : null))
         .catch(() => null);
       this.buffers.set(key, p);
     }

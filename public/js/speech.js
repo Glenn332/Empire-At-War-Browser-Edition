@@ -1,4 +1,5 @@
 import { fetchText, fetchBinary } from './vfs.js';
+import { playableWave } from './wavadpcm.js';
 import { parseXML } from './xml.js';
 import { languageName, speechFile } from './localizedmedia.js';
 export { speechFile } from './localizedmedia.js';
@@ -112,7 +113,7 @@ export class SpeechPlayer {
     }
     const value = this.readBuffer
       ? Promise.resolve().then(() => this.readBuffer(file, language))
-      : fetchBinary(file, { language }).then(bytes => (bytes ? this.audio.ctx.decodeAudioData(bytes.slice(0)) : null));
+      : fetchBinary(file, { language }).then(bytes => (bytes ? this.audio.ctx.decodeAudioData(playableWave(bytes.slice(0))) : null));
     const safe = value.catch(error => {
       this.errors.set(file, error.message);
       return null;
