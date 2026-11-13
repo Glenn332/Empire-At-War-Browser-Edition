@@ -8,6 +8,7 @@ import { adjustCredits } from './galacticeconomy.js';
 import { missionResult } from './galacticcorruption.js';
 import { defeatHeroStory } from './galacticbattleevents.js';
 import { orderMove } from './fleets.js';
+import { orbitBombingRun } from './galacticautoresolve.js';
 const key = s => String(s || '').toUpperCase();
 const integer = (s, d = 0) => (s === undefined || s === '' ? d : parseInt(s, 10) || 0);
 export function readLinkedTactical(game, params) {
@@ -130,6 +131,7 @@ export function linkedTacticalSetup(game, request) {
       linked: request,
       planetOwner: defender.weapons?.length ? game.me : null,
       planetWeapons: defender.weapons || [],
+      bombingRun: space ? null : orbitBombingRun(g, p.index, request.attacker),
       attacker,
       defender
     }
