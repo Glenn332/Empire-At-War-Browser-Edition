@@ -161,11 +161,16 @@ function handle(e) {
       if (trap.capture && !e.buttons) release();
       return;
     case 'mouseup':
+      send('mouseup', e);
+      if (e.button !== 0) send('auxclick', e);
+      if (e.button === 2) send('contextmenu', e);
+      return;
     case 'click':
     case 'dblclick':
+      send(e.type, e);
+      return;
     case 'contextmenu':
     case 'auxclick':
-      send(e.type, e);
       return;
     case 'wheel':
       send('wheel', e);
