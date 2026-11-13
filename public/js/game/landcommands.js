@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { bombingRun, garrison, ungarrison, orbitalBombard } from './landbase.js';
+import { bombingRun, garrison, ungarrison, orbitalBombard, canExit } from './landbase.js';
 import { PICKS_UNIT, SILENT } from './landabilities.js';
 import { Beacons, beaconType } from './beacons.js';
 
@@ -95,7 +95,10 @@ export function executeLand(game, side, cmd) {
     }
     case 'ungarrison': {
       const at = cmd.x == null ? [null, null] : [num(cmd.x), num(cmd.y)];
-      for (const s of own()) for (const u of s.members) if (u.holds && u.holds.length) ungarrison(w, u, at[0], at[1]);
+      const one = cmd.q == null ? null : squad(cmd.q);
+      for (const s of own())
+        for (const u of s.members)
+          if (u.holds && u.holds.length && (!one || u.holds.includes(one)) && canExit(w, u, one)) ungarrison(w, u, at[0], at[1], one);
       return {};
     }
     case 'ability': {

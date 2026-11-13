@@ -1248,17 +1248,31 @@ export function garrison(world, squad, host) {
   return null;
 }
 
+function exitSpot(host, k) {
+  const out = host.type.num('Garrison_Exit_Dist', 50) + host.hitRadius * 0.5 + 20,
+    a = k * 2.1;
+  return { x: host.x + Math.cos(a) * out, y: host.y + Math.sin(a) * out, a };
+}
+
+export function canExit(world, host, q = null) {
+  if (!host || host.dead || !host.holds || !host.holds.length) return false;
+  if (host.structure) return true;
+  if (!world.isOpen(host.x, host.y, host.need || 1)) return false;
+  return host.holds.every((h, k) => {
+    if ((q && h !== q) || !h.members.some(u => u.inside === host)) return true;
+    const e = exitSpot(host, k);
+    return world.isOpen(e.x, e.y, (h.members[0] && h.members[0].need) || 1);
+  });
+}
+
 export function ungarrison(world, host, x = null, y = null, only = null) {
-  const mult = db.constants.num('Garrisoned_Max_Attack_Distance_Multiplier', 1.5),
-    out = host.type.num('Garrison_Exit_Dist', 50) + host.hitRadius * 0.5;
+  const mult = db.constants.num('Garrisoned_Max_Attack_Distance_Multiplier', 1.5);
   host.holds.forEach((q, k) => {
     if (only && q !== only) return;
-    const a = k * 2.1,
+    const e = exitSpot(host, k),
+      a = e.a,
       need = (q.members[0] && q.members[0].need) || 1;
-    const o =
-      world.nearestOpen(host.x + Math.cos(a) * (out + 20), host.y + Math.sin(a) * (out + 20), need) ||
-      world.nearestOpen(host.x, host.y) ||
-      host;
+    const o = world.nearestOpen(e.x, e.y, need) || world.nearestOpen(host.x, host.y) || host;
     for (const u of q.members) {
       if (u.inside !== host) continue;
       u.inside = null;
@@ -1273,7 +1287,7 @@ export function ungarrison(world, host, x = null, y = null, only = null) {
     }
     if (!q.members.length) return;
     if (x !== null) world.order(q, x, y);
-    else world.order(q, host.x + Math.cos(a) * (out + 20), host.y + Math.sin(a) * (out + 20), null, true);
+    else world.order(q, e.x, e.y, null, true);
   });
   host.holds = only ? host.holds.filter(q => q !== only) : [];
   if (host.hoverH > 0) host.hoverState = 3;

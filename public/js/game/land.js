@@ -18,7 +18,7 @@ import { LandPaths } from './landpath.js';
 import { POSE_MARGIN } from './landinstances.js';
 import { cachedPose, settlePose } from './posecache.js';
 
-import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks } from './landbase.js';
+import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks, canExit } from './landbase.js';
 import { landAbilities, useAbility, abilityBlocked, refreshMods, tickAbilities, blastFactor } from './landabilities.js';
 import { tickClashes } from './landclash.js';
 import { BountyBook, bountyValue } from './bounty.js';
@@ -1371,6 +1371,10 @@ export class LandWorld {
       iy = Math.round(y / CELL);
     return ix >= 0 && iy >= 0 && ix < this.n && iy < this.n && !!this.open[iy * this.n + ix];
   }
+  canExit(host, q = null) {
+    return canExit(this, host, q);
+  }
+
   isOpen(x, y, need = 1) {
     const ix = Math.round(x / CELL),
       iy = Math.round(y / CELL);

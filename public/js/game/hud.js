@@ -1117,10 +1117,18 @@ export class CommandBar {
       columns = [];
     let skip = this.coveredColumns(false);
     this.buildBar?.set(0, 12 - skip, 0);
+    const held = new Map();
+    if (units.length === 1 && units[0].player === p && units[0].members)
+      for (const host of units[0].members)
+        for (const q of host.holds || [])
+          if (!q.dead && q.members.some(u => u.inside === host) && !held.has(q)) {
+            held.set(q, host);
+            units.push(q);
+          }
     if (units.length) {
       const groups = new Map();
       for (const s of units) {
-        const k = s.type.name + '|' + s.player.id;
+        const k = s.type.name + '|' + s.player.id + (held.has(s) ? '|held' : '');
         if (!groups.has(k)) groups.set(k, []);
         groups.get(k).push(s);
       }
@@ -1135,7 +1143,7 @@ export class CommandBar {
       let col = skip;
       for (const { list, one } of recs) {
         const first = col,
-          entries = one ? [{ unit: list[0], group: list }] : list.map(s => ({ unit: s }));
+          entries = one ? [{ unit: list[0], group: list, held: held.get(list[0]) }] : list.map(s => ({ unit: s, held: held.get(s) }));
         for (let i = 0; i < entries.length && col < 12; i += 2, col++) {
           entries.slice(i, i + 2).forEach((it, r) => {
             items[col * 2 + r] = it;
@@ -1147,6 +1155,7 @@ export class CommandBar {
             first,
             span: col - first,
             units: list,
+            held: held.has(list[0]),
             part: col - first === 1 ? 0 : c === first ? 1 : c === col - 1 ? 3 : 2
           });
       }
@@ -1187,7 +1196,11 @@ export class CommandBar {
     const it = this.slots[i].item,
       ui = this.ui;
     if (!it) return;
-    if (it.unit) {
+    if (it.held) {
+      const q = it.unit;
+      if (this.ui.world?.canExit?.(it.held, q)) this.game.command({ c: 'ungarrison', u: [it.held.squad.id], q: q.id });
+      else this.game.audio.play('GUI_Bad_Sound');
+    } else if (it.unit) {
       const picked = it.group || [it.unit];
       if (ev.ctrlKey || ev.shiftKey)
         ui.select(
@@ -1482,7 +1495,9 @@ export class CommandBar {
       L.mode +
       '|' +
       L.items
-        .map(it => (it ? (it.group ? 'g' + it.unit.id + 'x' + it.group.length : it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : ''))
+        .map(it =>
+          it ? (it.held ? 'h' : '') + (it.group ? 'g' + it.unit.id + 'x' + it.group.length : it.unit ? 'u' + it.unit.id : 'b' + it.build.name) : ''
+        )
         .join(',');
     if (sig !== this.sig) {
       this.sig = sig;
@@ -1492,7 +1507,19 @@ export class CommandBar {
         const type = it && (it.unit ? it.unit.type : it.build);
         s.el.classList.toggle('on', !!it);
         s.el.classList.toggle('build', !!(it && it.build));
-        s.el.querySelector('.ic').style.backgroundImage = type ? css(iconUrl(iconNameFor(type))) : 'none';
+        const ic = s.el.querySelector('.ic');
+        ic.style.backgroundImage = type ? css(iconUrl(iconNameFor(type))) : 'none';
+        let tint = s.el.querySelector('.tint');
+        if (it && it.held) {
+          if (!tint) {
+            tint = document.createElement('i');
+            tint.className = 'tint';
+            tint.style.cssText = 'background:rgb(230,230,40);mix-blend-mode:multiply;pointer-events:none;mask-size:100% 100%;-webkit-mask-size:100% 100%';
+            ic.after(tint);
+          }
+          tint.style.maskImage = tint.style.webkitMaskImage = ic.style.backgroundImage;
+          tint.hidden = false;
+        } else if (tint) tint.hidden = true;
         s.el.querySelector('.cost').textContent = it && it.build ? buildCost(it.build) : '';
         s.el.querySelector('.num').textContent = it && it.group ? 'x' + it.group.length : '';
         s.el.classList.remove('off');
@@ -1505,7 +1532,7 @@ export class CommandBar {
         if (x) b.style.backgroundImage = css(this.tex('special_border_00', 'Icon_Alternate_Texture_Name', x.part));
       });
       const mine = L.columns.filter(
-        c => c.units[0].player === p && c.col === c.first && this.rect('special_button_' + String(c.col * 2).padStart(2, '0'))
+        c => !c.held && c.units[0].player === p && c.col === c.first && this.rect('special_button_' + String(c.col * 2).padStart(2, '0'))
       );
       const abilityKey = mine.map(c => c.col + ':' + c.units[0].abilities.map(a => a.def.kind).join('/')).join(',');
       const habX = (base, span, k, n) => base.x + (span - 1) * 27.5 + (k - (n - 1) / 2) * 27.5;
@@ -1524,8 +1551,8 @@ export class CommandBar {
         this.abilityKey = abilityKey;
         this.abilityLayer.replaceChildren();
         this.abilityButtons = [];
-        for (const { col, first, span, units } of L.columns) {
-          if (units[0].player !== p || col !== first) continue;
+        for (const { col, first, span, units, held } of L.columns) {
+          if (held || units[0].player !== p || col !== first) continue;
           const defs = units[0].abilities.map(a => a.def);
           const base = this.rect('special_button_' + String(col * 2).padStart(2, '0'));
           if (!base) continue;

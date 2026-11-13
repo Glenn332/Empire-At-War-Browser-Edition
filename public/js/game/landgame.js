@@ -2738,8 +2738,10 @@ export class LandGame {
         } else {
           const on = this.unitAt(cx, cy),
             g = this.groundAt(cx, cy);
-          if (on && ui.canLeave(on)) ui.leave(on);
-          else if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
+          if (on && ui.canLeave(on)) {
+            if (w.canExit(on)) ui.leave(on);
+            else this.audio.play('GUI_Bad_Sound');
+          } else if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
           else send(cx, cy);
         }
       }
@@ -4658,10 +4660,11 @@ export class LandGame {
       }
       return c.get(name);
     };
-    const on = img('i_dialogue_radio_on.tga'),
-      off = img('i_dialogue_radio_off.tga');
+    const c = this.ui.bar?.comp('garrison_slot_icon'),
+      on = img(c?.val('Icon_Alternate_Texture_Name') || 'i_dialogue_radio_on.tga'),
+      off = img(c?.val('Icon_Texture_Name') || 'i_dialogue_radio_off.tga');
     if (!off.complete || !off.naturalWidth) return;
-    const k = 0.5 * Math.min(innerHeight / 768, innerWidth / 1024),
+    const k = (c ? c.num('Scale', 1) : 0.5) * Math.min(innerHeight / 768, innerWidth / 1024),
       pw = off.naturalWidth * k,
       ph = off.naturalHeight * k,
       used = usedOf(u),
