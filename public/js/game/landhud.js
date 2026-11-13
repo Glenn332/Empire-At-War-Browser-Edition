@@ -289,6 +289,7 @@ export class LandUI {
       this.pbCharge.firstChild.style.backgroundSize = (parseFloat(this.pbCharge.style.width) || 0) + 'px 100%';
     }
     this.pb.hidden = this.pbCharge.hidden = true;
+    this.bar.covers = [this.pb];
     const mm = $('minimap');
     const look = e => {
       game.following = null;

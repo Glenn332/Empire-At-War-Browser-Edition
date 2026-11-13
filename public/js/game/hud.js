@@ -1114,8 +1114,9 @@ export class CommandBar {
       ? []
       : sel.filter(s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length)));
     const items = new Array(24).fill(null),
-      columns = [];
-    this.buildBar?.set(0, 12, 0);
+      columns = [],
+      skip = this.coveredColumns();
+    this.buildBar?.set(0, 12 - skip, 0);
     if (units.length) {
       const groups = new Map();
       for (const s of units) {
@@ -1125,13 +1126,13 @@ export class CommandBar {
       }
       const recs = [...groups.values()].map(list => ({ list, one: false }));
       let need = units.length;
-      while (need > items.length) {
+      while (need > items.length - skip * 2) {
         const big = recs.filter(r => !r.one && r.list.length > 1).sort((a, b) => b.list.length - a.list.length)[0];
         if (!big) break;
         big.one = true;
         need -= big.list.length - 1;
       }
-      let col = 0;
+      let col = skip;
       for (const { list, one } of recs) {
         const first = col,
           entries = one ? [{ unit: list[0], group: list }] : list.map(s => ({ unit: s }));
@@ -1168,13 +1169,25 @@ export class CommandBar {
         this.buildKey = b;
         this.buildScroll = 0;
       }
-      this.buildScroll = Math.max(0, Math.min(cols - 12, this.buildScroll));
-      opts.slice(this.buildScroll * 2, this.buildScroll * 2 + 24).forEach((t, i) => {
-        items[i] = { build: t, builder: b };
+      this.buildScroll = Math.max(0, Math.min(cols - (12 - skip), this.buildScroll));
+      opts.slice(this.buildScroll * 2, this.buildScroll * 2 + 24 - skip * 2).forEach((t, i) => {
+        items[skip * 2 + i] = { build: t, builder: b };
       });
-      this.buildBar?.set(cols, 12, this.buildScroll);
+      this.buildBar?.set(cols, 12 - skip, this.buildScroll);
     }
     return { mode: 'build', items, columns };
+  }
+
+  coveredColumns() {
+    const covers = (this.covers || []).filter(n => n.isConnected && !n.closest('[hidden]') && n.style.display !== 'none');
+    if (!covers.length) return 0;
+    const boxes = covers.map(n => ({ x: parseFloat(n.style.left), w: parseFloat(n.style.width) }));
+    let skip = 0;
+    for (; skip < 12; skip++) {
+      const r = this.rect('s_select_' + String(skip * 2).padStart(2, '0'));
+      if (!r || !boxes.some(b => b.x < r.x + r.w && r.x < b.x + b.w)) break;
+    }
+    return skip;
   }
 
   slotClick(i, ev) {

@@ -649,6 +649,7 @@ class Game {
     this.advisor = new Advisor(this);
     this.ui = new UI(this);
     if (this.hudAssets) this.superweaponHUD = new TacticalSuperweaponHUD(this, this.hudAssets);
+    if (this.ui.bar && this.superweaponHUD && !this.superweaponHUD.centered) this.ui.bar.covers = [this.superweaponHUD.button];
 
     const rig = this.renderer.rig;
     rig.bounds = { minX: world.min.x, minY: world.min.y, maxX: world.max.x, maxY: world.max.y };
