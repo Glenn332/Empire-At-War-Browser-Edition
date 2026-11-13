@@ -3765,7 +3765,6 @@ export class LandWorld {
       heading,
       wait: 0,
       hold: this.reinforcementHold(side),
-      members: Math.max(1, kinds.length),
       interval: this.deployInterval(side),
       airborne
     };
@@ -3827,10 +3826,28 @@ export class LandWorld {
       if (o !== t && !o.craft.dead && (o.landing || o.stage === 'unload') && o.stage !== 'leave' && Math.hypot(o.x - t.x, o.y - t.y) < 100) return true;
     return false;
   }
+  holdInTransport(t, q) {
+    const all = (q.mates || [q]).flatMap(s => s.members).filter(u => !u.dead && !u.inside),
+      held = all.slice(1);
+    for (const u of held) {
+      u.inside = t.craft;
+      u.holder.visible = false;
+    }
+    return held;
+  }
+  leaveTransport(t, u) {
+    if (!u || u.dead || u.inside !== t.craft) return;
+    u.inside = null;
+    u.x = t.x;
+    u.y = t.y;
+    u.z = heightAt(this.terrain, u.x, u.y) + (u.lift || 0) + (u.hoverZ || 0);
+    u.holder.visible = !u.scriptHidden;
+  }
   updateTransports(dt) {
     let k = 0;
     for (const t of this.transports) {
       if (t.craft.dead) {
+        while (t.queue?.length) this.leaveTransport(t, t.queue.shift());
         if (t.stage === 'land') this.squads = this.squads.filter(q => q !== t.pending);
         this.scene.remove(t.holder);
         t.craft.gone = true;
@@ -3846,12 +3863,13 @@ export class LandWorld {
       const running = t.anim ? t.anim.step(dt) : false;
       if (t.stage === 'land' && !running) {
         t.stage = 'unload';
-        t.wait = (t.interval || 2) * (t.members || 1);
+        t.wait = t.interval || 2;
         t.out = false;
         const out = this.spawn(t.typeName, t.x, t.y, t.heading, t.side, null, { x: t.x, y: t.y });
         out.then(
           q => {
             this.squads = this.squads.filter(s => s !== t.pending);
+            if (q && !t.airborne && this.holdInTransport) t.queue = this.holdInTransport(t, q);
             t.out = true;
             if (this.onTransportOut) this.onTransportOut(t, q);
             if (t.onOut) t.onOut(q);
@@ -3867,7 +3885,12 @@ export class LandWorld {
         t.craft.gone = true;
         this.squads = this.squads.filter(q => q !== t.craft.squad);
         continue;
-      } else if (t.stage === 'unload' && t.out && (t.wait -= dt) <= 0) {
+      } else if (t.stage === 'unload' && t.out && t.queue?.length) {
+        if ((t.wait -= dt) <= 0) {
+          this.leaveTransport(t, t.queue.shift());
+          t.wait = t.interval || 2;
+        }
+      } else if (t.stage === 'unload' && t.out) {
         t.stage = 'leave';
         t.anim = t.off ? new AnimState(t.inst, t.off, {}) : null;
       } else if (t.stage === 'leave' && !running) {
