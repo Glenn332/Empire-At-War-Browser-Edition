@@ -1250,7 +1250,13 @@ export function garrison(world, squad, host) {
   const fit = squad.members.filter(u => suits(host, u));
   if (!fit.length) return 'They do not fit inside';
   if (squadSize(host, squad) > host.slots - usedOf(host)) return 'It is full';
-  const o = world.nearestOpen(host.x, host.y, squad.members[0].need || 1) || world.nearestOpen(host.x, host.y);
+  let first = null;
+  for (const u of squad.members) {
+    const e = entrySpot(world, host, u);
+    u.garrisonSlot = e.slot;
+    first ||= e;
+  }
+  const o = world.nearestOpen(first.x, first.y, squad.members[0].need || 1) || world.nearestOpen(host.x, host.y);
   if (!o) return 'No way in';
   squad.entering = host;
   squad.foe = null;
@@ -1258,46 +1264,140 @@ export function garrison(world, squad, host) {
   return null;
 }
 
-function exitSpot(host, k) {
-  const out = host.type.num('Garrison_Exit_Dist', 50) + host.hitRadius * 0.5 + 20,
-    a = k * 2.1;
-  return { x: host.x + Math.cos(a) * out, y: host.y + Math.sin(a) * out, a };
+const boneLists = new Map();
+function garrisonBones(host) {
+  let v = boneLists.get(host.type);
+  if (!v)
+    boneLists.set(
+      host.type,
+      (v = host.type
+        .list('Garrison_Bone_Names')
+        .flatMap(n => n.split(/[\s,]+/))
+        .filter(Boolean))
+    );
+  return v;
+}
+
+const kinds = new Map();
+function holderKind(host) {
+  let v = kinds.get(host.type);
+  if (v === undefined) {
+    const b = host.type.str('LandBehavior') + ' ' + host.type.str('Behavior');
+    kinds.set(host.type, (v = /\bGARRISON_STRUCTURE\b/i.test(b) ? 'structure' : /\bGARRISON_HOVER/i.test(b) ? 'hover' : host.structure ? 'structure' : 'vehicle'));
+  }
+  return v;
+}
+
+const _gb = new THREE.Vector3();
+function boneSpot(world, host, k) {
+  const name = garrisonBones(host)[k],
+    bone = name && host.inst?.bone ? host.inst.bone(name) : null;
+  if (!bone) return null;
+  host.holder?.updateMatrixWorld(true);
+  world.boneAt(host, bone, _gb);
+  return { x: _gb.x, y: _gb.y, z: _gb.z };
+}
+
+function halfExtent(host) {
+  const b = host.inst && host.inst.box;
+  if (!b || b.isEmpty()) return host.hitRadius || 0;
+  const s = host.holder ? host.holder.scale.x : 1;
+  return (Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) / 2) * s;
+}
+
+function entrySpot(world, host, u) {
+  const names = garrisonBones(host),
+    enter = host.type.num('Garrison_Enter_Dist', 0),
+    need = u.need || 1;
+  let at = { x: host.x, y: host.y },
+    slot = -1,
+    best = 1e18,
+    found = false;
+  for (let k = 0; k < names.length; k++) {
+    const b = boneSpot(world, host, k);
+    found = !!b;
+    if (!b) continue;
+    const d = (u.x - b.x) ** 2 + (u.y - b.y) ** 2 + ((u.z || 0) - b.z) ** 2;
+    if (d >= best) continue;
+    at = { x: b.x, y: b.y };
+    if (enter > 0) {
+      const a = Math.atan2(b.y - host.y, b.x - host.x);
+      at.x += Math.cos(a) * enter;
+      at.y += Math.sin(a) * enter;
+    }
+    if (world.sameZone(u.x, u.y, at.x, at.y, need)) {
+      best = d;
+      slot = k;
+    }
+  }
+  if (names.length && best !== 1e18 && found) return { slot, x: at.x, y: at.y };
+  const dist = enter > 0 ? enter : halfExtent(host) * 0.5;
+  return { slot, x: at.x + Math.cos(host.heading) * dist, y: at.y + Math.sin(host.heading) * dist };
+}
+
+function exitSpot(world, host, u) {
+  if (!(u.speed > 0)) {
+    const f = holderKind(host) === 'structure' && u.garrisonFrom ? u.garrisonFrom : host;
+    return { walk: false, x: f.x, y: f.y };
+  }
+  let bx = host.x,
+    by = host.y,
+    a = host.heading;
+  const slot = u.garrisonSlot ?? -1;
+  if (slot >= 0 && garrisonBones(host).length) {
+    const b = boneSpot(world, host, slot);
+    if (b) {
+      a = b.x === host.x && b.y === host.y ? 0 : Math.atan2(b.y - host.y, b.x - host.x);
+      bx = b.x;
+      by = b.y;
+    }
+  }
+  let dist = host.type.num('Garrison_Exit_Dist', 0);
+  if (!(dist > 0)) dist = halfExtent(host);
+  return { walk: true, bx, by, x: bx + Math.cos(a) * dist, y: by + Math.sin(a) * dist };
+}
+
+function holderFree(world, host) {
+  if (host.hoverH > 0 && host.hoverState) return world.isOpen(host.x, host.y, host.need || 1);
+  return true;
 }
 
 export function canExit(world, host, q = null) {
   if (!host || host.dead || !host.holds || !host.holds.length) return false;
-  if (host.structure) return true;
-  if (!world.isOpen(host.x, host.y, host.need || 1)) return false;
-  return host.holds.every((h, k) => {
-    if ((q && h !== q) || !h.members.some(u => u.inside === host)) return true;
-    const e = exitSpot(host, k);
-    return world.isOpen(e.x, e.y, (h.members[0] && h.members[0].need) || 1);
+  if (!holderFree(world, host)) return false;
+  if (holderKind(host) === 'structure') return true;
+  return host.holds.every(h => {
+    if (q && h !== q) return true;
+    return h.members.every(u => {
+      if (u.inside !== host) return true;
+      const e = exitSpot(world, host, u);
+      return !e.walk || world.isOpen(e.x, e.y, u.need || 1);
+    });
   });
 }
 
 export function ungarrison(world, host, x = null, y = null, only = null) {
   const mult = db.constants.num('Garrisoned_Max_Attack_Distance_Multiplier', 1.5);
-  host.holds.forEach((q, k) => {
+  host.holds.forEach(q => {
     if (only && q !== only) return;
-    const e = exitSpot(host, k),
-      a = e.a,
-      need = (q.members[0] && q.members[0].need) || 1;
-    const o = world.nearestOpen(e.x, e.y, need) || world.nearestOpen(host.x, host.y) || host;
+    let to = null;
     for (const u of q.members) {
       if (u.inside !== host) continue;
+      const e = exitSpot(world, host, u);
       u.inside = null;
       u.gunner = false;
+      u.garrisonSlot = -1;
       u.baseRange /= mult;
       u.holder.visible = true;
-      const at = x !== null ? o : host;
-      u.x = at.x + (simRandom() - 0.5) * 16;
-      u.y = at.y + (simRandom() - 0.5) * 16;
+      u.x = e.walk ? e.bx : e.x;
+      u.y = e.walk ? e.by : e.y;
       u.path = [];
       u.target = null;
+      if (e.walk) to ||= e;
     }
     if (!q.members.length) return;
     if (x !== null) world.order(q, x, y);
-    else world.order(q, e.x, e.y, null, true);
+    else if (to) world.order(q, to.x, to.y, null, true);
   });
   host.holds = only ? host.holds.filter(q => q !== only) : [];
   if (host.hoverH > 0) host.hoverState = 3;
@@ -1335,6 +1435,7 @@ export function putInside(world, q, host) {
     u.target = null;
     u.baseRange *= mult;
     u.gunner = ports-- > 0;
+    u.garrisonFrom = { x: u.x, y: u.y };
     u.holder.visible = false;
     u.x = host.x;
     u.y = host.y;

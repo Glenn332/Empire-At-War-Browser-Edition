@@ -531,6 +531,8 @@ class LandUnit {
     this.scriptHidden = undefined;
     this.inside = undefined;
     this.gunner = undefined;
+    this.garrisonSlot = undefined;
+    this.garrisonFrom = undefined;
     this.lastDamage = undefined;
     this.lastHit = undefined;
     this.hitBy = undefined;
@@ -1373,6 +1375,16 @@ export class LandWorld {
   }
   canExit(host, q = null) {
     return canExit(this, host, q);
+  }
+
+  sameZone(ax, ay, bx, by, need = 1) {
+    const P = this.paths,
+      mask = this.maskOf(need),
+      cell = v => Math.trunc((v + CELL / 2) / CELL);
+    P.sync();
+    P.mask = mask;
+    const z = P.zoneAt(cell(ax), cell(ay), mask);
+    return z >= 0 && P.zoneAt(cell(bx), cell(by), mask) === z;
   }
 
   isOpen(x, y, need = 1) {
