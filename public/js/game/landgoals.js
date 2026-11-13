@@ -388,6 +388,7 @@ export class GoalSystem {
           return false;
         }
         inst.gdef = c.def;
+        inst.stage = this.stageZone(c.def, c.t, mind);
         inst.tgt = c.t;
         inst.tkey = c.t ? c.t.key : '';
         inst.gside = side;
@@ -517,6 +518,13 @@ export class LandGoals extends GoalSystem {
     this.paced = true;
   }
 
+  stageZone(def, t, mind) {
+    if (!t || !t.zone) return null;
+    const k = REACH.indexOf(def?.reach);
+    if (k < 0) return null;
+    const tol = k === 0 ? 0 : k === 4 ? 1e18 : db.constants.num(REACH_TOL[k - 1], [1000, 3000, 5000][k - 1]);
+    return zonePaths(this.game.world.map).reach(t.zone, { threshold: tol, threat: zoneThreat(mind) })[0] || null;
+  }
   reachable(def, t, mind) {
     if (!t || !t.zone || !def.reach) return true;
     const k = REACH.indexOf(def.reach);

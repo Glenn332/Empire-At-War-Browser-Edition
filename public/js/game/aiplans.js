@@ -1925,7 +1925,12 @@ export class Plans {
       },
       Get_Self_Threat_Max: () => Math.max(0, ...alive().map(e => ai.value(e))),
       Get_Self_Threat_Sum: () => alive().reduce((a, e) => a + ai.value(e), 0),
-      Get_Stage: () => undefined,
+      Get_Stage: () => {
+        const D = this.defs.get(inst.key);
+        if (!inst.thing || (D && (!D.freeStore || D.magic))) return undefined;
+        const z = inst.stage;
+        return z ? this.host.pos(z.x, z.y, 0, 'Position') : this.host.vm.read(inst.env, 'AITarget');
+      },
       Produce_Force: () => {
         const bought = [],
           st = p.station;
