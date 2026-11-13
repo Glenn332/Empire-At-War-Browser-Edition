@@ -76,6 +76,10 @@ const icons = {
   DEPLOY_SQUAD: 'deploy_squad'
 };
 
+export function nativeAbilityIcon(kind) {
+  return icons[kind] ? 'i_sa_' + icons[kind] + '.tga' : '';
+}
+
 export function encyclopediaAbilityIcons(type) {
   const out = [];
   for (const block of type.sub('Unit_Abilities_Data'))

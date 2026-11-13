@@ -3,6 +3,7 @@ import { db, selectionBoxColors } from '../gamedata.js';
 import { getModelData, buildModel } from '../model.js';
 import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas, iconOpaque } from '../icons.js';
+import { nativeAbilityIcon } from './nativeabilityicons.js';
 import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump } from './sim.js';
 import { ids } from './commands.js';
@@ -64,27 +65,9 @@ function iconNameFor(type) {
   return name;
 }
 
-const ABILITY_ICONS = {
-  TURBO: 'i_sa_power_to_engines',
-  DEFEND: 'i_sa_defend_mode',
-  SPOILER_LOCK: 'i_sa_s_foil_mode',
-  FOW_REVEAL_PING: 'i_sa_sensor_ping',
-  BARRAGE: 'i_sa_barrage_area'
-};
-Object.assign(ABILITY_ICONS, {
-  ENERGY_WEAPON: 'i_sa_fire_energy_weapon',
-  INVULNERABILITY: 'i_sa_evasive_maneuvers',
-  MISSILE_SHIELD: 'i_sa_missile_jammer',
-  FULL_SALVO: 'i_sa_full_salvo',
-  CONCENTRATE_FIRE: 'i_sa_all_ships_concentrate_fire',
-  HARMONIC_BOMB: 'i_sa_harmonic_bomb',
-  BLAST: 'i_sa_blast',
-  WEAKEN_ENEMY: 'i_sa_weaken_enemy',
-  CORRUPT_SYSTEMS: 'i_sa_corrupt_systems',
-  LEECH_SHIELDS: 'i_sa_leech_shields'
-});
+const defaultAbilityIcon = kind => nativeAbilityIcon(kind) || 'i_sa_' + kind.toLowerCase() + '.tga';
 export function abilityIconName(kind, override = '') {
-  for (const n of [override, (ABILITY_ICONS[kind] || 'i_sa_' + kind.toLowerCase()) + '.tga', 'i_sa_blank_button.tga'])
+  for (const n of [override, defaultAbilityIcon(kind), 'i_sa_blank_button.tga'])
     if (n && iconCanvasRect(n)) return n;
   return null;
 }
@@ -97,7 +80,7 @@ export function shownAbility(abilities) {
 function abilityIcon(kind, override = '') {
   return (
     (override && iconUrl(override)) ||
-    iconUrl((ABILITY_ICONS[kind] || 'i_sa_' + kind.toLowerCase()) + '.tga') ||
+    iconUrl(defaultAbilityIcon(kind)) ||
     iconUrl('i_sa_blank_button.tga')
   );
 }
