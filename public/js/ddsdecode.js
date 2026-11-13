@@ -74,3 +74,43 @@ export function decodeDXT(src, width, height, kind) {
     }
   return out;
 }
+
+export function decodeRGTC(src, width, height, channels) {
+  const out = new Uint8Array(width * height * 4);
+  const v = new Uint8Array(8),
+    block = new Uint8Array(32);
+  let p = 0;
+  for (let by = 0; by < height; by += 4)
+    for (let bx = 0; bx < width; bx += 4) {
+      for (let c = 0; c < channels; c++, p += 8) {
+        v[0] = src[p];
+        v[1] = src[p + 1];
+        for (let i = 2; i < 8; i++)
+          v[i] = v[0] > v[1] ? ((8 - i) * v[0] + (i - 1) * v[1]) / 7 : i < 6 ? ((6 - i) * v[0] + (i - 1) * v[1]) / 5 : i === 6 ? 0 : 255;
+        const lo = src[p + 2] | (src[p + 3] << 8) | (src[p + 4] << 16),
+          hi = src[p + 5] | (src[p + 6] << 8) | (src[p + 7] << 16);
+        for (let i = 0; i < 8; i++) {
+          block[c * 16 + i] = v[(lo >> (3 * i)) & 7];
+          block[c * 16 + i + 8] = v[(hi >> (3 * i)) & 7];
+        }
+      }
+      for (let i = 0; i < 16; i++) {
+        const x = bx + (i & 3),
+          y = by + (i >> 2);
+        if (x >= width || y >= height) continue;
+        const o = (y * width + x) * 4,
+          r = block[i];
+        if (channels === 1) out[o] = out[o + 1] = out[o + 2] = r;
+        else {
+          const g = block[16 + i],
+            nx = r / 127.5 - 1,
+            ny = g / 127.5 - 1;
+          out[o] = r;
+          out[o + 1] = g;
+          out[o + 2] = Math.round((Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny)) + 1) * 127.5);
+        }
+        out[o + 3] = 255;
+      }
+    }
+  return out;
+}

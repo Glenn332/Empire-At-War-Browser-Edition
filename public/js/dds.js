@@ -2,14 +2,18 @@ import { diag } from './diag.js';
 import * as THREE from '../vendor/three/build/three.module.js';
 import { fetchBinary } from './vfs.js';
 import { gfx } from './gfx.js';
-import { decodeDXT } from './ddsdecode.js';
+import { decodeDXT, decodeRGTC } from './ddsdecode.js';
 import { buildMips, mipsFit } from './ddsmips.js';
 import { decodePNG, isPNG } from './png.js';
 
 const FOURCC = s => s.charCodeAt(0) | (s.charCodeAt(1) << 8) | (s.charCodeAt(2) << 16) | (s.charCodeAt(3) << 24);
 const DXT1 = FOURCC('DXT1'),
   DXT3 = FOURCC('DXT3'),
-  DXT5 = FOURCC('DXT5');
+  DXT5 = FOURCC('DXT5'),
+  DX10 = FOURCC('DX10'),
+  RGTC1 = [FOURCC('ATI1'), FOURCC('BC4U')],
+  RGTC2 = [FOURCC('ATI2'), FOURCC('BC5U')];
+const DXGI = { 70: 1, 71: 1, 72: 1, 73: 3, 74: 3, 75: 3, 76: 5, 77: 5, 78: 5, 79: 'r1', 80: 'r1', 81: 'r1', 82: 'r2', 83: 'r2', 84: 'r2', 97: 7, 98: 7, 99: 7 };
 
 const isDDS = buf => buf.byteLength >= 4 && new DataView(buf).getUint32(0, true) === 0x20534444;
 export function parseDDS(buffer) {
@@ -29,14 +33,36 @@ export function parseDDS(buffer) {
   let offset = 128;
   const mipmaps = [];
   if (pfFlags & 0x4) {
-    let format, block;
-    if (fourCC === DXT1) {
+    let format, block, kind;
+    if (fourCC === DX10) {
+      kind = DXGI[new Int32Array(buffer, 128, 1)[0]];
+      if (!kind) throw new Error('unsupported DDS DXGI format ' + new Int32Array(buffer, 128, 1)[0]);
+      offset = 148;
+    } else kind = fourCC === DXT1 ? 1 : fourCC === DXT3 ? 3 : fourCC === DXT5 ? 5 : RGTC1.includes(fourCC) ? 'r1' : RGTC2.includes(fourCC) ? 'r2' : 0;
+    if (kind === 'r1' || kind === 'r2') {
+      const ch = kind === 'r1' ? 1 : 2;
+      let w = width,
+        hh = height;
+      for (let i = 0; i < mipCount; i++) {
+        const size = Math.max(1, (w + 3) >> 2) * Math.max(1, (hh + 3) >> 2) * 8 * ch;
+        if (offset + size > buffer.byteLength) break;
+        mipmaps.push({ data: decodeRGTC(new Uint8Array(buffer, offset, size), w, hh, ch), width: w, height: hh });
+        offset += size;
+        w = Math.max(1, w >> 1);
+        hh = Math.max(1, hh >> 1);
+      }
+      return { width, height, format: THREE.RGBAFormat, compressed: false, mipmaps, cube, hasAlpha: false };
+    }
+    if (kind === 7) {
+      format = THREE.RGBA_BPTC_Format;
+      block = 16;
+    } else if (kind === 1) {
       format = THREE.RGBA_S3TC_DXT1_Format;
       block = 8;
-    } else if (fourCC === DXT3) {
+    } else if (kind === 3) {
       format = THREE.RGBA_S3TC_DXT3_Format;
       block = 16;
-    } else if (fourCC === DXT5) {
+    } else if (kind === 5) {
       format = THREE.RGBA_S3TC_DXT5_Format;
       block = 16;
     } else throw new Error('unsupported DDS fourCC ' + fourCC.toString(16));
@@ -50,7 +76,7 @@ export function parseDDS(buffer) {
       w = Math.max(1, w >> 1);
       hh = Math.max(1, hh >> 1);
     }
-    return { width, height, format, compressed: true, mipmaps, cube, hasAlpha: fourCC !== DXT1 };
+    return { width, height, format, compressed: true, mipmaps, cube, hasAlpha: kind !== 1 };
   }
   const bpp = bits >> 3;
   const shift = m => {
@@ -250,7 +276,28 @@ export function dxtSupported() {
   return dxtOK;
 }
 
+let bptcOK;
+export function bptcSupported() {
+  if (bptcOK === undefined) {
+    bptcOK = false;
+    try {
+      const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      if (gl) {
+        bptcOK = !!gl.getExtension('EXT_texture_compression_bptc');
+        const lose = gl.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+      }
+    } catch {}
+  }
+  return bptcOK;
+}
+
 async function wholeBlocks(dds) {
+  if (dds.format === THREE.RGBA_BPTC_Format) {
+    if (dds.width % 4 || dds.height % 4 || !bptcSupported()) throw new Error('BC7 textures are not supported here');
+    return dds;
+  }
   if (!dds.compressed || (dds.width % 4 === 0 && dds.height % 4 === 0 && dxtSupported())) return dds;
   const kind = dxtKind(dds);
   const mipmaps = await Promise.all(
@@ -263,7 +310,7 @@ async function wholeBlocks(dds) {
 }
 
 async function fullChain(dds) {
-  if (!dds.compressed || dds.cube || dds.mipmaps.length > 1 || !mipsFit(dds.width, dds.height)) return dds;
+  if (!dds.compressed || dds.format === THREE.RGBA_BPTC_Format || dds.cube || dds.mipmaps.length > 1 || !mipsFit(dds.width, dds.height)) return dds;
   const kind = dxtKind(dds),
     top = dds.mipmaps[0];
   const off = await decodeElsewhere(top.data, top.width, top.height, kind, false, true);
@@ -503,6 +550,7 @@ export async function loadTextureCanvas(name) {
   cv.width = width;
   cv.height = height;
   const g = cv.getContext('2d');
+  if (dds.format === THREE.RGBA_BPTC_Format) throw new Error('BC7 textures are not supported here');
   const kind = dxtKind(dds);
   const off = kind ? await decodeElsewhere(dds.mipmaps[0].data, width, height, kind) : null;
   if (off && off.bitmap) {

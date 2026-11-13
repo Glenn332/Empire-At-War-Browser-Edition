@@ -1513,6 +1513,7 @@ export class GPURenderer {
     if (!t) return { view: kind === 'unfilterable-float' ? this.empty['unfilterable-float'] : this.empty[dim], gen: 0, id: 0, levels: 1 };
     const dv = this.depthViews.get(t);
     if (dv) return dv;
+    if (t.isDepthTexture) return { view: kind === 'depth' ? this.noDepth : kind === 'unfilterable-float' ? this.empty['unfilterable-float'] : this.empty[dim], gen: 0, id: 0, levels: 1 };
     let e = this.textures.get(t);
     if (e && e.rt) return e;
     if (!e) {
@@ -1539,7 +1540,8 @@ export class GPURenderer {
       [THREE.RGBA_S3TC_DXT1_Format]: ['bc1-rgba-unorm', 8],
       [THREE.RGBA_S3TC_DXT3_Format]: ['bc2-rgba-unorm', 16],
       [THREE.RGBA_S3TC_DXT5_Format]: ['bc3-rgba-unorm', 16],
-      [THREE.RGB_S3TC_DXT1_Format]: ['bc1-rgba-unorm', 8]
+      [THREE.RGB_S3TC_DXT1_Format]: ['bc1-rgba-unorm', 8],
+      [THREE.RGBA_BPTC_Format]: ['bc7-rgba-unorm', 16]
     };
     let fmt,
       w,
