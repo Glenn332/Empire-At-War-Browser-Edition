@@ -45,6 +45,8 @@ import {
   tickCapturables,
   usedOf,
   setupBombard,
+  setupBombingRuns,
+  bombRunOf,
   bombardOf,
   bombardLightsNow,
   windDisturbances
@@ -938,6 +940,7 @@ export class LandGame {
     if (setup.campaign) world.market = this.factions.map(f => setup.campaign.blackMarket?.[f] || []);
     if (setup.campaign) world.defenderSide = setup.campaign.defender.side;
     setupBombard(world, setup.campaign || null);
+    if (setup.campaign) setupBombingRuns(world, setup.campaign);
     if (setup.campaign) {
       const had = new Set(world.squads);
       this.invasionBook = await placeLandInvasion(world, map, setup.campaign);
@@ -1331,6 +1334,9 @@ export class LandGame {
         bombard: (w.orbitals || []).map(r =>
           r ? { present: r.present, readyAt: r1(r.readyAt), countdownStart: r1(r.countdownStart), ship: r.ship ? r.ship.name : '' } : null
         ),
+        bombRuns: (w.bombRuns || []).map(r =>
+          r && r.present ? { type: r.type ? r.type.name : '', interval: r1(r.interval), readyAt: r1(r.running ? w.time + r.interval : r.readyAt), countdownStart: r1(r.running ? w.time : r.countdownStart) } : null
+        ),
         credits: w.credits.map(Math.round),
         ready: w.ready.map(l => l.map(t => t.name)),
         points: w.points.map(p => ({ side: p.side, taker: p.taker, progress: +p.progress.toFixed(3) })),
@@ -1578,6 +1584,17 @@ export class LandGame {
         countdownStart: r.countdownStart || 0,
         ship: db.type(r.ship) || null,
         told: w.time >= (r.readyAt || 0)
+      });
+    });
+    (b.bombRuns || []).forEach((r, side) => {
+      if (!r || !db.type(r.type)) return;
+      Object.assign(bombRunOf(w, side), {
+        present: true,
+        type: db.type(r.type),
+        interval: r.interval || 0,
+        readyAt: r.readyAt || 0,
+        countdownStart: r.countdownStart || 0,
+        running: false
       });
     });
     (b.owned || []).forEach((l, i) => {

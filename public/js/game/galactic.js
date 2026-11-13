@@ -80,7 +80,7 @@ import { Menus } from './menus.js';
 import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticeconomy.js';
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
-import { packContrast } from './galacticautoresolve.js';
+import { packContrast, orbitBombingRun } from './galacticautoresolve.js';
 import { PendingBattle } from './galacticpending.js';
 import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
@@ -3012,6 +3012,7 @@ export class GalacticGame {
         galacticPerceptions: this.galacticPerceptions(b),
         treasury: this.tacticalTreasury(b),
         orbitOwners: [...new Set(g.fleets.filter(f => f.planet === b.p && !f.leg && f.units.length).map(f => f.owner))],
+        bombingRun: orbitBombingRun(g, b.p, b.attacker),
         sides: [b.attacker, b.defender],
         autoResolve: this.autoResolveFor(b),
         tech: this.techLevels(),

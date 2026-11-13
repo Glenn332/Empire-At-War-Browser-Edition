@@ -800,7 +800,10 @@ export class Mind extends Reason {
         case 'CREDITSUNNORMALIZED':
           return w.credits[side];
         case 'ISBOMBINGRUNAVAILABLE':
-          return [...this.owned].some(n => /BOMBING_RUN/.test(n)) && !w.bombing.some(b => b.side === side) ? 1 : 0;
+          return ([...this.owned].some(n => /BOMBING_RUN/.test(n)) || (w.bombRuns?.[side]?.present && !w.bombRuns[side].running && w.time >= w.bombRuns[side].readyAt && !w.sidePlayers?.[side]?.bombingRunOff)) &&
+            !w.bombing.some(b => b.side === side)
+            ? 1
+            : 0;
         case 'ISORBITALBOMBARDMENTAVAILABLE': {
           const r = w.orbitals && w.orbitals[side],
             p = w.sidePlayers?.[side],

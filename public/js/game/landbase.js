@@ -708,12 +708,51 @@ const bombTicket = (world, side) =>
     const t = db.type(n);
     return t && abilityOf(t, 'Battlefield_Modifier_Ability').some(a => yes(a.val('Enable_Bombing_Runs')));
   });
+export function bombRunOf(world, side) {
+  const all = (world.bombRuns ||= []);
+  return (all[side] ||= { present: false, type: null, interval: 0, readyAt: 0, countdownStart: 0, running: false });
+}
+export function setupBombingRuns(world, campaign) {
+  const info = campaign?.bombingRun,
+    side = info ? world.factions.findIndex(f => String(f).toUpperCase() === String(info.owner).toUpperCase()) : -1,
+    type = info && db.type(info.type);
+  if (side < 0 || !type) return;
+  const count = Math.max(3, info.count || 0),
+    reduction = (Math.floor(count / 3) - 1) * db.constants.num('Bombing_Run_Reduction_Per_Squadron_Percent', 0),
+    factor = Math.max(0, (info.modifier || 0) + 1 - reduction),
+    interval = Math.max(
+      db.constants.num('Max_Bombing_Run_Interval_Seconds', 120) * factor,
+      db.constants.num('Min_Bombing_Run_Interval_Seconds', 120)
+    );
+  Object.assign(bombRunOf(world, side), {
+    present: true,
+    type,
+    interval,
+    countdownStart: world.time,
+    readyAt: world.time + interval,
+    running: false
+  });
+}
+const orbitRunReady = (world, side) => {
+  const r = world.bombRuns?.[side];
+  return !!r && r.present && !r.running && world.time >= r.readyAt;
+};
+export function bombRunCharge(world, side) {
+  const r = world.bombRuns?.[side];
+  if (!r || !r.present || r.running) return 0;
+  if (world.time >= r.readyAt) return 1;
+  const span = r.readyAt - r.countdownStart;
+  return span > 0 ? Math.max(0, Math.min(1, (world.time - r.countdownStart) / span)) : 1;
+}
 export const canBomb = (world, side) =>
-  !world.sidePlayers?.[side]?.bombingRunOff && !!bombTicket(world, side) && !world.bombing.some(b => b.side === side);
+  !world.sidePlayers?.[side]?.bombingRunOff &&
+  (orbitRunReady(world, side) || !!bombTicket(world, side)) &&
+  !world.bombing.some(b => b.side === side);
 
 export function bombingRun(world, side, x, y) {
-  const ticket = bombTicket(world, side);
-  if (!ticket) return 'No bombing run available';
+  const orbit = orbitRunReady(world, side) ? bombRunOf(world, side) : null,
+    ticket = orbit ? null : bombTicket(world, side);
+  if (!orbit && !ticket) return 'No bombing run available';
   if (
     world.units.some(u => u.structure && !u.dead && !world.ally(u.side, side) && u.noBomb > 0 && Math.hypot(u.x - x, u.y - y) <= u.noBomb)
   )
@@ -721,10 +760,12 @@ export function bombingRun(world, side, x, y) {
   const faction = world.factions[side].toUpperCase(),
     F = db.faction(world.factions[side]);
   const type =
+    orbit?.type ||
     (F && db.type(F.str('Skirmish_Land_Bomber').trim())) ||
     [...db.types.values()].find(t => t.tag === 'LandBombingUnit' && t.str('Affiliation').toUpperCase().includes(faction));
   if (!type) return 'No bombers';
-  world.owned[side].delete(ticket);
+  if (orbit) orbit.running = true;
+  else world.owned[side].delete(ticket);
   const home = world.units.find(u => u.isBase && world.ally(u.side, side)) || { x: x - 1, y };
   const d = Math.hypot(x - home.x, y - home.y) || 1,
     ux = (x - home.x) / d,
@@ -852,6 +893,12 @@ function tickBombing(world, dt) {
   }
   world.bombing = world.bombing.filter(run => {
     if (run.along < run.reach || run.bombs.length) return true;
+    const orbit = world.bombRuns?.[run.side];
+    if (orbit?.running) {
+      orbit.running = false;
+      orbit.countdownStart = world.time;
+      orbit.readyAt = world.time + orbit.interval;
+    }
     for (const c of run.craft) {
       world.scene.remove(c.holder);
       if (c.unit) {

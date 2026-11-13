@@ -173,6 +173,42 @@ export function landBomber(g, planet, owner) {
       }
   return null;
 }
+export function orbitBombingRun(g, planet, owner) {
+  const tech = g.players.find(p => key(p.faction) === key(owner))?.tech || 0,
+    bomberOf = t => (t && db.type(t.str('Land_Bomber_Type')) ? t : null),
+    members = t => (t ? [...t.list('Squadron_Units'), ...t.list('Company_Units')].map(n => db.type(n)).filter(Boolean) : []);
+  let count = 0,
+    last = null;
+  const take = t => {
+    const own = bomberOf(t);
+    if (own) {
+      count++;
+      last = own;
+      return true;
+    }
+    let any = false;
+    for (const m of members(t))
+      if (bomberOf(m)) {
+        count++;
+        last = m;
+        any = true;
+      }
+    return any;
+  };
+  for (const fleet of g.fleets)
+    if (fleet.planet === planet && !fleet.leg && key(fleet.owner) === key(owner))
+      for (const record of fleet.units) {
+        if (record.dead || !record.type || take(record.type)) continue;
+        for (let tier = 0; tier <= Math.min(5, tech); tier++)
+          for (const spawn of startingSpawns(record.type, tier, true)) take(spawn.type);
+      }
+  if (!last) return null;
+  const p = g.planets[planet],
+    modifier = [...(p?.groundStructures || []), ...(p?.garrison || []), ...(p?.orbitalStructures || [])]
+      .filter(u => !u.dead && u.type?.bool('Modifies_Bombing_Run_Time'))
+      .reduce((s, u) => s + u.type.num('Bombing_Run_Percent_Modifier', 0), 0);
+  return { owner, type: last.str('Land_Bomber_Type').trim(), count, modifier };
+}
 function buckets(roster, contrast) {
   const out = [{ category: null, power: 0 }, ...Array.from(contrast.keys(), category => ({ category, power: 0 }))];
   const add = (type, power) => {
