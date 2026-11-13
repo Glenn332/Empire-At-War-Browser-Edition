@@ -322,6 +322,7 @@ export class ScriptUI {
     this.game.pendingBattle?.click(key);
     if (key === 'ATTACK_BUTTON' && this.game.pauseShellOpen) this.game.setUserPaused(false);
     if (key === 'B_DROID_HELP' && !net) this.game.galacticLog?.toggle();
+    if ((key === 'HACK_CLOSE' || key === 'HACK_HACK') && !this.game.hackPanel?.open) this.visibility('hack_shell', false);
     if (key === 'B_STORY_ARC_G' && !net) {
       this.game.storyButtonFlash?.(false);
       if (this.game.storyDialog?.opened) this.game.storyDialog.close();
