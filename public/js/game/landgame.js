@@ -12,6 +12,7 @@ import { loadModel, lighting, setPlanetEnvironment, depthMaterial, programSource
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { loadALO } from '../alo.js';
 import { iconUrl, iconCanvasRect, iconAtlas } from '../icons.js';
+import { renderSkyAtlas, clearSkyAtlas } from '../skyreflect.js';
 import { buildTerrain, buildWater, drawSky, skyMaterial, heightAt, paintFog, fogTexture, CELL } from './terrain.js';
 import { LandWorld, costOf, timeOf, isUpgrade, buildsFor, FACING, placeRotation, landPop } from './land.js';
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
@@ -327,6 +328,7 @@ export class LandGame {
   }
 
   dispose() {
+    clearSkyAtlas();
     this.shooter?.dispose();
     this.modeSuspended = true;
     this.over = true;
@@ -1785,6 +1787,19 @@ export class LandGame {
     if (generation !== this.environmentGeneration) return;
     this.sky = entry.sky;
     this.skyTick = entry.ticks;
+  }
+  refreshSkyAtlas(R) {
+    const A = (this.skyAtlasState ||= { sky: null, by: null, left: 0, wait: 0 });
+    if (A.sky !== this.sky || A.by !== R) {
+      A.sky = this.sky;
+      A.by = R;
+      A.left = 5;
+      A.wait = 0;
+    }
+    if (A.left <= 0 || performance.now() < A.wait || !this.sky.children.length) return;
+    A.left--;
+    A.wait = performance.now() + 1000;
+    renderSkyAtlas(R, this.sky);
   }
   weatherLightning(L, real) {
     const s = (this.lightningNow ||= lightningState()),
@@ -3291,6 +3306,7 @@ export class LandGame {
     this.ground.userData.tick(dt);
     for (const f of this.skyTick) f(dt);
     const R = this.gpuOn ? this.gpu : this.renderer;
+    this.refreshSkyAtlas(R);
     const skip = R.isMirror && R.behind();
     R.autoClear = false;
     const draw = eye => {

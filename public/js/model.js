@@ -9,6 +9,7 @@ import { effectInfo, effectLOD, selectEffectTechnique } from './fxo.js';
 import { fetchBinary } from './vfs.js';
 import { planetEnvironment } from './planetlighting.js';
 import { env as gpuEnv } from './gpu/env.js';
+import { skyAtlas } from './skyreflect.js';
 
 const noShadow = new THREE.DepthTexture(1, 1);
 noShadow.compareFunction = THREE.LessEqualCompare;
@@ -209,6 +210,19 @@ uniform float dissolve;
 uniform float alphaRef;
 float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
 float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+#ifdef REFLECT
+uniform sampler2D skyAtlas;
+vec3 skyAt(vec3 r) {
+  vec3 a = abs(r), F, U;
+  float i;
+  if (a.x >= a.y && a.x >= a.z) { i = r.x > 0.0 ? 0.0 : 1.0; F = vec3(sign(r.x), 0.0, 0.0); U = vec3(0.0, 0.0, 1.0); }
+  else if (a.y >= a.z) { i = r.y > 0.0 ? 2.0 : 3.0; F = vec3(0.0, sign(r.y), 0.0); U = vec3(0.0, 0.0, 1.0); }
+  else { i = r.z > 0.0 ? 4.0 : 5.0; F = vec3(0.0, 0.0, sign(r.z)); U = vec3(0.0, 1.0, 0.0); }
+  float d = max(dot(r, F), 1e-4);
+  vec2 f = clamp(vec2(dot(r, cross(F, U)), dot(r, U)) / d * 0.5 + 0.5, 0.004, 0.996);
+  return texture2D(skyAtlas, vec2((i + f.x) / 6.0, f.y)).rgb;
+}
+#endif
 float haze(vec3 at) { return fogRange.y > 0.0 ? clamp((fogRange.y - distance(cameraPosition, at)) / max(1.0, fogRange.y - fogRange.x), 0.0, 1.0) : 1.0; }
 uniform vec4 colorization;
 uniform vec3 emissive, diffuse, specular;
@@ -252,6 +266,10 @@ void main() {
   albedo = mix(albedo, albedo * colorization.rgb, base.a);
 #endif
 #ifdef UNLIT
+  #ifdef REFLECT
+  albedo = skyAt(reflect(normalize(vWorldPos - cameraPosition), normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0)));
+  base.a = 1.0;
+  #endif
   vec3 col = albedo * diffuse;
   float a = base.a;
   #ifdef USE_VCOLOR
@@ -272,7 +290,7 @@ void main() {
 #else
   vec3 n = normalize(vNormal);
   float gloss = 0.25;
-  #if defined(BUMP) || defined(SPECGLOW)
+  #if defined(BUMP) || defined(SPECGLOW) || defined(REFLECT)
   vec4 nt = texture2D(normalMap, vUv);
   #endif
   #ifdef BUMP
@@ -328,6 +346,9 @@ void main() {
   vec3 col = albedo * diffuse * light * ls.rgb + sunSpecular * st.rgb * sh + emissive * nt.a;
   #else
   vec3 col = albedo * (2.0 * emissive + diffuse * light * ls.rgb) + specular * sunSpecular * sp * gloss;
+  #endif
+  #ifdef REFLECT
+  col += skyAt(reflect(-v, n)) * specular * nt.a;
   #endif
   col = tinted(col, tint);
   col = tinted(col, vTint);
@@ -565,6 +586,16 @@ export function depthMaterial(m) {
 const IDENTITY_BONES = new Float32Array(MAX_BONES * 16);
 for (let i = 0; i < MAX_BONES; i++) for (let k = 0; k < 4; k++) IDENTITY_BONES[i * 16 + k * 5] = 1;
 
+function keepSkyAtlas() {
+  const u = this.uniforms.skyAtlas;
+  delete this.uniforms.skyAtlas;
+  const c = THREE.ShaderMaterial.prototype.clone.call(this);
+  this.uniforms.skyAtlas = u;
+  c.uniforms.skyAtlas = u;
+  c.clone = keepSkyAtlas;
+  return c;
+}
+
 function makeMaterial(mat, format, teamColor) {
   const shader = mat.shader;
   const p = mat.params;
@@ -630,6 +661,7 @@ function makeMaterial(mat, format, teamColor) {
   if (shader.includes('colorize') && teamColor) defines.COLORIZE = 1;
   const detail = gfx.shader | 0;
   if (shader.includes('bump') && p.NormalTexture && detail >= 2) defines.BUMP = 1;
+  if (shader.includes('reflect') && detail >= 1) defines.REFLECT = 1;
   const specGlow = SPEC_GLOW.test(shader) && !unlit;
   if (detail < 1) {
   } else if (specGlow) defines.SPECGLOW = 1;
@@ -656,7 +688,7 @@ function makeMaterial(mat, format, teamColor) {
       normalMap: {
         value: rock4k
           ? rock4k.normalMap
-          : (defines.BUMP || defines.SPECGLOW) && p.NormalTexture
+          : (defines.BUMP || defines.SPECGLOW || defines.REFLECT) && p.NormalTexture
             ? loadTexture(p.NormalTexture)
             : defines.SPECGLOW
               ? blackTexture()
@@ -681,6 +713,7 @@ function makeMaterial(mat, format, teamColor) {
         : {}),
       ...(nebula ? { nebulaWave: { value: new THREE.Vector3(p.DistortionScale ?? 0, p.SFreq ?? 0, p.TFreq ?? 0) } } : {}),
       ...(rocky ? { detailScale: { value: 0.09 } } : {}),
+      ...(defines.REFLECT ? { skyAtlas } : {}),
       ...(skinned ? { boneMatrices: { value: IDENTITY_BONES } } : {})
     },
     side: (additive || alpha) && !/nebula/.test(shader) ? THREE.FrontSide : THREE.DoubleSide,
@@ -688,6 +721,7 @@ function makeMaterial(mat, format, teamColor) {
     depthWrite: !(additive || alpha),
     blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending
   });
+  if (defines.REFLECT) m.clone = keepSkyAtlas;
   if (additive) {
     m.blendSrc = THREE.OneFactor;
     m.blendDst = THREE.OneFactor;

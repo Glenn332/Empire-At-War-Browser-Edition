@@ -49,7 +49,8 @@ const MODEL_DEFINES = [
   'FOW_DIM',
   'DETAIL',
   'SKINNED',
-  'INSTSKIN'
+  'INSTSKIN',
+  'REFLECT'
 ];
 const LIGHTING_KEYS = [
   'sunDir',
@@ -93,6 +94,22 @@ struct Draw {
 @group(1) @binding(4) var glossT: texture_2d<f32>;
 @group(1) @binding(5) var glossS: sampler;
 @group(2) @binding(0) var<uniform> D: Draw;
+`
+  );
+  if (on('REFLECT'))
+    L.push(`
+@group(1) @binding(6) var skyT: texture_2d<f32>;
+@group(1) @binding(7) var skyS: sampler;
+fn skyAt(r: vec3f) -> vec3f {
+  let a = abs(r);
+  var i = 0.0; var F = vec3f(0.0); var U = vec3f(0.0, 0.0, 1.0);
+  if (a.x >= a.y && a.x >= a.z) { i = select(1.0, 0.0, r.x > 0.0); F = vec3f(sign(r.x), 0.0, 0.0); }
+  else if (a.y >= a.z) { i = select(3.0, 2.0, r.y > 0.0); F = vec3f(0.0, sign(r.y), 0.0); }
+  else { i = select(5.0, 4.0, r.z > 0.0); F = vec3f(0.0, 0.0, sign(r.z)); U = vec3f(0.0, 1.0, 0.0); }
+  let d = max(dot(r, F), 1e-4);
+  let f = clamp(vec2f(dot(r, cross(F, U)), dot(r, U)) / d * 0.5 + 0.5, vec2f(0.004), vec2f(0.996));
+  return textureSample(skyT, skyS, vec2f((i + f.x) / 6.0, f.y)).rgb;
+}
 `
   );
   L.push(`
@@ -213,7 +230,9 @@ fn rock(p: vec3f) -> f32 {
 @fragment fn fs(v: VOut, @builtin(front_facing) facing: bool) -> @location(0) vec4f {
   let front = ${turned ? '!facing' : 'facing'};
   let fc = v.pos.xy;
-  let base = textureSample(mapT, mapS, v.vUv);
+  var base = textureSample(mapT, mapS, v.vUv);
+  ${on('REFLECT') && on('UNLIT') ? 'let skyR = skyAt(reflect(normalize(v.vWorldPos - P.cameraPosition), normalize(v.vNormal) * select(-1.0, 1.0, front)));' : ''}
+  ${on('REFLECT') && on('UNLIT') ? 'base = vec4f(skyR, 1.0);' : ''}
   var albedo = base.rgb;
   ${on('COLORIZE') ? 'albedo = mix(albedo, albedo * D.colorization.rgb, base.a);' : ''}
 `);
@@ -241,7 +260,7 @@ fn rock(p: vec3f) -> f32 {
   var n = normalize(v.vNormal);
   var gloss = 0.25;
   ${
-    on('BUMP') || on('SPECGLOW') ? 'let nt = textureSample(normalT, normalS, v.vUv);' : ''
+    on('BUMP') || on('SPECGLOW') || on('REFLECT') ? 'let nt = textureSample(normalT, normalS, v.vUv);' : ''
   }
   ${
     on('BUMP')
@@ -291,6 +310,7 @@ fn rock(p: vec3f) -> f32 {
   var col = albedo * D.diffuse * light * ls.rgb + P.sunSpecular * st.rgb * sh + D.emissive * nt.a;`
         : 'var col = albedo * (2.0 * D.emissive + D.diffuse * light * ls.rgb) + D.specular * P.sunSpecular * sp * gloss;'
   }
+  ${on('REFLECT') ? 'col += skyAt(reflect(-vv, n)) * D.specular * nt.a;' : ''}
   col = tinted(col, D.tint);
   col = tinted(col, v.vTint);
   if (D.ghost > 0.5 && glMod(floor(fc.x) + floor(fc.y), 2.0) < 1.0) { discard; }
@@ -331,7 +351,7 @@ const model = {
   name: 'model',
   match(m) {
     const P = env.programSources;
-    if (!m.isShaderMaterial || m.vertexShader !== P.VERT) return false;
+    if (!m.isShaderMaterial || m.vertexShader !== P.VERT || (m.defines && m.defines.REFLECT)) return false;
     return m.fragmentShader === P.FRAG || m.fragmentShader === P.DEPTH_FRAG || m.fragmentShader === turnedFrag();
   },
   light: m => (LIGHTING_KEYS.every(k => !m.uniforms[k] || m.uniforms[k] === env.lighting[k]) ? null : m.uniforms),
@@ -1183,8 +1203,24 @@ const laserKite = simple({
     laserOut
 });
 
+const modelReflect = {
+  ...model,
+  name: 'modelReflect',
+  dims: null,
+  match(m) {
+    const P = env.programSources;
+    return !!(m.isShaderMaterial && m.defines && m.defines.REFLECT && m.vertexShader === P.VERT && (m.fragmentShader === P.FRAG || m.fragmentShader === P.DEPTH_FRAG || m.fragmentShader === turnedFrag()));
+  },
+  layout: [...texBinding(0), ...texBinding(2), ...texBinding(4), ...texBinding(6)],
+  textures(m) {
+    const U = m.uniforms;
+    return [U.map && U.map.value, U.normalMap && U.normalMap.value, U.glossMap && U.glossMap.value, U.skyAtlas && U.skyAtlas.value];
+  }
+};
+
 export const families = [
   model,
+  modelReflect,
   terrain,
   particles,
   basic,
