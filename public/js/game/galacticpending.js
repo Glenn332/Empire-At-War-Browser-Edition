@@ -86,7 +86,7 @@ export class PendingBattle {
     const game = this.game;
     if (this.busy) return false;
     if (game.net) return this.netBegin(request);
-    if (game.controlsLocked || game.storyMovie) {
+    if (game.controlsLocked || game.storyMovie?.active) {
       this.deferred = request;
       return true;
     }
@@ -118,7 +118,7 @@ export class PendingBattle {
   }
 
   tick() {
-    if (this.deferred && !this.game.controlsLocked && !this.game.storyMovie) {
+    if (this.deferred && !this.game.controlsLocked && !this.game.storyMovie?.active) {
       const waiting = this.deferred;
       this.deferred = null;
       this.begin(waiting);

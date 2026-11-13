@@ -210,6 +210,22 @@ assert.deepEqual(
 );
 db.constants.bool = bool;
 
+game.autoResolveOption = true;
+game.storyMovie = { active: true };
+calls.length = 0;
+assert.equal(pending.begin(request), true);
+assert.equal(calls.length, 0, 'A battle waits while a story movie plays');
+pending.tick();
+assert.equal(calls.length, 0);
+game.storyMovie.active = false;
+pending.tick();
+assert.deepEqual(calls.map(c => c[0]), ['resolve', 'fight'], 'and goes ahead once it is over, though the movie player stays');
+calls.length = 0;
+pending.begin(request);
+assert.deepEqual(calls.map(c => c[0]), ['resolve', 'fight'], 'later battles are not held by a finished movie');
+game.storyMovie = null;
+game.autoResolveOption = false;
+
 const contrast = await nativeAutoContrast(new Map([['FIGHTER', { types: new Map(), kinds: new Map([['FIGHTER', 1]]) }]]));
 const fixture = (name, power) => {
   const t = new ObjType('SpaceUnit', name);
