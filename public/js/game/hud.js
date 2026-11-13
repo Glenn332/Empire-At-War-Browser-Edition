@@ -1114,8 +1114,8 @@ export class CommandBar {
       ? []
       : sel.filter(s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length)));
     const items = new Array(24).fill(null),
-      columns = [],
-      skip = this.coveredColumns();
+      columns = [];
+    let skip = this.coveredColumns(false);
     this.buildBar?.set(0, 12 - skip, 0);
     if (units.length) {
       const groups = new Map();
@@ -1154,6 +1154,7 @@ export class CommandBar {
     }
     const b = ui.builder();
     if (b) {
+      skip = this.coveredColumns(true);
       const opts = w.buildOptions(b, p).filter(t => {
         if (/^Requires /.test(w.cantBuild(b, t, p) || '')) return false;
         if (!isUpgradeType(t)) return true;
@@ -1178,16 +1179,8 @@ export class CommandBar {
     return { mode: 'build', items, columns };
   }
 
-  coveredColumns() {
-    const covers = (this.covers || []).filter(n => n.isConnected && !n.closest('[hidden]') && n.style.display !== 'none');
-    if (!covers.length) return 0;
-    const boxes = covers.map(n => ({ x: parseFloat(n.style.left), w: parseFloat(n.style.width) }));
-    let skip = 0;
-    for (; skip < 12; skip++) {
-      const r = this.rect('s_select_' + String(skip * 2).padStart(2, '0'));
-      if (!r || !boxes.some(b => b.x < r.x + r.w && r.x < b.x + b.w)) break;
-    }
-    return skip;
+  coveredColumns(build) {
+    return (this.covers || []).some(c => (!build || c.build) && c.node.isConnected && !c.node.closest('[hidden]') && c.node.style.display !== 'none') ? 1 : 0;
   }
 
   slotClick(i, ev) {
