@@ -452,7 +452,7 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('GetCurrentTime', {
       __wrap: true,
       __name: 'GetCurrentTime',
-      __call: () => this.serviceTime,
+      __call: () => Math.fround(Math.fround(Math.floor(this.time * 30 + 1e-6)) * Math.fround(1 / 30)),
       Frame: () => Math.fround(Math.fround(Math.floor(this.time * 30 + 1e-6)) * Math.fround(1 / 30)),
       Galactic_Time: () => Math.fround(Math.fround(Math.floor(this.time * 30 + 1e-6)) * Math.fround(1 / 30))
     });

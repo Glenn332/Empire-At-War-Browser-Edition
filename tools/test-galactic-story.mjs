@@ -248,8 +248,8 @@ if (menu) {
   }
   assert(host.serviceTime > uiStart, 'Application service clock advances independently');
   host.vm.exec(
-    'assert(GetCurrentTime() > GetCurrentTime.Frame()); assert(GetCurrentTime.Frame() == GetCurrentTime.Galactic_Time())',
-    'Native application and mode clocks'
+    'assert(GetCurrentTime() == GetCurrentTime.Galactic_Time()); assert(GetCurrentTime.Frame() == GetCurrentTime.Galactic_Time())',
+    'Lua time is the galactic mode clock and stops while paused'
   );
   userPauseGalactic(game, false);
   assert.equal(game.galacticPauseCount, 0);
