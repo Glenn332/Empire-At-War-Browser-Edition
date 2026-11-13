@@ -956,6 +956,16 @@ export class CommandBar {
       }
     });
     this.bWeapon.classList.add('dis');
+    {
+      const b = this.bWeapon,
+        clock = Object.assign(document.createElement('i'), { className: 'hb-art hb-art-build' });
+      b.appendChild(clock);
+      b._nativeButton?.layers.set('build', clock);
+      this.setButtonImage(b, 'build', this.textureName('b_special_weapon', 'Build_Texture_Name'));
+      clock.style.backgroundImage = 'var(--build)';
+      clock.style.display = 'none';
+      this.weaponClock = clock;
+    }
     this.bPing = this.button('b_special_weapon2', {
       title: db.t('TEXT_PLACE_BEACON') || 'Place beacon',
       onClick: () => {
@@ -1481,6 +1491,12 @@ export class CommandBar {
     const sw = this.weaponOf();
     this.bWeapon.classList.toggle('dis', !sw || sw.charge < 0.99 || !sw.enabled());
     this.bWeapon.classList.toggle('sel', ui.armed === 'special');
+    {
+      const charge = this.weaponCharge ? this.weaponCharge() : sw ? sw.charge : 1,
+        on = charge > 0 && charge < 1;
+      if (this.weaponClock.style.display !== (on ? '' : 'none')) this.weaponClock.style.display = on ? '' : 'none';
+      if (on) this.weaponClock.style.setProperty('--cd', 100 * charge + '%');
+    }
     this.bPing.classList.toggle('dis', !game.beaconReady?.());
     this.bPing.classList.toggle('sel', ui.armed === 'beacon');
     this.bReinforce.classList.toggle('flash', reinforcing && p.reinforcements.length > 0 && !this.reinforceOpen);

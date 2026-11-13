@@ -489,7 +489,7 @@ const GROUPS = [
       [
         'Planet special weapon (ion cannon, hypervelocity gun) and its button',
         P,
-        'as read from the engine: every side has its faction Standalone_Space_Maps_Special_Weapon at the map special weapon source, charged at the start; each shot in a skirmish is bought as the use upgrade and uses it up; its volley flies from the planet at a unit of a valid kind; recharge, the advisor lines (ready, firing, charging, for both sides), the button with the weapon own icon and tip, the game own targeting pointers, the AI plans fire it. Not seen against the original: the shot in flight'
+        'as read from the engine: every side has its faction Standalone_Space_Maps_Special_Weapon at the map special weapon source, charged at the start; each shot in a skirmish is bought as the use upgrade and uses it up; its volley flies from the planet at a unit of a valid kind; recharge, the advisor lines (ready, firing, charging, for both sides), the button with the weapon own icon and tip and, while it recharges, its Build_Texture_Name cut as a fan for the share gone (time since the shot over the recharge time, clamped, as the engine space HUD passes the weapon charge; full or empty shows none), the game own targeting pointers, the AI plans fire it. Not seen against the original: the shot in flight'
       ],
       [
         'Losing side credit bonus (Multiplayer_Losing_Team_Bonus_Credit_Percentage)',

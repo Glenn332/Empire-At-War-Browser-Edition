@@ -279,15 +279,7 @@ export class LandUI {
       this.placing = this.aiming = null;
       if (this.armed) game.say('Click where the bombers should strike');
     };
-    {
-      const b = this.bar.bWeapon,
-        clock = Object.assign(document.createElement('i'), { className: 'hb-art hb-art-build' });
-      b.appendChild(clock);
-      b._nativeButton?.layers.set('build', clock);
-      this.bar.setButtonImage(b, 'build', this.bar.textureName('b_special_weapon', 'Build_Texture_Name'));
-      clock.style.backgroundImage = 'var(--build)';
-      this.bombClock = clock;
-    }
+    this.bar.weaponCharge = () => bombRunCharge(this.world, this.me);
     this.pb = this.bar.button('pb_switch', {
       onClick: () => {
         if (!canBombard(w, this.me)) return;
@@ -557,12 +549,6 @@ export class LandUI {
     }
     this.bar.bWeapon.classList.toggle('dis', !canBomb(this.world, this.me));
     this.bar.bWeapon.classList.toggle('sel', this.armed === 'bombing');
-    {
-      const charge = bombRunCharge(this.world, this.me),
-        on = charge > 0 && charge < 1;
-      if (this.bombClock.style.display !== (on ? '' : 'none')) this.bombClock.style.display = on ? '' : 'none';
-      if (on) this.bombClock.style.setProperty('--cd', 100 * charge + '%');
-    }
     this.refreshOrbital();
     this.fogDirty = true;
   }
