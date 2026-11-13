@@ -201,6 +201,7 @@ function allSourceDefs(type) {
       exCats: [],
       faction: '',
       self: true,
+      reverse: /^(yes|true)$/i.test(node.val('Reverse_Application_Logic').trim()),
       unique
     };
     if (modes & SPACE) all[SPACE].push(def);
@@ -231,5 +232,5 @@ export function bonusTypeFits(def, type, alias = '') {
 }
 
 export function bonusOwnerFits(def, targetFaction, allied) {
-  return def.faction ? String(targetFaction || '').toUpperCase() === def.faction : allied;
+  return def.faction ? String(targetFaction || '').toUpperCase() === def.faction : def.reverse ? !allied : allied;
 }

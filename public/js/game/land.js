@@ -2356,6 +2356,44 @@ export class LandWorld {
     return true;
   }
 
+  battleModifiers(side, field) {
+    const out = [],
+      seen = new Set();
+    const visit = (t, owner) => {
+      if (!t || !t.sub) return;
+      for (const node of t.sub('Abilities').flatMap(a => a.all('Battlefield_Modifier_Ability'))) {
+        if (!node.val(field).trim() || /^(no|false)$/i.test(node.val('Initially_Enabled').trim())) continue;
+        const style = node.val('Activation_Style').trim().toUpperCase();
+        if (style === 'SPACE_AUTOMATIC' || (this.campaign && style === 'SKIRMISH_AUTOMATIC')) continue;
+        const reverse = /^(yes|true)$/i.test(node.val('Reverse_Application_Logic').trim());
+        if (reverse ? this.ally(owner, side) : owner !== side && !(this.ally(owner, side) && /^(yes|true)$/i.test(node.val('Apply_To_All_Allies').trim()))) continue;
+        const key = owner + ':' + t.name + ':' + (node.attrs.Name || '');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ key: t.name + ':' + (node.attrs.Name || ''), value: node.num(field, 1) });
+      }
+    };
+    for (let s = 0; s < this.factions.length; s++) for (const name of this.owned[s] || []) visit(db.type(name), s);
+    for (const q of this.squads) if (q.side >= 0 && q.side < this.factions.length && q.members.length) visit(q.type, q.side);
+    return out;
+  }
+  reinforcementHold(side) {
+    if (this.campaign) return 0;
+    const base = Math.max(0, Math.round(db.constants.num('Skirmish_Reinforcement_Delay_Frames', 0)));
+    let frames = base;
+    for (const m of this.battleModifiers(side, 'Reinforcement_Time_Multiplier')) frames += Math.round(base * m.value) - base;
+    return Math.max(0, frames) / 30;
+  }
+  deployInterval(side) {
+    const best = new Map();
+    for (const m of this.battleModifiers(side, 'Reinforcement_Deploy_Time_Multiplier')) {
+      const v = m.value - 1;
+      if (!best.has(m.key) || v > best.get(m.key)) best.set(m.key, v);
+    }
+    let sum = 0;
+    for (const v of best.values()) sum += v;
+    return 2 * (1 + Math.max(-0.99, sum));
+  }
   alwaysSide(t) {
     const c = this.campaignSides;
     if (!c) return undefined;
@@ -3726,6 +3764,9 @@ export class LandWorld {
       y,
       heading,
       wait: 0,
+      hold: this.reinforcementHold(side),
+      members: Math.max(1, kinds.length),
+      interval: this.deployInterval(side),
       airborne
     };
     if (t.anim) t.anim.pose();
@@ -3781,6 +3822,11 @@ export class LandWorld {
     return t;
   }
 
+  transportNear(t) {
+    for (const o of this.transports)
+      if (o !== t && !o.craft.dead && (o.landing || o.stage === 'unload') && o.stage !== 'leave' && Math.hypot(o.x - t.x, o.y - t.y) < 100) return true;
+    return false;
+  }
   updateTransports(dt) {
     let k = 0;
     for (const t of this.transports) {
@@ -3791,10 +3837,16 @@ export class LandWorld {
         this.squads = this.squads.filter(q => q !== t.craft.squad);
         continue;
       }
+      if (t.stage === 'land' && (t.hold > 0 || this.transportNear?.(t))) {
+        if (t.hold > 0) t.hold -= dt;
+        this.transports[k++] = t;
+        continue;
+      }
+      t.landing = true;
       const running = t.anim ? t.anim.step(dt) : false;
       if (t.stage === 'land' && !running) {
         t.stage = 'unload';
-        t.wait = 2;
+        t.wait = (t.interval || 2) * (t.members || 1);
         t.out = false;
         const out = this.spawn(t.typeName, t.x, t.y, t.heading, t.side, null, { x: t.x, y: t.y });
         out.then(
