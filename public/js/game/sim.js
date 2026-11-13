@@ -4809,6 +4809,11 @@ export class World {
     if (!why && st.def.sfxOn) this.audio.playFor(e.player, st.def.sfxOn);
   }
 
+  shotEnded(p) {
+    if (!p.def || !p.owner || p.owner.id === undefined) return;
+    for (const pick of survivorPicks(p.def)) this.spawn(pick, p.owner, p.x, p.y, Math.atan2(p.vy || 0, p.vx || 1));
+  }
+
   updateProjectiles(dt) {
     const ps = this.projectiles;
     if (ps.length) this.makeHitGrid();
@@ -4849,6 +4854,7 @@ export class World {
             proj: p.def,
             z: p.point.z
           });
+          this.shotEnded(p);
           continue;
         }
       }
@@ -5050,6 +5056,7 @@ export class World {
           });
       }
       if (keep) ps[n++] = p;
+      else this.shotEnded(p);
     }
     ps.length = n;
   }
