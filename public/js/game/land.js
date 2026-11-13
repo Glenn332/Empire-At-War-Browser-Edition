@@ -533,6 +533,7 @@ class LandUnit {
     this.gunner = undefined;
     this.garrisonSlot = undefined;
     this.garrisonFrom = undefined;
+    this.gravHeld = undefined;
     this.lastDamage = undefined;
     this.lastHit = undefined;
     this.hitBy = undefined;

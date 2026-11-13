@@ -605,17 +605,21 @@ function tickGravity(world) {
       !u.dead && !u.unpowered && (u.gravField ??= /GRAVITY_CONTROL_FIELD/i.test(u.type.str('LandBehavior') + ' ' + u.type.str('Behavior')))
   );
   for (const u of world.units) {
-    if (u.dead || u.structure || !(u.gravHit ??= u.type.bool('Is_Affected_By_Gravity_Control_Field'))) continue;
+    if (u.dead || !(u.gravHit ??= u.type.bool('Is_Affected_By_Gravity_Control_Field'))) continue;
     let slow = 0,
+      held = false,
       fx = '';
     for (const g of fields) {
       if (world.ally(g.side, u.side) || Math.hypot(g.x - u.x, g.y - u.y) > g.type.num('Gravity_Control_Field_Range', 0)) continue;
+      held = true;
       const s = g.type.num('Gravity_Control_Field_Slow_Fraction', 0);
       if (s > slow) {
         slow = s;
         fx = g.type.str('Gravity_Control_Field_Effect');
       }
     }
+    u.gravHeld = held;
+    if (u.structure) continue;
     u.gravity = 1 - Math.min(0.95, slow);
     if (slow > 0 && fx && world.onFx && world.time >= (u.gravFxAt || 0)) {
       u.gravFxAt = world.time + 2;
@@ -1358,6 +1362,7 @@ function exitSpot(world, host, u) {
 }
 
 function holderFree(world, host) {
+  if (host.gravHeld) return false;
   if (host.hoverH > 0 && host.hoverState) return world.isOpen(host.x, host.y, host.need || 1);
   return true;
 }
