@@ -1,6 +1,7 @@
 import { simRandom } from './simrandom.js';
 import { pool as slicePool } from './galacticslicer.js';
 import { db, typeHasProperty } from '../gamedata.js';
+import { diplomacy, setRelation } from './galacticrelation.js';
 import { activeLanguage } from '../language.js';
 import { changeController } from './galacticpolitics.js';
 import { planetFactionChange } from './galacticobliterate.js';
@@ -716,8 +717,25 @@ export class GalacticStoryHost extends StoryPlots {
       Get_Difficulty: () => ({ easy: 'Easy', medium: 'Normal', hard: 'Hard' })[this.game.setup?.difficulty] || 'Normal',
       Lock_Tech: type => this.tech(faction.name, type?.__type, false),
       Unlock_Tech: type => this.tech(faction.name, type?.__type, true),
-      Is_Enemy: other => faction.list('Enemies').some(n => key(n) === key(other?.__faction)),
-      Is_Ally: other => id === key(other?.__faction) || faction.list('Allies').some(n => key(n) === key(other?.__faction)),
+      Is_Enemy: other => {
+        const set = diplomacy(id, other?.__faction);
+        return set !== undefined ? set === 1 : faction.list('Enemies').some(n => key(n) === key(other?.__faction));
+      },
+      Is_Ally: other => {
+        if (id === key(other?.__faction)) return true;
+        const set = diplomacy(id, other?.__faction);
+        return set !== undefined ? set === 0 : faction.list('Allies').some(n => key(n) === key(other?.__faction));
+      },
+      Make_Ally: other => {
+        if (!other?.__faction) return;
+        setRelation(this.game.galaxy, id, other.__faction, 0);
+        this.game.ai?.invalidate?.();
+      },
+      Make_Enemy: other => {
+        if (!other?.__faction) return;
+        setRelation(this.game.galaxy, id, other.__faction, 1);
+        this.game.ai?.invalidate?.();
+      },
       __missing: this.absent('Player')
     };
     this.players.set(id, f);
@@ -1335,6 +1353,10 @@ export class GalacticStoryHost extends StoryPlots {
         for (const o of objects) this.activate(o, filter);
       },
       Move_To: target => this.moveFleet(objects, target),
+      Can_Move: () => {
+        const f = home();
+        return !!f && !f.leg && f.planet >= 0 && objects.some(o => !o.dead);
+      },
       Get_Parent_Object: () => {
         const f = home();
         if (f) return f.leg ? undefined : this.planet(this.game.galaxy.planets[f.planet]);

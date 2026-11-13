@@ -4,6 +4,7 @@ import { parseXML } from '../xml.js';
 import { advisorHintFlags } from './advisorhints.js';
 import { retreatDisabledList, setRetreatDisabledList } from './retreat.js';
 import { strategicStealth } from './galacticfog.js';
+import { setDiplomacy } from './galacticrelation.js';
 import { overrideState } from './abilityoverride.js';
 import { unlockBelowTech } from './galacticproduction.js';
 
@@ -167,6 +168,7 @@ const startAllied = (a, b) =>
     .some(n => n.toUpperCase() === String(b || '').toUpperCase());
 
 export function startingGalaxy(data, campaign) {
+  setDiplomacy(null);
   const c = campaign;
   const planets = [],
     byName = new Map();
@@ -328,6 +330,7 @@ export function snapshotGalaxy(g) {
     autoReveal: g.autoReveal,
     ...(g.campaignAutoResolve !== undefined ? { campaignAutoResolve: g.campaignAutoResolve } : {}),
     aiPathfinders: !!g.aiPathfinders,
+    ...(g.diplomacy ? { diplomacy: { ...g.diplomacy } } : {}),
     visibility: g.visibility
       ? {
           viewer: g.visibility.viewer,
@@ -466,6 +469,8 @@ export function applyGalaxy(g, s) {
   const t = name => (name ? db.type(name) || null : null),
     list = l => l.map(([n, owner, markerId = -1, flags = {}]) => ({ type: t(n), owner, markerId, ...flags })).filter(x => x.type);
   g.time = s.time || 0;
+  g.diplomacy = s.diplomacy ? { ...s.diplomacy } : undefined;
+  setDiplomacy(g.diplomacy);
   g.sabotageOff = !!s.sabotageOff;
   g.victoryMovies = !!s.victoryMovies;
   if (s.humans) g.humans = s.humans.slice();

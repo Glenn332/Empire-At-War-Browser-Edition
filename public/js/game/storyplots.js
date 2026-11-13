@@ -254,6 +254,12 @@ export class StoryPlots {
       Reset: () => {
         for (const e of plot.events.values()) this.resetEvent(e);
       },
+      Activate: () => {
+        plot.active = true;
+      },
+      Suspend: () => {
+        plot.active = false;
+      },
       __missing: this.absent('StoryPlot')
     };
   }

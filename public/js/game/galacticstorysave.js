@@ -212,6 +212,7 @@ export function saveStory(host) {
       name: p.name,
       owner: p.owner,
       scriptName: p.scriptName || '',
+      ...(p.active === false ? { suspended: true } : {}),
       ...(p.generated ? { generated: generatedPlotSave(p) } : {}),
       events: [...p.events.values()].map(e => ({
         name: e.name,
@@ -341,6 +342,7 @@ export async function restoreStory(host, data) {
   for (const sp of data.plots) {
     const plot = [...host.plots.values()].find(p => key(p.name) === key(sp.name) && key(p.owner) === key(sp.owner));
     if (!plot) continue;
+    if (sp.suspended) plot.active = false;
     for (const se of sp.events) {
       const e = plot.events.get(key(se.name));
       if (!e) continue;

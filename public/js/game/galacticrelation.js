@@ -8,6 +8,19 @@ const key = s =>
 
 const relations = new Map(),
   UNSET = -1;
+let overrides = new Map();
+export function setDiplomacy(table) {
+  overrides = new Map(Object.entries(table || {}));
+  relations.clear();
+}
+export function diplomacy(a, b) {
+  return overrides.get(key(a) + '|' + key(b));
+}
+export function setRelation(galaxy, a, b, r) {
+  if (!galaxy || !a || !b || key(a) === key(b)) return;
+  (galaxy.diplomacy ||= {})[key(a) + '|' + key(b)] = r;
+  setDiplomacy(galaxy.diplomacy);
+}
 export function relation(a, b) {
   let row = relations.get(a);
   if (!row) {
@@ -23,6 +36,8 @@ export function relation(a, b) {
 }
 function relationOf(a, b) {
   if (!a || !b || key(a) === key(b)) return 0;
+  const set = overrides.get(key(a) + '|' + key(b));
+  if (set !== undefined) return set;
   const fa = db.faction(a),
     fb = db.faction(b);
   if (fa?.bool('Is_Neutral') || fb?.bool('Is_Neutral')) return 2;
