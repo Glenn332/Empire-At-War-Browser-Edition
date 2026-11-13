@@ -1,5 +1,5 @@
 import { ScanAhead } from './scanjobs.js';
-import { hardpointModes, modeAllows, modeDelay, SALVO_DELAY } from './firemodes.js';
+import { hardpointModes, hardpointDelays, modeAllows, modeDelay, rechargeDelay } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
 import { survivorPicks } from './survivors.js';
 import { unitTeamColor } from './teamcolor.js';
@@ -424,8 +424,7 @@ class Hardpoint {
     this.range = def.num('Fire_Range_Distance', 0);
     this.minRange = def.num('Fire_Min_Range_Distance', 0);
     this.modes = hardpointModes(def);
-    this.salvoDelay = def.num('Full_Salvo_Weapon_Delay_Multiplier', SALVO_DELAY);
-    this.ptwDelay = def.num('Power_To_Weapons_Mode_Weapon_Delay_Multiplier', 1);
+    this.delays = hardpointDelays(def);
     this.coneWidth = clamp(def.num('Fire_Cone_Width', 0), 0, 360);
     this.coneHalf = Math.min(180, this.coneWidth / 2) * DEG;
     this.coneUp = Math.max(0, def.num('Fire_Cone_Height', 0) / 2) * DEG;
@@ -4224,8 +4223,8 @@ export class World {
         }
       }
       if (!fired) continue;
-      if (--hp.pulsesLeft > 0) hp.pulseTimer = hp.pulseDelay;
-      else hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * modeDelay(hp, u.abilities)) / u.bonus.fireRate;
+      if (--hp.pulsesLeft > 0) hp.pulseTimer = hp.pulseDelay * modeDelay(hp, u.abilities);
+      else hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * rechargeDelay(hp, u.abilities)) / u.bonus.fireRate;
     }
   }
 
@@ -6245,9 +6244,9 @@ export class World {
         if (hp.pulseTimer <= 0) {
           if (hp.target && !hp.target.dead) this.fireHardpoint(u, hp);
           hp.pulsesLeft--;
-          hp.pulseTimer = hp.pulseDelay;
+          hp.pulseTimer = hp.pulseDelay * modeDelay(hp, (u.squad || u).abilities);
           if (hp.pulsesLeft === 0)
-            hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * modeDelay(hp, (u.squad || u).abilities)) / u.bonus.fireRate;
+            hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * rechargeDelay(hp, (u.squad || u).abilities)) / u.bonus.fireRate;
         }
         continue;
       }

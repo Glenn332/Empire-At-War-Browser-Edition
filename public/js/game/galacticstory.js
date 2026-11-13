@@ -1355,7 +1355,7 @@ export class GalacticStoryHost extends StoryPlots {
       Move_To: target => this.moveFleet(objects, target),
       Can_Move: () => {
         const f = home();
-        return !!f && !f.leg && f.planet >= 0 && objects.some(o => !o.dead);
+        return f ? !f.leg && f.planet >= 0 : undefined;
       },
       Get_Parent_Object: () => {
         const f = home();

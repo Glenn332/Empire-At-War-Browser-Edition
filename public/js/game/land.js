@@ -3866,6 +3866,17 @@ export class LandWorld {
     }
     return held;
   }
+  loseInTransport(u) {
+    if (!u || u.dead) return;
+    u.dead = u.gone = true;
+    u.health = 0;
+    u.inside = null;
+    u.target = null;
+    this.unstamp(u);
+    if (u.holder) this.scene.remove(u.holder);
+    const q = u.squad;
+    if (q) q.members = q.members.filter(m => m !== u);
+  }
   leaveTransport(t, u) {
     if (!u || u.dead || u.inside !== t.craft) return;
     u.inside = null;
@@ -3878,7 +3889,7 @@ export class LandWorld {
     let k = 0;
     for (const t of this.transports) {
       if (t.craft.dead) {
-        while (t.queue?.length) this.leaveTransport(t, t.queue.shift());
+        while (t.queue?.length) this.loseInTransport(t.queue.shift());
         if (t.stage === 'land') this.squads = this.squads.filter(q => q !== t.pending);
         this.scene.remove(t.holder);
         t.craft.gone = true;
@@ -4256,7 +4267,7 @@ export class LandWorld {
               back: rb.num('Redirect_Chance', 0),
               block: rb.num('Block_Chance', 0),
               arc: (rb.num('Reaction_Arc_In_Degrees', 180) * DEG) / 2,
-              turn: Math.min(180, Math.max(0, rb.num('Max_Projectile_Redirection_Angle_In_Degrees', 0))) * DEG,
+              turn: Math.min(180, Math.max(0, rb.num('Max_Projectile_Redirection_Angle_In_Degrees', 180))) * DEG,
               sfx: rb.val('SFXEvent_Activate')
             }));
           u.deflect = u.deflects.filter(d => d.on).sort((a, b) => b.back + b.block - a.back - a.block)[0] || null;
@@ -5714,7 +5725,7 @@ export class LandWorld {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
       this.shots[this.shots.length - 1].turned = true;
       this.shots[this.shots.length - 1].damage = s.damage;
-    } else if (D.turn > 0) {
+    } else {
       const a = Math.atan2(s.from.y - t.y, s.from.x - t.x) + (simRandom() * 2 - 1) * D.turn,
         d = 150 + simRandom() * 150,
         x = t.x + Math.cos(a) * d,
@@ -5723,7 +5734,7 @@ export class LandWorld {
       this.fire(t, spot, { ...s.w, muzzles: null, quiet: true, blastR: 0, blastD: 0 });
       const n = this.shots[this.shots.length - 1];
       n.turned = true;
-      n.damage = 0;
+      n.damage = s.w.proj.num('Projectile_Damage', s.damage);
     }
     return true;
   }
