@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { SALVO_DELAY } from './firemodes.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
@@ -172,7 +173,7 @@ export function refreshMods(u) {
     m.speed *= g.get('SPEED_MULTIPLIER') ?? 1;
     m.damageTaken *= g.get('TAKE_DAMAGE_MULTIPLIER') ?? 1;
     if (st.def.immobile) m.speed = 0;
-    if (st.def.kind === 'FULL_SALVO') m.weaponDelay *= 0.15;
+    if (st.def.kind === 'FULL_SALVO') m.weaponDelay *= SALVO_DELAY;
     if (st.def.kind === 'BLAST' && st.data && st.data.fired) m.damageDealt *= st.def.spec ? st.def.spec.num('Damage_Multiplier', 5) : 5;
   }
   for (const s of u.statuses) {

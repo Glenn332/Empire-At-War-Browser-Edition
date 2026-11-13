@@ -1,5 +1,6 @@
 import { ScanAhead } from './scanjobs.js';
-import { hardpointModes, modeAllows } from './firemodes.js';
+import { hardpointModes, modeAllows, modeDelay, SALVO_DELAY } from './firemodes.js';
+import { ProjectileMods } from './projectilemods.js';
 import { unitTeamColor } from './teamcolor.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
@@ -422,6 +423,8 @@ class Hardpoint {
     this.range = def.num('Fire_Range_Distance', 0);
     this.minRange = def.num('Fire_Min_Range_Distance', 0);
     this.modes = hardpointModes(def);
+    this.salvoDelay = def.num('Full_Salvo_Weapon_Delay_Multiplier', SALVO_DELAY);
+    this.ptwDelay = def.num('Power_To_Weapons_Mode_Weapon_Delay_Multiplier', 1);
     this.coneWidth = clamp(def.num('Fire_Cone_Width', 0), 0, 360);
     this.coneHalf = Math.min(180, this.coneWidth / 2) * DEG;
     this.coneUp = Math.max(0, def.num('Fire_Cone_Height', 0) / 2) * DEG;
@@ -564,7 +567,7 @@ export class Unit {
     this.spawnTimer = 0;
     this.hyper = null;
     this.engineGlows = [];
-    this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1 };
+    this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1, fireRate: 1 };
     this.cmods = null;
     this.abilities = [];
     this.statuses = [];
@@ -1220,7 +1223,8 @@ export class Unit {
       shield: f(MOD.SHIELD),
       energy: f(MOD.ENERGY),
       range: f(MOD.RANGE),
-      hm: 1
+      hm: 1,
+      fireRate: f(MOD.FIRE_RATE)
     };
     const adj = p && p.adjust,
       hm = adj ? adj.health : 1,
@@ -1714,6 +1718,7 @@ export class World {
     this.onEvent = () => {};
     this.hitPart = null;
     this.bonusHolders = [];
+    this.projectileMods = new ProjectileMods();
   }
 
   addTeam(t) {
@@ -2404,6 +2409,9 @@ export class World {
     }
     if (proj && from && from.mods && from.mods.diminish !== false && normalDamage(proj)) amount *= diminishedHit(target, this.time);
     amount *= target.mods.damageTaken * target.bonus.defense;
+    if (proj) this.projectileMods.apply(this.time, target, proj, (u, pm) => {
+      if ((u.cmods ||= new CombatMods()).set(pm.type, pm.key, pm, pm.value)) u.applyBonuses();
+    });
     {
       const by = attacker && (attacker.player || attacker);
       if (by && by.adjust && by !== target.player) amount *= by.adjust.damage;
@@ -2891,6 +2899,9 @@ export class World {
     if (this.forces.length) recheckForces(this);
     for (const s of this.squads) if (!s.dead) this.updateSquad(s, dt);
     if (this.bonusHolders.length) this.tickBonuses();
+    this.projectileMods.tick(this.time, (u, pm) => {
+      if (u.cmods && u.cmods.drop(pm)) u.applyBonuses();
+    });
     for (const sw of this.specialWeapons) sw.update();
     this.tacticalSuperweapons?.update();
     if (this.skirmish && (this.bonusTimer = (this.bonusTimer ?? 0.5) - dt) <= 0) {
@@ -4205,7 +4216,7 @@ export class World {
       }
       if (!fired) continue;
       if (--hp.pulsesLeft > 0) hp.pulseTimer = hp.pulseDelay;
-      else hp.cooldown = rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay;
+      else hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * modeDelay(hp, u.abilities)) / u.bonus.fireRate;
     }
   }
 
@@ -4272,7 +4283,7 @@ export class World {
         }
         w.pulsesLeft--;
         w.pulseTimer = w.pulseDelay;
-        if (!w.pulsesLeft) w.cooldown = w.recharge * u.mods.weaponDelay;
+        if (!w.pulsesLeft) w.cooldown = (w.recharge * u.mods.weaponDelay) / u.bonus.fireRate;
       }
       return;
     }
@@ -6187,7 +6198,7 @@ export class World {
   pulseDone(u, w) {
     w.pulsesLeft--;
     if (w.pulsesLeft > 0) w.pulseTimer = w.pulseDelay;
-    else w.cooldown = (w.recharge + Math.floor(simRandom() * 11) / LOGIC_FPS) * u.mods.weaponDelay;
+    else w.cooldown = ((w.recharge + Math.floor(simRandom() * 11) / LOGIC_FPS) * u.mods.weaponDelay) / u.bonus.fireRate;
   }
 
   fireConeOf(u) {
@@ -6219,7 +6230,8 @@ export class World {
           if (hp.target && !hp.target.dead) this.fireHardpoint(u, hp);
           hp.pulsesLeft--;
           hp.pulseTimer = hp.pulseDelay;
-          if (hp.pulsesLeft === 0) hp.cooldown = rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay;
+          if (hp.pulsesLeft === 0)
+            hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * modeDelay(hp, (u.squad || u).abilities)) / u.bonus.fireRate;
         }
         continue;
       }

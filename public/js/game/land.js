@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { unitTeamColor } from './teamcolor.js';
 import { db } from '../gamedata.js';
 import { hardpointModes, modeAllows } from './firemodes.js';
+import { ProjectileMods } from './projectilemods.js';
 import { loadModel, buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
 import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
@@ -915,6 +916,7 @@ export class LandWorld {
     this.earned = factions.map(() => 0);
     this.bounty = new BountyBook();
     this.sideMods = factions.map(() => new CombatMods());
+    this.projectileMods = new ProjectileMods();
     this.bonusHolders = [];
     this.bonusSeen = 0;
     this.collected = factions.map(() => 0);
@@ -5137,6 +5139,7 @@ export class LandWorld {
       (2 - this.combatFactor(u, MOD.DEFENSE)) *
       (u.mod ? u.mod.taken : 1) *
       (u.shell ? db.constants.num('Base_Shield_Vulnerability_Modifier', 2) : 1);
+    if (shot) this.projectileMods?.apply(this.time, u, shot, (x, pm) => this.addCombatMod(x, pm.type, pm.key, pm, pm.value));
     const soak = Math.min(u.shield, amount);
     u.shield -= soak;
     u.health -= amount - soak;
@@ -8238,6 +8241,7 @@ export class LandWorld {
       this.teamSight();
       if ((this.pointsDt = (this.pointsDt || 0) + dt) >= 0.2) {
         this.updatePoints(this.pointsDt);
+        this.projectileMods.tick(this.time, (u, pm) => this.dropCombatMod(u, pm));
         this.pointsDt = 0;
       }
       this.updateTransports(dt);

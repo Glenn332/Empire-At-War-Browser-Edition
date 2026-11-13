@@ -15,6 +15,18 @@ export function fireMode(abilities) {
   return m || 1;
 }
 
+export const SALVO_DELAY = 0.15;
+
+export function modeDelay(hp, abilities) {
+  let k = 1;
+  for (const st of abilities)
+    if (st.active) {
+      if (st.def.kind === 'FULL_SALVO') k *= hp.salvoDelay / SALVO_DELAY;
+      else if (st.def.kind === 'POWER_TO_WEAPONS') k *= hp.ptwDelay;
+    }
+  return k;
+}
+
 export function modeAllows(modes, abilities) {
   if (modes === 15) return true;
   const m = fireMode(abilities);
