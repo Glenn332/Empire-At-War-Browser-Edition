@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { hardpointModes } from './firemodes.js';
 import { simRandom } from './simrandom.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
@@ -557,7 +558,7 @@ function toggled(world, q, st) {
             .list('HardPoints')
             .map(n => db.hardpoint(n))
             .filter(h => h && db.type(h.str('Fire_Projectile_Type')));
-          const h = hps[0],
+          const h = hps.find(h => (hardpointModes(h) & 5) === 4) || hps[0],
             P = h && db.type(h.str('Fire_Projectile_Type'));
           if (!P) continue;
           u.altWeapon = {

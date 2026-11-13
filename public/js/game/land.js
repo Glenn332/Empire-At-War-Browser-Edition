@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { unitTeamColor } from './teamcolor.js';
 import { db } from '../gamedata.js';
+import { hardpointModes, modeAllows } from './firemodes.js';
 import { loadModel, buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
 import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
@@ -4007,6 +4008,8 @@ export class LandWorld {
               left: 0,
               timer: 0,
               baseRange: h.num('Fire_Range_Distance', u.baseRange),
+              minRange: h.num('Fire_Min_Range_Distance', 0),
+              modes: hardpointModes(h),
               get range() {
                 return u.cmods ? this.baseRange * u.cmods.factor(MOD.RANGE) : this.baseRange;
               },
@@ -5863,6 +5866,7 @@ export class LandWorld {
       seen = false;
     for (const g of u.guns) {
       g.cooldown -= dt;
+      if (!modeAllows(g.modes, u.squad.abilities)) continue;
       const D = u.squad.direct || (this.shooter ? this.shooter.gunner(u) : null),
         a = D && D.firing && D.target;
       let t = D
@@ -5880,6 +5884,7 @@ export class LandWorld {
         g.scanAt = this.time + 0.3 + simRandom() * 0.2;
         t = this.nearestFoe(u, this.units, g.range, g);
       }
+      if (t && g.minRange > 0 && !t.spot && Math.hypot(t.x - u.x, t.y - u.y) < g.minRange) t = null;
       if (t) {
         const head = g.onHead ? u.turret : null,
           cone = () => {

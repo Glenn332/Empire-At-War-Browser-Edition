@@ -1,4 +1,5 @@
 import { ScanAhead } from './scanjobs.js';
+import { hardpointModes, modeAllows } from './firemodes.js';
 import { unitTeamColor } from './teamcolor.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
@@ -419,6 +420,8 @@ class Hardpoint {
     this.proj = db.type(def.str('Fire_Projectile_Type'));
     this.isWeapon = !!this.proj;
     this.range = def.num('Fire_Range_Distance', 0);
+    this.minRange = def.num('Fire_Min_Range_Distance', 0);
+    this.modes = hardpointModes(def);
     this.coneWidth = clamp(def.num('Fire_Cone_Width', 0), 0, 360);
     this.coneHalf = Math.min(180, this.coneWidth / 2) * DEG;
     this.coneUp = Math.max(0, def.num('Fire_Cone_Height', 0) / 2) * DEG;
@@ -4177,7 +4180,7 @@ export class World {
   updateWeapons(u, dt) {
     if (u.cloaked || u.holdFire) return;
     for (const hp of u.hardpoints) {
-      if (!hp.isWeapon || !hp.alive) continue;
+      if (!hp.isWeapon || !hp.alive || !modeAllows(hp.modes, u.abilities)) continue;
       if (hp.pulsesLeft > 0) {
         if (hp.pulseTimer > 0 && (hp.pulseTimer -= dt) > 0) continue;
       } else {
@@ -4304,6 +4307,7 @@ export class World {
       dy = t.y - _ph.y;
     const reach = hp.range + t.hitRadius;
     if (!t.free && dx * dx + dy * dy > reach * reach) return false;
+    if (hp.minRange > 0 && dx * dx + dy * dy < hp.minRange * hp.minRange) return false;
     if (this.hpInCone(u, hp, t.x, t.y, t.z || 0)) return true;
     if (!t.hardpoints) return false;
     for (const h of t.hardpoints) {
@@ -6208,7 +6212,7 @@ export class World {
   updateFighterHardpoints(u, dt, target, st) {
     if (u.holdFire) return;
     for (const hp of u.hardpoints) {
-      if (!hp.isWeapon || !hp.alive) continue;
+      if (!hp.isWeapon || !hp.alive || !modeAllows(hp.modes, (u.squad || u).abilities)) continue;
       if (hp.pulsesLeft > 0) {
         hp.pulseTimer -= dt;
         if (hp.pulseTimer <= 0) {
@@ -6225,6 +6229,7 @@ export class World {
         dy = target.y - u.y,
         reach = hp.range + target.hitRadius;
       if (!target.free && dx * dx + dy * dy > reach * reach) continue;
+      if (hp.minRange > 0 && dx * dx + dy * dy < hp.minRange * hp.minRange) continue;
       if (Math.abs(wrapAngle(Math.atan2(dy, dx) - u.heading)) > Math.max(hp.coneHalf, 0.4)) continue;
       hp.target = target;
       hp.targetHp = null;
