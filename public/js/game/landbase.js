@@ -743,15 +743,20 @@ const orbitRunReady = (world, side) => {
 };
 export function bombRunCharge(world, side) {
   const r = world.bombRuns?.[side];
-  if (!r || !r.present || r.running) return 0;
-  if (world.time >= r.readyAt) return 1;
-  const span = r.readyAt - r.countdownStart;
-  return span > 0 ? Math.max(0, Math.min(1, (world.time - r.countdownStart) / span)) : 1;
+  if (!r || !r.present) return 1;
+  let ready = r.readyAt;
+  if (r.running) {
+    const run = world.bombing.find(b => b.side === side && !b.flown);
+    ready = world.time + r.interval + (run && run.craft.length ? Math.max(0, run.reach - run.along) / run.speed : 0);
+  }
+  const start = r.countdownStart;
+  if (ready <= world.time || !(start < ready && start < world.time)) return 1;
+  return (world.time - start) / (ready - start) || 1;
 }
 export const canBomb = (world, side) =>
   !world.sidePlayers?.[side]?.bombingRunOff &&
   (orbitRunReady(world, side) || !!bombTicket(world, side)) &&
-  !world.bombing.some(b => b.side === side);
+  !world.bombing.some(b => b.side === side && !b.flown);
 
 export function bombingRun(world, side, x, y) {
   const orbit = orbitRunReady(world, side) ? bombRunOf(world, side) : null,
@@ -768,8 +773,10 @@ export function bombingRun(world, side, x, y) {
     (F && db.type(F.str('Skirmish_Land_Bomber').trim())) ||
     [...db.types.values()].find(t => t.tag === 'LandBombingUnit' && t.str('Affiliation').toUpperCase().includes(faction));
   if (!type) return 'No bombers';
-  if (orbit) orbit.running = true;
-  else world.owned[side].delete(ticket);
+  if (orbit) {
+    orbit.running = true;
+    orbit.countdownStart = world.time;
+  } else world.owned[side].delete(ticket);
   const home = world.units.find(u => u.isBase && world.ally(u.side, side)) || { x: x - 1, y };
   const d = Math.hypot(x - home.x, y - home.y) || 1,
     ux = (x - home.x) / d,
@@ -790,6 +797,7 @@ export function bombingRun(world, side, x, y) {
     height: type.num('Hover_Offset', 100) + type.num('Layer_Z_Adjust', 0),
     every: Math.max(0.2, type.num('Projectile_Fire_Recharge_Seconds', 0.2)),
     wait: 0,
+    flown: false,
     craft: [],
     bombs: []
   };
@@ -896,13 +904,15 @@ function tickBombing(world, dt) {
     });
   }
   world.bombing = world.bombing.filter(run => {
-    if (run.along < run.reach || run.bombs.length) return true;
-    const orbit = world.bombRuns?.[run.side];
-    if (orbit?.running) {
-      orbit.running = false;
-      orbit.countdownStart = world.time;
-      orbit.readyAt = world.time + orbit.interval;
+    if (!run.flown && (run.along >= run.reach || !run.craft.length)) {
+      run.flown = true;
+      const orbit = world.bombRuns?.[run.side];
+      if (orbit?.running) {
+        orbit.running = false;
+        orbit.readyAt = world.time + orbit.interval;
+      }
     }
+    if (!run.flown || run.bombs.length) return true;
     for (const c of run.craft) {
       world.scene.remove(c.holder);
       if (c.unit) {

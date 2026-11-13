@@ -187,15 +187,11 @@ export function orbitBombingRun(g, planet, owner) {
     }
     for (let tier = 0; tier <= Math.min(5, tech); tier++)
       for (const spawn of startingSpawns(t, tier, true))
-        if (bomber(spawn.type)) {
-          count++;
-          last = spawn.type;
-        } else
-          for (const m of members(spawn.type))
-            if (bomber(m)) {
-              count++;
-              last = m;
-            }
+        for (const m of members(spawn.type))
+          if (bomber(m)) {
+            count++;
+            last = m;
+          }
   };
   for (const fleet of g.fleets)
     if (fleet.planet === planet && !fleet.leg && key(fleet.owner) === key(owner))
