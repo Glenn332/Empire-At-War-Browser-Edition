@@ -388,7 +388,7 @@ export class GoalSystem {
           return false;
         }
         inst.gdef = c.def;
-        inst.stage = this.stageZone(c.def, c.t, mind);
+        inst.stage = this.stageZone?.(c.def, c.t, mind) ?? null;
         inst.tgt = c.t;
         inst.tkey = c.t ? c.t.key : '';
         inst.gside = side;
