@@ -14,18 +14,31 @@ export function spaceRosters(world, campaign) {
       c.entity = u;
       out.push(c);
     }
+    for (const p of team.players || [])
+      if (p.id >= 0)
+        for (const type of p.reinforcements || []) {
+          const c = autoCombatant(type, p.factionName, { space: true });
+          c.entity = { reserve: p, type, dead: false };
+          out.push(c);
+        }
     return out;
   };
   return [side(campaign.attacker.team), side(campaign.defender.team)];
 }
 
-export function landRosters(world, factions, sides) {
+export function landRosters(world, factions, sides, waiting = []) {
   const side = index => {
     const out = [];
     for (const u of world.units) {
       if (u.dead || u.structure || u.side !== index) continue;
       const c = autoCombatant(u.type, factions[index], { space: false });
       c.entity = u;
+      out.push(c);
+    }
+    for (const r of waiting) {
+      if (r.side !== index || !r.type) continue;
+      const c = autoCombatant(r.type, factions[index], { space: false });
+      c.entity = { waiting: r, dead: false };
       out.push(c);
     }
     return out;

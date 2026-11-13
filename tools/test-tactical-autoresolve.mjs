@@ -70,4 +70,14 @@ assert.deepEqual(
   lr.map(r => r.length),
   [1, 1]
 );
+team[1].players = [rebel];
+rebel.reinforcements = [strong[0], strong[0], strong[0], strong[0], strong[0], strong[0], strong[0], strong[0], strong[0]];
+const withReserve = spaceRosters(world, campaign);
+assert.equal(withReserve[1].length, 11, 'ships still waiting to come in count for their side');
+assert.equal(withReserve[1][2].entity.reserve, rebel);
+assert.equal(resolveTactical(withReserve, campaign, { space: true, random: () => 0.5 }).winner, 1, 'and can decide the battle');
+const waiting = [{ side: 1, type: strong[0], gid: 'a' }, { side: 1, type: strong[0], gid: 'b' }, { side: 0, type: strong[0], gid: 'c' }];
+const lw = landRosters(land, ['Empire', 'Rebel'], [0, 1], waiting);
+assert.deepEqual(lw.map(r => r.length), [2, 3], 'companies still in the reinforcement pool count for their side');
+assert.equal(lw[1][1].entity.waiting, waiting[0]);
 console.log('ok, multiplier', db.constants.num('Auto_Resolve_Tactical_Multiplier', 1));

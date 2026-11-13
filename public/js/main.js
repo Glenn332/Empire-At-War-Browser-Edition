@@ -1657,11 +1657,19 @@ class Game {
     if (this.paused) this.togglePause();
     const rosters = spaceRosters(w, cb),
       { winner, doomed } = resolveTactical(rosters, cb, { space: true });
-    for (const e of doomed) if (!e.dead) w.kill(e, null);
+    const lose = e => {
+      if (e.reserve) {
+        if (e.dead) return;
+        e.dead = true;
+        const at = e.reserve.reinforcements.indexOf(e.type);
+        if (at >= 0) e.reserve.reinforcements.splice(at, 1);
+      } else if (!e.dead) w.kill(e, null);
+    };
+    for (const e of doomed) lose(e);
     const [won, lost] = winner === 0 ? [cb.attacker.team, cb.defender.team] : [cb.defender.team, cb.attacker.team];
     const loser = w.players.find(p => p.id >= 0 && p.team === w.teams[lost]);
     if (loser && this.retreat.canRetreat(loser) !== 0) {
-      for (const c of rosters[1 - winner]) if (!c.entity.dead) w.kill(c.entity, null);
+      for (const c of rosters[1 - winner]) lose(c.entity);
       return;
     }
     if (!sideBeaten(w, w.teams[lost])) this.tacticalVictory.request(w.teams[won], 12, 210);

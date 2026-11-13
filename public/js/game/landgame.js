@@ -4082,12 +4082,23 @@ export class LandGame {
       return;
     }
     if (this.paused) this.togglePause();
-    const sides = [cb.attacker.side, cb.defender.side],
-      rosters = landRosters(w, this.factions, sides),
+    const book = this.invasionBook,
+      sides = [cb.attacker.side, cb.defender.side],
+      rosters = landRosters(w, this.factions, sides, book?.waiting || []),
       { winner, doomed } = resolveTactical(rosters, cb, { space: false });
-    for (const e of doomed) if (!e.dead) w.hurt(e, 1e9, null);
+    const lose = e => {
+      if (e.waiting) {
+        e.dead = true;
+        const at = book.waiting.indexOf(e.waiting),
+          ready = w.ready[e.waiting.side],
+          t = ready ? ready.indexOf(e.waiting.type) : -1;
+        if (at >= 0) book.waiting.splice(at, 1);
+        if (t >= 0) ready.splice(t, 1);
+      } else if (!e.dead) w.hurt(e, 1e9, null);
+    };
+    for (const e of doomed) lose(e);
     const lost = sides[1 - winner];
-    if (retreat.canRetreat(lost) !== 0) for (const c of rosters[1 - winner]) if (!c.entity.dead) w.hurt(c.entity, 1e9, null);
+    if (retreat.canRetreat(lost) !== 0) for (const c of rosters[1 - winner]) lose(c.entity);
     const side = sides[winner];
     w.winner = this.teams[side];
     this.end(w.winner === this.myTeam);
