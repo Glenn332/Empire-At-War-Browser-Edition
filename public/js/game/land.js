@@ -714,6 +714,7 @@ export class LandSquad {
       sp = w.sidePlayers;
     if (!sp) return null;
     if (this.structure && w.viewer !== undefined && this.side >= 0 && w.ally(this.side, w.viewer)) return sp[w.viewer];
+    if (this.side === w.wild && this.native && w.hostilePlayer) return w.hostilePlayer;
     return sp[this.side] || sp[w.wild] || null;
   }
   get dead() {
@@ -948,6 +949,7 @@ export class LandWorld {
     this.transports = [];
     this.campaign = false;
     this.campaignSides = null;
+    this.hostilePlayer = null;
     this.campaignAttacker = -1;
     this.campaignGarrison = new Set();
     this.onTransportOut = null;
@@ -2084,6 +2086,7 @@ export class LandWorld {
       seconds: t.num('Capture_Point_Transition_Time_Seconds', 10),
       enable: t.num('Reinforcement_Enabling_Radius', 250),
       cap: t.num('Additional_Population_Capacity', 0),
+      hostile: false,
       inst: null
     };
     this.points.push(pt);
@@ -2439,6 +2442,7 @@ export class LandWorld {
         if (pt.progress >= 1) {
           const was = pt.side;
           pt.side = lead;
+          pt.hostile = false;
           pt.taker = -1;
           pt.progress = 0;
           this.showOwner(pt);

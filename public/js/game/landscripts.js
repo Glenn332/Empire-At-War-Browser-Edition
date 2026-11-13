@@ -60,6 +60,7 @@ class PointThing {
   get player() {
     const w = this.world,
       s = this.point.side;
+    if (s < 0 && this.point.hostile && w.hostilePlayer) return w.hostilePlayer;
     return w.sidePlayers[s >= 0 ? s : w.wild];
   }
   get health() {
@@ -261,6 +262,9 @@ class LandView {
   }
   get neutral() {
     return this.w.sidePlayers[this.w.wild];
+  }
+  get hostile() {
+    return this.w.hostilePlayer || this.w.sidePlayers[this.w.wild];
   }
   get teams() {
     return [...new Set(this.players.map(p => p.team))];
@@ -587,12 +591,14 @@ export class LandScripts {
         }
       },
       owner: (q, p) => {
-        const side = w.sidePlayers.indexOf(p);
+        const hostile = !!p && p === w.hostilePlayer,
+          side = hostile ? w.wild : w.sidePlayers.indexOf(p);
         if (side < 0) return;
         if (q.isPoint) {
           const pt = q.point,
             was = pt.side;
           pt.side = side === w.wild ? -1 : side;
+          pt.hostile = hostile;
           pt.taker = -1;
           pt.progress = 0;
           w.showOwner(pt);
@@ -605,7 +611,7 @@ export class LandScripts {
         }
         if (!q.members) return;
         changeSide(w, q, side);
-        q.native = false;
+        q.native = hostile;
       },
       selectable: (q, on) => {
         q.selectable = on;
@@ -717,11 +723,13 @@ export class LandScripts {
   spawnNow(type, player, at) {
     const w = this.game.world,
       o = w.isOpen(at.x, at.y) ? at : w.nearestOpen(at.x, at.y) || at;
+    const hostile = !!player && player === w.hostilePlayer;
     w.spawning = null;
-    w.spawn(type.name, o.x, o.y, 0, player.id).catch(e => console.warn('script spawn', type.name, e));
+    w.spawn(type.name, o.x, o.y, 0, hostile ? w.wild : player.id).catch(e => console.warn('script spawn', type.name, e));
     const q = w.spawning?.[0],
       by = this.host?.current?.e;
     if (q) q.scriptPosition = { x: o.x, y: o.y, z: at.z, preserveFormation: true };
+    if (q && hostile) q.native = true;
     if (q && by && w.onScriptSpawn) w.onScriptSpawn(q, by);
     return q || null;
   }

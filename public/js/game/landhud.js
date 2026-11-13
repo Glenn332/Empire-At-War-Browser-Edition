@@ -144,6 +144,18 @@ export class LandUI {
       upgrades: new Set(),
       techLevel: 1
     };
+    w.hostilePlayer = {
+      id: -2,
+      team: { id: -2 },
+      faction: db.faction('Hostile') || w.sidePlayers[w.wild].faction,
+      factionName: 'Hostile',
+      credits: 0,
+      pop: 0,
+      popCap: 0,
+      reinforcements: [],
+      upgrades: new Set(),
+      techLevel: 1
+    };
 
     const siteFor = (b, uc) => {
       const own = this.siteOf(b);

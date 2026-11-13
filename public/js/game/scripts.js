@@ -1527,6 +1527,7 @@ export class ScriptHost {
       const n = String(name || '').toUpperCase();
       if (n === 'LOCAL') return this.player(this.game.setup?.net ? w.players.find(p => p.human) || this.game.human : this.game.human);
       if (n === 'NEUTRAL') return this.player(w.neutral);
+      if (n === 'HOSTILE' && w.hostile) return this.player(w.hostile);
       return this.player(w.players.find(p => p.factionName.toUpperCase() === n) || this.campaignPlayer(n) || (n === 'HOSTILE' ? w.neutral : null));
     });
     vm.global('Evaluate_In_Galactic_Context', (name, player) => {

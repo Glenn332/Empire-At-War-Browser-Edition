@@ -172,6 +172,13 @@ const CSS = `
 #landend { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 30; pointer-events: none; font: 700 54px "EmpireAtWar-Bold", "Segoe UI", sans-serif; color: #ffd421; text-shadow: 0 0 14px #000, 0 0 4px #000; }
 `;
 
+function hostileOwner(t, o) {
+  const affil = t.list('Affiliation').map(f => f.trim().toUpperCase());
+  if (affil.length) return affil.includes('HOSTILE') && !affil.some(f => f !== 'HOSTILE' && f !== 'NEUTRAL');
+  const owner = o.owner >= 0 ? [...db.factions.values()][o.owner]?.name : null;
+  return !!owner && owner.toUpperCase() === 'HOSTILE';
+}
+
 async function spawnMapLoadTables(game, world, map) {
   const rows = [];
   for (const o of map.objects) {
@@ -215,6 +222,7 @@ async function spawnMapLoadTables(game, world, map) {
     try {
       if (beh(t).has('CAPTURE_POINT')) {
         const pt = await world.addPoint(at, side >= 0 && side < world.factions.length ? side : -1);
+        pt.hostile = side === world.wild && hostileOwner(t, o);
         if (beh(t).has('TACTICAL_BUILD_OBJECTS')) world.addPadSite(pt, at);
         else if (!pt.reinforce) made = await addCapturable(world, pt, at);
         made ||= { type: t, point: pt };
@@ -773,6 +781,7 @@ export class LandGame {
             world.mapObjects.set(mapIndex, [new TacticalMarker(o, () => world.sidePlayers[side >= 0 ? side : world.wild])]);
           if (beh(o.type).has('CAPTURE_POINT')) {
             const pt = await world.addPoint(o);
+            pt.hostile = hostileOwner(o.type, o);
             world.mapObjects.set(mapIndex, [{ point: pt }]);
             if (beh(o.type).has('TACTICAL_BUILD_OBJECTS')) world.addPadSite(pt, o);
             else if (!pt.reinforce) await addCapturable(world, pt, o);
