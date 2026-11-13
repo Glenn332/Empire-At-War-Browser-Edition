@@ -940,10 +940,10 @@ export class LandGame {
     if (setup.campaign) world.market = this.factions.map(f => setup.campaign.blackMarket?.[f] || []);
     if (setup.campaign) world.defenderSide = setup.campaign.defender.side;
     setupBombard(world, setup.campaign || null);
-    if (setup.campaign) setupBombingRuns(world, setup.campaign);
     if (setup.campaign) {
       const had = new Set(world.squads);
       this.invasionBook = await placeLandInvasion(world, map, setup.campaign);
+      setupBombingRuns(world, setup.campaign);
       if (save && setup.restore.campaign) {
         for (const q of world.squads)
           if (!had.has(q) && !q.structure) {

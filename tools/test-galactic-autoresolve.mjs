@@ -15,7 +15,7 @@ globalThis.fetch = async input => {
 };
 const { db, ObjType, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
-const { autoCombatant, resolveAutoBattle, subtractForces, contrastWeight, nativeAutoContrast, specialCombatant, landBomber } = await import(
+const { autoCombatant, resolveAutoBattle, subtractForces, contrastWeight, nativeAutoContrast, specialCombatant, landBomber, orbitBombingRun } = await import(
   '../public/js/game/galacticautoresolve.js'
 );
 const { battleStory, destroyStory, destroyBaseStory, conquerStory, resetCombatEvent, battleClassSummary } = await import(
@@ -150,6 +150,20 @@ assert(
   [...r.sides[0].alive].every(u => u.original !== bomber),
   'Bomber is not a casualty participant'
 );
+const runFighter = type('FIXTURE_RUN_FIGHTER', 1, 'Fighter', { Ship_Class: 'bomber', Land_Bomber_Type: bomber.name }),
+  runSquadron = type('FIXTURE_RUN_SQUADRON', 1, 'Fighter', { Squadron_Units: [runFighter.name, runFighter.name, runFighter.name].join(', ') }),
+  runCarrier = type('FIXTURE_RUN_CARRIER', 1, 'Capital', { Starting_Spawned_Units_Tech_0: runSquadron.name + ', 1' });
+for (const t of [runFighter, runSquadron, runCarrier]) db.types.set(t.name, t);
+const runGalaxy = units => ({ players: [{ faction: a, tech: 0 }], planets: [{}], fleets: [{ owner: a, planet: 0, leg: null, units }] });
+assert.equal(orbitBombingRun(runGalaxy([{ type: squadron }]), 0, a), null, 'Land_Bomber_Type without the bomber ship class gives no bombing run');
+assert.deepEqual(
+  orbitBombingRun(runGalaxy([{ type: runSquadron }, { type: runSquadron }]), 0, a),
+  { owner: a, type: bomber.name, count: 6 },
+  'Every bomber class fighter of a squadron in orbit counts'
+);
+assert.equal(orbitBombingRun(runGalaxy([{ type: runCarrier }]), 0, a)?.count, 3, 'Carrier starting spawns count their bomber fighters');
+assert.equal(orbitBombingRun(runGalaxy([{ type: runSquadron }]), 0, b), null, 'Only the given player fleets count');
+for (const t of [runFighter, runSquadron, runCarrier]) db.types.delete(t.name);
 for (const t of [bomber, fighter, squadron]) db.types.delete(t.name);
 const overrun = { num: (name, def) => (name === 'Overrun_Auto_Resolve_Multiple' ? 8 : normal.num(name, def)) };
 r = resolveAutoBattle(

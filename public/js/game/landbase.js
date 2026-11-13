@@ -719,7 +719,11 @@ export function setupBombingRuns(world, campaign) {
   if (side < 0 || !type) return;
   const count = Math.max(3, info.count || 0),
     reduction = (Math.floor(count / 3) - 1) * db.constants.num('Bombing_Run_Reduction_Per_Squadron_Percent', 0),
-    factor = Math.max(0, (info.modifier || 0) + 1 - reduction),
+    defender = world.defenderSide ?? -1,
+    modifier = world.units
+      .filter(u => !u.dead && u.side === defender && u.type?.bool('Modifies_Bombing_Run_Time'))
+      .reduce((sum, u) => sum + u.type.num('Bombing_Run_Percent_Modifier', 0), 0),
+    factor = Math.max(0, modifier + 1 - reduction),
     interval = Math.max(
       db.constants.num('Max_Bombing_Run_Interval_Seconds', 120) * factor,
       db.constants.num('Min_Bombing_Run_Interval_Seconds', 120)
