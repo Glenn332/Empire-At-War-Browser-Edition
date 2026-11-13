@@ -66,12 +66,7 @@ const _q = new THREE.Quaternion(),
   _Y = new THREE.Vector3(0, 1, 0),
   _Z = new THREE.Vector3(0, 0, 1);
 
-export const inCategory = (t, cat) =>
-  t
-    .str('CategoryMask')
-    .toUpperCase()
-    .split(/[\s|,]+/)
-    .includes(cat);
+export const inCategory = (t, cat) => t.categories().has(cat);
 
 export const animOverride = type => {
   const v = type.raw('Land_Model_Anim_Override_Name');

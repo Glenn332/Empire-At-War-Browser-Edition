@@ -25,7 +25,7 @@ export function strategicCategories(type, seen = new Set()) {
   if (seen.has(type)) return new Set();
   seen.add(type);
   const units = members(type),
-    cats = new Set(units.length ? [] : type.categories());
+    cats = new Set(units.length ? [] : type.ownCategories());
   for (const member of units) for (const c of strategicCategories(member, seen)) cats.add(c);
   seen.delete(type);
   categoryCache.set(type, cats);

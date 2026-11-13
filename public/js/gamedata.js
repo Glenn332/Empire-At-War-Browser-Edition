@@ -5,6 +5,10 @@ import { languageId, resolveLanguageText, setActiveLanguage, activeLanguage, ref
 const XML = 'Data/XML/';
 
 let sealed = false;
+let categoryMasks = null;
+export function categoryMask(name) {
+  return categoryMasks?.get(String(name).trim().toUpperCase()) ?? 0n;
+}
 const typeNames = new Map(),
   factionNames = new Map();
 function sealedLookup(names, map, name) {
@@ -143,8 +147,19 @@ export class ObjType {
     if (!this._beh) this._beh = new Set([...this.list('Behavior'), ...this.list('SpaceBehavior')].map(s => s.toUpperCase()));
     return this._beh;
   }
+  ownCategories() {
+    return (this._own ||= new Set(this.list('CategoryMask').map(s => s.toUpperCase())));
+  }
   categories() {
-    if (!this._cat) this._cat = new Set(this.list('CategoryMask').map(s => s.toUpperCase()));
+    if (!this._cat) {
+      const own = new Set(this.ownCategories());
+      if (categoryMasks) {
+        let m = 0n;
+        for (const n of own) m |= categoryMasks.get(n) ?? 0n;
+        if (m) for (const [n, v] of categoryMasks) if (v & m) own.add(n);
+      }
+      this._cat = own;
+    }
     return this._cat;
   }
 }
@@ -410,6 +425,14 @@ export async function loadGameData(onProgress = () => {}, { language } = {}) {
     if (armor) db.armorMod.set((dmg + '|' + armor).toUpperCase(), parseFloat(mod));
   }
   for (const txt of fs) if (txt) readObjects(parseXML(txt), db.factions, null);
+  const enumXml = await fetchText(XML + 'Enum/GameObjectCategoryType.xml').catch(() => null);
+  categoryMasks = new Map();
+  for (const n of (enumXml && parseXML(enumXml).children[0]?.children) || []) {
+    try {
+      categoryMasks.set(n.tag.toUpperCase(), BigInt(n.text.trim()));
+    } catch {}
+  }
+  for (const t of db.types.values()) t._cat = undefined;
   if (music) readObjects(parseXML(music), db.music, null);
 
   onProgress('Text');
