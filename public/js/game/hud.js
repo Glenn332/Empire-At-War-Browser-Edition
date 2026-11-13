@@ -1118,6 +1118,7 @@ export class CommandBar {
     const ui = this.ui,
       p = this.player,
       w = this.world;
+    ui.addHeld?.();
     const sel = ui.selection.filter(s => !s.dead);
     const menu = sel.length === 1 && sel[0].player === p && !!ui.padOf?.(sel[0]);
     const units = menu
@@ -1128,13 +1129,10 @@ export class CommandBar {
     let skip = this.coveredColumns(false);
     this.buildBar?.set(0, 12 - skip, 0);
     const held = new Map();
-    if (units.length === 1 && units[0].player === p && units[0].members)
-      for (const host of units[0].members)
-        for (const q of host.holds || [])
-          if (!q.dead && q.members.some(u => u.inside === host) && !held.has(q)) {
-            held.set(q, host);
-            units.push(q);
-          }
+    for (const q of units) {
+      const host = q.members && q.members.find(u => u.inside)?.inside;
+      if (host && sel.includes(host.squad)) held.set(q, host);
+    }
     if (units.length) {
       const groups = new Map();
       for (const s of units) {

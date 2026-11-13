@@ -118,6 +118,8 @@ class PadPick {
   }
 }
 
+const inside = s => !!(s.members && s.members.length && s.members.every(u => u.inside));
+
 export class LandUI {
   constructor(game, assets) {
     this.game = game;
@@ -331,14 +333,27 @@ export class LandUI {
     for (const s of this.selection) s.selected = false;
     this.selection = next.filter(s => s && !s.dead && s.selectable !== false);
     for (const s of this.selection) s.selected = true;
+    this.addHeld(before);
     this.game.tacticalStory?.selected?.(this.selection.filter(s => !before.includes(s)));
     this.game.hudTimer = 0;
+  }
+  addHeld(before = null) {
+    const live = this.selection.filter(s => !s.dead);
+    if (live.length !== 1 || !live[0].members) return;
+    const add = [];
+    for (const host of live[0].members)
+      for (const q of host.holds || [])
+        if (!q.dead && q.members.some(u => u.inside === host) && !this.selection.includes(q) && !add.includes(q)) add.push(q);
+    if (!add.length) return;
+    for (const q of add) q.selected = true;
+    this.selection.push(...add);
+    if (!before) this.game.tacticalStory?.selected?.(add);
   }
   mine() {
     return this.selection.filter(s => !s.dead && s.player === this.player);
   }
   movers() {
-    return this.mine().filter(s => s.isMobile && !s.native);
+    return this.mine().filter(s => s.isMobile && !s.native && !inside(s));
   }
   builder() {
     return this.mine().find(s => s.isPad || (s.structure && !s.craft) || this.padOf(s)) || null;
@@ -472,7 +487,7 @@ export class LandUI {
     return !!host && !host.dead && host.slots > 0 && this.movers().some(q => q !== host.squad && canGarrison(this.world, q, host));
   }
   canLeave(host) {
-    const m = this.mine();
+    const m = this.mine().filter(s => !inside(s));
     return !!host && !host.dead && m.length === 1 && m[0] === host.squad && host.squad.members.some(u => u.holds && u.holds.length);
   }
   leave(host) {
