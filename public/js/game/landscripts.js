@@ -134,6 +134,21 @@ class LandView {
     this.fields = [];
     this.onEvent = () => {};
     this.points = new Map();
+    this.markersAt = undefined;
+    this.markerList = [];
+    this.heldPoints = new WeakSet();
+  }
+  scriptMarkers() {
+    if (this.markersAt !== this.w.time) {
+      this.markersAt = this.w.time;
+      const w = this.w,
+        held = this.heldPoints;
+      for (const u of w.units) if (u.capturable) held.add(u.capturable);
+      const out = w.points.filter(pt => !held.has(pt)).map(pt => this.point(pt));
+      for (const list of this.w.mapObjects?.values() || []) for (const o of list) if (o?.mapMarker && !o.dead) out.push(o);
+      this.markerList = out;
+    }
+    return this.markerList;
   }
   get audio() {
     return this.game.audio || { play() {} };
@@ -572,7 +587,22 @@ export class LandScripts {
       },
       owner: (q, p) => {
         const side = w.sidePlayers.indexOf(p);
-        if (side < 0 || !q.members) return;
+        if (side < 0) return;
+        if (q.isPoint) {
+          const pt = q.point,
+            was = pt.side;
+          pt.side = side === w.wild ? -1 : side;
+          pt.taker = -1;
+          pt.progress = 0;
+          w.showOwner(pt);
+          if (was !== pt.side) w.onCapture?.(pt, was);
+          return;
+        }
+        if (q.mapMarker) {
+          q.player = p;
+          return;
+        }
+        if (!q.members) return;
         changeSide(w, q, side);
         q.native = false;
       },

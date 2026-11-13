@@ -28,6 +28,12 @@ const NATIVES =
 
 const LEVELS = { easy: 'Easy', medium: 'Normal', hard: 'Hard' };
 const lead = e => (e && e.isSquad ? e.fighters[0] : e);
+const scriptMarkers = w => {
+  if (w.scriptMarkers) return w.scriptMarkers();
+  const out = [];
+  for (const list of w.mapObjects?.values() || []) for (const o of list) if (o?.mapMarker && !o.dead) out.push(o);
+  return out;
+};
 const body = e => (e && !e.isSquad && e.members ? e.members[0] : lead(e));
 function shouldSwitch(u, t) {
   if (!u || !u.type || !t || !t.type || t.dead) return false;
@@ -1415,12 +1421,13 @@ export class ScriptHost {
     const playerOf = n => (n && n.__player) || null;
     const live = () => [...w.selectables()].filter(e => !gone(e));
     const objects = () => {
-      if (this.land || !w.squads) return live();
+      if (this.land || !w.squads) return [...live(), ...scriptMarkers(w)];
       const out = [];
       for (const s of w.squads) if (!gone(s)) out.push(s);
       for (const u of w.units) if (!u.dead) out.push(u);
       out.sort((a, b) => a.id - b.id);
       for (const s of w.specialWeapons || []) if (!s.dead) out.push(s);
+      for (const m of scriptMarkers(w)) out.push(m);
       return out;
     };
     const ofType = (e, t) => e.type === t || e.scriptType === t || (!e.isSquad || this.land ? lead(e) && lead(e).type === t : false);
@@ -2173,7 +2180,7 @@ export class ScriptHost {
 
   attach() {
     const w = this.world;
-    for (const e of [...w.units, ...(w.squads || [])]) {
+    for (const e of [...w.units, ...(w.squads || []), ...(this.game?.setup?.attract ? [] : scriptMarkers(w))]) {
       if (e.scripted || e.dead) continue;
       e.scripted = true;
       const type = e.scriptType || e.type,

@@ -20,6 +20,9 @@ export class TacticalMarker {
   get player() {
     return this.owner();
   }
+  set player(p) {
+    this.owner = () => p;
+  }
   get scriptType() {
     return this.type;
   }
