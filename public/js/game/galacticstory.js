@@ -414,7 +414,7 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Enable_AI_Fleet_Pathfinders', on => {
       if (game.galaxy) game.galaxy.aiPathfinders = !!on;
     });
-    vm.global('DiscreteDistribution', {
+    vm.global('DiscreteDistribution', (this.distributions = {
       __wrap: true,
       __name: 'DiscreteDistribution',
       __missing: this.absent('DiscreteDistribution'),
@@ -423,6 +423,7 @@ export class GalacticStoryHost extends StoryPlots {
         return {
           __wrap: true,
           __name: 'DiscreteDistribution',
+          __dist: items,
           Is_Valid: () => true,
           __missing: this.absent('DiscreteDistribution'),
           Insert: (value, weight) => {
@@ -440,7 +441,7 @@ export class GalacticStoryHost extends StoryPlots {
           }
         };
       }
-    });
+    }));
     vm.global('StringCompare', (a, b) => key(a) === key(b));
     vm.global('GetCurrentTime', {
       __wrap: true,

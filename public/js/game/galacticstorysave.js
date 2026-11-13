@@ -73,6 +73,17 @@ function describeObject(host, o) {
   if (o.__type) return { k: 'ty', n: o.__type.name };
   if (o.__faction !== undefined) return { k: 'pc', n: o.__faction };
   if (o.__pos) return { k: 'ps', x: o.x, y: o.y, z: o.z };
+  if (o.__dist) {
+    const it = [];
+    for (const [v, w] of o.__dist) {
+      if (v && typeof v === 'object') {
+        const d = describeObject(host, v);
+        if (!d) return undefined;
+        it.push([{ o: d }, w]);
+      } else it.push([{ v }, w]);
+    }
+    return { k: 'dd', it };
+  }
   return undefined;
 }
 
@@ -114,6 +125,11 @@ function resolveObject(host, d) {
       return host.position(d.x, d.y, d.z);
     case 'fl':
       return host.fleet(d.o.map(x => resolveObject(host, x)));
+    case 'dd': {
+      const dist = host.distributions.Create();
+      for (const [x, w] of d.it) dist.Insert(x.o ? resolveObject(host, x.o) : x.v, w);
+      return dist;
+    }
     case 'ob': {
       let found = recordAt(host, d);
       if (found === undefined) found = { record: { type: db.type(d.t), owner: d.ow, planet: null, pos: [0, 0, 0], dead: true } };
