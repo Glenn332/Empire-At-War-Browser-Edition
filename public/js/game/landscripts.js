@@ -139,13 +139,14 @@ class LandView {
     this.heldPoints = new WeakSet();
   }
   scriptMarkers() {
-    if (this.markersAt !== this.w.time) {
-      this.markersAt = this.w.time;
-      const w = this.w,
-        held = this.heldPoints;
+    const w = this.w,
+      at = w.points.length + ':' + (w.mapObjects?.size || 0) + ':' + w.units.length;
+    if (this.markersAt !== at) {
+      this.markersAt = at;
+      const held = this.heldPoints;
       for (const u of w.units) if (u.capturable) held.add(u.capturable);
       const out = w.points.filter(pt => !held.has(pt)).map(pt => this.point(pt));
-      for (const list of this.w.mapObjects?.values() || []) for (const o of list) if (o?.mapMarker && !o.dead) out.push(o);
+      for (const list of w.mapObjects?.values() || []) for (const o of list) if (o?.mapMarker) out.push(o);
       this.markerList = out;
     }
     return this.markerList;

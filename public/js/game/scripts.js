@@ -1421,13 +1421,13 @@ export class ScriptHost {
     const playerOf = n => (n && n.__player) || null;
     const live = () => [...w.selectables()].filter(e => !gone(e));
     const objects = () => {
-      if (this.land || !w.squads) return [...live(), ...scriptMarkers(w)];
+      if (this.land || !w.squads) return [...live(), ...scriptMarkers(w).filter(m => !m.dead)];
       const out = [];
       for (const s of w.squads) if (!gone(s)) out.push(s);
       for (const u of w.units) if (!u.dead) out.push(u);
       out.sort((a, b) => a.id - b.id);
       for (const s of w.specialWeapons || []) if (!s.dead) out.push(s);
-      for (const m of scriptMarkers(w)) out.push(m);
+      for (const m of scriptMarkers(w)) if (!m.dead) out.push(m);
       return out;
     };
     const ofType = (e, t) => e.type === t || e.scriptType === t || (!e.isSquad || this.land ? lead(e) && lead(e).type === t : false);
