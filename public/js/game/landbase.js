@@ -1300,10 +1300,11 @@ export async function addHouse(world, o) {
     first = db.type(t.list('Spawned_Indigenous_Units_Type')[0]);
   let aff = t.str('Affiliation').toUpperCase();
   if ((!aff || aff.includes('NEUTRAL')) && first) aff = first.str('Affiliation').toUpperCase();
-  if (!aff || aff.includes('NEUTRAL')) return null;
-  let side = world.factions.findIndex(f => aff.includes(f.toUpperCase()));
+  const forced = world.alwaysSide?.(t);
+  if (forced === undefined && (!aff || aff.includes('NEUTRAL'))) return null;
+  let side = forced ?? world.factions.findIndex(f => aff.includes(f.toUpperCase()));
   if (side < 0) side = world.wild;
-  if (world.planetCorruption === 4 && first?.bool('Is_Indigenous_Unit_Corruptible', true)) {
+  if (forced === undefined && world.planetCorruption === 4 && first?.bool('Is_Indigenous_Unit_Corruptible', true)) {
     const ally = world.factions.findIndex(f => db.faction(f)?.bool('Benefits_From_Corruption'));
     if (ally >= 0) side = ally;
   }

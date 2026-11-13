@@ -208,6 +208,8 @@ async function spawnMapLoadTables(game, world, map) {
       side = owner ? present(owner.toUpperCase()) : -1;
       if (side < 0 && owner) side = db.faction(owner)?.bool('Is_Neutral') ? -1 : world.wild;
     }
+    const forced = world.alwaysSide(t);
+    if (forced !== undefined) side = forced;
     const at = { type: t, pos: o.pos, rot: o.rot, scale: 1 };
     let made = null;
     try {
@@ -691,6 +693,7 @@ export class LandGame {
       popCap: setup.popCap
     }));
     world.campaign = !!setup.campaign;
+    world.campaignSides = setup.campaign?.attacker && setup.campaign?.defender ? { attacker: setup.campaign.attacker.side, defender: setup.campaign.defender.side } : null;
     world.landControl = setup.type === 'control';
     world.tacticalRules = setTacticalRules({ campaign: !!setup.campaign, skirmish: !!setup.campaign?.skirmishRules, corrupted: (setup.campaign?.corruption ?? -1) !== -1 });
     world.playerSides = this.players.length;

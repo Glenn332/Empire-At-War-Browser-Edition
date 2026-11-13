@@ -1492,6 +1492,10 @@ export class ScriptHost {
     vm.global('Create_Position', (x, y, z) => this.pos(+x || 0, +y || 0, +z || 0));
     vm.global('StringCompare', (a, b) => String(a ?? '').toUpperCase() === String(b ?? '').toUpperCase());
     vm.global('Is_Multiplayer_Mode', () => !!(this.game && this.game.setup && this.game.setup.net));
+    vm.global('Cancel_Fast_Forward', () => {
+      const g = this.game;
+      if (g && !g.setup?.net && g.speed > 1 && g.setSpeed) g.setSpeed(1);
+    });
     vm.global('Is_Campaign_Game', () => !!this.game?.setup?.campaign);
     vm.global('GetThreadID', () => 0);
     vm.global('_ScriptExit', () => {

@@ -3,6 +3,7 @@ import { unitTeamColor } from './teamcolor.js';
 import { db } from '../gamedata.js';
 import { hardpointModes, modeAllows } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
+import { survivorPicks } from './survivors.js';
 import { loadModel, buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
 import { loadALA, animName, AnimState, knownAnimations } from '../ala.js';
@@ -945,6 +946,7 @@ export class LandWorld {
     for (let i = 0; i + 1 < caps.length; i += 2) if (caps[i] <= 2) this.popLimit = caps[i + 1];
     this.transports = [];
     this.campaign = false;
+    this.campaignSides = null;
     this.campaignAttacker = -1;
     this.campaignGarrison = new Set();
     this.onTransportOut = null;
@@ -2350,6 +2352,13 @@ export class LandWorld {
     return true;
   }
 
+  alwaysSide(t) {
+    const c = this.campaignSides;
+    if (!c) return undefined;
+    if (t.bool('Always_Side_With_Defender')) return c.defender;
+    if (t.bool('Always_Side_With_Invader')) return c.attacker;
+    return undefined;
+  }
   popOf(t) {
     return this.shooter ? this.shooter.sizeOf(t) : landPop(t);
   }
@@ -4136,6 +4145,7 @@ export class LandWorld {
               back: rb.num('Redirect_Chance', 0),
               block: rb.num('Block_Chance', 0),
               arc: (rb.num('Reaction_Arc_In_Degrees', 180) * DEG) / 2,
+              turn: Math.min(180, Math.max(0, rb.num('Max_Projectile_Redirection_Angle_In_Degrees', 0))) * DEG,
               sfx: rb.val('SFXEvent_Activate')
             }));
           u.deflect = u.deflects.filter(d => d.on).sort((a, b) => b.back + b.block - a.back - a.block)[0] || null;
@@ -5037,6 +5047,14 @@ export class LandWorld {
     return S;
   }
 
+  spawnSurvivors(u) {
+    const side = u.side >= 0 ? u.side : this.wild;
+    for (const pick of survivorPicks(u.type)) {
+      const a = simRandom() * Math.PI * 2,
+        d = (u.hitRadius > 0 ? u.hitRadius : 10) + 10;
+      this.spawn(pick.name, u.x + Math.cos(a) * d, u.y + Math.sin(a) * d, u.heading || 0, side);
+    }
+  }
   die(u, how = '') {
     const kind =
       {
@@ -5060,6 +5078,7 @@ export class LandWorld {
     const clone = clones.length ? any(clones) : null,
       src = clone || u.type;
     u.deathClone = clone;
+    this.spawnSurvivors(u);
     if (clone && !u.structure && clone.bool('Death_Clone_Is_Obstacle')) this.blockWreck(u, clone);
     let KIND = (clone && clone.str('Specific_Death_Anim_Type').toUpperCase()) || (how && u.foot ? how : 'DIE');
     const index = clone && clone.str('Specific_Death_Anim_Index') !== '' ? clone.num('Specific_Death_Anim_Index', 0) : -1;
@@ -5579,6 +5598,16 @@ export class LandWorld {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
       this.shots[this.shots.length - 1].turned = true;
       this.shots[this.shots.length - 1].damage = s.damage;
+    } else if (D.turn > 0) {
+      const a = Math.atan2(s.from.y - t.y, s.from.x - t.x) + (simRandom() * 2 - 1) * D.turn,
+        d = 150 + simRandom() * 150,
+        x = t.x + Math.cos(a) * d,
+        y = t.y + Math.sin(a) * d;
+      const spot = { x, y, z: this.groundZ(x, y), aimZ: 0, kind: 'STRUCTURE', hitRadius: -1, side: this.wild, dead: false, flies: false, type: t.type, spot: true, path: [] };
+      this.fire(t, spot, { ...s.w, muzzles: null, quiet: true, blastR: 0, blastD: 0 });
+      const n = this.shots[this.shots.length - 1];
+      n.turned = true;
+      n.damage = 0;
     }
     return true;
   }

@@ -31,7 +31,7 @@ function parseMaterial(r, c) {
   const mat = { shader: '', params: {} };
   for (const k of r.chunks(c.start, c.end)) {
     if (k.type === 0x10101) {
-      mat.shader = r.str(k.start, k.end).toLowerCase();
+      mat.shader = r.str(k.start, k.end).toLowerCase().replace(/\.fxo$/, '.fx');
       continue;
     }
     let name = '',

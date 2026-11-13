@@ -1,6 +1,7 @@
 import { ScanAhead } from './scanjobs.js';
 import { hardpointModes, modeAllows, modeDelay, SALVO_DELAY } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
+import { survivorPicks } from './survivors.js';
 import { unitTeamColor } from './teamcolor.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
@@ -567,7 +568,7 @@ export class Unit {
     this.spawnTimer = 0;
     this.hyper = null;
     this.engineGlows = [];
-    this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1, fireRate: 1 };
+    this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1, fireRate: 1, sight: 1 };
     this.cmods = null;
     this.abilities = [];
     this.statuses = [];
@@ -1224,7 +1225,8 @@ export class Unit {
       energy: f(MOD.ENERGY),
       range: f(MOD.RANGE),
       hm: 1,
-      fireRate: f(MOD.FIRE_RATE)
+      fireRate: f(MOD.FIRE_RATE),
+      sight: f(MOD.SIGHT)
     };
     const adj = p && p.adjust,
       hm = adj ? adj.health : 1,
@@ -1251,6 +1253,7 @@ export class Unit {
       e.cap = cap;
       if (e.value > cap) e.value = cap;
     }
+    if (b.sight !== (old.sight ?? 1)) this.revealRange *= b.sight / (old.sight ?? 1);
     if (b.range !== (old.range ?? 1)) {
       const k = b.range / (old.range ?? 1);
       this.attackRange *= k;
@@ -2707,6 +2710,11 @@ export class World {
       return;
     }
     this.removeUnit(u);
+    for (const pick of survivorPicks(u.type)) {
+      const a = simRandom() * Math.PI * 2,
+        d = (u.hitRadius > 0 ? u.hitRadius : 20) + 20;
+      this.spawn(pick, u.player, u.x + Math.cos(a) * d, u.y + Math.sin(a) * d, u.heading || 0);
+    }
     for (const h of u.hardpoints)
       if (h.destroyable && h.alive) {
         h.alive = false;

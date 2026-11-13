@@ -17,7 +17,11 @@ export const sellPrice = rec => Math.trunc((rec.carries || rec.type).num('Build_
 
 export function canSell(g, rec, faction) {
   const at = rec && !rec.dead && locateRecord(g, rec);
-  return !!at && at.planet >= 0 && key(at.owner) === key(faction) && !isHero(rec) && !superType(rec.type) && !superType(rec.carries);
+  if (!at || at.planet < 0 || key(at.owner) !== key(faction)) return false;
+  const rule = key((rec.carries || rec.type)?.str('Is_Sellable').trim());
+  if (rule === 'SELLABLE_NEVER') return false;
+  if (rule === 'SELLABLE_ALWAYS') return true;
+  return !isHero(rec) && !superType(rec.type) && !superType(rec.carries);
 }
 
 export function sellRecord(g, rec, faction) {

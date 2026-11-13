@@ -185,6 +185,27 @@ function allSourceDefs(type) {
     if (modes & SPACE) all[SPACE].push(def);
     if (modes & LAND) all[LAND].push(def);
   });
+  const fields = type && type.sub ? type.sub('Abilities').flatMap(x => x.all('Battlefield_Modifier_Ability')) : [];
+  fields.forEach((node, index) => {
+    const sight = node.num('FOW_Reveal_Range_Multiplier', 1);
+    if (sight === 1 || !(sight > 0) || /^(no|false)$/i.test(node.val('Initially_Enabled').trim())) return;
+    const modes = STYLE_MODES[node.val('Activation_Style').trim().toUpperCase() || 'COMBAT_AUTOMATIC'] || 0;
+    const def = {
+      node,
+      index: abilities.length + index,
+      key: Math.trunc(node.num('Stacking_Category', 0)) || 0,
+      mods: [[MOD.SIGHT, sight - 1]],
+      types: new Set(),
+      cats: ['ALL'],
+      exTypes: new Set(),
+      exCats: [],
+      faction: '',
+      self: true,
+      unique
+    };
+    if (modes & SPACE) all[SPACE].push(def);
+    if (modes & LAND) all[LAND].push(def);
+  });
   if (!all[SPACE].length) all[SPACE] = NONE;
   if (!all[LAND].length) all[LAND] = NONE;
   sourceDefs.set(type, all);
