@@ -2185,7 +2185,7 @@ export class ScriptHost {
 
   attach() {
     const w = this.world;
-    for (const e of [...w.units, ...(w.squads || []), ...(this.game?.setup?.attract ? [] : scriptMarkers(w))]) {
+    for (const e of [...w.units, ...(w.squads || []), ...(this.game?.setup?.attract && !this.land ? [] : scriptMarkers(w))]) {
       if (e.scripted || e.dead) continue;
       e.scripted = true;
       const type = e.scriptType || e.type,

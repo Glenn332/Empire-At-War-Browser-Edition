@@ -635,6 +635,7 @@ export class LandGame {
       setup = this.setup;
     $('lobby').classList.add('hidden');
     if (!setup.attract) showSplash();
+    else document.body.classList.add('attract', 'hud-hidden');
     P('Loading map', 0);
     const map = (this.map = await loadMap(setup.mapFile));
     ensureMissionPlayers(setup, map);
@@ -2294,7 +2295,7 @@ export class LandGame {
       ui = this.ui,
       w = this.world,
       me = this.me;
-    const addEventListener = (ev, fn, opts) => this.listen(ev, fn, opts);
+    const addEventListener = (ev, fn, opts) => this.listen(ev, this.setup.attract && ev !== 'resize' ? () => {} : fn, opts);
     addEventListener('keydown', e => {
       if (
         e.code === 'Escape' &&
@@ -2435,7 +2436,7 @@ export class LandGame {
     el.addEventListener(
       'wheel',
       e => {
-        if (this.controlsLocked) return;
+        if (this.controlsLocked || this.setup.attract) return;
         const dn = this.down,
           dragged = dn && Math.hypot(ui.mouse.x - dn[0], ui.mouse.y - dn[1]) > 5;
         if (this.moveDragOn) {
@@ -2547,6 +2548,7 @@ export class LandGame {
       this.hudTimer = 0;
     };
     el.addEventListener('mousedown', e => {
+      if (this.setup.attract) return;
       this.audio.unlock && this.audio.unlock();
       if (this.controlsLocked) {
         this.down = null;

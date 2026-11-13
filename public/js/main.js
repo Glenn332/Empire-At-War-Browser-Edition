@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall } from './vfs.js';
 import { gfx, storeGfx } from './gfx.js';
-import { loadMap, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
+import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
 import { bakeRockTextures } from './rockbake.js';
@@ -3397,7 +3397,8 @@ async function boot() {
 
 async function startFrontEnd(mapFile, { lobby, instant, multiplayer, load, start }) {
   if (!(await loadMap(mapFile).catch(() => null))) return false;
-  const game = new Game({
+  const land = (await loadMapHeader(mapFile).catch(() => null))?.kind === 1;
+  const attractSetup = {
     attract: true,
     direct: true,
     benchmark: 0,
@@ -3406,12 +3407,13 @@ async function startFrontEnd(mapFile, { lobby, instant, multiplayer, load, start
     popCap: 0,
     fog: false,
     teamFactions:
-      FACTIONS.includes('Rebel') && FACTIONS.includes('Underworld') ? ['Rebel', 'Underworld'] : [FACTIONS[0], FACTIONS[1] || FACTIONS[0]],
+      db.faction('Rebel') && db.faction('Underworld') ? ['Rebel', 'Underworld'] : [FACTIONS[0], FACTIONS[1] || FACTIONS[0]],
     players: [
       { human: true, team: 0, color: '#e0352b' },
       { human: false, team: 1, color: '#f7c90d', difficulty: 'easy' }
     ]
-  });
+  };
+  const game = land ? new LandGame({ ...attractSetup, mode: 'land' }, { audio, progress }) : new Game(attractSetup);
   audio.menuOnly = true;
   await game.start();
   const unlock = () => {
@@ -3431,7 +3433,7 @@ async function startFrontEnd(mapFile, { lobby, instant, multiplayer, load, start
   const cycle = db.constants.num('Demo_Attract_Map_Cycle_Delay_Seconds', 1200);
   let from = 0;
   game.attractCycle = setInterval(() => {
-    if (game.world.time - from > cycle && game.menus.stack.length === 1) {
+    if (game.restartAttract && game.world.time - from > cycle && game.menus.stack.length === 1) {
       game.restartAttract();
       from = game.world.time;
     }
