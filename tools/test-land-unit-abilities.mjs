@@ -221,11 +221,9 @@ const settle = async (world, secs) => {
   );
   await settle(world, 0.1);
   assert.equal(chewie.inside, null);
-  assert.deepEqual(
-    [chewie.x, chewie.y, chewie.heading, chewie.health],
-    [80, 40, -0.4, hp],
-    'The thief steps out unharmed where the vehicle was'
-  );
+  assert.deepEqual([chewie.heading, chewie.health], [-0.4, hp], 'The thief steps out unharmed, facing as the vehicle did');
+  const out = Math.hypot(chewie.x - 80, chewie.y - 40);
+  assert(out >= (clone.hitRadius || 10) && out < (clone.hitRadius || 10) + 60, 'The thief is set down on open ground beside the wreck');
   const cap = q.abilityState('CAPTURE_VEHICLE');
   assert(cap.cooldown <= cap.def.recharge && cap.cooldown > cap.def.recharge - 0.2, 'Capture recharge starts on exit');
   assert.deepEqual(swaps, [[clone.squad, q]], 'A selected vehicle hands the selection to the thief');
@@ -420,6 +418,6 @@ const synthetic = (base, xml) => {
 console.log(
   JSON.stringify({
     checks:
-      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, exact release, recharge on exit, reselection; demolition: behaviour and category gates, turn, spawn frame, offset, timer, damage; eat attack: squad order pick, attack-animation gate, attachment and destruction frames, fixed kill with damage type, heal, interrupted eat, chance 0'
+      'remote bomb: stick and ride, owner-only friendly damage, enemy-only tiered blast, shot bomb, orphan cleanup; vehicle thief: clone swap with health share, eject by thief damage, release beside the wreck, recharge on exit, reselection; demolition: behaviour and category gates, turn, spawn frame, offset, timer, damage; eat attack: squad order pick, attack-animation gate, attachment and destruction frames, fixed kill with damage type, heal, interrupted eat, chance 0'
   })
 );
