@@ -1373,6 +1373,24 @@ export class LandGame {
             ...(u.noOpportunity ? { nof: 1 } : {})
           }))
         })),
+        unloading: w.transports
+          .filter(t => t.stage === 'unload' && t.queue?.length)
+          .map(t => ({
+            type: t.typeName,
+            side: t.side,
+            x: r1(t.x),
+            y: r1(t.y),
+            h: +(t.heading || 0).toFixed(3),
+            wait: r1(t.wait),
+            interval: t.interval,
+            held: t.queue
+              .filter(u => !u.dead)
+              .map(u => {
+                const i = live.indexOf(u.squad);
+                return i >= 0 ? [i, live[i].members.indexOf(u)] : null;
+              })
+              .filter(Boolean)
+          })),
         landing: w.transports
           .filter(t => t.stage === 'land')
           .map(t => ({
@@ -1683,6 +1701,10 @@ export class LandGame {
       })
     );
     const landing = await Promise.all((b.landing || []).map(l => w.spawn(l.type, l.x, l.y, 0, l.side)));
+    for (const t of b.unloading || []) {
+      const units = t.held.map(([i, j]) => squads[i]?.members?.[j]).filter(Boolean);
+      if (units.length) await w.reinforce(t.side, t.type, t.x, t.y, t.h, { units, wait: t.wait, interval: t.interval });
+    }
     (b.queues || []).forEach((q, side) => {
       for (const [n, left] of q.units || []) reorder(side, n, left);
       for (const [n, left] of q.upgrades || []) reorder(side, n, left);

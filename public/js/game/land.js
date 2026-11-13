@@ -886,6 +886,15 @@ export const missingFor = (world, side, t) =>
     .map(n => db.type(n))
     .filter(p => p && !world.owned[side].has(p.name));
 export const costOf = (t, faction = null) => (faction ? padCost(t, faction) : tacticalCost(t));
+const reversedTypes = new WeakMap();
+const reversedModifiers = t => {
+  let v = reversedTypes.get(t);
+  if (v === undefined) {
+    v = !!t.sub && t.sub('Abilities').some(a => a.all('Battlefield_Modifier_Ability').some(n => /^(yes|true)$/i.test(n.val('Reverse_Application_Logic').trim())));
+    reversedTypes.set(t, v);
+  }
+  return v;
+};
 export const landPop = t =>
   t.has('Land_Override_Population_Value') ? t.num('Land_Override_Population_Value', 0) : t.num('Population_Value', 0);
 export const timeOf = t => t.num('Tactical_Build_Time_Seconds', 10);
@@ -950,6 +959,7 @@ export class LandWorld {
     this.campaign = false;
     this.campaignSides = null;
     this.hostilePlayer = null;
+    this.lostSources = new Set();
     this.campaignAttacker = -1;
     this.campaignGarrison = new Set();
     this.onTransportOut = null;
@@ -2359,14 +2369,14 @@ export class LandWorld {
   battleModifiers(side, field) {
     const out = [],
       seen = new Set();
-    const visit = (t, owner) => {
+    const visit = (t, owner, lost = false) => {
       if (!t || !t.sub) return;
       for (const node of t.sub('Abilities').flatMap(a => a.all('Battlefield_Modifier_Ability'))) {
         if (!node.val(field).trim() || /^(no|false)$/i.test(node.val('Initially_Enabled').trim())) continue;
         const style = node.val('Activation_Style').trim().toUpperCase();
         if (style === 'SPACE_AUTOMATIC' || (this.campaign && style === 'SKIRMISH_AUTOMATIC')) continue;
-        const reverse = /^(yes|true)$/i.test(node.val('Reverse_Application_Logic').trim());
-        if (reverse ? this.ally(owner, side) : owner !== side && !(this.ally(owner, side) && /^(yes|true)$/i.test(node.val('Apply_To_All_Allies').trim()))) continue;
+        if (/^(yes|true)$/i.test(node.val('Reverse_Application_Logic').trim()) !== lost) continue;
+        if (owner !== side && !(this.ally(owner, side) && /^(yes|true)$/i.test(node.val('Apply_To_All_Allies').trim()))) continue;
         const key = owner + ':' + t.name + ':' + (node.attrs.Name || '');
         if (seen.has(key)) continue;
         seen.add(key);
@@ -2375,6 +2385,12 @@ export class LandWorld {
     };
     for (let s = 0; s < this.factions.length; s++) for (const name of this.owned[s] || []) visit(db.type(name), s);
     for (const q of this.squads) if (q.side >= 0 && q.side < this.factions.length && q.members.length) visit(q.type, q.side);
+    for (const key of this.lostSources) {
+      const [s, name] = key.split('|'),
+        owner = +s,
+        t = db.type(name);
+      if (t && !this.squads.some(q => q.side === owner && q.type === t && q.members.some(u => !u.dead))) visit(t, owner, true);
+    }
     return out;
   }
   reinforcementHold(side) {
@@ -3716,11 +3732,11 @@ export class LandWorld {
     return file ? { file, scale: variant.num('Scale_Factor', craft.num('Scale_Factor', 1)) } : null;
   }
 
-  async reinforce(side, typeName, x, y, heading = 0) {
-    this.onReinforce?.(this.factions[side], typeName);
+  async reinforce(side, typeName, x, y, heading = 0, landed = null) {
+    if (!landed) this.onReinforce?.(this.factions[side], typeName);
     const type = db.type(typeName),
       craft = type && db.type(type.str('Company_Transport_Unit') || '');
-    const pending = type ? new LandSquad(this, type, side, { arriving: true }) : null;
+    const pending = type && !landed ? new LandSquad(this, type, side, { arriving: true }) : null;
     if (pending) {
       pending.members = [0];
       this.squads.push(pending);
@@ -3732,6 +3748,7 @@ export class LandWorld {
     const file = craft && landingModel(craft, variant),
       inst = file && (await loadModel(file).catch(() => null));
     if (!inst) {
+      if (landed) return null;
       const q = this.spawn(typeName, x, y, heading, side);
       Promise.resolve(q).then(unpend, unpend);
       return q;
@@ -3818,6 +3835,20 @@ export class LandWorld {
     this.units.push(cu);
     this.squads.push(cs);
     this.transports.push(t);
+    if (landed) {
+      if (t.anim) t.anim.step(1e4);
+      t.hold = 0;
+      t.landing = true;
+      t.stage = 'unload';
+      t.out = true;
+      if (landed.interval > 0) t.interval = landed.interval;
+      t.wait = landed.wait ?? t.interval;
+      t.queue = landed.units.filter(u => !u.dead);
+      for (const u of t.queue) {
+        u.inside = cu;
+        u.holder.visible = false;
+      }
+    }
     return t;
   }
 
@@ -5158,6 +5189,7 @@ export class LandWorld {
     const clone = clones.length ? any(clones) : null,
       src = clone || u.type;
     u.deathClone = clone;
+    if (u.side >= 0 && u.squad?.type && reversedModifiers(u.squad.type)) this.lostSources.add(u.side + '|' + u.squad.type.name);
     this.spawnSurvivors(u);
     if (clone && !u.structure && clone.bool('Death_Clone_Is_Obstacle')) this.blockWreck(u, clone);
     let KIND = (clone && clone.str('Specific_Death_Anim_Type').toUpperCase()) || (how && u.foot ? how : 'DIE');

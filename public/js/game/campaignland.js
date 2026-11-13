@@ -247,7 +247,8 @@ export async function placeLandInvasion(w, map, cb) {
     w.showOwner(p);
   }
   const reinforce = w.reinforce.bind(w);
-  w.reinforce = async (side, name, x, y, heading) => {
+  w.reinforce = async (side, name, x, y, heading, landed = null) => {
+    if (landed) return reinforce(side, name, x, y, heading, landed);
     const record = book.waiting.find(r => r.side === side && r.type.name.toUpperCase() === name.toUpperCase());
     if (record) book.waiting.splice(book.waiting.indexOf(record), 1);
     book.pending++;
