@@ -2488,7 +2488,7 @@ export class Shooter {
     const E = (this.setEl = document.createElement('div'));
     E.className = 'sh-set';
     E.style.display = 'none';
-    E.innerHTML = '<div class="sh-frame sh-set-box eaw-frame"><div class="sh-head"><div class="sh-title">Shooter Settings</div></div><div class="sh-set-body"></div><div class="sh-foot"><div></div><button class="sh-go eaw-btn">Done</button></div></div>';
+    E.innerHTML = '<div class="sh-frame sh-set-box eaw-frame"><div class="sh-head"><div class="sh-title">Battlefront Settings</div></div><div class="sh-set-body"></div><div class="sh-foot"><div></div><button class="sh-go eaw-btn">Done</button></div></div>';
     document.body.appendChild(E);
     const body = E.querySelector('.sh-set-body'),
       C = this.cfg;

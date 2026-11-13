@@ -41,18 +41,20 @@ function setInput(id, value) {
 }
 
 const TWEAK_SLIDERS = [
-  { id: 'IDC_TWEAK_SHOOTER_CAP', input: 'optShooterCap', label: 'Shooter: soldiers per side', min: 10, max: 200, step: 5, show: v => String(v) },
-  { id: 'IDC_TWEAK_SHOOTER_TICKETS', input: 'optShooterTickets', label: 'Shooter: tickets', min: 50, max: 500, step: 10, show: v => String(v) },
-  { id: 'IDC_TWEAK_SHOOTER_CONQUEST', input: 'optShooterConquest', label: 'Shooter: conquest tickets per soldier', min: 10, max: 50, step: 5, show: v => `${(v / 10).toFixed(1)}x` },
-  { id: 'IDC_TWEAK_SHOOTER_FOCUS', input: 'optShooterFocus', label: 'Shooter: aim focus blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') },
-  { id: 'IDC_TWEAK_SHOOTER_BLUR', input: 'optShooterBlur', label: 'Shooter: motion blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') }
+  { id: 'IDC_TWEAK_SHOOTER_CAP', input: 'optShooterCap', label: 'Soldiers per side', min: 10, max: 200, step: 5, show: v => String(v) },
+  { id: 'IDC_TWEAK_SHOOTER_TICKETS', input: 'optShooterTickets', label: 'Tickets', min: 50, max: 500, step: 10, show: v => String(v) },
+  { id: 'IDC_TWEAK_SHOOTER_CONQUEST', input: 'optShooterConquest', label: 'Conquest tickets per soldier', min: 10, max: 50, step: 5, show: v => `${(v / 10).toFixed(1)}x` },
+  { id: 'IDC_TWEAK_SHOOTER_FOCUS', input: 'optShooterFocus', label: 'Aim focus blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') },
+  { id: 'IDC_TWEAK_SHOOTER_BLUR', input: 'optShooterBlur', label: 'Motion blur', min: 0, max: 100, step: 5, show: v => (v > 0 ? `${v}%` : 'Off') }
 ];
 const TWEAK_EXTRA = [
-  'IDC_TWEAK_PARTICLE_LABEL',
+  'IDC_TWEAK_PARTICLE_COUNT_LABEL',
   'IDC_TWEAK_PARTICLE_COUNT',
-  'IDC_TWEAK_PARTICLE_VALUE',
+  'IDC_TWEAK_PARTICLE_COUNT_VALUE',
   ...TWEAK_SLIDERS.flatMap(s => [s.id + '_LABEL', s.id, s.id + '_VALUE'])
 ];
+const BATTLEFRONT = { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Battlefront mode (land battles)' };
+const BATTLEFRONT_CHECKS = [{ id: 'IDC_TWEAK_SHOOTER_OVERLORD', input: 'optShooterOverlord', label: 'Overlord mode' }];
 const TWEAKS = [
   { id: 'IDC_TWEAK_CAPTURE_BARS', input: 'optCaptureBars', label: 'Show capture progress bars' },
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
@@ -62,8 +64,6 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
   { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
-  { id: 'IDC_TWEAK_SHOOTER', input: 'optShooter', label: 'Land battles as a shooter' },
-  { id: 'IDC_TWEAK_SHOOTER_OVERLORD', input: 'optShooterOverlord', label: 'Shooter: overlord mode' },
   { id: 'IDC_TWEAK_EXTRA_FX', input: 'optExtraFx', label: 'Extra effects in space and land battles' }
 ];
 
@@ -611,42 +611,36 @@ export class Menus {
     const W = 520,
       top = 50,
       row = 26,
+      gap = 14,
+      indent = 20,
       VISIBLE = 10,
       panelH = VISIBLE * row + 8,
       back = top + panelH + 18,
       shift = (W - 321) / 2;
+    const checks = [...TWEAKS, BATTLEFRONT, ...BATTLEFRONT_CHECKS];
+    const checkCtl = (t, x) => ({ kind: 'CONTROL', text: '', id: t.id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y: 0, w: W - 64 - x, h: 23 });
+    const sliderCtl = (id, x) => [
+      { kind: 'LTEXT', text: '', id: id + '_LABEL', x: 4 + x, y: 0, w: 205 - x, h: 20, style: '' },
+      { kind: 'CONTROL', text: '', id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 212, y: 0, w: W - 352, h: 20 },
+      { kind: 'LTEXT', text: '', id: id + '_VALUE', x: W - 130, y: 0, w: 70, h: 20, style: '' }
+    ];
+    const rows = [
+      ...TWEAKS.map(t => ({ ctls: [checkCtl(t, 0)] })),
+      { ctls: sliderCtl('IDC_TWEAK_PARTICLE_COUNT', 0) },
+      { ctls: [checkCtl(BATTLEFRONT, 0)], gap: true },
+      ...BATTLEFRONT_CHECKS.map(t => ({ ctls: [checkCtl(t, indent)], sub: true })),
+      ...TWEAK_SLIDERS.map(t => ({ ctls: sliderCtl(t.id, indent), sub: true }))
+    ];
+    const dy = c => (c.cls === 'Button' ? 0 : c.cls === 'msctls_trackbar32' ? 2 : 4);
     const dlg = await this.push('IDD_IN_GAME_OPTIONS_DIALOG', {
       size: { w: W, h: back + 53 },
-      extra: [
-        ...TWEAKS.map((t, i) => ({
-          kind: 'CONTROL',
-          text: '',
-          id: t.id,
-          cls: 'Button',
-          style: 'BS_AUTOCHECKBOX | WS_TABSTOP',
-          x: 0,
-          y: i * row,
-          w: W - 64,
-          h: 23
-        })),
-        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_LABEL', x: 4, y: TWEAKS.length * row + 4, w: 150, h: 20, style: '' },
-        { kind: 'CONTROL', text: '', id: 'IDC_TWEAK_PARTICLE_COUNT', cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 160, y: TWEAKS.length * row + 2, w: W - 300, h: 20 },
-        { kind: 'LTEXT', text: '', id: 'IDC_TWEAK_PARTICLE_VALUE', x: W - 130, y: TWEAKS.length * row + 4, w: 70, h: 20, style: '' },
-        ...TWEAK_SLIDERS.flatMap((s, i) => {
-          const y = (TWEAKS.length + 1 + i) * row;
-          return [
-            { kind: 'LTEXT', text: '', id: s.id + '_LABEL', x: 4, y: y + 4, w: 205, h: 20, style: '' },
-            { kind: 'CONTROL', text: '', id: s.id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 212, y: y + 2, w: W - 352, h: 20 },
-            { kind: 'LTEXT', text: '', id: s.id + '_VALUE', x: W - 130, y: y + 4, w: 70, h: 20, style: '' }
-          ];
-        })
-      ],
+      extra: rows.flatMap(r => r.ctls),
       adjust: c =>
         c.id === 'IDC_OK_IN_GAME'
           ? { ...c, x: c.x + shift, y: back }
           : c.id === 'IDC_STATIC_IN_GAME_OPTIONS'
             ? { ...c, kind: 'LTEXT', x: 24 }
-            : TWEAKS.some(t => t.id === c.id) || TWEAK_EXTRA.includes(c.id)
+            : checks.some(t => t.id === c.id) || TWEAK_EXTRA.includes(c.id)
               ? null
               : { ...c, x: c.x + shift }
     });
@@ -666,27 +660,49 @@ export class Menus {
       `position:absolute;left:20px;top:${top}px;width:${W - 40}px;height:${panelH}px;overflow-y:auto;overflow-x:hidden;` +
       'box-sizing:border-box;background:rgba(0,0,0,0.35);border:1px solid rgba(140,170,200,0.35);scrollbar-width:thin;scrollbar-color:rgba(160,190,220,0.6) transparent';
     const inner = document.createElement('div');
-    inner.style.cssText = `position:relative;left:8px;top:4px;height:${(TWEAKS.length + 1 + TWEAK_SLIDERS.length) * row + 4}px`;
+    inner.style.cssText = 'position:relative;left:8px;top:4px';
     panel.appendChild(inner);
     dlg.el.appendChild(panel);
-    for (const t of TWEAKS) {
+    const rule = document.createElement('div');
+    rule.style.cssText = `position:absolute;left:0;width:${W - 64}px;height:0;border-top:1px solid rgba(140,170,200,0.35)`;
+    inner.appendChild(rule);
+    for (const r of rows) for (const c of r.ctls) if (dlg.ctl(c.id)) inner.appendChild(dlg.ctl(c.id));
+    const layout = () => {
+      const on = !!$(BATTLEFRONT.input)?.checked;
+      let y = 0;
+      for (const r of rows) {
+        const shown = !r.sub || on;
+        if (r.gap) {
+          y += gap;
+          rule.style.top = y - gap / 2 - 2 + 'px';
+        }
+        for (const c of r.ctls) {
+          const el = dlg.ctl(c.id);
+          if (!el) continue;
+          el.hidden = !shown;
+          if (shown) el.style.top = y + dy(c) + 'px';
+        }
+        if (shown) y += row;
+      }
+      inner.style.height = y + 4 + 'px';
+    };
+    for (const t of checks) {
       const input = $(t.input),
         c = dlg.ctl(t.id);
-      if (c) inner.appendChild(c);
       dlg.setText(t.id, t.label);
       if (input?.parentElement?.title && c) c.title = input.parentElement.title;
-      dlg.check(t.id, !!input?.checked, on => setInput(t.input, on));
+      dlg.check(t.id, !!input?.checked, on => {
+        setInput(t.input, on);
+        if (t === BATTLEFRONT) layout();
+      });
     }
-    for (const id of TWEAK_EXTRA) {
-      const c = dlg.ctl(id);
-      if (c) inner.appendChild(c);
-    }
+    layout();
     const P = PARTICLE_CAP,
       span = P.max - P.min,
-      showCap = v => dlg.setText('IDC_TWEAK_PARTICLE_VALUE', v.toLocaleString('en-US'));
-    dlg.setText('IDC_TWEAK_PARTICLE_LABEL', 'Particle count');
+      showCap = v => dlg.setText('IDC_TWEAK_PARTICLE_COUNT_VALUE', v.toLocaleString('en-US'));
+    dlg.setText('IDC_TWEAK_PARTICLE_COUNT_LABEL', 'Particle count');
     const tip = 'Most particles alive at once. Higher keeps more smoke, sparks and engine glow in big battles, at a cost in frame rate.';
-    for (const id of ['IDC_TWEAK_PARTICLE_LABEL', 'IDC_TWEAK_PARTICLE_COUNT']) {
+    for (const id of ['IDC_TWEAK_PARTICLE_COUNT_LABEL', 'IDC_TWEAK_PARTICLE_COUNT']) {
       const c = dlg.ctl(id);
       if (c) c.title = tip;
     }

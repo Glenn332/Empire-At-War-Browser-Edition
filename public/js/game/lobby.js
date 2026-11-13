@@ -510,7 +510,7 @@ export async function advancedOptions(st) {
   dlg.el.appendChild(fog);
   const gun = fog.cloneNode(true);
   gun.style.top = parseFloat(fog.style.top || like.y) + 30 + 'px';
-  gun.lastChild.textContent = 'Shooter mode (land)';
+  gun.lastChild.textContent = 'Battlefront mode (land)';
   gun.classList.toggle('on', !!st.shooter);
   gun.onclick = () => {
     st.shooter = !st.shooter;

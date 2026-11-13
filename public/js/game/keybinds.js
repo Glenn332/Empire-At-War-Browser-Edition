@@ -52,19 +52,19 @@ export const ACTIONS = [
   { id: 'SQUAD_CAM', page: 5, extra: { col: 1, y: 240 }, label: 'Follow Whole Squad', keys: ['Alt+KeyC'] },
   { id: 'REINFORCE', page: 5, extra: { col: 0, y: 265 }, label: 'Reinforcements', keys: ['KeyN'] },
   { id: 'RETREAT', page: 5, extra: { col: 1, y: 265 }, label: 'Retreat', keys: ['KeyY'] },
-  { id: 'SHOOTER_ENTER', page: 5, extra: { col: 0, y: 290 }, label: 'Shooter: Enter / Leave', keys: ['KeyE'] },
-  { id: 'SHOOTER_SPRINT', page: 5, extra: { col: 1, y: 290 }, label: 'Shooter: Sprint', keys: ['ShiftLeft', 'ShiftRight'] },
-  { id: 'SHOOTER_CROUCH', page: 5, extra: { col: 0, y: 315 }, label: 'Shooter: Crouch / Fly Down', keys: ['KeyC'] },
-  { id: 'SHOOTER_JUMP', page: 5, extra: { col: 1, y: 315 }, label: 'Shooter: Jump / Fly Up', keys: ['Space'] },
-  { id: 'SHOOTER_SCORES', page: 5, extra: { col: 0, y: 340 }, label: 'Shooter: Scores', keys: ['Tab'] },
-  { id: 'SHOOTER_ABILITY_1', page: 5, extra: { col: 1, y: 340 }, label: 'Shooter: Ability 1', keys: ['KeyQ'] },
-  { id: 'SHOOTER_ABILITY_2', page: 5, extra: { col: 0, y: 365 }, label: 'Shooter: Ability 2', keys: ['KeyF'] },
-  { id: 'SHOOTER_ABILITY_3', page: 5, extra: { col: 1, y: 365 }, label: 'Shooter: Ability 3', keys: ['KeyG'] },
-  { id: 'SHOOTER_DODGE', page: 5, extra: { col: 0, y: 390 }, label: 'Shooter: Dodge', keys: ['KeyV'] },
-  { id: 'SHOOTER_MAP', page: 5, extra: { col: 1, y: 390 }, label: 'Shooter: Map', keys: ['KeyM'] },
-  { id: 'SHOOTER_GRENADE', page: 5, extra: { col: 0, y: 415 }, label: 'Shooter: Thermal Detonator', keys: ['KeyT'] },
-  { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, y: 415 }, label: 'Shooter: Settings', keys: ['KeyO'] },
-  { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, y: 440 }, label: 'Shooter: Tactical View', keys: ['KeyL'] }
+  { id: 'SHOOTER_ENTER', page: 5, extra: { col: 0, y: 290 }, label: 'Battlefront: Enter / Leave', keys: ['KeyE'] },
+  { id: 'SHOOTER_SPRINT', page: 5, extra: { col: 1, y: 290 }, label: 'Battlefront: Sprint', keys: ['ShiftLeft', 'ShiftRight'] },
+  { id: 'SHOOTER_CROUCH', page: 5, extra: { col: 0, y: 315 }, label: 'Battlefront: Crouch / Fly Down', keys: ['KeyC'] },
+  { id: 'SHOOTER_JUMP', page: 5, extra: { col: 1, y: 315 }, label: 'Battlefront: Jump / Fly Up', keys: ['Space'] },
+  { id: 'SHOOTER_SCORES', page: 5, extra: { col: 0, y: 340 }, label: 'Battlefront: Scores', keys: ['Tab'] },
+  { id: 'SHOOTER_ABILITY_1', page: 5, extra: { col: 1, y: 340 }, label: 'Battlefront: Ability 1', keys: ['KeyQ'] },
+  { id: 'SHOOTER_ABILITY_2', page: 5, extra: { col: 0, y: 365 }, label: 'Battlefront: Ability 2', keys: ['KeyF'] },
+  { id: 'SHOOTER_ABILITY_3', page: 5, extra: { col: 1, y: 365 }, label: 'Battlefront: Ability 3', keys: ['KeyG'] },
+  { id: 'SHOOTER_DODGE', page: 5, extra: { col: 0, y: 390 }, label: 'Battlefront: Dodge', keys: ['KeyV'] },
+  { id: 'SHOOTER_MAP', page: 5, extra: { col: 1, y: 390 }, label: 'Battlefront: Map', keys: ['KeyM'] },
+  { id: 'SHOOTER_GRENADE', page: 5, extra: { col: 0, y: 415 }, label: 'Battlefront: Thermal Detonator', keys: ['KeyT'] },
+  { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, y: 415 }, label: 'Battlefront: Settings', keys: ['KeyO'] },
+  { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, y: 440 }, label: 'Battlefront: Tactical View', keys: ['KeyL'] }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 

@@ -3073,7 +3073,7 @@ async function boot() {
     box.checked = on;
     window.extraFx = on;
     box.parentElement.title =
-      'The effects of the shooter mode in regular space and land battles: laser bolts and beams light the ships, units and ground they pass, rocket and bomb blasts flash on land, and land battles get a soft bloom; both get a light colour grade. Off: the look of the original.';
+      'The effects of Battlefront mode in regular space and land battles: laser bolts and beams light the ships, units and ground they pass, rocket and bomb blasts flash on land, and land battles get a soft bloom; both get a light colour grade. Off: the look of the original.';
     box.onchange = () => {
       window.extraFx = box.checked;
       try {
@@ -3090,7 +3090,7 @@ async function boot() {
     box.checked = on;
     window.shooterMode = on;
     box.parentElement.title =
-      'Land skirmish battles become a shooter: you fight as one soldier in first or third person, the AI runs both armies, soldiers fight alone, vehicles need someone inside, no fog of war and long range shots. Takes effect from the next land battle. Not in multiplayer or the campaign.';
+      'Battlefront mode: land skirmish battles are played from one soldier in first or third person, the AI runs both armies, soldiers fight alone, vehicles need someone inside, no fog of war and long range shots. Takes effect from the next land battle. Not in multiplayer or the campaign.';
     box.onchange = () => {
       window.shooterMode = box.checked;
       try {
@@ -3107,7 +3107,7 @@ async function boot() {
     box.checked = on;
     window.shooterOverlord = on;
     box.parentElement.title =
-      'With the shooter on: scroll out of your soldier (or press L) to the tactical view, select and order your squads as in a normal battle, then scroll in on any of your soldiers or vehicles to take it over. Squads you order finish that order before the AI gives them new ones. In multiplayer every player commands the squads of their own slot. Takes effect from the next land battle; in multiplayer the host decides.';
+      'With Battlefront mode on: scroll out of your soldier (or press L) to the tactical view, select and order your squads as in a normal battle, then scroll in on any of your soldiers or vehicles to take it over. Squads you order finish that order before the AI gives them new ones. In multiplayer every player commands the squads of their own slot. Takes effect from the next land battle; in multiplayer the host decides.';
     box.onchange = () => {
       window.shooterOverlord = box.checked;
       try {
@@ -3116,11 +3116,11 @@ async function boot() {
     };
   }
   for (const [id, key, flag, def, min, max, scale, old, tip] of [
-    ['optShooterCap', 'swr-shooter-cap', 'shooterCap', 50, 10, 200, 1, {}, 'With the shooter on: the most soldiers each side has on the field at once. Fallen soldiers respawn until a side is back at this number. Vehicles and units from buildings are not counted.'],
-    ['optShooterTickets', 'swr-shooter-tickets', 'shooterTickets', 150, 50, 500, 1, { 0: 150, 1: 150 }, 'With the shooter on: each side starts with this many reinforcement tickets. Every soldier lost costs one, every vehicle two, and a side holding more than half the points drains the others by one every 5 s. A side out of tickets loses.'],
-    ['optShooterConquest', 'swr-shooter-conquest', 'shooterConquest', 20, 10, 50, 10, {}, 'With the shooter on, in conquest land battles: each infantry company a side sends is worth its soldier count times this many tickets. Vehicles are worth one each and do not respawn.'],
-    ['optShooterFocus', 'swr-shooter-focus', 'shooterFocus', 100, 0, 100, 100, { 0: 0, 1: 100 }, 'With the shooter on: how much the edges of the view soften while you aim down the sights. All the way left is off.'],
-    ['optShooterBlur', 'swr-shooter-blur', 'shooterBlur', 0, 0, 100, 100, { 0: 0, 1: 100 }, 'With the shooter on: how much fast camera turns smear the view. All the way left is off.']
+    ['optShooterCap', 'swr-shooter-cap', 'shooterCap', 50, 10, 200, 1, {}, 'With Battlefront mode on: the most soldiers each side has on the field at once. Fallen soldiers respawn until a side is back at this number. Vehicles and units from buildings are not counted.'],
+    ['optShooterTickets', 'swr-shooter-tickets', 'shooterTickets', 150, 50, 500, 1, { 0: 150, 1: 150 }, 'With Battlefront mode on: each side starts with this many reinforcement tickets. Every soldier lost costs one, every vehicle two, and a side holding more than half the points drains the others by one every 5 s. A side out of tickets loses.'],
+    ['optShooterConquest', 'swr-shooter-conquest', 'shooterConquest', 20, 10, 50, 10, {}, 'With Battlefront mode on, in conquest land battles: each infantry company a side sends is worth its soldier count times this many tickets. Vehicles are worth one each and do not respawn.'],
+    ['optShooterFocus', 'swr-shooter-focus', 'shooterFocus', 100, 0, 100, 100, { 0: 0, 1: 100 }, 'With Battlefront mode on: how much the edges of the view soften while you aim down the sights. All the way left is off.'],
+    ['optShooterBlur', 'swr-shooter-blur', 'shooterBlur', 0, 0, 100, 100, { 0: 0, 1: 100 }, 'With Battlefront mode on: how much fast camera turns smear the view. All the way left is off.']
   ]) {
     const box = $(id);
     let v = def;
