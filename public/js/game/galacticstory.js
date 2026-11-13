@@ -184,6 +184,11 @@ export class GalacticStoryHost extends StoryPlots {
 
   async fetchSources() {
     for (const inst of this.instances) if (inst.state !== 'over') this.source(inst.key);
+    for (const inst of this.objectScripts?.values() || []) if (inst && inst.state !== 'over') this.source(inst.key);
+    for (const [record] of this.objectScriptHolders()) {
+      const name = record.type?.str?.('Lua_Script')?.trim();
+      if (name) this.source(moduleKey(name));
+    }
     while (this.pending.size) await Promise.all([...this.pending.values()]);
   }
 
@@ -378,7 +383,7 @@ export class GalacticStoryHost extends StoryPlots {
         : 'Galactic'
     );
     vm.global('Is_Multiplayer_Mode', () => !!game.setup?.net);
-    vm.global('WeightedTypeList', {
+    vm.global('WeightedTypeList', (this.weightedTypes = {
       __wrap: true,
       __name: 'WeightedTypeList',
       Create: () => {
@@ -410,7 +415,7 @@ export class GalacticStoryHost extends StoryPlots {
         };
       },
       __missing: this.absent('WeightedTypeList')
-    });
+    }));
     vm.global('Is_Campaign_Game', () => true);
     vm.global('Enable_AI_Fleet_Pathfinders', on => {
       if (game.galaxy) game.galaxy.aiPathfinders = !!on;
@@ -2156,7 +2161,14 @@ export class GalacticStoryHost extends StoryPlots {
       index = this.instances.indexOf(inst),
       object = this.persist.refValue(env).value,
       info = vm.envInfo.get(object);
-    const owner = index >= 0 ? ['env', 'loaded', index] : inst.plan && inst.id !== undefined ? ['penv', 'ploaded', inst.id] : null;
+    const owner =
+      index >= 0
+        ? ['env', 'loaded', index]
+        : inst.plan && inst.id !== undefined
+          ? ['penv', 'ploaded', inst.id]
+          : inst.oid !== undefined
+            ? ['oenv', 'oloaded', inst.oid]
+            : null;
     if (owner) {
       this.envOwners.set(object, { kind: owner[0], i: owner[2] });
       if (info) this.envOwners.set(info.loaded, { kind: owner[1], i: owner[2] });
@@ -2361,6 +2373,7 @@ export class GalacticStoryHost extends StoryPlots {
         continue;
       }
       const inst = {
+        oid: (this.objectSeq = (this.objectSeq || 0) + 1),
         name,
         key: moduleKey(name),
         object: record,

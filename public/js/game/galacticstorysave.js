@@ -16,11 +16,20 @@ export function installPersistence(host) {
   persist.hooks.resolve = d => resolveObject(host, d);
   persist.hooks.bound = t => {
     const o = host.envOwners.get(t);
+    if (o && (o.kind === 'oenv' || o.kind === 'oloaded') && !host.savingObjects?.has(o.i)) return undefined;
     return o ? o.kind + ':' + o.i : undefined;
   };
   persist.hooks.boundTable = name => {
     const [kind, i] = name.split(':'),
-      inst = host.instances[+i];
+      inst =
+        kind === 'oenv' || kind === 'oloaded'
+          ? [...(host.objectScripts?.values() || [])].find(o => o && o.oid === +i)
+          : host.instances[+i];
+    if (kind === 'oenv' || kind === 'oloaded') {
+      if (!inst || inst.env == null) return null;
+      const env = persist.refValue(inst.env).value;
+      return kind === 'oenv' ? env : host.vm.envInfo.get(env)?.loaded;
+    }
     if (!inst || inst.env == null) return null;
     const info = host.vm.envInfo.get(persist.refValue(inst.env).value);
     return kind === 'env' ? persist.refValue(inst.env).value : info?.loaded;
@@ -51,7 +60,7 @@ export function locate(host, record) {
 }
 
 function describeObject(host, o) {
-  if (o.__inst) return { k: 'inst', i: host.instances.indexOf(o.__inst), w: o.__hostName };
+  if (o.__inst) return o.__inst.oid !== undefined && !host.instances.includes(o.__inst) ? { k: 'oinst', i: o.__inst.oid, w: o.__hostName } : { k: 'inst', i: host.instances.indexOf(o.__inst), w: o.__hostName };
   if (o.__plotRef) return { k: 'plot', n: o.__plotRef.name, o: o.__plotRef.owner };
   if (o.__eventRef) return { k: 'ev', n: o.__eventRef.plot.name, o: o.__eventRef.plot.owner, e: o.__eventRef.name };
   if (o.__planet) return { k: 'pl', i: o.__planet.index };
@@ -84,8 +93,47 @@ function describeObject(host, o) {
     }
     return { k: 'dd', it };
   }
+  if (o.__weighted) return { k: 'wt', it: o.__weighted.map(([t, w]) => [t.name, w]) };
   return undefined;
 }
+
+function locateObject(host, record) {
+  if (record.memberOf) {
+    const at = locate(host, record.memberOf),
+      j = at ? host.membersOf(record.memberOf).indexOf(record) : -1;
+    return j >= 0 ? { m: at, j } : null;
+  }
+  return locate(host, record);
+}
+
+function objectAt(host, d) {
+  if (d.m) {
+    const holder = recordAt(host, d.m);
+    const record = holder?.record && host.membersOf(holder.record)[d.j];
+    return record ? { record, planet: holder.planet, owner: holder.owner } : null;
+  }
+  return recordAt(host, d);
+}
+
+const blankInstance = si => ({
+  name: si.name,
+  key: si.key,
+  scoring: si.scoring,
+  state: si.state,
+  env: null,
+  thread: null,
+  events: [],
+  tags: si.tags.slice(),
+  history: si.history.slice(),
+  values: new Map(),
+  threads: [],
+  next: si.next,
+  exit: si.exit,
+  initialized: si.initialized,
+  starts: si.starts,
+  needs: si.needs.slice(),
+  rate: si.rate ?? undefined
+});
 
 export function recordAt(host, d) {
   const g = host.game.galaxy;
@@ -108,6 +156,8 @@ function resolveObject(host, d) {
   switch (d.k) {
     case 'inst':
       return host.instances[d.i]?.hostValues?.[d.w];
+    case 'oinst':
+      return [...(host.objectScripts?.values() || [])].find(o => o && o.oid === d.i)?.hostValues?.[d.w];
     case 'plot':
       return host.plotWrapperOf([...host.plots.values()].find(p => key(p.name) === key(d.n) && key(p.owner) === key(d.o)));
     case 'ev': {
@@ -125,6 +175,11 @@ function resolveObject(host, d) {
       return host.position(d.x, d.y, d.z);
     case 'fl':
       return host.fleet(d.o.map(x => resolveObject(host, x)));
+    case 'wt': {
+      const list = host.weightedTypes.Create();
+      for (const [name, w] of d.it) list.Add_Type(name, w);
+      return list;
+    }
     case 'dd': {
       const dist = host.distributions.Create();
       for (const [x, w] of d.it) dist.Insert(x.o ? resolveObject(host, x.o) : x.v, w);
@@ -153,6 +208,20 @@ export function saveStory(host) {
     persist = host.persist;
   if (!persist) throw new Error('the story has no persistence');
   if (host.running || host.current || vm.L.errorJmp) throw new Error('the story scripts are running');
+  const objects = [...(host.objectScripts || [])]
+    .filter(([record]) => !record.dead)
+    .map(([record, inst]) => [locateObject(host, record), inst])
+    .filter(([at]) => at);
+  host.savingObjects = new Set(objects.filter(([, inst]) => inst && inst.env != null).map(([, inst]) => inst.oid));
+  try {
+    return writeStory(host, objects);
+  } finally {
+    host.savingObjects = null;
+  }
+}
+
+function writeStory(host, objects) {
+  const persist = host.persist;
   const s = persist.begin();
   const planInst = inst => {
     const th = t =>
@@ -232,7 +301,9 @@ export function saveStory(host) {
         })
       }))
     })),
-    instances: host.instances.map(planInst)
+    instances: host.instances.map(planInst),
+    objectSeq: host.objectSeq || 0,
+    objectScripts: objects.map(([at, inst]) => (inst ? { at, oid: inst.oid, ...planInst(inst) } : { at, none: 1 }))
   };
   out.lua = s.end();
   return out;
@@ -266,25 +337,7 @@ export async function restoreStory(host, data) {
   for (const [id, p] of ids) host.hashPlot(id, p);
   host.instances.length = 0;
   for (const si of data.instances) {
-    const inst = {
-      name: si.name,
-      key: si.key,
-      scoring: si.scoring,
-      state: si.state,
-      env: null,
-      thread: null,
-      events: [],
-      tags: si.tags.slice(),
-      history: si.history.slice(),
-      values: new Map(),
-      threads: [],
-      next: si.next,
-      exit: si.exit,
-      initialized: si.initialized,
-      starts: si.starts,
-      needs: si.needs.slice(),
-      rate: si.rate ?? undefined
-    };
+    const inst = blankInstance(si);
     host.instances.push(inst);
     if (si.plot) {
       const plot = [...host.plots.values()].find(p => key(p.name) === key(si.plot.name) && key(p.owner) === key(si.plot.owner));
@@ -297,9 +350,33 @@ export async function restoreStory(host, data) {
     if (si.scoring) host.scoring = inst;
     if (si.env !== null) inst.env = host.environment(inst);
   }
+  host.objectScripts = new Map();
+  host.objectSeq = data.objectSeq || 0;
+  const objects = [],
+    orphans = [];
+  for (const so of data.objectScripts || []) {
+    const at = objectAt(host, so.at);
+    if (!at) {
+      if (so.none || so.env === null) continue;
+      const lost = { ...blankInstance(so), oid: so.oid },
+        holder = {};
+      host.objectScripts.set(holder, lost);
+      lost.env = host.environment(lost);
+      orphans.push([holder, lost]);
+      continue;
+    }
+    if (so.none) {
+      host.objectScripts.set(at.record, null);
+      continue;
+    }
+    const inst = { ...blankInstance(so), oid: so.oid, object: at.record };
+    inst.objectWrapper = host.object(at.record, at.planet || undefined, at.owner || at.record.owner || at.planet?.owner);
+    host.objectScripts.set(at.record, inst);
+    if (so.env !== null) inst.env = host.environment(inst);
+    objects.push([so, inst]);
+  }
   const restored = persist.restore(data.lua);
-  data.instances.forEach((si, i) => {
-    const inst = host.instances[i];
+  const fill = (si, inst) => {
     inst.initialCallbacks = restored.js(si.initialCallbacks) || undefined;
     inst.params = restored.js(si.params);
     inst.values = restored.js(si.values);
@@ -322,7 +399,13 @@ export async function restoreStory(host, data) {
       params: restored.js(e.params),
       ...(e.release ? { release: true } : {})
     }));
-  });
+  };
+  data.instances.forEach((si, i) => fill(si, host.instances[i]));
+  for (const [so, inst] of objects) fill(so, inst);
+  for (const [holder, lost] of orphans) {
+    host.drop(lost);
+    host.objectScripts.delete(holder);
+  }
   host.values = restored.js(data.values);
   host.storyGoals = restored.js(data.goals);
   host.storyGoalAt = +data.goalAt || 0;
