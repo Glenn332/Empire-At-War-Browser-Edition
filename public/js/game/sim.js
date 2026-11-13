@@ -2412,8 +2412,9 @@ export class World {
     }
     if (proj && from && from.mods && from.mods.diminish !== false && normalDamage(proj)) amount *= diminishedHit(target, this.time);
     amount *= target.mods.damageTaken * target.bonus.defense;
-    if (proj) this.projectileMods.apply(this.time, target, proj, (u, pm) => {
+    if (proj) this.projectileMods.apply(this.time, target, proj, (u, pm, fresh) => {
       if ((u.cmods ||= new CombatMods()).set(pm.type, pm.key, pm, pm.value)) u.applyBonuses();
+      if (fresh && pm.spaceFx && this.viewerSees(u)) this.fx.attachFx?.(u, pm.spaceFx, pm.dur);
     });
     {
       const by = attacker && (attacker.player || attacker);

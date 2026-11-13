@@ -1,4 +1,5 @@
 import { MOD } from './combatmods.js';
+import { db } from '../gamedata.js';
 
 const KINDS = {
   COMBAT_MOD_DEFENSE: MOD.DEFENSE,
@@ -30,8 +31,15 @@ export function projectileMod(P) {
           dur,
           key: 1000000 + ++keys,
           effect: P.str('Projectile_Combat_Mod_Effect').trim(),
+          spaceFx: '',
+          landFx: '',
           cats: P.list('Projectile_Combat_Mod_Category_Mask').map(c => c.toUpperCase())
         };
+  if (pm && pm.effect) {
+    const e = db.type(pm.effect);
+    pm.spaceFx = e ? e.str('Space_Model_Name') || e.str('Land_Model_Name') : '';
+    pm.landFx = e ? e.str('Land_Model_Name') || e.str('Space_Model_Name') : '';
+  }
   cache.set(P, pm);
   return pm;
 }
@@ -47,13 +55,15 @@ export class ProjectileMods {
       const own = u.type.categories();
       if (!pm.cats.some(c => own.has(c))) return;
     }
-    add(u, pm);
     for (const e of this.live)
       if (e.u === u && e.pm === pm) {
+        add(u, pm, false);
         e.until = time + pm.dur;
-        return;
+        return true;
       }
+    add(u, pm, true);
     this.live.push({ u, pm, until: time + pm.dur });
+    return true;
   }
   tick(time, drop) {
     if (!this.live.length) return;

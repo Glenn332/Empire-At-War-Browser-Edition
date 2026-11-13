@@ -936,6 +936,7 @@ export class LandWorld {
     this.revealUntil = factions.map(() => 0);
     this.reveals = [];
     this.onShot = null;
+    this.onAttachFx = null;
     this.time = 0;
     this.points = [];
     const caps = (db.faction(this.factions[0])?.str('Land_Skirmish_Unit_Cap_By_Player_Count') || '')
@@ -5158,7 +5159,11 @@ export class LandWorld {
       (2 - this.combatFactor(u, MOD.DEFENSE)) *
       (u.mod ? u.mod.taken : 1) *
       (u.shell ? db.constants.num('Base_Shield_Vulnerability_Modifier', 2) : 1);
-    if (shot) this.projectileMods?.apply(this.time, u, shot, (x, pm) => this.addCombatMod(x, pm.type, pm.key, pm, pm.value));
+    if (shot)
+      this.projectileMods?.apply(this.time, u, shot, (x, pm, fresh) => {
+        this.addCombatMod(x, pm.type, pm.key, pm, pm.value);
+        if (fresh && pm.landFx) this.onAttachFx?.(x, pm.landFx, pm.dur);
+      });
     const soak = Math.min(u.shield, amount);
     u.shield -= soak;
     u.health -= amount - soak;

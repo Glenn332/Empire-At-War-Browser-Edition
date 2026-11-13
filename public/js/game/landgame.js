@@ -980,6 +980,23 @@ export class LandGame {
     const burst = (file, x, y, z) => {
       if (file && fx.systems.length < 300 && fx.state(file) === 'ready') fx.burst(file, x, y, z);
     };
+    world.onAttachFx = (u, file, seconds) => {
+      if (!file || fx.systems.length >= 300 || world.viewFogged(u.x, u.y) || fx.state(file) !== 'ready') return;
+      const until = world.time + seconds;
+      fx.spawn(
+        file,
+        f => {
+          f.x = u.x;
+          f.y = u.y;
+          f.z = u.z || 0;
+          f.rot = 0;
+          f.scale = 1;
+          f.vx = f.vy = 0;
+          return !u.dead && world.time < until;
+        },
+        { maxEmit: 4 }
+      );
+    };
     let lastFire = 0;
     world.onShot = s => {
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));

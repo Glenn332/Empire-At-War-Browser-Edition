@@ -1489,6 +1489,25 @@ export class Renderer {
     if (file && this.fxParticles.systems.length < 450 && this.fxParticles.state(file) === 'ready') this.fxParticles.burst(file, x, y, z);
   }
 
+  attachFx(u, file, seconds) {
+    const fx = this.fxParticles;
+    if (!u || !file || fx.systems.length >= 450 || fx.state(file) !== 'ready') return;
+    const until = performance.now() + seconds * 1000;
+    fx.spawn(
+      file,
+      f => {
+        f.x = u.x;
+        f.y = u.y;
+        f.z = u.z || 0;
+        f.rot = 0;
+        f.scale = 1;
+        f.vx = f.vy = 0;
+        return !u.dead && performance.now() < until;
+      },
+      { maxEmit: 4 }
+    );
+  }
+
   hit(x, y, z, size, file = '') {
     if (x === undefined) return;
     if (file && this.fxParticles.systems.length < 450 && this.fxParticles.state(file) === 'ready') {
