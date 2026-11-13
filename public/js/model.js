@@ -704,7 +704,23 @@ function makeMaterial(mat, format, teamColor) {
   if (!skinned && !alpha) instanceable.add(m);
   if (skinned && !alpha) skinBatchable.add(m);
   materialCache.set(key, m);
+  hideWithoutShader(shader, m);
   return m;
+}
+
+const shaderFound = new Map();
+function hideWithoutShader(shader, m) {
+  if (!shader || SKIP.test(shader)) return;
+  let found = shaderFound.get(shader);
+  if (!found) {
+    const file = shader.replace(/\.fx$/i, '.fxo'),
+      look = path => fetchBinary(path).then(b => !!b, () => false);
+    found = look('Data/Art/Shaders/' + file).then(ok => ok || look('Data/Art/Shaders/Engine/' + file));
+    shaderFound.set(shader, found);
+  }
+  found.then(ok => {
+    if (!ok) m.visible = false;
+  });
 }
 
 const effectStates = new Map();
