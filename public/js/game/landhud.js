@@ -4,6 +4,7 @@ import { CommandBar } from './hud.js';
 import { costOf } from './land.js';
 import {
   canBomb,
+  bombRunCharge,
   bombingRun,
   garrison,
   canGarrison,
@@ -262,7 +263,15 @@ export class LandUI {
     $('hud').classList.remove('hidden');
     document.body.classList.add('original-hud');
     this.bar = new CommandBar(host, this, assets);
-    this.bar.bWeapon.title = 'Bombing run';
+    {
+      const tips = (this.bar.comp('b_special_weapon')?.all('Tooltip_Text') || [])
+        .map(n => n.text.trim())
+        .join(' ')
+        .split(/\s+/)
+        .filter(Boolean);
+      this.bar.bWeapon.title = (tips[3] && db.t(tips[3])) || 'Bombing run';
+      this.bar.setButtonImage(this.bar.bWeapon, 'icon', this.bar.textureName('b_special_weapon', 'Icon_Alternate_Texture_Name', 3));
+    }
     this.bar.bWeapon.onclick = () => {
       if (this.bar.bWeapon.classList.contains('dis')) return;
       game.audio.play('GUI_Button_Press_2_SFX');
@@ -270,6 +279,15 @@ export class LandUI {
       this.placing = this.aiming = null;
       if (this.armed) game.say('Click where the bombers should strike');
     };
+    {
+      const b = this.bar.bWeapon,
+        clock = Object.assign(document.createElement('i'), { className: 'hb-art hb-art-build' });
+      b.appendChild(clock);
+      b._nativeButton?.layers.set('build', clock);
+      this.bar.setButtonImage(b, 'build', this.bar.textureName('b_special_weapon', 'Build_Texture_Name'));
+      clock.style.backgroundImage = 'var(--build)';
+      this.bombClock = clock;
+    }
     this.pb = this.bar.button('pb_switch', {
       onClick: () => {
         if (!canBombard(w, this.me)) return;
@@ -539,6 +557,12 @@ export class LandUI {
     }
     this.bar.bWeapon.classList.toggle('dis', !canBomb(this.world, this.me));
     this.bar.bWeapon.classList.toggle('sel', this.armed === 'bombing');
+    {
+      const charge = bombRunCharge(this.world, this.me),
+        on = charge > 0 && charge < 1;
+      if (this.bombClock.style.display !== (on ? '' : 'none')) this.bombClock.style.display = on ? '' : 'none';
+      if (on) this.bombClock.style.setProperty('--cd', 100 * charge + '%');
+    }
     this.refreshOrbital();
     this.fogDirty = true;
   }

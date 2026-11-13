@@ -991,6 +991,10 @@ body:not(.original-hud) .heroframe {
     var(--sel) center/100% 100% no-repeat,
     var(--blank) center/100% 100% no-repeat;
 }
+.hb-native > .hb-art-build {
+  -webkit-mask-image: conic-gradient(transparent var(--cd, 0%), #000 0);
+  mask-image: conic-gradient(transparent var(--cd, 0%), #000 0);
+}
 .hb-native > .hb-art[hidden] {
   display: none;
 }
