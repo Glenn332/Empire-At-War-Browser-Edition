@@ -2933,7 +2933,7 @@ export class LandWorld {
       const d = (u.deflects || []).find(x => x.name === a.val('Ability_Name').toUpperCase());
       if (d) {
         d.on = true;
-        u.deflect = u.deflects.filter(x => x.on).sort((p, q) => q.back + q.block - p.back - p.block)[0] || null;
+        u.deflect = u.deflects.some(x => x.on);
       }
     }
     for (const a of type.sub('Abilities').flatMap(x => x.all('Combat_Bonus_Ability'))) {
@@ -4268,9 +4268,12 @@ export class LandWorld {
               block: rb.num('Block_Chance', 0),
               arc: (rb.num('Reaction_Arc_In_Degrees', 180) * DEG) / 2,
               turn: Math.min(180, Math.max(0, rb.num('Max_Projectile_Redirection_Angle_In_Degrees', 180))) * DEG,
+              cats: rb.val('Applicable_Unit_Categories').split(/[\s,|]+/).filter(Boolean).map(c => c.toUpperCase()),
+              types: rb.val('Applicable_Unit_Types').split(/[\s,|]+/).filter(Boolean).map(c => c.toUpperCase()),
+              excluded: rb.val('Excluded_Unit_Types').split(/[\s,|]+/).filter(Boolean).map(c => c.toUpperCase()),
               sfx: rb.val('SFXEvent_Activate')
             }));
-          u.deflect = u.deflects.filter(d => d.on).sort((a, b) => b.back + b.block - a.back - a.block)[0] || null;
+          u.deflect = u.deflects.some(d => d.on);
           if (ab && ab.num('Absorb_Chance', 0) > 0)
             u.absorb = {
               chance: ab.num('Absorb_Chance', 0),
@@ -5710,21 +5713,33 @@ export class LandWorld {
     place();
   }
 
+  deflectFor(t, s) {
+    const from = s.from,
+      name = from.type.name.toUpperCase(),
+      P = s.w.proj,
+      back = (P._redirectMod ??= P.num('Projectile_Redirect_Chance_Modifier', 1)),
+      block = (P._blockMod ??= P.num('Projectile_Block_Chance_Modifier', 1));
+    let rel = Math.atan2(from.y - t.y, from.x - t.x) - t.heading;
+    rel = Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel)));
+    for (const D of t.deflects) {
+      if (!D.on || rel > D.arc || D.excluded.includes(name)) continue;
+      if ((D.cats.length || D.types.length) && !D.types.includes(name) && !D.cats.some(c => inCategory(from.type, c))) continue;
+      if (back * D.back > simRandom()) return [D, true];
+      if (block * D.block > simRandom()) return [D, false];
+    }
+    return null;
+  }
   deflects(t, s) {
-    const D = t.deflect;
-    if (!D || s.turned || !s.from || t.stunUntil > this.time || !/LASER/i.test(s.w.proj.str('Projectile_Category'))) return false;
-    let rel = Math.atan2(s.from.y - t.y, s.from.x - t.x) - t.heading;
-    rel = Math.atan2(Math.sin(rel), Math.cos(rel));
-    if (Math.abs(rel) > D.arc) return false;
-    const r = simRandom();
-    if (r >= D.back + D.block) return false;
-    const back = r < D.back && !s.from.dead;
+    if (!t.deflect || s.turned || !s.from || s.from.dead || t.stunUntil > this.time || !/LASER/i.test(s.w.proj.str('Projectile_Category'))) return false;
+    const pick = this.deflectFor(t, s);
+    if (!pick) return false;
+    const [D, back] = pick;
     if (!t.path.length && !(t.cast > this.time)) this.cast(t, back ? 'REDIRECT_BLASTER' : 'BLOCK_BLASTER');
     if (this.onSound) this.onSound(D.sfx, t.x, t.y, t.side);
     if (back) {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
       this.shots[this.shots.length - 1].turned = true;
-      this.shots[this.shots.length - 1].damage = s.damage;
+      this.shots[this.shots.length - 1].damage = s.w.proj.num('Projectile_Damage', s.damage);
     } else {
       const a = Math.atan2(s.from.y - t.y, s.from.x - t.x) + (simRandom() * 2 - 1) * D.turn,
         d = 150 + simRandom() * 150,
