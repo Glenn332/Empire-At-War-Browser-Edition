@@ -569,7 +569,7 @@ function makeMaterial(mat, format, teamColor) {
   const shader = mat.shader;
   const p = mat.params;
   const nebula = shader === 'nebula.fx';
-  const nativeAdditive = /^(mesh|rskin)additive(vcolor)?\.fx$/.test(shader) || nebula;
+  const nativeAdditive = /^(mesh|rskin)additive(vcolor|2x)?\.fx$/.test(shader) || nebula;
   const uvScrollRate = nativeAdditive ? (p.UVScrollRate || [0, 0]).map(v => v * (nebula ? 3 : 1)) : null;
   const skinned = /RSkin|B4I4/.test(format);
   const key =
@@ -644,6 +644,7 @@ function makeMaterial(mat, format, teamColor) {
   if (skinned) defines.SKINNED = 1;
   const c3 = (v, d) => (v ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
   const diffuse = c3(nativeAdditive ? p.Color : p.Diffuse || p.Color, 1);
+  if (shader === 'meshadditive2x.fx') diffuse.multiplyScalar(2);
   m = new THREE.ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: FRAG,
