@@ -103,7 +103,7 @@ const REACH = 1600,
     hero: 'Hero'
   },
   ARTY = { reach: 0.97, pad: 6, arc: 40, blast: 20 },
-  ARTY_CAM = { perRad: 600, back: 140, backK: 0.3, up: 0.75, ease: 5, exitPitch: 0.05 },
+  ARTY_CAM = { perRad: 600, back: 140, backK: 0.3, up: 0.75, ease: 5, blend: 3.5, lift: 0.35, tilt: 0.2 },
   GRENADE = { count: 2, speed: 1.3, radius: 2.2, damage: 4, refill: 6, arc: 28, reach: 0.92 },
   LOCK = { cone: 0.09, time: 1.2, damage: 1.5, reach: 1.1 },
   SCOPE = { fov: 12, damage: 1.6, spread: 0.15, sens: 0.18 },
@@ -6010,27 +6010,35 @@ export class Shooter {
     return W && /^GRENADE$/i.test(W.proj.str('Projectile_Category')) && this.lobGravity(W) > 0 ? v : null;
   }
 
-  artyCamera(cam, v, real) {
-    const A = (this.artyView ||= { on: false, r: 0, fx: 0, fy: 0, fz: 0, px: 0, py: 0, pz: 0 });
+  artyControl(v) {
+    const A = (this.artyView ||= { on: false, r: 0, saved: 0, fresh: true, fx: 0, fy: 0, fz: 0, px: 0, py: 0, pz: 0, p: new THREE.Vector3(), d: new THREE.Vector3() });
     if (!A.on) {
       const T = this.artySpot;
       A.r = T ? Math.hypot(T.x - v.x, T.y - v.y) : ((v.minRange || 0) + (v.range || 0)) / 2;
-      A.fresh = true;
+      A.saved = this.pitch;
       A.on = true;
     } else A.r += this.pitch * ARTY_CAM.perRad;
     this.pitch = 0;
     const lo = (v.minRange || 0) + ARTY.pad,
       hi = Math.max(lo, (v.range || v.weapon.reach || 0) * ARTY.reach);
     A.r = Math.max(lo, Math.min(hi, A.r));
-    const cy = Math.cos(this.yaw),
-      sy = Math.sin(this.yaw),
-      a = this.aim;
-    a.x = v.x + cy * A.r;
-    a.y = v.y + sy * A.r;
+    const a = this.aim;
+    a.x = v.x + Math.cos(this.yaw) * A.r;
+    a.y = v.y + Math.sin(this.yaw) * A.r;
     a.z = heightAt(this.world.terrain, a.x, a.y);
     const T = this.artyTarget(v);
     A.r = Math.hypot(T.x - v.x, T.y - v.y);
-    const back = ARTY_CAM.back + A.r * ARTY_CAM.backK,
+  }
+
+  artyPose(v, real) {
+    const A = (this.artyView ||= { on: false, r: 0, saved: 0, fresh: true, fx: 0, fy: 0, fz: 0, px: 0, py: 0, pz: 0, p: new THREE.Vector3(), d: new THREE.Vector3() }),
+      T = this.artySpot || this.artyTarget(v),
+      dx = T.x - v.x,
+      dy = T.y - v.y,
+      r = Math.hypot(dx, dy) || 1,
+      cy = dx / r,
+      sy = dy / r,
+      back = ARTY_CAM.back + r * ARTY_CAM.backK,
       wx = T.x - cy * back,
       wy = T.y - sy * back,
       wz = Math.max(T.z, v.z) + back * ARTY_CAM.up,
@@ -6042,8 +6050,9 @@ export class Shooter {
     A.fx += (T.x - A.fx) * k;
     A.fy += (T.y - A.fy) * k;
     A.fz += (T.z - A.fz) * k;
-    cam.position.set(A.px, A.py, A.pz);
-    _v.set(A.fx - A.px, A.fy - A.py, A.fz - A.pz).normalize();
+    A.p.set(A.px, A.py, A.pz);
+    A.d.set(A.fx - A.px, A.fy - A.py, A.fz - A.pz).normalize();
+    return A;
   }
 
   artyTarget(v) {
@@ -6696,21 +6705,36 @@ export class Shooter {
       bobX = Math.sin(this.bobPhase) * bobA * 0.6,
       bz = this.smoothZ ?? b.z;
     const artyV = seat && ride && !this.post && !this.netClient ? this.artyOf(ride) : null,
-      artyOn = !!artyV && artyV.deployed;
-    if (!artyOn && this.artyView?.on) {
-      this.artyView.on = false;
-      this.pitch = ARTY_CAM.exitPitch;
+      artyOn = !!artyV && artyV.deployed,
+      overWant = artyOn && this.cockpit,
+      AB = (this.artyBlend ||= { raise: 0, over: 0, was: false });
+    if (artyOn && !AB.was) this.flash(`${this.keyText('DIRECT_VIEW')} for the artillery view`);
+    AB.was = artyOn;
+    if (artyV) {
+      const k = Math.min(1, real * ARTY_CAM.blend);
+      AB.raise += ((artyOn ? 1 : 0) - AB.raise) * k;
+      AB.over += ((overWant ? 1 : 0) - AB.over) * k;
+    } else AB.raise = AB.over = 0;
+    const A = this.artyView;
+    if (overWant) this.artyControl(artyV);
+    else if (A?.on) {
+      A.on = false;
+      this.pitch = A.saved;
+    }
+    if (AB.raise > 0.001) {
+      const p = this.pitch - AB.raise * ARTY_CAM.tilt,
+        c = Math.cos(p);
+      d.set(cy * c, sy * c, Math.sin(p));
     }
     const inner = !artyOn && !!seat && !this.post && this.cockpit && pk < 0.02;
-    if (artyOn) this.artyCamera(cam, artyV, real);
-    else if (inner) cam.position.copy(this.seatView(seat, d, real));
+    if (inner) cam.position.copy(this.seatView(seat, d, real));
     else if (seat) {
       const top = this.heightOfSeat(seat),
         tall = !seat.structure && !seat.flies && !this.post && top > seat.hitRadius * RIDE_CAM.tall,
         big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
         back = Math.max(this.post ? 40 : 60, big, tall ? top * RIDE_CAM.back : 0) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
         side = tall ? top * RIDE_CAM.side : 0,
-        pz = tall ? seat.z + top * RIDE_CAM.lift : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12;
+        pz = (tall ? seat.z + top * RIDE_CAM.lift : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12) + back * ARTY_CAM.lift * AB.raise;
       cam.position.set(seat.x - d.x * back + sy * side, seat.y - d.y * back - cy * side, pz - d.z * back);
     } else if (fp && this.big) {
       const G = this.big,
@@ -6742,6 +6766,12 @@ export class Shooter {
         pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5 + pk * this.camBack * 1.2;
       cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
     }
+    if (artyV && AB.over > 0.001) {
+      const V = this.artyPose(artyV, real),
+        e = AB.over * AB.over * (3 - 2 * AB.over);
+      cam.position.lerp(V.p, e);
+      d.lerp(V.d, e).normalize();
+    } else if (this.artyView) this.artyView.fresh = true;
     if (this.shake > 0.01) {
       const m = this.shake * (inner ? 1.4 : 2.5);
       cam.position.x += (Math.random() - 0.5) * m;
@@ -6770,7 +6800,7 @@ export class Shooter {
       this.clutter();
     }
     this.lockOn(real, d);
-    if (artyOn) this.aimHit = null;
+    if (overWant) this.aimHit = null;
     else this.aimRay(cam.position, d);
     P.spot = this.aim;
     P.fire = !seat && this.fire;
