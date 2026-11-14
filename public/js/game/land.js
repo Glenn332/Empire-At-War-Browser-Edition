@@ -134,6 +134,7 @@ export const animClip = (type, kind) => {
 const any = list => list[Math.floor(simRandom() * list.length)];
 const WALK_ENDS = ['MOVE_ENDONE', 'MOVE_ENDTWO', 'MOVE_ENDTHREE', 'MOVE_ENDFOUR'];
 const OPEN_CAP = 24;
+const BARREL_KICK = { share: 0.15, snap: 0.05, back: 0.6 };
 const REPATH_PER_STEP = 4;
 const SPIN_ROLL = ((20 * Math.PI) / 180) * LOGIC_FPS;
 
@@ -4122,6 +4123,11 @@ export class LandWorld {
             T.pitchSign = Math.sign(best.dz);
           }
           T.restUp = Math.abs(t.vec ? t.vec('Turret_Deployed_Rest_Angle', [0, 0, 0])[1] || 0 : 0) * DEG;
+          const mz = u.weapon.muzzles[0].bone,
+            rb = mz.parent && mz.parent !== T.bone ? mz.parent : null,
+            len = rb ? mz.position.length() : 0;
+          if (rb && len > 0.5)
+            T.kick = { bone: rb, dir: mz.position.clone().normalize().applyQuaternion(rb.quaternion), len: len * BARREL_KICK.share, at: -99, base: new THREE.Vector3(), out: null };
         }
         if (t.has('Turret_Targets_Ground_Vehicles') || t.has('Turret_Targets_Anything_Else')) {
           const rank = k => t.num('Turret_Targets_' + k, 9999);
@@ -5584,6 +5590,7 @@ export class LandWorld {
     shot.hidden = this.shotHidden(shot);
     if (!w.quiet && (u.revealsFiring ??= landReveals(u.type))) this.firedOn(u, t);
     if (u.foot && !u.pilot && w === u.weapon && (u.animKind === 'ATTACKIDLE' || u.once === 'attack')) this.oneShot(u, 'ATTACK', 'attack');
+    if (u.turret?.kick && w === u.weapon) u.turret.kick.at = this.time;
     if (this.onShot) this.onShot(shot);
   }
 
@@ -6569,7 +6576,7 @@ export class LandWorld {
 
   pose(u, dt) {
     u.lagDt = 0;
-    if (this.poseCache && !u.pilot && cachedPose(u, dt, this)) {
+    if (this.poseCache && !u.pilot && !(u.turret?.kick && this.time - u.turret.kick.at < BARREL_KICK.snap + BARREL_KICK.back) && cachedPose(u, dt, this)) {
       if (u.looksOf !== false) looks(this, u, dt);
       return;
     }
@@ -6594,6 +6601,16 @@ export class LandWorld {
     };
     turn(T.bone, 'yaw', T.axis, T.yaw, T.selfPitch ? T.pitch * (T.pitchSign || 1) : 0);
     if (T.barrel !== T.bone) turn(T.barrel, 'pitch', T.pitchAxis, T.pitch * (T.pitchSign || 1));
+    const K = T.kick;
+    if (K) {
+      const b = K.bone;
+      if (K.out && b.position.equals(K.out)) b.position.copy(K.base);
+      K.base.copy(b.position);
+      const e = this.time - K.at,
+        k = e < 0 ? 0 : e < BARREL_KICK.snap ? e / BARREL_KICK.snap : Math.max(0, 1 - (e - BARREL_KICK.snap) / BARREL_KICK.back) ** 2;
+      if (k > 0) b.position.addScaledVector(K.dir, -K.len * k);
+      (K.out ||= new THREE.Vector3()).copy(b.position);
+    }
   }
 
   animRate(u, K) {

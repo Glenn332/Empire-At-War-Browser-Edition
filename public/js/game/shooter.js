@@ -245,6 +245,9 @@ const SHOOTER_CSS = `
 .sh-vh-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
 .sh-vh-row span { width: calc(64px * var(--eaw-k, 1)); font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); }
 .sh-vh-row .sh-bar { flex: 1; }
+.sh-vh-rd { display: flex; align-items: center; gap: 3px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); color: var(--eaw-cream); white-space: nowrap; }
+.sh-vh-rd i { width: calc(5px * var(--eaw-k, 1)); height: calc(10px * var(--eaw-k, 1)); background: rgba(255,215,106,0.25); border: 1px solid rgba(255,215,106,0.6); }
+.sh-vh-rd i.on { background: #ffd76a; }
 .sh-vh-row i.s { filter: hue-rotate(170deg) saturate(1.4); }
 .sh-vh-info { margin-top: 4px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
 .sh-vh-warn { display: none; margin-top: 5px; text-align: center; font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: rgb(235,80,50); text-shadow: 1px 1px 0 #000; animation: sh-blink .5s steps(1) infinite; }
@@ -3304,6 +3307,15 @@ export class Shooter {
     this.vhShRow.style.display = sh >= 0 ? 'flex' : 'none';
     if (sh >= 0) this.vhSh.style.width = `${Math.round(sh * 100)}%`;
     this.vhWp.style.width = `${Math.round(ready * 100)}%`;
+    {
+      const max = wp ? Math.max(1, wp.pulses || 1) : 0,
+        left = !wp ? 0 : wp.left > 0 ? wp.left : (wp.cooldown || 0) <= 0 ? max : 0,
+        key = max + ':' + left;
+      if (this.vhRdKey !== key) {
+        this.vhRdKey = key;
+        this.vhRd.innerHTML = max > 1 && max <= 12 ? Array.from({ length: max }, (_, i) => `<i class="${i < left ? 'on' : ''}"></i>`).join('') + `&nbsp;${left} / ${max}` : max ? `${left} / ${max}` : '';
+      }
+    }
     const info = `${spd} km/h${alt !== null ? `   ALT ${alt} m` : ''}${this.A.boost && v.flies ? '   BOOST' : ''}`;
     if (this.vhInfo.textContent !== info) this.vhInfo.textContent = info;
     if (warn !== this.warning) {
@@ -7063,12 +7075,13 @@ export class Shooter {
     this.vhud.className = 'sh-vhud eaw-frame-s';
     this.vhud.style.display = 'none';
     this.vhud.innerHTML =
-      '<div class="sh-vh-n"></div><div class="sh-vh-row"><span>Hull</span><div class="sh-bar eaw-bar"><i class="h"></i></div></div><div class="sh-vh-row s"><span>Shield</span><div class="sh-bar eaw-bar"><i class="s"></i></div></div><div class="sh-vh-row"><span>Weapon</span><div class="sh-bar eaw-bar"><i class="w"></i></div></div><div class="sh-vh-info"></div><div class="sh-vh-warn"></div>';
+      '<div class="sh-vh-n"></div><div class="sh-vh-row"><span>Hull</span><div class="sh-bar eaw-bar"><i class="h"></i></div></div><div class="sh-vh-row s"><span>Shield</span><div class="sh-bar eaw-bar"><i class="s"></i></div></div><div class="sh-vh-row"><span>Weapon</span><div class="sh-bar eaw-bar"><i class="w"></i></div><b class="sh-vh-rd"></b></div><div class="sh-vh-info"></div><div class="sh-vh-warn"></div>';
     this.vhN = this.vhud.querySelector('.sh-vh-n');
     this.vhHull = this.vhud.querySelector('i.h');
     this.vhSh = this.vhud.querySelector('i.s');
     this.vhShRow = this.vhud.querySelector('.sh-vh-row.s');
     this.vhWp = this.vhud.querySelector('i.w');
+    this.vhRd = this.vhud.querySelector('.sh-vh-rd');
     this.vhInfo = this.vhud.querySelector('.sh-vh-info');
     this.vhWarn = this.vhud.querySelector('.sh-vh-warn');
     this.scopeEl = el('div', '', document.body);
