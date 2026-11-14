@@ -75,7 +75,7 @@ const REACH = 1600,
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
-  MELEE = { cone: 0.95, reach: 1.15, seek: 2.6, lunge: 3.4, lungeTime: 0.22, hitAt: 0.42, queue: 0.35, combo: 0.7, slow: 0.35, finisher: 1.35, shake: 0.5, dip: 0.12, guard: 2, guardSlow: 0.55, turn: 22, fallback: 0.6 },
+  MELEE = { cone: 0.95, reach: 1.15, seek: 2.6, lunge: 3.4, lungeTime: 0.22, hitAt: 0.42, queue: 0.35, combo: 0.7, slow: 0.35, finisher: 1.35, shake: 0.5, dip: 0.12, guard: 2, guardSlow: 0.55, turn: 22, fallback: 0.6, cam: 1.7 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
   SCORE = { foot: 100, car: 250, assistMin: 10, assistMax: 90, assistStep: 5 },
   WALK = { slope: 1, wet: 6, drive: 0.9 },
@@ -102,6 +102,7 @@ const REACH = 1600,
     heavy: 'Heavy - big heat sink for long bursts',
     hero: 'Hero'
   },
+  ARTY = { reach: 0.97, pad: 6, arc: 40, blast: 20 },
   GRENADE = { count: 2, speed: 1.3, radius: 2.2, damage: 4, refill: 6, arc: 28, reach: 0.92 },
   LOCK = { cone: 0.09, time: 1.2, damage: 1.5, reach: 1.1 },
   SCOPE = { fov: 12, damage: 1.6, spread: 0.15, sens: 0.18 },
@@ -729,10 +730,10 @@ export class Shooter {
       sw = mel ? this.swingStep(u, P, dt) : null;
     this.melee = mel;
     u.blockBoost = mel && P.zoom && !sw ? MELEE.guard : undefined;
-    const aiming = mel ? !!sw || P.zoom : P.fire || P.zoom;
+    const aiming = mel ? !!sw || P.zoom || P.fire : P.fire || P.zoom;
     const sp =
       u.speed *
-      (sw ? MELEE.slow : mel && P.zoom ? MELEE.guardSlow : P.run && f > 0 && !aiming ? 1.7 : aiming ? ADS_SPEED : 1) *
+      (sw ? MELEE.slow : mel && P.zoom ? MELEE.guardSlow : mel && P.fire ? 1 : P.run && f > 0 && !aiming ? 1.7 : aiming ? ADS_SPEED : 1) *
       (P.crouch ? 0.45 : 1),
       cy = Math.cos(P.yaw),
       sy = Math.sin(P.yaw),
@@ -1215,6 +1216,7 @@ export class Shooter {
       const r = t.num('Targeting_Max_Attack_Distance', 0) || u.weapon.reach || 0;
       M.set(t, (m = inCategory(t, 'MELEEUNIT') || (r > 0 && r < SHORT.range)));
     }
+    if (m) animReady(t, 'ATTACK');
     return m;
   }
 
@@ -6001,6 +6003,137 @@ export class Shooter {
     return best;
   }
 
+  artyOf(q) {
+    const v = q && q.members[0],
+      W = v && !v.dead && v.weapon;
+    return W && /^GRENADE$/i.test(W.proj.str('Projectile_Category')) && this.lobGravity(W) > 0 ? v : null;
+  }
+
+  artyTarget(v) {
+    const W = v.weapon,
+      a = this.aim,
+      T = (this.artySpot ||= { x: 0, y: 0, z: 0, aimZ: 0, hitRadius: 0, kind: 'INFANTRY', dead: true, side: -1, mvx: 0, mvy: 0, mvz: 0, path: [], spot: true, out: '' }),
+      z0 = v.z + (v.aimZ || 0),
+      ter = this.world.terrain;
+    let dx = a.x - v.x,
+      dy = a.y - v.y,
+      d = Math.hypot(dx, dy);
+    if (!(d > 1)) {
+      dx = Math.cos(this.yaw);
+      dy = Math.sin(this.yaw);
+      d = 1;
+    }
+    const ux = dx / d,
+      uy = dy / d,
+      lo = (v.minRange || 0) + ARTY.pad,
+      hi = Math.max(lo, (v.range || W.reach || 0) * ARTY.reach),
+      ok = D => !!this.lobPlan(W, D, heightAt(ter, v.x + ux * D, v.y + uy * D) - z0);
+    let D = Math.max(lo, Math.min(hi, d));
+    if (!ok(D)) {
+      let a0 = lo,
+        a1 = D;
+      for (let i = 0; i < 14; i++) {
+        const m = (a0 + a1) / 2;
+        if (ok(m)) a0 = m;
+        else a1 = m;
+      }
+      D = a0;
+    }
+    T.out = d > D + 1 ? 'far' : d < lo ? 'near' : '';
+    T.x = v.x + ux * D;
+    T.y = v.y + uy * D;
+    T.z = heightAt(ter, T.x, T.y);
+    return T;
+  }
+
+  lobArc(x, cam, dpr, sx, sy, z0, t, W, R, arcCol, ringCol, steps, fill = '') {
+    const w = this.world,
+      D = Math.hypot(t.x - sx, t.y - sy),
+      L = this.lobPlan(W, D, t.z - z0);
+    if (!L) return false;
+    const ux = (t.x - sx) / (D || 1),
+      uy = (t.y - sy) / (D || 1),
+      vh = Math.cos(L.angle) * L.v,
+      vz = Math.sin(L.angle) * L.v,
+      T = D / Math.max(1, vh);
+    x.strokeStyle = arcCol;
+    x.lineWidth = 2 * dpr;
+    x.setLineDash([6 * dpr, 5 * dpr]);
+    x.beginPath();
+    let first = true;
+    for (let i = 1; i <= steps; i++) {
+      const s = (T * i) / steps;
+      _ndc.set(sx + ux * vh * s, sy + uy * vh * s, z0 + vz * s - 0.5 * L.g * s * s).project(cam);
+      if (_ndc.z > 1) {
+        first = true;
+        continue;
+      }
+      const px = (_ndc.x * 0.5 + 0.5) * x.canvas.width,
+        py = (-_ndc.y * 0.5 + 0.5) * x.canvas.height;
+      if (first) x.moveTo(px, py);
+      else x.lineTo(px, py);
+      first = false;
+    }
+    x.stroke();
+    x.setLineDash([]);
+    x.beginPath();
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * Math.PI * 2,
+        px0 = t.x + Math.cos(a) * R,
+        py0 = t.y + Math.sin(a) * R;
+      _ndc.set(px0, py0, heightAt(w.terrain, px0, py0) + 1).project(cam);
+      if (_ndc.z > 1) continue;
+      const px = (_ndc.x * 0.5 + 0.5) * x.canvas.width,
+        py = (-_ndc.y * 0.5 + 0.5) * x.canvas.height;
+      if (i) x.lineTo(px, py);
+      else x.moveTo(px, py);
+    }
+    x.strokeStyle = ringCol;
+    if (fill) {
+      x.fillStyle = fill;
+      x.fill();
+      x.lineWidth = 3 * dpr;
+    }
+    x.stroke();
+    x.lineWidth = 2 * dpr;
+    return true;
+  }
+
+  drawArty(x, cam, dpr, v) {
+    const W = v.weapon,
+      t = this.artyTarget(v),
+      ready = !v.needsDeploy || v.deployed,
+      loaded = ready && W.cooldown <= 0,
+      R = Math.max(ARTY.blast, W.proj.num('Projectile_Blast_Area_Range', 0));
+    let sx = v.x,
+      sy = v.y,
+      z0 = v.z + (v.aimZ || 0);
+    const M = W.muzzles && W.muzzles[0];
+    if (M && M.bone) {
+      M.bone.getWorldPosition(_lk);
+      sx = _lk.x;
+      sy = _lk.y;
+      z0 = _lk.z;
+    }
+    const arc = !ready ? 'rgba(200,200,200,0.55)' : loaded ? 'rgba(255,215,106,0.9)' : 'rgba(255,215,106,0.45)',
+      ring = !ready ? 'rgba(200,200,200,0.7)' : t.out ? 'rgba(255,170,60,0.95)' : 'rgba(255,90,60,0.95)';
+    this.lobArc(x, cam, dpr, sx, sy, z0, t, W, R, arc, ring, ARTY.arc, ready ? 'rgba(255,90,60,0.18)' : 'rgba(200,200,200,0.12)');
+    _ndc.set(t.x, t.y, t.z + 2).project(cam);
+    if (_ndc.z < 1) {
+      const px = (_ndc.x * 0.5 + 0.5) * x.canvas.width,
+        py = (-_ndc.y * 0.5 + 0.5) * x.canvas.height,
+        m = Math.round(Math.hypot(t.x - v.x, t.y - v.y)),
+        label = !ready ? 'deploy to fire' : t.out === 'far' ? `max range ${m}` : t.out === 'near' ? `min range ${m}` : loaded ? `${m}` : 'reloading';
+      x.font = `bold ${Math.round(14 * dpr)}px sans-serif`;
+      x.textAlign = 'center';
+      x.lineWidth = 3 * dpr;
+      x.strokeStyle = 'rgba(0,0,0,0.75)';
+      x.strokeText(label, px, py + 22 * dpr);
+      x.fillStyle = ring;
+      x.fillText(label, px, py + 22 * dpr);
+    }
+  }
+
   nadeTarget() {
     const b = this.body,
       W = this.nadeW,
@@ -6081,53 +6214,10 @@ export class Shooter {
     const b = this.body,
       w = this.world;
     if (!b || this.state !== 'alive') return;
-    if (this.nadeHeld && this.role === 'trooper' && this.nadeW && this.nades > 0 && !this.seatOf()) {
-      const W = this.nadeW,
-        t = this.nadeTarget(),
-        z0 = b.z + (b.aimZ || 0),
-        D = Math.hypot(t.x - b.x, t.y - b.y),
-        L = this.lobPlan(W, D, t.z - z0);
-      if (L) {
-        const ux = (t.x - b.x) / (D || 1),
-          uy = (t.y - b.y) / (D || 1),
-          vh = Math.cos(L.angle) * L.v,
-          vz = Math.sin(L.angle) * L.v,
-          T = D / Math.max(1, vh);
-        x.strokeStyle = 'rgba(255,215,106,0.9)';
-        x.lineWidth = 2 * dpr;
-        x.setLineDash([6 * dpr, 5 * dpr]);
-        x.beginPath();
-        let first = true;
-        for (let i = 1; i <= GRENADE.arc; i++) {
-          const s = (T * i) / GRENADE.arc;
-          _ndc.set(b.x + ux * vh * s, b.y + uy * vh * s, z0 + vz * s - 0.5 * L.g * s * s).project(cam);
-          if (_ndc.z > 1) {
-            first = true;
-            continue;
-          }
-          const px = (_ndc.x * 0.5 + 0.5) * x.canvas.width,
-            py = (-_ndc.y * 0.5 + 0.5) * x.canvas.height;
-          if (first) x.moveTo(px, py);
-          else x.lineTo(px, py);
-          first = false;
-        }
-        x.stroke();
-        x.setLineDash([]);
-        x.beginPath();
-        for (let i = 0; i <= 24; i++) {
-          const a = (i / 24) * Math.PI * 2,
-            px0 = t.x + Math.cos(a) * W.blastR,
-            py0 = t.y + Math.sin(a) * W.blastR;
-          _ndc.set(px0, py0, heightAt(w.terrain, px0, py0) + 1).project(cam);
-          const px = (_ndc.x * 0.5 + 0.5) * x.canvas.width,
-            py = (-_ndc.y * 0.5 + 0.5) * x.canvas.height;
-          if (i) x.lineTo(px, py);
-          else x.moveTo(px, py);
-        }
-        x.strokeStyle = 'rgba(255,90,60,0.9)';
-        x.stroke();
-      }
-    }
+    if (this.nadeHeld && this.role === 'trooper' && this.nadeW && this.nades > 0 && !this.seatOf())
+      this.lobArc(x, cam, dpr, b.x, b.y, b.z + (b.aimZ || 0), this.nadeTarget(), this.nadeW, this.nadeW.blastR, 'rgba(255,215,106,0.9)', 'rgba(255,90,60,0.9)', GRENADE.arc);
+    const ar = this.rideQ && this.seatOf() && !this.netClient ? this.artyOf(this.rideQ) : null;
+    if (ar) this.drawArty(x, cam, dpr, ar);
     const e = this.lockT;
     if (e && !e.dead) {
       _ndc.set(e.x, e.y, e.z + (e.aimZ || e.hitRadius * 0.5 || 8)).project(cam);
@@ -6603,7 +6693,7 @@ export class Shooter {
         pz = bz + G.top * RIDE_CAM.lift + pk * back * 0.5;
       cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
     } else {
-      const back = this.camBack * (this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
+      const back = this.camBack * (this.melee ? MELEE.cam : this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
         side = this.eye * 0.35,
         pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5 + pk * this.camBack * 1.2;
       cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
@@ -6640,7 +6730,8 @@ export class Shooter {
     P.spot = this.aim;
     P.fire = !seat && this.fire;
     if (ride && ride.direct) {
-      ride.direct.target = this.aim;
+      const L = this.artyOf(ride);
+      ride.direct.target = L ? this.artyTarget(L) : this.aim;
       ride.direct.firing = this.fire;
     }
     if (this.gunD) {
@@ -7609,7 +7700,16 @@ export class Shooter {
     this.wpn.style.display = seat ? 'none' : 'block';
     if (!seat) {
       if (this.wpnN.textContent !== g.name) this.wpnN.textContent = g.name || '';
-      if (g.kind === 'heat') {
+      if (this.melee && b && b.weapon) {
+        const S = this.swing,
+          wp = b.weapon,
+          k = S ? 1 - (S.end - this.world.time) / Math.max(0.01, S.end - S.t0) : 1 - Math.max(0, wp.cooldown) / Math.max(0.05, wp.recharge || 1);
+        this.wpnBar.style.width = `${Math.round(Math.max(0, Math.min(1, k)) * 100)}%`;
+        this.wpnBar.style.background = S && S.last ? '#ffa040' : '';
+        const t = S ? (S.last ? 'FINISHER' : `COMBO ${S.idx + 1}`) : b.blockBoost ? 'GUARD' : 'READY';
+        if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
+        this.wpn.classList.remove('hot');
+      } else if (g.kind === 'heat') {
         this.wpnBar.style.width = `${Math.round(g.heat * 100)}%`;
         this.wpnBar.style.background = g.hot ? '#ff4a32' : g.heat > 0.7 ? '#ffa040' : '';
         const t = g.hot ? 'OVERHEATED' : 'HEAT';
@@ -7622,8 +7722,9 @@ export class Shooter {
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', !g.ammo);
       }
-      const extra =
-        this.role === 'trooper' && this.nadeW
+      const extra = this.melee
+        ? 'Click to swing, hold to chain a combo, right mouse to guard'
+        : this.role === 'trooper' && this.nadeW
           ? `Thermal detonators ${this.nades} / ${GRENADE.count}  (${this.keyText('SHOOTER_GRENADE')})`
           : this.role === 'rocket'
             ? this.lockK >= 1
