@@ -15,6 +15,7 @@ import { simRandom } from './simrandom.js';
 import { settlePose } from './posecache.js';
 import { MOD } from './combatmods.js';
 import { categoryOf, CAT } from './projflight.js';
+import { fireSound } from './weaponswap.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
@@ -74,6 +75,7 @@ const REACH = 1600,
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
+  MELEE = { cone: 0.95, reach: 1.15, seek: 2.6, lunge: 3.4, lungeTime: 0.22, hitAt: 0.42, queue: 0.35, combo: 0.7, slow: 0.35, finisher: 1.35, shake: 0.5, dip: 0.12, guard: 2, guardSlow: 0.55, turn: 22, fallback: 0.6 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
   SCORE = { foot: 100, car: 250, assistMin: 10, assistMax: 90, assistStep: 5 },
   WALK = { slope: 1, wet: 6, drive: 0.9 },
@@ -455,6 +457,8 @@ export class Shooter {
     this.fxAt = 0;
     this.feel = { u: null, h: 0, v: 0, roll: 0, pitch: 0, phase: 0, step: 0 };
     this.shake = 0;
+    this.melee = false;
+    this.swing = null;
     this.cockpit = false;
     this.seatBox = { u: null, len: 0, top: 0 };
     this.stomps = new Map();
@@ -721,8 +725,15 @@ export class Shooter {
       f /= l;
       s /= l;
     }
-    const aiming = P.fire || P.zoom;
-    const sp = u.speed * (P.run && f > 0 && !aiming ? 1.7 : aiming ? ADS_SPEED : 1) * (P.crouch ? 0.45 : 1),
+    const mel = this.meleeOf(u),
+      sw = mel ? this.swingStep(u, P, dt) : null;
+    this.melee = mel;
+    u.blockBoost = mel && P.zoom && !sw ? MELEE.guard : undefined;
+    const aiming = mel ? !!sw || P.zoom : P.fire || P.zoom;
+    const sp =
+      u.speed *
+      (sw ? MELEE.slow : mel && P.zoom ? MELEE.guardSlow : P.run && f > 0 && !aiming ? 1.7 : aiming ? ADS_SPEED : 1) *
+      (P.crouch ? 0.45 : 1),
       cy = Math.cos(P.yaw),
       sy = Math.sin(P.yaw),
       need = (u.need & ~3) | 1;
@@ -754,18 +765,19 @@ export class Shooter {
       go = Math.hypot(u.x - x0, u.y - y0);
     }
     {
-      const fp = this.third === false;
-      let want = P.yaw;
-      if (go) {
+      const fp = this.third === false && !mel,
+        tw = (aiming || fp) && !mel;
+      let want = sw ? sw.face : P.yaw;
+      if (go && !sw) {
         const md = Math.atan2(dy, dx),
           rel = wrap(md - P.yaw);
         want = aiming || fp ? (Math.abs(rel) > 2.2 ? P.yaw : P.yaw + Math.max(-1, Math.min(1, rel))) : md;
       }
       const da = wrap(want - u.heading),
-        st = 10 * dt;
+        st = (sw ? MELEE.turn : 10) * dt;
       u.heading += Math.abs(da) <= st ? da : Math.sign(da) * st;
-      this.twist.want = aiming || fp ? Math.max(-1.1, Math.min(1.1, wrap(P.yaw - u.heading))) : 0;
-      this.twist.pitch = aiming || fp ? Math.max(AIM_PITCH.min, Math.min(AIM_PITCH.max, this.pitch)) : 0;
+      this.twist.want = tw ? Math.max(-1.1, Math.min(1.1, wrap(P.yaw - u.heading))) : 0;
+      this.twist.pitch = tw ? Math.max(AIM_PITCH.min, Math.min(AIM_PITCH.max, this.pitch)) : 0;
       this.twist.raise = fp ? AIM_PITCH.raise : 0;
     }
     if (P.jump && P.h <= 0) P.vz = JUMP;
@@ -784,7 +796,8 @@ export class Shooter {
     let shooting = false;
     const S = SPREAD,
       want = (P.h > 0 ? S.air : P.run && go ? S.run : go ? S.walk : S.still) * (P.crouch ? S.crouch : 1) * (P.zoom ? (this.role === 'scout' ? SCOPE.spread : S.zoom) : 1);
-    if (wpn) {
+    if (mel) shooting = !!sw;
+    else if (wpn) {
       wpn.cooldown -= dt;
       if (P.fire && P.spot && this.canFire()) {
         shooting = true;
@@ -796,10 +809,11 @@ export class Shooter {
     this.bloom = Math.max(0, Math.min(S.max, this.bloom + (shooting ? S.bloom : -S.cool) * dt));
     this.spread += (want + this.bloom - this.spread) * Math.min(1, dt * 8);
     const has = K => animReady(u.type, K),
-      fp = this.third === false;
+      fp = this.third === false && !mel;
     let kind;
-    this.twist.overlay = ((go && (shooting || aiming)) || fp) && !(go && has('FIRE_MOVE')) && has('ATTACKIDLE');
-    if (go) kind = shooting || aiming ? (has('FIRE_MOVE') ? 'FIRE_MOVE' : has('WALKMOVE') ? 'WALKMOVE' : 'move') : P.crouch && has('CROUCHMOVE') ? 'CROUCHMOVE' : 'move';
+    this.twist.overlay = !mel && ((go && (shooting || aiming)) || fp) && !(go && has('FIRE_MOVE')) && has('ATTACKIDLE');
+    if (sw) kind = 'attack';
+    else if (go) kind = shooting || aiming ? (has('FIRE_MOVE') ? 'FIRE_MOVE' : has('WALKMOVE') ? 'WALKMOVE' : 'move') : P.crouch && has('CROUCHMOVE') ? 'CROUCHMOVE' : 'move';
     else if (shooting) kind = 'attack';
     else if (aiming || fp) kind = has('ATTACKIDLE') ? 'attack' : 'idle';
     else kind = P.crouch && has('CROUCHIDLE') ? 'CROUCHIDLE' : 'idle';
@@ -1158,6 +1172,7 @@ export class Shooter {
       return advance.call(w, sq);
     };
     w.order = (sq, x, y, facing = null, exact = false) => {
+      if (!this.raw && sq.direct) return true;
       if (!this.raw && sq.crew) {
         const vs = this.vstate.get(sq);
         if (vs && w.time < vs.halt) {
@@ -1189,6 +1204,162 @@ export class Shooter {
       }
       return order.call(w, sq, x, y, facing, exact);
     };
+  }
+
+  meleeOf(u) {
+    if (!u || !u.foot || !u.weapon || u.structure || u.flies) return false;
+    const M = (this.meleeTypes ||= new Map()),
+      t = u.type;
+    let m = M.get(t);
+    if (m === undefined) {
+      const r = t.num('Targeting_Max_Attack_Distance', 0) || u.weapon.reach || 0;
+      M.set(t, (m = inCategory(t, 'MELEEUNIT') || (r > 0 && r < SHORT.range)));
+    }
+    return m;
+  }
+
+  meleeReach(u) {
+    return Math.max(8, (u.range || u.weapon.reach || 20) * MELEE.reach);
+  }
+
+  meleeTarget(u, reach, cone, face) {
+    const w = this.world;
+    let best = null,
+      score = Infinity;
+    for (const e of w.foesNear(u.x, u.y, reach + 40)) {
+      if (e === u || e.dead || e.inside || e.flies || e.side < 0 || e.untargetable || e.limbo || !w.enemy(u, e)) continue;
+      const dx = e.x - u.x,
+        dy = e.y - u.y,
+        d = Math.hypot(dx, dy) - Math.max(0, e.hitRadius || 0);
+      if (d > reach) continue;
+      const rel = Math.abs(wrap(Math.atan2(dy, dx) - face));
+      if (rel > cone) continue;
+      const k = d / reach + rel / cone;
+      if (k < score) {
+        score = k;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  swingStep(u, P, dt) {
+    const w = this.world,
+      wp = u.weapon,
+      now = w.time;
+    wp.cooldown -= dt;
+    let S = this.swing;
+    if (S && S.u !== u) S = this.swing = null;
+    if (S && P.fire && now >= S.t0 + (S.end - S.t0) * MELEE.queue) this.swingQueued = true;
+    if (S && !S.struck && now >= S.hit) {
+      S.struck = true;
+      this.strike(u, S);
+    }
+    if (S && now >= S.end) {
+      this.comboAt = S.last ? -99 : now;
+      this.comboIdx = S.idx;
+      S = this.swing = null;
+    }
+    if (!S && this.swingQueued && now - (this.comboAt ?? -99) > MELEE.combo) this.swingQueued = false;
+    if (!S && (P.fire || this.swingQueued) && wp.cooldown <= 0 && !P.dash) {
+      this.swingQueued = false;
+      S = this.startSwing(u, P);
+    }
+    if (S && S.dash > 0) {
+      const t = S.target,
+        stop = this.meleeReach(u) * 0.55;
+      S.dash -= dt;
+      if (t && !t.dead) {
+        const dx = t.x - u.x,
+          dy = t.y - u.y,
+          l = Math.hypot(dx, dy) || 1,
+          d = l - Math.max(0, t.hitRadius || 0);
+        S.face = Math.atan2(dy, dx);
+        if (d > stop) {
+          const step = Math.min(d - stop, S.lungeV * dt),
+            need = (u.need & ~3) | 1;
+          if (this.walkable(u.x + (dx / l) * step, u.y, need)) u.x += (dx / l) * step;
+          if (this.walkable(u.x, u.y + (dy / l) * step, need)) u.y += (dy / l) * step;
+        } else S.dash = 0;
+      } else S.dash = 0;
+    }
+    return S;
+  }
+
+  startSwing(u, P) {
+    const w = this.world,
+      wp = u.weapon,
+      now = w.time,
+      idx = now - (this.comboAt ?? -99) < MELEE.combo ? (this.comboIdx ?? -1) + 1 : 0,
+      reach = this.meleeReach(u),
+      target = this.meleeTarget(u, reach * MELEE.seek, MELEE.cone, P.yaw);
+    let n = 1;
+    const played = w.oneShot(u, 'ATTACK', 'attack', vs => vs[idx % (n = vs.length)]),
+      dur = played ? Math.max(0.2, u.onceEnd - now) : Math.max(0.35, (wp.recharge || 1) * MELEE.fallback),
+      near = target ? Math.hypot(target.x - u.x, target.y - u.y) - Math.max(0, target.hitRadius || 0) : 0;
+    wp.cooldown = (wp.recharge || 1) * w.fireDelay(u);
+    return (this.swing = {
+      u,
+      t0: now,
+      end: now + dur,
+      hit: now + dur * MELEE.hitAt,
+      idx,
+      last: n > 1 && idx % n === n - 1,
+      target,
+      face: target ? Math.atan2(target.y - u.y, target.x - u.x) : P.yaw,
+      dash: target && near > reach * 0.7 ? MELEE.lungeTime : 0,
+      lungeV: Math.max(u.speed * MELEE.lunge, (near - reach * 0.55) / MELEE.lungeTime),
+      struck: false
+    });
+  }
+
+  strike(u, S) {
+    const w = this.world,
+      wp = u.weapon,
+      reach = this.meleeReach(u);
+    let t = S.target;
+    const fits = e => {
+      if (!e || e.dead || e.inside) return false;
+      const d = Math.hypot(e.x - u.x, e.y - u.y) - Math.max(0, e.hitRadius || 0);
+      return d <= reach && Math.abs(wrap(Math.atan2(e.y - u.y, e.x - u.x) - u.heading)) <= MELEE.cone * 1.2;
+    };
+    if (!fits(t)) t = this.meleeTarget(u, reach, MELEE.cone, u.heading);
+    if (!t) {
+      const A = this.game.audio;
+      if (A) {
+        A.forceNext = true;
+        A.play(fireSound(u.type, wp.proj), u.x, u.y);
+      }
+      return;
+    }
+    const n = w.shots.length;
+    w.fire(u, t, wp);
+    const shot = w.shots.length > n ? w.shots[w.shots.length - 1] : null;
+    if (shot && S.last) shot.damage *= MELEE.finisher;
+    this.shake = Math.max(this.shake, MELEE.shake * (S.last ? 1.6 : 1));
+    this.dip = Math.max(this.dip, this.eye * MELEE.dip);
+  }
+
+  deployHint(q, lead, moving) {
+    if (!lead.needsDeploy || !lead.weapon || this.netClient) return;
+    const w = this.world;
+    if (w.time < (this.deployHintAt || 0)) return;
+    const i = q.abilities.filter(a => !/^(SELL|SPREAD_OUT)$/.test(a.def.kind)).findIndex(a => a.def.kind === 'DEPLOY'),
+      key = i >= 0 && i < 3 ? this.keyText('SHOOTER_ABILITY_' + (i + 1)) : '';
+    let text = '';
+    if (lead.setup && moving) text = lead.deployed ? `Deployed - ${key ? key + ' to ' : ''}pack up and drive` : 'Deploying';
+    else if (!lead.setup && !lead.deployed && this.fire) text = `${key ? key + ' to ' : ''}deploy before firing`;
+    else if (!lead.setup && lead.cast > w.time) text = 'Packing up';
+    if (!text) return;
+    this.deployHintAt = w.time + 1.2;
+    this.flash(text);
+  }
+
+  playerHeld(q) {
+    if (!q) return false;
+    if (q.direct || q === this.rideQ || q === this.gunQ) return true;
+    if (this.body && !this.body.dead && q === this.body.squad) return true;
+    return !!q.members && q.members.some(m => m.remote);
   }
 
   isBot(sq) {
@@ -1609,7 +1780,8 @@ export class Shooter {
     return u.foot && !u.weapon && this.world.time - (u.gunAt ?? -99) < GUN_POSE.hold;
   }
 
-  ready(u, t) {
+  ready(u, t, wp) {
+    if (u.foot && !u.pilot && u.once === 'attack' && this.world.time < u.onceEnd && !(wp && wp.left > 0) && this.meleeOf(u)) return false;
     if (u.kind !== 'INFANTRY' || !t || !this.aiShooter(u)) return true;
     if (this.rocketsLeft(u) <= 0) return false;
     if ((u.v || 0) > 2 || (t.x !== undefined && !t.spot && !this.sees(u, t))) return false;
@@ -1626,6 +1798,10 @@ export class Shooter {
   }
 
   aimError(u, t, dist, off) {
+    if (u && u === this.body && this.swing && this.swing.u === u) {
+      off.x = off.y = off.z = 0;
+      return;
+    }
     if (u && u.remote && t && t.spot) {
       off.x = off.y = off.z = 0;
       return;
@@ -5536,7 +5712,7 @@ export class Shooter {
   }
 
   recoil(from, s) {
-    if (from !== this.body) return;
+    if (from !== this.body || this.melee) return;
     if (s && s.w === this.nadeW) return;
     if (s && this.role === 'scout' && this.zoom) this.scopedShots.add(s);
     this.twist.kick = Math.min(0.3, this.twist.kick + RECOIL);
@@ -6346,6 +6522,7 @@ export class Shooter {
         for (const m of ride.members) m.direct = D;
         D.turn = s;
         D.throttle = f;
+        this.deployHint(ride, lead, f || s);
       }
       if (lead && lead.pilot === this.A) {
         const A = this.A;
@@ -6374,7 +6551,7 @@ export class Shooter {
     const d = _v.set(cy * cp, sy * cp, sp);
     const scoped = !seat && this.zoom && this.role === 'scout',
       pk = this.ov ? this.ov.pull * this.ov.pull : 0,
-      fp = !seat && (!this.third || scoped) && pk < 0.02;
+      fp = !seat && (!this.third || scoped) && pk < 0.02 && !this.melee;
     {
       const r = Math.min(this.kickDebt, this.kickDebt * KICK.recover * real);
       this.pitch -= r;
@@ -6444,7 +6621,7 @@ export class Shooter {
     cam.lookAt(cam.position.x + d.x, cam.position.y + d.y, cam.position.z + d.z);
     {
       const boosting = !!seat && this.A.boost && this.rideQ && this.rideQ.members[0]?.pilot === this.A,
-        want = this.zoom ? (scoped ? SCOPE.fov : ZOOM_FOV * (this.cfg.fov / FOV)) : this.cfg.fov + (running ? SPRINT_FOV : 0) + (boosting ? BOOST.fov : 0);
+        want = this.zoom && !(this.melee && !seat) ? (scoped ? SCOPE.fov : ZOOM_FOV * (this.cfg.fov / FOV)) : this.cfg.fov + (running ? SPRINT_FOV : 0) + (boosting ? BOOST.fov : 0);
       this.fovNow += (want - this.fovNow) * Math.min(1, real * 10);
       this.setFov(cam, Math.round(this.fovNow * 10) / 10, fp || inner ? 0.3 : 1);
     }

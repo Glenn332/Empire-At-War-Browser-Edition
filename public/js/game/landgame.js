@@ -2999,7 +2999,7 @@ export class LandGame {
       }
     }
     for (const q of w.squads)
-      if (q.side === side && q.members.length && !q.structure && !q.arriving && !q.native && q.abilities.length)
+      if (q.side === side && q.members.length && !q.structure && !q.arriving && !q.native && q.abilities.length && !this.shooter?.playerHeld(q))
         aiAbilities(w, q, mind && mind.b.eq.has('BRIBE_TARGET_SCORE') ? u => mind.fn('BRIBE_TARGET_SCORE', target.unit(u)) : null);
     if (army && !ai.led) commandArmy(this, side);
   }

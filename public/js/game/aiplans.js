@@ -2019,6 +2019,7 @@ export class Plans {
       },
       Activate_Ability: (name, on) => {
         for (const e of alive()) {
+          if (host.land && w.shooter?.playerHeld(e)) continue;
           const ok = host.wrap(e).Activate_Ability(name, on);
           if (ok === false) this.tell(inst, f, 'Unit_Ability_Finished', wrapper, host.wrap(e));
         }

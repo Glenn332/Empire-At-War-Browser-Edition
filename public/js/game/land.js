@@ -465,6 +465,7 @@ class LandUnit {
     this.guns = undefined;
     this.deflects = undefined;
     this.deflect = undefined;
+    this.blockBoost = undefined;
     this.mod = undefined;
     this.surf = NO_SURFACE;
     this.surface = undefined;
@@ -1104,7 +1105,7 @@ export class LandWorld {
     return !!e && e.value >= w.energy;
   }
   burst(u, t, w, dt) {
-    if (this.shooter && !this.shooter.ready(u, t)) return;
+    if (this.shooter && !this.shooter.ready(u, t, w)) return;
     if (w.left > 0) {
       if ((w.timer -= dt) <= 0 && this.canShoot(u, w)) {
         this.fire(u, t, w);
@@ -5725,11 +5726,12 @@ export class LandWorld {
       block = (P._blockMod ??= P.num('Projectile_Block_Chance_Modifier', 1));
     let rel = Math.atan2(from.y - t.y, from.x - t.x) - t.heading;
     rel = Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel)));
+    const g = t.blockBoost || 1;
     for (const D of t.deflects) {
       if (!D.on || rel > D.arc || D.excluded.includes(name)) continue;
       if ((D.cats.length || D.types.length) && !D.types.includes(name) && !D.cats.some(c => inCategory(from.type, c))) continue;
-      if (back * D.back > simRandom()) return [D, true];
-      if (block * D.block > simRandom()) return [D, false];
+      if (back * D.back * g > simRandom()) return [D, true];
+      if (block * D.block * g > simRandom()) return [D, false];
     }
     return null;
   }
@@ -5738,7 +5740,8 @@ export class LandWorld {
     const pick = this.deflectFor(t, s);
     if (!pick) return false;
     const [D, back] = pick;
-    if (!t.path.length && !(t.cast > this.time)) this.cast(t, back ? 'REDIRECT_BLASTER' : 'BLOCK_BLASTER');
+    if (!t.path.length && !(t.cast > this.time) && !(t.pilot && t.once === 'attack' && t.onceEnd > this.time))
+      this.cast(t, back ? 'REDIRECT_BLASTER' : 'BLOCK_BLASTER');
     if (this.onSound) this.onSound(D.sfx, t.x, t.y, t.side);
     if (back) {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
@@ -6426,7 +6429,8 @@ export class LandWorld {
     if (u.turret && !u.weapon && u.guns) this.aimHead(u, dt);
     let go = 0;
     const L = D.lead;
-    if (u === L || !L || L.dead) {
+    if (u.rooted || u.setup) go = 0;
+    else if (u === L || !L || L.dead) {
       u.heading -= Math.max(-1, Math.min(1, D.turn)) * Math.min(u.turn || 2, 2.2) * dt;
       go = (D.throttle > 0 ? u.speed : D.throttle < 0 ? -u.speed * 0.5 : 0) * dt;
       if (go) {
