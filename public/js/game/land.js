@@ -467,6 +467,7 @@ class LandUnit {
     this.deflects = undefined;
     this.deflect = undefined;
     this.blockBoost = undefined;
+    this.rapid = undefined;
     this.mod = undefined;
     this.surf = NO_SURFACE;
     this.surface = undefined;

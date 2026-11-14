@@ -76,6 +76,7 @@ const REACH = 1600,
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
+  RAPID = { rate: 3 },
   MELEE = { cone: 0.95, reach: 1.15, seek: 2.6, lunge: 3.4, lungeTime: 0.22, hitAt: 0.42, queue: 0.35, combo: 0.7, slow: 0.35, finisher: 1.35, shake: 0.5, dip: 0.12, guard: 2, guardSlow: 0.55, turn: 22, fallback: 0.6, cam: 1.7 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
   SCORE = { foot: 100, car: 250, assistMin: 10, assistMax: 90, assistStep: 5 },
@@ -4422,21 +4423,8 @@ export class Shooter {
       W = Math.ceil(side / C) + 1,
       a = new Float32Array(W * W).fill(-Infinity),
       lo = new Float32Array(W * W).fill(Infinity),
-      flat = this.liftedOver ? null : new Float32Array(W * W).fill(Infinity),
-      box = new THREE.Box3(),
-      A = new THREE.Vector3(),
-      B = new THREE.Vector3(),
-      D = new THREE.Vector3(),
-      P = new THREE.Vector3();
+      flat = this.liftedOver ? null : new Float32Array(W * W).fill(Infinity);
     let any = false;
-    const mark = (x, y, z) => {
-      const i = Math.floor(x / C),
-        j = Math.floor(y / C);
-      if (i < 0 || j < 0 || i >= W || j >= W) return;
-      const k = j * W + i;
-      if (z > a[k]) a[k] = z;
-      if (z < lo[k]) lo[k] = z;
-    };
     const solids = [];
     for (const p of g.props || []) if (!p.clutter && !p.scriptHidden && p.grp && p.grp.parent === g.scene) solids.push(p.grp);
     const props = solids.length,
@@ -4447,67 +4435,20 @@ export class Shooter {
         if (u.dome?.meshes) domes.set(u.holder, u.dome.meshes);
       }
     let n = 0;
+    const cache = (this.rockCache ||= new WeakMap());
     for (const grp of solids) {
       const prop = n++ < props;
-      const p = { grp };
-      p.grp.updateMatrixWorld(true);
-      box.setFromObject(p.grp);
-      if (box.isEmpty()) continue;
-      const ground = heightAt(T, (box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2);
-      if (box.max.z - ground < (prop ? ROCK.minH : ROCK.minH * 0.6) || Math.max(box.max.x - box.min.x, box.max.y - box.min.y) < (prop ? ROCK.minW : ROCK.minW * 0.4)) continue;
-      const skip = new Set(domes.get(grp) || []);
-      p.grp.traverse(o => {
-        if (!o.isMesh || !o.visible || !o.geometry || !o.geometry.attributes.position || skip.has(o) || [].concat(o.material || []).some(m => m && m.transparent)) return;
-        const pos = o.geometry.attributes.position,
-          idx = o.geometry.index,
-          M = o.matrixWorld,
-          n = idx ? idx.count : pos.count;
-        for (let t = 0; t + 2 < n; t += 3) {
-          const ia = idx ? idx.getX(t) : t,
-            ib = idx ? idx.getX(t + 1) : t + 1,
-            ic = idx ? idx.getX(t + 2) : t + 2;
-          A.fromBufferAttribute(pos, ia).applyMatrix4(M);
-          B.fromBufferAttribute(pos, ib).applyMatrix4(M);
-          D.fromBufferAttribute(pos, ic).applyMatrix4(M);
-          const ux = B.x - A.x,
-            uy = B.y - A.y,
-            uz = B.z - A.z,
-            vx = D.x - A.x,
-            vy = D.y - A.y,
-            vz = D.z - A.z,
-            nx = uy * vz - uz * vy,
-            ny = uz * vx - ux * vz,
-            nz = ux * vy - uy * vx,
-            nl = Math.hypot(nx, ny, nz);
-          if (!(nl > 1e-6)) continue;
-          const steep = Math.abs(nz) / nl <= ROCK.steep;
-          if (!steep && !flat) continue;
-          const span = Math.max(A.distanceTo(B), B.distanceTo(D), D.distanceTo(A)),
-            m = Math.max(1, Math.min(ROCK.steps * 8, Math.ceil(span / (C * 0.6))));
-          if (!steep) {
-            for (let u = 0; u <= m; u++)
-              for (let v = 0; u + v <= m; v++) {
-                P.copy(A)
-                  .multiplyScalar(1 - (u + v) / m)
-                  .addScaledVector(B, u / m)
-                  .addScaledVector(D, v / m);
-                const i = Math.floor(P.x / C),
-                  j = Math.floor(P.y / C);
-                if (i >= 0 && j >= 0 && i < W && j < W && P.z < flat[j * W + i]) flat[j * W + i] = P.z;
-              }
-            continue;
-          }
-          for (let u = 0; u <= m; u++)
-            for (let v = 0; u + v <= m; v++) {
-              P.copy(A)
-                .multiplyScalar(1 - (u + v) / m)
-                .addScaledVector(B, u / m)
-                .addScaledVector(D, v / m);
-              mark(P.x, P.y, P.z);
-            }
-        }
-        any = true;
-      });
+      let c = cache.get(grp);
+      if (!c || flat) {
+        c = this.rockMarks(grp, prop, domes, flat, W, C);
+        cache.set(grp, c);
+      }
+      if (c.any) any = true;
+      for (let q = 0; q < c.k.length; q++) {
+        const k = c.k[q];
+        if (c.hi[q] > a[k]) a[k] = c.hi[q];
+        if (c.lo[q] < lo[k]) lo[k] = c.lo[q];
+      }
     }
     for (let k = 0; k < a.length; k++) {
       if (a[k] === -Infinity) continue;
@@ -4527,6 +4468,94 @@ export class Shooter {
     this.closeRocks(a, lo, W, C);
     this.rocks = any ? { cell: C, w: W, a, lo } : null;
     this.rocksDirty = false;
+  }
+
+  rockMarks(grp, prop, domes, flat, W, C) {
+    const T = this.world.terrain,
+      box = new THREE.Box3(),
+      A = new THREE.Vector3(),
+      B = new THREE.Vector3(),
+      D = new THREE.Vector3(),
+      P = new THREE.Vector3(),
+      cells = new Map(),
+      out = { any: false, k: [], hi: [], lo: [] },
+      mark = (x, y, z) => {
+        const i = Math.floor(x / C),
+          j = Math.floor(y / C);
+        if (i < 0 || j < 0 || i >= W || j >= W) return;
+        const k = j * W + i,
+          e = cells.get(k);
+        if (!e) cells.set(k, [z, z]);
+        else {
+          if (z > e[0]) e[0] = z;
+          if (z < e[1]) e[1] = z;
+        }
+      };
+    const p = { grp };
+    p.grp.updateMatrixWorld(true);
+    box.setFromObject(p.grp);
+    if (box.isEmpty()) return out;
+    const ground = heightAt(T, (box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2);
+    if (box.max.z - ground < (prop ? ROCK.minH : ROCK.minH * 0.6) || Math.max(box.max.x - box.min.x, box.max.y - box.min.y) < (prop ? ROCK.minW : ROCK.minW * 0.4)) return out;
+    const skip = new Set(domes.get(grp) || []);
+    p.grp.traverse(o => {
+      if (!o.isMesh || !o.visible || !o.geometry || !o.geometry.attributes.position || skip.has(o) || [].concat(o.material || []).some(m => m && m.transparent)) return;
+      const pos = o.geometry.attributes.position,
+        idx = o.geometry.index,
+        M = o.matrixWorld,
+        n = idx ? idx.count : pos.count;
+      for (let t = 0; t + 2 < n; t += 3) {
+        const ia = idx ? idx.getX(t) : t,
+          ib = idx ? idx.getX(t + 1) : t + 1,
+          ic = idx ? idx.getX(t + 2) : t + 2;
+        A.fromBufferAttribute(pos, ia).applyMatrix4(M);
+        B.fromBufferAttribute(pos, ib).applyMatrix4(M);
+        D.fromBufferAttribute(pos, ic).applyMatrix4(M);
+        const ux = B.x - A.x,
+          uy = B.y - A.y,
+          uz = B.z - A.z,
+          vx = D.x - A.x,
+          vy = D.y - A.y,
+          vz = D.z - A.z,
+          nx = uy * vz - uz * vy,
+          ny = uz * vx - ux * vz,
+          nz = ux * vy - uy * vx,
+          nl = Math.hypot(nx, ny, nz);
+        if (!(nl > 1e-6)) continue;
+        const steep = Math.abs(nz) / nl <= ROCK.steep;
+        if (!steep && !flat) continue;
+        const span = Math.max(A.distanceTo(B), B.distanceTo(D), D.distanceTo(A)),
+          m = Math.max(1, Math.min(ROCK.steps * 8, Math.ceil(span / (C * 0.6))));
+        if (!steep) {
+          for (let u = 0; u <= m; u++)
+            for (let v = 0; u + v <= m; v++) {
+              P.copy(A)
+                .multiplyScalar(1 - (u + v) / m)
+                .addScaledVector(B, u / m)
+                .addScaledVector(D, v / m);
+              const i = Math.floor(P.x / C),
+                j = Math.floor(P.y / C);
+              if (i >= 0 && j >= 0 && i < W && j < W && P.z < flat[j * W + i]) flat[j * W + i] = P.z;
+            }
+          continue;
+        }
+        for (let u = 0; u <= m; u++)
+          for (let v = 0; u + v <= m; v++) {
+            P.copy(A)
+              .multiplyScalar(1 - (u + v) / m)
+              .addScaledVector(B, u / m)
+              .addScaledVector(D, v / m);
+            mark(P.x, P.y, P.z);
+          }
+      }
+      out.any = true;
+    });
+    for (const [k, e] of cells) {
+      out.k.push(k);
+      out.hi.push(e[0]);
+      out.lo.push(e[1]);
+    }
+    return out;
   }
 
   liftOverheads(a, lo, flat, W, C) {
@@ -5245,6 +5274,7 @@ export class Shooter {
       u.path.length = 0;
       u.target = null;
       u.remote = { peer, s: [], kind: '', hero: false };
+      this.rapid(u);
       this.remotes.set(peer, u);
       if (!q.dead && !q.crew.in) this.remoteEnter(peer, v);
       return u;
@@ -5280,6 +5310,7 @@ export class Shooter {
     if (!hero) {
     }
     u.remote = { peer, s: [], kind: '', hero };
+    if (!hero) this.rapid(u);
     this.remotes.set(peer, u);
     return u;
   }
@@ -5820,11 +5851,23 @@ export class Shooter {
       g.kick = KICK.ammo;
     } else {
       g.kind = 'heat';
+      this.rapid(u);
       const rate = wp ? Math.max(1, wp.pulses || 1) / Math.max(0.05, (wp.recharge || 1) * this.world.fireDelay(u)) : 4;
       g.per = 1 / Math.max(HEAT.minShots, Math.round(rate * HEAT.burst));
       if (this.role === 'heavy') g.per *= HEAVY.heat;
       g.kick = KICK.heat;
     }
+  }
+
+  rapid(u) {
+    const w = this.world;
+    if (!u || !u.weapon || !u.foot || u.rapid || this.meleeOf(u)) return;
+    const P = u.weapon.proj,
+      cat = P ? categoryOf(P) : CAT.DEFAULT;
+    if (cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET || cat === CAT.MISSILE || cat === CAT.GRENADE) return;
+    u.rapid = true;
+    w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY + 7, 'shooter-rapid', RAPID.rate - 1);
+    w.addCombatMod(u, MOD.DAMAGE, MOD_KEY + 7, 'shooter-rapid', 1 / RAPID.rate - 1);
   }
 
   canFire() {

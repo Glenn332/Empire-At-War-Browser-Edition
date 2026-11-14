@@ -239,7 +239,7 @@ export class TroopBay {
         this.box(H * 0.08, H * 0.12, T, dark, cx, sy * (W / 2 - H * 0.06), T / 2);
       this.rails.push(this.tube(L * 0.84, H * 0.022, chrome, -L * 0.02, sy * W * BAY.rail, T * 0.62));
       for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T * 0.4, H * 0.012, chrome, hx, sy * W * BAY.rail, T * 0.82, 'z'));
-      for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.08), sy, face: sy * Math.PI / 2, taken: null });
+      for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.3), sy, face: -sy * Math.PI / 2, taken: null });
     }
     const back = new THREE.Mesh(new THREE.PlaneGeometry(W, T), wallM(W / (H * 1.6)));
     back.rotation.set(Math.PI / 2, -Math.PI / 2, 0);
@@ -481,18 +481,33 @@ export class TroopBay {
       farm = b('B_FARM_' + side),
       hand = b('B_HAND_' + side);
     if (!bicep || !farm || !hand) return;
-    const out = new THREE.Vector3(side === 'R' ? 1 : -1, 0, 0).applyQuaternion(m.holder.getWorldQuaternion(new THREE.Quaternion())).setZ(0).normalize(),
-      up = new THREE.Vector3().copy(UP).addScaledVector(out, 0.18).normalize();
-    this.aim(bicep, farm, up);
-    this.aim(farm, hand, UP);
-    m.holder.updateMatrixWorld(true);
-    const h = this.group.worldToLocal(hand.getWorldPosition(new THREE.Vector3())),
-      railY = S.seat.sy * this.W * BAY.rail;
-    m.holder.position.y += railY - h.y;
+    const g = this.group,
+      wp = o => o.getWorldPosition(new THREE.Vector3()),
+      up = wp(farm).distanceTo(wp(bicep)),
+      lo = wp(hand).distanceTo(wp(farm)),
+      reach = (up + lo) * 0.96,
+      sh = g.worldToLocal(wp(bicep));
     if (this.railZ === null) {
-      this.railZ = h.z + this.H * 0.02;
+      this.railZ = sh.z + reach * 0.86;
       for (const r of this.rails) r.position.z += this.railZ - this.T * 0.62;
     }
+    const dz = Math.max(0, Math.min(reach * 0.97, this.railZ - sh.z)),
+      dh = Math.sqrt(Math.max(0, reach * reach - dz * dz)),
+      railY = S.seat.sy * this.W * BAY.rail;
+    m.holder.position.y += railY + S.seat.sy * dh - sh.y;
+    m.holder.updateMatrixWorld(true);
+    const S0 = wp(bicep),
+      T = g.localToWorld(new THREE.Vector3(g.worldToLocal(S0.clone()).x, railY, this.railZ)),
+      D = Math.min(S0.distanceTo(T), up + lo - 1e-3),
+      dir = T.clone().sub(S0).normalize(),
+      out = new THREE.Vector3(side === 'R' ? 1 : -1, 0, 0).applyQuaternion(m.holder.getWorldQuaternion(new THREE.Quaternion())),
+      bend = DOWN.clone().addScaledVector(out, 0.6),
+      n = bend.sub(dir.clone().multiplyScalar(bend.dot(dir))).normalize(),
+      cosA = Math.max(-1, Math.min(1, (up * up + D * D - lo * lo) / (2 * up * D))),
+      sinA = Math.sqrt(1 - cosA * cosA),
+      E = S0.clone().addScaledVector(dir, up * cosA).addScaledVector(n, up * sinA);
+    this.aim(bicep, farm, E.clone().sub(S0).normalize());
+    this.aim(farm, hand, T.clone().sub(wp(farm)).normalize());
   }
 
   freeHand(m, b) {

@@ -269,7 +269,9 @@ export class ShuttleWaves {
           side = Math.abs(-dx * Math.sin(f) + dy * Math.cos(f));
         return ahead > 0 && ahead < D * 1.6 && side < D * 0.6;
       },
-      free = (x, y) => taken.every(p => Math.hypot(p.x - x, p.y - y) >= D && !lane(p, x, y) && !lane({ x, y, face: base }, p.x, p.y));
+      props = [...w.points.filter(p => p.holder), ...(w.units || []).filter(u => u.structure && !u.dead && !u.squad?.craft)],
+      clearOf = (x, y) => props.every(p => Math.hypot(p.x - x, p.y - y) >= D * 0.6 + (p.hitRadius > 0 && p.structure ? p.hitRadius : 0)),
+      free = (x, y) => clearOf(x, y) && taken.every(p => Math.hypot(p.x - x, p.y - y) >= D && !lane(p, x, y) && !lane({ x, y, face: base }, p.x, p.y));
     const tries = [[0, 0]];
     for (const k of WAVE.rings) {
       const n = 6 * k;
@@ -518,7 +520,6 @@ export class ShuttleWaves {
       this.hideCraft = { craft, x: at.x, y: at.y, r: R.bay ? R.bay.L * 1.4 : 120, until: this.sh.world.time + 20 };
       craft.holder.visible = false;
     }
-    if (R.hid) for (const o of R.hid) o.visible = true;
     if (R.bay) R.bay.dispose();
   }
 
@@ -601,11 +602,6 @@ export class ShuttleWaves {
         drop = floor - heightAt(w.terrain, end.x, end.y);
       bay.rampTilt = Math.max(0, Math.min(0.6, Math.asin(Math.max(-1, Math.min(1, drop / bay.rampLen)))));
     }
-    if (w.time >= (R.clearAt || 0)) {
-      R.clearAt = w.time + 0.5;
-      this.clearFootprint(R, bay);
-    }
-    if (R.hid) for (const o of R.hid) o.visible = false;
     this.syncSeats(R);
     if (landed && R.landAt === undefined) {
       R.landAt = performance.now() / 1000;
@@ -666,22 +662,6 @@ export class ShuttleWaves {
       R.tt = now;
     } else if (now - R.tt > 0.15) R.tv.set(0, 0, 0);
     return c.copy(R.tc).addScaledVector(R.tv, Math.min(now - R.tt, 1 / 20));
-  }
-
-  clearFootprint(R, bay) {
-    const w = this.sh.world,
-      inv = new THREE.Matrix4().copy(bay.group.matrixWorld).invert(),
-      hx = bay.L / 2 + bay.rampLen + bay.H * 0.2,
-      hy = bay.W / 2 + bay.H * 0.2,
-      inside = o => {
-        _c.set(o.x, o.y, bay.group.position.z).applyMatrix4(inv);
-        return _c.x > -hx && _c.x < hx && Math.abs(_c.y) < hy;
-      },
-      hid = (R.hid ||= new Set()),
-      own = R.F ? R.F.t?.craft : null,
-      me = this.sh.body;
-    for (const p of w.points) if (p.holder && p.holder.visible && inside(p)) hid.add(p.holder);
-    for (const u of w.units) if (!u.dead && u.holder && u.holder.visible && u !== own && u !== me && (u.structure || !u.foot) && inside(u)) hid.add(u.holder);
   }
 
   groundTop(c, face, bay) {
