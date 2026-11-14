@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { AnimState } from '../ala.js';
-import { TroopBay } from './troopbay.js';
+import { TroopBay, bayExit } from './troopbay.js';
 
-const WAVE = { every: 15, first: 3, cap: 8, gap: 3, unload: 0.6, ramp: 1.2, space: 110, rings: [1, 2, 3], linger: 2.5, out: 9 },
+const WAVE = { every: 15, first: 3, cap: 8, gap: 3, unload: 0.6, ramp: 1.2, walk: 3.2, space: 110, rings: [1, 2, 3], linger: 2.5, out: 12 },
   ROOM = { send: 0.1, shake: 0.012, fov: 70 },
   _c = new THREE.Vector3(),
   _p = new THREE.Vector3(),
@@ -103,6 +103,7 @@ export class ShuttleWaves {
 
   seat(F, e) {
     F.load.push(e);
+    if (!F.H) F.H = this.heightOf(e.unit);
     if (e.who === 'bot') e.sid = 'b' + ++F.bots;
     else e.sid = e.who === 'me' ? 'h' : 'p' + e.who;
     this.seatEvent(F);
@@ -127,9 +128,45 @@ export class ShuttleWaves {
       this.launch(s, this.queues[s].splice(0));
     }
     this.shield();
+    this.keepClear();
     for (const F of this.flights.values()) {
       if (F.inside.size && now >= F.forceAt) for (const e of [...F.inside.keys()]) this.riderOut(F, e, null);
       if (F.gone || (F.t && (F.t.craft?.gone || F.t.craft?.dead) && !F.inside.size)) this.flights.delete(F.key);
+    }
+  }
+
+  keepClear() {
+    const w = this.sh.world,
+      solid = [];
+    for (const t of w.transports || []) {
+      if (!t.cargo || !t.holder || t.craft?.dead) continue;
+      const a = t.anim,
+        k = a && a.anim ? a.time / Math.max(1e-3, a.anim.duration) : 1;
+      const low = (t.stage === 'land' && !(t.hold > 0) && k > 0.55) || t.stage === 'unload' || (t.stage === 'leave' && k < 0.35);
+      if (!low) continue;
+      if (!t.clearR) {
+        t.holder.updateMatrixWorld(true);
+        _box.setFromObject(t.holder);
+        const half = Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.32,
+          F = this.flights.get(t.shuttleKey),
+          ramp = F ? bayExit(F.H, 1).x * 0.85 : 70;
+        t.clearR = Math.max(12, Math.min(half, ramp));
+      }
+      solid.push({ x: t.roomX ?? t.x, y: t.roomY ?? t.y, r: t.clearR });
+    }
+    if (!solid.length) return;
+    for (const u of w.units || []) {
+      if (u.dead || u.inside || u.structure || u.flies || !(u.speed > 0)) continue;
+      for (const S of solid) {
+        const dx = u.x - S.x,
+          dy = u.y - S.y,
+          d = Math.hypot(dx, dy),
+          R = S.r + (u.foot ? 2 : u.hitRadius || 8);
+        if (d >= R) continue;
+        const a = d > 1e-3 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+        u.x = S.x + Math.cos(a) * R;
+        u.y = S.y + Math.sin(a) * R;
+      }
     }
   }
 
@@ -299,10 +336,16 @@ export class ShuttleWaves {
     const opts = {
       hold,
       interval: WAVE.unload,
-      ramp: WAVE.ramp,
+      ramp: WAVE.ramp + WAVE.walk,
       cargo: async t => {
         F.landed = true;
         F.launched = true;
+        if (t && t.inst) {
+          t.holder.updateMatrixWorld(true);
+          const c = this.centroid(t, _c);
+          t.roomX = c.x;
+          t.roomY = c.y;
+        }
         const at = t ? { x: t.x, y: t.y } : F.o,
           bots = [];
         for (const e of F.load) {
@@ -329,8 +372,9 @@ export class ShuttleWaves {
         return bots;
       },
       onLeave: (u, t) => {
-        const e = byUnit.get(u);
-        this.exit(u, t, F.face, exits++);
+        const e = byUnit.get(u),
+          i = exits++;
+        this.exit(u, t, F.face, i, u.foot ? bayExit(F.H, i) : null);
         if (e) {
           this.stood(F, e.sid);
           this.out(e, u);
@@ -351,7 +395,7 @@ export class ShuttleWaves {
       F.t = t;
       t.shuttleKey = F.key;
     });
-    if (N && N.peers?.size) N.events.push(['shut', F.key, side, comp, Math.round(F.o.x * 10) / 10, Math.round(F.o.y * 10) / 10, Math.round(F.face * 100) / 100, Math.round(hold * 10) / 10, 0]);
+    if (N && N.peers?.size) N.events.push(['shut', F.key, side, comp, Math.round(F.o.x * 10) / 10, Math.round(F.o.y * 10) / 10, Math.round(F.face * 100) / 100, Math.round(hold * 10) / 10, Math.round((F.H || 12) * 100) / 100]);
   }
 
   craftCompany(F) {
@@ -363,7 +407,7 @@ export class ShuttleWaves {
 
   stood(F, sid) {
     F.stood.add(sid);
-    if (this.room && this.room.key === F.key && this.room.bay) this.room.bay.stand(sid);
+    if (this.room && this.room.key === F.key && this.room.bay) this.room.bay.leave(sid);
     const N = this.sh.game.shooterNet;
     if (N && N.peers?.size) N.events.push(['stand', F.key, sid]);
   }
@@ -413,7 +457,7 @@ export class ShuttleWaves {
       t.roomX = c.x;
       t.roomY = c.y;
     }
-    this.exit(u, t, F.face, 0, local || { x: 70, y: 0, yaw: 0 });
+    this.exit(u, t, F.face, 0, local || bayExit(F.H, 1));
     if (u.holder) u.holder.visible = !u.scriptHidden;
     F.pos.delete(e.sid);
     this.out(e, u);
@@ -460,6 +504,7 @@ export class ShuttleWaves {
       this.hideCraft = { craft, x: at.x, y: at.y, r: R.bay ? R.bay.L * 1.4 : 120, until: this.sh.world.time + 20 };
       craft.holder.visible = false;
     }
+    if (R.hid) for (const o of R.hid) o.visible = true;
     if (R.bay) R.bay.dispose();
   }
 
@@ -514,7 +559,7 @@ export class ShuttleWaves {
     if (!R.bay) {
       const own = R.F ? R.F.load.find(e => e.who === 'me') : null,
         cls = own?.unit || (sh.pick && sh.pick.unit);
-      R.bay = new TroopBay(w, R.F ? R.F.side : sh.me, this.heightOf(cls));
+      R.bay = new TroopBay(w, R.F ? R.F.side : sh.me, R.F ? R.F.H : R.V.H || this.heightOf(cls));
       R.K = this.landedOffset(craft);
       R.face = R.F ? R.F.face : craft.heading;
       sh.yaw = R.face + Math.PI;
@@ -537,7 +582,24 @@ export class ShuttleWaves {
       shake = landed ? 0 : Math.min(1, Math.abs(vz) / 300) * ROOM.shake;
     bay.place(_p.set(c.x, c.y, 0), R.face, floor, tilt, Math.sin(performance.now() / 700) * shake * 2);
     bay.rampOpen = landed;
+    {
+      const end = bay.toWorld(bay.L / 2 + bay.rampLen, 0, 0, _p),
+        drop = floor - heightAt(w.terrain, end.x, end.y);
+      bay.rampTilt = Math.max(0, Math.min(0.6, Math.asin(Math.max(-1, Math.min(1, drop / bay.rampLen)))));
+    }
+    if (w.time >= (R.clearAt || 0)) {
+      R.clearAt = w.time + 0.5;
+      this.clearFootprint(R, bay);
+    }
+    if (R.hid) for (const o of R.hid) o.visible = false;
     this.syncSeats(R);
+    if (landed && R.landAt === undefined) {
+      R.landAt = performance.now() / 1000;
+      const list = R.F ? R.F.load.map(e => [e.sid, '', e.who === 'bot' ? 0 : 1]) : R.V?.seats || [];
+      list
+        .filter(x => !x[2])
+        .forEach(([sid], i) => bay.walkOut(sid, R.landAt + WAVE.ramp + WAVE.walk + i * WAVE.unload, i));
+    }
     bay.me.yaw = sh.yaw - R.face;
     bay.me.pitch = sh.pitch;
     const res = bay.step(real, R.exited ? null : input);
@@ -590,6 +652,22 @@ export class ShuttleWaves {
       R.tt = now;
     } else if (now - R.tt > 0.15) R.tv.set(0, 0, 0);
     return c.copy(R.tc).addScaledVector(R.tv, Math.min(now - R.tt, 1 / 20));
+  }
+
+  clearFootprint(R, bay) {
+    const w = this.sh.world,
+      inv = new THREE.Matrix4().copy(bay.group.matrixWorld).invert(),
+      hx = bay.L / 2 + bay.rampLen + bay.H * 0.2,
+      hy = bay.W / 2 + bay.H * 0.2,
+      inside = o => {
+        _c.set(o.x, o.y, bay.group.position.z).applyMatrix4(inv);
+        return _c.x > -hx && _c.x < hx && Math.abs(_c.y) < hy;
+      },
+      hid = (R.hid ||= new Set()),
+      own = R.F ? R.F.t?.craft : null,
+      me = this.sh.body;
+    for (const p of w.points) if (p.holder && p.holder.visible && inside(p)) hid.add(p.holder);
+    for (const u of w.units) if (!u.dead && u.holder && u.holder.visible && u !== own && u !== me && (u.structure || !u.foot) && inside(u)) hid.add(u.holder);
   }
 
   groundTop(c, face, bay) {
@@ -655,7 +733,7 @@ export class ShuttleWaves {
         if (!bay.avatars.has(sid)) bay.avatar(sid, name);
         const p = R.F ? R.F.pos.get(sid) : R.V?.pos?.get(sid);
         if (p) bay.moveAvatar(sid, p.x, p.y, p.h, p.m);
-      } else if (!bay.sitters.has(sid) && !stood.has(sid)) bay.sit(sid, name);
+      } else if (!bay.sitters.has(sid) && !stood.has(sid) && !bay.left.has(sid)) bay.sit(sid, name, String(R.key));
     }
     for (const sid of [...bay.avatars.keys()]) if (!want.has(sid)) bay.dropAvatar(sid);
   }
@@ -697,7 +775,7 @@ export class ShuttleWaves {
     const V = this.pending(key);
     V.stood.add(sid);
     const R = this.room;
-    if (R && R.key === key && R.bay) R.bay.stand(sid);
+    if (R && R.key === key && R.bay) R.bay.leave(sid);
   }
 
   netPos(m) {
@@ -710,7 +788,7 @@ export class ShuttleWaves {
       w = this.sh.world,
       V = this.pending(key);
     if (V.ready || V.loading) return;
-    Object.assign(V, { side, x, y, heading: face, hold: +hold || 0, stage: 'land', loading: true, ground: 0 });
+    Object.assign(V, { side, x, y, heading: face, hold: +hold || 0, stage: 'land', loading: true, ground: 0, H: +ev[8] || 12 });
     const L = await w.landingCraft(comp);
     if (!L || V.gone) {
       this.visuals.delete(key);
@@ -739,7 +817,7 @@ export class ShuttleWaves {
         mine = this.room && this.room.key === key && !this.room.exited;
       if (V.stage === 'land' && !running) {
         V.stage = 'unload';
-        V.ground = WAVE.ramp + Math.max(1, V.seats.length) * WAVE.unload + WAVE.linger;
+        V.ground = WAVE.ramp + WAVE.walk + Math.max(1, V.seats.length) * WAVE.unload + WAVE.linger;
       } else if (V.stage === 'unload' && !mine && (V.ground -= dt) <= 0) {
         V.stage = 'leave';
         V.anim = V.off ? new AnimState(V.inst, V.off, {}) : null;
