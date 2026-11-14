@@ -615,9 +615,9 @@ export class Overlord {
     this.clearCanvas();
   }
 
-  possessed(u) {
+  possessed(u, landed = false) {
     if (!this.on) return;
-    if (!this.blend && u) this.startBlend('in', this.sh.nameOf(u.type), 'Deployed');
+    if (!this.blend && u && !landed) this.startBlend('in', this.sh.nameOf(u.type), 'Deployed');
     if (document.body.classList.contains('shooter-command')) this.look(false);
     this.wantDeploy = false;
     this.pull = 0;

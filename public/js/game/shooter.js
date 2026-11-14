@@ -466,6 +466,7 @@ export class Shooter {
     this.shake = 0;
     this.melee = false;
     this.swing = null;
+    this.landingIn = false;
     this.cockpit = false;
     this.seatBox = { u: null, len: 0, top: 0 };
     this.stomps = new Map();
@@ -5154,6 +5155,7 @@ export class Shooter {
 
   boarded(e, u) {
     this.boardCost = 0;
+    this.landingIn = true;
     this.possess(u.squad, u, false);
   }
 
@@ -5623,6 +5625,8 @@ export class Shooter {
   }
 
   possess(q, u, hero) {
+    const landed = !!this.waves?.inRoom() || this.landingIn;
+    this.landingIn = false;
     this.waves?.endRoom();
     q.noAI = true;
     q.selectable = false;
@@ -5697,7 +5701,7 @@ export class Shooter {
     T.gunRel = null;
     this.panel.style.display = 'none';
     this.hud.style.display = 'block';
-    this.ov?.possessed(u);
+    this.ov?.possessed(u, landed);
     this.lock();
     this.hints();
   }
