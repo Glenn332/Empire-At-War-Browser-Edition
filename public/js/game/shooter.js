@@ -816,9 +816,14 @@ export class Shooter {
     const has = K => animReady(u.type, K),
       fp = this.third === false && !mel;
     let kind;
-    this.twist.overlay = !mel && ((go && (shooting || aiming)) || fp) && !(go && has('FIRE_MOVE')) && has('ATTACKIDLE');
-    if (sw) kind = 'attack';
-    else if (go) kind = shooting || aiming ? (has('FIRE_MOVE') ? 'FIRE_MOVE' : has('WALKMOVE') ? 'WALKMOVE' : 'move') : P.crouch && has('CROUCHMOVE') ? 'CROUCHMOVE' : 'move';
+    const walkSwing = !!(sw && go && sw.clip);
+    this.twist.swing = walkSwing ? sw : null;
+    this.twist.overlay = walkSwing || (!mel && ((go && (shooting || aiming)) || fp) && !(go && has('FIRE_MOVE')) && has('ATTACKIDLE'));
+    if (walkSwing) kind = P.run && has('MOVE') ? 'move' : has('WALKMOVE') ? 'WALKMOVE' : 'move';
+    else if (sw) {
+      kind = 'attack';
+      this.holdSwing(u, sw);
+    } else if (go) kind = shooting || aiming ? (has('FIRE_MOVE') ? 'FIRE_MOVE' : has('WALKMOVE') ? 'WALKMOVE' : 'move') : P.crouch && has('CROUCHMOVE') ? 'CROUCHMOVE' : 'move';
     else if (shooting) kind = 'attack';
     else if (aiming || fp) kind = has('ATTACKIDLE') ? 'attack' : 'idle';
     else kind = P.crouch && has('CROUCHIDLE') ? 'CROUCHIDLE' : 'idle';
@@ -1292,6 +1297,16 @@ export class Shooter {
     return S;
   }
 
+  holdSwing(u, S) {
+    if (!S.clip || (u.anim && u.anim.anim === S.clip && u.once === 'attack')) return;
+    const w = this.world;
+    u.anim = new AnimState(u.inst, S.clip, { loop: false, speed: S.rate, time: Math.max(0, Math.min(S.clip.duration - 1e-4, (w.time - S.t0) * S.rate)) });
+    u.once = 'attack';
+    u.onceKind = 'ATTACK';
+    u.onceEnd = S.end;
+    u.animKind = '~';
+  }
+
   startSwing(u, P) {
     const w = this.world,
       wp = u.weapon,
@@ -1306,6 +1321,8 @@ export class Shooter {
     wp.cooldown = (wp.recharge || 1) * w.fireDelay(u);
     return (this.swing = {
       u,
+      clip: played && u.anim ? u.anim.anim : null,
+      rate: played && u.anim ? u.anim.speed || 1 : 1,
       t0: now,
       end: now + dur,
       hit: now + dur * MELEE.hitAt,
@@ -6884,13 +6901,15 @@ export class Shooter {
       }
     }
     if (T.overlay && !u.inside) {
-      const clip = animClip(u.type, 'ATTACKIDLE');
+      const S = T.swing && T.swing === this.swing ? T.swing : null,
+        clip = S ? S.clip : animClip(u.type, 'ATTACKIDLE');
       if (clip) {
         if (!T.upper || T.upper.anim !== clip || T.upper.inst !== u.inst) {
-          T.upper = new AnimState(u.inst, clip, { loop: true });
+          T.upper = new AnimState(u.inst, clip, { loop: !S });
           T.upper.bound = T.upper.bound.filter(b => !LOWER_BONES.test(b.bone.name));
         }
-        T.upper.advance(this.realDt || 0);
+        if (S) T.upper.time = Math.max(0, Math.min(clip.duration - 1e-4, (this.world.time - S.t0) * S.rate));
+        else T.upper.advance(this.realDt || 0);
         T.upper.pose();
       }
     }
