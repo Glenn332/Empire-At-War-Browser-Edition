@@ -108,6 +108,38 @@ export class SpecialWeapon {
   }
 }
 
+export function factionWeaponIndex(p) {
+  const name = p?.faction?.str('Standalone_Space_Maps_Special_Weapon_A').trim(),
+    t = name ? db.type(name) : null;
+  return t ? t.num('Special_Weapon_Index', -1) : -1;
+}
+
+export function playerSpecial(world, p) {
+  if (!p || !p.faction) return null;
+  const index = factionWeaponIndex(p);
+  if (index >= 0) {
+    const weapon = (world.specialWeapons || []).find(s => s.player === p && s.index === index && !s.dead) || null;
+    return weapon ? { weapon, station: null, hp: null, charge: weapon.charge } : null;
+  }
+  if (!p.faction.bool('Benefits_From_Corruption')) return null;
+  const station = world.units.find(u => u.isStation && !u.dead && u.player && u.player.team === p.team);
+  if (!station) return null;
+  const hp = (station.hardpoints || []).find(h => h.def.bool('Requires_Manual_Target_Assignment')) || null;
+  let charge = 0;
+  if (hp && !(hp.destroyable && hp.health <= 0)) {
+    const t = world.time - p.manualStart;
+    charge = p.manualSpan > 0 && t < p.manualSpan ? t / p.manualSpan : 1;
+  }
+  return { weapon: null, station, hp, charge };
+}
+
+export function specialTargets(world, sp, t) {
+  if (sp.weapon) return sp.weapon.canTarget(t);
+  const o = t && t.isSquad ? t.fighters[0] : t;
+  if (!sp.hp || !o || o.dead || o.isPad || !o.player || o.player.id < 0 || o.player.team === sp.station.player.team) return false;
+  return !world.restricted || !world.restricted(sp.hp, o);
+}
+
 export function useUpgrades(p) {
   const out = [];
   for (const n of p.upgrades) {

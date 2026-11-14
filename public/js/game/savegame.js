@@ -282,7 +282,8 @@ function spaceSnapshot(game, name) {
       players: w.players.map(p => ({
         credits: Math.round(p.credits),
         stats: { ...p.stats },
-        reinforcements: p.reinforcements.map(t => t.name)
+        reinforcements: p.reinforcements.map(t => t.name),
+        ...(p.manualSpan ? { manual: [p.manualStart, p.manualSpan] } : {})
       })),
       entities: ents.map(e => (e.isSquad ? squad(e) : unit(e))),
       ...(w.carried && w.carried.length
@@ -633,6 +634,7 @@ export function restore(game, save) {
     p.credits = ps.credits;
     Object.assign(p.stats, ps.stats || {});
     p.reinforcements = (ps.reinforcements || []).map(n => db.type(n)).filter(Boolean);
+    if (Array.isArray(ps.manual)) [p.manualStart, p.manualSpan] = ps.manual;
     if (!p.human) p.aiPool = p.reinforcements.map(type => ({ type, owner: null }));
   });
   if (Array.isArray(snap.storyBlips)) {

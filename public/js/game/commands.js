@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { orderMove, orderAttack, orderGuard, orderStop, orderPlaced } from './orders.js';
 import { Beacons, beaconType } from './beacons.js';
+import { playerSpecial } from './superweapon.js';
 
 export const ids = list => list.map(e => e.id);
 
@@ -140,10 +141,11 @@ export function execute(world, player, cmd) {
       return why ? { why } : {};
     }
     case 'special': {
-      const mine = (world.specialWeapons || []).filter(w => w.player === player),
-        sw = mine.find(w => w.charge >= 0.99) || mine[0],
+      const sp = playerSpecial(world, player),
+        sw = sp && sp.weapon,
         t = find(cmd.t);
-      if (!sw) return {};
+      if (!sp) return {};
+      if (!sw) return world.assignManual(sp.hp, t, player) ? {} : { why: 'Not a valid target' };
       if (!t || !sw.canTarget(t)) return { why: 'Not a valid target' };
       const why = sw.fire(t);
       return why ? { why } : {};

@@ -448,6 +448,10 @@ const at = {
     assert(t, 'a special weapon target');
     assert.equal(sw.fire(t), null);
   },
+  350: () => {
+    me.manualStart = truth.time;
+    me.manualSpan = 120;
+  },
   300: () => {
     for (const f of truth.squads.find(s => !s.dead && s.player === foe)?.fighters || []) [f.x, f.y] = [me.station.x + 300, me.station.y];
   }

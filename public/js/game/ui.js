@@ -23,6 +23,7 @@ import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './p
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
+import { playerSpecial, specialTargets } from './superweapon.js';
 
 const $ = id => document.getElementById(id);
 const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -1335,11 +1336,10 @@ export class UI {
       return true;
     }
     if (this.armed === 'special') {
-      const mine = (this.world.specialWeapons || []).filter(w => w.player === this.player),
-        sw = mine.find(w => w.charge >= 0.99) || mine[0],
+      const sp = playerSpecial(this.world, this.player),
         hit = this.pick(x, y);
-      if (!sw) return true;
-      if (!hit || !sw.canTarget(hit)) {
+      if (!sp) return true;
+      if (!hit || !specialTargets(this.world, sp, hit)) {
         this.game.message('Not a valid target', 'bad');
         this.game.audio.play('GUI_Bad_Sound');
         return false;
@@ -1711,10 +1711,10 @@ export class UI {
         this.arm(null);
     }
     if (this.armed === 'special') {
-      const mine = (this.world.specialWeapons || []).filter(w => w.player === this.player),
-        sw = mine.find(w => w.charge >= 0.99) || mine[0];
+      const sp = playerSpecial(this.world, this.player),
+        action = sp ? (sp.weapon ? sp.weapon.action : sp.station.type.num('Special_Weapon_Target_Action_Index', 0)) : 0;
       pointers.set(
-        'POINTER_ATTACK_WITH_SPECIAL_WEAPON_' + (sw && this.hover && sw.canTarget(this.hover) ? Math.min(2, sw.action) : 'INVALID')
+        'POINTER_ATTACK_WITH_SPECIAL_WEAPON_' + (sp && this.hover && specialTargets(this.world, sp, this.hover) ? Math.min(2, action) : 'INVALID')
       );
     } else if (!this.armed && !this.placing && !this.drag?.box && !this.direct && m.inside && this.repairTarget(m.x, m.y)) {
       pointers.set('POINTER_REPAIR_HARDPOINT');

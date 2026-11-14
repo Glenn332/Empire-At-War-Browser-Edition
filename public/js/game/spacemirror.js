@@ -364,6 +364,12 @@ export class SpaceMirror {
         sw.readyAt = readyAt;
         sw.left = left;
       });
+      for (const [id, start, span] of st[6] || []) {
+        const p = w.players.find(x => x.id === id);
+        if (!p) continue;
+        p.manualStart = start;
+        p.manualSpan = span;
+      }
     }
   }
 

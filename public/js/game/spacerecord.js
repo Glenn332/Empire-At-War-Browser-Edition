@@ -80,7 +80,8 @@ export class SpaceRecorder {
       w.reveal ? 1 : 0,
       w.fogLifted || 0,
       (w.specialWeapons || []).map(sw => [sw.firedAt, sw.readyAt, sw.left]),
-      w.dogs ? [...w.dogs.cells].filter(c => c[1].length).map(([k, l]) => [k, l.map(q => q.id)]) : []
+      w.dogs ? [...w.dogs.cells].filter(c => c[1].length).map(([k, l]) => [k, l.map(q => q.id)]) : [],
+      w.players.map(p => [p.id, p.manualStart, p.manualSpan])
     ];
   }
 

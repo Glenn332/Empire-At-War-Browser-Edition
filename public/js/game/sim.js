@@ -371,6 +371,8 @@ export class Player {
     this.basePos = { x: 0, y: 0 };
     this.reinforcements = [];
     this.adjust = null;
+    this.manualStart = 0;
+    this.manualSpan = 0;
   }
   get bit() {
     return this.team.bit;
@@ -448,6 +450,8 @@ class Hardpoint {
     this.forward = def.bool('Fires_Forward');
     this.target = null;
     this.targetHp = null;
+    this.manual = null;
+    this.manualBy = null;
     this.local = { x: 0, y: 0, z: 0 };
     this.fireLocal = [];
     this.facing = 0;
@@ -4224,8 +4228,32 @@ export class World {
       }
       if (!fired) continue;
       if (--hp.pulsesLeft > 0) hp.pulseTimer = hp.pulseDelay * modeDelay(hp, u.abilities);
-      else hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * rechargeDelay(hp, u.abilities)) / u.bonus.fireRate;
+      else {
+        hp.cooldown = (rand(hp.rechargeMin, hp.rechargeMax) * u.mods.weaponDelay * rechargeDelay(hp, u.abilities)) / u.bonus.fireRate;
+        if (hp.manualBy) {
+          const p = hp.manualBy;
+          p.manualStart = this.time;
+          p.manualSpan = Math.round(hp.def.num('Manual_Hardpoint_Firing_Cooldown_Secs', 0) * 30) / 30;
+          hp.manual = hp.manualBy = null;
+        }
+      }
     }
+  }
+
+  assignManual(hp, t, player) {
+    const u = hp && hp.unit;
+    if (!u || u.dead || !hp.alive || hp.manual || !hp.def.bool('Requires_Manual_Target_Assignment')) return false;
+    if (t && t.isSquad) t = t.fighters[0];
+    if (!t || t.dead || !t.player || t.player.id < 0 || t.player.team === u.player.team) return false;
+    if (!this.canSee(u.player, t) || !this.canBear(u, hp, t)) return false;
+    hp.rules ??= {
+      manual: true,
+      idle: hp.def.bool('Allow_Opportunity_Fire_When_Idle', true),
+      busy: hp.def.bool('Allow_Opportunity_Fire_When_Targeting', true)
+    };
+    hp.manual = t;
+    hp.manualBy = player;
+    return true;
   }
 
   aimHardpoint(u, hp, t) {
@@ -4391,6 +4419,11 @@ export class World {
   }
 
   hardpointTarget(u, hp) {
+    if (hp.rules?.manual) {
+      const m = hp.manual;
+      if (m && m.dead) hp.manual = hp.manualBy = null;
+      return m && !m.dead && this.canBear(u, hp, m) ? m : null;
+    }
     if (u.direct) {
       const a = u.direct.firing && u.direct.target;
       return a && !a.dead && this.canBear(u, hp, a) ? a : null;
@@ -4403,7 +4436,7 @@ export class World {
       idle: D.bool('Allow_Opportunity_Fire_When_Idle', true),
       busy: D.bool('Allow_Opportunity_Fire_When_Targeting', true)
     };
-    if (hp.rules.manual) return null;
+    if (hp.rules.manual) return this.hardpointTarget(u, hp);
     if (
       !(ord ? hp.rules.busy : hp.rules.idle) &&
       !(!u.player.human && !(hp.rechargeMax > db.constants.num('Hardpoint_Recharge_Cutoff_For_Opportunity_Fire', 3)))

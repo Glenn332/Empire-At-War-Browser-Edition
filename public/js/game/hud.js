@@ -11,6 +11,7 @@ import { buildCost, isUpgradeType, companySpaceUnits } from './sim.js';
 import { parseAbilities } from './abilities.js';
 import { abilityLocked } from './blackmarket.js';
 import { battlePlanetName } from './battleplanet.js';
+import { playerSpecial } from './superweapon.js';
 import { withKey, keysOf, keyName, onBindingsChange } from './keybinds.js';
 import { TooltipGate } from './tooltipgate.js';
 import { loadBarSkins, textureKey, decodeSkinIcons } from './barskins.js';
@@ -944,11 +945,12 @@ export class CommandBar {
             : '') || ''
         ) || 'Planetary weapon',
       onClick: () => {
-        const x = this.weaponOf();
-        if (!x) return;
-        const why = x.charge < 0.99 ? 'Not ready' : !x.enabled() ? 'Purchase a special weapon upgrade' : null;
+        const sp = this.weaponOf();
+        if (!sp) return;
+        const x = sp.weapon;
+        const why = sp.charge < 1 ? 'Not ready' : x && !x.enabled() ? 'Purchase a special weapon upgrade' : null;
         if (why) {
-          if (x.charge < 0.99) x.announce('Charging');
+          if (x && x.charge < 0.99) x.announce('Charging');
           game.message(why, 'bad');
           return;
         }
@@ -1451,8 +1453,7 @@ export class CommandBar {
   }
 
   weaponOf() {
-    const mine = (this.world.specialWeapons || []).filter(x => x.player === this.player);
-    return mine.find(x => x.charge >= 0.99) || mine[0] || null;
+    return playerSpecial(this.world, this.player);
   }
 
   refresh() {
@@ -1487,7 +1488,7 @@ export class CommandBar {
     const reinforcing = game.reinforcementsEnabled?.[String(p.factionName || '').toUpperCase()] !== false;
     this.bReinforce.classList.toggle('dis', !p.reinforcements.length || !reinforcing);
     const sw = this.weaponOf();
-    this.bWeapon.classList.toggle('dis', !sw || sw.charge < 0.99 || !sw.enabled());
+    this.bWeapon.classList.toggle('dis', !sw || sw.charge < 1 || (!!sw.weapon && !sw.weapon.enabled()));
     this.bWeapon.classList.toggle('sel', ui.armed === 'special');
     {
       const charge = this.weaponCharge ? this.weaponCharge() : sw ? sw.charge : 1,
