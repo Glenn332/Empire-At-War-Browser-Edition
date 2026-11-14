@@ -732,6 +732,7 @@ export class Shooter {
     }
     const mel = this.meleeOf(u),
       sw = mel ? this.swingStep(u, P, dt) : null;
+    if (!mel && this.swing) this.swing = null;
     this.melee = mel;
     u.blockBoost = mel && P.zoom && !sw ? MELEE.guard : undefined;
     const aiming = mel ? !!sw || P.zoom || P.fire : P.fire || P.zoom;
@@ -772,16 +773,18 @@ export class Shooter {
     {
       const fp = this.third === false && !mel,
         tw = (aiming || fp) && !mel;
+      const ws = !!(sw && go && sw.clip);
       let want = sw ? sw.face : P.yaw;
-      if (go && !sw) {
+      if (go && (!sw || ws)) {
         const md = Math.atan2(dy, dx),
-          rel = wrap(md - P.yaw);
-        want = aiming || fp ? (Math.abs(rel) > 2.2 ? P.yaw : P.yaw + Math.max(-1, Math.min(1, rel))) : md;
+          face = ws ? sw.face : P.yaw,
+          rel = wrap(md - face);
+        want = ws || aiming || fp ? (Math.abs(rel) > 2.2 ? face : face + Math.max(-1, Math.min(1, rel))) : md;
       }
       const da = wrap(want - u.heading),
         st = (sw ? MELEE.turn : 10) * dt;
       u.heading += Math.abs(da) <= st ? da : Math.sign(da) * st;
-      this.twist.want = tw ? Math.max(-1.1, Math.min(1.1, wrap(P.yaw - u.heading))) : 0;
+      this.twist.want = ws ? Math.max(-1.1, Math.min(1.1, wrap(sw.face - u.heading))) : tw ? Math.max(-1.1, Math.min(1.1, wrap(P.yaw - u.heading))) : 0;
       this.twist.pitch = tw ? Math.max(AIM_PITCH.min, Math.min(AIM_PITCH.max, this.pitch)) : 0;
       this.twist.raise = fp ? AIM_PITCH.raise : 0;
     }
