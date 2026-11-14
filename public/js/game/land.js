@@ -1107,8 +1107,11 @@ export class LandWorld {
   }
   burst(u, t, w, dt) {
     if (this.shooter && !this.shooter.ready(u, t, w)) return;
+    const mag = !!this.shooter && !!u.direct;
+    if (mag && w.left > 0 && w.left < w.pulses && w.cooldown <= 0) w.left = w.pulses;
     if (w.left > 0) {
       if ((w.timer -= dt) <= 0 && this.canShoot(u, w)) {
+        if (mag && w.left >= w.pulses) w.cooldown = w.recharge * this.fireDelay(u);
         this.fire(u, t, w);
         if (w.energy > 0) u.energy.value = Math.min(u.energy.cap, Math.max(0, u.energy.value - w.energy));
         w.left--;
@@ -6480,6 +6483,7 @@ export class LandWorld {
     const t = D.firing || (D.track && u.turret) ? D.target : null;
     if (w && !(u.needsDeploy && !u.deployed)) {
       w.cooldown -= dt;
+      if (this.shooter && w.left > 0 && w.left < w.pulses && w.cooldown <= 0) w.left = w.pulses;
       if (t && (t.spot && D.far ? true : !t.dead && Math.hypot(t.x - u.x, t.y - u.y) <= u.range + (t.hitRadius > 0 ? t.hitRadius : 0))) {
         let rel = Math.atan2(t.y - u.y, t.x - u.x) - u.heading;
         rel = Math.atan2(Math.sin(rel), Math.cos(rel));
