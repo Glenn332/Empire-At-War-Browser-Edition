@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { AnimState } from '../ala.js';
 
-const WAVE = { every: 15, first: 3, cap: 8, gap: 4, unload: 0.35, ramp: 1, spread: 70, linger: 2.5 },
+const WAVE = { every: 15, first: 3, cap: 8, gap: 3, unload: 0.35, ramp: 1, space: 110, rings: [1, 2, 3], linger: 2.5 },
   RIDE = { ahead: 0.9, up: 0.12, down: 0.32, ease: 6, fade: 600 },
   _c = new THREE.Vector3(),
   _p = new THREE.Vector3(),
@@ -67,11 +67,18 @@ export class ShuttleWaves {
   }
 
   add(e) {
-    const w = this.sh.world,
-      q = (this.queues[e.side] ||= []);
-    q.push(e);
-    if (!(this.next[e.side] > w.time)) this.next[e.side] = w.time + (this.next[e.side] === undefined ? WAVE.first : 0);
+    this.clock();
+    (this.queues[e.side] ||= []).push(e);
     return e;
+  }
+
+  clock() {
+    const w = this.sh.world,
+      n = Math.max(this.sh.game.factions?.length || 0, this.queues.length);
+    for (let s = 0; s < n; s++) {
+      this.queues[s] ||= [];
+      if (this.next[s] === undefined) this.next[s] = w.time + WAVE.first;
+    }
   }
 
   launchIn(side) {
@@ -91,12 +98,12 @@ export class ShuttleWaves {
   step() {
     const w = this.sh.world,
       now = w.time;
+    this.clock();
     for (let s = 0; s < this.queues.length; s++) {
       const q = this.queues[s];
-      if (!q) continue;
-      if (this.next[s] === undefined) this.next[s] = now + WAVE.first;
       if (now < this.next[s]) continue;
-      this.next[s] = now + WAVE.every;
+      this.next[s] += WAVE.every;
+      if (this.next[s] <= now) this.next[s] = now + WAVE.every;
       if (q.length) this.launch(s, q.splice(0));
     }
   }
@@ -158,21 +165,44 @@ export class ShuttleWaves {
       if (!g) groups.set(z, (g = { foot: [], car: [] }));
       (e.car ? g.car : g.foot).push(e);
     }
+    const flights = [],
+      taken = [];
+    for (const t of w.transports) if (t.cargo && !t.craft.dead) taken.push({ x: t.x, y: t.y });
     for (const [z, g] of groups) {
       g.foot.sort((a, b) => (a.who === 'bot') - (b.who === 'bot'));
       const loads = [];
       for (let i = 0; i < g.foot.length; i += WAVE.cap) loads.push(g.foot.slice(i, i + WAVE.cap));
       for (const e of g.car) loads.push([e]);
-      const cx = w.n * 10,
-        cy = w.n * 10,
-        base = Math.atan2(cy - z.y, cx - z.x);
-      loads.forEach((load, i) => {
-        const a = base + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.9,
-          r = i ? WAVE.spread : 0,
-          o = w.nearestOpen(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, load[0].car ? 3 : 1) || { x: z.x, y: z.y };
-        this.fly(side, load, o, base, i * WAVE.gap);
-      });
+      const base = Math.atan2(w.n * 10 - z.y, w.n * 10 - z.x);
+      for (const load of loads) {
+        const o = this.spot(z, base, taken, load[0].car);
+        taken.push(o);
+        flights.push({ load, o, face: base, me: load.some(e => e.who !== 'bot') });
+      }
     }
+    flights.sort((a, b) => b.me - a.me);
+    flights.forEach((f, i) => this.fly(side, f.load, f.o, f.face, i * WAVE.gap));
+  }
+
+  spot(z, base, taken, car) {
+    const w = this.sh.world,
+      D = Math.max(WAVE.space, this.space || 0),
+      free = (x, y) => taken.every(p => Math.hypot(p.x - x, p.y - y) >= D);
+    const tries = [[0, 0]];
+    for (const k of WAVE.rings) {
+      const n = 6 * k;
+      for (let j = 0; j < n; j++) {
+        const a = base + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * ((Math.PI * 2) / n);
+        tries.push([Math.cos(a) * D * k, Math.sin(a) * D * k]);
+      }
+    }
+    for (const [dx, dy] of tries) {
+      const o = w.nearestOpen(z.x + dx, z.y + dy, car ? 3 : 1);
+      if (o && free(o.x, o.y)) return { x: o.x, y: o.y };
+    }
+    const a = Math.random() * Math.PI * 2,
+      r = D * (WAVE.rings.length + 1);
+    return w.nearestOpen(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, car ? 3 : 1) || { x: z.x + Math.cos(a) * r, y: z.y + Math.sin(a) * r };
   }
 
   async direct(side, e) {
@@ -210,6 +240,7 @@ export class ShuttleWaves {
     if (!t.exitR) {
       _box.setFromObject(t.holder);
       t.exitR = Math.max(10, Math.min(90, Math.max(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.55));
+      this.space = Math.max(this.space || 0, t.exitR * 2.6);
     }
     const R = t.exitR + (u.foot ? 6 : (u.hitRadius || 10)) + Math.floor(i / 3) * 10,
       lat = ((i % 3) - 1) * 10,
