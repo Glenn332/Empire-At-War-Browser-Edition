@@ -3761,7 +3761,7 @@ export class Shooter {
           if (from && this.mine(from) && u.side >= 0 && !w.ally(u.side, this.me) && u.kind !== 'INFANTRY' && !u.structure) this.stats.vehicles++;
           if (u.side >= 0 && !u.structure && u.side !== w.wild && !u.squad?.native) this.logKill(from, u);
           this.wrecked(u);
-          if (u.structure) this.rocksDirty = true;
+          if (u.structure && !u.squad?.craft) this.rocksDirty = true;
         }
         return r;
       };
@@ -3862,7 +3862,7 @@ export class Shooter {
       this.homeDrops();
       this.lastStand();
       let ns = 0;
-      for (const u of w.units) if (u.structure && !u.dead && !u.gone) ns++;
+      for (const u of w.units) if (u.structure && !u.dead && !u.gone && !u.squad?.craft) ns++;
       if (ns !== this.structN) {
         if (this.structN !== undefined) this.rocksDirty = true;
         this.structN = ns;
@@ -3905,7 +3905,7 @@ export class Shooter {
     if (w.time >= this.crewAt) {
       this.crewAt = w.time + 1;
       let ns = 0;
-      for (const u of w.units) if (u.structure && !u.dead && !u.gone) ns++;
+      for (const u of w.units) if (u.structure && !u.dead && !u.gone && !u.squad?.craft) ns++;
       if (ns !== this.structN) {
         if (this.structN !== undefined) this.rocksDirty = true;
         this.structN = ns;
@@ -4442,7 +4442,7 @@ export class Shooter {
     const props = solids.length,
       domes = new Map();
     for (const u of w.units)
-      if (u.structure && !u.dead && !u.gone && u.holder && u.holder.visible !== false && !(u.speed > 0)) {
+      if (u.structure && !u.dead && !u.gone && !u.squad?.craft && u.holder && u.holder.visible !== false && !(u.speed > 0)) {
         solids.push(u.holder);
         if (u.dome?.meshes) domes.set(u.holder, u.dome.meshes);
       }

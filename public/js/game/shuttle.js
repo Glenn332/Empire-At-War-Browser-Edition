@@ -137,7 +137,10 @@ export class ShuttleWaves {
 
   keepClear() {
     const w = this.sh.world,
+      dt = Math.max(0, Math.min(0.1, w.time - (this.clearT ?? w.time))),
+      me = this.sh.body,
       solid = [];
+    this.clearT = w.time;
     for (const t of w.transports || []) {
       if (!t.cargo || !t.holder || t.craft?.dead) continue;
       const a = t.anim,
@@ -158,12 +161,23 @@ export class ShuttleWaves {
     for (const u of w.units || []) {
       if (u.dead || u.inside || u.structure || u.flies || !(u.speed > 0)) continue;
       for (const S of solid) {
+        const R = S.r + (u.foot ? 2 : u.hitRadius || 8),
+          within = p => Math.hypot(p.x - S.x, p.y - S.y) < R * 1.05;
+        if (u.path && u.path.length && Math.hypot(u.x - S.x, u.y - S.y) < R * 2.5) {
+          while (u.path.length > 1 && within(u.path[0])) u.path.shift();
+          if (u.path.length === 1 && within(u.path[0])) u.path.length = 0;
+        }
         const dx = u.x - S.x,
           dy = u.y - S.y,
-          d = Math.hypot(dx, dy),
-          R = S.r + (u.foot ? 2 : u.hitRadius || 8);
+          d = Math.hypot(dx, dy);
         if (d >= R) continue;
-        const a = d > 1e-3 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+        let a = d > 1e-3 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+        const goal = u !== me ? (u.path && u.path[0]) || (u.target && !u.target.dead ? u.target : null) : null;
+        if (goal && !within(goal)) {
+          const ga = Math.atan2(goal.y - S.y, goal.x - S.x),
+            diff = Math.atan2(Math.sin(ga - a), Math.cos(ga - a));
+          a += Math.sign(diff) * Math.min(Math.abs(diff), ((u.speed || 20) * dt) / R);
+        }
         u.x = S.x + Math.cos(a) * R;
         u.y = S.y + Math.sin(a) * R;
       }

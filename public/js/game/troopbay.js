@@ -82,22 +82,6 @@ const stripes = () =>
     }
   });
 
-const crateTex = () =>
-  canvasTexture((x, S) => {
-    x.fillStyle = '#5b5f55';
-    x.fillRect(0, 0, S, S);
-    x.strokeStyle = '#2f322c';
-    x.lineWidth = 10;
-    x.strokeRect(8, 8, S - 16, S - 16);
-    x.lineWidth = 6;
-    x.beginPath();
-    x.moveTo(8, S / 2);
-    x.lineTo(S - 8, S / 2);
-    x.stroke();
-    x.fillStyle = '#c8a03a';
-    x.fillRect(S * 0.12, S * 0.62, S * 0.3, S * 0.12);
-  });
-
 function mat(opts) {
   return new THREE.MeshBasicMaterial({ fog: false, side: THREE.DoubleSide, ...opts });
 }
@@ -170,7 +154,6 @@ export class TroopBay {
       ceilTex = panelTexture('#474d54', 'rgba(15,18,20,0.8)', 2, 6, 'rgba(180,190,200,0.3)'),
       metal = mat({ color: 0x7d858e }),
       dark = mat({ color: 0x3b4047 }),
-      pad = mat({ color: 0x4f2e2a }),
       chrome = mat({ color: 0xb8c0c8 });
     this.L = L;
     this.W = W;
@@ -248,8 +231,6 @@ export class TroopBay {
         if (len < H * 0.45) continue;
         const cx = (x0 + x1) / 2;
         this.box(len, bd, bh, metal, cx, sy * (W / 2 - bd / 2), bh / 2, true);
-        this.box(len, bd * 0.9, H * 0.04, pad, cx, sy * (W / 2 - bd / 2), bh + H * 0.02);
-        this.box(len, H * 0.05, H * 0.5, pad, cx, sy * (W / 2 - H * 0.03), bh + H * 0.3);
         this.benches.push({ x0, x1, sy });
         const per = Math.max(1, Math.floor(len / (H * 0.62)));
         for (let s = 0; s < per; s++) this.seats.push({ x: x0 + (len * (s + 0.5)) / per, y: sy * (W / 2 - bd * 0.35), sy, face: -sy * Math.PI / 2, taken: null });
@@ -260,10 +241,6 @@ export class TroopBay {
       for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T * 0.4, H * 0.012, chrome, hx, sy * W * BAY.rail, T * 0.82, 'z'));
       for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.08), sy, face: sy * Math.PI / 2, taken: null });
     }
-    const crate = mat({ map: crateTex() });
-    this.box(H * 0.6, H * 0.6, H * 0.6, crate, -L / 2 + H * 0.4, -W / 2 + BAY.bench * H + H * 0.35, H * 0.3, true);
-    this.box(H * 0.45, H * 0.45, H * 0.45, crate, -L / 2 + H * 0.4, -W / 2 + BAY.bench * H + H * 0.35, H * 0.82);
-    this.box(H * 0.5, H * 0.7, H * 0.5, crate, -L / 2 + H * 0.36, W / 2 - BAY.bench * H - H * 0.4, H * 0.25, true);
     const back = new THREE.Mesh(new THREE.PlaneGeometry(W, T), wallM(W / (H * 1.6)));
     back.rotation.set(Math.PI / 2, -Math.PI / 2, 0);
     back.position.set(-L / 2, 0, T / 2);
