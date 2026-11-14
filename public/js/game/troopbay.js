@@ -4,7 +4,7 @@ import { loadModel } from '../model.js';
 import { AnimState } from '../ala.js';
 import { animClip } from './land.js';
 
-const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.9, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, hold: 0.45, body: 0.24, me: 0.22 },
+const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.9, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, railH: 0.93, railR: 0.022, hold: 0.45, body: 0.24, me: 0.22 },
   DOWN = new THREE.Vector3(0, 0, -1),
   UP = new THREE.Vector3(0, 0, 1),
   _a = new THREE.Vector3(),
@@ -237,8 +237,10 @@ export class TroopBay {
       }
       for (const cx of [-L / 2 + H * 0.05, ...this.windows.map(c => c - ww / 2 - H * 0.04), ...this.windows.map(c => c + ww / 2 + H * 0.04), L / 2 - H * 0.05])
         this.box(H * 0.08, H * 0.12, T, dark, cx, sy * (W / 2 - H * 0.06), T / 2);
-      this.rails.push(this.tube(L * 0.84, H * 0.022, chrome, -L * 0.02, sy * W * BAY.rail, T * 0.62));
-      for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T * 0.4, H * 0.012, chrome, hx, sy * W * BAY.rail, T * 0.82, 'z'));
+      const rz = BAY.railH * H;
+      this.railZ = rz;
+      this.rails.push(this.tube(L * 0.84, H * BAY.railR, chrome, -L * 0.02, sy * W * BAY.rail, rz));
+      for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T - rz, H * 0.012, chrome, hx, sy * W * BAY.rail, (T + rz) / 2, 'z'));
       for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.3), sy, face: -sy * Math.PI / 2, taken: null });
     }
     const back = new THREE.Mesh(new THREE.PlaneGeometry(W, T), wallM(W / (H * 1.6)));
@@ -487,17 +489,14 @@ export class TroopBay {
       lo = wp(hand).distanceTo(wp(farm)),
       reach = (up + lo) * 0.96,
       sh = g.worldToLocal(wp(bicep));
-    if (this.railZ === null) {
-      this.railZ = sh.z + reach * 0.86;
-      for (const r of this.rails) r.position.z += this.railZ - this.T * 0.62;
-    }
-    const dz = Math.max(0, Math.min(reach * 0.97, this.railZ - sh.z)),
+    const grip = this.railZ - this.H * BAY.railR - lo * 0.32,
+      dz = Math.max(0, Math.min(reach * 0.97, grip - sh.z)),
       dh = Math.sqrt(Math.max(0, reach * reach - dz * dz)),
       railY = S.seat.sy * this.W * BAY.rail;
     m.holder.position.y += railY + S.seat.sy * dh - sh.y;
     m.holder.updateMatrixWorld(true);
     const S0 = wp(bicep),
-      T = g.localToWorld(new THREE.Vector3(g.worldToLocal(S0.clone()).x, railY, this.railZ)),
+      T = g.localToWorld(new THREE.Vector3(g.worldToLocal(S0.clone()).x, railY + S.seat.sy * this.H * BAY.railR * 1.8, grip)),
       D = Math.min(S0.distanceTo(T), up + lo - 1e-3),
       dir = T.clone().sub(S0).normalize(),
       out = new THREE.Vector3(side === 'R' ? 1 : -1, 0, 0).applyQuaternion(m.holder.getWorldQuaternion(new THREE.Quaternion())),
