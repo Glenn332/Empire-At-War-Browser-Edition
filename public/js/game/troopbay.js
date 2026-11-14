@@ -96,10 +96,6 @@ const crateTex = () =>
     x.stroke();
     x.fillStyle = '#c8a03a';
     x.fillRect(S * 0.12, S * 0.62, S * 0.3, S * 0.12);
-    const a = S * 0.11,
-      b = S * 0.085;
-    glyphs(x, 'ARMS', (S - glyphWidth('ARMS', a)) / 2, S * 0.17, a, 'rgba(255,255,255,0.6)');
-    glyphs(x, 'CL7', S * 0.66 - glyphWidth('CL7', b) / 2, S * 0.6, b, 'rgba(255,255,255,0.45)');
   });
 
 function mat(opts) {
@@ -116,59 +112,6 @@ const hash = s => {
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 };
-
-const GRID = [
-  [0, 0],
-  [0.5, 0],
-  [1, 0],
-  [0, 0.5],
-  [0.5, 0.5],
-  [1, 0.5],
-  [0, 1],
-  [0.5, 1],
-  [1, 1]
-];
-
-function glyphWidth(text, size) {
-  let w = 0;
-  for (const ch of text) w += ch === ' ' ? size * 0.6 : size * 0.95;
-  return Math.max(0, w - size * 0.25);
-}
-
-function glyphs(x, text, gx, gy, size, color) {
-  x.save();
-  x.strokeStyle = color;
-  x.fillStyle = color;
-  x.lineWidth = Math.max(2, size * 0.12);
-  x.lineCap = 'square';
-  let cx = gx;
-  for (const ch of text) {
-    if (ch === ' ') {
-      cx += size * 0.6;
-      continue;
-    }
-    const r = k => hash(ch + ':' + k),
-      w = size * 0.7,
-      strokes = 2 + Math.floor(r('n') * 3);
-    for (let i = 0; i < strokes; i++) {
-      const a = GRID[Math.floor(r('a' + i) * 9)],
-        b = GRID[Math.floor(r('b' + i) * 9)];
-      if (a === b) continue;
-      x.beginPath();
-      x.moveTo(cx + a[0] * w, gy + a[1] * size);
-      x.lineTo(cx + b[0] * w, gy + b[1] * size);
-      x.stroke();
-    }
-    if (r('o') < 0.3) {
-      x.beginPath();
-      x.arc(cx + w * 0.5, gy + size * (r('p') < 0.5 ? 0.25 : 0.75), size * 0.13, 0, Math.PI * 2);
-      x.stroke();
-    }
-    if (r('d') < 0.35) x.fillRect(cx + w * (r('e') < 0.5 ? 0 : 0.85), gy + size * 0.45, size * 0.12, size * 0.12);
-    cx += w + size * 0.25;
-  }
-  x.restore();
-}
 
 export function bayExit(H, i = 0) {
   const h = Math.max(6, Math.min(30, H || 12)),
