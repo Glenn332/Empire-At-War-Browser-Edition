@@ -522,14 +522,13 @@ export class ShuttleWaves {
     }
     craft.holder.visible = false;
     craft.holder.updateMatrixWorld(true);
-    const c = this.centroid(craft, _c),
+    const c = this.smooth(R, this.centroid(craft, _c)),
       bay = R.bay,
       ground = heightAt(w.terrain, c.x, c.y),
       landed = R.F ? !!R.F.t && R.F.t.stage !== 'land' : craft.stage !== 'land',
       top = this.groundTop(c, R.face, bay),
       floor = landed ? top : Math.max(top, c.z - R.K),
-      vz = R.lastZ === undefined ? 0 : (floor - R.lastZ) / Math.max(1e-3, real);
-    R.lastZ = floor;
+      vz = landed ? 0 : R.tv.z;
     if (landed && R.F && R.F.t.roomX === undefined) {
       R.F.t.roomX = c.x;
       R.F.t.roomY = c.y;
@@ -545,7 +544,13 @@ export class ShuttleWaves {
     if (res && res.out && landed && !R.exited) this.leaveRoom(R);
     if (!this.room) return false;
     const eye = bay.eyeWorld(_p);
-    if (shake) eye.addScalar((Math.random() - 0.5) * shake * bay.H * 8);
+    if (shake) {
+      const t = performance.now() / 1000,
+        a = shake * bay.H * 3;
+      eye.x += Math.sin(t * 21) * a;
+      eye.y += Math.sin(t * 17 + 1.3) * a;
+      eye.z += Math.sin(t * 25 + 2.1) * a;
+    }
     cam.position.copy(eye);
     cam.up.set(0, 0, 1);
     const cp = Math.cos(sh.pitch);
@@ -569,6 +574,22 @@ export class ShuttleWaves {
     }
     this.sendPos(R);
     return true;
+  }
+
+  smooth(R, c) {
+    const now = performance.now() / 1000;
+    if (!R.tc) {
+      R.tc = c.clone();
+      R.tv = new THREE.Vector3();
+      R.tt = now;
+    } else if (R.tc.distanceToSquared(c) > 1e-6) {
+      const dt = Math.max(1 / 240, now - R.tt);
+      R.tv.copy(c).sub(R.tc).multiplyScalar(1 / dt);
+      if (R.tv.lengthSq() > 4e6) R.tv.setLength(2000);
+      R.tc.copy(c);
+      R.tt = now;
+    } else if (now - R.tt > 0.15) R.tv.set(0, 0, 0);
+    return c.copy(R.tc).addScaledVector(R.tv, Math.min(now - R.tt, 1 / 20));
   }
 
   groundTop(c, face, bay) {
