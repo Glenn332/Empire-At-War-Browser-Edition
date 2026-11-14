@@ -308,7 +308,7 @@ const GROUPS = [
     'Abilities',
     'space',
     [
-      ['Hunt', D, 'a move, attack or guard order from the player switches it off, so the hunt icon goes with it. Ours: the engine order handling for hunt was not traced'],
+      ['Hunt', D, 'as the engine (read): a move, attack or guard order from the player switches hunt off for good, and its button with it; a stop does so for a unit with a Space_Layer (a squadron has none, so its hunt stays on); an object script Attack_Target switches it off too; orders the AI and hunt itself give keep it on'],
       [
         'Hero and unit combat bonuses (Combat_Bonus_Ability)',
         D,
@@ -1329,8 +1329,8 @@ const GROUPS = [
       ],
       [
         'Galactic fleet move voice',
-        P,
-        'sending a fleet or units into orbit plays the SFXEvent_Fleet_Move of a hero in it, else of its first unit with one. Ours: which unit speaks is our guess, the engine choice was not traced'
+        D,
+        'as the engine (read): a move order of the player plays the line of one commander, unless the galaxy is paused; every unit of the fleet and the units inside its companies are ranked by the first Unit_Command_Rankings_By_Category entry their CategoryMask meets, then by Ranking_In_Category, with the engine tie rule; the commander says its SFXEvent_Fleet_Move, else its SFXEvent_Move, else nothing. Taking units from a planet into orbit and moving them between fleets have no voice. The hyperspace sound plays as the fleet sets off'
       ],
       [
         'Galactic build buttons and fast forward',

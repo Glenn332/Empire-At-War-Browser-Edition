@@ -20,7 +20,7 @@ import { showSplash, hideSplash } from '../splash.js';
 
 import * as THREE from 'three';
 import { BenchOverlay } from '../benchoverlay.js';
-import { db, switchLanguage } from '../gamedata.js';
+import { db, switchLanguage, categoryMask } from '../gamedata.js';
 import { loadModel, planetLighting, lighting, updateBillboards, planetClock, programSources } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
 import { loadTexture } from '../dds.js';
@@ -2508,24 +2508,46 @@ export class GalacticGame {
   order(cmd) {
     if (!cmd) return null;
     const g = this.galaxy;
+    if (cmd.c === 'move') this.fleetVoice(g.fleets[cmd.f]?.units);
     if (this.net) {
-      if (cmd.c === 'move') this.fleetVoice(g.fleets[cmd.f]?.units);
       this.net.lock.command(cmd);
       return null;
     }
-    const before = cmd.c === 'embark' ? new Set(g.fleets) : null;
     const r = runCommand(this, this.me, cmd);
-    if (cmd.c === 'move' && g.fleets[cmd.f]?.dest === cmd.to) this.fleetVoice(g.fleets[cmd.f].units);
-    else if (before) this.fleetVoice(g.fleets.filter(f => !before.has(f) || (cmd.tf >= 0 && f === g.fleets[cmd.tf])).flatMap(f => f.units));
     this.syncFleetViews();
     return r;
   }
   fleetVoice(units) {
-    const types = (units || []).filter(u => !u.dead).map(u => carriedCompany(u) || u.type),
-      line = t => t.str('SFXEvent_Fleet_Move').trim(),
-      hero = t => t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => db.type(n)?.bool('Is_Named_Hero')),
-      speaker = types.find(t => hero(t) && line(t)) || types.find(line);
-    if (speaker) this.audio?.play(line(speaker));
+    if (this.paused) return;
+    const ranks = (this.commandRanks ||= db.constants
+        .str('Unit_Command_Rankings_By_Category')
+        .split(',')
+        .map(n => categoryMask(n))),
+      none = { t: null, cat: -1, rank: -1 };
+    const scored = t => {
+      const m = t ? t.list('CategoryMask').reduce((a, n) => a | categoryMask(n), 0n) : 0n,
+        cat = m ? ranks.findIndex(r => (r & m) !== 0n) : -1;
+      return cat < 0 ? none : { t, cat, rank: t.num('Ranking_In_Category', 0) };
+    };
+    const better = (best, c) => {
+      if (!c.t) return best;
+      const lower = best.cat === -1 || c.cat < best.cat;
+      if (!lower && !(best.rank === -1 || c.rank < best.rank)) return best;
+      return { t: c.t, cat: lower ? c.cat : best.cat, rank: c.rank };
+    };
+    let best = none;
+    for (const u of units || []) {
+      if (u.dead) continue;
+      const own = carriedCompany(u) || u.type;
+      best = better(best, scored(own));
+      best = better(
+        best,
+        own.list('Company_Units').reduce((b, n) => better(b, scored(db.type(n))), none)
+      );
+    }
+    const t = best.t,
+      line = t && (t.str('SFXEvent_Fleet_Move').trim() || t.str('SFXEvent_Move').trim());
+    if (line) this.audio?.play(line);
   }
   switchSides(target = '') {
     if (this.setup.net) return false;

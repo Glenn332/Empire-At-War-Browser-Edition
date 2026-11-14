@@ -942,6 +942,7 @@ export class ScriptHost {
       Attack_Target: o => {
         const t = self.of(o);
         if (!t || gone(t)) return undefined;
+        if (e.isActive?.('HUNT')) self.world.useAbility(e, 'HUNT', false);
         self.cmd.attack([e], t);
         return self.plans.block(() => gone(e) || gone(t));
       },

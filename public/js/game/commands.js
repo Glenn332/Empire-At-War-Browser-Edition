@@ -69,6 +69,10 @@ export function execute(world, player, cmd) {
       return {};
     }
     case 'stop':
+      endHunt(
+        world,
+        own().filter(e => !e.isSquad && e.type.str('Space_Layer').trim())
+      );
       orderStop(own());
       return {};
     case 'repair': {
