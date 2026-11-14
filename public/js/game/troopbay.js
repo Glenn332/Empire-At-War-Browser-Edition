@@ -4,7 +4,7 @@ import { loadModel } from '../model.js';
 import { AnimState } from '../ala.js';
 import { animClip } from './land.js';
 
-const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.9, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, railH: 0.93, railR: 0.022, hold: 0.45, body: 0.24, me: 0.22 },
+const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.42, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, railH: 0.93, railR: 0.022, hold: 0.45, body: 0.24, me: 0.22 },
   DOWN = new THREE.Vector3(0, 0, -1),
   UP = new THREE.Vector3(0, 0, 1),
   _a = new THREE.Vector3(),
@@ -290,7 +290,7 @@ export class TroopBay {
       this.lights.push({ m: l, k: i });
     }
     this.hinge = new THREE.Group();
-    this.hinge.position.set(L / 2, 0, 0);
+    this.hinge.position.set(L / 2 + H * 0.06, 0, 0);
     const rampLen = Math.max(DH, BAY.ramp * H);
     const ramp = new THREE.Mesh(new THREE.BoxGeometry(rampLen, D, H * 0.08), mat({ map: (() => {
       const t = panelTexture('#6b737c', 'rgba(25,28,32,0.8)', 4, 2, 'rgba(210,215,220,0.4)');
@@ -628,14 +628,21 @@ export class TroopBay {
         ny = o.y + (dy / d) * min;
       }
     }
-    const onRamp = open && Math.abs(ny) <= door,
-      xMax = onRamp ? L / 2 + this.rampLen * Math.cos(this.rampDrop()) + r : L / 2 - r;
-    if (nx > L / 2 - r && Math.abs(ny) > door) nx = Math.min(nx, L / 2 - r);
-    nx = Math.max(-L / 2 + r, Math.min(xMax, nx));
+    const wall = L / 2 - r,
+      outside = me.x > wall + 1e-3,
+      rampEnd = L / 2 + this.rampLen * Math.cos(this.rampDrop());
+    let off = false;
+    if (!outside) {
+      if (nx > wall && !(open && Math.abs(ny) <= door)) nx = wall;
+    } else {
+      if (nx <= wall && Math.abs(ny) > door) nx = wall + 2e-3;
+      if (nx > L / 2 + r && Math.abs(ny) > (BAY.door * this.H) / 2) off = true;
+    }
+    nx = Math.max(-L / 2 + r, Math.min(rampEnd + r, nx));
     me.moving = Math.hypot(nx - me.x, ny - me.y) > 1e-3;
     me.x = nx;
     me.y = ny;
-    return { out: me.x > L / 2 + this.rampLen * BAY.out * Math.cos(this.rampDrop()) };
+    return { out: off || me.x > L / 2 + this.rampLen * BAY.out * Math.cos(this.rampDrop()) };
   }
 
   rampDrop() {

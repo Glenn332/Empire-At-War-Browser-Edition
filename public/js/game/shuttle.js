@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { heightAt } from './terrain.js';
+import { heightAt, CELL } from './terrain.js';
+import { TERRAIN } from './landtables.js';
 import { AnimState } from '../ala.js';
 import { TroopBay, bayExit } from './troopbay.js';
 
@@ -141,12 +142,16 @@ export class ShuttleWaves {
       me = this.sh.body,
       solid = [];
     this.clearT = w.time;
+    for (const t of this.blocked || []) if (!(w.transports || []).includes(t) || t.craft?.dead) this.unblock(t);
     for (const t of w.transports || []) {
       if (!t.cargo || !t.holder || t.craft?.dead) continue;
       const a = t.anim,
         k = a && a.anim ? a.time / Math.max(1e-3, a.anim.duration) : 1;
       const low = (t.stage === 'land' && !(t.hold > 0) && k > 0.55) || t.stage === 'unload' || (t.stage === 'leave' && k < 0.35);
-      if (!low) continue;
+      if (!low) {
+        if (t.blockCells) this.unblock(t);
+        continue;
+      }
       if (!t.clearR) {
         t.holder.updateMatrixWorld(true);
         _box.setFromObject(t.holder);
@@ -156,6 +161,7 @@ export class ShuttleWaves {
         t.clearR = Math.max(12, Math.min(half, ramp));
       }
       solid.push({ x: t.roomX ?? t.x, y: t.roomY ?? t.y, r: t.clearR });
+      if (!t.blockCells) this.block(t, t.roomX ?? t.x, t.roomY ?? t.y, t.clearR * 0.9);
     }
     if (!solid.length) return;
     for (const u of w.units || []) {
@@ -182,6 +188,35 @@ export class ShuttleWaves {
         u.y = S.y + Math.sin(a) * R;
       }
     }
+  }
+
+  block(t, x, y, r) {
+    const w = this.sh.world,
+      n = w.n,
+      cells = [],
+      i0 = Math.max(0, Math.floor((x - r) / CELL)),
+      i1 = Math.min(n - 1, Math.ceil((x + r) / CELL)),
+      j0 = Math.max(0, Math.floor((y - r) / CELL)),
+      j1 = Math.min(n - 1, Math.ceil((y + r) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (Math.hypot(i * CELL - x, j * CELL - y) <= r) cells.push(j * n + i);
+    const own = [];
+    t.blockCells = own;
+    (this.blocked ||= new Set()).add(t);
+    if (!cells.length || !w.occupy) return;
+    for (const k of cells) own.push(k);
+    w.occupy(own, cells, TERRAIN.OBSTACLE);
+    w.groundChanged(cells);
+    if (w.reroute) w.reroute(cells);
+  }
+
+  unblock(t) {
+    const w = this.sh.world,
+      own = t.blockCells;
+    t.blockCells = null;
+    this.blocked?.delete(t);
+    if (!own || !own.length || !w.vacate) return;
+    w.vacate(own);
+    if (w.reroute) w.reroute(own);
   }
 
   zones(side) {
@@ -270,7 +305,7 @@ export class ShuttleWaves {
         return ahead > 0 && ahead < D * 1.6 && side < D * 0.6;
       },
       props = [...w.points.filter(p => p.holder), ...(w.units || []).filter(u => u.structure && !u.dead && !u.squad?.craft)],
-      clearOf = (x, y) => props.every(p => Math.hypot(p.x - x, p.y - y) >= D * 0.6 + (p.hitRadius > 0 && p.structure ? p.hitRadius : 0)),
+      clearOf = (x, y) => props.every(p => Math.hypot(p.x - x, p.y - y) >= D * 0.9 + (p.hitRadius > 0 && p.structure ? p.hitRadius : 0)),
       free = (x, y) => clearOf(x, y) && taken.every(p => Math.hypot(p.x - x, p.y - y) >= D && !lane(p, x, y) && !lane({ x, y, face: base }, p.x, p.y));
     const tries = [[0, 0]];
     for (const k of WAVE.rings) {
