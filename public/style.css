@@ -982,6 +982,9 @@ body:not(.original-hud) .heroframe {
 .hb-native.galactic-build.dis > .hb-art {
   filter: brightness(0.502);
 }
+.hb-native.galactic-build.dis > .hb-art-dis {
+  display: none;
+}
 .hb-native.hb-swap.sel:not(.dis) > .hb-art-icon,
 .hb-native.hb-swap:hover:not(.dis) > .hb-art-icon {
   display: none;

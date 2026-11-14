@@ -22,6 +22,10 @@ function finder(world) {
   };
 }
 
+function endHunt(world, list) {
+  for (const e of list) if (e.isActive?.('HUNT')) world.useAbility(e, 'HUNT', false);
+}
+
 export function execute(world, player, cmd) {
   const find = finder(world);
   const own = () => (Array.isArray(cmd.u) ? cmd.u : []).map(find).filter(e => e && e.player === player);
@@ -31,6 +35,7 @@ export function execute(world, player, cmd) {
   switch (cmd.c) {
     case 'move': {
       const mine = own().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
+      endHunt(world, mine);
       if (mine.length) orderMove(mine, clampX(cmd.x), clampY(cmd.y), !!cmd.attack, !!cmd.waypoint);
       return {};
     }
@@ -38,6 +43,10 @@ export function execute(world, player, cmd) {
       const placed = (Array.isArray(cmd.p) ? cmd.p : [])
         .map(([id, x, y]) => ({ e: find(id), x: clampX(x), y: clampY(y) }))
         .filter(o => o.e && o.e.player === player && !o.e.dead && (o.e.isSquad || o.e.isMobile));
+      endHunt(
+        world,
+        placed.map(o => o.e)
+      );
       if (placed.length) orderPlaced(placed, num(cmd.h), !!cmd.attack);
       return {};
     }
@@ -46,6 +55,7 @@ export function execute(world, player, cmd) {
         t = find(cmd.t);
       if (!mine.length || !t || t.player.id < 0 || t.player.team === player.team || t.isPad) return {};
       const hp = cmd.hp >= 0 && t.hardpoints ? t.hardpoints[cmd.hp] || null : null;
+      endHunt(world, mine);
       orderAttack(mine, t, hp);
       return {};
     }
@@ -54,6 +64,7 @@ export function execute(world, player, cmd) {
         t = cmd.t ? find(cmd.t) : null;
       if (!mine.length) return {};
       if (cmd.t && (!t || t.player.team !== player.team)) return {};
+      endHunt(world, mine);
       orderGuard(mine, t, t ? t.x : clampX(cmd.x), t ? t.y : clampY(cmd.y));
       return {};
     }

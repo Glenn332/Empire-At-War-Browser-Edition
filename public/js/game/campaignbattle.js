@@ -435,6 +435,8 @@ export function placeCampaignBattle(w, map, teams, cb) {
     const team = teams[s.team],
       p = owner(team);
     const roster = s.units.map(u => {
+      const company = u.company && db.type(u.company);
+      if (company) return { ...u, companyType: company };
       const type = tacticalTransportType(u);
       return type === u.type ? u : { ...u, type, companyType: u.type };
     });

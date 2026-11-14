@@ -9,6 +9,17 @@ export const carriedCompany = u => u.carries || (forceKind(u.type) === 'company'
 export const companyTransport = type => type && db.type(type.list('Company_Transport_Unit')[0]);
 export const tacticalTransportType = record =>
   forceKind(record.type) === 'company' ? companyTransport(carriedCompany(record)) || record.type : record.type;
+export function companySpaceForm(company) {
+  for (const n of company?.list('Company_Units') || []) {
+    const unique = db.type(db.type(n)?.str('Unique_Space_Unit') || '');
+    if (unique) return unique;
+  }
+  return null;
+}
+export const spaceBattleType = record => {
+  const company = carriedCompany(record);
+  return (company && companySpaceForm(company)) || tacticalTransportType(record);
+};
 const hostile = (owner, other) =>
   !!other &&
   !!db

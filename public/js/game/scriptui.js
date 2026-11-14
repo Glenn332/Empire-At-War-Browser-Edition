@@ -318,7 +318,7 @@ export class ScriptUI {
     }
     if (!forced && !net) this.game.audio?.play(c.val('Click_SFX') || 'GUI_Button_Press_2_SFX');
     if (!forced && !net && key === 'B_OPTION_G') this.game.toggleMenu();
-    if (key === 'B_FAST_FORWARD' && !net) this.game.setFastForward?.(true);
+    if (key === 'B_FAST_FORWARD' && !net) this.game.setFastForward?.(tab ? s.selected : !this.game.fastForward);
     this.game.pendingBattle?.click(key);
     if (key === 'ATTACK_BUTTON' && this.game.pauseShellOpen) this.game.setUserPaused(false);
     if (key === 'B_DROID_HELP' && !net) this.game.galacticLog?.toggle();

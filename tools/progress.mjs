@@ -308,7 +308,7 @@ const GROUPS = [
     'Abilities',
     'space',
     [
-      ['Hunt', D],
+      ['Hunt', D, 'a move, attack or guard order from the player switches it off, so the hunt icon goes with it. Ours: the engine order handling for hunt was not traced'],
       [
         'Hero and unit combat bonuses (Combat_Bonus_Ability)',
         D,
@@ -400,7 +400,7 @@ const GROUPS = [
       [
         'Space AI: a task force moves as one formation order',
         D,
-        'as the engine space movement coordinator (read), for the player and the AI: squadrons going the same way form wings that escort the nearest ship of the group (flying its course at up to twice its speed when close, else going to where it was), ships set off SpacePathfindFrameDelayDelta frames apart layer by layer with the furthest ahead first, an attack group is checked again every MovementReevaluationFrameCount frames (a shared hardpoint pick, the layer put back on its ring when the target moved out of reach), and wings with the same orders that meet are merged; the move counts as done when every unit has arrived. Ours: a wing gives up its escort when the ship stops, where the engine leaves it beside the ship; wings and attack groups are not kept in saves'
+        'as the engine space movement coordinator (read), for the player and the AI: squadrons going the same way form wings that escort the nearest ship of the group (flying its course at up to twice its speed when close, else going to where it was), ships set off SpacePathfindFrameDelayDelta frames apart layer by layer with the furthest ahead first, an attack group is checked again every MovementReevaluationFrameCount frames (a shared hardpoint pick, the layer put back on its ring when the target moved out of reach), and wings with the same orders that meet are merged; the move counts as done when every unit has arrived. while escorting, squadrons with an attack order keep the ordered target and fire at it when it comes in reach (read); the escort is given up once a second when the ship has no route left (read). Ours: a ship that has reached its attack slot once counts as stopped, standing in for the engine slot that is only placed again at the recheck (our slot follows a moving target every frame); a wing gives up its escort where the engine leaves it beside the ship; wings and attack groups are not kept in saves'
       ],
       [
         'Space AI: checked against logs of the original (a logging mod, re/ailog)',
@@ -728,7 +728,7 @@ const GROUPS = [
       [
         'Save and load',
         P,
-        'skirmish battles, space and land, and campaigns, save and load in our own format (see Campaign save and load); a single player campaign battle, space or land, is saved with its galaxy in one file and loads back into the battle, then returns to the galaxy (engine: one save holds the galactic and the tactical mode; multiplayer campaigns save on the galaxy only). A game in the background is saved to one slot of its own and offered again after the browser ended the page. A battle save keeps its scripts as the engine does (their Lua state): object, scoring, story and free-store scripts and the AI plans with their task forces, what they wait on and the goal system memory, the story events and objectives, and a retreat under way. Action point: a script waiting inside a call of the engine at the moment of saving is saved without the scripts (they start over), and the mod campaigns story scripts are not yet checked in a saved battle'
+        'skirmish battles, space and land, and campaigns, save and load in our own format (see Campaign save and load); the save name box starts empty and takes at most 63 characters, saving without a name asks for one (TEXT_ENTER_SAVE_NAME), as the engine (read); a single player campaign battle, space or land, is saved with its galaxy in one file and loads back into the battle, then returns to the galaxy (engine: one save holds the galactic and the tactical mode; multiplayer campaigns save on the galaxy only). A game in the background is saved to one slot of its own and offered again after the browser ended the page. A battle save keeps its scripts as the engine does (their Lua state): object, scoring, story and free-store scripts and the AI plans with their task forces, what they wait on and the goal system memory, the story events and objectives, and a retreat under way. Action point: a script waiting inside a call of the engine at the moment of saving is saved without the scripts (they start over), and the mod campaigns story scripts are not yet checked in a saved battle'
       ],
       [
         'Spectator (space and land, our own feature)',
@@ -1321,6 +1321,26 @@ const GROUPS = [
         'Selling in the planet view',
         D,
         'galacticsell.js: a right click on a unit, company or structure of the player in the planet view opens the engine sell button ( Sell name ($ refund) ) and a click sells it through a network order: GUI_Structure_Sold plays, the record is removed and half the type Build_Cost_Credits is paid back. As in the engine the default sell rule refuses heroes and Super category types (no game data sets another SellableType). The button is the g_ground_sell command bar component as the engine clones it: its Icon_Texture_Name and Mouse_Over_Texture_Name art at the art height, as wide as the text, its font, size, scale and outline, its click and mouse over sounds, placed 8192 by 18432 screen units right of and below the cursor like a popup; the pointer over the slot and the button is POINTER_TACTICAL_SELL. Its Text_Color has no alpha, which in the original leaves the white to grey text of the font (matched to a screenshot of the original, the text draw was not traced to the end). Ours: the per-object price field of the engine is not tracked'
+      ],
+      [
+        'Heroes with a space form in campaign space battles',
+        D,
+        'a hero company whose hero names a Unique_Space_Unit (Darth Vader, the Executor, Piett and his Accuser) comes into a galactic space battle as that unit instead of its transport, keeping the company for its carried bonuses; a unit with Create_Team comes as its Create_Team_Type squadron (Vader TIE_Prototype with his escort TIEs), read from the data, and still counts for the build limits of the unit'
+      ],
+      [
+        'Galactic fleet move voice',
+        P,
+        'sending a fleet or units into orbit plays the SFXEvent_Fleet_Move of a hero in it, else of its first unit with one. Ours: which unit speaks is our guess, the engine choice was not traced'
+      ],
+      [
+        'Galactic build buttons and fast forward',
+        D,
+        'a build button that cannot be bought keeps its icon at half brightness instead of being covered by the disabled pad; a second click on fast forward turns it off'
+      ],
+      [
+        'Mouse kept in the game window (desktop app, our own)',
+        D,
+        'an option keeps the cursor inside the game window while it has focus, for players with several screens; Alt+Tab frees it. Browsers cannot confine the cursor, so the option shows only in the desktop app'
       ],
       [
         'Galactic interface and droid log',

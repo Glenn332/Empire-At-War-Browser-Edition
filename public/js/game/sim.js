@@ -223,6 +223,7 @@ export function modelsForType(type, factions = null, out = new Set(), seen = new
     'Company_Units',
     'Company_Transport_Unit',
     'Unique_Space_Unit',
+    'Create_Team_Type',
     'Projectile_Types',
     'Tactical_Buildable_Constructed',
     'Next_Level_Base'
@@ -1506,11 +1507,33 @@ const leadOf = (out, x, y, z, T, ax, ay, az, speed) => {
   return leadCircle(out, x, y, z, T, ax - T.x, ay - T.y, az - (T.z || 0), speed);
 };
 
+const teamLeaders = new Map();
+export function teamLeaderType(type) {
+  if (teamLeaders.has(type)) return teamLeaders.get(type);
+  const name = type.name.toUpperCase();
+  let leader = null;
+  for (const n of type.list('Squadron_Units')) {
+    const t = db.type(n);
+    if (t && t.bool('Create_Team') && t.str('Create_Team_Type').trim().toUpperCase() === name) {
+      leader = t;
+      break;
+    }
+  }
+  teamLeaders.set(type, leader);
+  return leader;
+}
+function createdTeam(type) {
+  if (isSquadronType(type) || !type.bool('Create_Team')) return null;
+  const team = db.type(type.str('Create_Team_Type').trim());
+  return team && isSquadronType(team) && teamLeaderType(team) === type ? team : null;
+}
+
 export class Squad {
   constructor(world, type, player, x, y, heading) {
     this.world = world;
     this.id = nextId++;
     this.type = type;
+    this.teamOf = teamLeaderType(type);
     this.player = player;
     this.x = x;
     this.y = y;
@@ -1745,6 +1768,7 @@ export class World {
       return last;
     }
     let e;
+    type = createdTeam(type) || type;
     if (isSquadronType(type) || type.behaviors().has('FIGHTER_LOCOMOTOR')) {
       e = new Squad(this, type, player, x, y, heading);
       this.squads.push(e);
@@ -1961,7 +1985,13 @@ export class World {
         (u.type.upperName ||= u.type.name.toUpperCase()) === n
       )
         c++;
-    for (const s of this.squads) if (!s.dead && s.player === player && (s.type.upperName ||= s.type.name.toUpperCase()) === n) c++;
+    for (const s of this.squads)
+      if (
+        !s.dead &&
+        s.player === player &&
+        ((s.type.upperName ||= s.type.name.toUpperCase()) === n || (s.teamOf && (s.teamOf.upperName ||= s.teamOf.name.toUpperCase()) === n))
+      )
+        c++;
     return c;
   }
 
@@ -3820,11 +3850,17 @@ export class World {
           else if (dist2(u, p) > 40 * 40) {
             goal = p;
             stopAt = 30;
-          } else faceOnly = t;
+          } else {
+            faceOnly = t;
+            ord.reached = true;
+          }
         } else if (dist2(u, at) > want * want) {
           goal = at;
           stopAt = want;
-        } else faceOnly = t;
+        } else {
+          faceOnly = t;
+          ord.reached = true;
+        }
       }
     } else if (ord.kind === 'guard') {
       const t = ord.target;
@@ -5658,6 +5694,7 @@ export class World {
     }
     const lead = s.fighters[0];
     if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
+    else if (ord.kind === 'attack' && ord.target && !ord.target.dead) s.fireTarget = ord.target;
     else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
@@ -5800,7 +5837,7 @@ export class World {
     }
     if (this.time >= w.check) {
       w.check = this.time + 1;
-      if (!sh.going) {
+      if (!sh.going || (sh.order.kind === 'attack' && sh.order.reached)) {
         dropEscort(w);
         return null;
       }

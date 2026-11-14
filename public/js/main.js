@@ -1,4 +1,5 @@
 import { TacticalMarker } from './game/tacticalobjects.js';
+import { initCursorLock } from './cursorlock.js';
 import { colorizes } from './game/teamcolor.js';
 import { setTacticalRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
@@ -3010,7 +3011,7 @@ async function boot() {
     box.checked = on;
     window.reinforceTurn = on;
     box.parentElement.title =
-      'While placing reinforcements, the mouse wheel turns them and dragging a line sets the way they face. Off: they face the default way.';
+      'While placing reinforcements, the mouse wheel turns them; press and drag to set the way one faces, or lay several out along a line. Off: they face the default way.';
     box.onchange = () => {
       window.reinforceTurn = box.checked;
       try {
@@ -3018,6 +3019,7 @@ async function boot() {
       } catch {}
     };
   }
+  initCursorLock($('optCursorLock'));
   {
     const box = $('optLineMove');
     let on = true;

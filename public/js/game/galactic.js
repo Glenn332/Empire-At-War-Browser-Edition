@@ -35,7 +35,7 @@ import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
 import { openDialog } from './dialogs.js';
 import { STRATEGIC_FRAMES } from './galacticspeed.js';
-import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult, tacticalTransportType, onLanded } from './invasion.js';
+import { embarkGround, canLand, landFriendly, invasionForces, applyInvasionResult, spaceBattleType, carriedCompany, companySpaceForm, onLanded } from './invasion.js';
 import { orderMove, stepFleets, LOGIC_FPS, baseSpeed, blocks, bribeQuote, pullIn } from './fleets.js';
 import { canBribe } from './galacticbribe.js';
 import { reachableFleetPlanets, transferFleetUnits, dropOverviewUnits, aiPathfinder } from './fleetmanagement.js';
@@ -471,7 +471,7 @@ export class GalacticGame {
 
   saveName() {
     const g = this.galaxy;
-    return `${g.campaign.name} - ${db.t('TEXT_CYCLES') || 'Cycle'} ${cycleNumber(g)}`;
+    return `${db.t(g.campaign.str('Text_ID')) || g.campaign.name} - ${db.t('TEXT_CYCLES') || 'Cycle'} ${cycleNumber(g)}`;
   }
 
   galacticSnapshot(name, { version, build }) {
@@ -2507,13 +2507,25 @@ export class GalacticGame {
 
   order(cmd) {
     if (!cmd) return null;
+    const g = this.galaxy;
     if (this.net) {
+      if (cmd.c === 'move') this.fleetVoice(g.fleets[cmd.f]?.units);
       this.net.lock.command(cmd);
       return null;
     }
+    const before = cmd.c === 'embark' ? new Set(g.fleets) : null;
     const r = runCommand(this, this.me, cmd);
+    if (cmd.c === 'move' && g.fleets[cmd.f]?.dest === cmd.to) this.fleetVoice(g.fleets[cmd.f].units);
+    else if (before) this.fleetVoice(g.fleets.filter(f => !before.has(f) || (cmd.tf >= 0 && f === g.fleets[cmd.tf])).flatMap(f => f.units));
     this.syncFleetViews();
     return r;
+  }
+  fleetVoice(units) {
+    const types = (units || []).filter(u => !u.dead).map(u => carriedCompany(u) || u.type),
+      line = t => t.str('SFXEvent_Fleet_Move').trim(),
+      hero = t => t.bool('Is_Named_Hero') || t.list('Company_Units').some(n => db.type(n)?.bool('Is_Named_Hero')),
+      speaker = types.find(t => hero(t) && line(t)) || types.find(line);
+    if (speaker) this.audio?.play(line(speaker));
   }
   switchSides(target = '') {
     if (this.setup.net) return false;
@@ -2732,7 +2744,16 @@ export class GalacticGame {
         );
       return g.fleets.flatMap((f, fi) =>
         here.includes(f)
-          ? f.units.map((u, ui) => ({ gid: fi + ':' + ui, type: tacticalTransportType(u).name, pathfinder: !!u.pathfinder || u === lead }))
+          ? f.units.map((u, ui) => {
+              const type = spaceBattleType(u),
+                company = carriedCompany(u);
+              return {
+                gid: fi + ':' + ui,
+                type: type.name,
+                ...(company && companySpaceForm(company) === type ? { company: company.name } : {}),
+                pathfinder: !!u.pathfinder || u === lead
+              };
+            })
           : []
       );
     };

@@ -320,7 +320,7 @@ export class UI {
       return;
     }
     if (this.placing) {
-      if (e.button === 0 && !this.placing.dragging && this.placing.list.length > 1) {
+      if (e.button === 0 && !this.placing.dragging && (this.placing.list.length > 1 || globalThis.reinforceTurn !== false)) {
         const g = this.r.pickGround(m.x, m.y);
         if (g) this.placing.press = { sx: m.x, sy: m.y, x: g.x, y: g.y };
       } else if (e.button === 0) this.finishPlacing(m.x, m.y);
@@ -986,7 +986,12 @@ export class UI {
     const pr = pl.press,
       radii = pl.ghosts.map(gh => Math.max(40, gh.radius || 0));
     let L;
-    if (pr && Math.hypot(this.mouse.x - pr.sx, this.mouse.y - pr.sy) > 8) {
+    if (pr && pl.list.length === 1 && Math.hypot(this.mouse.x - pr.sx, this.mouse.y - pr.sy) > 8) {
+      L = { pts: [{ x: pr.x, y: pr.y }], seq: [0] };
+      at = L.pts;
+      heading = pl.heading = Math.atan2(g.y - pr.y, g.x - pr.x);
+      pl.turned = true;
+    } else if (pr && Math.hypot(this.mouse.x - pr.sx, this.mouse.y - pr.sy) > 8) {
       L = laidOut(pl.list, radii, pl.perm || 0, r => stretched(r, 30, pr, g));
       at = L.pts;
       if (globalThis.reinforceTurn !== false) heading = L.facing;

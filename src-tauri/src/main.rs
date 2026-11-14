@@ -557,6 +557,13 @@ impl Server {
                 Err(e) => text(400, &e),
             };
         }
+        if p == "/api/cursor-grab" {
+            let on = arg("on").as_deref() == Some("1");
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_cursor_grab(on);
+            }
+            return json(&serde_json::json!({ "ok": true }));
+        }
         if p == "/api/pick-folder" {
             let mut d =
                 rfd::FileDialog::new().set_title(arg("title").unwrap_or("Choose a folder".into()));

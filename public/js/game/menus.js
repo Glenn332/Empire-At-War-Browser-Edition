@@ -5,7 +5,7 @@ import { toMainMenu, loadSaved } from './transit.js';
 import { gfx, storeGfx, presets } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
-import { snapshot, snapshotNow, defaultName, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
+import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { enterFullscreen } from '../pointertrap.js';
 import {
@@ -187,6 +187,16 @@ export class Menus {
       yes();
     });
     dlg.on('IDC_DIALOG_BOX_BUTTON_RIGHT', () => this.pop());
+  }
+
+  async notify(text) {
+    const dlg = await this.push('IDD_DIALOG_BOX_QUIT_CONFIRM');
+    if (!dlg) return;
+    dlg.setText('IDC_CAPTION', text);
+    for (const id of ['IDC_USER_TEXT_STRING_1', 'IDC_USER_TEXT_STRING_2', 'IDC_USER_TEXT_STRING_3']) dlg.show(id, false);
+    dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', T('TEXT_BUTTON_OK', 'OK'));
+    dlg.show('IDC_DIALOG_BOX_BUTTON_RIGHT', false);
+    dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => this.pop());
   }
 
   async ask(caption, lines, yes, no = null) {
@@ -473,7 +483,8 @@ export class Menus {
       dlg = await this.push('IDD_SAVE_GAME_DIALOG');
     if (!dlg) return;
     const name = dlg.edit('IDC_SAVE_GAME_NAME_EDIT');
-    name.value = defaultName(g);
+    name.value = '';
+    name.maxLength = 63;
     let list;
     const refresh = async () => {
       list = dlg.list('IDC_SAVE_GAME_LIST', await this.saveRows(), row => {
@@ -505,7 +516,10 @@ export class Menus {
     };
     dlg.on('IDC_SAVE_CANCEL_BUTTON', () => this.pop());
     dlg.on('IDC_SAVE_GAME_BUTTON', () => {
-      if (!name.value.trim()) return;
+      if (!name.value.trim()) {
+        this.notify(T('TEXT_ENTER_SAVE_NAME', 'Please enter a name for your saved game.'));
+        return;
+      }
       const cur = list && list.selected();
       if (cur && cur.label === name.value.trim()) this.confirm(T('TEXT_SAVE_CONFIRM', 'Overwrite Save Game?'), () => write(cur.key));
       else write(null);

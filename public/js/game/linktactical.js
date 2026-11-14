@@ -1,7 +1,7 @@
 import { retreatDestination } from './fleetretreat.js';
 import { db, autoColors } from '../gamedata.js';
 import { snapshotGalaxy, enteredOrbit } from './galaxy.js';
-import { carriedCompany } from './invasion.js';
+import { carriedCompany, companySpaceForm } from './invasion.js';
 import { destroyPlanet } from './planetdestruction.js';
 import { StoryFlags } from './storyflags.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -65,9 +65,12 @@ export function linkedTacticalSetup(game, request) {
     participants = new Map();
   const add = (gid, record, owner, kind) => {
     participants.set(gid, { record, owner, kind });
+    const company = carriedCompany(record),
+      form = space && company && companySpaceForm(company);
     return {
       gid,
-      type: (space ? record.type : carriedCompany(record) || record.type).name,
+      type: (form || (space ? record.type : company || record.type)).name,
+      ...(form ? { company: company.name } : {}),
       markerId: record.markerId ?? -1,
       pathfinder: !!record.pathfinder
     };

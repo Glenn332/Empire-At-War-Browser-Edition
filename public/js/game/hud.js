@@ -1878,17 +1878,20 @@ export class CommandBar {
           d.onclick = ev => {
             ev.stopPropagation();
             this.game.audio.play(c.val('Click_SFX'));
-            this.heroClick(h, ev);
+            this.heroClick(d._h, ev);
           };
-          d.ondblclick = () => this.heroFocus(h);
+          d.ondblclick = () => this.heroFocus(d._h);
           d.onmousedown = ev => ev.stopPropagation();
         }
         d._h = h;
         bar.el.appendChild(d);
       });
     }
+    let slot = 0;
     for (const d of bar.el.children) {
       if (!d._h) continue;
+      if (list[slot]?.e.id === d._h.e.id) d._h = list[slot];
+      slot++;
       const e = d._h.e,
         f = e.isSquad ? (e.fighters[0] ? e.fighters[0].healthFrac : 0) : e.healthFrac;
       const fill = d.lastChild.firstChild,

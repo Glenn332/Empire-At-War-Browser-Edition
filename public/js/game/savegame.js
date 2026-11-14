@@ -13,11 +13,6 @@ const EXT = '.swrsave';
 
 const r1 = v => Math.round(v * 10) / 10;
 
-export function defaultName(game) {
-  if (game.galactic) return game.saveName();
-  return snapshot(game).name;
-}
-
 export async function snapshotNow(game, name = '') {
   if (game.tacticalCinematics?.on) game.tacticalCinematics.endMode();
   if (game.mirror) return withMultiplayer(game, await game.mirror.save(name));
