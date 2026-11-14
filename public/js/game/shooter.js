@@ -5592,7 +5592,7 @@ export class Shooter {
   }
 
   possess(q, u, hero) {
-    this.waves?.endRide();
+    this.waves?.endRoom();
     q.noAI = true;
     q.selectable = false;
     q.foe = null;
@@ -6519,6 +6519,13 @@ export class Shooter {
         }
         return;
       }
+      if (this.state !== 'alive' && this.waves?.inRoom()) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (pressed(e, 'SHOOTER_SETTINGS')) this.openSettings();
+        else this.keys.add(e.code);
+        return;
+      }
       if (this.state !== 'alive') {
         if (pressed(e, 'SHOOTER_SETTINGS')) {
           this.openSettings();
@@ -6566,7 +6573,7 @@ export class Shooter {
       if (this.state === 'alive' && this.owns(e)) e.stopImmediatePropagation();
     });
     on('mousemove', e => {
-      if (this.state !== 'alive' || document.pointerLockElement !== this.canvas()) return;
+      if ((this.state !== 'alive' && !this.waves?.inRoom()) || document.pointerLockElement !== this.canvas()) return;
       e.stopImmediatePropagation();
       const C = this.cfg,
         k = (this.zoom ? (this.role === 'scout' && !this.seatOf() ? SCOPE.sens : 0.45) * C.ads : 1) * C.sens;
@@ -6690,9 +6697,15 @@ export class Shooter {
       if (this.watch(cam, real)) return;
     }
     if (this.state !== 'alive' || !b) {
-      if (this.waves.camera(cam, real)) {
-        this.lastCam = null;
-        return;
+      if (this.waves.inRoom()) {
+        const k = this.keys,
+          M = this.padMove,
+          f = Math.max(-1, Math.min(1, (held(k, 'SCROLL_UP') ? 1 : 0) - (held(k, 'SCROLL_DOWN') ? 1 : 0) + M.f)),
+          s = Math.max(-1, Math.min(1, (held(k, 'SCROLL_RIGHT') ? 1 : 0) - (held(k, 'SCROLL_LEFT') ? 1 : 0) + M.s));
+        if (this.waves.roomFrame(cam, real, { f, s })) {
+          this.lastCam = null;
+          return;
+        }
       }
       if (this.state === 'dead' && this.lastCam && w.time < this.deadAt + DEATH_CAM) {
         this.killCam(cam, real);

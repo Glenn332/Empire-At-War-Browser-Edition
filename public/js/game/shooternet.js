@@ -145,6 +145,7 @@ export class ShooterNet {
     else if (m.k === 'sh-me') this.game.shooter?.remoteState(from, m);
     else if (m.k === 'sh-st' && Array.isArray(m.st)) this.stats.set(from, m.st.slice(0, 5).map(v => Math.max(0, Math.min(1e6, Math.round(+v || 0)))));
     else if (m.k === 'sh-f') this.game.shooter?.remoteFire(from, m);
+    else if (m.k === 'sh-rp') this.game.shooter?.waves?.remotePos(from, m);
     else if (m.k === 'sh-ab') this.game.shooter?.remoteAbility(from, m);
     else if (m.k === 'sh-exit') this.game.shooter?.remoteExit(from);
     else if (m.k === 'sh-enter') {
@@ -407,13 +408,14 @@ export class ShooterNet {
       this.wantYou.id = +m.id || 0;
     }
     else if (m.k === 'sh-cr') this.game.shooter?.netCredit(m);
+    else if (m.k === 'sh-rp') this.game.shooter?.waves?.netPos(m);
     else if (m.k === 'sh-q' && this.wantYou && this.wantYou.r === m.r) {
       const sh = this.game.shooter;
       this.wantYou.until = performance.now() + 120000;
       if (sh && Number.isFinite(+m.in)) sh.waves.clientWait = performance.now() + Math.max(0, +m.in) * 1000;
       if (sh && m.key) {
         sh.waves.clientWait = 0;
-        sh.waves.rideFor(+m.key);
+        sh.waves.rideFor(+m.key, String(m.rid || ''));
       }
     }
     else if (m.k === 'sh-in' && this.wantIn && this.wantIn.r === m.r) {
@@ -587,6 +589,8 @@ export class ShooterNet {
     const w = this.world;
     if (ev[0] === 'sp') this.spawnRec(ev[1]);
     else if (ev[0] === 'shut') this.game.shooter?.waves?.visual(ev);
+    else if (ev[0] === 'seat') this.game.shooter?.waves?.netSeats(+ev[1], ev[2]);
+    else if (ev[0] === 'stand') this.game.shooter?.waves?.netStand(+ev[1], String(ev[2]));
     else if (ev[0] === 'die') {
       const u = this.byId.get(ev[1]);
       if (!u || u.dead) return;

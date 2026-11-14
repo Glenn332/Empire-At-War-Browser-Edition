@@ -3824,7 +3824,8 @@ export class LandWorld {
       cargo,
       ramp: opts?.ramp ?? 0,
       onLeave: opts?.onLeave || null,
-      onLost: opts?.onLost || null
+      onLost: opts?.onLost || null,
+      keepOpen: opts?.keepOpen || null
     };
     if (t.anim) t.anim.pose();
     t.pending = pending;
@@ -3990,7 +3991,7 @@ export class LandWorld {
           if (t.onLeave && u && !u.dead) t.onLeave(u, t);
           t.wait = t.interval || 2;
         }
-      } else if (t.stage === 'unload' && t.out) {
+      } else if (t.stage === 'unload' && t.out && !(t.keepOpen && t.keepOpen())) {
         t.stage = 'leave';
         t.anim = t.off ? new AnimState(t.inst, t.off, {}) : null;
       } else if (t.stage === 'leave' && !running) {

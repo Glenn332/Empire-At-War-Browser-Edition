@@ -12,7 +12,7 @@ const world = {
   ally: (a, b) => a === b,
   nearestOpen: (x, y) => ({ x, y }),
   reinforce: (side, name, x, y, face, landed, opts) => {
-    calls.push({ side, name, x, y, hold: opts.hold, cargo: opts.cargo });
+    calls.push({ side, name, x, y, face, hold: opts.hold, at: world.time + opts.hold, cargo: opts.cargo });
     return Promise.resolve(null);
   },
   spawn: async () => null
@@ -26,7 +26,10 @@ const sh = {
   game: { shooterNet: null, factions: ['EMPIRE', 'REBEL'] },
   points: () => [padA, padB],
   home: () => null,
-  hq: () => null
+  hq: () => null,
+  panel: { style: {} },
+  lock: () => {},
+  classes: () => []
 };
 const W = new ShuttleWaves(sh);
 assert.equal(W.on(), true, 'shuttles are on by default');
@@ -37,12 +40,16 @@ sh.cfg.shuttle = true;
 const foot = T('Stormtrooper_Squad'),
   car = T('Scout_Squad');
 W.add({ side: 0, who: 'me', unit: foot, company: foot, cls: {}, point: padB });
+assert.equal(calls.length, 1, "the player boards a shuttle at once");
+assert.equal(calls[0].at, 3, 'it holds above the landing zone until the wave launches');
+assert(W.inRoom(), 'the player is in the troop bay while waiting');
 for (let i = 0; i < 14; i++) W.add({ side: 0, who: 'bot', unit: foot, company: foot, done: () => {} });
 W.add({ side: 0, who: 'bot', unit: car, company: car, car: true, done: () => {} });
-assert.equal(W.launchIn(0), 3, 'the first wave launches 3 s after the first request');
+const own = W.flights.get(1);
+assert.equal(own.load.length, 8, "waiting bots take the free seats in the player's shuttle");
 world.time = 2.9;
 W.step();
-assert.equal(calls.length, 0, 'nothing launches before the wave time');
+assert.equal(calls.length, 1, 'no other shuttle launches before the wave time');
 world.time = 3;
 W.step();
 const atB = calls.filter(c => c.x === padB.x && c.y === padB.y),
@@ -50,11 +57,21 @@ const atB = calls.filter(c => c.x === padB.x && c.y === padB.y),
   cars = calls.filter(c => c.name === 'Scout_Squad');
 assert.equal(cars.length, 1, 'a vehicle gets its own shuttle');
 assert.equal(foots.length, 2, '15 soldiers fill two shuttles of up to 8');
-assert(atB.length >= 1 && atB[0].hold === 0, "the player's shuttle lands first at the player's chosen pad");
-const holds = calls.map(c => c.hold).sort((a, b) => a - b);
+assert(atB.length >= 1 && calls[0] === atB[0] && calls.every(c => c.at >= calls[0].at), "the player's shuttle lands at the player's chosen pad and launches first");
+const holds = calls.map(c => c.at).sort((a, b) => a - b);
 for (let i = 1; i < holds.length; i++) assert(holds[i] - holds[i - 1] >= 3, 'every shuttle of a wave launches a few seconds after the one before: ' + holds);
 for (let i = 0; i < calls.length; i++)
-  for (let j = i + 1; j < calls.length; j++) assert(Math.hypot(calls[i].x - calls[j].x, calls[i].y - calls[j].y) >= 110, 'shuttles get their own landing spot, clear of each other');
+  for (let j = 0; j < calls.length; j++) {
+    if (i === j) continue;
+    const a = calls[i],
+      b = calls[j],
+      dx = b.x - a.x,
+      dy = b.y - a.y;
+    if (j > i) assert(Math.hypot(dx, dy) >= 110, 'shuttles get their own landing spot, clear of each other');
+    const ahead = dx * Math.cos(a.face) + dy * Math.sin(a.face),
+      side = Math.abs(-dx * Math.sin(a.face) + dy * Math.cos(a.face));
+    assert(!(ahead > 0 && ahead < 176 && side < 66), 'no shuttle lands in the ramp lane in front of another');
+  }
 assert.equal(W.launchIn(0), 15, 'the next wave is 15 s later');
 world.time = 18;
 calls.length = 0;
@@ -76,5 +93,5 @@ world.time = 48;
 W.step();
 assert.equal(calls.length, 1, 'without a pad the shuttle lands at a held command post');
 assert.equal(calls[0].x, 500);
-console.log('PASS: shuttle waves - setting, timing, 8 per shuttle, own shuttle per vehicle, player first at its pad, stagger, post fallback');
+console.log('PASS: shuttle waves - setting, boarding at once, bots fill the bay, fixed clock, 8 per shuttle, own shuttle per vehicle, stagger, spacing, clear ramp lanes, post fallback');
 process.exit(0);
