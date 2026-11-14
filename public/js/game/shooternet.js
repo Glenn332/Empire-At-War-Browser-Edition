@@ -176,7 +176,8 @@ export class ShooterNet {
 
   async deployFor(from, m) {
     const sh = this.game.shooter;
-    const u = sh ? await sh.remoteDeploy(from, String(m.c || ''), +m.x, +m.y, +m.v || 0) : null;
+    const notify = info => this.session.send(from, { k: 'sh-q', r: m.r, ...info });
+    const u = sh ? await sh.remoteDeploy(from, String(m.c || ''), +m.x, +m.y, +m.v || 0, notify) : null;
     if (u) sh.names.set(u, this.peerName(from));
     this.session.send(from, { k: 'sh-you', id: u ? this.idOf(u) : 0, r: m.r });
   }
@@ -240,7 +241,7 @@ export class ShooterNet {
           this.wantYou = null;
           return res(u);
         }
-        if (performance.now() > until) {
+        if (performance.now() > (W.until ?? until)) {
           this.wantYou = null;
           return res(null);
         }
@@ -406,6 +407,15 @@ export class ShooterNet {
       this.wantYou.id = +m.id || 0;
     }
     else if (m.k === 'sh-cr') this.game.shooter?.netCredit(m);
+    else if (m.k === 'sh-q' && this.wantYou && this.wantYou.r === m.r) {
+      const sh = this.game.shooter;
+      this.wantYou.until = performance.now() + 120000;
+      if (sh && Number.isFinite(+m.in)) sh.waves.clientWait = performance.now() + Math.max(0, +m.in) * 1000;
+      if (sh && m.key) {
+        sh.waves.clientWait = 0;
+        sh.waves.rideFor(+m.key);
+      }
+    }
     else if (m.k === 'sh-in' && this.wantIn && this.wantIn.r === m.r) {
       const W = this.wantIn;
       this.wantIn = null;
@@ -576,6 +586,7 @@ export class ShooterNet {
   event(ev, at) {
     const w = this.world;
     if (ev[0] === 'sp') this.spawnRec(ev[1]);
+    else if (ev[0] === 'shut') this.game.shooter?.waves?.visual(ev);
     else if (ev[0] === 'die') {
       const u = this.byId.get(ev[1]);
       if (!u || u.dead) return;

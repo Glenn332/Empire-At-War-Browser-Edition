@@ -19,6 +19,7 @@ import { fireSound } from './weaponswap.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
+import { ShuttleWaves } from './shuttle.js';
 import { eawSkin } from './eawskin.js';
 import { TERRAIN } from './landtables.js';
 import { thiefOut } from './landabilities.js';
@@ -149,7 +150,7 @@ function usePalette(safe) {
   r.setProperty('--sh-enemy-soft', PAL.enemySoft);
 }
 const CFG_KEY = 'swr-shooter-settings',
-  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, view: 'third', crosshair: 'ring', bob: true, colorblind: false, assist: true };
+  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, view: 'third', crosshair: 'ring', bob: true, colorblind: false, assist: true, shuttle: true };
 function loadCfg() {
   let got = {};
   try {
@@ -541,6 +542,7 @@ export class Shooter {
     this.dom();
     this.input();
     this.ov = new Overlord(this);
+    this.waves = new ShuttleWaves(this);
     if (game.audio) game.audio.falloff = SOUND_FALLOFF;
     setParticleDepth(true);
     game.ground?.traverse?.(o => {
@@ -2757,6 +2759,7 @@ export class Shooter {
       ['cross', 'Cross']
     ]);
     check('Head bob', () => C.bob, v => this.setCfg('bob', v));
+    check('Shuttle deploys', () => C.shuttle !== false, v => this.setCfg('shuttle', v));
     const level = (label, name, key, id) => {
       const wrapEl = document.createElement('div'),
         i = document.createElement('input'),
@@ -3880,7 +3883,8 @@ export class Shooter {
       this.respawnAt = w.time + 0.5;
       this.respawnBots();
     }
-    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.respawnView();
+    this.waves.step();
+    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none' && !this.waves.riding()) this.respawnView();
     this.refreshDeploy();
     this.ov?.tickHeld();
     this.drawTickets();
@@ -3924,7 +3928,8 @@ export class Shooter {
       this.history.push([w.time, ...this.tickets]);
       this.warnLow();
     }
-    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none') this.respawnView();
+    this.waves.stepVisuals(dt);
+    if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none' && !this.waves.riding()) this.respawnView();
     this.refreshDeploy();
     this.ov?.tickHeld();
     this.drawTickets();
@@ -4261,7 +4266,7 @@ export class Shooter {
         continue;
       }
       let coming = 0;
-      for (const t of w.transports) if (t.side === s && t.stage === 'land') coming += this.sizeOf(db.type(t.typeName));
+      for (const t of w.transports) if (t.side === s && t.stage === 'land' && !t.cargo) coming += this.sizeOf(db.type(t.typeName));
       const want = this.fieldCap() - this.popUsed(s) - coming - q.length - (this.spawningN[s] || 0);
       const delay = this.benchN ? 0 : this.respawnDelay(s);
       for (let i = 0; i < want; i++) q.push(now + delay);
@@ -4313,14 +4318,19 @@ export class Shooter {
       pool.pending++;
       pick.spare--;
     }
-    const face = Math.atan2(w.n * 10 - o.y, w.n * 10 - o.x);
-    Promise.resolve(w.spawn(t.name, o.x, o.y, face, s))
-      .catch(() => null)
-      .then(q => {
+    const face = Math.atan2(w.n * 10 - o.y, w.n * 10 - o.x),
+      done = q => {
         this.spawningN[s] = Math.max(0, (this.spawningN[s] || 1) - 1);
         if (pool) pool.pending = Math.max(0, pool.pending - 1);
         if (q && pick.gid) this.claimFor(q, pick.gid);
-      });
+      };
+    if (this.waves.on()) {
+      this.waves.add({ side: s, who: 'bot', unit: t, company: pick.company, car: !pick.foot, done });
+      return true;
+    }
+    Promise.resolve(w.spawn(t.name, o.x, o.y, face, s))
+      .catch(() => null)
+      .then(done);
     return true;
   }
 
@@ -5088,6 +5098,15 @@ export class Shooter {
     if (this.tickets && this.tickets[this.me] <= 0) return;
     if (!p || w.credits[this.me] < cost) return;
     if (this.netClient) return this.netDeploy(c, p);
+    if (this.waves.on() && !heroic) {
+      if (this.waves.waiting(this.me, 'me')) return;
+      w.credits[this.me] -= cost;
+      this.boardCost = cost;
+      this.boardHero = heroic;
+      this.waves.add({ side: this.me, who: 'me', cls: c, unit: c.unit, company: c.company, point: p });
+      this.refreshDeploy(true);
+      return;
+    }
     this.spawning = true;
     const a = simRandom() * Math.PI * 2,
       o = w.nearestOpen(p.x + Math.cos(a) * 40, p.y + Math.sin(a) * 40) || { x: p.x, y: p.y };
@@ -5102,6 +5121,18 @@ export class Shooter {
     }
     if (heroic) this.heroUsed();
     this.possess(q, u, heroic);
+  }
+
+  boarded(e, u) {
+    this.boardCost = 0;
+    this.possess(u.squad, u, false);
+  }
+
+  boardFailed(shot = false) {
+    if (this.boardCost) this.world.credits[this.me] += this.boardCost;
+    this.boardCost = 0;
+    this.flash(shot ? 'Your shuttle was shot down' : 'Could not deploy');
+    if (this.state !== 'alive' && !this.game.over) this.openDeploy();
   }
 
   async spawnClass(c, o, face, side) {
@@ -5190,7 +5221,7 @@ export class Shooter {
     return i >= 0 ? i : this.me;
   }
 
-  async remoteDeploy(peer, name, x, y, vid = 0) {
+  async remoteDeploy(peer, name, x, y, vid = 0, notify = null) {
     const w = this.world,
       side = this.peerSide(peer),
       had = this.remotes.get(peer);
@@ -5227,6 +5258,11 @@ export class Shooter {
       const h = c.hero.members[0];
       if (!h || h.dead || h.inside || h.remote || h === this.body) return null;
       q = c.hero;
+    } else if (this.waves.on()) {
+      if (this.waves.waiting(side, peer)) return null;
+      if (notify) notify({ in: this.waves.launchIn(side) });
+      const got = await new Promise(res => this.waves.add({ side, who: peer, cls: c, unit: c.unit, company: c.company, point: { x, y }, resolve: res, notify }));
+      q = got && !got.dead ? got.squad : null;
     } else {
       const a = simRandom() * Math.PI * 2,
         o = w.nearestOpen(x + Math.cos(a) * 40, y + Math.sin(a) * 40) || { x, y };
@@ -5556,6 +5592,7 @@ export class Shooter {
   }
 
   possess(q, u, hero) {
+    this.waves?.endRide();
     q.noAI = true;
     q.selectable = false;
     q.foe = null;
@@ -6653,6 +6690,10 @@ export class Shooter {
       if (this.watch(cam, real)) return;
     }
     if (this.state !== 'alive' || !b) {
+      if (this.waves.camera(cam, real)) {
+        this.lastCam = null;
+        return;
+      }
       if (this.state === 'dead' && this.lastCam && w.time < this.deadAt + DEATH_CAM) {
         this.killCam(cam, real);
         return;
@@ -7532,6 +7573,13 @@ export class Shooter {
         foot.insertBefore(t, b);
       }
     }
+    const boarding = this.waves.waiting(this.me, 'me') || (this.netClient && this.waves.clientWait > performance.now());
+    if (boarding) {
+      const left = this.netClient ? Math.max(0, Math.ceil((this.waves.clientWait - performance.now()) / 1000)) : this.waves.launchIn(this.me);
+      this.wait.textContent = left > 0 ? `Boarding - shuttle launches in ${left} s` : 'Boarding - shuttle launching';
+      this.go.disabled = true;
+      return;
+    }
     this.wait.textContent = out
       ? 'No tickets left'
       : locked
@@ -8190,6 +8238,7 @@ export class Shooter {
   }
 
   dispose() {
+    this.waves?.dispose();
     if (this.game.audio) this.game.audio.falloff = 1;
     setParticleDepth(false);
     if (this.world?.terrain) this.world.terrain.padTop = null;

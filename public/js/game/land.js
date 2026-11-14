@@ -3753,11 +3753,23 @@ export class LandWorld {
     return file ? { file, scale: variant.num('Scale_Factor', craft.num('Scale_Factor', 1)) } : null;
   }
 
-  async reinforce(side, typeName, x, y, heading = 0, landed = null) {
-    if (!landed) this.onReinforce?.(this.factions[side], typeName);
+  async landingCraft(typeName) {
+    const type = db.type(typeName),
+      craft = type && db.type(type.str('Company_Transport_Unit') || ''),
+      variant = craft && (db.type(craft.str('Landing_Transport_Variant')) || craft),
+      file = craft && landingModel(craft, variant),
+      inst = file && (await loadModel(file).catch(() => null));
+    if (!inst) return null;
+    const [land, off] = await Promise.all(['LAND', 'TAKEOFF'].map(k => Promise.resolve(loadALA(animName(file, k))).catch(() => null)));
+    return { inst, land, off, scale: variant.num('Scale_Factor', craft.num('Scale_Factor', 1)) };
+  }
+
+  async reinforce(side, typeName, x, y, heading = 0, landed = null, opts = null) {
+    const cargo = opts?.cargo || null;
+    if (!landed && !cargo) this.onReinforce?.(this.factions[side], typeName);
     const type = db.type(typeName),
       craft = type && db.type(type.str('Company_Transport_Unit') || '');
-    const pending = type && !landed ? new LandSquad(this, type, side, { arriving: true }) : null;
+    const pending = type && !landed && !cargo ? new LandSquad(this, type, side, { arriving: true }) : null;
     if (pending) {
       pending.members = [0];
       this.squads.push(pending);
@@ -3770,6 +3782,10 @@ export class LandWorld {
       inst = file && (await loadModel(file).catch(() => null));
     if (!inst) {
       if (landed) return null;
+      if (cargo) {
+        await cargo(null);
+        return null;
+      }
       const q = this.spawn(typeName, x, y, heading, side);
       Promise.resolve(q).then(unpend, unpend);
       return q;
@@ -3802,9 +3818,13 @@ export class LandWorld {
       y,
       heading,
       wait: 0,
-      hold: this.reinforcementHold(side),
-      interval: this.deployInterval(side),
-      airborne
+      hold: opts?.hold ?? this.reinforcementHold(side),
+      interval: opts?.interval ?? this.deployInterval(side),
+      airborne: cargo ? false : airborne,
+      cargo,
+      ramp: opts?.ramp ?? 0,
+      onLeave: opts?.onLeave || null,
+      onLost: opts?.onLost || null
     };
     if (t.anim) t.anim.pose();
     t.pending = pending;
@@ -3910,6 +3930,7 @@ export class LandWorld {
     let k = 0;
     for (const t of this.transports) {
       if (t.craft.dead) {
+        if (t.stage === 'land' && t.onLost) t.onLost(t);
         while (t.queue?.length) this.loseInTransport(t.queue.shift());
         if (t.stage === 'land') this.squads = this.squads.filter(q => q !== t.pending);
         this.scene.remove(t.holder);
@@ -3917,14 +3938,28 @@ export class LandWorld {
         this.squads = this.squads.filter(q => q !== t.craft.squad);
         continue;
       }
-      if (t.stage === 'land' && (t.hold > 0 || this.transportNear?.(t))) {
+      if (t.stage === 'land' && (t.hold > 0 || (!t.cargo && this.transportNear?.(t)))) {
         if (t.hold > 0) t.hold -= dt;
         this.transports[k++] = t;
         continue;
       }
       t.landing = true;
       const running = t.anim ? t.anim.step(dt) : false;
-      if (t.stage === 'land' && !running) {
+      if (t.stage === 'land' && !running && t.cargo) {
+        t.stage = 'unload';
+        t.wait = t.ramp || t.interval || 2;
+        t.out = false;
+        Promise.resolve(t.cargo(t))
+          .catch(() => [])
+          .then(list => {
+            t.queue = (list || []).filter(u => u && !u.dead);
+            for (const u of t.queue) {
+              u.inside = t.craft;
+              if (u.holder) u.holder.visible = false;
+            }
+            t.out = true;
+          });
+      } else if (t.stage === 'land' && !running) {
         t.stage = 'unload';
         t.wait = t.interval || 2;
         t.out = false;
@@ -3950,7 +3985,9 @@ export class LandWorld {
         continue;
       } else if (t.stage === 'unload' && t.out && t.queue?.length) {
         if ((t.wait -= dt) <= 0) {
-          this.leaveTransport(t, t.queue.shift());
+          const u = t.queue.shift();
+          this.leaveTransport(t, u);
+          if (t.onLeave && u && !u.dead) t.onLeave(u, t);
           t.wait = t.interval || 2;
         }
       } else if (t.stage === 'unload' && t.out) {
