@@ -4038,7 +4038,7 @@ export class Shooter {
     }
     this.board(b, q);
     const lead = q.members[0];
-    const D = { turn: 0, throttle: 0, firing: false, target: null, lead, spot: this.spot, far: true };
+    const D = { turn: 0, throttle: 0, firing: false, target: null, lead, spot: this.spot, far: true, track: true };
     D.slots = new Map();
     q.direct = D;
     for (const m of q.members) m.direct = D;

@@ -6470,7 +6470,7 @@ export class LandWorld {
     }
     u.v = dt > 0 ? Math.abs(go) / dt : 0;
     let shooting = false;
-    const t = D.firing ? D.target : null;
+    const t = D.firing || (D.track && u.turret) ? D.target : null;
     if (w && !(u.needsDeploy && !u.deployed)) {
       w.cooldown -= dt;
       if (t && (t.spot && D.far ? true : !t.dead && Math.hypot(t.x - u.x, t.y - u.y) <= u.range + (t.hitRadius > 0 ? t.hitRadius : 0))) {
@@ -6494,7 +6494,7 @@ export class LandWorld {
           }
           aimed = Math.abs(rel) < 0.35;
         }
-        if (aimed) {
+        if (aimed && D.firing) {
           shooting = true;
           this.burst(u, t, w, dt);
         }
@@ -6502,6 +6502,9 @@ export class LandWorld {
         u.turret.wantPitch = 0;
         this.aimTurret(u, 0, dt);
       }
+    } else if (u.turret && D.track) {
+      u.turret.wantPitch = 0;
+      this.aimTurret(u, 0, dt);
     }
     this.setAnim(u, go ? 'move' : shooting ? 'attack' : 'idle');
     if (go) this.moveRate(u);
