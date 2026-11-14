@@ -1335,7 +1335,7 @@ const GROUPS = [
       [
         'Galactic build buttons and fast forward',
         D,
-        'a build button that cannot be bought keeps its icon at half brightness instead of being covered by the disabled pad; a second click on fast forward turns it off'
+        'a build button that cannot be bought keeps its icon at half brightness instead of being covered by the disabled pad; the space tab puts its build buttons on the second Blank_Texture_Name and Disabled_Texture_Name pad (the blue one), the ground tab on the first (tan); a second click on fast forward turns it off'
       ],
       [
         'Mouse kept in the game window (desktop app, our own)',

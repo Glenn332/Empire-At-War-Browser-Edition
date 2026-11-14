@@ -545,10 +545,17 @@ export class GalacticBar extends CommandBar {
     this.optionCount = options.length;
     const layout = this.layoutSlots(options),
       disabled = n => !!player?.disabledTypes?.some(d => String(d).toUpperCase() === String(n).toUpperCase());
+    const pad = this.tab === 'space' ? 1 : 0;
     this.slots.forEach((b, i) => {
       const t = (b._type = layout[i]);
       b.style.display = t ? '' : 'none';
       if (!t) return;
+      if (b._pad !== pad) {
+        b._pad = pad;
+        const name = 'b_Create_' + String(i).padStart(2, '0');
+        this.setButtonImage(b, 'blank', this.textureName(name, 'Blank_Texture_Name', pad));
+        this.setButtonImage(b, 'dis', this.textureName(name, 'Disabled_Texture_Name', pad));
+      }
       const cost = productionCost(g, p, game.me, t, context),
         why = productionBlock(g, p.index, game.me, t, context);
       b.dataset.type = t.name;
