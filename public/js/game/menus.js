@@ -1,3 +1,4 @@
+import { expansion } from '../edition.js';
 import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
@@ -935,7 +936,7 @@ export class Menus {
     };
     const setSimplified = on => {
       simplified = on;
-      g.simplifiedFactionColors = on;
+      g.simplifiedFactionColors = on || !expansion();
       try {
         localStorage.setItem('swr-simplified-faction-colors', on ? '1' : '0');
       } catch {}

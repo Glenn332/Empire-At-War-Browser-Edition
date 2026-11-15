@@ -5,13 +5,21 @@ export const radarPlanets = g => g.planets.filter(p => p.owner != null && p.type
 export const radarPoint = (pos, size) => ({ x: ((pos[0] / 380) * size[0]) / 2, y: ((pos[1] / 460) * size[1]) / 2 });
 export const radarWorld = (point, size) => ({ x: (point.x / (size[0] / 2)) * 380, y: (point.y / (size[1] / 2)) * 460 });
 export const nativeRound = n => Math.sign(n) * Math.floor(Math.abs(n) + 0.5);
+const relative = new Map();
 const colors = new WeakMap(),
   neutralColor = [100, 100, 100, 255];
 
-export function radarAppearance(g, p) {
+export function radarAppearance(g, p, game = null) {
   const v = intelligence(g, p),
-    known = !!v?.discovered;
-  const faction = db.faction(displayOwner(g, p)) || db.faction('Neutral');
+    known = !!v?.discovered,
+    owner = displayOwner(g, p);
+  if (game?.relativeColors?.() && db.faction(owner)) {
+    const c = game.factionColor(owner),
+      id = c.map(n => Math.round(n * 255)).join(',');
+    if (!relative.has(id)) relative.set(id, [...id.split(',').map(Number), 255]);
+    return { known, color: relative.get(id), alpha: known ? 1 : 128 / 255 };
+  }
+  const faction = db.faction(owner) || db.faction('Neutral');
   if (faction && !colors.has(faction)) colors.set(faction, faction.vec('Color', neutralColor));
   const color = faction ? colors.get(faction) : neutralColor;
   return { known, color, alpha: known ? 1 : 128 / 255 };

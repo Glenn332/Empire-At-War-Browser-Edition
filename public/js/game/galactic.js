@@ -1,3 +1,4 @@
+import { expansion } from '../edition.js';
 import { ridesFlagship } from './campaignbattle.js';
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { dropRockTextures } from '../rockbake.js';
@@ -169,9 +170,9 @@ export class GalacticGame {
     this.linkedMission = null;
     this.modeSuspended = false;
     try {
-      this.simplifiedFactionColors = localStorage.getItem('swr-simplified-faction-colors') === '1';
+      this.simplifiedFactionColors = !expansion() || localStorage.getItem('swr-simplified-faction-colors') === '1';
     } catch {
-      this.simplifiedFactionColors = false;
+      this.simplifiedFactionColors = !expansion();
     }
     try {
       this.autoResolveOption = localStorage.getItem('swr-auto-resolve') === '1';
@@ -1185,13 +1186,16 @@ export class GalacticGame {
     return pick ? icon(pick) : '';
   }
 
+  relativeColors() {
+    return !!(
+      (this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false) ||
+      this.galaxy?.players?.find(p => p.faction === this.me)?.tutorial
+    );
+  }
+
   factionColor(owner) {
     const f = db.faction(owner);
-    if (
-      ((this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false) ||
-        this.galaxy?.players?.find(p => p.faction === this.me)?.tutorial) &&
-      f
-    ) {
+    if (this.relativeColors() && f) {
       if (String(owner).toUpperCase() === String(this.me).toUpperCase()) return rgb(db.constants.str('Player_Color'));
       if (f.bool('Is_Playable') && !f.bool('Is_Neutral')) return rgb(db.constants.str('Enemy_Color'));
     }
@@ -1371,7 +1375,7 @@ export class GalacticGame {
       const override = f.units.map(u => u.type.str('Galactic_Fleet_Override_Model_Name')).find(Boolean);
       const file = override || (box && box.str('Galactic_Model_Name')) || 'w_planet_fleet.alo';
       const fac = db.faction(f.owner),
-        col = fac ? rgb(fac.str('Color')) : [1, 1, 1];
+        col = fac ? this.factionColor(f.owner) : [1, 1, 1];
       const inst = await loadModel(file, { teamColor: new THREE.Color(...col) }).catch(() => null);
       if (!inst || !this.galaxy.fleets.includes(f)) return;
       inst.root.scale.setScalar(box ? box.num('Scale_Factor', 1) : 1);
@@ -4039,9 +4043,11 @@ export class GalacticGame {
         point = pv?.show && this.overlayPoint(p.pos);
       if (!point) return;
       const v = intelligence(this.galaxy, p),
-        faction = db.faction(displayOwner(this.galaxy, p)),
-        col = rgb(faction?.str('Color')),
-        ink = faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : col;
+        owner = displayOwner(this.galaxy, p),
+        faction = db.faction(owner),
+        relative = this.relativeColors(),
+        col = relative && faction ? this.factionColor(owner) : rgb(faction?.str('Color')),
+        ink = !relative && faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : col;
       const ring = i !== this.selected && !!this.ringComp.texture && this.tinted(this.ringComp.texture, col);
       if (ring) {
         const z = ui * this.ringComp.scale;

@@ -210,7 +210,7 @@ export class GalacticRadar {
       scale = c?.num('Scale', 1) ?? 1;
     for (const row of this.blips) {
       const { p, el } = row,
-        appearance = radarAppearance(this.game.galaxy, p),
+        appearance = radarAppearance(this.game.galaxy, p, this.game),
         selected = p.index === this.game.selected;
       const prop = selected
         ? 'Selected_Texture_Name'
