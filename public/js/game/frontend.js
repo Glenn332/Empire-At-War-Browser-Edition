@@ -121,7 +121,12 @@ export class FrontEnd {
       .sort((a, b) => a - b);
     const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter(d => d > 0),
       gap = gaps.length ? Math.min(...gaps) : back.y - skirmish.y,
-      fits = back.y - skirmish.y >= 2 * gap;
+      fits = back.y - skirmish.y >= 2 * gap,
+      column = ['IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON', 'IDC_BACK_BUTTON_MAIN']
+        .map(box)
+        .filter(Boolean)
+        .every(c => c.x === skirmish.x);
+    if (!fits && !column) return;
     let y = skirmish.y + gap;
     if (!fits) {
       y = skirmish.y;
