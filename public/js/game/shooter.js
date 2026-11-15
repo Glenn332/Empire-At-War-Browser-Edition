@@ -65,7 +65,7 @@ const REACH = 1600,
   FIX = { yaw: 0.9, pitch: 0.8 },
   FP_MUZZLE_Y = -0.42,
   SOUND_FALLOFF = 2,
-  DUMMY = { wait: 3 },
+  DUMMY = { wait: 15 },
   REMOTE = { delay: 0.1, keep: 10, fire: 0.04, reach: 45 },
   IDLE_GUN = { firing: false, target: null },
   LAG = { reach: 60 },
@@ -3885,6 +3885,12 @@ export class Shooter {
       this.respawnAt = w.time + 0.5;
       this.respawnBots();
     }
+    for (const p of this.pendingDummies)
+      if (p.take && w.time >= p.until) {
+        const take = p.take;
+        p.take = null;
+        take(null);
+      }
     this.waves.step();
     if (this.state === 'dead' && !this.game.over && w.time >= this.deadAt + DEATH_CAM && this.panel.style.display === 'none' && !this.waves.riding()) this.respawnView();
     this.refreshDeploy();
@@ -5178,7 +5184,6 @@ export class Shooter {
     const entry = { by: null, until: w.time + DUMMY.wait, take: null },
       got = new Promise(res => {
         entry.take = res;
-        setTimeout(() => res(null), DUMMY.wait * 1000 + 500);
       });
     const was = this.spawning;
     this.spawning = false;

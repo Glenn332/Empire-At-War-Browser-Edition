@@ -1529,7 +1529,12 @@ export class ScriptHost {
       if (n === 'LOCAL') return this.player(this.game.setup?.net ? w.players.find(p => p.human) || this.game.human : this.game.human);
       if (n === 'NEUTRAL') return this.player(w.neutral);
       if (n === 'HOSTILE' && w.hostile) return this.player(w.hostile);
-      return this.player(w.players.find(p => p.factionName.toUpperCase() === n) || this.campaignPlayer(n) || (n === 'HOSTILE' ? w.neutral : null));
+      return this.player(
+        w.players.find(p => p.factionName.toUpperCase() === n) ||
+          this.campaignPlayer(n) ||
+          this.game.scriptPlayer?.(n) ||
+          (n === 'HOSTILE' ? w.neutral : null)
+      );
     });
     vm.global('Evaluate_In_Galactic_Context', (name, player) => {
       const table = this.game.setup?.campaign?.galacticPerceptions,
@@ -1546,7 +1551,7 @@ export class ScriptHost {
     vm.global('Find_All_Objects_Of_Type', (a, b) => {
       const p = playerOf(a),
         t = p ? null : typeOf(a),
-        cat = p && b ? String(b).toUpperCase() : null;
+        cat = p && b ? String(b).toUpperCase().split('|').map(s => s.trim()).filter(Boolean) : null;
       if (!p && !t && typeof a === 'string') {
         const of = playerOf(b);
         return objects()
@@ -1555,7 +1560,11 @@ export class ScriptHost {
       }
       return objects()
         .filter(e =>
-          t ? ofType(e, t) : p ? this.owner(e) === p && (!cat || (lead(e) && lead(e).type.categories().has(cat))) : false
+          t
+            ? ofType(e, t)
+            : p
+              ? this.owner(e) === p && (!cat?.length || (lead(e) && cat.some(c => lead(e).type.categories().has(c))))
+              : false
         )
         .map(e => this.wrap(e));
     });
@@ -1580,14 +1589,16 @@ export class ScriptHost {
     };
     const whenArt = (L, t, now) => {
       const wait = t && this.game.artFor ? this.game.artFor(t) : null,
-        inst = this.current;
-      if (wait && inst && inst.thread && L === inst.thread.co) {
-        const hold = (inst.blocked = { ready: false });
+        inst = this.current,
+        side = inst && inst.running && L === inst.running.co ? inst.running : null;
+      if (wait && inst && (side || (inst.thread && L === inst.thread.co))) {
+        const owner = side || inst,
+          hold = (owner.blocked = { ready: false });
         wait.then(() => {
           hold.ready = true;
         });
         return lua.lua_yieldk(L, 0, 0, L2 => {
-          inst.blocked = null;
+          owner.blocked = null;
           vm.push(now(), L2);
           return 1;
         });
@@ -2386,6 +2397,7 @@ export class ScriptHost {
       }
       if (!inst.blocked)
         for (const t of inst.threads.slice()) {
+          if (t.blocked && !t.blocked.ready) continue;
           inst.running = t;
           const tr = vm.resume(t, t.arg);
           inst.running = null;

@@ -26,6 +26,17 @@ export async function storyTypes(names) {
     await Promise.all(children.map(read));
   };
   await Promise.all(names.map(read));
+  await readScripts(scripts, texts);
+  return typesIn(texts);
+}
+
+export async function scriptTypes(names) {
+  const texts = [];
+  await readScripts(new Set(names.filter(Boolean)), texts);
+  return typesIn(texts);
+}
+
+async function readScripts(scripts, texts) {
   await Promise.all(
     [...scripts].map(async s => {
       const file = (await findFiles(`SCRIPTS\\\\(.*\\\\)?${esc(s.toUpperCase())}\\.LUA$`).catch(() => []))[0];
@@ -33,6 +44,9 @@ export async function storyTypes(names) {
       if (text) texts.push(text);
     })
   );
+}
+
+function typesIn(texts) {
   const out = new Set();
   for (const text of texts)
     for (const m of text.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {

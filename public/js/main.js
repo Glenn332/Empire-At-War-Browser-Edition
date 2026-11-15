@@ -77,7 +77,7 @@ import { restoreBattleScripts } from './game/tacticalsave.js';
 import { orderMove } from './game/orders.js';
 import { placeSpecialWeapons, placeCampaignSpecialWeapons, specialWeaponSource } from './game/superweapon.js';
 import { placeCampaignBattle, sideBeaten, battleResult, campaignIntro } from './game/campaignbattle.js';
-import { storyTypes } from './game/storyart.js';
+import { storyTypes, scriptTypes } from './game/storyart.js';
 import { openRetreatDialog, resolveTactical, spaceRosters } from './game/tacticalautoresolve.js';
 import { tacticalSpeed } from './game/galacticspeed.js';
 import { RetreatCoordinator, showRetreatLine, hasRetreatPrevention } from './game/retreat.js';
@@ -382,6 +382,8 @@ class Game {
         }
     const isPad = t => (t.behaviors().has('TACTICAL_BUILD_OBJECTS') && !t.has('Tactical_Health')) || t.name.toUpperCase().endsWith('_PAD');
     for (const o of map.objects) modelsForType(o.type, factions, names, seen, isPad(o.type) ? null : later);
+    if (this.setup.attract)
+      for (const t of await scriptTypes(map.objects.map(o => o.type.str('Lua_Script').trim()))) modelsForType(t, null, names, seen, null);
     const tacticalWeapons = [...seen].filter(isTacticalSuperweapon),
       superweaponAssets = new Set();
     if (tacticalWeapons.length)
@@ -804,6 +806,18 @@ class Game {
     this.bench = null;
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
     if (window.game === this) window.game = null;
+  }
+
+  scriptPlayer(name) {
+    const w = this.world,
+      f = this.setup.attract && w && db.faction(name);
+    if (!f || f.bool('Is_Neutral')) return null;
+    let p = w.players.find(q => q.factionName.toUpperCase() === f.name.toUpperCase());
+    if (!p) {
+      const t = w.addTeam(new Team(w.teams.length, f.name));
+      p = w.addPlayer(new Player(w.players.length, t, { credits: 0, name: f.name }));
+    }
+    return p;
   }
 
   startAttract() {

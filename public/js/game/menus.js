@@ -634,8 +634,8 @@ export class Menus {
     const checks = [...TWEAKS, BATTLEFRONT, ...BATTLEFRONT_CHECKS];
     const checkCtl = (t, x) => ({ kind: 'CONTROL', text: '', id: t.id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y: 0, w: W - 64 - x, h: 23 });
     const sliderCtl = (id, x) => [
-      { kind: 'LTEXT', text: '', id: id + '_LABEL', x: 4 + x, y: 0, w: 205 - x, h: 20, style: '' },
-      { kind: 'CONTROL', text: '', id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 212, y: 0, w: W - 352, h: 20 },
+      { kind: 'LTEXT', text: '', id: id + '_LABEL', x: 4 + x, y: 0, w: 250 - x, h: 20, style: '' },
+      { kind: 'CONTROL', text: '', id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 258, y: 0, w: W - 398, h: 20 },
       { kind: 'LTEXT', text: '', id: id + '_VALUE', x: W - 130, y: 0, w: 70, h: 20, style: '' }
     ];
     const rows = [
