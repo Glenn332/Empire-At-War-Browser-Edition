@@ -195,7 +195,6 @@ export class GalacticStoryDialog {
     this.titleSource = null;
     this.unsubscribeSpeech = game.audio?.speech?.on('done', () => {
       this.speechFinished = true;
-      if (this.open && this.summary) game.movies?.stop();
       const resume = this.speechWait;
       this.speechWait = null;
       resume?.();
