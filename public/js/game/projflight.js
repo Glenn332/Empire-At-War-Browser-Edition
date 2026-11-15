@@ -18,6 +18,7 @@ export const categoryOf = P => (P._cat ??= CAT[P.str('Projectile_Category').trim
 export const aimsOff = cat => cat < 8 && ((0xd9 >> cat) & 1) === 1;
 
 const rand = (lo, hi) => lo + (hi - lo) * simRandom();
+const MAX_LEG_KEYS = 64;
 
 export function intercept(out, x, y, z, tx, ty, tz, vx, vy, vz, speed) {
   const dx = tx - x,
@@ -114,8 +115,8 @@ function addLeg(keys, from, to, amount, lastOnGround, curve, offset, ground) {
     dy = to[1] - from[1],
     dz = to[2] - from[2],
     dist = Math.hypot(dx, dy, dz);
-  const n = Math.ceil(dist / (1.1 * curve));
-  if (!(n > 0)) return;
+  const n = Math.min(MAX_LEG_KEYS, Math.ceil(dist / (1.1 * curve)));
+  if (!(n > 0) || !Number.isFinite(dist)) return;
   const mx = (from[0] + to[0]) / 2 + 1,
     my = (from[1] + to[1]) / 2 + 1,
     mz = (from[2] + to[2]) / 2 + 1;

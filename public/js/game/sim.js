@@ -4560,6 +4560,11 @@ export class World {
     const cat = categoryOf(proj),
       tp = targetHp ? targetHp.worldPos(_p2) : { x: target.x, y: target.y, z: target.z };
     let lead = leadOf(_p3, x, y, z, target, tp.x, tp.y, tp.z, speed);
+    if (
+      lead &&
+      !(Math.hypot(lead.x - tp.x, lead.y - tp.y, lead.z - tp.z) <= proj.num('Projectile_Max_Flight_Distance', 2000) + (target.hitRadius || 0))
+    )
+      lead = null;
     if (!lead) {
       lead = _p3;
       lead.x = tp.x;
