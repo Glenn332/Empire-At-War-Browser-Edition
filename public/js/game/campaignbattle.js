@@ -334,17 +334,40 @@ export function campaignIntro(game) {
     own: book.anchors[team.id] || arriving,
     local: attacking,
     lead: units.find(u => !u.isSquad) || units[0],
-    speech: game.human.faction
-      .str(attacking ? 'SpeechEvent_Tactical_Intro_Space_Attacker' : 'SpeechEvent_Tactical_Intro_Space_Defender')
-      .trim()
+    station: attacking ? null : book.station && !book.station.dead ? book.station : null
   });
+}
+
+const CRUISE_FRAME = 45,
+  KEY_TENSION = 0.5;
+
+function cameraSpline(keys, f) {
+  const n = keys.length;
+  if (f <= keys[0][0]) return keys[0][1];
+  if (f >= keys[n - 1][0]) return keys[n - 1][1];
+  let i = 0;
+  while (i < n - 2 && f > keys[i + 1][0]) i++;
+  const [f0, a] = keys[i],
+    [f1, b] = keys[i + 1],
+    prev = keys[i - 1]?.[1],
+    next = keys[i + 2]?.[1],
+    k = (f - f0) / (f1 - f0 || 1),
+    k2 = k * k,
+    k3 = k2 * k;
+  const out = {};
+  for (const c of ['x', 'y', 'z']) {
+    const ta = KEY_TENSION * (prev ? b[c] - prev[c] : b[c] - a[c]),
+      tb = KEY_TENSION * (next ? next[c] - a[c] : b[c] - a[c]);
+    out[c] = (2 * k3 - 3 * k2 + 1) * a[c] + (k3 - 2 * k2 + k) * ta + (-2 * k3 + 3 * k2) * b[c] + (k3 - k2) * tb;
+  }
+  return out;
 }
 
 const KEY_END = 120,
   OPENING_SECONDS = 5,
   SPEECH_AFTER = 10;
 
-export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech }) {
+export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech, station = null }) {
   const cine = g.cine,
     R = g.renderer,
     rig = R?.rig;
@@ -353,27 +376,28 @@ export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech }
     fx = Math.cos(facing),
     fy = Math.sin(facing),
     ez = entry.z || 0,
-    start = { x: entry.x - fx * HYPER.far, y: entry.y - fy * HYPER.far, z: ez };
-  let from;
+    back = HYPER.far - HYPER.gone[CRUISE_FRAME],
+    start = { x: entry.x - fx * back, y: entry.y - fy * back, z: ez };
+  let from,
+    watch = null;
   if (local) {
     from =
       Math.random() < 0.5
         ? { x: entry.x + (start.x - entry.x) * 0.05 - fy * 300, y: entry.y + (start.y - entry.y) * 0.05 + fx * 300, z: ez + 70 }
         : { x: 2 * start.x - entry.x, y: 2 * start.y - entry.y, z: ez - 70 };
-  } else {
-    from = { x: lead ? lead.x : start.x, y: lead ? lead.y : start.y, z: ez + 20 };
-  }
-  rig.x = own.x;
-  rig.y = own.y;
+  } else watch = station ? { x: station.x, y: station.y, z: 0 } : { x: own.x, y: own.y, z: 0 };
+  rig.x = watch ? watch.x : own.x;
+  rig.y = watch ? watch.y : own.y;
   rig.clamp?.();
   rig.home = { ...(rig.home || {}), x: rig.x, y: rig.y };
   const pitch = rig.viewPitch ? rig.viewPitch() : rig.pitch,
     cp = Math.cos(pitch);
   const home = { x: rig.x + Math.cos(rig.yaw) * cp * rig.dist, y: rig.y + Math.sin(rig.yaw) * cp * rig.dist, z: (rig.z || 0) + Math.sin(pitch) * rig.dist };
-  const ease = k => k * k * (3 - 2 * k),
-    mix = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k });
-  const spot = f => (local ? (f <= 35 ? from : mix(from, home, ease((f - 35) / (KEY_END - 35)))) : mix(from, home, ease(f / KEY_END)));
-  const aim = f => (local ? (f <= 23 ? start : mix(start, { ...entry, z: ez }, ease((f - 23) / (KEY_END - 23)))) : { x: entry.x, y: entry.y, z: ez });
+  if (watch) from = { x: watch.x + (watch.y - home.y), y: watch.y + (watch.x - home.x), z: watch.z + 20 };
+  const eyeKeys = local ? [[0, from], [35, from], [KEY_END, home]] : [[0, from], [KEY_END, home]],
+    lookKeys = local ? [[0, start], [23, start], [KEY_END, { ...entry, z: ez }]] : null;
+  const spot = f => cameraSpline(eyeKeys, f);
+  const aim = f => (local ? cameraSpline(lookKeys, f) : watch);
   let t = 0,
     spoke = false;
   const say = () => {
@@ -382,8 +406,8 @@ export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech }
     const wait = Math.max(0, SPEECH_AFTER - t) * 1000;
     setTimeout(() => !g.over && g.audio.speech?.enqueue(speech), wait);
   };
-  cine.start();
-  cine.subject = lead || null;
+  cine.start({ letterbox: false });
+  cine.subject = local ? lead || null : station;
   cine.sequence = {
     stop() {
       cine.subject = null;

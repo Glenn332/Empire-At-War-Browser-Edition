@@ -19,13 +19,13 @@ export class Cinematic {
     else this.start();
   }
 
-  start() {
+  start({ letterbox = true } = {}) {
     if (this.on) return;
     this.on = true;
     const g = this.game,
       R = g.renderer;
     document.body.classList.add('cinematic');
-    document.documentElement.style.setProperty('--letterbox', this.bars * 100 + 'vh');
+    document.documentElement.style.setProperty('--letterbox', (letterbox ? this.bars * 100 : 0) + 'vh');
     this.savedFov = R.camera.fov;
     R.cameraOverride = dt => this.frame(dt);
     g.ui.select([], false);
