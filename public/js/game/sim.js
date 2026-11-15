@@ -5456,6 +5456,7 @@ export class World {
     const inWeapon = o => dist2(lead, o) <= (reach + o.hitRadius) ** 2;
     const respond = (o, start = true) => {
       if (range < 0) return false;
+      if (kind === 'idle' && !parked && inWeapon(o)) return true;
       const hurt = (ext || parked) && this.hurtBy(s, o);
       if (parked && !hurt) return false;
       const f = hull + range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);

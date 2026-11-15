@@ -33,7 +33,8 @@ export class NeutralizeShell {
   }
 
   static available(game) {
-    return !!game.scriptUI?.comps.get(SHELL)?.val('Model_Name');
+    const comps = game.scriptUI?.comps;
+    return !!(comps?.get(SHELL)?.val('Model_Name') && comps.get(button(0)));
   }
 
   async open(rows, choose, { cancel = null } = {}) {
