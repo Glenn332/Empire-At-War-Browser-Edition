@@ -902,10 +902,11 @@ export class GalacticGame {
         .faction(owner)
         ?.list('Allies')
         .some(n => n.toUpperCase() === viewer?.toUpperCase());
-    return routeSettings(
-      line,
-      routeStyle(a, b, f, db.constants, this.me, this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false, allied)
-    );
+    const simplified = this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false;
+    let style = routeStyle(a, b, f, db.constants, this.me, simplified, allied);
+    if (!line?.sub('Settings_For_Faction').some(n => n.attrs.Name?.toUpperCase() === style.toUpperCase()))
+      style = routeStyle(a, b, f, db.constants, this.me, true, allied);
+    return routeSettings(line, style);
   }
 
   buildRoutes() {
