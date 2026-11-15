@@ -52,7 +52,7 @@ function describePlan(plans, o) {
     const h = o.__markup;
     return { k: 'pmk', id: h.inst?.id, i: [...(h.inst?.markups || [])].indexOf(h) };
   }
-  if (o.__weighted) return { k: 'pwl', t: o.__weighted.map(([t, w]) => [t.name, w]), g: o.__kinds.map(([n, w]) => [n, w]) };
+  if (o.__weighted && o.__kinds) return { k: 'pwl', t: o.__weighted.map(([t, w]) => [t.name, w]), g: o.__kinds.map(([n, w]) => [n, w]) };
   if (o.__spec) return { k: 'pbk', s: encodeSpec(plans, o.__spec) };
   return undefined;
 }

@@ -164,6 +164,8 @@ function typeName(type) {
 
 const ICON_LIFT = 0.048;
 
+const autoRetarget = st => !!st && st.auto && st.active && !st.def.toggle && st.def.duration > 0 && st.def.target !== 'none';
+
 export class UI {
   constructor(game) {
     this.game = game;
@@ -975,11 +977,15 @@ export class UI {
     pl.x = g.x;
     pl.y = g.y;
     if (!pl.turned) {
-      const st = this.player.station;
-      const bx = st && !st.dead ? st.x : 0,
-        by = st && !st.dead ? st.y : 0;
-      const d = Math.hypot(g.x - bx, g.y - by);
-      pl.heading = d > 200 ? Math.atan2(g.y - by, g.x - bx) : Math.atan2(-by, -bx);
+      const sp = this.player.spawnPoints?.[0];
+      if (sp && Number.isFinite(sp.heading)) pl.heading = sp.heading;
+      else {
+        const st = this.player.station;
+        const bx = st && !st.dead ? st.x : 0,
+          by = st && !st.dead ? st.y : 0;
+        const d = Math.hypot(g.x - bx, g.y - by);
+        pl.heading = d > 200 ? Math.atan2(g.y - by, g.x - bx) : Math.atan2(-by, -bx);
+      }
     }
     let at = null,
       heading = pl.heading;
@@ -1119,7 +1125,7 @@ export class UI {
     };
     const turnOn = users.some(ready);
     if (!anyActive && !turnOn) return;
-    if (def.target !== 'none' && turnOn) {
+    if (def.target !== 'none' && (turnOn || users.some(s => autoRetarget(s.abilityState(kind))))) {
       this.arm(this.armed === 'ability:' + kind ? null : 'ability:' + kind);
       return;
     }
@@ -1541,12 +1547,7 @@ export class UI {
       fy = (e.clientY - rect.top) / rect.height;
     const x = w.min.x + fx * (w.max.x - w.min.x),
       y = w.max.y - fy * (w.max.y - w.min.y);
-    const armed =
-      e.button === 2 && ['attackmove', 'guard', 'move'].includes(this.armed)
-        ? this.armed
-        : e.button === 0 && this.armed === 'waypoint'
-          ? this.armed
-          : null;
+    const armed = (e.button === 0 || e.button === 2) && ['attackmove', 'guard', 'move', 'waypoint'].includes(this.armed) ? this.armed : null;
     if (e.button === 2 || armed) {
       if (e.type === 'mousemove') {
         e.preventDefault();
@@ -1710,7 +1711,7 @@ export class UI {
       if (
         !this.mine().some(s => {
           const st = s.abilityState(kind);
-          return st && !st.active && !(st.cooldown > 0);
+          return st && ((!st.active && !(st.cooldown > 0)) || autoRetarget(st));
         })
       )
         this.arm(null);

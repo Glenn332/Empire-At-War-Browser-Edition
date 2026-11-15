@@ -514,7 +514,7 @@ export function placeCampaignBattle(w, map, teams, cb) {
   for (const t of teams)
     if (!t.spawnPoints.length) {
       const at = t === teams[d.team] ? defend : entry;
-      t.spawnPoints.push({ x: at.x, y: at.y, heading: Math.atan2(-at.y, -at.x) });
+      t.spawnPoints.push({ x: at.x, y: at.y, heading: Number.isFinite(at.heading) ? at.heading : Math.atan2(-at.y, -at.x) });
     }
   w.recountPop();
   return book;

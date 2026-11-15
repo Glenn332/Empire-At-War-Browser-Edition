@@ -109,6 +109,28 @@ export function uiBoneTransforms(model) {
   return world;
 }
 
+function reinforceGrid(shell) {
+  const x = [],
+    y = [];
+  for (let c = 0; shell.get('R_00' + String(c).padStart(2, '0')); c++) x.push(shell.get('R_00' + String(c).padStart(2, '0')).origin.x);
+  for (let r = 0; shell.get('R_' + String(r).padStart(2, '0') + '00'); r++) y.push(shell.get('R_' + String(r).padStart(2, '0') + '00').origin.y);
+  let rows = 0;
+  while (shell.get('REINFORCEMENT_WINDOW_ALT' + rows)) rows++;
+  if (!x.length) for (let c = 0; c < 4; c++) x.push(32 + 43 * c);
+  if (!y.length) for (let r = 0; r < 5; r++) y.push(-(49 + 46 * r));
+  rows = Math.max(1, Math.min(rows || 5, y.length));
+  const close = shell.get('R_CLOSE');
+  return {
+    x,
+    y,
+    cols: x.length,
+    rows,
+    closeX: close ? close.origin.x : x[0] + (x[x.length - 1] - x[0]) / 2,
+    closeDrop: close ? y[rows - 1] - close.origin.y : 37,
+    wide: 186
+  };
+}
+
 export function uiMeshes(model) {
   const out = new Map(),
     transforms = uiBoneTransforms(model);
@@ -1909,7 +1931,8 @@ export class CommandBar {
       p = this.player;
     const counts = new Map();
     for (const t of p.reinforcements) counts.set(t, (counts.get(t) || 0) + 1);
-    const rows = Math.max(1, Math.min(5, Math.ceil(counts.size / 4)));
+    const grid = (this.reinGrid ||= reinforceGrid(this.rshell));
+    const rows = Math.max(1, Math.min(grid.rows, Math.ceil(counts.size / grid.cols)));
     const sig = (this.reinforceOpen ? 'o' : 'c') + rows + [...counts].map(([t, n]) => t.name + n).join();
     if (sig === this.reinSig) {
       if (this.reinPop) this.reinPop.textContent = `${p.pop}/${p.popCap}`;
@@ -1945,9 +1968,10 @@ export class CommandBar {
       node.style.cssText += `;position:absolute;left:${x + ox - w / 2}px;top:${oy - y - h / 2}px;width:${w}px;height:${h}px`;
       return node;
     };
-    const icon = at(el('hicon', win), 86, -15, 22, 17);
+    const right = R.x + R.w - grid.wide;
+    const icon = at(el('hicon', win), 86 + right, -15, 22, 17);
     icon.style.backgroundImage = css(iconUrl('i_icon_planet_Pop.tga'));
-    const pop = at(el('ht outline', win), 122, -15, 50, 16);
+    const pop = at(el('ht outline', win), 122 + right, -15, 50, 16);
     pop.style.justifyContent = 'flex-start';
     pop.style.fontSize = 6 * PT + 'px';
     pop.style.color = '#fff';
@@ -1955,10 +1979,10 @@ export class CommandBar {
     this.reinPop = pop;
     let i = 0;
     for (const [t, n] of counts) {
-      if (i >= 20) break;
-      const r = Math.floor(i / 4),
-        c = i % 4;
-      const s = at(el('rslot', win), 32 + 43 * c, -(49 + 46 * r), 43, 43);
+      if (i >= grid.cols * grid.rows) break;
+      const r = Math.floor(i / grid.cols),
+        c = i % grid.cols;
+      const s = at(el('rslot', win), grid.x[c], grid.y[r], 43, 43);
       s.style.backgroundImage = css(iconUrl(iconNameFor(t)));
       s.style.setProperty('--over', css(iconAdditiveUrl('i_button_unit_frame_select.tga')));
       s.innerHTML = `<span>${n > 1 ? n : ''}</span>`;
@@ -1985,7 +2009,7 @@ export class CommandBar {
       };
       i++;
     }
-    const close = at(el('rclose', win), 97, -(49 + 46 * (rows - 1) + 37), 101, 22);
+    const close = at(el('rclose', win), grid.closeX, grid.y[rows - 1] - grid.closeDrop, 101, 22);
     close.style.setProperty('--icon', css(iconUrl('i_reinforcement_button.tga')));
     close.style.setProperty('--over', css(iconUrl('i_reinforcement_button_mouse_over.tga')));
     close.textContent = db.t('TEXT_BUTTON_CLOSE') || 'CLOSE';

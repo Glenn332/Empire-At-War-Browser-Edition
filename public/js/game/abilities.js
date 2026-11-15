@@ -231,7 +231,7 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   if (on) {
     if ((lead.abilityLock || 0) > world.time)
       return lead.inNebula ? 'Abilities do not work inside a nebula' : 'Abilities are still recovering from the nebula';
-    if (st0.active && (def.toggle || def.duration > 0)) return null;
+    if (st0.active && (def.toggle || def.duration > 0) && (def.target === 'none' || !target)) return null;
     if (kind === 'DEFEND' && lead.ionUntil > world.time) return 'Disabled by an ion stun';
     if (kind === 'DEFEND' && world.inIonStorm && world.inIonStorm(lead)) return 'Shields do not work inside an ion storm';
     if (kind === 'INTERDICT' && lead.hardpoints?.some(h => h.kind === 'HARD_POINT_GRAVITY_WELL' && !h.alive))
@@ -259,6 +259,11 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   let any = false;
   for (const u of members(e)) {
     const st = u.abilities.find(s => s.def.kind === kind);
+    if (on && st && st.active && !def.toggle && def.duration > 0 && def.target !== 'none' && target) {
+      retarget(u, st, target);
+      any = true;
+      continue;
+    }
     if (!st || (st.active === on && (def.toggle || def.duration > 0))) continue;
     if (on) {
       if (st.cooldown > 0) continue;
@@ -281,6 +286,12 @@ function swapWeapon(u) {
   if (!u.weapons) return;
   u.weaponIndex = swapped(u.weaponIndex, u.weapons.length);
   if (u.weapons[u.weaponIndex]) u.weapon = u.weapons[u.weaponIndex];
+}
+
+function retarget(u, st, target) {
+  st.data = { target, t: st.data ? st.data.t : 0 };
+  const kind = st.def.kind;
+  if ((kind === 'TRACTOR_BEAM' || kind === 'ENERGY_WEAPON' || kind === 'LEECH_SHIELDS') && !u.squad) u.target = target;
 }
 
 function start(world, u, st, target) {
