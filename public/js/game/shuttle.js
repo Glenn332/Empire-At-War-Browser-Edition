@@ -342,7 +342,11 @@ export class ShuttleWaves {
       w = sh.world;
     let q = null;
     try {
-      q = e.who === 'bot' ? await w.spawn(e.unit.name, o.x, o.y, h, side) : await sh.spawnClass(e.cls, o, h, side);
+      if (e.who === 'bot') {
+        const real = sh.isDummy(e.unit) ? sh.realTypes(e.unit) : null,
+          t = real ? real[Math.floor(Math.random() * real.length)] : e.unit;
+        q = sh.single(await sh.spawnKept(t.name, o.x, o.y, h, side));
+      } else q = await sh.spawnClass(e.cls, o, h, side);
     } catch {
       q = null;
     }
@@ -783,11 +787,15 @@ export class ShuttleWaves {
 
   leaveRoom(R) {
     const me = R.bay.me;
-    R.exited = true;
     if (R.F) {
       const e = R.F.load.find(x => x.who === 'me');
-      if (e) this.riderOut(R.F, e, { x: me.x, y: me.y, yaw: me.yaw });
-    } else this.sh.game.shooterNet?.session?.send(0, { k: 'sh-rp', key: R.key, x: me.x, y: me.y, h: me.yaw, m: 0, out: 1 });
+      if (!e || !R.F.inside.has(e)) return;
+      R.exited = true;
+      this.riderOut(R.F, e, { x: me.x, y: me.y, yaw: me.yaw });
+    } else {
+      R.exited = true;
+      this.sh.game.shooterNet?.session?.send(0, { k: 'sh-rp', key: R.key, x: me.x, y: me.y, h: me.yaw, m: 0, out: 1 });
+    }
   }
 
   pending(key) {

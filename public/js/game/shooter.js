@@ -425,6 +425,8 @@ export class Shooter {
     this.bornOf = new WeakMap();
     this.kept = new WeakSet();
     this.pendingDummies = [];
+    this.singles = new WeakSet();
+    this.firstOf = new WeakMap();
     this.rocks = null;
     this.rocksClosed = false;
     this.closedCells = null;
@@ -575,7 +577,7 @@ export class Shooter {
   made(q) {
     if (this.netClient) return;
     this.learnDummy(q);
-    if (this.trim(q)) return;
+    if (this.extra(q) || this.trim(q)) return;
     const u = q.members[0];
     for (const m of q.members) {
       const up = RANGE_UP[m.kind];
@@ -651,7 +653,7 @@ export class Shooter {
       m = q.members[0];
     if (this.spawning || this.kept.has(q) || !m || q.side < 0 || q.side === w.wild || q.native || q.structure || m.structure || !(m.speed > 0)) return false;
     if (m.foot) {
-      if (this.popUsed(q.side) <= this.fieldCap(q.side)) return false;
+      if (this.popUsed(q.side) + (this.spawningN[q.side] || 0) + (this.respawns[q.side]?.length || 0) <= this.fieldCap(q.side)) return false;
     } else {
       if (this.conquest || (m.kind !== 'VEHICLE' && m.kind !== 'AIR')) return false;
       if (inCategory(m.type, 'HERO') || m.type.bool('Is_Named_Hero')) return false;
@@ -659,6 +661,53 @@ export class Shooter {
       for (const u of w.units) if (!u.dead && !u.gone && u.side === q.side && !u.foot && !u.structure && u.speed > 0 && (u.kind === 'VEHICLE' || u.kind === 'AIR') && !u.squad?.native) n++;
       if (n <= BOT_RESPAWN.maxVehicles) return false;
     }
+    this.discard(q);
+    return true;
+  }
+
+  spawnKept(name, x, y, face, side) {
+    const w = this.world;
+    w.spawning = null;
+    const made = w.spawn(name, x, y, face, side);
+    for (const q of w.spawning || []) this.kept.add(q);
+    return made;
+  }
+
+  probe(c, side) {
+    const d = c.dummy;
+    if (!d || c.unit !== d || this.realOf(d)) return;
+    const seen = (this.probing ||= new Set());
+    if (seen.has(d)) return;
+    seen.add(d);
+    const w = this.world,
+      h = this.home(side) || this.hq(side);
+    if (!h) return;
+    const o = w.nearestOpen(h.x, h.y) || h;
+    Promise.resolve(this.spawnKept(d.name, o.x, o.y, 0, side))
+      .then(q => this.single(q))
+      .catch(() => null);
+  }
+
+  single(q) {
+    if (q && this.isDummy(q.members[0]?.type)) this.singles.add(q);
+    return q;
+  }
+
+  extra(q) {
+    const b = this.bornOf.get(q);
+    if (!b || !this.singles.has(b.by) || !q.members[0]) return false;
+    const first = this.firstOf.get(b.by);
+    if (!first || first === q || first.dead || !first.members.length) {
+      this.firstOf.set(b.by, q);
+      return false;
+    }
+    if (this.kept.has(q)) return false;
+    this.discard(q);
+    return true;
+  }
+
+  discard(q) {
+    const w = this.world;
     q.scriptDespawned = true;
     q.forming = false;
     for (const u of q.members) {
@@ -669,7 +718,6 @@ export class Shooter {
       if (u.holder) w.scene.remove(u.holder);
     }
     q.members.length = 0;
-    return true;
   }
 
   respawnDelay(side) {
@@ -4232,11 +4280,12 @@ export class Shooter {
           .filter(Boolean);
         const k = kinds[0];
         if (!k || inCategory(k, 'HERO') || k.bool('Is_Named_Hero')) continue;
-        const foot = /infantry/i.test(k.str('MovementClass'));
+        const dummy = this.isDummy(k) ? k : null,
+          real = dummy ? this.realOf(dummy) : null,
+          shape = real || k,
+          foot = /infantry/i.test(shape.str('MovementClass')) && !inCategory(shape, 'VEHICLE');
         if (!foot && !vehicles) continue;
         if (missingFor(w, side, t).length) continue;
-        const dummy = this.isDummy(k) ? k : null,
-          real = dummy ? this.realOf(dummy) : null;
         out.set(t.name, { company: t, unit: real || k, units: dummy ? this.realTypes(dummy) || kinds : kinds, foot, cost: Math.max(0, Math.round(costOf(t, faction) / Math.max(1, kinds.length))), dummy });
       }
     }
@@ -4336,9 +4385,9 @@ export class Shooter {
       this.waves.add({ side: s, who: 'bot', unit: t, company: pick.company, car: !pick.foot, done });
       return true;
     }
-    Promise.resolve(w.spawn(t.name, o.x, o.y, face, s))
+    Promise.resolve(this.spawnKept(t.name, o.x, o.y, face, s))
       .catch(() => null)
-      .then(done);
+      .then(q => done(this.single(q)));
     return true;
   }
 
@@ -5136,6 +5185,7 @@ export class Shooter {
     if (this.netClient) return this.netDeploy(c, p);
     if (this.waves.on() && !heroic) {
       if (this.waves.waiting(this.me, 'me')) return;
+      this.probe(c, this.me);
       w.credits[this.me] -= cost;
       this.boardCost = cost;
       this.boardHero = heroic;
@@ -5179,15 +5229,16 @@ export class Shooter {
   }
 
   async spawnClassRaw(c, o, face, side) {
-    const w = this.world;
-    if (!(c.dummy && c.unit === c.dummy)) return w.spawn(c.unit.name, o.x, o.y, face, side);
+    const w = this.world,
+      unit = c.dummy && c.unit === c.dummy ? this.realOf(c.dummy) || c.unit : c.unit;
+    if (unit !== c.dummy) return this.spawnKept(unit.name, o.x, o.y, face, side);
     const entry = { by: null, until: w.time + DUMMY.wait, take: null },
       got = new Promise(res => {
         entry.take = res;
       });
     const was = this.spawning;
     this.spawning = false;
-    const dq = await w.spawn(c.unit.name, o.x, o.y, face, side);
+    const dq = this.single(await w.spawn(c.unit.name, o.x, o.y, face, side));
     this.spawning = was;
     entry.by = dq;
     this.pendingDummies.push(entry);

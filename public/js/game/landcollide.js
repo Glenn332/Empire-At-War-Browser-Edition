@@ -1385,7 +1385,7 @@ function onWay(w, x, y) {
 }
 
 function freeSpot(W, M, H, bodies) {
-  const R = radius(M),
+  const R = radius(M) || 1,
     cap = Math.min(10, R * 1.5 || 5),
     half = R + M.spacing * 5,
     cone = M.cls === 5 ? Math.PI : 2.3561945,
