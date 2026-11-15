@@ -91,7 +91,13 @@ export class FrontEnd {
   }
 
   async single() {
-    const dlg = await this.screen('IDD_SINGLE_PLAYER_GAMES_MENU_DIALOG', ['IDC_HINT_LIST', 'IDC_DEBUG_LOAD_SKIRMISH_MAP_BUTTON']);
+    const def = this.instant ? (await loadDialogs())?.dialogs.get('IDD_SINGLE_PLAYER_GAMES_MENU_DIALOG') : null,
+      slot = def ? instantSlot(def) : null;
+    const dlg = await this.screen(
+      'IDD_SINGLE_PLAYER_GAMES_MENU_DIALOG',
+      ['IDC_HINT_LIST', 'IDC_DEBUG_LOAD_SKIRMISH_MAP_BUTTON'],
+      slot ? { extra: [{ kind: 'PUSHBUTTON', text: '', id: 'IDC_INSTANT_BATTLE_BUTTON', fontOf: 'IDC_SKIRMISH_GAMES_BUTTON', ...slot, style: '' }] } : {}
+    );
     if (!dlg) return;
     dlg.on('IDC_NEW_CAMPAIGN_BUTTON', () => this.newCampaign(dlg));
     dlg.on('IDC_CUSTOM_CAMPAIGN_BUTTON', () => this.campaign(dlg));
@@ -106,7 +112,55 @@ export class FrontEnd {
       if (!ok) show(true);
     });
     dlg.on('IDC_BACK_BUTTON_MAIN', () => this.menus.pop());
-    if (this.instant) this.instantEntry(dlg, show);
+    if (slot) {
+      const own = dlg.ctl('IDC_INSTANT_BATTLE_BUTTON'),
+        back = dlg.ctl('IDC_BACK_BUTTON_MAIN'),
+        like = dlg.ctl('IDC_SKIRMISH_GAMES_BUTTON');
+      const bg = dlg.el.querySelector('.dlg-bg');
+      if (own && back && like && bg) {
+        const bx = parseFloat(back.style.left),
+          by = parseFloat(back.style.top),
+          bw = parseFloat(back.style.width),
+          bh = parseFloat(back.style.height),
+          pad = 8,
+          copy = document.createElement('div');
+        copy.className = 'dlg-bg';
+        Object.assign(copy.style, {
+          position: 'absolute',
+          left: bx - pad + 'px',
+          top: slot.y - (by - parseFloat(own.style.top)) - pad + 'px',
+          width: bw + 2 * pad + 'px',
+          height: bh + 2 * pad + 'px',
+          backgroundImage: bg.style.backgroundImage,
+          backgroundSize: bg.style.width + ' ' + bg.style.height,
+          backgroundPosition: `${pad - bx}px ${pad - by}px`,
+          backgroundRepeat: 'no-repeat'
+        });
+        bg.after(copy);
+        for (const k of ['left', 'width', 'height']) own.style[k] = back.style[k];
+        for (const k of ['--up', '--over', '--down', '--off']) {
+          const v = back.style.getPropertyValue(k);
+          if (v) own.style.setProperty(k, v);
+        }
+        own.style.backgroundImage = back.style.backgroundImage;
+        const top = own.style.top;
+        own.style.top = back.style.top;
+        back.style.top = top;
+        copy.style.top = parseFloat(top) - pad + 'px';
+      }
+      dlg.setText('IDC_INSTANT_BATTLE_BUTTON', 'Instant Battle');
+      dlg.on('IDC_INSTANT_BATTLE_BUTTON', () => this.runInstant(show));
+    } else if (this.instant) this.instantEntry(dlg, show);
+  }
+
+  async runInstant(show) {
+    this.game.audio.unlock();
+    show(false);
+    const ok = await this.instant(() => show(true)).catch(e => {
+      console.warn('instant battle', e);
+      return false;
+    });
+    if (!ok) show(true);
   }
 
   instantEntry(dlg, show) {
@@ -121,12 +175,7 @@ export class FrontEnd {
       .sort((a, b) => a - b);
     const gaps = ys.slice(1).map((y, i) => y - ys[i]).filter(d => d > 0),
       gap = gaps.length ? Math.min(...gaps) : back.y - skirmish.y,
-      fits = back.y - skirmish.y >= 2 * gap,
-      column = ['IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON', 'IDC_BACK_BUTTON_MAIN']
-        .map(box)
-        .filter(Boolean)
-        .every(c => c.x === skirmish.x);
-    if (!fits && !column) return;
+      fits = back.y - skirmish.y >= 2 * gap;
     let y = skirmish.y + gap;
     if (!fits) {
       y = skirmish.y;
@@ -136,15 +185,7 @@ export class FrontEnd {
         if (c && e) e.style.top = c.y - gap + 'px';
       }
     }
-    this.menus.extra(dlg, 'IDC_SKIRMISH_GAMES_BUTTON', 'Instant Battle', skirmish.x, y, skirmish.w, async () => {
-      this.game.audio.unlock();
-      show(false);
-      const ok = await this.instant(() => show(true)).catch(e => {
-        console.warn('instant battle', e);
-        return false;
-      });
-      if (!ok) show(true);
-    });
+    this.menus.extra(dlg, 'IDC_SKIRMISH_GAMES_BUTTON', 'Instant Battle', skirmish.x, y, skirmish.w, () => this.runInstant(show));
   }
 
   async multiplayer() {
@@ -230,4 +271,17 @@ export class FrontEnd {
     });
     if (!ok) show(true);
   }
+}
+
+function instantSlot(def) {
+  const box = id => def.controls.find(c => c.id === id),
+    skirmish = box('IDC_SKIRMISH_GAMES_BUTTON'),
+    back = box('IDC_BACK_BUTTON_MAIN');
+  if (!skirmish || !back || back.y <= skirmish.y) return null;
+  const column = ['IDC_NEW_CAMPAIGN_BUTTON', 'IDC_CUSTOM_CAMPAIGN_BUTTON', 'IDC_SKIRMISH_GAMES_BUTTON', 'IDC_BACK_BUTTON_MAIN']
+    .map(box)
+    .filter(Boolean)
+    .every(c => c.x === skirmish.x);
+  if (column) return null;
+  return { x: back.x, y: back.y + (back.y - skirmish.y), w: back.w, h: back.h };
 }

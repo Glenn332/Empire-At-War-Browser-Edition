@@ -919,7 +919,7 @@ export async function openDialog(
   const ctls = new Map(),
     sources = new Map(),
     refreshers = new Set(),
-    controlFont = (cid, kind) => font(cid, kind, nativeFonts, id);
+    controlFont = (cid, kind) => font(resource.controls.find(c => c.id === cid)?.fontOf || cid, kind, nativeFonts, id);
   for (const c0 of dlg.controls) {
     const c = (adjust && adjust(c0)) || c0;
     const text = /^TEXT_/.test(c.text) ? db.t(c.text) || '' : '';
