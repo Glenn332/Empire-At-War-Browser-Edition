@@ -1,3 +1,4 @@
+import { tacticalIntro } from './tacticalintro.js';
 import { TacticalMarker } from './tacticalobjects.js';
 import { colorizes } from './teamcolor.js';
 import { setTacticalRules } from './tacticalrules.js';
@@ -3148,6 +3149,7 @@ export class LandGame {
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
     this.movies?.update(real);
     this.tacticalStory?.update();
+    tacticalIntro(this);
     stepTacticalSpeech(this, real);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);

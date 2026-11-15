@@ -477,6 +477,15 @@ export function placeCampaignBattle(w, map, teams, cb) {
         continue;
       }
       w.carryBonuses?.(u.companyType, p, e);
+      if (flagship) {
+        const riders = (w.flagshipRiders ||= new Map()),
+          list = riders.get(flagship) || [];
+        for (const n of u.companyType.list('Company_Units')) {
+          const t = db.type(n);
+          if (t && flagshipRider(t)) list.push(t);
+        }
+        riders.set(flagship, list);
+      }
       if (!flagship && hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
       book.entity.set(u.gid, e);
     }

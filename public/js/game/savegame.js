@@ -180,6 +180,8 @@ function spaceSnapshot(game, name) {
     if (u.limbo) o.limbo = 1;
     if (u.noOpportunity) o.nof = 1;
     if (u.flagship) o.flag = 1;
+    const riders = w.flagshipRiders?.get(u);
+    if (riders?.length) o.riders = riders.map(t => t.name);
     const carry = w.carriedBy ? w.carriedBy(u) : [];
     if (carry.length) o.carry = carry;
     return o;
@@ -493,6 +495,7 @@ export function restore(game, save) {
     }
     if (o.carry) w.carry?.(o.carry, p, e);
     if (o.flag) e.flagship = true;
+    if (o.riders?.length) (w.flagshipRiders ||= new Map()).set(e, o.riders.map(n => db.type(n)).filter(Boolean));
     if (e.isSquad) {
       while (e.fighters.length > o.f.length) {
         const f = e.fighters.pop();

@@ -1819,7 +1819,7 @@ export class UI {
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
       const r = Math.min(this.screenRadius(s), 260);
       const size = grab ? grab : s.isSquad || s.isFighter ? Math.round(iconSize * 0.9) : iconSize;
-      const hasIcon = unitIcon(s) && this.drawUnitIcon(g, s, p.x, p.y, enemy, size);
+      const hasIcon = (unitIcon(s) || !!this.world.flagshipRiders?.has(s)) && this.drawUnitIcon(g, s, p.x, p.y, enemy, size);
       const col =
         s.player.id < 0
           ? '#b9c4cf'
@@ -2052,8 +2052,9 @@ export class UI {
   }
 
   drawUnitIcon(g, s, x, y, enemy, size) {
-    const rect = iconCanvasRect((s._iconName ??= iconNameFor(s.type) || ''));
-    if (!rect) return false;
+    const own = unitIcon(s),
+      rect = own ? iconCanvasRect((s._iconName ??= iconNameFor(s.type) || '')) : null;
+    if (own && !rect) return false;
     const ix = Math.round(x - size / 2),
       iy = Math.round(y - size / 2);
     s._iconX = x;
@@ -2077,8 +2078,20 @@ export class UI {
       seen.gen === this.stampGen
         ? seen.stamp
         : null;
-    if (!stamp) stamp = this.iconStamp(s._iconName, rect, color, size, mode, alpha, selected, pad, s);
-    g.drawImage(stamp, ix - pad, iy - pad, size + pad * 2, size + pad * 2);
+    if (own) {
+      if (!stamp) stamp = this.iconStamp(s._iconName, rect, color, size, mode, alpha, selected, pad, s);
+      g.drawImage(stamp, ix - pad, iy - pad, size + pad * 2, size + pad * 2);
+    }
+    const riders = this.world.flagshipRiders?.get(s),
+      first = own ? 1 : 0;
+    if (riders)
+      riders.forEach((t, i) => {
+        const name = (t._riderIcon ??= iconNameFor(t) || ''),
+          r = name && iconCanvasRect(name);
+        if (!r) return;
+        const stampR = this.iconStamp(name, r, color, size, mode, alpha, selected, pad, s);
+        g.drawImage(stampR, ix + (size + 4) * (i + first) - pad, iy - pad, size + pad * 2, size + pad * 2);
+      });
     return true;
   }
 

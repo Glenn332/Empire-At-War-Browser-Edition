@@ -1,3 +1,4 @@
+import { ridesFlagship } from './campaignbattle.js';
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { dropRockTextures } from '../rockbake.js';
 import { switchTarget } from './switchsides.js';
@@ -2772,7 +2773,7 @@ export class GalacticGame {
               return {
                 gid: fi + ':' + ui,
                 type: type.name,
-                ...(company && companySpaceForm(company) === type ? { company: company.name } : {}),
+                ...(company && (companySpaceForm(company) === type || ridesFlagship(company)) ? { company: company.name } : {}),
                 pathfinder: !!u.pathfinder || u === lead
               };
             })

@@ -1,3 +1,4 @@
+import { tacticalIntro } from './game/tacticalintro.js';
 import { TacticalMarker } from './game/tacticalobjects.js';
 import { initCursorLock } from './cursorlock.js';
 import { colorizes } from './game/teamcolor.js';
@@ -2438,6 +2439,7 @@ class Game {
     this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
     this.movies?.update(real);
     this.tacticalStory?.update();
+    tacticalIntro(this);
     stepTacticalSpeech(this, real);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
