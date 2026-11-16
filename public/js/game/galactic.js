@@ -3462,6 +3462,10 @@ export class GalacticGame {
         { x, y } = this.scroll;
       if ((x || y) && this.panFree() && !this.scrollLocked) this.panBy(x * c - y * s, x * s + y * c);
     }
+    if (!this.controlsLocked && !this.scriptUI?.modal && !this.menus?.open && !this.planetInfo.open && !this.battle) {
+      const t = (held(k, 'ROTATE_RIGHT') ? 1 : 0) - (held(k, 'ROTATE_LEFT') ? 1 : 0);
+      if (t) v.yaw = ((v.yaw || 0) + t * 1.2 * real) % (Math.PI * 2);
+    }
     if (v.pullTo !== undefined && v.pull !== v.pullTo) {
       v.pull += (v.pullTo - v.pull) * Math.min(1, real * 10);
       if (Math.abs(v.pullTo - v.pull) < 0.5) v.pull = v.pullTo;
