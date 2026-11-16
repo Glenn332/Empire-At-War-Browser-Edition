@@ -1218,12 +1218,56 @@ const modelReflect = {
   }
 };
 
+const baySurface = simple({
+  name: 'baySurface',
+  textures: ['map'],
+  params: [
+    ['tint', 'c3'],
+    ['bayShade', 'f']
+  ],
+  match: m => m.isShaderMaterial && !!m.uniforms && !!m.uniforms.bayShade && !!m.uniforms.map,
+  vertex: () => [
+    ['position', 3, 0],
+    ['normal', 3, 1],
+    ['uv', 2, 2]
+  ],
+  code: () => `
+struct VIn { @location(0) position: vec3f, @location(1) normal: vec3f, @location(2) uv: vec2f }
+struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) wp: vec3f, @location(2) n: vec3f }
+@vertex fn vs(i: VIn) -> VOut {
+  var o: VOut;
+  let wp = D.model * vec4f(i.position, 1.0);
+  o.wp = wp.xyz;
+  o.n = (D.model * vec4f(i.normal, 0.0)).xyz;
+  o.vUv = i.uv;
+  o.pos = glDepth(P.proj * P.view * wp);
+  return o;
+}
+fn bayLit(wp: vec3f, n: vec3f) -> f32 {
+  if (P.shadowOn < 0.5) { return 1.0; }
+  let p = (P.shadowMatrix * vec4f(wp + n * 0.35, 1.0)).xyz;
+  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) { return 1.0; }
+  let d = p.z - 0.0006; let o = P.shadowTexel * 1.6;
+  var s = 0.0;
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) { s += textureSampleCompareLevel(shadowMap, shadowS, p.xy + vec2f(f32(x), f32(y)) * o, d); }
+  }
+  s /= 9.0;
+  return mix(D.bayShade, 1.0, s);
+}
+@fragment fn fs(v: VOut) -> @location(0) vec4f {
+  let t = textureSample(mapT, mapS, v.vUv);
+  return vec4f(t.rgb * D.tint * bayLit(v.wp, normalize(v.n)), 1.0);
+}`
+});
+
 export const families = [
   model,
   modelReflect,
   terrain,
   particles,
   basic,
+  baySurface,
   decals,
   shield,
   skydome,

@@ -3,7 +3,7 @@ import { db } from '../gamedata.js';
 import { loadModel } from '../model.js';
 import { AnimState } from '../ala.js';
 import { animClip } from './land.js';
-import { bakeRoom, lookFor, lookOf, shadedBox, shadedTube, shadedMat, fitUV, gameTexture, sharedBay } from './baylook.js';
+import { bakeRoom, lookFor, lookOf, shadedBox, shadedTube, shadedMat, fitUV, gameTexture, sharedBay, bayMaterial } from './baylook.js';
 
 const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.42, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, railH: 0.93, railR: 0.022, hold: 0.45, body: 0.24, me: 0.22 },
   DOWN = new THREE.Vector3(0, 0, -1),
@@ -51,6 +51,8 @@ export class TroopBay {
     this.rampK = 0;
     this.me = { x: -this.H * 1.2, y: 0, yaw: 0, pitch: -0.05, moving: false };
     this.build();
+    this.shell = [...this.group.children];
+    this.group.userData.casts = true;
     world.scene.add(this.group);
   }
 
@@ -75,7 +77,7 @@ export class TroopBay {
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) - u0) / du, (uv.getY(i) - v0) / dv);
     uv.needsUpdate = true;
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map, fog: false, side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(geo, bayMaterial(map));
     this.group.add(m);
     return m;
   }
@@ -200,7 +202,6 @@ export class TroopBay {
     sc.height = 256;
     this.screenCtx = sc.getContext('2d');
     this.screenTex = new THREE.CanvasTexture(sc);
-    this.screenTex.colorSpace = THREE.SRGBColorSpace;
     this.box(H * 0.08, H * 1.78, H * 0.95, trim, -L / 2 + H * 0.04, 0, H * 1.25, false, 0.4, 0.5);
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(H * 1.6, H * 0.8), new THREE.MeshBasicMaterial({ map: this.screenTex, fog: false, side: THREE.DoubleSide }));
     screen.rotation.set(Math.PI / 2, Math.PI / 2, 0);
@@ -250,7 +251,7 @@ export class TroopBay {
     const rampMap = gameTexture(look.ramp),
       ramp = new THREE.Mesh(
         rampGeo,
-        [0.6, 0.6, 0.65, 0.65, 0.9, 0.35].map(k => new THREE.MeshBasicMaterial({ map: rampMap, fog: false, color: new THREE.Color(k, k, k) }))
+        [0.6, 0.6, 0.65, 0.65, 0.9, 0.35].map(k => bayMaterial(rampMap, k))
       );
     ramp.position.set(rampLen / 2, 0, 0);
     this.hinge.add(ramp);
@@ -267,6 +268,15 @@ export class TroopBay {
     warn.position.set(L / 2 - H * 0.17, 0, DH + H * 0.07);
     this.warn = warn;
     g.add(warn);
+  }
+
+  castPass(on) {
+    for (const o of this.shell) o.visible = !on;
+  }
+
+  shadowView() {
+    const p = this.group.position;
+    return { x: p.x, y: p.y, z: p.z, half: this.L * 0.75, yaw: this.group.rotation.z };
   }
 
   place(origin, yaw, floorZ, sway = 0, roll = 0) {

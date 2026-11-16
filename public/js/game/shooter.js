@@ -73,6 +73,7 @@ const REACH = 1600,
   CONQUEST = { mult: 2, crewMax: 30 },
   GUN_POSE = { face: 0.3, hold: 1.2 },
   SLOT_ROUTE = { every: 1.5 },
+  BAY_LIGHT = { tilt: -0.45, side: 0.2 },
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
@@ -3085,7 +3086,18 @@ export class Shooter {
     L.pitch = this.pitch;
   }
 
+  shadowPass(on) {
+    const bay = this.waves?.room?.bay;
+    if (bay && !this.waves.room.exited) bay.castPass(on);
+  }
+
   shadowBox(size) {
+    const bay = this.waves?.room?.bay;
+    if (bay && !this.waves.room.exited) {
+      const v = bay.shadowView(),
+        tx = (2 * v.half) / Math.max(1, size);
+      return { x: Math.round(v.x / tx) * tx, y: Math.round(v.y / tx) * tx, z: v.z, half: v.half, every: true, dir: { x: Math.cos(v.yaw) * BAY_LIGHT.tilt - Math.sin(v.yaw) * BAY_LIGHT.side, y: Math.sin(v.yaw) * BAY_LIGHT.tilt + Math.cos(v.yaw) * BAY_LIGHT.side, z: 1 } };
+    }
     if ((this.state !== 'alive' && !(this.benchN && this.watched)) || !this.eyeAt) return null;
     const half = SHADOW.half,
       tx = (2 * half) / Math.max(1, size),

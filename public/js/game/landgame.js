@@ -3914,19 +3914,19 @@ export class LandGame {
         bias: new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
       };
     }
-    if (S.frame++ % 2 === 0) {
+    const box = this.shooter ? this.shooter.shadowBox(S.size) : null;
+    if (S.frame++ % 2 === 0 || box?.every) {
       const look = this.tacticalCinematics?.on ? this.tacticalCinematics.evaluate('target') : null,
         eye = this.camera.position;
       const v = look ? { x: look.x, y: look.y, dist: Math.hypot(eye.x - look.x, eye.y - look.y, eye.z - (look.z || 0)) } : this.view;
       const R = this.gpuOn ? this.gpu : this.renderer,
         cam = S.camera,
-        box = this.shooter ? this.shooter.shadowBox(S.size) : null,
         cx = box ? box.x : v.x,
         cy = box ? box.y : v.y,
         half = box ? box.half : Math.max(350, v.dist * 1.25),
         far = half * 3,
-        dir = lighting.sunDir.value,
-        z0 = heightAt(this.terrain, cx, cy);
+        dir = box?.dir || lighting.sunDir.value,
+        z0 = box && box.z !== undefined ? box.z : heightAt(this.terrain, cx, cy);
       const dz = Math.max(0.3, dir.z),
         k = 1 / Math.hypot(dir.x, dir.y, dz);
       cam.left = cam.bottom = -half;
@@ -3989,11 +3989,13 @@ export class LandGame {
       lighting.shadowMap.value = this.noShadow;
       const was = R.getRenderTarget();
       try {
+        this.shooter?.shadowPass(true);
         R.setRenderTarget(S.target);
         R.clear();
         R.render(this.scene, cam);
         R.setRenderTarget(was);
       } finally {
+        this.shooter?.shadowPass(false);
         for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
         swapped.length = 0;
       }

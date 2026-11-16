@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { loadTexture, parseTexture } from '../dds.js';
 import { decodeDXT } from '../ddsdecode.js';
 import { fetchBinary } from '../vfs.js';
+import { lighting } from '../model.js';
 
 const LOOKS = {
   imperial: {
     wall: { tex: 'W_INTERIOR_WALL00', tile: [1.4, 2.1] },
-    back: { tex: 'W_INTERIOR_WALL01', tile: [1.4, 2.1] },
+    back: { tex: 'W_INTERIOR_WALL00', tile: [1.4, 2.1] },
     front: { tex: 'W_INTERIOR_WALL00', tile: [1.4, 2.1] },
     ceil: { tex: 'W_INTERIOR_WALL00', tile: [1.2, 1.2] },
     glow: { tex: 'W_INTERIOR_WALL02', tile: [1.2, 1.2], emit: 0.8 },
@@ -23,7 +24,7 @@ const LOOKS = {
   },
   worn: {
     wall: { tex: 'W_WALL_METALS_C', tile: [1.6, 2.1] },
-    back: { tex: 'W_WALL_METALS_A', tile: [1.6, 2.1] },
+    back: { tex: 'W_WALL_METALS_C', tile: [1.6, 2.1] },
     front: { tex: 'W_WALL_METALS_C', tile: [1.6, 2.1] },
     ceil: { tex: 'W_URBAN_METAL07', tile: [1.3, 1.3] },
     glow: null,
@@ -39,6 +40,59 @@ const LOOKS = {
     exposure: 1.1
   }
 };
+
+const BAY_VERT = `varying vec2 vUv;
+varying vec3 vWp;
+varying vec3 vN;
+void main() {
+  vUv = uv;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWp = wp.xyz;
+  vN = mat3(modelMatrix) * normal;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+  BAY_FRAG = `uniform sampler2D map;
+uniform vec3 tint;
+uniform float bayShade;
+uniform highp sampler2DShadow shadowMap;
+uniform mat4 shadowMatrix;
+uniform float shadowOn, shadowTexel;
+varying vec2 vUv;
+varying vec3 vWp;
+varying vec3 vN;
+float bayLit() {
+  if (shadowOn < 0.5) return 1.0;
+  vec3 p = (shadowMatrix * vec4(vWp + normalize(vN) * 0.35, 1.0)).xyz;
+  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
+  float d = p.z - 0.0006, o = shadowTexel * 1.6;
+  float s = texture(shadowMap, vec3(p.xy, d));
+  s += texture(shadowMap, vec3(p.xy + vec2(-o, -o), d)) + texture(shadowMap, vec3(p.xy + vec2(0.0, -o), d)) + texture(shadowMap, vec3(p.xy + vec2(o, -o), d));
+  s += texture(shadowMap, vec3(p.xy + vec2(-o, 0.0), d)) + texture(shadowMap, vec3(p.xy + vec2(o, 0.0), d));
+  s += texture(shadowMap, vec3(p.xy + vec2(-o, o), d)) + texture(shadowMap, vec3(p.xy + vec2(0.0, o), d)) + texture(shadowMap, vec3(p.xy + vec2(o, o), d));
+  return mix(bayShade, 1.0, s / 9.0);
+}
+void main() {
+  vec4 t = texture2D(map, vUv);
+  gl_FragColor = vec4(t.rgb * tint * bayLit(), 1.0);
+}`,
+  SHADE = 0.4;
+
+export function bayMaterial(map, tint = 1) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      map: { value: map },
+      tint: { value: new THREE.Color(tint, tint, tint) },
+      bayShade: { value: SHADE },
+      shadowMap: lighting.shadowMap,
+      shadowMatrix: lighting.shadowMatrix,
+      shadowOn: lighting.shadowOn,
+      shadowTexel: lighting.shadowTexel
+    },
+    vertexShader: BAY_VERT,
+    fragmentShader: BAY_FRAG,
+    side: THREE.DoubleSide
+  });
+}
 
 const PPU = 112,
   GRID = 6,
@@ -98,7 +152,7 @@ export function fitUV(geo, tile) {
 }
 
 export function shadedMat(tex, tint = 1) {
-  return new THREE.MeshBasicMaterial({ map: gameTexture(tex), fog: false, side: THREE.DoubleSide, color: new THREE.Color(tint, tint, tint) });
+  return bayMaterial(gameTexture(tex), tint);
 }
 
 export function sharedBay(t) {
@@ -109,7 +163,7 @@ export function sharedBay(t) {
 export function shadedBox(w, d, h, tex, tile, tint = 1) {
   const geo = fitUV(new THREE.BoxGeometry(w, d, h), tile),
     map = gameTexture(tex),
-    face = k => new THREE.MeshBasicMaterial({ map, fog: false, color: new THREE.Color(k * tint, k * tint, k * tint) });
+    face = k => bayMaterial(map, k * tint);
   return new THREE.Mesh(geo, [face(0.62), face(0.55), face(0.7), face(0.66), face(0.92), face(0.3)]);
 }
 
@@ -367,7 +421,6 @@ export function bakeRoom(key, B) {
       x.fillStyle = '#2b2f35';
       x.fillRect(0, 0, 4, 4);
       const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = 4;
       textures[k] = t;
     }
@@ -382,6 +435,7 @@ export function bakeRoom(key, B) {
         await new Promise(r => setTimeout(r, 0));
         const cv = await bakeSurface(S[k], look, imgs),
           t = textures[k];
+        t.dispose();
         t.image = cv;
         t.needsUpdate = true;
       }
