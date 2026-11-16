@@ -3,6 +3,7 @@ import { db } from '../gamedata.js';
 import { loadModel } from '../model.js';
 import { AnimState } from '../ala.js';
 import { animClip } from './land.js';
+import { bakeRoom, lookFor, lookOf, shadedBox, shadedTube, shadedMat, fitUV, gameTexture, sharedBay } from './baylook.js';
 
 const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, door: 1.7, doorH: 1.45, ramp: 1.42, win: 0.95, winLo: 0.62, winHi: 1.32, walk: 2.2, eye: 0.9, out: 0.75, rail: 0.17, railH: 0.93, railR: 0.022, hold: 0.45, body: 0.24, me: 0.22 },
   DOWN = new THREE.Vector3(0, 0, -1),
@@ -12,79 +13,6 @@ const BAY = { len: 5.6, wid: 4.2, high: 2.1, bench: 0.3, seat: 0.3, back: 0.08, 
   _c = new THREE.Vector3(),
   _q = new THREE.Quaternion(),
   _q2 = new THREE.Quaternion();
-
-function canvasTexture(draw, size = 256) {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  draw(c.getContext('2d'), size);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-function panelTexture(base, seam, rows, cols, rivet) {
-  return canvasTexture((x, S) => {
-    x.fillStyle = base;
-    x.fillRect(0, 0, S, S);
-    const g = x.createLinearGradient(0, 0, 0, S);
-    g.addColorStop(0, 'rgba(255,255,255,0.06)');
-    g.addColorStop(1, 'rgba(0,0,0,0.18)');
-    x.fillStyle = g;
-    x.fillRect(0, 0, S, S);
-    x.strokeStyle = seam;
-    x.lineWidth = 3;
-    for (let r = 0; r <= rows; r++) {
-      x.beginPath();
-      x.moveTo(0, (r * S) / rows);
-      x.lineTo(S, (r * S) / rows);
-      x.stroke();
-    }
-    for (let k = 0; k <= cols; k++) {
-      x.beginPath();
-      x.moveTo((k * S) / cols, 0);
-      x.lineTo((k * S) / cols, S);
-      x.stroke();
-    }
-    if (rivet) {
-      x.fillStyle = rivet;
-      for (let r = 0; r < rows; r++)
-        for (let k = 0; k < cols; k++) {
-          const x0 = (k * S) / cols,
-            y0 = (r * S) / rows;
-          for (const [dx, dy] of [
-            [8, 8],
-            [S / cols - 8, 8],
-            [8, S / rows - 8],
-            [S / cols - 8, S / rows - 8]
-          ]) {
-            x.beginPath();
-            x.arc(x0 + dx, y0 + dy, 2.2, 0, Math.PI * 2);
-            x.fill();
-          }
-        }
-    }
-  });
-}
-
-const stripes = () =>
-  canvasTexture((x, S) => {
-    x.fillStyle = '#1a1a1a';
-    x.fillRect(0, 0, S, S);
-    x.fillStyle = '#d9a520';
-    for (let i = -S; i < S * 2; i += 64) {
-      x.beginPath();
-      x.moveTo(i, 0);
-      x.lineTo(i + 32, 0);
-      x.lineTo(i + 32 - S, S);
-      x.lineTo(i - S, S);
-      x.fill();
-    }
-  });
-
-function mat(opts) {
-  return new THREE.MeshBasicMaterial({ fog: false, side: THREE.DoubleSide, ...opts });
-}
 
 const hash = s => {
   let h = 2166136261;
@@ -126,21 +54,30 @@ export class TroopBay {
     world.scene.add(this.group);
   }
 
-  box(w, d, h, m, x, y, z, solid = false) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), m);
+  box(w, d, h, tex, x, y, z, solid = false, tint = 1, tile = 0.9) {
+    const b = shadedBox(w, d, h, tex, tile * this.H, tint);
     b.position.set(x, y, z);
     this.group.add(b);
     if (solid) this.blocks.push({ x0: x - w / 2, x1: x + w / 2, y0: y - d / 2, y1: y + d / 2 });
     return b;
   }
 
-  tube(len, r, m, x, y, z, axis = 'x') {
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), m);
+  tube(len, r, tex, x, y, z, axis = 'x', tint = 1) {
+    const t = shadedTube(len, r, tex, tint);
     if (axis === 'x') t.rotation.z = Math.PI / 2;
     else if (axis === 'z') t.rotation.x = Math.PI / 2;
     t.position.set(x, y, z);
     this.group.add(t);
     return t;
+  }
+
+  surface(geo, map, u0, du, v0, dv) {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) - u0) / du, (uv.getY(i) - v0) / dv);
+    uv.needsUpdate = true;
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map, fog: false, side: THREE.DoubleSide }));
+    this.group.add(m);
+    return m;
   }
 
   build() {
@@ -149,41 +86,54 @@ export class TroopBay {
       W = BAY.wid * H,
       T = BAY.high * H,
       g = this.group,
-      wallTex = panelTexture('#5d646c', 'rgba(20,24,28,0.75)', 3, 4, 'rgba(200,210,220,0.35)'),
-      floorTex = panelTexture('#3a3f45', 'rgba(10,12,14,0.9)', 8, 8, null),
-      ceilTex = panelTexture('#474d54', 'rgba(15,18,20,0.8)', 2, 6, 'rgba(180,190,200,0.3)'),
-      metal = mat({ color: 0x7d858e }),
-      dark = mat({ color: 0x3b4047 }),
-      chrome = mat({ color: 0xb8c0c8 });
+      key = lookFor(this.world.factions?.[this.side]),
+      look = lookOf(key),
+      trim = look.trim,
+      pipe = look.pipe,
+      ww = BAY.win * H,
+      lo = BAY.winLo * H,
+      hi = BAY.winHi * H,
+      D = BAY.door * H,
+      DH = BAY.doorH * H,
+      bd = BAY.bench * H,
+      bh = BAY.seat * H;
     this.L = L;
     this.W = W;
     this.T = T;
-    floorTex.repeat.set(L / (H * 2), W / (H * 2));
-    const wallM = (rx, ry = 1) => {
-        const t = wallTex.clone();
-        t.needsUpdate = true;
-        t.repeat.set(rx, ry);
-        return mat({ map: t });
-      },
-      shapeM = () => wallM(1 / (H * 1.6), 1 / T);
-    g.add(new THREE.Mesh(new THREE.PlaneGeometry(L, W), mat({ map: floorTex })));
-    const walk = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.9, W * 0.22), mat({ color: 0x4a5058 }));
-    walk.position.z = 0.04;
-    g.add(walk);
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L, W), mat({ map: ceilTex }));
-    ceil.position.z = T;
-    g.add(ceil);
-    for (const k of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.8, H * 0.1), mat({ color: 0xdff0ff }));
-      strip.position.set(0, k * W * 0.32, T - 0.05);
-      g.add(strip);
-      this.tube(L * 0.96, H * 0.05, dark, 0, k * (W / 2 - H * 0.12), T - H * 0.1);
-      this.tube(L * 0.96, H * 0.03, metal, 0, k * (W / 2 - H * 0.25), T - H * 0.08);
-    }
-    const ww = BAY.win * H,
-      lo = BAY.winLo * H,
-      hi = BAY.winHi * H;
+    this.look = key;
     this.windows.push(-L * 0.2, L * 0.2);
+    for (const sy of [-1, 1]) {
+      const edges = [-L / 2 + H * 0.3, ...this.windows.flatMap(cx => [cx - ww / 2 - H * 0.08, cx + ww / 2 + H * 0.08]), L / 2 - H * 0.3];
+      for (let k = 0; k < edges.length; k += 2) {
+        const x0 = edges[k],
+          x1 = edges[k + 1],
+          len = x1 - x0;
+        if (len < H * 0.45) continue;
+        this.benches.push({ x0, x1, sy });
+        const per = Math.max(1, Math.floor(len / (H * 0.62)));
+        for (let s = 0; s < per; s++) this.seats.push({ x: x0 + (len * (s + 0.5)) / per, y: sy * (W / 2 - bd * 0.35), sy, face: (-sy * Math.PI) / 2, taken: null });
+      }
+    }
+    const tx = bakeRoom(key, {
+      L: BAY.len,
+      W: BAY.wid,
+      T: BAY.high,
+      D: BAY.door,
+      DH: BAY.doorH,
+      winLo: BAY.winLo,
+      winHi: BAY.winHi,
+      windows: this.windows.map(x => x / H),
+      benches: this.benches.map(b => ({ x0: b.x0 / H, x1: b.x1 / H, sy: b.sy })),
+      bench: BAY.bench,
+      seat: BAY.seat
+    }).textures;
+    this.surface(new THREE.PlaneGeometry(L, W), tx.floor, 0, 1, 0, 1);
+    this.surface(new THREE.PlaneGeometry(L, W), tx.ceil, 0, 1, 0, 1).position.z = T;
+    for (const k of [-1, 1]) {
+      this.tube(L * 0.96, H * 0.05, pipe, 0, k * (W / 2 - H * 0.12), T - H * 0.1, 'x', 0.55);
+      this.tube(L * 0.96, H * 0.03, pipe, 0, k * (W / 2 - H * 0.25), T - H * 0.08, 'x', 0.75);
+      for (const x of [-0.4, -0.13, 0.13, 0.4]) this.box(H * 0.06, H * 0.34, H * 0.05, trim, x * L, k * (W / 2 - H * 0.17), T - H * 0.025, false, 0.6, 0.4);
+    }
     for (const sy of [-1, 1]) {
       const shape = new THREE.Shape();
       shape.moveTo(-L / 2, 0);
@@ -193,74 +143,70 @@ export class TroopBay {
       shape.lineTo(-L / 2, 0);
       for (const cx of this.windows) {
         const x0 = cx - ww / 2,
-          hole = new THREE.Path(),
-          c = ww * 0.18;
-        hole.moveTo(x0 + c, lo);
-        hole.lineTo(x0 + ww - c, lo);
-        hole.lineTo(x0 + ww, lo + c);
-        hole.lineTo(x0 + ww, hi - c);
-        hole.lineTo(x0 + ww - c, hi);
-        hole.lineTo(x0 + c, hi);
-        hole.lineTo(x0, hi - c);
-        hole.lineTo(x0, lo + c);
-        hole.lineTo(x0 + c, lo);
-        shape.holes.push(hole);
-        const glass = new THREE.Mesh(new THREE.PlaneGeometry(ww, hi - lo), mat({ color: 0x8fc4ff, transparent: true, opacity: 0.07, depthWrite: false }));
-        glass.rotation.x = Math.PI / 2;
-        glass.position.set(cx, sy * (W / 2 - 0.05), (lo + hi) / 2);
-        g.add(glass);
-        g.add(
-          new THREE.LineLoop(
-            new THREE.BufferGeometry().setFromPoints(hole.getPoints().map(p => new THREE.Vector3(p.x, sy * (W / 2 - 0.1), p.y))),
-            new THREE.LineBasicMaterial({ color: 0x8fd0ff, fog: false })
-          )
+          c = ww * 0.18,
+          outline = (p, e) => {
+            p.moveTo(x0 + c - e * 0.4, lo - e);
+            p.lineTo(x0 + ww - c + e * 0.4, lo - e);
+            p.lineTo(x0 + ww + e, lo + c - e * 0.4);
+            p.lineTo(x0 + ww + e, hi - c + e * 0.4);
+            p.lineTo(x0 + ww - c + e * 0.4, hi + e);
+            p.lineTo(x0 + c - e * 0.4, hi + e);
+            p.lineTo(x0 - e, hi - c + e * 0.4);
+            p.lineTo(x0 - e, lo + c - e * 0.4);
+            p.lineTo(x0 + c - e * 0.4, lo - e);
+            return p;
+          };
+        shape.holes.push(outline(new THREE.Path(), 0));
+        const ring = outline(new THREE.Shape(), H * 0.07);
+        ring.holes.push(outline(new THREE.Path(), 0));
+        const frame = new THREE.Mesh(fitUV(new THREE.ExtrudeGeometry(ring, { depth: H * 0.09, bevelEnabled: false }), H * 0.5), shadedMat(trim, 0.5));
+        frame.rotation.x = Math.PI / 2;
+        frame.position.y = sy > 0 ? W / 2 + 0.02 : -W / 2 + H * 0.09 - 0.02;
+        g.add(frame);
+        const glass = new THREE.Mesh(
+          new THREE.PlaneGeometry(ww, hi - lo),
+          new THREE.MeshBasicMaterial({ color: 0x9cc8f0, transparent: true, opacity: 0.1, depthWrite: false, fog: false, side: THREE.DoubleSide })
         );
-        this.box(ww * 1.1, H * 0.06, H * 0.05, dark, cx, sy * (W / 2 - H * 0.03), lo - H * 0.03);
+        glass.rotation.x = Math.PI / 2;
+        glass.position.set(cx, sy * (W / 2 + H * 0.03), (lo + hi) / 2);
+        g.add(glass);
+        this.box(ww * 1.12, H * 0.1, H * 0.05, trim, cx, sy * (W / 2 - H * 0.05), lo - H * 0.07, false, 0.75, 0.5);
       }
-      const wall = new THREE.Mesh(new THREE.ShapeGeometry(shape), shapeM());
+      const wall = this.surface(new THREE.ShapeGeometry(shape), tx.wall, -L / 2, L, 0, T);
       wall.rotation.x = Math.PI / 2;
       wall.position.y = sy * (W / 2);
-      g.add(wall);
-      const edges = [-L / 2 + H * 0.3, ...this.windows.flatMap(cx => [cx - ww / 2 - H * 0.08, cx + ww / 2 + H * 0.08]), L / 2 - H * 0.3],
-        bd = BAY.bench * H,
-        bh = BAY.seat * H;
-      for (let k = 0; k < edges.length; k += 2) {
-        const x0 = edges[k],
-          x1 = edges[k + 1],
-          len = x1 - x0;
-        if (len < H * 0.45) continue;
-        const cx = (x0 + x1) / 2;
-        this.box(len, bd, bh, metal, cx, sy * (W / 2 - bd / 2), bh / 2, true);
-        this.benches.push({ x0, x1, sy });
-        const per = Math.max(1, Math.floor(len / (H * 0.62)));
-        for (let s = 0; s < per; s++) this.seats.push({ x: x0 + (len * (s + 0.5)) / per, y: sy * (W / 2 - bd * 0.35), sy, face: -sy * Math.PI / 2, taken: null });
+      for (const b of this.benches) {
+        if (b.sy !== sy) continue;
+        const len = b.x1 - b.x0,
+          cx = (b.x0 + b.x1) / 2;
+        this.box(len, bd, H * 0.06, trim, cx, sy * (W / 2 - bd / 2), bh - H * 0.03, false, 0.95, 0.7);
+        this.box(len - H * 0.06, H * 0.03, bh - H * 0.07, trim, cx, sy * (W / 2 - bd + H * 0.07), (bh - H * 0.07) / 2, false, 0.45, 0.7);
+        for (const lx of [b.x0 + H * 0.06, b.x1 - H * 0.06]) this.box(H * 0.05, bd - H * 0.04, bh - H * 0.06, trim, lx, sy * (W / 2 - bd / 2), (bh - H * 0.06) / 2, false, 0.55, 0.5);
+        this.blocks.push({ x0: b.x0, x1: b.x1, y0: sy > 0 ? W / 2 - bd : -W / 2, y1: sy > 0 ? W / 2 : -W / 2 + bd });
       }
-      for (const cx of [-L / 2 + H * 0.05, ...this.windows.map(c => c - ww / 2 - H * 0.04), ...this.windows.map(c => c + ww / 2 + H * 0.04), L / 2 - H * 0.05])
-        this.box(H * 0.08, H * 0.12, T, dark, cx, sy * (W / 2 - H * 0.06), T / 2);
+      for (const cx of [-L / 2 + H * 0.05, ...this.windows.map(c => c - ww / 2 - H * 0.12), ...this.windows.map(c => c + ww / 2 + H * 0.12), L / 2 - H * 0.05])
+        this.box(H * 0.1, H * 0.1, T, trim, cx, sy * (W / 2 - H * 0.05), T / 2, false, 0.6, 0.6);
       const rz = BAY.railH * H;
       this.railZ = rz;
-      this.rails.push(this.tube(L * 0.84, H * BAY.railR, chrome, -L * 0.02, sy * W * BAY.rail, rz));
-      for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T - rz, H * 0.012, chrome, hx, sy * W * BAY.rail, (T + rz) / 2, 'z'));
-      for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.3), sy, face: -sy * Math.PI / 2, taken: null });
+      this.rails.push(this.tube(L * 0.84, H * BAY.railR, pipe, -L * 0.02, sy * W * BAY.rail, rz, 'x', 1.15));
+      for (const hx of [-L * 0.4, -L * 0.1, L * 0.2, L * 0.38]) this.rails.push(this.tube(T - rz, H * 0.012, pipe, hx, sy * W * BAY.rail, (T + rz) / 2, 'z', 0.9));
+      for (const hx of [-L * 0.32, -L * 0.04, L * 0.24]) this.spots.push({ x: hx, y: sy * (W * BAY.rail + H * 0.3), sy, face: (-sy * Math.PI) / 2, taken: null });
     }
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(W, T), wallM(W / (H * 1.6)));
+    const back = this.surface(new THREE.PlaneGeometry(W, T), tx.back, 0, 1, 0, 1);
     back.rotation.set(Math.PI / 2, -Math.PI / 2, 0);
     back.position.set(-L / 2, 0, T / 2);
-    g.add(back);
     const sc = document.createElement('canvas');
     sc.width = 512;
     sc.height = 256;
     this.screenCtx = sc.getContext('2d');
     this.screenTex = new THREE.CanvasTexture(sc);
     this.screenTex.colorSpace = THREE.SRGBColorSpace;
-    this.box(H * 0.06, H * 1.75, H * 0.92, dark, -L / 2 + 0.05, 0, H * 1.25);
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(H * 1.6, H * 0.8), mat({ map: this.screenTex }));
+    this.box(H * 0.08, H * 1.78, H * 0.95, trim, -L / 2 + H * 0.04, 0, H * 1.25, false, 0.4, 0.5);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(H * 1.6, H * 0.8), new THREE.MeshBasicMaterial({ map: this.screenTex, fog: false, side: THREE.DoubleSide }));
     screen.rotation.set(Math.PI / 2, Math.PI / 2, 0);
-    screen.position.set(-L / 2 + H * 0.04, 0, H * 1.25);
+    screen.position.set(-L / 2 + H * 0.085, 0, H * 1.25);
     g.add(screen);
-    const D = BAY.door * H,
-      DH = BAY.doorH * H,
-      fs = new THREE.Shape();
+    const fs = new THREE.Shape();
     fs.moveTo(-W / 2, 0);
     fs.lineTo(W / 2, 0);
     fs.lineTo(W / 2, T);
@@ -273,42 +219,52 @@ export class TroopBay {
     dh.lineTo(-D / 2, DH);
     dh.lineTo(-D / 2, 0);
     fs.holes.push(dh);
-    const front = new THREE.Mesh(new THREE.ShapeGeometry(fs), shapeM());
+    const front = this.surface(new THREE.ShapeGeometry(fs), tx.front, -W / 2, W, 0, T);
     front.rotation.set(Math.PI / 2, Math.PI / 2, 0);
     front.position.x = L / 2;
-    g.add(front);
-    for (const k of [-1, 1]) this.box(H * 0.14, H * 0.12, DH, dark, L / 2 - H * 0.07, k * (D / 2 + H * 0.06), DH / 2);
-    this.box(H * 0.14, D + H * 0.24, H * 0.12, dark, L / 2 - H * 0.07, 0, DH + H * 0.06);
-    const hz = stripes();
-    hz.repeat.set(3, 1);
-    const haz = new THREE.Mesh(new THREE.PlaneGeometry(H * 0.5, D), mat({ map: hz }));
-    haz.position.set(L / 2 - H * 0.3, 0, 0.06);
-    g.add(haz);
-    this.box(H * 0.06, H * 0.3, H * 0.45, dark, L / 2 - H * 0.05, D / 2 + H * 0.5, H * 0.95);
+    for (const k of [-1, 1]) this.box(H * 0.16, H * 0.14, DH, trim, L / 2 - H * 0.08, k * (D / 2 + H * 0.07), DH / 2, false, 0.55, 0.5);
+    this.box(H * 0.16, D + H * 0.28, H * 0.14, trim, L / 2 - H * 0.08, 0, DH + H * 0.07, false, 0.55, 0.5);
+    this.box(H * 0.06, H * 0.3, H * 0.45, trim, L / 2 - H * 0.05, D / 2 + H * 0.5, H * 0.95, false, 0.35, 0.4);
     for (let i = 0; i < 3; i++) {
-      const l = this.box(H * 0.03, H * 0.06, H * 0.06, mat({ color: 0xff4a32 }), L / 2 - H * 0.09, D / 2 + H * 0.5, H * 1.05 - i * H * 0.12);
+      const l = new THREE.Mesh(new THREE.BoxGeometry(H * 0.03, H * 0.06, H * 0.06), new THREE.MeshBasicMaterial({ color: 0xff4a32, fog: false }));
+      l.position.set(L / 2 - H * 0.09, D / 2 + H * 0.5, H * 1.05 - i * H * 0.12);
+      g.add(l);
       this.lights.push({ m: l, k: i });
     }
     this.hinge = new THREE.Group();
     this.hinge.position.set(L / 2 + H * 0.06, 0, 0);
-    const rampLen = Math.max(DH, BAY.ramp * H);
-    const ramp = new THREE.Mesh(new THREE.BoxGeometry(rampLen, D, H * 0.08), mat({ map: (() => {
-      const t = panelTexture('#6b737c', 'rgba(25,28,32,0.8)', 4, 2, 'rgba(210,215,220,0.4)');
-      return t;
-    })() }));
+    const rampLen = Math.max(DH, BAY.ramp * H),
+      rampGeo = new THREE.BoxGeometry(rampLen, D, H * 0.08),
+      ruv = rampGeo.attributes.uv,
+      rp = rampGeo.attributes.position,
+      rn = rampGeo.attributes.normal,
+      rt = look.rampTile * H;
+    for (let i = 0; i < ruv.count; i++) {
+      const x = rp.getX(i),
+        y = rp.getY(i),
+        z = rp.getZ(i);
+      if (Math.abs(rn.getZ(i)) > 0.5) ruv.setXY(i, rt ? x / rt : ((y + D / 2) / D) * 0.48, rt ? y / rt : x / (D * 0.5));
+      else ruv.setXY(i, (Math.abs(rn.getX(i)) > 0.5 ? y : x) / (H * 0.6), z / (H * 0.6));
+    }
+    ruv.needsUpdate = true;
+    const rampMap = gameTexture(look.ramp),
+      ramp = new THREE.Mesh(
+        rampGeo,
+        [0.6, 0.6, 0.65, 0.65, 0.9, 0.35].map(k => new THREE.MeshBasicMaterial({ map: rampMap, fog: false, color: new THREE.Color(k, k, k) }))
+      );
     ramp.position.set(rampLen / 2, 0, 0);
     this.hinge.add(ramp);
-    const rz = stripes();
-    rz.repeat.set(4, 1);
-    const rs = new THREE.Mesh(new THREE.PlaneGeometry(rampLen * 0.15, D), mat({ map: rz }));
-    rs.position.set(rampLen * 0.92, 0, H * 0.045);
-    this.hinge.add(rs);
+    for (const k of [-1, 1]) {
+      const rail = shadedBox(rampLen, H * 0.06, H * 0.1, trim, H * 0.5, 0.5);
+      rail.position.set(rampLen / 2, k * (D / 2 - H * 0.03), H * 0.07);
+      this.hinge.add(rail);
+    }
     this.hinge.rotation.y = -Math.PI / 2;
     g.add(this.hinge);
     this.rampLen = rampLen;
-    const warn = new THREE.Mesh(new THREE.PlaneGeometry(D, H * 0.1), mat({ color: 0xff4a32 }));
+    const warn = new THREE.Mesh(new THREE.PlaneGeometry(D * 0.6, H * 0.06), new THREE.MeshBasicMaterial({ color: 0xff4a32, fog: false, side: THREE.DoubleSide }));
     warn.rotation.set(Math.PI / 2, Math.PI / 2, 0);
-    warn.position.set(L / 2 - 0.15, 0, DH + H * 0.16);
+    warn.position.set(L / 2 - H * 0.17, 0, DH + H * 0.07);
     this.warn = warn;
     g.add(warn);
   }
@@ -672,7 +628,7 @@ export class TroopBay {
     x.strokeRect(6, 6, 500, 244);
     x.fillStyle = 'rgba(110,190,255,0.08)';
     for (let y = 10; y < 250; y += 6) x.fillRect(8, y, 496, 2);
-    x.font = 'bold 34px sans-serif';
+    x.font = 'bold 34px "EmpireAtWar-Bold","Segoe UI",sans-serif';
     x.textAlign = 'center';
     lines.forEach((l, i) => {
       x.fillStyle = i === 0 ? '#ffd76a' : '#bfe4ff';
@@ -684,5 +640,11 @@ export class TroopBay {
   dispose() {
     this.gone = true;
     this.world.scene.remove(this.group);
+    this.group.traverse(o => {
+      if (!o.isMesh) return;
+      o.geometry?.dispose();
+      for (const m of [o.material].flat()) if (m && !sharedBay(m.map)) m.dispose();
+    });
+    this.screenTex?.dispose();
   }
 }
