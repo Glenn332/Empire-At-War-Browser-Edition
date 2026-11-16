@@ -76,7 +76,8 @@ const REACH = 1600,
   ROCK = { cell: 8, minH: 12, minW: 20, steps: 4, wall: 10, foot: 6, steep: 0.6, headroom: 22, closeHits: 1, keep: 1 },
   CATCHUP = { delay: 4 },
   SHORT = { range: 80, weight: 0.15 },
-  RAPID = { rate: 3 },
+  RAPID = { rate: 3.5, damage: 1 / 3 },
+  FOOT_TAKEN = 6,
   MELEE = { cone: 0.95, reach: 1.15, seek: 2.6, lunge: 3.4, lungeTime: 0.22, hitAt: 0.42, queue: 0.35, combo: 0.7, slow: 0.35, finisher: 1.35, shake: 0.5, dip: 0.12, guard: 2, guardSlow: 0.55, turn: 22, fallback: 0.6, cam: 1.7 },
   STALL = { fails: 3, still: 15, moved: 30, avoid: 60, skip: 10 },
   SCORE = { foot: 100, car: 250, assistMin: 10, assistMax: 90, assistStep: 5 },
@@ -2622,6 +2623,15 @@ export class Shooter {
       if (px * px + py * py < r * r && ez + (tz - ez) * k < b.z + b.hitRadius) return false;
     }
     return true;
+  }
+
+  footTaken(u) {
+    if (u.kind !== 'INFANTRY' || u.structure || !u.type) return 1;
+    const t = u.type,
+      m = (this.softFoot ||= new WeakMap());
+    let k = m.get(t);
+    if (k === undefined) m.set(t, (k = inCategory(t, 'HERO') || t.bool('Is_Named_Hero') ? 1 : FOOT_TAKEN));
+    return k;
   }
 
   hitScale(s, hit) {
@@ -5927,7 +5937,7 @@ export class Shooter {
     if (cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET || cat === CAT.MISSILE || cat === CAT.GRENADE) return;
     u.rapid = true;
     w.addCombatMod(u, MOD.FIRE_RATE, MOD_KEY + 7, 'shooter-rapid', RAPID.rate - 1);
-    w.addCombatMod(u, MOD.DAMAGE, MOD_KEY + 7, 'shooter-rapid', 1 / RAPID.rate - 1);
+    w.addCombatMod(u, MOD.DAMAGE, MOD_KEY + 7, 'shooter-rapid', RAPID.damage - 1);
   }
 
   canFire() {

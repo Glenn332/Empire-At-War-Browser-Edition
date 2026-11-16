@@ -5334,7 +5334,8 @@ export class LandWorld {
       if (this.retreatState.phase === 'flight') return;
       amount *= this.retreatState.damaged(u.side);
     }
-    if (shot && from && from.type && !(from.mod && from.mod.noDiminish) && normalDamage(shot)) amount *= diminishedHit(u, this.time);
+    if (shot && !this.shooter && from && from.type && !(from.mod && from.mod.noDiminish) && normalDamage(shot)) amount *= diminishedHit(u, this.time);
+    if (this.shooter) amount *= this.shooter.footTaken(u);
     amount *=
       (from instanceof LandUnit && !from.dead ? this.combatFactor(from, MOD.DAMAGE) : 1) *
       (2 - this.combatFactor(u, MOD.DEFENSE)) *
