@@ -5,7 +5,7 @@ import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas, iconOpaque } from '../icons.js';
 import { nativeAbilityIcon } from './nativeabilityicons.js';
 import { loadTextureCanvas } from '../dds.js';
-import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump } from './sim.js';
+import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
 import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
@@ -762,25 +762,7 @@ export class UI {
     this.cancelPlacing();
     this.arm(null);
     e.setOrder({ kind: 'idle' });
-    e.direct = {
-      turn: 0,
-      throttle: 0,
-      firing: false,
-      target: null,
-      spot: {
-        x: 0,
-        y: 0,
-        z: 0,
-        dead: false,
-        free: true,
-        hitRadius: 0,
-        heading: 0,
-        speed: 0,
-        sizeClass: '',
-        player: { id: -1, team: { id: -1 } },
-        type: { name: '', categories: () => [] }
-      }
-    };
+    e.direct = directState();
     this.endTrack();
     this.direct = e;
     this.following = e;
@@ -791,6 +773,7 @@ export class UI {
     const e = this.direct;
     if (!e) return;
     e.direct = null;
+    this.game.mirror?.steer(e, null);
     this.direct = null;
     this.following = null;
     this.fireHeld = false;
@@ -1670,6 +1653,7 @@ export class UI {
     if (this.direct) {
       px = py = 0;
       this.steerDirect();
+      if (this.direct) this.game.mirror?.steer(this.direct, this.direct.direct);
     }
     (this.arcView ||= new ArcView(this.r.scene)).update(this.direct ? this.world.directArcs(this.direct, (this.arcs ||= [])) : NO_ARCS);
     const f = this.following;

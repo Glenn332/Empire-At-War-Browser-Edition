@@ -143,6 +143,28 @@ export function hiddenInJump(e) {
   return !!h && !h.shown;
 }
 
+export function directState() {
+  return {
+    turn: 0,
+    throttle: 0,
+    firing: false,
+    target: null,
+    spot: {
+      x: 0,
+      y: 0,
+      z: 0,
+      dead: false,
+      free: true,
+      hitRadius: 0,
+      heading: 0,
+      speed: 0,
+      sizeClass: '',
+      player: { id: -1, team: { id: -1 } },
+      type: { name: '', categories: () => [] }
+    }
+  };
+}
+
 export function footprintOf(type) {
   if (type._footprint !== undefined) return type._footprint;
   const scale = type.num('Scale_Factor', 1),

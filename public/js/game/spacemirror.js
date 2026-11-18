@@ -156,6 +156,21 @@ export class SpaceMirror {
     this.worker.postMessage({ k: 'cmd', cmd: this.ours(cmd) });
   }
 
+  steer(e, D) {
+    const id = this.toW.get(e);
+    if (id === undefined || !this.worker) return;
+    let m = null;
+    if (D) {
+      const t = D.target,
+        tid = t && t !== D.spot ? this.toW.get(t) || 0 : 0;
+      m = [D.turn, D.throttle, D.firing ? 1 : 0, tid, t && !tid ? 1 : 0, D.spot.x, D.spot.y, D.spot.z];
+    }
+    const key = id + ':' + (m ? m.join(',') : '-');
+    if (key === this.steerKey) return;
+    this.steerKey = key;
+    this.worker.postMessage({ k: 'direct', id, m });
+  }
+
   setRules(rules) {
     this.worker?.postMessage({ k: 'rules', rules });
   }
