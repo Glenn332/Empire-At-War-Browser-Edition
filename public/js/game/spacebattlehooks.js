@@ -1,4 +1,4 @@
-import { World, Player, Team, Unit, Squad } from './sim.js';
+import { World, Player, Team, Unit, Squad, directState } from './sim.js';
 import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
 
 const kept = new WeakSet();
@@ -132,4 +132,39 @@ export function stepRecord(w, rec, spawns, events) {
     },
     transfer: [units.buffer, shots.buffer, points.buffer, abilities.buffer]
   };
+}
+
+export function applyDirect(w, id, m) {
+  const find = id => {
+    if (!id) return null;
+    for (const u of w.units) if (u.id === id) return u;
+    for (const q of w.squads) {
+      if (q.id === id) return q;
+      for (const f of q.fighters) if (f.id === id) return f;
+    }
+    return null;
+  };
+  const e = find(id);
+  if (!e) return;
+  if (!m) {
+    e.direct = null;
+    return;
+  }
+  if (e.dead || e.player !== w.viewer) return;
+  if (!e.direct) {
+    e.setOrder({ kind: 'idle' });
+    e.direct = directState();
+  }
+  const D = e.direct,
+    [turn, throttle, firing, tid, spot, x, y, z] = m;
+  D.turn = turn;
+  D.throttle = throttle;
+  D.firing = !!firing;
+  D.spot.x = x;
+  D.spot.y = y;
+  D.spot.z = z;
+  if (tid) {
+    if (D.tid !== tid || !D.target || D.target.dead) D.target = find(tid);
+  } else D.target = spot ? D.spot : null;
+  D.tid = tid;
 }

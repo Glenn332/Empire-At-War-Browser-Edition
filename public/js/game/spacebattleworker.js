@@ -3,7 +3,7 @@ import * as THREE from '../../vendor/three/build/three.module.js';
 import { loadGameData, db } from '../gamedata.js';
 import { setTacticalRules } from './tacticalrules.js';
 import { loadMap } from '../ted.js';
-import { World, Player, Team, Unit, Squad, modelsForType, resetEntityIds, directState } from './sim.js';
+import { World, Player, Team, Unit, Squad, modelsForType, resetEntityIds } from './sim.js';
 import { seedSim, simRandomState, simRandomDraws } from './simrandom.js';
 import { unitDetail } from './desyncreport.js';
 import { TacticalMarker } from './tacticalobjects.js';
@@ -14,7 +14,7 @@ import { loadALA, animName } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { loadPrioritySets } from './priorities.js';
 import { SpaceRecorder } from './spacerecord.js';
-import { plain, keeper, hookBattle, stepRecord, guard, send } from './spacebattlehooks.js';
+import { plain, keeper, hookBattle, stepRecord, guard, send, applyDirect } from './spacebattlehooks.js';
 import { ScriptHost } from './scripts.js';
 import { SkirmishAI } from './ai.js';
 import { SpaceGoals } from './spacegoals.js';
@@ -326,37 +326,6 @@ async function run(m) {
       )
     : null;
   const entity = id => w.units.find(u => u.id === id) || w.squads.find(q => q.id === id) || null;
-  const anyEntity = id => {
-    const e = entity(id);
-    if (e || !id) return e;
-    for (const q of w.squads) for (const f of q.fighters) if (f.id === id) return f;
-    return null;
-  };
-  const steer = (id, m) => {
-    const e = entity(id);
-    if (!e) return;
-    if (!m) {
-      e.direct = null;
-      return;
-    }
-    if (e.dead || e.player !== w.viewer) return;
-    if (!e.direct) {
-      e.setOrder({ kind: 'idle' });
-      e.direct = directState();
-    }
-    const D = e.direct,
-      [turn, throttle, firing, tid, spot, x, y, z] = m;
-    D.turn = turn;
-    D.throttle = throttle;
-    D.firing = !!firing;
-    D.spot.x = x;
-    D.spot.y = y;
-    D.spot.z = z;
-    if (tid) {
-      if (D.tid !== tid || !D.target || D.target.dead) D.target = anyEntity(tid);
-    } else D.target = spot ? D.spot : null;
-    D.tid = tid;
-  };
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
     steps = 0;
@@ -444,7 +413,7 @@ async function run(m) {
       w.tacticalRules = setTacticalRules(c.rules);
     } else if (c.k === 'viewer') {
       w.viewer = w.players.find(p => p.id === c.id) || null;
-    } else if (c.k === 'direct') steer(c.id, c.m);
+    } else if (c.k === 'direct') applyDirect(w, c.id, c.m);
     else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
     } else if (c.k === 'pace') {

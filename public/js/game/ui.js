@@ -794,6 +794,11 @@ export class UI {
     if (lead) C.enter(lead.x, lead.y, lead.z, lead.hitRadius, lead.heading, spread * 1.6, lead.obj);
   }
 
+  driveDirect() {
+    this.steerDirect();
+    if (this.direct) this.game.mirror?.steer(this.direct, this.direct.direct);
+  }
+
   steerDirect() {
     const e = this.direct,
       D = e && e.direct;
@@ -1652,8 +1657,7 @@ export class UI {
     }
     if (this.direct) {
       px = py = 0;
-      this.steerDirect();
-      if (this.direct) this.game.mirror?.steer(this.direct, this.direct.direct);
+      this.driveDirect();
     }
     (this.arcView ||= new ArcView(this.r.scene)).update(this.direct ? this.world.directArcs(this.direct, (this.arcs ||= [])) : NO_ARCS);
     const f = this.following;
