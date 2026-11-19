@@ -36,7 +36,17 @@ export function execute(world, player, cmd) {
     case 'move': {
       const mine = own().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
       endHunt(world, mine);
-      if (mine.length) orderMove(mine, clampX(cmd.x), clampY(cmd.y), !!cmd.attack, !!cmd.waypoint);
+      if (mine.length) orderMove(mine, clampX(cmd.x), clampY(cmd.y), !!cmd.attack, !!cmd.waypoint, false, cmd.fast && !cmd.attack ? 28 : 0);
+      return {};
+    }
+    case 'face': {
+      const ships = own().filter(s => !s.isSquad && s.isMobile && s.sizeClass !== 'STRUCTURE'),
+        h = num(cmd.h);
+      endHunt(world, ships);
+      for (const s of ships) {
+        s.queue = null;
+        s.setOrder({ kind: 'idle', face: Math.atan2(Math.sin(h), Math.cos(h)) });
+      }
       return {};
     }
     case 'formmove': {

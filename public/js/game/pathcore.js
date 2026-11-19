@@ -478,9 +478,12 @@ export class PathCore {
 
   slot(u, x, y) {
     const q = this.ext(u);
-    const free = (px, py) => !(this.sweep(u, q, px, py, px, py, 0, 0) & STILL);
-    if (free(x, y)) return null;
     const w = this.world,
+      avoid = w.fields.filter(f => w.hazardous(f, u));
+    const free = (px, py) =>
+      !(this.sweep(u, q, px, py, px, py, 0, 0) & STILL) && !avoid.some(f => (f.x - px) ** 2 + (f.y - py) ** 2 < (f.r + q.r) ** 2);
+    if (free(x, y)) return null;
+    const
       back = Math.atan2(u.y - y, u.x - x);
     for (let ring = 1; ring <= 40; ring++) {
       const r = ring * this.ringStep,

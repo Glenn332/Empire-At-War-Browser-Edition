@@ -745,6 +745,7 @@ function recheckLayer(world, F, list, T) {
     if (!at) continue;
     const o = e.order;
     o.offset = at.offset;
+    o.reached = false;
     o.meetAt = at.meetAt;
     o.startAt = at.startAt;
     if (at.pace !== undefined) o.pace = at.pace;

@@ -23,7 +23,7 @@ const OV = {
   arrive: 45,
   viewMax: 40
 };
-const HOLDS = new Set(['move', 'formmove', 'stop', 'garrison']);
+const HOLDS = new Set(['move', 'formmove', 'face', 'stop', 'garrison']);
 const _p = new THREE.Vector3(),
   _q = new THREE.Quaternion(),
   _v = new THREE.Vector3();

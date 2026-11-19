@@ -354,13 +354,17 @@ export class UI {
         this.arm(null);
         return;
       }
-      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey };
+      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: e.detail >= 2 };
       this.ctrlTurn = e.ctrlKey && !e.shiftKey && !e.altKey ? { x: m.x, y: m.y } : null;
       const movers = this.mine().filter(s => !s.dead && (s.isSquad || s.isMobile)),
         g = this.r.pickGround(m.x, m.y),
         h = this.pick(m.x, m.y);
       if (globalThis.lineMove !== false && movers.length > 1 && g && !(h && h.player.id >= 0 && h.player.team !== this.player.team))
         this.moveDrag = { sx: m.x, sy: m.y, a: { x: g.x, y: g.y }, movers, on: false, perm: 0, ghosts: [] };
+      else if (movers.length === 1 && !movers[0].isSquad && g) {
+        const own = h && (h.squad || h);
+        this.moveDrag = { sx: m.x, sy: m.y, a: { x: g.x, y: g.y }, movers, on: false, perm: 0, ghosts: [], single: true, turn: own === movers[0] };
+      }
     } else if (e.button === 1) {
       e.preventDefault();
       this.panDrag = { x: m.x, y: m.y };
@@ -431,14 +435,16 @@ export class UI {
       this.endMoveDrag();
       if (md.on) {
         this.pendingCommand = null;
-        this.finishMoveDrag(md, e.ctrlKey);
+        const h = md.single ? this.pick(e.clientX, e.clientY) : null;
+        if (h && !h.dead && h.player.id >= 0 && h.player.team !== this.player.team && !h.isPad) this.commandAt(e.clientX, e.clientY, false);
+        else this.finishMoveDrag(md, e.ctrlKey);
         return;
       }
     }
     if (e.button === 2 && this.pendingCommand) {
       const p = this.pendingCommand;
       this.pendingCommand = null;
-      this.commandAt(p.x, p.y, p.ctrl, p.shift);
+      this.commandAt(p.x, p.y, p.ctrl, p.shift, p.fast);
       return;
     }
     if (e.button === 0 && this.placing && this.placing.press) {
@@ -878,13 +884,23 @@ export class UI {
       this.endMoveDrag();
       return;
     }
-    if (!md.on && Math.hypot(m.x - md.sx, m.y - md.sy) > 8) {
+    if (!md.on && (md.single ? Math.max(Math.abs(m.x - md.sx), Math.abs(m.y - md.sy)) > db.constants.num('MinimumDragDistance', 4) : Math.hypot(m.x - md.sx, m.y - md.sy) > 8)) {
       md.on = true;
       md.ghosts = md.movers.map(s => this.r.makeGhost(ghostModels(s.type)));
     }
     if (!md.on) return;
     const g = this.r.pickGround(m.x, m.y);
     if (!g) return;
+    if (md.single) {
+      if (Math.hypot(g.x - md.a.x, g.y - md.a.y) < 1) return;
+      const s = md.movers[0],
+        p = md.turn ? { x: s.x, y: s.y } : md.a;
+      md.face = Math.atan2(g.y - md.a.y, g.x - md.a.x);
+      md.at = [p];
+      md.ghosts[0].set(p.x, p.y, md.face, true);
+      showHand([s.type], m.x, m.y);
+      return;
+    }
     const L = laidOut(
       md.movers.map(s => s.type),
       md.ghosts.map(gh => Math.max(40, gh.radius || 0)),
@@ -911,6 +927,10 @@ export class UI {
 
   finishMoveDrag(md, attackMove) {
     if (!md.at) return;
+    if (md.turn) {
+      this.game.command({ c: 'face', u: ids(md.movers), h: md.face });
+      return;
+    }
     const w = this.world,
       clampP = p => ({ x: Math.max(w.min.x, Math.min(w.max.x, p.x)), y: Math.max(w.min.y, Math.min(w.max.y, p.y)) });
     const p = md.movers.map((s, i) => {
@@ -1498,7 +1518,7 @@ export class UI {
     this.selSig = '';
   }
 
-  commandAt(x, y, attackMove, waypoint = false) {
+  commandAt(x, y, attackMove, waypoint = false, fast = false) {
     const mine = this.mine().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
     if (!mine.length) return;
     const hit = this.systemUnder(this.hover, x, y) || this.pick(x, y) || (this.hover && !this.hover.dead ? this.hover : null);
@@ -1515,7 +1535,7 @@ export class UI {
     const w = this.world;
     g.x = Math.max(w.min.x, Math.min(w.max.x, g.x));
     g.y = Math.max(w.min.y, Math.min(w.max.y, g.y));
-    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: !!attackMove, waypoint: !!waypoint });
+    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: !!attackMove, waypoint: !!waypoint, fast: !!fast && !attackMove });
     this.pings.push({ x: g.x, y: g.y, t: 0, color: attackMove ? '#ffb347' : waypoint ? '#7fd4ff' : '#6be675', r: 40 });
     this.radarClick(g.x, g.y, attackMove);
     this.sayMove(mine, g.x, g.y, attackMove);

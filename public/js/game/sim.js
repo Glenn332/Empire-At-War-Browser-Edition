@@ -3890,7 +3890,13 @@ export class World {
             ? ord.reach + (sys ? 0 : ext)
             : Math.max(u.type.num('Targeting_Min_Attack_Distance', 0) + ext, 0.9 * (u.engageRange + ext));
         const at = sys || t;
-        if (ord.offset && !ord.reach) {
+        const inReach =
+          ord.reached &&
+          dist2(u, at) <= (u.engageRange + ext) ** 2 &&
+          dist2(u, at) > (u.type.num('Targeting_Min_Attack_Distance', 0) + ext) ** 2;
+        if (!inReach) ord.reached = false;
+        if (inReach && !ord.reach) faceOnly = t;
+        else if (ord.offset && !ord.reach) {
           const L = leadPoint(t, (ord.meetAt ?? this.time) - this.time),
             p = (u.slotAt ||= { x: 0, y: 0 });
           p.x = L.x + ord.offset.x;
