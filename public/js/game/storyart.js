@@ -36,14 +36,21 @@ export async function scriptTypes(names) {
   return typesIn(texts);
 }
 
-async function readScripts(scripts, texts) {
+async function readScripts(scripts, texts, done = new Set()) {
+  const next = new Set();
   await Promise.all(
     [...scripts].map(async s => {
-      const file = (await findFiles(`SCRIPTS\\\\(.*\\\\)?${esc(s.toUpperCase())}\\.LUA$`).catch(() => []))[0];
+      const key = s.toUpperCase();
+      if (done.has(key)) return;
+      done.add(key);
+      const file = (await findFiles(`SCRIPTS\\\\(.*\\\\)?${esc(key)}\\.LUA$`).catch(() => []))[0];
       const text = file && (await fetchText(file.replace(/\\/g, '/')).catch(() => null));
-      if (text) texts.push(text);
+      if (!text) return;
+      texts.push(text);
+      for (const m of text.matchAll(/\brequire\s*\(?\s*["']([^"']+)["']/g)) if (!done.has(m[1].toUpperCase())) next.add(m[1]);
     })
   );
+  if (next.size) await readScripts(next, texts, done);
 }
 
 function typesIn(texts) {

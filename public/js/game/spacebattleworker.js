@@ -9,7 +9,8 @@ import { unitDetail } from './desyncreport.js';
 import { TacticalMarker } from './tacticalobjects.js';
 import { restore, snapshot } from './savegame.js';
 import { restoreBattleScripts } from './tacticalsave.js';
-import { preloadModels } from '../model.js';
+import { preloadModels, getModelData } from '../model.js';
+import { scriptTypes } from './storyart.js';
 import { loadALA, animName } from '../ala.js';
 import { findFiles } from '../vfs.js';
 import { loadPrioritySets } from './priorities.js';
@@ -234,6 +235,24 @@ async function minds(w, m, map, events, thing) {
         console.warn('space worker: scripts', e);
         return null;
       });
+  if (scripts && m.net) {
+    const named = new Set(),
+      known = new Set();
+    for (const e of [...w.units, ...(w.squads || [])]) if (e.type) named.add(e.type.str('Lua_Script').trim());
+    const more = new Set();
+    for (const t of await scriptTypes([...named]).catch(() => [])) modelsForType(t, null, more, known);
+    await preloadModels([...more].filter(Boolean)).catch(() => null);
+  } else if (scripts) {
+    const art = new Map();
+    game.artFor = type => {
+      if (!type) return null;
+      const want = [...modelsForType(type, null, new Set(), new Set())].filter(Boolean);
+      if (want.every(n => getModelData(n))) return null;
+      let p = art.get(type);
+      if (!p) art.set(type, (p = preloadModels(want).catch(() => null)));
+      return p;
+    };
+  }
   if (scripts) {
     game.scripts = w.scripts = scripts;
     if (!m.net) scripts.budgetMs = 4;
