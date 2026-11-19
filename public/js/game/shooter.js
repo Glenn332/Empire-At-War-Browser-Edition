@@ -5190,18 +5190,15 @@ export class Shooter {
     if (c.vehicle) {
       const q = c.vehicle,
         v = q.members[0],
-        foot = this.classes().find(x => !x.hero);
-      if (!v || v.dead || q.crew.in || q.side !== this.me || !foot) return;
+        foot = this.classes().find(x => !x.hero && !x.heroSpawn && !x.vehicle);
+      if (!v || v.dead || q.side !== this.me || (q.crew.in && (foot || !this.botCrew(q)))) return;
       if (this.tickets && this.tickets[this.me] <= 0) return;
       this.spawning = true;
-      const a = v.heading + Math.PI / 2,
-        o = w.nearestOpen(v.x + Math.cos(a) * (v.hitRadius + 12), v.y + Math.sin(a) * (v.hitRadius + 12)) || { x: v.x, y: v.y };
-      const sq = await w.spawn(foot.unit.name, o.x, o.y, v.heading, this.me);
+      const u = await this.rideBody(q, this.me, foot);
       this.spawning = false;
-      const u = sq && sq.members[0];
       if (!u) return;
-      this.role = this.roleOf(foot, this.classes());
-      this.possess(sq, u, false);
+      this.role = foot ? this.roleOf(foot, this.classes()) : 'trooper';
+      this.possess(u.squad, u, false);
       if (!q.dead && q.members.length && !q.crew.in) this.drive(q);
       return;
     }
@@ -5290,15 +5287,15 @@ export class Shooter {
     const N = this.game.shooterNet,
       v = c.vehicle.members[0],
       foot = this.classes().find(x => !x.hero && !x.heroSpawn && !x.vehicle);
-    if (!N || !v || !foot || this.spawning) return;
+    if (!N || !v || (!foot && !this.conquest) || this.spawning) return;
     this.spawning = true;
-    const u = await N.requestDeploy(foot.company.name, v.x, v.y, N.ids.get(v));
+    const u = await N.requestDeploy(foot ? foot.company.name : '', v.x, v.y, N.ids.get(v));
     this.spawning = false;
     if (!u || u.dead || this.state === 'alive') {
       if (!u) this.flash('Could not deploy');
       return;
     }
-    this.role = this.roleOf(foot, this.classes());
+    this.role = foot ? this.roleOf(foot, this.classes()) : 'trooper';
     this.possess(u.squad, u, false);
     if (!c.vehicle.dead && c.vehicle.members.length) this.drive(c.vehicle);
   }
@@ -5343,15 +5340,14 @@ export class Shooter {
       const v = this.game.shooterNet?.byId.get(vid),
         q = v && v.squad,
         foot = this.classes(side).find(k => !k.hero && !k.heroSpawn && !k.vehicle && k.company.name === name) || this.classes(side).find(k => !k.hero && !k.heroSpawn && !k.vehicle);
-      if (!v || v.dead || !q || !this.crewed.has(q) || q.crew.in || q.side !== side || !foot) return null;
+      if (!v || v.dead || !q || !this.crewed.has(q) || q.side !== side || (q.crew.in && (foot || !this.botCrew(q)))) return null;
+      if (!foot && !this.footless(side)) return null;
       if (this.tickets && this.tickets[side] <= 0) return null;
-      const a = v.heading + Math.PI / 2,
-        o = w.nearestOpen(v.x + Math.cos(a) * (v.hitRadius + 12), v.y + Math.sin(a) * (v.hitRadius + 12)) || { x: v.x, y: v.y };
       this.spawning = true;
-      const sq = await w.spawn(foot.unit.name, o.x, o.y, v.heading, side);
+      const u = await this.rideBody(q, side, foot);
       this.spawning = false;
-      const u = sq && sq.members[0];
       if (!u) return null;
+      const sq = u.squad;
       sq.noAI = true;
       sq.selectable = false;
       sq.foe = null;
@@ -5403,9 +5399,14 @@ export class Shooter {
     const N = this.game.shooterNet,
       out = {};
     if (!N) return out;
+    const take = new Map();
     for (const q of this.crewed) {
       const v = q.members[0];
-      if (!v || v.dead || q.crew.in || q.side < 0 || v.health < v.maxHealth * VEH.bail) continue;
+      if (!v || v.dead || q.side < 0 || v.health < v.maxHealth * VEH.bail) continue;
+      if (q.crew.in) {
+        if (!take.has(q.side)) take.set(q.side, this.footless(q.side));
+        if (!take.get(q.side) || !this.botCrew(q)) continue;
+      }
       (out[q.side] ||= []).push(N.idOf(v));
     }
     return out;
@@ -6110,12 +6111,38 @@ export class Shooter {
       }
       return out;
     }
+    const take = this.footless(this.me);
     for (const q of this.crewed) {
       const v = q.members[0];
-      if (!v || v.dead || q.side !== this.me || q.crew.in || q === this.rideQ || v.health < v.maxHealth * VEH.bail) continue;
+      if (!v || v.dead || q.side !== this.me || (q.crew.in && !(take && this.botCrew(q))) || q === this.rideQ || v.health < v.maxHealth * VEH.bail) continue;
       out.push({ company: q.type, unit: v.type, cost: 0, vehicle: q });
     }
     return out;
+  }
+
+  footless(side) {
+    return !!this.conquest?.ready && !this.classes(side).some(k => !k.hero && !k.heroSpawn && !k.vehicle);
+  }
+
+  botCrew(q) {
+    const u = q.crew?.in;
+    return u && !u.dead && u !== this.body && !u.remote ? u : null;
+  }
+
+  async rideBody(q, side, foot) {
+    const w = this.world,
+      v = q.members[0],
+      bot = foot ? null : this.botCrew(q);
+    if (bot) {
+      this.eject(bot, q, false);
+      return bot;
+    }
+    const t = foot ? foot.unit : this.crewType(side);
+    if (!t || !v) return null;
+    const a = v.heading + Math.PI / 2,
+      o = w.nearestOpen(v.x + Math.cos(a) * (v.hitRadius + 12), v.y + Math.sin(a) * (v.hitRadius + 12)) || { x: v.x, y: v.y },
+      sq = await w.spawn(t.name, o.x, o.y, v.heading, side);
+    return (sq && sq.members[0]) || null;
   }
 
   cards() {
