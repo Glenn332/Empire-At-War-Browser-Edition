@@ -9,6 +9,7 @@ import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { enterFullscreen } from '../pointertrap.js';
+import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
   ACTIONS,
   MAX_KEYS,
@@ -800,14 +801,25 @@ export class Menus {
       label: Math.round(innerWidth * dpr * k) + ' x ' + Math.round(innerHeight * dpr * k),
       note: Math.round(k * 100) + '%'
     }));
-    const res = dlg.list('IDC_RESOLUTION_LIST', rows, row => {
-      if (gfx.scale !== row.key) {
-        gfx.scale = row.key;
-        apply();
-      }
-    });
+    const sized = !document.fullscreenElement ? await windowSizes() : null;
+    const res = sized
+      ? dlg.list(
+          'IDC_RESOLUTION_LIST',
+          sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
+          row => {
+            const [w, h] = row.key.split('x').map(Number);
+            pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
+          }
+        )
+      : dlg.list('IDC_RESOLUTION_LIST', rows, row => {
+          if (gfx.scale !== row.key) {
+            gfx.scale = row.key;
+            apply();
+          }
+        });
     const show = () => {
-      if (res) res.select(scales.reduce((best, k) => (Math.abs(k - gfx.scale) < Math.abs(best - gfx.scale) ? k : best), 1));
+      if (res && sized) res.select(sized.now[0] + 'x' + sized.now[1]);
+      else if (res) res.select(scales.reduce((best, k) => (Math.abs(k - gfx.scale) < Math.abs(best - gfx.scale) ? k : best), 1));
       dlg.slider('IDC_ANTI_ALIAS_SLIDER', gfx.aa !== false ? 1 : 0, v => {
         const on = v >= 0.5;
         if (on !== gfx.aa) {

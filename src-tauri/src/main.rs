@@ -557,6 +557,24 @@ impl Server {
                 Err(e) => text(400, &e),
             };
         }
+        if p == "/api/window-size" {
+            let num = |k: &str| arg(k).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+            let (w, h) = (num("w"), num("h"));
+            if let Some(win) = app.get_webview_window("main") {
+                if w >= 640 && h >= 480 {
+                    let _ = win.unmaximize();
+                    let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                    let _ = win.center();
+                }
+                let size = win.inner_size().ok();
+                let monitor = win.current_monitor().ok().flatten().map(|m| *m.size());
+                return json(&serde_json::json!({
+                    "w": size.map(|s| s.width), "h": size.map(|s| s.height),
+                    "mw": monitor.map(|s| s.width), "mh": monitor.map(|s| s.height)
+                }));
+            }
+            return json(&serde_json::json!({ "ok": false }));
+        }
         if p == "/api/cursor-grab" {
             let on = arg("on").as_deref() == Some("1");
             if let Some(w) = app.get_webview_window("main") {

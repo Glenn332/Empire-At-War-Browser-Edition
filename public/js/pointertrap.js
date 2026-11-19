@@ -1,3 +1,4 @@
+import { inApp } from './platform.js';
 const VIRTUAL = 1;
 const MOUSE_TYPES = [
   'pointermove',
@@ -78,7 +79,7 @@ function keepEscape() {
 }
 
 function lock() {
-  if (trap.locked || !ownFullscreen() || document.pointerLockElement) return;
+  if (trap.locked || !ownFullscreen() || document.pointerLockElement || inApp()) return;
   try {
     const p = document.documentElement.requestPointerLock();
     if (p && p.catch) p.catch(() => {});
