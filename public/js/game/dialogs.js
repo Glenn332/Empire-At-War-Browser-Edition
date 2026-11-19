@@ -1131,6 +1131,7 @@ export async function openDialog(
         t.style.position = 'absolute';
         t.style.left = (off?.w || 0) + 14 + 'px';
         t.style.pointerEvents = 'none';
+        t.style.transformOrigin = 'left center';
       }
       if (nativeFonts) {
         nativeLabel(t, text, f);
@@ -1150,11 +1151,10 @@ export async function openDialog(
       t.textContent = text;
       d.appendChild(t);
       const f = controlFont(c.id, nativeFonts ? 'Check_Box' : 'L_Text');
-      styleText(d, f);
+      styleText(nativeFonts ? t : d, f);
       if (nativeFonts) {
+        t.style.transformOrigin = 'left center';
         nativeLabel(t, text, f);
-        d.style.filter = '';
-        d.style.textShadow = '';
         d._textEl = t;
         d._textFont = f;
         d._setText = (value, color) => nativeLabel(t, value, f, color ? { top: color, bottom: color } : {});
