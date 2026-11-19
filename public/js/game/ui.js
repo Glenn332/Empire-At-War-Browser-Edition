@@ -1138,7 +1138,7 @@ export class UI {
       return;
     }
     const r = this.game.command({ c: 'ability', u: ids(users), kind, on: turnOn });
-    if ((!r || r.ok) && !(turnOn ? def.sfxOn : def.sfxOff)) {
+    if (!r || r.ok) {
       const t = this.player.faction
         .tuples('SFXEvent_GUI_Toggle_Non_Hero_Ability_' + (turnOn ? 'On' : 'Off'))
         .find(x => x[0].toUpperCase() === kind);

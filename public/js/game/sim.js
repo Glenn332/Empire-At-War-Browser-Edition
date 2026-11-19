@@ -13,6 +13,7 @@ import { getModelData, buildModel, flattenModel } from '../model.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import {
   parseAbilities,
+  autoSpecials,
   attachAbilities,
   tickAbilities,
   useAbility,
@@ -291,6 +292,7 @@ const inLookTree = t =>
       .toUpperCase()
       .split(/[|,\s]+/)
       .some(k => LOOK_LAYERS.has(k)));
+const MODE_PROXY = { pptw: ['POWER_TO_WEAPONS', 'FULL_SALVO'], prs: ['MISSILE_SHIELD'], pem: ['INVULNERABILITY'] };
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
 const shadowModels = new WeakMap();
@@ -944,6 +946,21 @@ export class Unit {
           });
           continue;
         }
+        const mode = px.hidden ? /^(pptw|prs|pem)/i.exec(px.name)?.[1].toLowerCase() : null;
+        if (mode) {
+          (this.modeProxies ||= []).push({
+            name: px.name,
+            bone: px.bone,
+            local: this.localOf(px.bone),
+            damage: false,
+            hp: null,
+            on: false,
+            sys: null,
+            byBone: false,
+            mode
+          });
+          continue;
+        }
         if (px.hidden) continue;
         let hp = null;
         for (let b = px.bone; b && !hp; b = b.parent) hp = damageBones.get(b) || null;
@@ -959,7 +976,8 @@ export class Unit {
           on: false,
           sys: null,
           byBone,
-          turbo: /^PTE_/i.test(px.name)
+          turbo: /^PTE_/i.test(px.name),
+          plain: /^pe/i.test(px.name)
         };
         this.proxies.push(proxy);
         if (!damage) this.pendingProxies.push(proxy);
@@ -985,7 +1003,7 @@ export class Unit {
       (this.world.incomeModUnits ??= []).push(this);
     }
     const heal = t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))[0];
-    if (heal && (this.isStructure || this.noAI)) {
+    if (heal) {
       this.heal = {
         range: heal.num('Heal_Range', 0),
         percent: heal.num('Heal_Percent', 0),
@@ -1016,7 +1034,7 @@ export class Unit {
         by: null
       };
     }
-    attachAbilities(this, parseAbilities(t));
+    attachAbilities(this, parseAbilities(t), autoSpecials(t));
     this.applyBonuses();
     this.setupAnimation();
     if (this.model) {
@@ -1182,6 +1200,18 @@ export class Unit {
     if (fireA) {
       hp.frame = frameOf(this.modelMatrix(fireA, _m1).elements, this.scale, fireB ? this.modelMatrix(fireB, _m2).elements : null);
       hp.fireYaw = Math.atan2(hp.frame.xy, hp.frame.xx);
+      const pivot = this.type.str('Turret_Bone_Name') ? model.bone(this.type.str('Turret_Bone_Name')) : null;
+      for (let b = fireA.parent; pivot && b; b = b.parent)
+        if (b === pivot) {
+          hp.onTurret = true;
+          this.turretAim ??= {
+            yaw: 0,
+            rate: (this.type.num('Turret_Rotate_Speed', 3) || 3) * LOGIC_FPS * DEG,
+            limit: (Math.min(360, this.type.num('Turret_Rotate_Extent_Degrees', 360)) * DEG) / 2,
+            ref: hp
+          };
+          break;
+        }
     }
     if (anchor) hp.attach = frameOf(this.modelMatrix(anchor, _m1).elements, this.scale, null);
     hp.bone = bone;
@@ -1370,6 +1400,11 @@ export class Unit {
 
   turboOn() {
     return this.abilities.some(a => a.active && a.def.kind === 'TURBO');
+  }
+
+  modeOn(mode) {
+    const kinds = MODE_PROXY[mode];
+    return !!kinds && this.abilities.some(a => a.active && kinds.includes(a.def.kind));
   }
 
   engineAlive() {
@@ -2369,7 +2404,7 @@ export class World {
     this.onReinforce?.(player.factionName, type?.name ?? type);
     const e = this.spawn(type, player, x, y, heading, { hyperspace: true });
     this.bonusArrival(player, type, e);
-    this.audio.playFor(player, player.faction.str('Reinforcements_Enroute_SFXEvent'));
+    this.audio.playFor(player, (type?.str ? type.str('SFXEvent_Fleet_Move').trim() : '') || player.faction.str('Reinforcements_Enroute_SFXEvent'));
     this.onEvent('built', { player, type, entity: e });
     return null;
   }
@@ -4293,6 +4328,7 @@ export class World {
   }
 
   updateWeapons(u, dt) {
+    if (u.turretAim) this.turnTurret(u, dt);
     if (u.cloaked || u.holdFire) return;
     for (const hp of u.hardpoints) {
       if (!hp.isWeapon || !hp.alive || !modeAllows(hp.modes, u.abilities)) continue;
@@ -4457,9 +4493,23 @@ export class World {
     return false;
   }
 
+  turnTurret(u, dt) {
+    const T = u.turretAim,
+      t = u.target && !u.target.dead ? u.target : null;
+    let want = 0;
+    if (t) {
+      want = wrapAngle(Math.atan2(t.y - u.y, t.x - u.x) - u.heading - (T.ref.fireYaw || 0));
+      if (T.limit < Math.PI) want = clamp(want, -T.limit, T.limit);
+    }
+    const d = T.limit < Math.PI ? want - T.yaw : wrapAngle(want - T.yaw),
+      step = T.rate * dt;
+    T.yaw = T.limit < Math.PI ? T.yaw + clamp(d, -step, step) : wrapAngle(T.yaw + clamp(d, -step, step));
+  }
+
   hpInCone(u, hp, x, y, z) {
-    const c = Math.cos(u.heading),
-      s = Math.sin(u.heading),
+    const h = hp.onTurret && u.turretAim ? u.heading + u.turretAim.yaw : u.heading,
+      c = Math.cos(h),
+      s = Math.sin(h),
       turret = hp.turret >= 0,
       F = turret ? hp.attach : hp.frame,
       o = F ? null : hp.fireLocal[0] || hp.local;
@@ -4895,13 +4945,39 @@ export class World {
       big || range > 300,
       particleFile(proj.str('Projectile_Lifetime_Detonation_Particle')) || particleFile(proj.str('Projectile_Object_Detonation_Particle'))
     );
-    this.audio.play(proj.str('Projectile_SFXEvent_Detonate') || 'Unit_Star_Destroyer_Death_SFX', x, y);
+    const healing = proj.bool('Projectile_Instant_Heal_On_Detonation');
+    const sfx = proj.str('Projectile_SFXEvent_Detonate') || (healing ? '' : 'Unit_Star_Destroyer_Death_SFX');
+    if (sfx) this.audio.play(sfx, x, y);
     this.areaDamage(x, y, range, dmg, proj.str('Damage_Type'), owner, {
       shields: proj.bool('Projectile_Does_Shield_Damage', true),
       hull: proj.bool('Projectile_Does_Hitpoint_Damage', true),
       proj,
       z
     });
+    if (healing && owner) this.instantHeal(proj, owner, x, y);
+  }
+
+  instantHeal(proj, owner, x, y) {
+    const R = proj.num('Projectile_Instant_Heal_Radius', 100),
+      add = proj.num('Projectile_Instant_Heal_Health_Increase', 0),
+      cats = proj
+        .str('Projectile_Instant_Heal_Targets_Category_Mask')
+        .split(/[|,\s]+/)
+        .filter(Boolean)
+        .map(c => c.toUpperCase()),
+      look = db.type(proj.str('Projectile_Instant_Heal_Spawn_Effect').trim()),
+      file = look ? look.str('Space_Model_Name') : '';
+    const team = owner.team || owner.player?.team;
+    for (const u of this.units) {
+      if (u.dead || u.hyper || u.player.team !== team || (u.x - x) ** 2 + (u.y - y) ** 2 > R * R) continue;
+      if (cats.length) {
+        const has = u.type.categories();
+        if (!cats.some(c => has.has(c))) continue;
+      }
+      if (u.health >= u.maxHealth) continue;
+      u.health = Math.min(u.maxHealth, u.health + add);
+      if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, 1);
+    }
   }
 
   delayed(seconds, x, y, z, fn) {

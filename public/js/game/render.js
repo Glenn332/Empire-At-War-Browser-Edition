@@ -1457,6 +1457,8 @@ export class Renderer {
           !u.hyper &&
           (!px.engine || u.engineAlive()) &&
           (!px.turbo || u.turboOn()) &&
+          (!px.plain || !u.turboOn()) &&
+          (!px.mode || u.modeOn(px.mode)) &&
           (!px.byBone || boneShown(px.bone, u.model.root)) &&
           (!px.ion || u.ionUntil > u.world.time)
         );
@@ -1840,6 +1842,12 @@ export class Renderer {
         if (u.obj.visible !== seen && !(u.isPad && u.padChild)) u.obj.visible = seen;
         if (!seen) continue;
         if (u.inNebula || u.haze) this.updateHaze(u, dt);
+        if (u.modeProxies)
+          for (const px of u.modeProxies)
+            if (!px.on && u.modeOn(px.mode)) {
+              px.on = true;
+              u.pendingProxies.push(px);
+            }
         if (u.pendingProxies.length) u.pendingProxies = u.pendingProxies.filter(px => !this.attachProxy(u, px));
         _sphere.center.set(u.x, u.y, u.z || 0);
         _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);

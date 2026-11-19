@@ -134,8 +134,46 @@ export function parseAbilities(type) {
   return out;
 }
 
-export function attachAbilities(unit, defs) {
+const AUTO_STYLE = /^(global|combat|space|skirmish)_automatic$/i;
+export function autoSpecials(type) {
+  const out = [],
+    named = new Set();
+  for (const block of type.sub('Unit_Abilities_Data'))
+    for (const ab of block.all('Unit_Ability')) named.add(ab.val('GUI_Activated_Ability_Name').trim());
+  for (const block of type.sub('Abilities'))
+    for (const spec of block.all('Laser_Defense_Ability')) {
+      if (!AUTO_STYLE.test(spec.val('Activation_Style').trim()) || named.has((spec.attrs.Name || '').trim())) continue;
+      out.push({
+        kind: 'LASER_DEFENSE',
+        mods: new Map(),
+        noDiminish: false,
+        node: spec,
+        spec,
+        target: 'none',
+        duration: spec.num('Defense_Duration_In_Secs', 30),
+        mustBuy: false,
+        gui: '',
+        recharge: 0,
+        byDefault: true,
+        toggle: false,
+        range: 0,
+        immobile: false,
+        icon: '',
+        sfxOn: '',
+        sfxOff: '',
+        sfxTarget: '',
+        autofire: false,
+        passive: true,
+        label: 'Laser defense'
+      });
+      break;
+    }
+  return out;
+}
+
+export function attachAbilities(unit, defs, passive = []) {
   const auto = !!(unit.player && unit.player.human && (unit.player.autofire ?? (unit.world && unit.world.autofire)));
+  unit.passives = passive.map(def => ({ def, active: false, timer: 0, cooldown: 0, data: null, acc: 0, auto: false, pend: true }));
   unit.abilities = defs.map(def => ({
     def,
     active: false,
@@ -469,10 +507,15 @@ export function tickAbilities(world, u, dt) {
     }
     if (changed) refreshMods(u);
   }
-  for (const st of u.abilities) {
+  for (const st of u.passives?.length ? u.abilities.concat(u.passives) : u.abilities) {
     if (st.pend && !u.hyper) {
       st.pend = false;
-      useAbility(world, u, st.def.kind, true);
+      if (st.def.passive) {
+        st.active = true;
+        st.timer = st.def.duration;
+        st.acc = 0;
+        st.data = { t: 0 };
+      } else useAbility(world, u, st.def.kind, true);
     }
     if (!st.active) {
       if (st.cooldown > 0) st.cooldown -= dt;
@@ -595,11 +638,21 @@ export function tickAbilities(world, u, dt) {
       case 'LASER_DEFENSE': {
         const r = def.spec ? def.spec.num('Protection_Radius', 500) : 500;
         const every = def.spec ? def.spec.num('Recharge_Time_In_Secs', 0.5) : 0.5;
+        const kinds = (def.kinds ??= def.spec
+            ? def.spec
+                .val('Projectile_Types_Targeted')
+                .split(/[,|\s]+/)
+                .filter(Boolean)
+                .map(c => c.toUpperCase())
+            : []),
+          gone = def.spec ? def.spec.num('Projectile_Dist_Travelled', 0) : 0;
         if ((st.acc += dt) < every) break;
         st.acc = 0;
         for (const p of world.projectiles) {
-          if (!p.missile || p.dead || !p.owner || p.owner.team === u.player.team) continue;
-          if ((p.x - u.x) ** 2 + (p.y - u.y) ** 2 > r * r) continue;
+          if (p.dead || !p.owner || p.owner.team === u.player.team) continue;
+          if (kinds.length ? !(p.def && kinds.includes(p.def.str('Projectile_Category').trim().toUpperCase())) : !p.missile) continue;
+          if ((p.flown || 0) <= gone) continue;
+          if ((p.x - u.x) ** 2 + (p.y - u.y) ** 2 + ((p.z || 0) - (u.z || 0)) ** 2 > r * r) continue;
           p.dead = true;
           world.fx.hit(p.x, p.y, p.z, 10);
           if (def.kind === 'LASER_DEFENSE') {
