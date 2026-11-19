@@ -1656,7 +1656,12 @@ export class GPURenderer {
       w = t.image.width;
       h = t.image.height;
       layers = t.isCompressedArrayTexture ? t.image.depth : 1;
-      const mips = t.mipmaps;
+      const cap = d.limits.maxTextureDimension2D;
+      let skip = 0;
+      while (skip < t.mipmaps.length - 1 && Math.max(w >> skip, h >> skip) > cap) skip++;
+      w = Math.max(1, w >> skip);
+      h = Math.max(1, h >> skip);
+      const mips = t.mipmaps.slice(skip);
       levels = mips.length;
       mips.forEach((m, k) => {
         const mw = Math.max(1, w >> k),
@@ -1699,6 +1704,14 @@ export class GPURenderer {
       external = img;
       w = img.width || img.videoWidth;
       h = img.height || img.videoHeight;
+      const cap = d.limits.maxTextureDimension2D;
+      if (Math.max(w, h) > cap && typeof OffscreenCanvas !== 'undefined') {
+        const k = cap / Math.max(w, h);
+        w = Math.max(1, Math.floor(w * k));
+        h = Math.max(1, Math.floor(h * k));
+        external = new OffscreenCanvas(w, h);
+        external.getContext('2d').drawImage(img, 0, 0, w, h);
+      }
       fmt = 'rgba8unorm';
       levels = 1;
       if (t.generateMipmaps && MIP_FILTERS.has(t.minFilter)) {

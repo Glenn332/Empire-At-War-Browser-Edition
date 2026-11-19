@@ -1006,6 +1006,7 @@ export class Renderer {
         transparent: false,
         depthWrite: false,
         depthTest: false,
+        side: THREE.DoubleSide,
         blending: THREE.CustomBlending,
         blendSrc: THREE.SrcAlphaFactor,
         blendDst: THREE.OneMinusSrcAlphaFactor,
