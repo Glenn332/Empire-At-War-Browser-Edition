@@ -76,6 +76,7 @@ function build(events) {
   w.spawn(ship, players[0], -2000, -1500, 0);
   w.spawn(squadron, players[0], -2000, 1500, 0);
   w.spawn(target, players[1], 2500, 0, Math.PI);
+  w.spawn(target, players[1], 9000, 9000, Math.PI);
   w.recountPop();
   return w;
 }
@@ -219,6 +220,57 @@ assert(workSquad.direct, 'the battle worker knows the squadron is under direct c
   step(60);
   lift('KeyD');
   assert(Math.abs(angle(lead.heading - h0)) > 0.3, 'D turns the squadron');
+}
+{
+  const workTarget = worker.units.findLast(u => u.type === target && !u.dead),
+    pageTarget = page.units.find(u => mirror.toW.get(u) === workTarget.id),
+    lead = workSquad.fighters.find(f => !f.dead),
+    life = () => workTarget.health + (workTarget.shield || 0) + workTarget.hardpoints.reduce((s, hp) => s + (hp.health || 0), 0);
+  workTarget.x = pageTarget.x = lead.x + Math.cos(lead.heading) * 500;
+  workTarget.y = pageTarget.y = lead.y + Math.sin(lead.heading) * 500;
+  workTarget.setOrder({ kind: 'idle' });
+  ui.mouse.inside = true;
+  ui.pick = () => pageTarget;
+  ui.r.pickGround = () => ({ x: pageTarget.x, y: pageTarget.y });
+  const before = life();
+  ui.fireHeld = true;
+  step(150);
+  ui.fireHeld = false;
+  assert(life() < before, 'holding fire makes the controlled squadron shoot the unit under the cursor');
+  workTarget.x = pageTarget.x = lead.x - 30000;
+  workTarget.y = pageTarget.y = lead.y;
+  ui.pick = () => null;
+  const ahead = () => {
+    const f = workSquad.fighters.find(f => !f.dead);
+    return { x: f.x + Math.cos(f.heading) * 600, y: f.y + Math.sin(f.heading) * 600 };
+  };
+  ui.r.pickGround = () => ahead();
+  step(30);
+  let idle = 0,
+    shots = 0;
+  const seen = new Set(worker.projectiles);
+  const count = () => {
+    let n = 0;
+    for (const p of worker.projectiles)
+      if (!seen.has(p)) {
+        seen.add(p);
+        n++;
+      }
+    return n;
+  };
+  for (let i = 0; i < 90; i++) {
+    step(1);
+    idle += count();
+  }
+  ui.fireHeld = true;
+  for (let i = 0; i < 90; i++) {
+    step(1);
+    shots += count();
+  }
+  ui.fireHeld = false;
+  assert(shots > idle, `holding fire at empty space under the cursor makes the squadron shoot (${shots} shots, ${idle} without the button)`);
+  ui.mouse.inside = false;
+  ui.r.pickGround = () => null;
 }
 ui.releaseDirect();
 step(1);

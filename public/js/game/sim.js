@@ -61,6 +61,7 @@ const PROBE_CELL = 1024,
 const _nearCap = [],
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
+const NO_CATS = new Set();
 const UNIT_CELL = 1024,
   UNIT_PAD = 200;
 const HIT_CELL = 256;
@@ -160,7 +161,7 @@ export function directState() {
       speed: 0,
       sizeClass: '',
       player: { id: -1, team: { id: -1 } },
-      type: { name: '', categories: () => [] }
+      type: { name: '', categories: () => NO_CATS }
     }
   };
 }
