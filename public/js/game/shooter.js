@@ -655,6 +655,8 @@ export class Shooter {
     const w = this.world,
       m = q.members[0];
     if (this.spawning || this.kept.has(q) || !m || q.side < 0 || q.side === w.wild || q.native || q.structure || m.structure || !(m.speed > 0)) return false;
+    const b = this.bornOf.get(q);
+    if (b && this.singles.has(b.by) && this.firstOf.get(b.by) === q) return false;
     if (m.foot) {
       if (this.popUsed(q.side) + (this.spawningN[q.side] || 0) + (this.respawns[q.side]?.length || 0) <= this.fieldCap(q.side)) return false;
     } else {
