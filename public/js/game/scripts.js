@@ -1577,7 +1577,8 @@ export class ScriptHost {
       const now = () => {
         if (!t || !at || !p) return [];
         const from = this.of(where),
-          e = w.spawn(t, p, at.x, at.y, from && from.heading !== undefined ? from.heading : 0);
+          free = w.freeSpot ? w.freeSpot(t, at.x, at.y) : null,
+          e = w.spawn(t, p, free ? free.x : at.x, free ? free.y : at.y, from && from.heading !== undefined ? from.heading : 0);
         return e ? [this.wrap(e)] : [];
       };
       if (this.game.spawnNow) {

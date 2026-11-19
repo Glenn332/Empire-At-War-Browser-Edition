@@ -1501,6 +1501,14 @@ const laneLayers = t =>
     .toUpperCase()
     .split(/[|,\s]+/)
     .reduce((m, k) => m | (LANE_LAYERS[k] || 0), 0));
+function boxHalfOf(t) {
+  if (t._boxHalf) return t._boxHalf;
+  const s = t.num('Scale_Factor', 1) || 1,
+    data = getModelData(t.str('Space_Model_Name')),
+    E = data ? extentBoxOf(data) : null;
+  if (!E) return hardExtentsOf(t);
+  return (t._boxHalf = [Math.abs(E[0]) * s, Math.abs(E[1]) * s]);
+}
 function hardExtentsOf(t) {
   if (t._hardExt) return t._hardExt;
   const s = t.num('Scale_Factor', 1) || 1,
@@ -2393,6 +2401,29 @@ export class World {
     }
     for (const r of this.reveals) if (r.team === player.team && (r.x - x) ** 2 + (r.y - y) ** 2 < r.r * r.r) seen = true;
     return seen ? null : 'No line of sight to that area';
+  }
+
+  freeSpot(type, x, y, startDeg = 0) {
+    const L = layerMask(type);
+    if (type.has('Squadron_Units') || L === 8 || type.behaviors().has('SPACE_OBSTACLE')) return null;
+    const e = boxHalfOf(type),
+      step = Math.max(e[0], e[1]) * 2 * 1.2;
+    if (!(step > 0)) return null;
+    const blocked = (qx, qy) =>
+      this.units.some(o => {
+        if (o.dead || o.isFighter || o.hyper || o.squad || layerMask(o.type) === 8) return false;
+        const f = boxHalfOf(o.type);
+        return Math.abs(o.x - qx) <= f[0] + e[0] && Math.abs(o.y - qy) <= f[1] + e[1];
+      });
+    if (!blocked(x, y)) return null;
+    for (let r = step; r < 2500; r += step)
+      for (let deg = startDeg; deg <= startDeg + 360; deg += 22.5) {
+        const a = (deg * Math.PI) / 180,
+          qx = x + Math.cos(a) * r,
+          qy = y + Math.sin(a) * r;
+        if (!blocked(qx, qy)) return { x: qx, y: qy };
+      }
+    return null;
   }
 
   deployReinforcement(player, type, x, y, heading) {
