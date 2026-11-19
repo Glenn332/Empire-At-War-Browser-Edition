@@ -1,4 +1,4 @@
-import { openOverlay } from './mods.js';
+import { openOverlay, openStep } from './mods.js';
 import { languageId } from './language.js';
 import { expansion } from './edition.js';
 
@@ -11,7 +11,7 @@ let overlayState = 'waiting';
 overlay.then(o => (overlayState = o ? 'open' : 'none'));
 const open = new Set();
 export function pendingFiles() {
-  return { folders: overlayState, queued: queued.length, inFlight: out, reading: [...open].slice(0, 5) };
+  return { folders: overlayState === 'waiting' && openStep ? 'waiting: ' + openStep : overlayState, queued: queued.length, inFlight: out, reading: [...open].slice(0, 5) };
 }
 const keyOf = path => String(path).replace(/[\\/]+/g, '\\').toUpperCase();
 

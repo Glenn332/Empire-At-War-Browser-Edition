@@ -706,14 +706,18 @@ function pickAgain(mods) {
   });
 }
 
+export let openStep = '';
 export async function openOverlay() {
   if (!foldersSupported() && !archivesSupported()) return null;
+  openStep = 'reading the saved game folder';
   const game = foldersSupported() ? await getGame() : null;
+  openStep = 'reading the saved mod list';
   const usable = m => (m.local ? true : m.compat ? compatSupported() : m.handle && supported());
   let mods = [
     ...(game && usable(game) ? [game] : []),
     ...(await listMods()).filter(m => m.on && (m.archive ? archivesSupported() : usable(m)))
   ];
+  openStep = 'opening the mod archives';
   for (const m of mods)
     if (m.archive)
       m.tar = await (await modDir()).getFileHandle(m.archive.file).then(
@@ -732,15 +736,18 @@ export async function openOverlay() {
   if (!mods.length) return null;
   const repick = mods.filter(m => m.compat);
   if (repick.length) {
+    openStep = 'waiting for the folders to be chosen again';
     const ok = await pickAgain(repick);
     mods = mods.filter(m => !m.compat || ok.includes(m));
   }
   if (!mods.length) return null;
+  openStep = 'checking folder permission';
   const state = await Promise.all(
     mods.map(m => (m.archive || m.compat || m.local ? 'granted' : m.handle.queryPermission({ mode: 'read' }).catch(() => 'denied')))
   );
   const asked = mods.filter((m, i) => state[i] !== 'granted');
   if (asked.length) {
+    openStep = 'waiting for the go-ahead to read the folders';
     const ok = await askAgain(asked);
     mods = mods.filter(m => !asked.includes(m) || ok.includes(m));
   }
@@ -748,6 +755,7 @@ export async function openOverlay() {
   const eaw = !expansion();
   if (eaw && game && mods.includes(game)) {
     if (!game.eaw) {
+      openStep = 'scanning the Empire at War files';
       game.eaw = await scanGame(game.handle, () => {}, 0, { expansion: false });
       const { handle, ...rest } = game;
       await tx('readwrite', s => s.put(game.compat ? rest : game)).catch(() => {});
