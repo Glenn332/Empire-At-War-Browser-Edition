@@ -1292,10 +1292,27 @@ class Game {
     g.quaternion.setFromEuler(new THREE.Euler(o.rot[0] * DEG, o.rot[1] * DEG, o.rot[2] * DEG, 'ZYX')).multiply(_modelTurnQ);
     g.scale.setScalar(o.type.num('Scale_Factor', 1) * (o.scale || 1));
     this.renderer.scene.add(g);
-    if (g.position.z < db.constants.num('SpaceFOWHeight', -80))
+    if (g.position.z < db.constants.num('SpaceFOWHeight', -80)) {
+      let layer = 0;
       g.traverse(m => {
-        if (m.isMesh && !m.material.transparent) m.renderOrder = -200;
+        if (!m.isMesh || Array.isArray(m.material)) return;
+        if (!m.material.transparent) {
+          m.renderOrder = -200;
+          return;
+        }
+        const was = m.material,
+          c = was.clone();
+        if (was.uniforms) c.uniforms = was.uniforms;
+        if (c.blending === THREE.NormalBlending) {
+          c.blending = THREE.CustomBlending;
+          c.blendSrc = c.premultipliedAlpha ? THREE.OneFactor : THREE.SrcAlphaFactor;
+          c.blendDst = THREE.OneMinusSrcAlphaFactor;
+        }
+        c.transparent = false;
+        m.material = c;
+        m.renderOrder = -199 + Math.min(90, layer++);
       });
+    }
     if (inst) {
       this.renderer.addIdle(inst, o.type.str('Space_Model_Name'));
       if (inst.billboards.length) this.renderer.sceneryBillboards.push(inst);
