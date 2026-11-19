@@ -57,6 +57,45 @@
           .filter(u => u.startsWith(location.origin) && /\.(js|css)$/.test(new URL(u).pathname));
         Promise.all([location.href, ...urls].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))).then(() => location.reload());
       });
+      document.addEventListener(
+        'error',
+        e => {
+          const s = e.target;
+          if (!(s instanceof HTMLScriptElement) || s.type !== 'module') return;
+          let tries = 0;
+          try {
+            tries = +(sessionStorage.getItem('swr-module-retry') || 0);
+            sessionStorage.setItem('swr-module-retry', String(tries + 1));
+          } catch {
+            tries = 2;
+          }
+          console.warn('The game scripts did not load', s.src, tries < 2 ? 'reloading' : '');
+          if (tries === 0) location.reload();
+          else if (tries === 1)
+            Promise.resolve(navigator.serviceWorker?.getRegistrations())
+              .then(list => Promise.all((list || []).map(r => r.unregister())))
+              .catch(() => {})
+              .then(() => location.reload());
+          else {
+            document.getElementById('splash')?.classList.add('hidden');
+            document.getElementById('loading')?.classList.remove('hidden');
+            const t = document.getElementById('loadText');
+            if (t) t.textContent = 'The game files did not load. Reload the page to try again.';
+          }
+        },
+        true
+      );
+      setTimeout(() => {
+        if (window.loadLog) return;
+        const files = performance.getEntriesByType('resource').filter(r => r.name.startsWith(location.origin));
+        console.warn('Loading has not moved for 20 s: the game scripts have not started', {
+          serviceWorker: !!navigator.serviceWorker?.controller,
+          isolated: globalThis.crossOriginIsolated,
+          page: document.readyState,
+          loaded: files.length,
+          last: files.slice(-6).map(r => r.name.slice(location.origin.length))
+        });
+      }, 20000);
     </script>
   </head>
   <body>
@@ -189,9 +228,6 @@
           <label for="optClearShots">Land units move to get a clear shot</label><input id="optClearShots" type="checkbox" />
         </div>
         <div class="row">
-          <label for="optExtraFx">Extra effects in space and land battles</label><input id="optExtraFx" type="checkbox" />
-        </div>
-        <div class="row">
           <label for="optShooter">Battlefront mode (land battles)</label><input id="optShooter" type="checkbox" />
         </div>
         <div class="row">
@@ -228,6 +264,7 @@
           <div class="row"><label for="gfxBloom">Bloom</label><input id="gfxBloom" type="checkbox" /></div>
           <div class="row"><label for="gfxHeat">Heat haze</label><input id="gfxHeat" type="checkbox" /></div>
           <div class="row"><label for="gfxFlare">Lens flare</label><input id="gfxFlare" type="checkbox" /></div>
+          <div class="row"><label for="optExtraFx">Cinematic lighting</label><input id="optExtraFx" type="checkbox" /></div>
         </details>
         <button id="quitBtn">Quit to setup</button>
       </div>

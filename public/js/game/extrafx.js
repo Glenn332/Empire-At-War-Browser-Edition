@@ -4,6 +4,27 @@ import { lensMaterial } from './lens.js';
 export const GRADE = { bloom: 0.4, cutoff: 0.96, sun: 0.12, sat: 1.08, contrast: 1.06, vignette: 0.22 };
 export const BOLT = { slots: 16 };
 
+export const EXTRA_FX_NAME = 'Cinematic Lighting';
+export const EXTRA_FX_TIP =
+  'Lighting effects from Battlefront mode, in regular space and land battles: laser bolts and beams light up the ships, units and ground they fly past, rocket and bomb blasts flash on land, land battles get a soft glow, and both get a light colour grade. Turn it off for the look of the original game.';
+
+export function extraFxSetting() {
+  try {
+    return localStorage.getItem('swr-extra-fx') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setExtraFx(on) {
+  globalThis.extraFx = !!on;
+  try {
+    localStorage.setItem('swr-extra-fx', on ? '1' : '0');
+  } catch {}
+}
+
+if (typeof window !== 'undefined' && globalThis.extraFx === undefined) globalThis.extraFx = extraFxSetting();
+
 export const extraFxOn = () => !!globalThis.extraFx;
 
 export function gradeLens(u) {

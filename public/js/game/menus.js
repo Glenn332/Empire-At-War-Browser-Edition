@@ -9,6 +9,7 @@ import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { enterFullscreen } from '../pointertrap.js';
+import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
   ACTIONS,
@@ -65,8 +66,7 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
-  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
-  { id: 'IDC_TWEAK_EXTRA_FX', input: 'optExtraFx', label: 'Extra effects in space and land battles' }
+  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' }
 ];
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
@@ -878,35 +878,42 @@ export class Menus {
       });
     const heat = dlg.def.controls.find(c => c.id === 'IDC_HEAT_DISTORTIONS'),
       bloom = dlg.def.controls.find(c => c.id === 'IDC_BLOOM');
-    const flare = dlg.ctl('IDC_HEAT_DISTORTIONS').cloneNode(true);
-    flare.style.top = heat.y + (heat.y - bloom.y) + 'px';
-    flare.lastChild.textContent = 'Lens Flare';
-    flare.onclick = () => {
-      gfx.flare = !gfx.flare;
-      flare.classList.toggle('on', gfx.flare);
-      apply();
-    };
-    dlg.el.appendChild(flare);
-    const soft = flare.cloneNode(true);
     const shadowsBox = dlg.def.controls.find(c => c.id === 'IDC_SOFT_SHADOWS'),
-      detect = dlg.def.controls.find(c => c.id === 'IDC_AUTO_DETECT');
-    soft.style.top = shadowsBox.y + 'px';
-    if (detect) soft.style.left = detect.x + 'px';
-    soft.lastChild.textContent = 'Soft Particles';
-    soft.onclick = () => {
-      gfx.soft = gfx.soft === false;
-      soft.classList.toggle('on', gfx.soft);
-      apply();
+      detect = dlg.def.controls.find(c => c.id === 'IDC_AUTO_DETECT'),
+      below = heat.y + (heat.y - bloom.y);
+    const extra = (id, label, x, y, flip) => {
+      const c = dlg.clone('IDC_HEAT_DISTORTIONS', id, x, y);
+      if (!c) return null;
+      dlg.setText(id, label);
+      c.onclick = () => {
+        flip();
+        show();
+      };
+      return c;
     };
-    dlg.el.appendChild(soft);
+    const flare = extra('IDC_LENS_FLARE', 'Lens Flare', null, below, () => {
+      gfx.flare = !gfx.flare;
+      apply();
+    });
+    const soft = extra('IDC_SOFT_PARTICLES', 'Soft Particles', detect ? detect.x : null, shadowsBox.y, () => {
+      gfx.soft = gfx.soft === false;
+      apply();
+    });
+    const cine = extra('IDC_CINEMATIC_LIGHTING', EXTRA_FX_NAME, detect ? detect.x : null, below, () => {
+      setExtraFx(!extraFxOn());
+      const box = document.getElementById('optExtraFx');
+      if (box) box.checked = extraFxOn();
+    });
+    if (cine) cine.title = EXTRA_FX_TIP;
     const show = () => {
       for (const id in checks)
         dlg.check(id, gfx[checks[id]], on => {
           gfx[checks[id]] = on;
           apply();
         });
-      flare.classList.toggle('on', !!gfx.flare);
-      soft.classList.toggle('on', gfx.soft !== false);
+      flare?.classList.toggle('on', !!gfx.flare);
+      soft?.classList.toggle('on', gfx.soft !== false);
+      cine?.classList.toggle('on', extraFxOn());
       dlg.slider('IDC_PARTICLE_DETAIL_SLIDER', gfx.particle, v => {
         gfx.particle = Math.round(v * 20) / 20;
         apply();
