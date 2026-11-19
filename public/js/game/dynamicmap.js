@@ -208,6 +208,8 @@ const incomeOf = (t, depth = 0) => {
   if (t.sub('Abilities').some(a => a.all('Income_Stream_Ability').length > 0)) return true;
   return incomeOf(db.type(t.str('Tactical_Buildable_Constructed').trim()), depth + 1);
 };
+const fleeting = (t, depth = 0) =>
+  !!t && depth <= 3 && (t.behaviors().has('SELF_DESTRUCT') || fleeting(db.type(t.str('Tactical_Buildable_Constructed').trim()), depth + 1));
 const padBuilds = t =>
   t
     .list('Tactical_Buildable_Objects_Multiplayer')
@@ -328,6 +330,7 @@ function classify(maps) {
       spread = r || (propReach.get(t) || 0) * 0.7,
       cluster = !solid && rocky && (propParts.get(t) || 0) >= CLUSTER_PARTS;
     const pad = (b.has('TACTICAL_BUILD_OBJECTS') && !t.has('Tactical_Health')) || /_PAD$/i.test(t.name);
+    if (pad && padBuilds(t).some(fleeting)) continue;
     if (pad) (padBuilds(t).some(incomeOf) ? kinds.mine : kinds.pad).push(t);
     else if (b.has('CAPTURE_POINT')) (b.has('DUMMY_STAR_BASE') ? kinds.hub : kinds.capture).push(t);
     else if (b.has('SELECTABLE') || b.has('DUMMY_SPECIAL_WEAPON_SOURCE') || t.has('Tactical_Health')) continue;
