@@ -1610,6 +1610,7 @@ export class GPURenderer {
     if (t.isDepthTexture) return { view: kind === 'depth' ? this.noDepth : kind === 'unfilterable-float' ? this.empty['unfilterable-float'] : this.empty[dim], gen: 0, id: 0, levels: 1 };
     let e = this.textures.get(t);
     if (e && e.rt) return e;
+    if (t.isRenderTargetTexture) return { view: kind === 'unfilterable-float' ? this.empty['unfilterable-float'] : this.empty[dim], gen: 0, id: 0, levels: 1 };
     if (!e) {
       e = { id: attrId(t), gen: 0, version: 0, view: null, tex: null, levels: 1, w: 0, h: 0, fmt: '' };
       this.textures.set(t, e);
