@@ -6,7 +6,7 @@ export const BOLT = { slots: 16 };
 
 export const EXTRA_FX_NAME = 'Cinematic Lighting';
 export const EXTRA_FX_TIP =
-  'Lighting effects from Battlefront mode, in regular space and land battles: laser bolts and beams light up the ships, units and ground they fly past, rocket and bomb blasts flash on land, land battles get a soft glow, and both get a light colour grade. Turn it off for the look of the original game.';
+  'Lighting effects for space and land battles: laser bolts and beams light up the ships, units and ground they fly past, rocket and bomb blasts flash on land, land battles get a soft glow, and both get a light colour grade. Turn it off for the look of the original game.';
 
 export function extraFxSetting() {
   try {
