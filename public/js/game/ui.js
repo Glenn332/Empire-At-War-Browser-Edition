@@ -1225,7 +1225,7 @@ export class UI {
     if (!s.isSquad) return s;
     const m = (this.icons ||= new WeakMap()),
       f = this.overlayFrame,
-      parked = s.mode === 'idle' && s.about && s.about.cell;
+      parked = !s.direct && s.mode === 'idle' && s.about && s.about.cell;
     let p = m.get(s);
     if (!p) {
       const c = this.boxCentre(s, {});
