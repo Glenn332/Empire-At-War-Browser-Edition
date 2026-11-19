@@ -1052,6 +1052,38 @@ body:not(.original-hud) .heroframe {
   display: none;
   cursor: pointer;
 }
+#padmenu {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 5;
+}
+#padmenu .padb {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  pointer-events: auto;
+  background: center/100% 100% no-repeat;
+}
+#padmenu .padb .ic {
+  inset: 6px;
+}
+#padmenu .padb:hover {
+  background-image: var(--over) !important;
+}
+#padmenu .padb .cost {
+  bottom: 5px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+#padmenu .padb.off .cost {
+  color: rgba(128, 128, 128, 0.9);
+}
 .hslot.on {
   display: block;
 }

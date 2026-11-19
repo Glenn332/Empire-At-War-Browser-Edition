@@ -400,6 +400,8 @@ async function buildBaseHud() {
   ]);
   if (!shell || !reinforce || !comps.size) return null;
   assets = { comps, reinforce: uiMeshes(reinforce), ...(await tacticalShell(shell, comps)) };
+  const padShell = await loadShellModel(comps, 'I_BUILD_BUTTONS', 'i_build_buttons.alo').catch(() => null);
+  if (padShell) assets.padMenu = uiMeshes(padShell);
   if (evil && good && evilTex && goodTex)
     assets.heroes = { evil: { meshes: uiMeshes(evil), tex: evilTex }, good: { meshes: uiMeshes(good), tex: goodTex } };
   const names = [];
@@ -441,6 +443,7 @@ export class CommandBar {
     this.shell = data.shell;
     this.movieAt = data.movieAt || null;
     this.rshell = data.reinforce;
+    this.padShell = data.padMenu || null;
     this.heroShells = data.heroes || null;
     this.skin = data.skins?.get(String(this.player?.factionName || '').toUpperCase()) || null;
     this.root = document.getElementById('cmdbar');
@@ -465,6 +468,7 @@ export class CommandBar {
     this.reinforceOpen = false;
     this.scale = Math.min(innerHeight / 768, innerWidth / 1024);
     this.build();
+    this.makePadMenu();
     this.resize();
     this.onResize = () => this.resize();
     addEventListener('resize', this.onResize);
@@ -481,6 +485,7 @@ export class CommandBar {
       delete mm.dataset.component;
     }
     this.offKeys?.();
+    this.padMenu?.root.remove();
     removeEventListener('resize', this.onResize);
     for (const ev of ['pointermove', 'pointerdown']) removeEventListener(ev, this.onPoint, true);
   }
@@ -1478,7 +1483,83 @@ export class CommandBar {
     return playerSpecial(this.world, this.player);
   }
 
+  makePadMenu() {
+    document.getElementById('padmenu')?.remove();
+    const root = document.createElement('div');
+    root.id = 'padmenu';
+    root.hidden = true;
+    this.root.parentNode.appendChild(root);
+    const M = (this.padMenu = { root, pad: null, sig: '', buttons: [] });
+    for (let i = 0; i < 6; i++) {
+      const name = 'Build_0' + i,
+        m = this.padShell?.get(name.toUpperCase()),
+        x = m ? m.origin.x : ((i % 3) - 1) * 53,
+        y = m ? m.origin.y : -(67 + Math.floor(i / 3) * 53),
+        c = this.comp(name);
+      const b = el('hslot padb', root);
+      b.style.left = x - 26 + 'px';
+      b.style.top = -y - 26 + 'px';
+      b.style.backgroundImage = css(this.tex(name, 'Blank_Texture_Name'));
+      b.style.setProperty('--over', css(this.tex(name, 'Mouse_Over_Texture_Name')));
+      b.innerHTML = '<i class="ic"></i><i class="dark"></i><span class="cost"></span>';
+      const slot = { el: b, type: null };
+      b.onmouseenter = () => {
+        if (slot.type && M.pad) this.tipOn('pad' + i, slot.type, M.pad);
+        this.game.audio.play(c ? c.val('Mouse_Over_SFX') : '');
+      };
+      b.onmouseleave = () => this.hideInfo();
+      b.onclick = ev => {
+        if (!slot.type || !M.pad) return;
+        if (b.classList.contains('off')) {
+          this.game.audio.play('GUI_Bad_Sound');
+          return;
+        }
+        const r = this.game.command({ c: 'build', b: M.pad.id, type: slot.type.name, n: ev.shiftKey && c && /^(true|yes)$/i.test(c.val('Click_Shift')) ? 5 : 1 });
+        if (!(r && r.why)) this.game.audio.play((c && c.val('Click_SFX')) || 'GUI_Button_Press_2_SFX');
+        this.hideInfo();
+        this.ui.hudTimer = 0;
+      };
+      M.buttons.push(slot);
+    }
+  }
+
+  updatePadMenu() {
+    const M = this.padMenu;
+    if (!M) return;
+    const ui = this.ui,
+      w = this.world,
+      p = this.player,
+      sel = ui.selection.length === 1 ? ui.selection[0] : null,
+      pad = sel && sel.isPad && !sel.dead && !sel.padChild && sel.padOwner === p ? sel : null,
+      opts = pad ? w.buildOptions(pad, p).filter(t => !/^Requires /.test(w.cantBuild(pad, t, p) || '')).slice(0, 6) : [];
+    const at = opts.length ? ui.screenOf(pad) : null;
+    if (!at || at.behind) {
+      if (!M.root.hidden) {
+        M.root.hidden = true;
+        M.pad = null;
+        M.sig = '';
+      }
+      return;
+    }
+    M.root.hidden = false;
+    M.pad = pad;
+    M.root.style.transform = `translate(${at.x}px, ${at.y}px) scale(${this.scale})`;
+    const sig = pad.id + '|' + opts.map(t => t.name).join();
+    if (sig !== M.sig) {
+      M.sig = sig;
+      M.buttons.forEach((b, i) => {
+        const t = opts[i] || null;
+        b.type = t;
+        b.el.classList.toggle('on', !!t);
+        b.el.querySelector('.ic').style.backgroundImage = t ? css(iconUrl(iconNameFor(t))) : 'none';
+        b.el.querySelector('.cost').textContent = t ? buildCost(t) : '';
+      });
+    }
+    for (const b of M.buttons) if (b.type) b.el.classList.toggle('off', !!w.cantBuild(pad, b.type, p));
+  }
+
   refresh() {
+    this.updatePadMenu();
     const p = this.player,
       w = this.world,
       ui = this.ui,
