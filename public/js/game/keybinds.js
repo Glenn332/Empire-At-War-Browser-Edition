@@ -64,7 +64,8 @@ export const ACTIONS = [
   { id: 'SHOOTER_MAP', page: 5, extra: { col: 1, y: 390 }, label: 'Battlefront: Map', keys: ['KeyM'] },
   { id: 'SHOOTER_GRENADE', page: 5, extra: { col: 0, y: 415 }, label: 'Battlefront: Thermal Detonator', keys: ['KeyT'] },
   { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, y: 415 }, label: 'Battlefront: Settings', keys: ['KeyO'] },
-  { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, y: 440 }, label: 'Battlefront: Tactical View', keys: ['KeyL'] }
+  { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, y: 440 }, label: 'Battlefront: Tactical View', keys: ['KeyL'] },
+  { id: 'SHOOTER_RELOAD', page: 5, extra: { col: 1, y: 440 }, label: 'Battlefront: Reload', keys: ['KeyR'] }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 

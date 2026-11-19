@@ -46,7 +46,7 @@ const REACH = 1600,
   HOME = { reach: 420, out: 70, tries: 12 },
   FIELD_CAP = 50,
   HEAT = { burst: 3.5, cool: 0.55, delay: 0.3, unlock: 0.25, minShots: 6 },
-  AMMO = { rocket: 6, grenade: 4, refill: 2.5 },
+  AMMO = { rocket: 6, grenade: 4, refill: 2.5, reload: 3 },
   REGEN = { wait: 5, rate: 0.05, heal: 0.12, reach: 1.25, tick: 0.5 },
   KICK = { heat: 0.012, ammo: 0.05, yaw: 0.35, recover: 7 },
   BOB = { walk: 0.012, run: 0.02, rate: 0.055 },
@@ -436,6 +436,7 @@ export class Shooter {
     this.evenAt = 0;
     this.ammoOf = new WeakMap();
     this.ammoAt = new WeakMap();
+    this.reloadOf = new WeakMap();
     this.fpZ = undefined;
     this.dealt = new WeakMap();
     this.assists = 0;
@@ -518,7 +519,7 @@ export class Shooter {
     this.introAt = 0;
     this.introUntil = 0;
     this.caps = 0;
-    this.gun = { kind: 'heat', heat: 0, hot: false, lastShot: -9, per: 0.1, ammo: 0, max: 0, refillAt: 0, kick: KICK.heat };
+    this.gun = { kind: 'heat', heat: 0, hot: false, lastShot: -9, per: 0.1, ammo: 0, max: 0, refillAt: 0, reloadAt: 0, kick: KICK.heat };
     this.kickDebt = 0;
     this.pain = 0;
     this.beatAt = 0;
@@ -747,7 +748,9 @@ export class Shooter {
   shotFired(s) {
     const u = s.from;
     if (!u || u.dead || s.w !== u.weapon || !this.antiArmor(u) || !this.aiShooter(u)) return;
-    this.ammoOf.set(u, Math.max(0, this.rocketsLeft(u) - 1));
+    const left = Math.max(0, this.rocketsLeft(u) - 1);
+    this.ammoOf.set(u, left);
+    if (left <= 0 && !this.reloadOf.has(u)) this.reloadOf.set(u, this.world.time + AMMO.reload);
   }
 
   reach(u) {
@@ -1522,7 +1525,7 @@ export class Shooter {
           }
           continue;
         }
-      } else if ((u.health < u.maxHealth * RETREAT.below || this.rocketsLeft(u) <= 0) && now >= st.retreatAt && !this.inHealZone(u)) {
+      } else if (u.health < u.maxHealth * RETREAT.below && now >= st.retreatAt && !this.inHealZone(u)) {
         const h = this.healSpot(u);
         if (h && Math.hypot(h.x - u.x, h.y - u.y) > 80) {
           st.mode = 'retreat';
@@ -2984,6 +2987,7 @@ export class Shooter {
       ['Sprint, crouch, jump', `${K('SHOOTER_SPRINT')}, ${K('SHOOTER_CROUCH')}, ${K('SHOOTER_JUMP')}`, 'L3, B, A'],
       ['Dodge', K('SHOOTER_DODGE'), 'RB'],
       ['Thermal detonator', `hold ${K('SHOOTER_GRENADE')}`, 'hold LB'],
+      ['Reload', K('SHOOTER_RELOAD'), 'automatic when empty'],
       ['Enter or leave', K('SHOOTER_ENTER'), 'X'],
       ['Abilities', `${K('SHOOTER_ABILITY_1')} ${K('SHOOTER_ABILITY_2')} ${K('SHOOTER_ABILITY_3')}`, 'D-pad'],
       ['View, map, scores', `${K('DIRECT_VIEW')}, ${K('SHOOTER_MAP')}, ${K('SHOOTER_SCORES')}`, 'Y, D-pad down, View'],
@@ -5910,7 +5914,10 @@ export class Shooter {
         g.hot = true;
         this.sfx('vent');
       }
-    } else g.ammo = Math.max(0, g.ammo - 1);
+    } else {
+      g.ammo = Math.max(0, g.ammo - 1);
+      if (!g.ammo) this.reload();
+    }
     const k = g.kick * (this.zoom ? 0.6 : 1) * (this.P.crouch ? 0.7 : 1);
     this.pitch = Math.min(1.35, this.pitch + k);
     this.kickDebt += k;
@@ -5926,6 +5933,7 @@ export class Shooter {
     g.hot = false;
     g.lastShot = -9;
     g.refillAt = 0;
+    g.reloadAt = 0;
     g.name = this.nameOf(u.type);
     if (cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET || cat === CAT.MISSILE || cat === CAT.GRENADE) {
       g.kind = 'ammo';
@@ -5954,7 +5962,15 @@ export class Shooter {
 
   canFire() {
     const g = this.gun;
-    return g.kind === 'heat' ? !g.hot : g.ammo > 0;
+    return g.kind === 'heat' ? !g.hot : g.ammo > 0 && !g.reloadAt;
+  }
+
+  reload() {
+    const g = this.gun;
+    if (g.kind !== 'ammo' || g.reloadAt || g.ammo >= g.max || this.melee) return;
+    g.reloadAt = this.world.time + AMMO.reload;
+    g.refillAt = 0;
+    this.sfx('reload');
   }
 
   denied() {
@@ -5970,6 +5986,12 @@ export class Shooter {
     if (g.kind === 'heat') {
       if (w.time - g.lastShot > HEAT.delay) g.heat = Math.max(0, g.heat - HEAT.cool * dt * (g.hot ? 0.8 : 1));
       if (g.hot && g.heat <= HEAT.unlock) g.hot = false;
+    } else if (g.reloadAt) {
+      if (w.time >= g.reloadAt) {
+        g.reloadAt = 0;
+        g.ammo = g.max;
+        this.sfx('loaded');
+      }
     } else if (g.ammo < g.max && this.body && this.inHealZone(this.body)) {
       if (w.time >= g.refillAt) {
         if (g.refillAt > 0) g.ammo++;
@@ -6508,7 +6530,15 @@ export class Shooter {
     this.healing = false;
     for (const u of w.units) {
       if (u.dead || u.structure || u.inside || !u.foot || u.side < 0 || u === this.body) continue;
-      const left = this.rocketsLeft(u);
+      const left = this.rocketsLeft(u),
+        due = this.reloadOf.get(u);
+      if (due !== undefined) {
+        if (now >= due) {
+          this.reloadOf.delete(u);
+          this.ammoOf.set(u, AMMO.rocket);
+        }
+        continue;
+      }
       if (left < AMMO.rocket && this.inHealZone(u)) {
         const at = this.ammoAt.get(u) || 0;
         if (now >= at) {
@@ -6581,6 +6611,13 @@ export class Shooter {
       tone(1350, 0.06, 'square', 0.07, 0.11);
     }
     else if (kind === 'empty') tone(320, 0.03, 'square', 0.06);
+    else if (kind === 'reload') {
+      noise(0.08, 0.3, 1400);
+      tone(520, 0.04, 'square', 0.05, 0.12);
+    } else if (kind === 'loaded') {
+      tone(700, 0.04, 'square', 0.06);
+      tone(980, 0.05, 'square', 0.06, 0.07);
+    }
     else if (kind === 'beat') {
       tone(62, 0.13, 'sine', 0.5);
       tone(55, 0.12, 'sine', 0.35, 0.22);
@@ -6678,6 +6715,8 @@ export class Shooter {
       if (pressed(e, 'SHOOTER_CROUCH') && !this.seatOf()) this.crouched = !this.crouched;
       if (pressed(e, 'SHOOTER_DODGE')) this.P.dodge = true;
       if (pressed(e, 'SHOOTER_GRENADE')) this.nadeHeld = true;
+      const rl = pressed(e, 'SHOOTER_RELOAD');
+      if (rl && this.state === 'alive' && !this.seatOf()) this.reload();
       if (pressed(e, 'SHOOTER_SETTINGS')) this.openSettings();
       if (pressed(e, 'SHOOTER_MAP')) this.bigMap.style.display = this.bigMap.style.display === 'none' ? 'flex' : 'none';
       if (pressed(e, 'SHOOTER_ENTER')) this.seated() ? this.leave() : this.enter();
@@ -6686,7 +6725,7 @@ export class Shooter {
         else this.third = !this.third;
       }
       if (pressed(e, 'SHOOTER_SCORES')) this.scoreEl.style.display = 'block';
-      for (let n = 1; n <= 3; n++) if (pressed(e, 'SHOOTER_ABILITY_' + n) || pressed(e, 'ABILITY_' + n)) this.ability(n - 1);
+      for (let n = 1; n <= 3; n++) if (pressed(e, 'SHOOTER_ABILITY_' + n) || (!rl && pressed(e, 'ABILITY_' + n))) this.ability(n - 1);
     });
     on('keyup', e => {
       this.keys.delete(e.code);
@@ -8012,11 +8051,12 @@ export class Shooter {
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', g.hot);
       } else {
-        this.wpnBar.style.width = `${Math.round((g.ammo / Math.max(1, g.max)) * 100)}%`;
-        this.wpnBar.style.background = g.ammo ? '' : '#ff4a32';
-        const t = `${g.ammo} / ${g.max}${g.ammo < g.max && this.healing ? '  restocking' : ''}`;
+        const R = g.reloadAt ? 1 - Math.max(0, g.reloadAt - this.world.time) / AMMO.reload : 0;
+        this.wpnBar.style.width = `${Math.round((g.reloadAt ? R : g.ammo / Math.max(1, g.max)) * 100)}%`;
+        this.wpnBar.style.background = g.reloadAt ? '#ffa040' : g.ammo ? '' : '#ff4a32';
+        const t = g.reloadAt ? 'RELOADING' : `${g.ammo} / ${g.max}${g.ammo < g.max && this.healing ? '  restocking' : ''}`;
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
-        this.wpn.classList.toggle('hot', !g.ammo);
+        this.wpn.classList.toggle('hot', !g.ammo && !g.reloadAt);
       }
       const extra = this.melee
         ? 'Click to swing, hold to chain a combo, right mouse to guard'
