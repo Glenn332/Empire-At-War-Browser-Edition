@@ -147,6 +147,15 @@ export class Radar {
       : null;
   }
 
+  teamTypeOf(t) {
+    const m = (this.teamTypes ||= new Map());
+    if (!m.has(t)) {
+      const n = t.str('Create_Team_Type').trim();
+      m.set(t, (n && db.type(n)) || t);
+    }
+    return m.get(t);
+  }
+
   of(t) {
     let r = this.info.get(t);
     if (r) return r;
@@ -159,7 +168,7 @@ export class Radar {
         !yes(t, 'Is_Nebula', false),
       enemy: yes(t, 'Is_Visible_On_Enemy_Radar', true),
       fogged: yes(t, 'Visible_On_Radar_When_Fogged', false),
-      icon: t.has('Radar_Icon_Name') ? t.str('Radar_Icon_Name').trim() : 'i_radar_default_blip.tga',
+      icon: t.raw('Radar_Icon_Name') ? t.str('Radar_Icon_Name').trim() : 'i_radar_default_blip.tga',
       sx: size[0],
       sy: size[1] ?? size[0],
       facing: yes(t, 'Radar_Show_Facing', true),
@@ -492,6 +501,55 @@ export class Radar {
         const hw = (t.sx * W) / 2,
           hh = (t.sy * H) / 2;
         const a = (t.facing ? -(u.heading - Math.PI / 2) : 0) + (t.turn ? Math.PI / 2 : 0);
+        if (a) {
+          g.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), x, y);
+          g.drawImage(img, -hw, -hh, hw * 2, hh * 2);
+          g.setTransform(1, 0, 0, 1, 0, 0);
+        } else g.drawImage(img, x - hw, y - hh, hw * 2, hh * 2);
+      }
+    for (let pass = 0; pass < 2; pass++)
+      for (const q of w.squads || []) {
+        if (q.dead || q.carrier) continue;
+        const tt = this.teamTypeOf(q.type);
+        if (!tt) continue;
+        const t = this.of(tt);
+        if (!t.show || (pass === 0) !== !t.icon) continue;
+        let lead = null,
+          cx = 0,
+          cy = 0,
+          n = 0,
+          seen = false,
+          hidden = true;
+        for (const f of q.fighters) {
+          if (f.dead || f.hyper) continue;
+          lead ||= f;
+          cx += f.x;
+          cy += f.y;
+          n++;
+          if (f.seenBy & bit) seen = true;
+          if (!f.cloaked) hidden = false;
+        }
+        if (!n) continue;
+        const own = q.player.team === player.team,
+          isEnemy = !own && q.player.id >= 0;
+        if (isEnemy && (!t.enemy || hidden || !radar)) continue;
+        if (!own && w.fog && !this.seeAll && !seen && !t.fogged) continue;
+        const c = sel && q.selected ? sel : q.player.id >= 0 ? this.colorOf(q.player) : this.tone(NEUTRAL);
+        g.globalAlpha = 1;
+        const x = X(cx / n),
+          y = Y(cy / n);
+        if (!t.icon) {
+          const b = t.blip * dpr;
+          g.fillStyle = c.rgb;
+          g.fillRect(Math.round(x - b / 2), Math.round(y - b / 2), b, b);
+          continue;
+        }
+        let img = c.icons.get(t.icon);
+        if (!img && (img = this.icon(t.icon, c.c))) c.icons.set(t.icon, img);
+        if (!img) continue;
+        const hw = (t.sx * W) / 2,
+          hh = (t.sy * H) / 2,
+          a = (t.facing ? -(lead.heading - Math.PI / 2) : 0) + (t.turn ? Math.PI / 2 : 0);
         if (a) {
           g.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), x, y);
           g.drawImage(img, -hw, -hh, hw * 2, hh * 2);
