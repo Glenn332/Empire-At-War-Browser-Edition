@@ -33,6 +33,7 @@ export function wrapScreenText(text, width, measure) {
         spaced = false;
         end = line.length - 1;
         while (end > 1 && measure(line.slice(0, end)) > width) end--;
+        end = Math.max(1, end);
       }
       out.push(line.slice(0, end));
       line = line.slice(end + (spaced ? 1 : 0));

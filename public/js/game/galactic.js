@@ -88,7 +88,7 @@ import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
 import { campaignScore } from './campaignscore.js';
 import { ParticleManager, loadParticles } from '../particles.js';
-import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction, ownedTypes } from './galacticproduction.js';
+import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction, ownedTypes, onProductionEvent } from './galacticproduction.js';
 import {
   stepVisibility,
   intelligence,
@@ -174,6 +174,13 @@ export class GalacticGame {
     } catch {
       this.simplifiedFactionColors = !expansion();
     }
+    onProductionEvent((kind, p, type) =>
+      this.story?.scoringCall(
+        kind === 'begin' ? 'Galactic_Production_Begin_Event' : 'Galactic_Production_Canceled_Event',
+        this.story.planet(p),
+        this.story.type(type)
+      )
+    );
     try {
       this.autoResolveOption = localStorage.getItem('swr-auto-resolve') === '1';
     } catch {
@@ -3669,7 +3676,16 @@ export class GalacticGame {
               if (done.owner === (this.localFaction ?? this.me) && p?.techUnlocked?.length)
                 this.audio?.play?.(db.faction(done.owner)?.str('SFXEvent_New_Construction_Options_Available'));
             }
-          if (this.story) for (const done of completed) constructStory(this.story, done.type, done.owner, this.galaxy.planets[done.planet]);
+          if (this.story)
+            for (const done of completed) {
+              const planet = this.galaxy.planets[done.planet];
+              this.story.scoringCall(
+                'Galactic_Production_End_Event',
+                this.story.planet(planet),
+                done.record ? this.story.object(done.record, planet, done.owner) : this.story.type(done.type)
+              );
+              constructStory(this.story, done.type, done.owner, planet);
+            }
           for (const done of completed) this.battles.dirty.add(done.planet);
         }
         this.sweepEmptyFleets();

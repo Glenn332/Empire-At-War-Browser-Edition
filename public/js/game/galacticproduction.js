@@ -487,8 +487,15 @@ export function queueAIProduction(g, planet, owner, type, adjustment = null) {
   const total = Math.max(0, Math.trunc(productionTime(g, p, owner, type, context) * (adjustment?.build[kind] ?? 1) * 30) / 30);
   const q = { type, owner, planet, cost: productionCost(g, p, owner, type, context), total, left: total, ai: true, paid: 0 };
   p.production[kind].push(q);
+  tell('begin', p, type);
   return q;
 }
+
+let listener = null;
+export function onProductionEvent(fn) {
+  listener = fn;
+}
+const tell = (...args) => listener?.(...args);
 
 const candidates = new Map();
 const BUILD_TABS = [
@@ -548,6 +555,7 @@ export function queueUnit(g, planet, owner, type) {
   const payg = payAsYouGo(g, owner);
   if (!payg) adjustCredits(g, owner, -cost);
   p.production[kindOf(type)].push({ type, owner, cost, total, left: total, ...(payg ? { payg: true, paid: 0 } : {}) });
+  tell('begin', p, type);
   return null;
 }
 
@@ -559,6 +567,7 @@ export function cancelProduction(g, planet, owner, item) {
     if (at < 0) continue;
     list.splice(at, 1);
     adjustCredits(g, owner, item.ai || item.payg ? item.paid || 0 : item.cost, true);
+    tell('cancel', p, item.type);
     return true;
   }
   return false;
@@ -566,26 +575,32 @@ export function cancelProduction(g, planet, owner, item) {
 
 const PLACED_ELSEWHERE = ['DUMMY_STAR_BASE', 'DUMMY_GROUND_BASE', 'DUMMY_ORBITAL_STRUCTURE', 'DUMMY_GROUND_STRUCTURE'];
 const ORBITAL_PRODUCT = ['FLEET', 'DUMMY_SPACE_FIGHTER_SQUADRON', 'DUMMY_ORBITAL_STRUCTURE', 'DUMMY_STARSHIP'];
+const baseLevels = new WeakMap();
 export function stepProduction(g, seconds, ai = null, conflictAt = null) {
   const completed = [];
   for (const p of g.planets) {
     const starbaseOwner = p.station ? p.stationOwner || p.owner : null;
-    for (const list of Object.values(p.production))
+    const levels = { ground: groundLevel(p, p.owner), space: p.station && starbaseOwner === p.owner ? p.spaceLevel || 0 : 0 },
+      seen = baseLevels.get(p);
+    baseLevels.set(p, levels);
+    for (const [kind, list] of Object.entries(p.production)) {
+      const changed = seen && seen[kind] !== levels[kind];
       for (let i = list.length - 1; i >= 0; i--) {
         const q = list[i];
-        const player = playerOf(g, q.owner);
         if (
           p.owner !== q.owner ||
-          !player ||
-          groundLevel(p, q.owner) < q.type.num('Required_Ground_Base_Level', 0) ||
-          (p.station && starbaseOwner === q.owner ? p.spaceLevel || 0 : 0) < q.type.num('Required_Star_Base_Level', 0) ||
-          !hasStructures(p, q.owner, q.type) ||
-          !hasOrbiting(g, p, q.owner, q.type)
+          !playerOf(g, q.owner) ||
+          (changed &&
+            (levels.ground < q.type.num('Required_Ground_Base_Level', 0) ||
+              levels.space < q.type.num('Required_Star_Base_Level', 0) ||
+              !hasStructures(p, q.owner, q.type) ||
+              !hasOrbiting(g, p, q.owner, q.type)))
         ) {
           list.splice(i, 1);
           if (q.ai) ai?.failed(q);
         }
       }
+    }
     let halted = false;
     for (const list of Object.values(p.production)) {
       const q = list[0];
@@ -642,6 +657,7 @@ enemyInOrbit(g, p, q.owner)
         planet: p.index,
         type: q.type,
         owner: q.owner,
+        record,
         ...(advance > 0 ? { tech: setTechLevel(g, q.owner, advance, { unlock: true }) } : {})
       });
       if (q.ai) ai?.complete(q, record);
