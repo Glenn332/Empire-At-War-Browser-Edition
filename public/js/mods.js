@@ -33,6 +33,9 @@ async function tx(mode, fn) {
 export const supported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window && 'indexedDB' in window;
 export const archivesSupported = () =>
   typeof window !== 'undefined' && 'indexedDB' in window && !!(navigator.storage && navigator.storage.getDirectory);
+const NO_ANSWER = 'no answer';
+const answer = (p, ms) => Promise.race([Promise.resolve(p).catch(() => 'denied'), new Promise(r => setTimeout(() => r(NO_ANSWER), ms))]);
+const canRead = h => answer(h.queryPermission({ mode: 'read' }), 4000);
 const modDir = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('mods', { create: true });
 
 export async function listMods() {
@@ -580,8 +583,7 @@ export async function nameMods() {
     changed = true;
   };
   for (const m of left) {
-    if (!m.handle || !m.handle.queryPermission || (await m.handle.queryPermission({ mode: 'read' }).catch(() => 'denied')) !== 'granted')
-      continue;
+    if (!m.handle || !m.handle.queryPermission || (await canRead(m.handle)) !== 'granted') continue;
     const name = await infoName(m.handle);
     if (name) await keep(m, name);
   }
@@ -637,7 +639,7 @@ function askAgain(mods) {
     (document.body || document.documentElement).append(box);
     yes.onclick = async () => {
       const ok = [];
-      for (const m of mods) if ((await m.handle.requestPermission({ mode: 'read' }).catch(() => 'denied')) === 'granted') ok.push(m);
+      for (const m of mods) if ((await answer(m.handle.requestPermission({ mode: 'read' }), 60000)) === 'granted') ok.push(m);
       box.remove();
       res(ok);
     };
@@ -648,7 +650,7 @@ function askAgain(mods) {
   });
 }
 
-function pickAgain(mods) {
+function pickAgain(mods, stuck = false) {
   return new Promise(res => {
     const box = document.createElement('div');
     box.style.cssText =
@@ -659,10 +661,14 @@ function pickAgain(mods) {
       p = document.createElement('p'),
       note = document.createElement('p'),
       say = document.createElement('p');
-    const why = supported()
-      ? `${one ? 'This folder is' : 'These folders are'} installed in a place your browser protects (such as Program Files), so ${one ? 'it is' : 'they are'} opened in compatibility mode`
-      : `This browser cannot keep access to a folder, so ${one ? 'this one is' : 'these are'} opened in compatibility mode`;
-    p.textContent = `${why}, and the browser does not remember ${one ? 'it' : 'them'} after the page reloads. Choose ${one ? 'it' : 'them'} again to play:`;
+    const why = stuck
+      ? `Your browser did not answer when this page asked whether it may still read ${one ? 'this folder' : 'these folders'}`
+      : supported()
+        ? `${one ? 'This folder is' : 'These folders are'} installed in a place your browser protects (such as Program Files), so ${one ? 'it is' : 'they are'} opened in compatibility mode`
+        : `This browser cannot keep access to a folder, so ${one ? 'this one is' : 'these are'} opened in compatibility mode`;
+    p.textContent = stuck
+      ? `${why}. Choose ${one ? 'it' : 'them'} again to play:`
+      : `${why}, and the browser does not remember ${one ? 'it' : 'them'} after the page reloads. Choose ${one ? 'it' : 'them'} again to play:`;
     note.textContent = 'If the browser asks whether to “upload” the files: nothing leaves your computer, this page only reads them.';
     note.style.cssText = 'font-size:13px;opacity:.75';
     say.style.cssText = 'color:#ff9c8a;min-height:1.5em;margin:8px 0 0';
@@ -679,13 +685,17 @@ function pickAgain(mods) {
       b.textContent = `Choose ${shown}…`;
       b.style.cssText = style;
       b.onclick = async () => {
-        const tree = await pickFolder();
+        const fresh = !m.compat && supported();
+        const tree = fresh
+          ? await window.showDirectoryPicker({ id: m.game ? 'swr-game' : 'swr-mod', mode: 'read' }).catch(() => null)
+          : await pickFolder();
         if (!tree) return;
         if (!(await sameFolder(m, tree))) {
           say.textContent = `“${tree.name}” is not the folder ${shown} was read from.`;
           return;
         }
         m.handle = tree;
+        if (fresh) await tx('readwrite', s => s.put(m)).catch(() => {});
         ok.push(m);
         say.textContent = '';
         b.disabled = true;
@@ -700,7 +710,7 @@ function pickAgain(mods) {
     no.textContent = 'Continue without';
     no.style.cssText = style.replace('display:block;width:100%;', '') + ';margin-top:14px;background:#0d1f31';
     no.onclick = finish;
-    inner.append(p, ...picks, say, note, no);
+    inner.append(p, ...picks, say, ...(stuck && supported() ? [] : [note]), no);
     box.append(inner);
     (document.body || document.documentElement).append(box);
   });
@@ -742,10 +752,19 @@ export async function openOverlay() {
   }
   if (!mods.length) return null;
   openStep = 'checking folder permission';
-  const state = await Promise.all(
-    mods.map(m => (m.archive || m.compat || m.local ? 'granted' : m.handle.queryPermission({ mode: 'read' }).catch(() => 'denied')))
-  );
-  const asked = mods.filter((m, i) => state[i] !== 'granted');
+  const state = await Promise.all(mods.map(m => (m.archive || m.compat || m.local ? 'granted' : canRead(m.handle))));
+  const said = new Map(mods.map((m, i) => [m, state[i]]));
+  const stuck = mods.filter(m => said.get(m) === NO_ANSWER);
+  if (stuck.length) {
+    console.warn(
+      'The browser did not answer the folder permission check for',
+      stuck.map(m => m.name)
+    );
+    openStep = 'waiting for the folders to be chosen again';
+    const ok = await pickAgain(stuck, true);
+    mods = mods.filter(m => !stuck.includes(m) || ok.includes(m));
+  }
+  const asked = mods.filter(m => !stuck.includes(m) && said.get(m) !== 'granted');
   if (asked.length) {
     openStep = 'waiting for the go-ahead to read the folders';
     const ok = await askAgain(asked);
