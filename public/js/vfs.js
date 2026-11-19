@@ -38,7 +38,7 @@ const next = () => {
   while (out < MAX_OUT && queued.length) {
     out++;
     const [u, ok, no] = queued.shift();
-    fetchNow(u)
+    fetchRetry(u)
       .then(ok, no)
       .finally(() => {
         out--;
@@ -46,6 +46,8 @@ const next = () => {
       });
   }
 };
+const fetchRetry = (u, tries = 0) =>
+  fetchNow(u).catch(e => (tries < 2 ? new Promise(r => setTimeout(r, 300 * (tries + 1))).then(() => fetchRetry(u, tries + 1)) : Promise.reject(e)));
 function fetchOff(u) {
   return new Promise((ok, no) => {
     queued.push([u, ok, no]);

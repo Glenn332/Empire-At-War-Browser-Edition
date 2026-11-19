@@ -114,7 +114,16 @@ async function serveFind(request, url) {
 }
 
 async function fresh(request) {
-  const res = await fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' });
+  let res;
+  for (let i = 0; ; i++) {
+    try {
+      res = await fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' });
+      break;
+    } catch (err) {
+      if (i >= 2) throw err;
+      await new Promise(r => setTimeout(r, 250 * (i + 1)));
+    }
+  }
   return res.redirected ? new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }) : res;
 }
 
