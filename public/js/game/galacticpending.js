@@ -100,8 +100,7 @@ export class PendingBattle {
     const game = this.game,
       C = db.constants,
       humans = [request.attacker, request.defender].filter(f => game.isHuman(f));
-    const coop = !!game.setup.singlePlayerCampaign && humans.length >= 1;
-    if ((humans.length < 2 && !coop) || (game.setup.options?.autoResolve ?? 2) === 0) return this.resolve(request);
+    if (!game.playable(humans) || (game.setup.options?.autoResolve ?? 2) === 0) return this.resolve(request);
     request.id = this.netCount = (this.netCount || 0) + 1;
     const sides = [request.attacker, request.defender].map(key);
     request.voters = (game.setup.players || [])
@@ -172,7 +171,7 @@ export class PendingBattle {
     if (!r?.voters) return;
     r.voters = r.voters.filter(v => v !== pid);
     if (gone) r.humans = r.humans.filter(f => key(f) !== key(faction));
-    if (r.humans.length < (this.game.setup.singlePlayerCampaign ? 1 : 2)) {
+    if (!this.game.playable(r.humans)) {
       this.closeVote();
       this.request = null;
       this.resolve(r, true);

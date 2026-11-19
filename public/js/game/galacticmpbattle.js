@@ -51,7 +51,7 @@ export class MpBattles {
     b.setup = b.mode === 'land' ? game.landBattleSetup() : game.battleSetup();
     if (b.mode === 'land' && game.setup.shooter) b.setup.shooter = true;
     b.local = humans.some(f => key(f) === key(game.me));
-    if (humans.length >= 2 || (game.setup.singlePlayerCampaign && humans.length)) {
+    if (game.playable(humans)) {
       const peers = f => game.setup.players.filter(p => p.human && !p.left && key(p.faction) === key(f)).map(p => p.peer);
       for (const p of b.setup.players)
         if (p.human) {

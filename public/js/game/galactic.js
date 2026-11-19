@@ -2247,6 +2247,13 @@ export class GalacticGame {
   isHuman(faction) {
     return this.galaxy ? isHumanFaction(this.galaxy, faction) : String(faction || '').toUpperCase() === String(this.me || '').toUpperCase();
   }
+  playable(humans) {
+    if (humans.length >= 2) return true;
+    if (!humans.length) return false;
+    if (this.setup.singlePlayerCampaign) return true;
+    const k = x => String(x || '').toUpperCase();
+    return humans.some(f => (this.setup.players || []).filter(p => p.human && !p.left && k(p.faction) === k(f)).length >= 2);
+  }
   humanFor(faction) {
     const g = this.galaxy,
       humans = g?.humans;
