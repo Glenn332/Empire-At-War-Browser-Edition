@@ -7,6 +7,12 @@ const overlay = (globalThis.SWR_OVERLAY ? Promise.resolve(globalThis.SWR_OVERLAY
   return null;
 });
 export const pageOverlay = () => overlay;
+let overlayState = 'waiting';
+overlay.then(o => (overlayState = o ? 'open' : 'none'));
+const open = new Set();
+export function pendingFiles() {
+  return { folders: overlayState, queued: queued.length, inFlight: out, reading: [...open].slice(0, 5) };
+}
 const keyOf = path => String(path).replace(/[\\/]+/g, '\\').toUpperCase();
 
 const cache = new Map();
@@ -88,6 +94,8 @@ export function fetchBinary(path, { language, keep = true } = {}) {
     const own = () => fetchOff(url(path, language));
     p = overlay.then(o => (o ? o.read(keyOf(path), language) : undefined)).then(b => (b !== undefined ? b : own()));
     cache.set(key, p);
+    open.add(path);
+    p.finally(() => open.delete(path)).catch(() => {});
     p.then(
       b => {
         if (!keep && cache.get(key) === p) cache.delete(key);

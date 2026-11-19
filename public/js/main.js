@@ -10,7 +10,7 @@ import './pointertrap.js';
 import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
-import { findFiles, fetchText, fromInstall } from './vfs.js';
+import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
 import { gfx, storeGfx } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
@@ -98,6 +98,7 @@ import { leaveTo, guardLeaving } from './leaveguard.js';
 import { Beacons, beaconType } from './game/beacons.js';
 import { SpectatorView } from './game/spectator.js';
 import { switchTarget } from './game/switchsides.js';
+import { restoreWindowSize } from './windowsize.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
@@ -184,10 +185,37 @@ const STAGES = {
 };
 let stageNow = null;
 
-function progress(text, frac) {
-  const stage = String(text).replace(/\s*\(\d+\/\d+\)$/, ''),
-    log = (window.loadLog ||= []);
+function mark(stage) {
+  const log = (window.loadLog ||= []);
   if (log.at(-1)?.[1] !== stage) log.push([Math.round(performance.now()), stage]);
+}
+
+function watchBoot(done) {
+  const STALL = 20000;
+  let seen = 0,
+    since = performance.now(),
+    told = false;
+  const timer = setInterval(() => {
+    const log = window.loadLog || [];
+    if (log.length !== seen) {
+      seen = log.length;
+      since = performance.now();
+      told = false;
+      return;
+    }
+    if (told || performance.now() - since < STALL) return;
+    told = true;
+    console.warn(`Loading has not moved for ${Math.round((performance.now() - since) / 1000)} s, waiting on: ${log.at(-1)?.[1] || 'start'}`, {
+      files: pendingFiles(),
+      serviceWorker: !!navigator.serviceWorker?.controller,
+      log: log.slice(-8)
+    });
+  }, 2000);
+  done.finally(() => clearInterval(timer));
+}
+
+function progress(text, frac) {
+  mark(String(text).replace(/\s*\(\d+\/\d+\)$/, ''));
   $('loadText').textContent = text;
   if (frac !== undefined) $('loadBar').style.width = Math.round(frac * 100) + '%';
   const screen = activeLoadScreen();
@@ -2501,7 +2529,9 @@ class Game {
 }
 
 async function boot() {
+  mark('Starting the service worker');
   await startServiceWorker();
+  mark('Checking for a new build');
   const build = await ensureCurrentBuild();
   try {
     sessionStorage.removeItem('swr-relinked');
@@ -2510,7 +2540,10 @@ async function boot() {
   tag.id = 'buildTag';
   tag.textContent = 'build ' + build;
   document.body.appendChild(tag);
-  if (!(await fromInstall()) && !(await assetsAvailable())) {
+  mark('Opening the game and mod folders');
+  const local = await fromInstall();
+  mark('Looking for the game data');
+  if (!local && !(await assetsAvailable())) {
     hideSplash();
     progress('No game data found in this browser.');
     $('needData').classList.remove('hidden');
@@ -3053,6 +3086,7 @@ async function boot() {
     };
   }
   initCursorLock($('optCursorLock'));
+  restoreWindowSize();
   {
     const box = $('optLineMove');
     let on = true;
@@ -3493,4 +3527,4 @@ async function startFrontEnd(mapFile, { lobby, instant, multiplayer, load, start
   return true;
 }
 
-boot();
+watchBoot(boot());
