@@ -875,6 +875,18 @@ export class Menus {
       apply();
     };
     dlg.el.appendChild(flare);
+    const soft = flare.cloneNode(true);
+    const shadowsBox = dlg.def.controls.find(c => c.id === 'IDC_SOFT_SHADOWS'),
+      detect = dlg.def.controls.find(c => c.id === 'IDC_AUTO_DETECT');
+    soft.style.top = shadowsBox.y + 'px';
+    if (detect) soft.style.left = detect.x + 'px';
+    soft.lastChild.textContent = 'Soft Particles';
+    soft.onclick = () => {
+      gfx.soft = gfx.soft === false;
+      soft.classList.toggle('on', gfx.soft);
+      apply();
+    };
+    dlg.el.appendChild(soft);
     const show = () => {
       for (const id in checks)
         dlg.check(id, gfx[checks[id]], on => {
@@ -882,6 +894,7 @@ export class Menus {
           apply();
         });
       flare.classList.toggle('on', !!gfx.flare);
+      soft.classList.toggle('on', gfx.soft !== false);
       dlg.slider('IDC_PARTICLE_DETAIL_SLIDER', gfx.particle, v => {
         gfx.particle = Math.round(v * 20) / 20;
         apply();

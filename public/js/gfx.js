@@ -1,5 +1,6 @@
 import { fetchText } from './vfs.js';
 import { parseXML } from './xml.js';
+import { env } from './gpu/env.js';
 
 const KEY = 'swr-gfx';
 const OWN = {
@@ -7,6 +8,7 @@ const OWN = {
   bloom: true,
   heat: true,
   flare: true,
+  soft: true,
   scale: 1,
   aa: true,
   particle: 1,
@@ -31,11 +33,13 @@ function read() {
 
 export const gfx = Object.assign({}, OWN, read());
 export const gfxDefaults = OWN;
+env.soft = gfx.soft !== false;
 
 export function storeGfx() {
   try {
     localStorage.setItem(KEY, JSON.stringify(gfx));
   } catch {}
+  env.soft = gfx.soft !== false;
   applyGamma();
 }
 

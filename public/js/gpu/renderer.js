@@ -213,6 +213,7 @@ export class GPURenderer {
     const q = typeof location !== 'undefined' ? location.search : '';
     this.bundles = /[?&]bundle(&|$)/.test(q) || (!webkit && !/[?&]nobundle/.test(q));
     this.bundlesMade = 0;
+    this.softOn = !/[?&]nosoft(&|$)/.test(q);
     this.pending = new Set();
     this.passChunk = null;
     this.passAt = 0;
@@ -481,12 +482,18 @@ export class GPURenderer {
         if (s) this.later(s.color, s.depth);
         const usage = GPUTextureUsage.RENDER_ATTACHMENT;
         s = this.canvasState = {
+          depthRead: null,
           w,
           h,
           samples: MSAA,
           format: this.format,
           color: this.device.createTexture({ size: [w, h], format: this.format, sampleCount: MSAA, usage }),
-          depth: this.device.createTexture({ size: [w, h], format: this.depthFormat, sampleCount: MSAA, usage }),
+          depth: this.device.createTexture({
+            size: [w, h],
+            format: this.depthFormat,
+            sampleCount: MSAA,
+            usage: usage | GPUTextureUsage.TEXTURE_BINDING
+          }),
           depthFormat: this.depthFormat
         };
         s.colorView = s.color.createView();
@@ -551,9 +558,11 @@ export class GPURenderer {
       if (!this.canvasTex) this.canvasTex = this.context.getCurrentTexture();
       T.resolve = this.canvasTex.createView();
     }
+    const soft = this.softWanted(L.transparent, T);
+    this.softNow = soft;
     const color = {
       view: T.colorView,
-      resolveTarget: T.samples > 1 ? T.resolve : undefined,
+      resolveTarget: T.samples > 1 && !soft ? T.resolve : undefined,
       loadOp: owed && owed.color ? 'clear' : 'load',
       storeOp: 'store',
       clearValue: (owed && owed.value) || [0, 0, 0, 1]
@@ -597,10 +606,94 @@ export class GPURenderer {
       }
       this.renderObject(O[i++]);
     }
+    if (soft) this.softSplit(T, ctx);
     for (const it of L.transparent) this.renderObject(it);
-    pass.end();
+    this.pass.end();
     this.pass = null;
+    this.softNow = false;
     if (T.levels > 1) this.mipmaps(T.color, T.levels, this.encoder);
+  }
+
+  softWanted(list, T) {
+    if (!this.softOn || env.soft === false || !T.depth || !list.length || (this.target && this.target.depthTexture)) return false;
+    for (const it of list) {
+      const S = this.stateOf(it.material);
+      if (S.fam && S.fam.soft && S.fam.soft(it.material)) return true;
+    }
+    return false;
+  }
+
+  softSplit(T, ctx) {
+    const d = this.device;
+    this.pass.end();
+    let S = this.softTex;
+    if (!S || S.w !== T.w || S.h !== T.h) {
+      if (S) this.later(S.tex);
+      const tex = d.createTexture({
+        size: [T.w, T.h],
+        format: 'r32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+      });
+      S = this.softTex = { w: T.w, h: T.h, tex, view: tex.createView(), gen: (S ? S.gen : 0) + 1 };
+      this.depthViews.set(env.softDepth, { view: S.view, gen: S.gen, id: 0, levels: 1 });
+    }
+    const ms = T.samples > 1;
+    let R = (this.softPipes ||= {})[ms ? 'ms' : 'ss'];
+    if (!R) {
+      const layout = d.createBindGroupLayout({
+        entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth', multisampled: ms } }]
+      });
+      const module = d.createShaderModule({
+        code: `@group(0) @binding(0) var dT: ${ms ? 'texture_depth_multisampled_2d' : 'texture_depth_2d'};
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
+  return vec4f(textureLoad(dT, vec2i(p.xy), 0), 0.0, 0.0, 1.0);
+}`
+      });
+      R = this.softPipes[ms ? 'ms' : 'ss'] = {
+        layout,
+        pipe: d.createRenderPipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
+          vertex: { module, entryPoint: 'vs' },
+          fragment: { module, entryPoint: 'fs', targets: [{ format: 'r32float' }] },
+          primitive: { topology: 'triangle-list' }
+        })
+      };
+    }
+    if (!T.depthRead || T.depthReadOf !== T.depth) {
+      T.depthReadOf = T.depth;
+      T.depthRead = T.depth.createView({ aspect: 'depth-only' });
+      T.softGroup = d.createBindGroup({ layout: R.layout, entries: [{ binding: 0, resource: T.depthRead }] });
+    }
+    const rp = this.encoder.beginRenderPass({
+      colorAttachments: [{ view: S.view, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }]
+    });
+    rp.setPipeline(R.pipe);
+    rp.setBindGroup(0, T.softGroup);
+    rp.draw(3);
+    rp.end();
+    const pass = this.encoder.beginRenderPass({
+      colorAttachments: [
+        { view: T.colorView, resolveTarget: T.samples > 1 ? T.resolve : undefined, loadOp: 'load', storeOp: 'store' }
+      ],
+      depthStencilAttachment: {
+        view: T.depthView,
+        depthLoadOp: 'load',
+        depthStoreOp: 'store',
+        stencilLoadOp: 'load',
+        stencilStoreOp: 'store'
+      }
+    });
+    this.pass = pass;
+    this.last = { pipeline: null, g1: null, g3: null, vb: [], vo: [], ib: null, ref: 0 };
+    const vp = this.curViewport;
+    if (vp && (vp[0] !== 0 || vp[1] !== 0 || vp[2] !== T.w || vp[3] !== T.h))
+      pass.setViewport(vp[0], vp[1], Math.max(1, Math.min(vp[2], T.w - vp[0])), Math.max(1, Math.min(vp[3], T.h - vp[1])), 0, 1);
+    pass.setBindGroup(0, ctx.group, [0]);
+    this.curLight = this.lighting;
   }
 
   contextOf(camera, T) {
@@ -657,6 +750,7 @@ export class GPURenderer {
     v3(60, L.fillDir.value);
     f[o + 63] = T.h;
     v3(64, L.fillColor.value);
+    f[o + 67] = this.softNow ? 1 : 0;
     v3(68, L.ambient.value);
     v3(72, L.fogTint.value);
     f[o + 76] = L.fogRange.value.x;

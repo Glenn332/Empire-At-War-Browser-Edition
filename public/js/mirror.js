@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { env } from './gpu/env.js';
 
 const BEFORE = THREE.Object3D.prototype.onBeforeRender;
 const STRIDE = 24;
@@ -378,6 +379,10 @@ export class MirrorRenderer {
     if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
     if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
     if (scene.onBeforeRender !== BEFORE) this.warn('scene.onBeforeRender');
+    if (this.softSent !== env.soft) {
+      this.softSent = env.soft;
+      this.ops.push(['soft', env.soft]);
+    }
     this.pass++;
     this.sync();
     _proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

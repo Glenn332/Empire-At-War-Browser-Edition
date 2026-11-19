@@ -8,7 +8,7 @@ struct Pass {
   sunDir: vec3f, shadowTexel: f32,
   sunColor: vec3f, fowSide: f32,
   fillDir: vec3f, height: f32,
-  fillColor: vec3f, _a: f32,
+  fillColor: vec3f, soft: f32,
   ambient: vec3f, _b: f32,
   fogTint: vec3f, _c: f32,
   fogRange: vec2f, _d: vec2f,
@@ -32,6 +32,18 @@ fn fillTerm(n: vec3f, d: vec3f) -> f32 {
 `;
 
 export const PARAMS = 32;
+export const SOFT_WGSL = `
+fn softFade(pos: vec4f, view: vec2f) -> f32 {
+  if (P.soft < 0.5) { return 1.0; }
+  let d = textureLoad(sceneD, min(vec2i(pos.xy), vec2i(textureDimensions(sceneD)) - 1), 0).r;
+  if (d <= 0.0 || d >= 1.0) { return 1.0; }
+  let n = d * 2.0 - 1.0;
+  let a = P.proj[2][2]; let b = P.proj[3][2];
+  let solid = select(b / (n + a), (b - n) / a, P.proj[3][3] > 0.5);
+  let k = clamp((solid - view.x) / clamp(view.y * 0.6, 1e-4, 45.0), 0.0, 1.0);
+  return k * k * (3.0 - 2.0 * k);
+}
+`;
 
 const MODEL_DEFINES = [
   'ADDITIVE',
@@ -587,12 +599,15 @@ struct Draw { model: mat4x4f, modelView: mat4x4f }
 @group(1) @binding(0) var mapT: texture_2d<f32>;
 @group(1) @binding(1) var mapS: sampler;
 @group(1) @binding(2) var framesT: texture_2d<f32>;
+@group(1) @binding(3) var sceneD: texture_2d<f32>;
 @group(2) @binding(0) var<uniform> D: Draw;
 struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) tint: vec4f, @location(3) cell: vec4f, @location(4) slot: f32, @location(5) dir: vec4f }
-struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f }
+struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f, @location(2) vView: vec2f }
+${SOFT_WGSL}
 @vertex fn vs(i: VIn) -> VOut {
   var o: VOut;
   o.vTint = i.tint;
+ 
   o.vUv = (i.cell.xy + vec2f(i.position.x * 0.5 + 0.5, 0.5 - i.position.y * 0.5)) * i.cell.z;
   let c = cos(i.cell.w); let s = sin(i.cell.w);
   var corner = vec2f(i.position.x * c - i.position.y * s, i.position.x * s + i.position.y * c) * i.center.w;
@@ -620,6 +635,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
       }
     }
   }
+  o.vView = vec2f(-mv.z, i.center.w);
   mv = vec4f(mv.xy + corner, mv.zw);
   o.pos = glDepth(P.proj * mv);
   return o;
@@ -629,8 +645,8 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(
     kind === 'heat'
       ? 'let t = textureSample(mapT, mapS, v.vUv); return vec4f(t.rg, 0.0, t.a * v.vTint.a);'
       : kind === 'add'
-        ? 'return vec4f(textureSample(mapT, mapS, v.vUv).rgb * v.vTint.rgb, 1.0);'
-        : 'return textureSample(mapT, mapS, v.vUv) * v.vTint;'
+        ? 'let t = textureSample(mapT, mapS, v.vUv); return vec4f(t.rgb * v.vTint.rgb * softFade(v.pos, v.vView), 1.0);'
+        : 'let t = textureSample(mapT, mapS, v.vUv) * v.vTint; return vec4f(t.rgb, t.a * softFade(v.pos, v.vView));'
   }
 }`;
 const particleKind = m =>
@@ -654,8 +670,13 @@ const particles = {
       ['dir', 4, 5]
     ]
   }),
-  layout: [...texBinding(0), { binding: 2, visibility: 3, texture: { sampleType: 'unfilterable-float' } }],
-  textures: m => [m.uniforms.map.value, m.uniforms.frames.value],
+  layout: [
+    ...texBinding(0),
+    { binding: 2, visibility: 3, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 3, visibility: 3, texture: { sampleType: 'unfilterable-float' } }
+  ],
+  textures: m => [m.uniforms.map.value, m.uniforms.frames.value, particleKind(m) === 'heat' ? null : env.softDepth],
+  soft: m => particleKind(m) !== 'heat',
   params() {}
 };
 
@@ -742,9 +763,11 @@ export function simple(spec) {
     o += sz;
   }
   if (o > 256) throw new Error(spec.name + ': block too large');
-  const tex = (spec.textures || [])
-    .map((t, i) => `@group(1) @binding(${i * 2}) var ${t}T: texture_2d<f32>;\n@group(1) @binding(${i * 2 + 1}) var ${t}S: sampler;`)
-    .join('\n');
+  const nt = (spec.textures || []).length;
+  const tex =
+    (spec.textures || [])
+      .map((t, i) => `@group(1) @binding(${i * 2}) var ${t}T: texture_2d<f32>;\n@group(1) @binding(${i * 2 + 1}) var ${t}S: sampler;`)
+      .join('\n') + (spec.soft ? `\n@group(1) @binding(${nt * 2}) var sceneD: texture_2d<f32>;\n${SOFT_WGSL}` : '');
   const head =
     PASS_WGSL +
     `struct Draw { model: mat4x4f, modelView: mat4x4f, ${fields.join(', ')}${fields.length ? ',' : ''} }\n${tex}\n@group(2) @binding(0) var<uniform> D: Draw;\n`;
@@ -757,8 +780,12 @@ export function simple(spec) {
       vertex: spec.vertex(m),
       instance: spec.perInstance || (instanced ? spec.instance || [['instanceMatrix', 16, 8]] : [])
     }),
-    layout: (spec.textures || []).flatMap((t, i) => texBinding(i * 2)),
-    textures: m => (spec.textures || []).map(t => m.uniforms[t] && m.uniforms[t].value),
+    layout: [
+      ...(spec.textures || []).flatMap((t, i) => texBinding(i * 2)),
+      ...(spec.soft ? [{ binding: nt * 2, visibility: 3, texture: { sampleType: 'unfilterable-float' } }] : [])
+    ],
+    textures: m => [...(spec.textures || []).map(t => m.uniforms[t] && m.uniforms[t].value), ...(spec.soft ? [env.softDepth] : [])],
+    soft: spec.soft ? () => true : undefined,
     params(m, f, base) {
       const U = m.uniforms;
       for (const [name, kind, k] of at) {

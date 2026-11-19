@@ -1,4 +1,4 @@
-export const env = { programSources: null, lighting: null };
+export const env = { programSources: null, lighting: null, softDepth: { name: 'softDepth' }, soft: true };
 
 const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
 export const webkit = /AppleWebKit/.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua);

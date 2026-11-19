@@ -11,6 +11,7 @@ const only = (m, ...names) => !!m.uniforms && Object.keys(m.uniforms).length ===
 const sprites = simple({
   name: 'sprites',
   textures: ['map'],
+  soft: true,
   match: m =>
     m.isShaderMaterial &&
     only(m, 'map') &&
@@ -22,17 +23,19 @@ const sprites = simple({
   ],
   code: () => `
 struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) tint: vec4f }
-struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f }
+struct VOut { @builtin(position) pos: vec4f, @location(0) vUv: vec2f, @location(1) vTint: vec4f, @location(2) vView: vec2f }
 @vertex fn vs(i: VIn) -> VOut {
   var o: VOut;
   o.vUv = i.position.xy * 0.5 + 0.5; o.vTint = i.tint;
-  var mv = P.view * vec4f(i.center.xyz, 1.0); mv = vec4f(mv.xy + i.position.xy * i.center.w, mv.zw);
+  var mv = P.view * vec4f(i.center.xyz, 1.0);
+  o.vView = vec2f(-mv.z, i.center.w);
+  mv = vec4f(mv.xy + i.position.xy * i.center.w, mv.zw);
   o.pos = glDepth(P.proj * mv);
   return o;
 }
 @fragment fn fs(v: VOut) -> @location(0) vec4f {
   let t = textureSample(mapT, mapS, v.vUv);
-  return vec4f(t.rgb * v.vTint.rgb * v.vTint.a * t.a, 1.0);
+  return vec4f(t.rgb * v.vTint.rgb * v.vTint.a * t.a * softFade(v.pos, v.vView), 1.0);
 }`
 });
 

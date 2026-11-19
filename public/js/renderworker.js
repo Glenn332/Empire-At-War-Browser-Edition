@@ -450,6 +450,9 @@ function step(op) {
       if (gpu) R.lighting = L;
       break;
     }
+    case 'soft':
+      env.soft = op[1];
+      break;
     case 'settle': {
       const id = op[1];
       Promise.resolve(gpu ? R.settle() : null).then(() => postMessage({ compiled: id }));
