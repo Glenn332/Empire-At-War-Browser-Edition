@@ -1477,6 +1477,22 @@ function hardExtentsOf(t) {
   if (data || !t.str('Space_Model_Name')) t._hardExt = out;
   return out;
 }
+function obstacleCircleOf(t) {
+  if (t._obstacleCircle) return t._obstacleCircle;
+  let r = t.num('Custom_Soft_Footprint_Radius', 0);
+  if (!(r > 0)) r = t.num('Space_Obstacle_Radius', 0);
+  let known = true;
+  if (!(r > 0)) {
+    const data = getModelData(t.str('Space_Model_Name')),
+      E = data ? extentBoxOf(data) : null;
+    r = E ? Math.max(Math.abs(E[0]), Math.abs(E[1])) : 0;
+    known = !!data || !t.str('Space_Model_Name');
+  }
+  const off = t.list('Space_Obstacle_Offset').map(Number),
+    out = { r: r * (t.num('Scale_Factor', 1) || 1), ox: off[0] || 0, oy: off[1] || 0 };
+  if (known) t._obstacleCircle = out;
+  return out;
+}
 function laneExtentsOf(t) {
   if (t._laneExt) return t._laneExt;
   const members = t.list('Squadron_Units');
@@ -2260,7 +2276,7 @@ export class World {
 
   insidePrevention(p, at) {
     for (const u of this.units) {
-      if (u.dead || u.player.team === p.team || u.player.id < 0) continue;
+      if (u.dead || u.player.team === p.team) continue;
       const r = u.type.num('Reinforcement_Prevention_Radius', 0);
       if (r > 0 && (u.x - at.x) ** 2 + (u.y - at.y) ** 2 < r * r) return true;
     }
@@ -2300,6 +2316,14 @@ export class World {
       if (!(bits & L.layer)) return false;
       if (L.squad && bits === 4) return false;
     }
+    if (u.type.behaviors().has('SPACE_OBSTACLE')) {
+      const o = obstacleCircleOf(u.type),
+        h = u.heading || 0,
+        cx = u.x + Math.cos(h) * o.ox - Math.sin(h) * o.oy,
+        cy = u.y + Math.sin(h) * o.ox + Math.cos(h) * o.oy,
+        r = L.r + o.r;
+      return segSeg2(L.ax, L.ay, L.bx, L.by, cx, cy, cx, cy) < r * r;
+    }
     const e = hardExtentsOf(u.type),
       r = L.r + Math.max(e[0], e[1]),
       go = !(bits & 8) && u.speed > 0.5 ? (u.speed * LANE_FRAMES) / LOGIC_FPS : 0,
@@ -2316,17 +2340,20 @@ export class World {
     let seen = !this.fog;
     const lane = type ? this.laneFor(type, x, y, heading ?? this.startFacing(player)) : null;
     for (const u of this.units) {
-      if (u.dead || u.hyper) continue;
+      if (u.dead) continue;
+      if (u.hyper) {
+        if (!seen && u.player.team === player.team && (u.x - x) ** 2 + (u.y - y) ** 2 <= u.revealRange * u.revealRange) seen = true;
+        continue;
+      }
       if (lane && this.laneHits(lane, u)) return 'Something is in the way of the arrival';
       const d2 = (u.x - x) ** 2 + (u.y - y) ** 2;
       if (u.player.team === player.team) {
         if (!seen && d2 <= u.revealRange * u.revealRange) seen = true;
-      } else if (u.player.id >= 0) {
+      } else {
         const r = u.type.num('Reinforcement_Prevention_Radius', 0);
         if (r > 0 && d2 < r * r)
           return u.type.bool('Is_Interdictor') ? 'An enemy gravity well blocks hyperspace here' : 'Too close to an enemy structure';
       }
-      if (u.isStructure && !u.isFighter && !flownThrough(u) && d2 < (u.radius * 0.9) ** 2) return 'Blocked';
     }
     for (const r of this.reveals) if (r.team === player.team && (r.x - x) ** 2 + (r.y - y) ** 2 < r.r * r.r) seen = true;
     return seen ? null : 'No line of sight to that area';
@@ -3661,7 +3688,7 @@ export class World {
           for (let i = i0; i <= i1; i++) if (i * i + j * j <= r2) at[row + i] = now;
         }
       };
-    for (const u of this.units) if (!u.dead && !u.hyper && u.player.team === v.team && u.revealRange > 0) mark(u.x, u.y, u.revealRange);
+    for (const u of this.units) if (!u.dead && u.player.team === v.team && u.revealRange > 0) mark(u.x, u.y, u.revealRange);
     for (const r of this.reveals) if (r.team === v.team) mark(r.x, r.y, r.r);
     for (const u of this.units)
       if (!u.dead && u.spotted)

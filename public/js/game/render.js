@@ -1086,7 +1086,9 @@ export class Renderer {
       });
     }
     f.mesh.visible = !this.cameraOverride;
-    f.material.uniforms.placing.value = this.fogPlacing ? 1 : 0;
+    const placing = !!this.fogPlacing;
+    f.material.uniforms.placing.value = placing ? 1 : 0;
+    if (placing !== f.placing) (f.placing = placing), (f.timer = 0);
     if ((f.timer -= dt) > 0) return;
     const step = 0.1 - f.timer;
     f.timer = 0.1;
@@ -1127,13 +1129,37 @@ export class Renderer {
         }
       }
     };
-    for (const u of world.units) if (!u.dead && !u.hyper && u.player.team === team) clear(u.x, u.y, u.revealRange);
+    for (const u of world.units) if (!u.dead && u.player.team === team) clear(u.x, u.y, u.revealRange);
     for (const r of world.reveals) if (r.team === team) clear(r.x, r.y, r.r);
     const bytes = f.bytes,
       img = f.image.data;
+    let barred = null;
+    if (placing) {
+      barred = f.barred && f.barred.length === state.length ? f.barred.fill(0) : (f.barred = new Uint8Array(state.length));
+      for (const u of world.units) {
+        if (u.dead || u.player.team === team) continue;
+        const r = u.type.num('Reinforcement_Prevention_Radius', 0);
+        if (!(r > 0)) continue;
+        const cx = (u.x - world.min.x) * sx,
+          cy = (u.y - world.min.y) * sy,
+          rx = r * sx,
+          ry = r * sy;
+        const y0 = Math.max(0, Math.floor(cy - ry)),
+          y1 = Math.min(ny - 1, Math.ceil(cy + ry));
+        for (let j = y0; j <= y1; j++) {
+          const dy = (j + 0.5 - cy) / ry,
+            w = 1 - dy * dy;
+          if (w <= 0) continue;
+          const hw = Math.sqrt(w) * rx,
+            x0 = Math.max(0, Math.ceil(cx - hw - 0.5)),
+            x1 = Math.min(nx - 1, Math.floor(cx + hw - 0.5));
+          barred.fill(1, j * nx + x0, j * nx + x1 + 1);
+        }
+      }
+    }
     for (let j = 0; j < ny; j++)
       for (let i = 0; i < nx; i++) {
-        const v = Math.round(state[j * nx + i] * 255),
+        const v = barred && barred[j * nx + i] && state[j * nx + i] < 0.75 ? 255 : Math.round(state[j * nx + i] * 255),
           o = (j * nx + i) * 4;
         bytes[o] = bytes[o + 1] = bytes[o + 2] = bytes[o + 3] = v;
         const q = ((ny - 1 - j) * nx + i) * 4;

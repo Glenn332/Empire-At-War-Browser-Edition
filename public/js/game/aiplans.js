@@ -1519,7 +1519,7 @@ export class Plans {
       y1 = w.max.y,
       now = w.time;
     for (const u of w.units) {
-      if (u.dead || u.hyper || u.player !== p || !(u.revealRange > 0)) continue;
+      if (u.dead || u.player !== p || !(u.revealRange > 0)) continue;
       const R = u.revealRange,
         c0 = Math.max(0, Math.floor((u.x - R - x0) / cell)),
         c1 = Math.min(nx - 1, Math.floor((u.x + R - x0) / cell)),
