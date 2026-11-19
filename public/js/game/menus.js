@@ -122,7 +122,7 @@ export class Menus {
     if (!this.pauseHeld) return;
     this.pauseHeld = false;
     if (this.game.pauseGalactic) this.game.pauseGalactic(false);
-    else if (!this.game.over) this.game.paused = this.wasPaused;
+    else this.game.paused = this.wasPaused;
     this.game.setUIPause?.('menu', false);
   }
 
@@ -140,13 +140,11 @@ export class Menus {
       wasPaused = g.paused,
       dlg = await this.push('IDD_GAME_OPTIONS_DIALOG');
     if (!dlg) return false;
-    if (!g.over) {
-      this.wasPaused = wasPaused;
-      this.pauseHeld = true;
-      if (g.pauseGalactic) g.pauseGalactic(true);
-      else if (!g.lock) g.paused = true;
-      g.setUIPause?.('menu', true);
-    }
+    this.wasPaused = wasPaused;
+    this.pauseHeld = true;
+    if (g.pauseGalactic) g.pauseGalactic(true);
+    else if (!g.lock) g.paused = true;
+    g.setUIPause?.('menu', true);
     dlg.enable('IDC_SAVE_GAME', !g.over && !g.setup.benchmark && !g.noSave && !(g.setup.net && g.setup.campaign && !g.galactic));
     const rehost = g.setup.net?.rehost;
     dlg.enable('IDC_LOAD_GAME', !g.setup.net || !!rehost);
