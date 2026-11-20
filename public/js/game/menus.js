@@ -8,7 +8,7 @@ import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
-import { enterFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
+import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
@@ -73,7 +73,8 @@ const TWEAKS = [
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
 const checkBox = (id, x, y, w, h) => ({ kind: 'CONTROL', text: '', id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y, w, h });
-const FULLSCREEN_MOUSE_TIP = 'In fullscreen, keeps the mouse inside the game screen so it cannot slip onto another monitor. Esc or Alt+Tab frees it.';
+const FULLSCREEN_MOUSE_TIP =
+  'Keeps the mouse inside the game so it cannot slip onto another monitor: in fullscreen, and in the desktop app in a window too. Esc or Alt+Tab frees it.';
 const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space battles and on the galaxy map.';
 
 export class Menus {
@@ -797,7 +798,7 @@ export class Menus {
     if (!dlg) return;
     const was = { ...gfx },
       wasCapture = fullscreenCapture();
-    dlg.setText('IDC_FULLSCREEN_MOUSE_CAPTURE', 'Capture the mouse in fullscreen');
+    dlg.setText('IDC_FULLSCREEN_MOUSE_CAPTURE', 'Capture the mouse');
     const captureBox = dlg.ctl('IDC_FULLSCREEN_MOUSE_CAPTURE');
     if (captureBox) captureBox.title = FULLSCREEN_MOUSE_TIP;
     const apply = () => {
@@ -807,30 +808,48 @@ export class Menus {
     const levels = await presets();
     const dpr = Math.min(devicePixelRatio, 2),
       scales = [1, 0.85, 0.75, 0.66, 0.5];
-    const rows = scales.map(k => ({
-      key: k,
-      label: Math.round(innerWidth * dpr * k) + ' x ' + Math.round(innerHeight * dpr * k),
-      note: Math.round(k * 100) + '%'
-    }));
-    const sized = !document.fullscreenElement ? await windowSizes() : null;
-    const res = sized
-      ? dlg.list(
-          'IDC_RESOLUTION_LIST',
-          sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
-          row => {
-            const [w, h] = row.key.split('x').map(Number);
-            pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
-          }
-        )
-      : dlg.list('IDC_RESOLUTION_LIST', rows, row => {
-          if (gfx.scale !== row.key) {
-            gfx.scale = row.key;
-            apply();
-          }
-        });
-    const show = () => {
+    let res = null,
+      sized = null,
+      filling = 0;
+    const fill = async () => {
+      const n = ++filling,
+        list = !document.fullscreenElement ? await windowSizes() : null;
+      if (n !== filling || !dlg.veil.isConnected) return;
+      sized = list;
+      res = sized
+        ? dlg.list(
+            'IDC_RESOLUTION_LIST',
+            sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
+            row => {
+              if (document.fullscreenElement) return;
+              const [w, h] = row.key.split('x').map(Number);
+              pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
+            }
+          )
+        : dlg.list(
+            'IDC_RESOLUTION_LIST',
+            scales.map(k => ({
+              key: k,
+              label: Math.round(innerWidth * dpr * k) + ' x ' + Math.round(innerHeight * dpr * k),
+              note: Math.round(k * 100) + '%'
+            })),
+            row => {
+              if (gfx.scale !== row.key) {
+                gfx.scale = row.key;
+                apply();
+              }
+            }
+          );
       if (res && sized) res.select(sized.now[0] + 'x' + sized.now[1]);
       else if (res) res.select(scales.reduce((best, k) => (Math.abs(k - gfx.scale) < Math.abs(best - gfx.scale) ? k : best), 1));
+    };
+    await fill();
+    const refill = () => {
+      if (!dlg.veil.isConnected) return document.removeEventListener('fullscreenchange', refill);
+      setTimeout(fill, 250);
+    };
+    document.addEventListener('fullscreenchange', refill);
+    const show = () => {
       dlg.slider('IDC_ANTI_ALIAS_SLIDER', gfx.aa !== false ? 1 : 0, v => {
         const on = v >= 0.5;
         if (on !== gfx.aa) {
@@ -852,7 +871,7 @@ export class Menus {
       dlg.check('IDC_FULLSCREEN_MOUSE_CAPTURE', fullscreenCapture(), setFullscreenCapture);
       dlg.check('IDC_WINDOWED_MODE', !document.fullscreenElement, on => {
         try {
-          if (on) document.exitFullscreen();
+          if (on) exitFullscreen();
           else enterFullscreen();
         } catch {}
       });

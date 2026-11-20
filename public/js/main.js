@@ -6,7 +6,7 @@ import { setTacticalRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
 import { mpBattleParent } from './game/galacticmpbattle.js';
 import { startGalaxyFrame, galaxyFrameSetup } from './game/mpgalaxyframe.js';
-import './pointertrap.js';
+import { restoreFullscreen } from './pointertrap.js';
 import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
@@ -3087,7 +3087,8 @@ async function boot() {
       } catch {}
     };
   }
-  initCursorLock($('optCursorLock'));
+  initCursorLock();
+  restoreFullscreen();
   restoreWindowSize();
   {
     const box = $('optLineMove');

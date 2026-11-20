@@ -1,18 +1,8 @@
 import { inApp } from './platform.js';
-import { fullscreen, fullscreenCapture, onFullscreenCapture } from './pointertrap.js';
+import { fullscreenCapture, onFullscreenCapture } from './pointertrap.js';
 
-const KEY = 'swr-cursor-lock';
-let want = false,
-  held = null,
+let held = null,
   listening = false;
-
-export function cursorLockSetting() {
-  try {
-    return localStorage.getItem(KEY) !== '0';
-  } catch {
-    return true;
-  }
-}
 
 function send(on) {
   if (held === on) return;
@@ -21,26 +11,11 @@ function send(on) {
 }
 
 function update() {
-  send((fullscreen() ? fullscreenCapture() : want) && document.hasFocus() && document.visibilityState === 'visible');
+  send(fullscreenCapture() && document.hasFocus() && document.visibilityState === 'visible');
 }
 
-export function setCursorLock(on) {
-  try {
-    localStorage.setItem(KEY, on ? '1' : '0');
-  } catch {}
-  want = !!on && inApp();
-  update();
-}
-
-export function initCursorLock(box) {
-  if (box) {
-    box.checked = cursorLockSetting();
-    box.parentElement.hidden = !inApp();
-    box.parentElement.title = 'Keeps the mouse inside the game window while windowed, for playing on one screen of several. Alt+Tab frees it.';
-    box.onchange = () => setCursorLock(box.checked);
-  }
+export function initCursorLock() {
   if (!inApp()) return;
-  want = cursorLockSetting();
   if (!listening) {
     listening = true;
     addEventListener('focus', update);

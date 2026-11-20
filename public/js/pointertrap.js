@@ -49,7 +49,42 @@ function toggleFullscreen() {
   } catch {}
 }
 
+const FULLSCREEN_KEY = 'swr-fullscreen';
+const rememberFullscreen = on => {
+  try {
+    localStorage.setItem(FULLSCREEN_KEY, on ? '1' : '0');
+  } catch {}
+};
+
+export function restoreFullscreen() {
+  let want = false;
+  try {
+    want = localStorage.getItem(FULLSCREEN_KEY) === '1';
+  } catch {}
+  document.addEventListener('fullscreenchange', () => {
+    if (!fullscreen() && !window.swrLeaving && document.visibilityState === 'visible') rememberFullscreen(false);
+  });
+  if (!want || fullscreen()) return;
+  const events = ['pointerdown', 'keydown'];
+  const wait = () => {
+    for (const k of events) addEventListener(k, again, true);
+  };
+  const again = () => {
+    for (const k of events) removeEventListener(k, again, true);
+    if (!fullscreen()) enterFullscreen();
+  };
+  if (!inApp()) return wait();
+  try {
+    keepEscape();
+    const p = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    if (p && p.catch) p.catch(wait);
+  } catch {
+    wait();
+  }
+}
+
 export function exitFullscreen() {
+  rememberFullscreen(false);
   try {
     const p = document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen?.();
     if (p && p.catch) p.catch(() => {});
@@ -57,6 +92,7 @@ export function exitFullscreen() {
 }
 
 export function enterFullscreen() {
+  rememberFullscreen(true);
   keepEscape();
   const el = document.documentElement,
     p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen?.();

@@ -1340,7 +1340,7 @@ const GROUPS = [
       [
         'Mouse kept in the game window (desktop app, our own)',
         D,
-        'an option keeps the cursor inside the game window while it has focus, for players with several screens; Alt+Tab frees it. Browsers cannot confine the cursor, so the option shows only in the desktop app'
+        'the Capture the mouse option, off by default, keeps the cursor inside the game window in the desktop app, windowed or fullscreen, for players with several screens; Alt+Tab frees it. Browsers cannot confine the cursor in a window, so there it only applies in fullscreen'
       ],
       [
         'Galactic interface and droid log',

@@ -10,7 +10,10 @@ mod vfs;
 use fonts::NativeFonts;
 use setup::{Settings, Source};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
+
+static CURSOR_GRAB: AtomicBool = AtomicBool::new(false);
 use tauri::http::{Request, Response};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use vfs::{Game, View};
@@ -561,7 +564,7 @@ impl Server {
             let num = |k: &str| arg(k).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
             let (w, h) = (num("w"), num("h"));
             if let Some(win) = app.get_webview_window("main") {
-                if w >= 640 && h >= 480 {
+                if w >= 640 && h >= 480 && !win.is_fullscreen().unwrap_or(false) {
                     let _ = win.unmaximize();
                     let _ = win.set_size(tauri::PhysicalSize::new(w, h));
                     let _ = win.center();
@@ -577,6 +580,7 @@ impl Server {
         }
         if p == "/api/cursor-grab" {
             let on = arg("on").as_deref() == Some("1");
+            CURSOR_GRAB.store(on, Ordering::Relaxed);
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_cursor_grab(on);
             }
@@ -721,6 +725,17 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol("swr", move |ctx, req, responder| {
             let (server, app) = (server.clone(), ctx.app_handle().clone());
             std::thread::spawn(move || responder.respond(server.handle(&app, &req)));
+        })
+        .on_window_event(|w, e| {
+            if matches!(
+                e,
+                tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::Moved(_)
+                    | tauri::WindowEvent::ScaleFactorChanged { .. }
+            ) && CURSOR_GRAB.load(Ordering::Relaxed)
+            {
+                let _ = w.set_cursor_grab(true);
+            }
         })
         .setup(move |app| {
             audio::name_sessions("Empire at War Browser Edition");
