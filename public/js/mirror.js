@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { env } from './gpu/env.js';
+import { env, dropGPU } from './gpu/env.js';
 
 const BEFORE = THREE.Object3D.prototype.onBeforeRender;
 const STRIDE = 24;
@@ -497,6 +497,7 @@ export class MirrorRenderer {
       if (res) res(d.pixels);
     }
     if (d.error) console.warn('render worker:', d.error);
+    if (d.gpuLost) dropGPU();
   }
 
   warn(what) {

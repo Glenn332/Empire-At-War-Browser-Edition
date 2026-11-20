@@ -1,7 +1,7 @@
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { families, PARAMS } from './programs.js';
 import './programs-galactic.js';
-import { env, webkit } from './env.js';
+import { env, webkit, dropGPU } from './env.js';
 
 const SLOT = 256;
 const SLOTS = 4096;
@@ -11,6 +11,35 @@ const BONES = 1536;
 const ARENA = 8 << 20;
 const MSAA = 4;
 const START_WAIT_MS = 5000;
+const RESTORE_WAIT_MS = 15000;
+const LOSSES = 3;
+const LAZY = [
+  'mipPipe',
+  'mipSampler',
+  'softPipes',
+  'softTex',
+  'lightsNow',
+  'lightsFrame',
+  'canvasState',
+  'pslots',
+  'indirect',
+  'passT',
+  'passOut',
+  'sigOut',
+  'viewsOut',
+  'recsOut',
+  'ctx',
+  'ctxUse',
+  'ctxFrame',
+  'last',
+  'pass',
+  'curLight',
+  'lightAt',
+  'softNow',
+  'retiredPass',
+  'scene',
+  'camera'
+];
 const DEPTH = 'depth24plus-stencil8';
 
 const WRAP = {
@@ -117,7 +146,7 @@ const _proj = new THREE.Matrix4(),
   _cam = new THREE.Vector3();
 
 export class GPURenderer {
-  static async create(canvas = null) {
+  static async open(wait = START_WAIT_MS) {
     let late = false;
     const within = p =>
       Promise.race([
@@ -126,46 +155,43 @@ export class GPURenderer {
           setTimeout(() => {
             late = true;
             r(null);
-          }, START_WAIT_MS)
+          }, wait)
         )
       ]);
     const adapter = navigator.gpu && (await within(navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })));
     if (!adapter || !adapter.features.has('texture-compression-bc')) {
-      if (late) console.warn('webgpu: no adapter in ' + START_WAIT_MS + ' ms');
+      if (late) console.warn('webgpu: no adapter in ' + wait + ' ms');
       return null;
     }
     const requiredFeatures = ['texture-compression-bc', 'float32-filterable'].filter(f => adapter.features.has(f));
     const asked = adapter.requestDevice({ requiredFeatures });
     const device = await within(asked);
     if (!device) {
-      console.warn('webgpu: no device in ' + START_WAIT_MS + ' ms');
+      console.warn('webgpu: no device in ' + wait + ' ms');
       asked.then(
         d => d && d.destroy(),
         () => {}
       );
       return null;
     }
-    return new GPURenderer(device, canvas);
+    return device;
+  }
+
+  static async create(canvas = null) {
+    const device = await GPURenderer.open();
+    return device ? new GPURenderer(device, canvas) : null;
   }
 
   constructor(device, canvas = null) {
-    this.device = device;
     this.depthFormat = DEPTH;
     this.domElement = canvas || document.createElement('canvas');
     this.context = this.domElement.getContext('webgpu');
     this.format = navigator.gpu.getPreferredCanvasFormat();
     if (this.domElement.style) this.domElement.style.transform = 'scaleY(-1)';
-    this.context.configure({
-      device,
-      format: this.format,
-      alphaMode: 'opaque',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
-    });
     this.autoClear = true;
     this.sortObjects = true;
     this.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.debug = { checkShaderErrors: false };
-    this.capabilities = { isWebGL2: true, maxTextureSize: device.limits.maxTextureDimension2D, getMaxAnisotropy: () => 16 };
     this.info = {
       autoReset: true,
       render: { frame: 0, calls: 0, triangles: 0, points: 0, lines: 0 },
@@ -183,6 +209,20 @@ export class GPURenderer {
     this.cssViewport = [0, 0, 1, 1];
     this.curViewport = null;
     this.target = null;
+    this.losses = 0;
+    this.lost = false;
+    this.init(device);
+  }
+
+  init(device) {
+    this.device = device;
+    this.context.configure({
+      device,
+      format: this.format,
+      alphaMode: 'opaque',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+    });
+    this.capabilities = { isWebGL2: true, maxTextureSize: device.limits.maxTextureDimension2D, getMaxAnisotropy: () => 16 };
     this.clears = new Map();
     this.unsupported = new Map();
     this.lists = { opaque: [], transparent: [], items: [], n: 0 };
@@ -219,6 +259,22 @@ export class GPURenderer {
     this.passAt = 0;
     this.lighting = env.lighting;
     this.setup();
+    device.lost.then(info => {
+      if (this.device !== device || info.reason === 'destroyed') return;
+      console.warn('webgpu: the graphics device was lost, starting it again', info.message);
+      this.lost = true;
+      this.restore();
+    });
+  }
+
+  async restore() {
+    if (++this.losses > LOSSES) return dropGPU();
+    const device = await GPURenderer.open(RESTORE_WAIT_MS).catch(() => null);
+    if (!device) return dropGPU();
+    for (const k of LAZY) delete this[k];
+    this.init(device);
+    this.lost = false;
+    console.warn('webgpu: graphics device started again');
   }
 
   setup() {
@@ -390,6 +446,10 @@ export class GPURenderer {
 
   endFrame() {
     if (!this.encoder) return;
+    if (this.lost) {
+      this.encoder = null;
+      return;
+    }
     const q = this.device.queue,
       enc = this.encoder;
     let shot = null;
@@ -448,7 +508,8 @@ export class GPURenderer {
 
   async settle() {
     while (this.pending.size) await Promise.all([...this.pending]);
-    await this.device.queue.onSubmittedWorkDone();
+    const d = this.device;
+    await Promise.race([d.queue.onSubmittedWorkDone().catch(() => {}), d.lost]);
   }
 
   readNext() {
@@ -533,6 +594,7 @@ export class GPURenderer {
   }
 
   render(scene, camera) {
+    if (this.lost) return;
     this.begin();
     if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
     if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
