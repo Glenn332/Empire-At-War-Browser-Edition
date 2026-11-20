@@ -8,7 +8,7 @@ import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
-import { enterFullscreen } from '../pointertrap.js';
+import { enterFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
@@ -24,7 +24,9 @@ import {
   keyNames,
   actionName,
   bothButtonsRotate,
-  setBothButtonsRotate
+  setBothButtonsRotate,
+  edgePan,
+  setEdgePan
 } from './keybinds.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
@@ -70,6 +72,9 @@ const TWEAKS = [
 ];
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
+const checkBox = (id, x, y, w, h) => ({ kind: 'CONTROL', text: '', id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y, w, h });
+const FULLSCREEN_MOUSE_TIP = 'In fullscreen, keeps the mouse inside the game screen so it cannot slip onto another monitor. Esc or Alt+Tab frees it.';
+const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space battles and on the galaxy map.';
 
 export class Menus {
   constructor(game) {
@@ -784,9 +789,17 @@ export class Menus {
   }
 
   async video() {
-    const dlg = await this.push('IDD_VIDEO_OPTIONS_DIALOG');
+    const win = (await loadDialogs())?.dialogs.get('IDD_VIDEO_OPTIONS_DIALOG')?.controls.find(c => c.id === 'IDC_WINDOWED_MODE');
+    const dlg = await this.push(
+      'IDD_VIDEO_OPTIONS_DIALOG',
+      win ? { extra: [checkBox('IDC_FULLSCREEN_MOUSE_CAPTURE', win.x, win.y + 22, win.w + 40, win.h)] } : undefined
+    );
     if (!dlg) return;
-    const was = { ...gfx };
+    const was = { ...gfx },
+      wasCapture = fullscreenCapture();
+    dlg.setText('IDC_FULLSCREEN_MOUSE_CAPTURE', 'Capture the mouse in fullscreen');
+    const captureBox = dlg.ctl('IDC_FULLSCREEN_MOUSE_CAPTURE');
+    if (captureBox) captureBox.title = FULLSCREEN_MOUSE_TIP;
     const apply = () => {
       storeGfx();
       if (window.applyGraphics) window.applyGraphics(window.game && window.game.renderer);
@@ -836,6 +849,7 @@ export class Menus {
           Object.assign(gfx, levels[i], { level: i });
           apply();
         });
+      dlg.check('IDC_FULLSCREEN_MOUSE_CAPTURE', fullscreenCapture(), setFullscreenCapture);
       dlg.check('IDC_WINDOWED_MODE', !document.fullscreenElement, on => {
         try {
           if (on) document.exitFullscreen();
@@ -853,6 +867,7 @@ export class Menus {
     dlg.on('IDC_CANCEL', () => {
       Object.assign(gfx, was);
       apply();
+      if (fullscreenCapture() !== wasCapture) setFullscreenCapture(wasCapture);
       this.pop();
     });
   }
@@ -934,8 +949,32 @@ export class Menus {
 
   async gameplay() {
     const g = this.game,
-      dlg = await this.push('IDD_GAMEPLAY_OPTIONS_DIALOG');
+      def = (await loadDialogs())?.dialogs.get('IDD_GAMEPLAY_OPTIONS_DIALOG'),
+      after = def?.controls.find(c => c.id === 'IDC_ABSOLUTE_SCROLLING'),
+      below = after && def.controls.filter(c => c.y > after.y && c.cls === 'Button').sort((a, b) => a.y - b.y)[0],
+      room = after && below ? below.y - after.y : 0,
+      at = after ? after.y + room : 0,
+      dlg = await this.push(
+        'IDD_GAMEPLAY_OPTIONS_DIALOG',
+        room
+          ? {
+              size: { w: def.w, h: def.h + room },
+              extra: [checkBox('IDC_EDGE_PAN', after.x, at, after.w, after.h)],
+              adjust: c =>
+                c.id === 'IDC_EDGE_PAN'
+                  ? null
+                  : c.kind === 'GROUPBOX' && c.y < at && c.y + c.h > at
+                    ? { ...c, h: c.h + room }
+                    : c.y >= at
+                      ? { ...c, y: c.y + room }
+                      : null
+            }
+          : undefined
+      );
     if (!dlg) return;
+    dlg.setText('IDC_EDGE_PAN', 'Pan the camera at the screen edges');
+    const edgeBox = dlg.ctl('IDC_EDGE_PAN');
+    if (edgeBox) edgeBox.title = EDGE_PAN_TIP;
     let simplified = false;
     try {
       simplified = localStorage.getItem('swr-simplified-faction-colors') === '1';
@@ -956,7 +995,7 @@ export class Menus {
       } catch {}
     };
     const strategic = !!g.galactic,
-      was = { speed: g.speed, tactical: tacticalSpeed(), auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate() };
+      was = { speed: g.speed, tactical: tacticalSpeed(), auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate(), edge: edgePan() };
     const setDelayed = on => {
       delayed = on;
       g.delayTooltips = on;
@@ -995,6 +1034,7 @@ export class Menus {
       dlg.check('IDC_SIMPLIFIED_FACTION_COLORS', simplified, setSimplified);
       dlg.check('IDC_DELAY_TOOLTIPS', delayed, setDelayed);
       dlg.check('IDC_BOTH_MOUSE_BUTTONS_ROTATE', bothButtonsRotate(), setBothButtonsRotate);
+      dlg.check('IDC_EDGE_PAN', edgePan(), setEdgePan);
       if (g.galactic) dlg.check('IDC_AUTORESOLVE', autoResolve, setAutoResolve);
     };
     show();
@@ -1030,6 +1070,7 @@ export class Menus {
       setSimplified(was.simplified);
       setDelayed(was.delayed);
       setBothButtonsRotate(was.both);
+      setEdgePan(was.edge);
       if (g.galactic) setAutoResolve(was.autoResolve);
       this.pop();
     });
@@ -1047,6 +1088,7 @@ export class Menus {
       setSimplified(false);
       setDelayed(false);
       setBothButtonsRotate(false);
+      setEdgePan(false);
       if (g.galactic) setAutoResolve(false);
       show();
     });

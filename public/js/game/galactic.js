@@ -113,7 +113,7 @@ import { stageStart } from './transit.js';
 import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
-import { pressed, held } from './keybinds.js';
+import { pressed, held, edgePan } from './keybinds.js';
 import { planetMaxStarbase } from './planetstats.js';
 
 const $ = id => document.getElementById(id);
@@ -3464,8 +3464,9 @@ export class GalacticGame {
         hi = c.num('Strategic_Max_Scroll_Speed', 400),
         m = this.mouse,
         speed = lo + (hi - lo) / 2,
-        side = (key, depth) => (held(k, key) || (m.in && depth > 0) ? speed : 0),
-        dt = Math.min(1, elapsed);
+        side = (key, depth) => (held(k, key) || (m.in && edge && depth > 0) ? speed : 0),
+        dt = Math.min(1, elapsed),
+        edge = edgePan();
       const r = side('SCROLL_RIGHT', m.x - (innerWidth - region - 1)) - side('SCROLL_LEFT', region - m.x),
         f = (side('SCROLL_UP', region - m.y) - side('SCROLL_DOWN', m.y - (innerHeight - region - 1))) * 1.2;
       scrollVelocity(this.scroll, r * dt, f * dt, c.num('Scroll_Acceleration_Factor', 0.08), c.num('Scroll_Deceleration_Factor', 1.5));

@@ -1,4 +1,5 @@
 import { inApp } from './platform.js';
+import { fullscreen, fullscreenCapture, onFullscreenCapture } from './pointertrap.js';
 
 const KEY = 'swr-cursor-lock';
 let want = false,
@@ -20,7 +21,7 @@ function send(on) {
 }
 
 function update() {
-  send(want && document.hasFocus() && document.visibilityState === 'visible');
+  send((fullscreen() ? fullscreenCapture() : want) && document.hasFocus() && document.visibilityState === 'visible');
 }
 
 export function setCursorLock(on) {
@@ -35,7 +36,7 @@ export function initCursorLock(box) {
   if (box) {
     box.checked = cursorLockSetting();
     box.parentElement.hidden = !inApp();
-    box.parentElement.title = 'Keeps the mouse inside the game window, for playing on one screen of several. Alt+Tab frees it.';
+    box.parentElement.title = 'Keeps the mouse inside the game window while windowed, for playing on one screen of several. Alt+Tab frees it.';
     box.onchange = () => setCursorLock(box.checked);
   }
   if (!inApp()) return;
@@ -46,6 +47,8 @@ export function initCursorLock(box) {
     addEventListener('blur', update);
     addEventListener('pointerdown', update, true);
     document.addEventListener('visibilitychange', update);
+    document.addEventListener('fullscreenchange', update);
+    onFullscreenCapture(update);
   }
   update();
 }

@@ -273,3 +273,21 @@ export function setBothButtonsRotate(on) {
     localStorage.setItem('swr-both-rotate', on ? '1' : '0');
   } catch {}
 }
+
+let edgeScroll = null;
+export function edgePan() {
+  if (edgeScroll === null) {
+    try {
+      edgeScroll = localStorage.getItem('swr-edge-pan') === '1';
+    } catch {
+      edgeScroll = false;
+    }
+  }
+  return edgeScroll;
+}
+export function setEdgePan(on) {
+  edgeScroll = !!on;
+  try {
+    localStorage.setItem('swr-edge-pan', on ? '1' : '0');
+  } catch {}
+}

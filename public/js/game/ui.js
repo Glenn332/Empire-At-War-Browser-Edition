@@ -8,7 +8,7 @@ import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
-import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
+import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan } from './keybinds.js';
 
 const ORDER_KEYS = [
   ['ATTACK_MOVE', 'attackmove'],
@@ -1668,7 +1668,7 @@ export class UI {
     if (held(k, 'SCROLL_UP')) py += 1;
     if (held(k, 'SCROLL_DOWN')) py -= 1;
     const m = this.mouse;
-    if (m.inside && m.moved && !this.drag && !this.track?.on && document.hasFocus()) {
+    if (m.inside && m.moved && edgePan() && !this.drag && !this.track?.on && document.hasFocus()) {
       const edge = 6;
       if (m.x < edge) px -= 1;
       else if (m.x > this.r.width - edge) px += 1;

@@ -78,8 +78,32 @@ function keepEscape() {
   );
 }
 
+const CAPTURE_KEY = 'swr-fullscreen-mouse';
+let capture = null;
+const captureWatchers = new Set();
+export function fullscreenCapture() {
+  if (capture === null) {
+    try {
+      capture = localStorage.getItem(CAPTURE_KEY) === '1';
+    } catch {
+      capture = false;
+    }
+  }
+  return capture;
+}
+export function setFullscreenCapture(on) {
+  capture = !!on;
+  try {
+    localStorage.setItem(CAPTURE_KEY, capture ? '1' : '0');
+  } catch {}
+  if (capture) lock();
+  else if (document.pointerLockElement === document.documentElement) document.exitPointerLock();
+  for (const f of captureWatchers) f(capture);
+}
+export const onFullscreenCapture = f => captureWatchers.add(f);
+
 function lock() {
-  if (trap.locked || !ownFullscreen() || document.pointerLockElement || inApp()) return;
+  if (trap.locked || !fullscreenCapture() || !ownFullscreen() || document.pointerLockElement || inApp()) return;
   try {
     const p = document.documentElement.requestPointerLock();
     if (p && p.catch) p.catch(() => {});
