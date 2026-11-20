@@ -10,9 +10,9 @@ export const EXTRA_FX_TIP =
 
 export function extraFxSetting() {
   try {
-    return localStorage.getItem('swr-extra-fx') !== '0';
+    return localStorage.getItem('swr-extra-fx') === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
