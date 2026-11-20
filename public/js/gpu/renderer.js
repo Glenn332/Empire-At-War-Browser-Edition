@@ -506,6 +506,10 @@ export class GPURenderer {
       });
   }
 
+  pendingPipelines() {
+    return [...this.pending].map(job => job.label || '?');
+  }
+
   async settle() {
     while (this.pending.size) await Promise.all([...this.pending]);
     const d = this.device;
@@ -1430,6 +1434,7 @@ export class GPURenderer {
           p.bad = true;
         }
       );
+      job.label = skey;
       this.pending.add(job);
       job.then(() => this.pending.delete(job));
       this.pipelines.set(pkey, p);

@@ -285,6 +285,8 @@ function readyDrawsOnly(R) {
 }
 
 const LAND_BOLT = { radius: 45, power: 0.9, blast: 110, blastPower: 1.6, blastTime: 0.18 };
+const LOAD_WAIT = { first: 20000, after: 2000 },
+  LOAD_LATE = Symbol('late');
 export class LandGame {
   constructor(setup, { audio, progress }) {
     this.setup = setup;
@@ -3486,8 +3488,23 @@ export class LandGame {
     this.bench = this.benchOverlay(`${n} v ${n} companies`, { companies: `${n} vs ${n}` });
   }
 
+  async loadWait(job, step) {
+    const limit = this.loadSlow ? LOAD_WAIT.after : LOAD_WAIT.first;
+    let timer = 0;
+    const late = new Promise(resolve => {
+      timer = setTimeout(() => resolve(LOAD_LATE), limit);
+    });
+    const result = await Promise.race([Promise.resolve(job).catch(() => null), late]);
+    clearTimeout(timer);
+    if (result !== LOAD_LATE) return result;
+    this.loadSlow = true;
+    const stuck = this.gpuOn ? this.gpu.pendingPipelines() : [];
+    console.warn(`land load: ${step} not finished after ${limit} ms, starting anyway`, stuck.length ? stuck : '');
+    return null;
+  }
+
   async warmFrames() {
-    if (this.preparing) await Promise.all([...this.preparing]);
+    if (this.preparing) await this.loadWait(Promise.all([...this.preparing]), 'model preparation');
     this.sendTextures(Infinity);
     const v = this.view,
       keep = { x: v.x, y: v.y, dist: v.dist },
@@ -3500,16 +3517,17 @@ export class LandGame {
         requestAnimationFrame(() => r());
         setTimeout(r, 100);
       });
-      if (this.gpuOn) await this.gpu.settle();
+      if (this.gpuOn) await this.loadWait(this.gpu.settle(), 'graphics pipelines');
     };
-    const drawn = this.renderer.isMirror ? () => this.renderer.idle() : () => null;
+    const drawn = this.renderer.isMirror ? () => this.loadWait(this.renderer.idle(), 'render worker') : () => null;
     this.warming = true;
     if (!this.noBatch) (this.batches ||= new LandInstances(this.scene, this.renderer, this.camera)).warm = true;
     this.warmGround();
-    const putAway = await this.warmEffects((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2).catch(e => {
-      console.warn('warm effects', e);
-      return () => {};
-    });
+    const effects = this.warmEffects((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2).catch(e => {
+        console.warn('warm effects', e);
+        return () => {};
+      }),
+      putAway = (await this.loadWait(effects, 'effect warm-up')) || (() => effects.then(late => late?.()));
     try {
       v.x = (lo[0] + hi[0]) / 2;
       v.y = (lo[1] + hi[1]) / 2;
