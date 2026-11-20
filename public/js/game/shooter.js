@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { db } from '../gamedata.js';
+import { db, spawnList } from '../gamedata.js';
 import { heightAt } from './terrain.js';
 import { buildsFor, costOf, inCategory, isUpgrade, missingFor, isHeroCompany, animReady, animClip } from './land.js';
 import { AnimState } from '../ala.js';
@@ -20,6 +20,7 @@ import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
 import { ShuttleWaves } from './shuttle.js';
+import { isSpawner, sideTech } from './landgarrison.js';
 import { eawSkin } from './eawskin.js';
 import { TERRAIN } from './landtables.js';
 import { thiefOut } from './landabilities.js';
@@ -996,7 +997,9 @@ export class Shooter {
       for (const rec of sideRec.units || []) {
         const t = db.type(rec.type);
         if (!t || isHeroCompany(t)) continue;
-        const leaves = this.leafTypes(t).filter(k => /infantry/i.test(k.str('MovementClass')) && !inCategory(k, 'HERO') && !k.bool('Is_Named_Hero'));
+        const leaves = this.leafTypes(t).filter(
+          k => /infantry/i.test(k.str('MovementClass')) && !inCategory(k, 'HERO') && !inCategory(k, 'STRUCTURE') && k.tag !== 'GroundStructure' && !k.bool('Is_Named_Hero')
+        );
         if (!leaves.length) continue;
         const real = leaves.map(k => (this.isDummy(k) ? this.realOf(k) || k : k));
         const size = this.nominalSoldiers(t);
@@ -4323,9 +4326,9 @@ export class Shooter {
       }
     }
     const buildsInfantry = [...out.values()].some(c => c.foot);
-    for (const [holder, garrison] of buildsInfantry ? [] : w.garrisons || []) {
-      if (holder.dead || !w.ally(holder.side, side)) continue;
-      for (const entry of garrison.entries) {
+    for (const holder of buildsInfantry ? [] : w.units) {
+      if (holder.dead || holder.inside || !w.ally(holder.side, side) || !isSpawner(holder.type)) continue;
+      for (const entry of spawnList(holder.type, sideTech(w, holder.side))) {
         const t = entry.type;
         if (out.has(t.name) || t.has('Company_Units') || t.has('Squadron_Units') || inCategory(t, 'HERO') || t.bool('Is_Named_Hero')) continue;
         if (!/infantry/i.test(t.str('MovementClass')) || inCategory(t, 'VEHICLE') || inCategory(t, 'STRUCTURE')) continue;

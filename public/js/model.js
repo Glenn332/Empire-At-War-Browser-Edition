@@ -991,6 +991,11 @@ function rigIndex(bones) {
     if (key.startsWith('SPINE')) spines.push([Number(key.slice(5)), bone]);
     else if (!index.has(key)) index.set(key, bone);
   }
+  const head = index.get('HEAD'),
+    aboveHead = new Set();
+  for (let bone = head?.parent; bone; bone = bone.parent) aboveHead.add(bone);
+  const headSpines = spines.filter(([, bone]) => aboveHead.has(bone));
+  if (headSpines.length) spines.splice(0, spines.length, ...headSpines);
   spines.sort((a, b) => a[0] - b[0]);
   if (spines.length) {
     if (!index.has('SPINE')) index.set('SPINE', spines[0][1]);
