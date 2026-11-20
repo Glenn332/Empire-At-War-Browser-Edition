@@ -3,6 +3,7 @@ import { heightAt, CELL } from './terrain.js';
 import { TERRAIN } from './landtables.js';
 import { AnimState } from '../ala.js';
 import { TroopBay, bayExit } from './troopbay.js';
+import { buildsFor, isHeroCompany } from './land.js';
 
 const WAVE = { every: 15, first: 3, cap: 8, gap: 3, unload: 0.6, ramp: 1.2, walk: 3.2, space: 110, rings: [1, 2, 3], linger: 2.5, out: 12 },
   ROOM = { send: 0.1, shake: 0.012, fov: 70 },
@@ -476,7 +477,17 @@ export class ShuttleWaves {
     const e = F.load.find(x => x.company && x.company.str('Company_Transport_Unit')) || F.load[0];
     if (e && e.company && e.company.str('Company_Transport_Unit')) return e.company.name;
     for (const c of this.sh.classes(F.side)) if (c.company && !c.hero && c.company.str('Company_Transport_Unit')) return c.company.name;
-    return e && e.company ? e.company.name : '';
+    return this.anyTransportCompany(F.side) || (e && e.company ? e.company.name : '');
+  }
+
+  anyTransportCompany(side) {
+    const w = this.sh.world,
+      faction = this.sh.game.factions[side];
+    for (const u of w.units) {
+      if (u.dead || !u.structure || !w.ally(u.side, side)) continue;
+      for (const t of buildsFor(u.type, faction, w.campaign)) if (t.str('Company_Transport_Unit') && !isHeroCompany(t)) return t.name;
+    }
+    return '';
   }
 
   stood(F, sid) {

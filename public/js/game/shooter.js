@@ -118,7 +118,7 @@ const REACH = 1600,
   STEP_SFX = { grass: 'GRASS', snow: 'SNOW', ice: 'SNOW', water: 'WATER', concrete: 'CONCRETE', mud: 'MUD' },
   ENGAGE_SCAN = 0.4,
   FIGHT_HOLD = 12,
-  FP_EYE = { back: 0.135, right: -0.06, up: 0.087, crouchLift: 0.12 },
+  FP_EYE = { back: 0.135, right: -0.06, up: 0.087, crouchLift: 0.12, headroom: 0.08 },
   TICKETS = { start: 150, foot: 1, vehicle: 2, bleed: 5 },
   AIM_PITCH = { chest: 0.35, arms: 0.65, raise: 0.45, min: -1, max: 1.1 },
   SPREAD_OUT = { far: 120, min: 10, max: 55 },
@@ -539,6 +539,7 @@ export class Shooter {
     this.spawningN = [];
     this.optionsAt = [];
     this.options = [];
+    this.noFootClass = [];
     this.respawnAt = 0;
     this.sizes = new Map();
     this.homes = new Map();
@@ -660,7 +661,8 @@ export class Shooter {
     const b = this.bornOf.get(q);
     if (b && this.singles.has(b.by) && this.firstOf.get(b.by) === q) return false;
     if (m.foot) {
-      if (this.popUsed(q.side) + (this.spawningN[q.side] || 0) + (this.respawns[q.side]?.length || 0) <= this.fieldCap(q.side)) return false;
+      const queued = this.noFootClass[q.side] ? 0 : this.respawns[q.side]?.length || 0;
+      if (this.popUsed(q.side) + (this.spawningN[q.side] || 0) + queued <= this.fieldCap(q.side)) return false;
     } else {
       if (this.conquest || (m.kind !== 'VEHICLE' && m.kind !== 'AIR')) return false;
       if (inCategory(m.type, 'HERO') || m.type.bool('Is_Named_Hero')) return false;
@@ -4315,8 +4317,19 @@ export class Shooter {
           shape = real || k,
           foot = /infantry/i.test(shape.str('MovementClass')) && !inCategory(shape, 'VEHICLE');
         if (!foot && !vehicles) continue;
+        if (inCategory(shape, 'STRUCTURE') || shape.tag === 'GroundStructure') continue;
         if (missingFor(w, side, t).length) continue;
         out.set(t.name, { company: t, unit: real || k, units: dummy ? this.realTypes(dummy) || kinds : kinds, foot, cost: Math.max(0, Math.round(costOf(t, faction) / Math.max(1, kinds.length))), dummy });
+      }
+    }
+    const buildsInfantry = [...out.values()].some(c => c.foot);
+    for (const [holder, garrison] of buildsInfantry ? [] : w.garrisons || []) {
+      if (holder.dead || !w.ally(holder.side, side)) continue;
+      for (const entry of garrison.entries) {
+        const t = entry.type;
+        if (out.has(t.name) || t.has('Company_Units') || t.has('Squadron_Units') || inCategory(t, 'HERO') || t.bool('Is_Named_Hero')) continue;
+        if (!/infantry/i.test(t.str('MovementClass')) || inCategory(t, 'VEHICLE') || inCategory(t, 'STRUCTURE')) continue;
+        out.set(t.name, { company: t, unit: t, units: [t], foot: true, cost: 0 });
       }
     }
     for (const q of vehicles ? [] : w.squads) {
@@ -4328,7 +4341,7 @@ export class Shooter {
     if (!out.size)
       for (const q of w.squads) {
         const m = q.members[0];
-        if (q.side !== side || !m || m.kind !== 'INFANTRY' || inCategory(m.type, 'HERO') || out.has(m.type.name)) continue;
+        if (q.side !== side || !m || m.kind !== 'INFANTRY' || !(m.speed > 0) || inCategory(m.type, 'STRUCTURE') || inCategory(m.type, 'HERO') || out.has(m.type.name)) continue;
         out.set(m.type.name, { company: q.type, unit: m.type, cost: 0 });
       }
     return [...out.values()];
@@ -4377,6 +4390,7 @@ export class Shooter {
       feet = opts.filter(c => c.foot && !c.hero && (!c.gid || c.spare > 0)),
       cars = opts.filter(c => !c.foot),
       pts = this.points(s);
+    this.noFootClass[s] = !feet.length;
     if (!feet.length || !pts.length) return false;
     let pick;
     let rides = 0;
@@ -7039,7 +7053,8 @@ export class Shooter {
         side = h * FP_EYE.right;
       const hn = this.twist.headNow,
         floor = hn > 0 ? bz + hn + this.eye * 0.03 + h * (FP_EYE.up + (P.crouch ? FP_EYE.crouchLift : 0)) : -Infinity,
-        off = Math.max(P.crouch ? bz + this.eye * 0.65 + h * FP_EYE.up : bz + this.eye + h * FP_EYE.up, floor) - bz;
+        byBox = P.crouch ? bz + this.eye * 0.65 + h * FP_EYE.up : bz + this.eye + h * FP_EYE.up,
+        off = Math.max(hn > 0 ? Math.min(byBox, floor + h * FP_EYE.headroom) : byBox, floor) - bz;
       this.fpZ = this.fpZ === undefined ? off : this.fpZ + (off - this.fpZ) * Math.min(1, real * 10);
       const ez = bz + this.fpZ;
       cam.position.set(b.x - cy * back + sy * (side + bobX), b.y - sy * back - cy * (side + bobX), ez + bobZ);
