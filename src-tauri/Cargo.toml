@@ -20,6 +20,7 @@ ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 rfd = "0.15"
 serde_json = { version = "1", features = ["preserve_order"] }
+discord-rich-presence = "1.1.0"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

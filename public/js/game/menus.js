@@ -8,6 +8,7 @@ import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
+import { inApp } from '../platform.js';
 import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
@@ -68,8 +69,9 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
-  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' }
-];
+  { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
+  { id: 'IDC_TWEAK_DISCORD', input: 'optDiscord', label: 'Show what you are playing on Discord', app: true }
+].filter(t => !t.app || inApp());
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
 const checkBox = (id, x, y, w, h) => ({ kind: 'CONTROL', text: '', id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y, w, h });

@@ -1,6 +1,8 @@
 import { tacticalIntro } from './game/tacticalintro.js';
 import { TacticalMarker } from './game/tacticalobjects.js';
 import { initCursorLock } from './cursorlock.js';
+import { discordSetting, setDiscord, initDiscord } from './discordpresence.js';
+import { inApp } from './platform.js';
 import { colorizes } from './game/teamcolor.js';
 import { setTacticalRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
@@ -3088,6 +3090,14 @@ async function boot() {
     };
   }
   initCursorLock();
+  {
+    const box = $('optDiscord');
+    box.checked = discordSetting();
+    box.parentElement.hidden = !inApp();
+    box.parentElement.title = 'Shows your current game, map or battle under your name on Discord, while the Discord app is running.';
+    box.onchange = () => setDiscord(box.checked);
+    initDiscord();
+  }
   restoreFullscreen();
   restoreWindowSize();
   {

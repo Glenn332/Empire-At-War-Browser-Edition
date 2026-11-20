@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod discord;
 mod fonts;
 mod setup;
 mod steam;
@@ -577,6 +578,19 @@ impl Server {
                 }));
             }
             return json(&serde_json::json!({ "ok": false }));
+        }
+        if p == "/api/discord" {
+            if arg("on").as_deref() == Some("0") {
+                discord::set(None);
+            } else {
+                discord::set(Some(discord::Status {
+                    details: arg("details").unwrap_or_default(),
+                    state: arg("state").unwrap_or_default(),
+                    large_text: arg("large").unwrap_or_default(),
+                    start: arg("start").and_then(|v| v.parse().ok()).unwrap_or(0),
+                }));
+            }
+            return json(&serde_json::json!({ "ok": true }));
         }
         if p == "/api/cursor-grab" {
             let on = arg("on").as_deref() == Some("1");
