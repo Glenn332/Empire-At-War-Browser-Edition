@@ -204,7 +204,9 @@ const SHOOTER_CSS = `
 .sh-pop.kill { color: var(--eaw-gold); }
 @keyframes sh-pop-up { 0% { opacity: 0; transform: translateY(4px); } 12% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-22px); } }
 .sh-compass { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); width: 460px; height: 30px; background: rgba(0,0,0,.35); }
-.sh-feed { position: absolute; right: 18px; top: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-list); text-shadow: 1px 1px 0 #000; }
+.sh-ctl-tip { position: absolute; right: 18px; top: 14px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); text-shadow: 1px 1px 0 #000; opacity: .85; }
+.sh-ctl-tip b { display: inline-block; min-width: 1.4em; margin-right: 6px; padding: 0 5px; text-align: center; font-weight: 400; color: var(--eaw-gold); border: 1px solid rgba(214,180,90,.7); background: rgba(0,0,0,.45); }
+.sh-feed { position: absolute; right: 18px; top: calc(22px + 24px * var(--eaw-k, 1)); display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-list); text-shadow: 1px 1px 0 #000; }
 .sh-feed-row { padding: 1px 8px; background: rgba(0,0,0,.45); }
 .sh-feed-row.mine { background: rgba(80,70,0,.55); }
 .sh-feed-row i { font-style: normal; color: var(--eaw-cream); margin: 0 7px; opacity: .75; }
@@ -2987,6 +2989,17 @@ export class Shooter {
     try {
       localStorage.setItem('swr-shooter-hints', '1');
     } catch {}
+    this.showControls(15000);
+  }
+
+  toggleControls() {
+    if (this.hintEl?.isConnected) return this.hintEl.close();
+    if (performance.now() - (this.hintClosedAt || 0) < 100) return;
+    this.showControls(0);
+  }
+
+  showControls(closeAfter) {
+    this.hintEl?.close?.();
     const K = id => this.keyText(id),
       E = document.createElement('div');
     E.className = 'sh-hints eaw-frame-s';
@@ -3001,6 +3014,7 @@ export class Shooter {
       ['Abilities', `${K('SHOOTER_ABILITY_1')} ${K('SHOOTER_ABILITY_2')} ${K('SHOOTER_ABILITY_3')}`, 'D-pad'],
       ['View, map, scores', `${K('DIRECT_VIEW')}, ${K('SHOOTER_MAP')}, ${K('SHOOTER_SCORES')}`, 'Y, D-pad down, View'],
       ['Settings', K('SHOOTER_SETTINGS'), 'Menu'],
+      ['Show controls', K('SHOOTER_CONTROLS'), '-'],
       ...(this.ov?.on ? [['Tactical view', `${K('SHOOTER_OVERLORD')}, scroll out`, '-']] : [])
     ];
     E.innerHTML = '<div class="sh-hints-t">Controls</div><table></table><div class="sh-hints-k">Click or press any key to close</div>';
@@ -3016,16 +3030,20 @@ export class Shooter {
     }
     document.body.appendChild(E);
     const close = () => {
+      if (!E.isConnected) return;
       E.remove();
+      this.hintClosedAt = performance.now();
       removeEventListener('keydown', close, true);
       removeEventListener('mousedown', close, true);
       clearTimeout(timer);
     };
-    const timer = setTimeout(close, 15000);
+    const timer = closeAfter > 0 ? setTimeout(close, closeAfter) : 0;
     setTimeout(() => {
+      if (!E.isConnected) return;
       addEventListener('keydown', close, true);
       addEventListener('mousedown', close, true);
     }, 600);
+    E.close = close;
     this.hintEl = E;
   }
 
@@ -6781,6 +6799,7 @@ export class Shooter {
         else this.third = !this.third;
       }
       if (pressed(e, 'SHOOTER_SCORES')) this.scoreEl.style.display = 'block';
+      if (pressed(e, 'SHOOTER_CONTROLS')) this.toggleControls();
       for (let n = 1; n <= 3; n++) if (pressed(e, 'SHOOTER_ABILITY_' + n) || (!rl && pressed(e, 'ABILITY_' + n))) this.ability(n - 1);
     });
     on('keyup', e => {
@@ -7393,6 +7412,8 @@ export class Shooter {
     this.compass.className = 'sh-compass';
     this.compass.width = COMPASS.w;
     this.compass.height = COMPASS.h;
+    this.controlsTip = el('div', '', this.hud);
+    this.controlsTip.className = 'sh-ctl-tip';
     this.feedEl = el('div', '', this.hud);
     this.feedEl.className = 'sh-feed';
     this.annEl = el('div', '', document.body);
@@ -7847,6 +7868,8 @@ export class Shooter {
       u = ride ? ride.members[0] : b;
     if (!u) return;
     this.name.textContent = this.nameOf(u.type);
+    const tip = `<b>${this.keyText('SHOOTER_CONTROLS')}</b> Show controls`;
+    if (this.controlsTip.innerHTML !== tip) this.controlsTip.innerHTML = tip;
     this.hpBar.style.width = `${Math.max(0, Math.min(1, u.health / (u.maxHealth || 1))) * 100}%`;
     const sh = u.maxShield > 0;
     this.shBar.parentElement.style.display = sh ? 'block' : 'none';
