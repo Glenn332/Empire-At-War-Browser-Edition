@@ -315,10 +315,21 @@ export class TroopBay {
     this.sitters.set(id, S);
     const m = await this.seatModel(typeName);
     if (!m || !this.sitters.has(id) || this.gone) return;
+    if (!this.humanoid(m)) {
+      this.sitters.delete(id);
+      this.left.add(id);
+      spot.taken = null;
+      return;
+    }
     S.m = m;
     m.holder.position.set(spot.x, spot.y, 0);
     m.holder.rotation.z = spot.face + Math.PI / 2;
     this.group.add(m.holder);
+  }
+
+  humanoid(m) {
+    const bone = name => m.inst.bone(name);
+    return ['B_PELVIS', 'B_THIGH_L', 'B_THIGH_R', 'B_CALF_L', 'B_CALF_R'].every(bone) && ['B_CHEST', 'B_SPINE', 'B_TORSO'].some(bone);
   }
 
   walkOut(id, arrive, i) {
@@ -399,8 +410,7 @@ export class TroopBay {
   }
 
   bones(m) {
-    const names = new Map(m.inst.bones.map(x => [x.name.toUpperCase(), x]));
-    return n => names.get(n) || null;
+    return name => m.inst.bone(name) || null;
   }
 
   pose(S) {

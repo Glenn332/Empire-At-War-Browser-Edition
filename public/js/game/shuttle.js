@@ -103,8 +103,12 @@ export class ShuttleWaves {
   }
 
   seat(F, e) {
+    if (e.who === 'bot' && this.sh.isDummy(e.unit)) {
+      const real = this.sh.realTypes(e.unit);
+      if (real) e.unit = real[Math.floor(Math.random() * real.length)];
+    }
     F.load.push(e);
-    if (!F.H) F.H = this.heightOf(e.unit);
+    if (!F.H && this.seatType(e.unit)) F.H = this.heightOf(this.seatType(e.unit));
     if (e.who === 'bot') e.sid = 'b' + ++F.bots;
     else e.sid = e.who === 'me' ? 'h' : 'p' + e.who;
     this.seatEvent(F);
@@ -115,7 +119,7 @@ export class ShuttleWaves {
   seatEvent(F) {
     const N = this.sh.game.shooterNet;
     if (!N || !N.peers?.size) return;
-    N.events.push(['seat', F.key, F.load.map(e => [e.sid, (e.unit && e.unit.name) || '', e.who === 'bot' ? 0 : 1])]);
+    N.events.push(['seat', F.key, F.load.map(e => [e.sid, this.seatName(e), e.who === 'bot' ? 0 : 1])]);
   }
 
   step() {
@@ -317,13 +321,28 @@ export class ShuttleWaves {
         tries.push([Math.cos(a) * D * k, Math.sin(a) * D * k]);
       }
     }
-    for (const [dx, dy] of tries) {
-      const o = w.nearestOpen(z.x + dx, z.y + dy, car ? 3 : 1);
-      if (o && free(o.x, o.y)) return { x: o.x, y: o.y };
-    }
+    for (const ramp of [true, false])
+      for (const [dx, dy] of tries) {
+        const o = w.nearestOpen(z.x + dx, z.y + dy, car ? 3 : 1);
+        if (o && free(o.x, o.y) && (!ramp || this.rampClear(o.x, o.y, base))) return { x: o.x, y: o.y };
+      }
     const a = Math.random() * Math.PI * 2,
       r = D * (WAVE.rings.length + 1);
     return w.nearestOpen(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, car ? 3 : 1) || { x: z.x + Math.cos(a) * r, y: z.y + Math.sin(a) * r };
+  }
+
+  rampClear(x, y, face) {
+    const w = this.sh.world,
+      c = Math.cos(face),
+      s = Math.sin(face);
+    for (let i = 0; i < 3; i++) {
+      const exit = bayExit(12, i),
+        px = x + c * exit.x - s * exit.y,
+        py = y + s * exit.x + c * exit.y,
+        open = w.nearestOpen(px, py, 1);
+      if (!open || open.x !== Math.round(px / CELL) * CELL || open.y !== Math.round(py / CELL) * CELL) return false;
+    }
+    return true;
   }
 
   async direct(side, e) {
@@ -488,7 +507,12 @@ export class ShuttleWaves {
       x = t.x + c * R - s * lat;
       y = t.y + s * R + c * lat;
     }
-    const o = w.nearestOpen(x, y, u.foot ? 1 : 3) || { x, y };
+    const cellX = Math.round(x / CELL),
+      cellY = Math.round(y / CELL),
+      open = w.nearestOpen(x, y, u.foot ? 1 : 3),
+      sameCell = open && cellX * CELL === open.x && cellY * CELL === open.y,
+      underOwnCraft = !!t.blockCells?.includes(cellY * w.n + cellX) && this.openBeneath(t, cellX, cellY),
+      o = !open || sameCell || underOwnCraft ? { x, y } : open;
     u.x = o.x;
     u.y = o.y;
     u.z = heightAt(w.terrain, u.x, u.y) + (u.lift || 0) + (u.hoverZ || 0);
@@ -497,6 +521,15 @@ export class ShuttleWaves {
       u.holder.position.set(u.x, u.y, u.z);
       u.holder.rotation.z = u.heading + Math.PI / 2;
     }
+  }
+
+  openBeneath(t, cellX, cellY) {
+    const w = this.sh.world,
+      cell = cellY * w.n + cellX,
+      owners = w.occ?.get(cell) || [];
+    let kind = w.baseKind?.[cell] ?? 0;
+    for (let j = 0; j < owners.length; j += 2) if (owners[j] !== t.blockCells) kind |= owners[j + 1];
+    return !(kind & (TERRAIN.STEEP | TERRAIN.OBSTACLE | TERRAIN.REBELWALL | TERRAIN.EMPIREWALL | TERRAIN.WATER | TERRAIN.IMPASSABLE));
   }
 
   riderOut(F, e, local) {
@@ -613,7 +646,7 @@ export class ShuttleWaves {
     if (!R.bay) {
       const own = R.F ? R.F.load.find(e => e.who === 'me') : null,
         cls = own?.unit || (sh.pick && sh.pick.unit);
-      R.bay = new TroopBay(w, R.F ? R.F.side : sh.me, R.F ? R.F.H : R.V.H || this.heightOf(cls));
+      R.bay = new TroopBay(w, R.F ? R.F.side : sh.me, R.F?.H || R.V?.H || this.heightOf(this.seatType(cls)));
       R.K = this.landedOffset(craft);
       R.face = R.F ? R.F.face : craft.heading;
       sh.yaw = R.face + Math.PI;
@@ -746,6 +779,15 @@ export class ShuttleWaves {
     return V && V.hold > 0 ? Math.ceil(V.hold) : 0;
   }
 
+  seatType(type) {
+    if (!type || !this.sh.isDummy(type)) return type || null;
+    return this.sh.realOf(type);
+  }
+
+  seatName(entry) {
+    return this.seatType(entry.unit)?.name || '';
+  }
+
   heightOf(t) {
     if (!t) return 12;
     const s = t.num ? t.num('Scale_Factor', 1) : 1;
@@ -754,7 +796,7 @@ export class ShuttleWaves {
 
   syncSeats(R) {
     const bay = R.bay,
-      list = R.F ? R.F.load.map(e => [e.sid, e.unit?.name || '', e.who === 'bot' ? 0 : 1]) : R.V?.seats || [],
+      list = R.F ? R.F.load.map(e => [e.sid, this.seatName(e), e.who === 'bot' ? 0 : 1]) : R.V?.seats || [],
       stood = R.F ? R.F.stood : (R.V.stood ||= new Set()),
       want = new Set(),
       mine = R.F ? 'h' : this.rideId;

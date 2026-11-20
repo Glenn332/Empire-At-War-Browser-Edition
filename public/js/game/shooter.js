@@ -341,6 +341,8 @@ const _fwd = new THREE.Vector3(),
   _off = new THREE.Vector3(),
   _rot = new THREE.Vector3(),
   _pq = new THREE.Quaternion(),
+  _barrelQuat = new THREE.Quaternion(),
+  _barrelDir = new THREE.Vector3(),
   _gp = new THREE.Vector3(),
   _ax = new THREE.Vector3(),
   _X = new THREE.Vector3(1, 0, 0),
@@ -410,7 +412,7 @@ export class Shooter {
     this.stats = { heads: 0, vehicles: 0 };
     this.losses = [];
     this.counted = new WeakSet();
-    this.twist = { bone: null, head: null, arms: [], want: 0, pitch: 0, raise: 0, live: [], overlay: false, upper: null, muzzle: null, fixYaw: 0, fixPitch: 0, mask: null, rigid: [], kick: 0 };
+    this.twist = { bone: null, head: null, arms: [], want: 0, pitch: 0, raise: 0, live: [], overlay: false, upper: null, muzzle: null, barrel: null, loose: [], fixYaw: 0, fixPitch: 0, mask: null, rigid: [], kick: 0 };
     const tk = new URLSearchParams(location.search).get('tickets');
     this.ticketStart = Math.max(1, parseInt(tk, 10) || (+globalThis.shooterTickets >= 50 ? Math.round(+globalThis.shooterTickets) : TICKETS.start));
     this.tickets = game.setup.benchmark ? null : game.factions.map(() => this.ticketStart);
@@ -5706,6 +5708,7 @@ export class Shooter {
     T.rigid = [];
     T.bone = T.head = null;
     T.arms = [];
+    T.loose = [];
     T.live = [];
   }
 
@@ -5772,7 +5775,12 @@ export class Shooter {
           T.gunRoot = g;
         }
       }
-      for (const root of T.gunRoot ? [...T.arms, T.gunRoot] : T.arms) root.traverse(o => all.has(o) && keep.add(o));
+      const armParts = ['CLAV', 'BICEP', 'FARM', 'HAND'].flatMap(part => ['R', 'L'].map(side => u.inst?.bone(`B_${part}_${side}`))).filter(Boolean),
+        fingers = T.arms.length ? bones.filter(bone => /FINGER|THUMB/i.test(bone.name)) : [],
+        chestTree = new Set();
+      T.bone?.traverse(o => chestTree.add(o));
+      T.loose = T.bone ? [...armParts, ...fingers].filter(bone => !chestTree.has(bone) && !armParts.includes(bone.parent) && !fingers.includes(bone.parent)) : [];
+      for (const root of [...T.arms, ...armParts, ...fingers, ...(T.gunRoot ? [T.gunRoot] : [])]) root.traverse(o => all.has(o) && keep.add(o));
       T.mask = keep.size ? new Set(bones.filter(x => !keep.has(x))) : null;
       T.rigid = [];
       if (T.mask) for (const bn of T.mask) for (const c of bn.children) if (!all.has(c) && c.visible) T.rigid.push(c);
@@ -5783,6 +5791,7 @@ export class Shooter {
     T.headNow = 0;
     this.fpZ = undefined;
     T.anchor = null;
+    T.barrel = null;
     T.gunRel = null;
     this.panel.style.display = 'none';
     this.hud.style.display = 'block';
@@ -6690,6 +6699,7 @@ export class Shooter {
     const g = this.game,
       on = (ev, fn) => g.listen(ev, fn, { capture: true });
     on('keydown', e => {
+      if (e.code === 'Escape' && document.pointerLockElement === this.canvas()) document.exitPointerLock?.();
       if (!this.owns(e)) return;
       if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
       if (this.setEl && this.setEl.style.display !== 'none') {
@@ -7138,16 +7148,11 @@ export class Shooter {
       if (clip) {
         new AnimState(u.inst, clip, { loop: true }).pose();
         u.inst.root.updateMatrixWorld(true);
-        T.muzzle.getWorldPosition(_mz);
-        T.muzzle.parent.getWorldPosition(_gp);
-        T.calib = {
-          y: wrap(Math.atan2(_mz.y - _gp.y, _mz.x - _gp.x) - u.heading),
-          p: Math.atan2(_mz.z - _gp.z, Math.hypot(_mz.x - _gp.x, _mz.y - _gp.y))
-        };
-        if (T.gunRoot) {
-          T.anchor = u.inst.bone('B_HAND_R') || u.inst.bone('B_HAND_L') || T.bone;
-          T.gunRel = T.anchor ? new THREE.Matrix4().copy(T.anchor.matrixWorld).invert().multiply(T.gunRoot.matrixWorld) : null;
-        }
+        if (T.gunRoot) T.anchor = u.inst.bone('B_HAND_R') || u.inst.bone('B_HAND_L') || T.bone;
+        T.barrel = this.barrelBone(T);
+        T.barrel.getWorldQuaternion(_barrelQuat).invert();
+        T.calib = { axis: new THREE.Vector3(Math.cos(u.heading), Math.sin(u.heading), 0).applyQuaternion(_barrelQuat) };
+        if (T.gunRoot) T.gunRel = T.anchor ? new THREE.Matrix4().copy(T.anchor.matrixWorld).invert().multiply(T.gunRoot.matrixWorld) : null;
       }
     }
     if (T.overlay && !u.inside) {
@@ -7194,13 +7199,14 @@ export class Shooter {
     const held = view && T.overlay && T.upper,
       chestYaw = yaw + (aimed ? T.fixYaw : 0),
       chestPitch = held ? pitch : pitch * (T.arms.length ? AIM_PITCH.chest : 1),
-      gunPivot = T.gunRoot && B ? (held ? _gpv.copy(this.eyeAt) : B.getWorldPosition(_gpv)) : null;
+      gunPivot = (T.gunRoot || T.loose.length) && B ? (held ? _gpv.copy(this.eyeAt) : B.getWorldPosition(_gpv)) : null;
     bend(B, chestYaw, chestPitch, held ? this.eyeAt : null);
     const kick = T.kick;
     T.kick *= Math.exp(-(this.realDt || 0) * 14);
     const armPitch = (held ? 0 : pitch * AIM_PITCH.arms) + (u.inside ? 0 : T.raise || 0) + (aimed ? T.fixPitch : 0) + kick;
     const toss = u === this.body ? this.throwPitch() : 0;
-    for (const arm of T.arms) bend(arm, 0, armPitch + (arm === T.arms[0] ? toss : 0));
+    for (const arm of T.arms) if (!T.loose.includes(arm)) bend(arm, 0, armPitch + (arm === T.arms[0] ? toss : 0));
+    if (gunPivot) for (const part of T.loose) bend(part, chestYaw, chestPitch + armPitch + (part.name === T.arms[0]?.name ? toss : 0), gunPivot);
     const pinned = T.overlay && T.gunRel && T.anchor && T.gunRoot.parent;
     if (pinned) {
       const G = T.gunRoot;
@@ -7208,15 +7214,15 @@ export class Shooter {
       G.parent.updateWorldMatrix(true, false);
       _gm.copy(G.parent.matrixWorld).invert().multiply(_gm2.multiplyMatrices(T.anchor.matrixWorld, T.gunRel));
       _gm.decompose(G.position, G.quaternion, _gs);
-    } else if (gunPivot) bend(T.gunRoot, chestYaw, chestPitch + armPitch, gunPivot);
+    } else if (gunPivot && T.gunRoot) bend(T.gunRoot, chestYaw, chestPitch + armPitch, gunPivot);
     const M = T.muzzle,
-      G = M && M.parent;
+      G = M && (T.barrel || M.parent);
     if (aimed && G && G.isBone !== false) {
       M.getWorldPosition(_mz);
-      G.getWorldPosition(_gp);
-      const cal = T.calib || { y: 0, p: 0 },
-        ey = wrap(Math.atan2(_mz.y - _gp.y, _mz.x - _gp.x) - this.yaw - cal.y),
-        ep = Math.atan2(_mz.z - _gp.z, Math.hypot(_mz.x - _gp.x, _mz.y - _gp.y)) - this.pitch - kick - cal.p;
+      if (T.calib) _barrelDir.copy(T.calib.axis).applyQuaternion(G.getWorldQuaternion(_barrelQuat));
+      else _barrelDir.copy(_mz).sub(G.getWorldPosition(_gp));
+      const ey = wrap(Math.atan2(_barrelDir.y, _barrelDir.x) - this.yaw),
+        ep = Math.atan2(_barrelDir.z, Math.hypot(_barrelDir.x, _barrelDir.y)) - this.pitch - kick;
       if (T.calib && Math.abs(ey) < 1.4) T.fixYaw = Math.max(-FIX.yaw, Math.min(FIX.yaw, T.fixYaw - ey * 0.35));
       if (fp) {
         const C = this.game.camera;
@@ -7229,6 +7235,15 @@ export class Shooter {
       } else if (T.calib && Math.abs(ep) < 1.4) T.fixPitch = Math.max(-FIX.pitch, Math.min(FIX.pitch, T.fixPitch - ep * 0.3));
     }
     if (B || T.head || T.arms.length) u.inst.syncFromBones();
+  }
+
+  barrelBone(T) {
+    if (T.gunRoot !== T.muzzle || !T.anchor) return T.muzzle.parent;
+    let held = null;
+    T.anchor.traverse(bone => {
+      if (!held && bone !== T.anchor && /GUN|WEAPON|RIFLE|BLASTER|PISTOL/i.test(bone.name)) held = bone;
+    });
+    return held || T.anchor;
   }
 
   endStats() {

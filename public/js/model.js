@@ -940,6 +940,66 @@ function buildGeometry(model, g) {
   return geo;
 }
 
+const RIG_PARTS = {
+  CLAV: 'CLAV',
+  CLAVICLE: 'CLAV',
+  SHOULDER: 'CLAV',
+  BICEP: 'BICEP',
+  UPPERARM: 'BICEP',
+  ARM: 'BICEP',
+  FARM: 'FARM',
+  FOREARM: 'FARM',
+  HAND: 'HAND',
+  THIGH: 'THIGH',
+  UPLEG: 'THIGH',
+  CALF: 'CALF',
+  LEG: 'CALF',
+  SHIN: 'CALF',
+  FOOT: 'FOOT',
+  PELVIS: 'PELVIS',
+  HIPS: 'PELVIS',
+  NECK: 'NECK',
+  HEAD: 'HEAD',
+  CHEST: 'CHEST',
+  TORSO: 'TORSO'
+};
+
+function rigKey(name) {
+  let part = String(name)
+      .toUpperCase()
+      .replace(/^MIXAMORIG:/, '')
+      .replace(/^BIP0?1(?=[ _]|$)[ _]?/, '')
+      .replace(/^B_/, ''),
+    side = '',
+    match;
+  if ((match = part.match(/^(LEFT|RIGHT)(.+)$/))) [side, part] = [match[1][0], match[2]];
+  else if ((match = part.match(/^([LR])[ _.](.+)$/))) [side, part] = [match[1], match[2]];
+  else if ((match = part.match(/^(.+)[ _.]([LR])$/))) [side, part] = [match[2], match[1]];
+  part = part.replace(/[ _.]/g, '');
+  const spine = !side && part.match(/^SPINE(\d*)$/);
+  if (spine) return 'SPINE' + (spine[1] || '0');
+  const role = RIG_PARTS[part];
+  return role ? role + (side ? '_' + side : '') : null;
+}
+
+function rigIndex(bones) {
+  const index = new Map(),
+    spines = [];
+  for (const bone of bones) {
+    const key = rigKey(bone.name);
+    if (!key) continue;
+    if (key.startsWith('SPINE')) spines.push([Number(key.slice(5)), bone]);
+    else if (!index.has(key)) index.set(key, bone);
+  }
+  spines.sort((a, b) => a[0] - b[0]);
+  if (spines.length) {
+    if (!index.has('SPINE')) index.set('SPINE', spines[0][1]);
+    if (!index.has('CHEST') && spines.length > 1) index.set('CHEST', spines[spines.length - 1][1]);
+    if (!index.has('TORSO') && spines.length > 1) index.set('TORSO', spines[1][1]);
+  }
+  return index;
+}
+
 export class ModelInstance {
   constructor() {
     this.root = new THREE.Group();
@@ -960,9 +1020,16 @@ export class ModelInstance {
     this.dirty = false;
     this.skinMask = null;
     this.skinPin = null;
+    this.rigIndex = null;
   }
   bone(name) {
-    return name ? this.boneByName.get(name.toUpperCase()) : undefined;
+    if (!name) return undefined;
+    const exact = this.boneByName.get(name.toUpperCase());
+    if (exact) return exact;
+    const key = rigKey(name);
+    if (!key) return undefined;
+    this.rigIndex ||= rigIndex(this.bones);
+    return this.rigIndex.get(key);
   }
 
   syncFromBones() {

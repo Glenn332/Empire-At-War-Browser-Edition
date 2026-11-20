@@ -29,7 +29,10 @@ const sh = {
   hq: () => null,
   panel: { style: {} },
   lock: () => {},
-  classes: () => []
+  classes: () => [],
+  isDummy: () => false,
+  realOf: () => null,
+  realTypes: () => null
 };
 const W = new ShuttleWaves(sh);
 assert.equal(W.on(), true, 'shuttles are on by default');

@@ -4097,6 +4097,7 @@ export class LandWorld {
           dead: false,
           gone: false,
           target: null,
+          untargetable: !t.bool('Is_Valid_Target', true) || undefined,
           repath: 0,
           maxHealth: landHealth(t, 50),
           health: landHealth(t, 50),
