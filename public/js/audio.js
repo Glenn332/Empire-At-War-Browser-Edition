@@ -6,6 +6,10 @@ import { SpeechPlayer } from './speech.js';
 import { activeLanguage } from './language.js';
 import { localizedAudioFile } from './localizedmedia.js';
 
+const POSITIONAL_VOICES = 32;
+const FLAT_VOICES = 24;
+const STOLEN_FADE_SECONDS = 0.03;
+
 const release = el => {
   el.pause();
   el.src = '';
@@ -16,8 +20,8 @@ export class Audio {
   constructor() {
     this.ctx = null;
     this.buffers = new Map();
-    this.active = new Map();
-    this.lastPlay = new Map();
+    this.instances = new Map();
+    this.positional = new Set();
     this.listener = { x: 0, y: 0, dist: 1500 };
     this.falloff = 1;
     this.forceNext = false;
@@ -201,8 +205,6 @@ export class Audio {
       boost = this.boostNext || 1;
     this.forceNext = false;
     this.boostNext = 0;
-    const live = this.active.get(key) || 0;
-    if (live >= ev.num('Max_Instances', 4) && !force) return true;
     if (this.ambientVOOff && ev.bool('Is_Ambient_VO')) return true;
     if (this.hudVOOff && ev.bool('Is_HUD_VO')) return true;
     if (this.unitResponseOff && ev.bool('Is_Unit_Response_VO')) return true;
@@ -218,15 +220,29 @@ export class Audio {
       if (this.hud.length < 4 && !this.hud.some(h => h.name === name)) this.hud.push({ name, at: now, language });
       return true;
     }
-    if (!voice && !force && now - (this.lastPlay.get(key) || -1) < 0.04) return true;
-    const prio = ev.num('Priority', 3);
-    if (!voice && !force && ((this.total >= 40 && prio >= 3) || (this.total >= 28 && prio >= 4) || this.total >= 56)) return true;
-    this.lastPlay.set(key, now);
+    const priority = ev.num('Priority', 3),
+      positional = x !== undefined && !voice && ev.bool('Is_3D', !ev.bool('Is_2D')),
+      distance = positional ? this.listenerDistance(x, y) : 0,
+      instances = this.instances.get(key) || this.instances.set(key, new Set()).get(key);
+    let replaced = null,
+      displaced = null;
+    if (!force) {
+      const limit = ev.num('Max_Instances', 1);
+      if (limit <= 0) return true;
+      if (instances.size >= limit) {
+        replaced = positional ? this.farthestOf(instances) : null;
+        if (!replaced || distance > this.listenerDistance(replaced.x, replaced.y)) return true;
+      }
+      if (positional && this.positional.size - (replaced ? 1 : 0) + this.loops.size >= POSITIONAL_VOICES) {
+        displaced = this.leastImportantOf(this.positional, replaced);
+        if (!displaced || priority > displaced.priority || distance >= this.listenerDistance(displaced.x, displaced.y)) return true;
+      }
+      if (!voice && !positional && this.total - this.positional.size >= FLAT_VOICES) return true;
+    }
 
     let gain = (ev.num('Min_Volume', 80) + Math.random() * (ev.num('Max_Volume', 80) - ev.num('Min_Volume', 80))) / 100;
     let pan = 0,
       far = 1;
-    const positional = x !== undefined && !voice && ev.bool('Is_3D', !ev.bool('Is_2D'));
     if (positional) {
       const h = this.hear(ev.num('Volume_Saturation_Distance', 400), x, y);
       far = h.gain;
@@ -241,18 +257,23 @@ export class Audio {
       this.seq.set(key, i + 1);
     } else file = samples[Math.floor(Math.random() * samples.length)];
     if (ev.bool('Localize')) file = localizedAudioFile(file, language);
-    this.active.set(key, live + 1);
+    if (replaced) this.stopInstance(replaced);
+    if (displaced) this.stopInstance(displaced);
+    const instance = { x, y, priority, source: null, gain: null, stopped: false, release: null };
+    instances.add(instance);
+    if (positional) this.positional.add(instance);
     this.total++;
     const delay = (ev.num('Min_Predelay', 0) + Math.random() * Math.max(0, ev.num('Max_Predelay', 0) - ev.num('Min_Predelay', 0))) / 1000;
     if (voice && group) this.groups.set(group, now + delay + 1.2);
     if (hud) this.hudUntil = now + delay + 1.2;
     if (reply) this.voiceUntil = now + delay + 1.2;
-    const done = () => {
-      this.active.set(key, Math.max(0, (this.active.get(key) || 1) - 1));
+    const done = (instance.release = () => {
+      if (!instances.delete(instance)) return;
+      this.positional.delete(instance);
       this.total = Math.max(0, this.total - 1);
-    };
+    });
     this.buffer(file, language).then(buf => {
-      if (!buf) {
+      if (!buf || instance.stopped) {
         done();
         return;
       }
@@ -263,6 +284,8 @@ export class Audio {
       const rate = (src.playbackRate.value = (lo + Math.random() * (hi - lo)) / 100);
       const g = this.ctx.createGain();
       g.gain.value = gain;
+      instance.source = src;
+      instance.gain = g;
       let node = g;
       const S = positional ? this.spatial : null;
       if (!S && positional && this.ctx.createStereoPanner) {
@@ -293,6 +316,52 @@ export class Audio {
       src.start(at);
     });
     return true;
+  }
+
+  listenerDistance(x, y) {
+    return Math.hypot(x - this.listener.x, y - this.listener.y);
+  }
+
+  farthestOf(instances) {
+    let farthest = null,
+      farthestDistance = -1;
+    for (const instance of instances) {
+      if (instance.x === undefined) continue;
+      const distance = this.listenerDistance(instance.x, instance.y);
+      if (distance > farthestDistance) {
+        farthest = instance;
+        farthestDistance = distance;
+      }
+    }
+    return farthest;
+  }
+
+  leastImportantOf(instances, skipped) {
+    let least = null,
+      leastDistance = -1;
+    for (const instance of instances) {
+      if (instance === skipped) continue;
+      const distance = this.listenerDistance(instance.x, instance.y);
+      if (!least || instance.priority > least.priority || (instance.priority === least.priority && distance > leastDistance)) {
+        least = instance;
+        leastDistance = distance;
+      }
+    }
+    return least;
+  }
+
+  stopInstance(instance) {
+    instance.stopped = true;
+    instance.release();
+    const source = instance.source;
+    if (!source) return;
+    source.stopped = true;
+    const now = this.ctx.currentTime;
+    instance.gain.gain.cancelScheduledValues(now);
+    instance.gain.gain.setTargetAtTime(0, now, STOLEN_FADE_SECONDS / 4);
+    try {
+      source.stop(now + STOLEN_FADE_SECONDS);
+    } catch {}
   }
 
   nextHud() {

@@ -39,7 +39,7 @@ import {
   sweepBox,
   leadCircle
 } from './projflight.js';
-import { fireNum, startingWeapon, fireSound, fixedMuzzle, swapMode } from './weaponswap.js';
+import { fireNum, startingWeapon, fireSound, weaponFireSound, fixedMuzzle, swapMode } from './weaponswap.js';
 import { leadPoint, fieldPassed, mergeWings, recheckForces, wingSpeed, dropEscort } from './orders.js';
 import { basisOf } from '../particlesim.js';
 import { CombatMods, MOD, SPACE, bonusSourceDefs, bonusTypeFits, bonusOwnerFits } from './combatmods.js';
@@ -4735,7 +4735,7 @@ export class World {
           : { range: hp.range, damage: hp.projDamage }
     );
     if (ok === false) return false;
-    if (hp.fireSfx) this.audio.play(hp.fireSfx, x, y);
+    this.audio.play(weaponFireSound(u.type, hp), x, y);
     return true;
   }
 

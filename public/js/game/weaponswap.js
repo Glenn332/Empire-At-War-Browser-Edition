@@ -37,6 +37,10 @@ export function fireSound(type, proj) {
   return (type.list('Projectile_Types').length > 1 && proj && proj.str('SFXEvent_Fire')) || type.str('SFXEvent_Fire');
 }
 
+export function weaponFireSound(type, weapon) {
+  return (weapon && weapon.fireSfx) || fireSound(type, weapon && weapon.proj);
+}
+
 export function thrownReach(proj) {
   if (!proj || !/^GRENADE$/i.test(proj.str('Projectile_Category').trim())) return null;
   const g = proj.num('Projectile_Grenade_Gravity', 0) * proj.num('Projectile_Grenade_Gravity_Lob_Mod', 1),
