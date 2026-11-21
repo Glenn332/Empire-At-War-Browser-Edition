@@ -4218,6 +4218,7 @@ export class LandWorld {
               cone: h.num('Fire_Cone_Width', 360) * DEG,
               facing: hardpointFacing(inst, h),
               hp: name,
+              fireSfx: h.str('Fire_SFXEvent').trim(),
               turret: h.bool('Is_Turret')
                 ? {
                     name: h.str('Turret_Bone_Name'),

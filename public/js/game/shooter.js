@@ -15,7 +15,7 @@ import { simRandom } from './simrandom.js';
 import { settlePose } from './posecache.js';
 import { MOD } from './combatmods.js';
 import { categoryOf, CAT } from './projflight.js';
-import { fireSound } from './weaponswap.js';
+import { weaponFireSound } from './weaponswap.js';
 import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
@@ -1413,7 +1413,7 @@ export class Shooter {
       const A = this.game.audio;
       if (A) {
         A.forceNext = true;
-        A.play(fireSound(u.type, wp.proj), u.x, u.y);
+        A.play(weaponFireSound(u.type, wp), u.x, u.y);
       }
       return;
     }

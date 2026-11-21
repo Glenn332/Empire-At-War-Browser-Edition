@@ -61,7 +61,7 @@ import { Shots } from './landshots.js';
 import { BenchOverlay } from '../benchoverlay.js';
 import { loadBrain, Mind, target, buildGoal, aiFreeStore } from './landbrain.js';
 import { loadPrioritySets } from './priorities.js';
-import { fireSound } from './weaponswap.js';
+import { weaponFireSound } from './weaponswap.js';
 import { LandScripts } from './landscripts.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { stepTacticalSpeech } from './tacticalspeech.js';
@@ -1027,7 +1027,7 @@ export class LandGame {
         this.shooter.recoil(s.from, s);
       }
       else lastFire = world.time;
-      this.audio.play(fireSound(s.from.type, s.w.proj), s.x, s.y);
+      this.audio.play(weaponFireSound(s.from.type, s.w), s.x, s.y);
     };
     world.onSound = (name, x, y, side) => {
       if (side !== undefined && side !== this.me && this.audio.isVoice(name)) return;
