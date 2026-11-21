@@ -36,6 +36,8 @@ export class Audio {
     this.falloff = 1;
     this.forceNext = false;
     this.boostNext = 0;
+    this.followNext = null;
+    this.following = new Set();
     this.sfxVolume = 0.7;
     this.musicVolume = 0.45;
     this.voiceVolume = 0.9;
@@ -95,6 +97,7 @@ export class Audio {
     ear.rightY = m[1];
     ear.rightZ = m[2];
     ear.placed = true;
+    this.followSounds();
     const listener = this.ctx?.listener;
     if (!listener || this.spatial) return;
     if (listener.positionX) {
@@ -111,6 +114,36 @@ export class Audio {
       listener.setPosition(ear.x, ear.y, ear.z);
       listener.setOrientation(forwardX, forwardY, forwardZ, m[4], m[5], m[6]);
     }
+  }
+
+  followSounds() {
+    for (const s of this.following) {
+      const u = s.from;
+      if (s.stopped || !u || u.dead || u.x === undefined) {
+        this.following.delete(s);
+        continue;
+      }
+      s.x = u.x + s.dx;
+      s.y = u.y + s.dy;
+      if (s.panner) this.placePanner(s.panner, s.x, s.y);
+      else if (s.pan && s.gain) {
+        const h = this.hear(s.saturation, s.x, s.y);
+        s.pan.pan.value = h.pan;
+        s.gain.gain.value = s.level * h.gain;
+      }
+    }
+    for (const l of this.loops.values()) {
+      const u = l.from;
+      if (!l.panner || !u || u.dead || u.x === undefined) continue;
+      l.x = u.x;
+      l.y = u.y;
+      this.placePanner(l.panner, l.x, l.y);
+    }
+  }
+
+  playFrom(unit, name, x, y) {
+    this.followNext = unit || null;
+    return this.play(name, x, y);
   }
 
   soundHeight(x, y) {
@@ -294,6 +327,8 @@ export class Audio {
   }
 
   play(name, x, y, language = activeLanguage) {
+    const from = this.followNext;
+    this.followNext = null;
     if (!name || !this.ctx) return false;
     if (this.menuOnly && !/^GUI_/i.test(name.trim())) return false;
     const ev = db.sfx.get(name.trim().toUpperCase());
@@ -352,7 +387,8 @@ export class Audio {
       pan = h.pan;
       if (gain * far < 0.02) return true;
     }
-    gain = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * (placed ? 1 : far) * boost;
+    const level = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * boost;
+    gain = level * (placed ? 1 : far);
     let file;
     if (ev.bool('Play_Sequentially')) {
       const i = this.seq.get(key) || 0;
@@ -362,7 +398,23 @@ export class Audio {
     if (ev.bool('Localize')) file = localizedAudioFile(file, language);
     if (replaced) this.stopInstance(replaced);
     if (displaced) this.stopInstance(displaced);
-    const instance = { x, y, priority, source: null, gain: null, stopped: false, release: null };
+    const follows = positional && !!from && from.x !== undefined;
+    const instance = {
+      x,
+      y,
+      priority,
+      source: null,
+      gain: null,
+      stopped: false,
+      release: null,
+      from: follows ? from : null,
+      dx: follows ? x - from.x : 0,
+      dy: follows ? y - from.y : 0,
+      level,
+      saturation,
+      panner: null,
+      pan: null
+    };
     instances.add(instance);
     if (positional) this.positional.add(instance);
     this.total++;
@@ -373,6 +425,7 @@ export class Audio {
     const done = (instance.release = () => {
       if (!instances.delete(instance)) return;
       this.positional.delete(instance);
+      this.following.delete(instance);
       this.total = Math.max(0, this.total - 1);
     });
     this.buffer(file, language).then(buf => {
@@ -395,12 +448,15 @@ export class Audio {
       if (panner) {
         g.connect(panner);
         node = panner;
+        instance.panner = panner;
       } else if (!S && positional && this.ctx.createStereoPanner) {
         const p = this.ctx.createStereoPanner();
         p.pan.value = pan;
         g.connect(p);
         node = p;
+        instance.pan = p;
       }
+      if (instance.from && !S) this.following.add(instance);
       src.connect(g);
       if (S) S.route(g, x, y);
       else node.connect(this.master);
@@ -417,7 +473,10 @@ export class Audio {
         done();
         if (src.stopped) return;
         const next = ev.str('Chained_SFXEvent');
-        if (next) this.play(next, x, y);
+        if (next) {
+          this.followNext = instance.from;
+          this.play(next, instance.x, instance.y);
+        }
         if (hud) this.nextHud();
       };
       src.start(at);
@@ -525,6 +584,7 @@ export class Audio {
           gain: null,
           pan: null,
           panner: null,
+          from: c.unit || null,
           x: c.x,
           y: c.y,
           src: null,
@@ -566,6 +626,7 @@ export class Audio {
           l.out = out;
         });
       } else {
+        l.from = c.unit || l.from;
         l.x = c.x;
         l.y = c.y;
         if (l.gain) l.gain.gain.setTargetAtTime(gain, now, 0.15);
@@ -601,9 +662,10 @@ export class Audio {
     return !!ev && (ev.bool('Is_Unit_Response_VO') || ev.bool('Is_HUD_VO') || ev.bool('Is_Ambient_VO') || ev.bool('Localize'));
   }
 
-  playAt(player, name, x, y) {
+  playAt(player, name, x, y, from) {
     if (!(name && db.sfx.get(String(name).trim().toUpperCase()))) return false;
     if (this.isVoice(name)) return this.playFor(player, name);
+    this.followNext = from || null;
     return this.play(name, x, y);
   }
 

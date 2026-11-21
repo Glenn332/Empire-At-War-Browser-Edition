@@ -1028,7 +1028,7 @@ export class LandGame {
         this.audio.boostNext = this.shooter.shotBoost(s);
         this.shooter.recoil(s.from, s);
       }
-      this.audio.play(weaponFireSound(s.from.type, s.w), s.x, s.y);
+      this.audio.playFrom(s.from, weaponFireSound(s.from.type, s.w), s.x, s.y);
     };
     world.onSound = (name, x, y, side) => {
       if (side !== undefined && side !== this.me && this.audio.isVoice(name)) return;

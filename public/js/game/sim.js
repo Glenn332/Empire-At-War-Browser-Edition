@@ -3321,7 +3321,7 @@ export class World {
         u.type.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 5),
         u.type.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 10)
       );
-      this.audio.playAt(u.player, u.flyBy, u.x, u.y);
+      this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
     }
     if (u.player.id < 0) {
       if (u.isMobile) u.syncObj();
@@ -3619,7 +3619,7 @@ export class World {
       let ev;
       if (u.construction) ev = u.player.faction ? u.player.faction.str('SFXEvent_Tactical_Object_Building_Loop') : '';
       else ev = (u.speed > 2 ? t.str('SFXEvent_Engine_Moving_Loop') : t.str('SFXEvent_Engine_Idle_Loop')) || t.str('SFXEvent_Ambient_Loop');
-      if (ev) out.push({ id: u.id, event: ev, x: u.x, y: u.y });
+      if (ev) out.push({ id: u.id, event: ev, x: u.x, y: u.y, unit: u });
     }
     return out;
   }
@@ -4740,7 +4740,7 @@ export class World {
           : { range: hp.range, damage: hp.projDamage }
     );
     if (ok === false) return false;
-    this.audio.play(weaponFireSound(u.type, hp), x, y);
+    this.audio.playFrom(u, weaponFireSound(u.type, hp), x, y);
     return true;
   }
 
