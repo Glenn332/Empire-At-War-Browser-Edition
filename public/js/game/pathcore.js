@@ -144,15 +144,17 @@ export function routeOf(NX, NY, NS, NT, NH, NOP, NP, end, now, F) {
 
 export { MOVING, STILL, FIELD, SCELL, touch };
 
-const SOFT_HAZARD_TRY = 3;
-export const UNTIMED_TRIES = SOFT_HAZARD_TRY + 1;
+const SOFT_HAZARD_TRY = 4;
+const LOOSE_START = 600;
+
+const nextTryStates = (K, tryNumber, states) => (tryNumber >= 1 ? Math.floor(states * K.expGrow) : states);
 
 export function searchBudget(K) {
   let states = 0,
     tryStates = K.maxExp;
-  for (let k = 0; k <= Math.min(SOFT_HAZARD_TRY, K.tries - 1); k++) {
-    states += Math.ceil(tryStates) + 1;
-    tryStates *= K.expGrow;
+  for (let k = 0; k < K.tries; k++) {
+    states += tryStates + 1;
+    tryStates = nextTryStates(K, k, tryStates);
   }
   return states;
 }
@@ -185,7 +187,6 @@ export class PathCore {
     this.searchMs = Infinity;
     this.expBudget = Infinity;
     this.statesUsed = 0;
-    this.triesBeforeTimeLimit = 0;
     this.irun = 0;
   }
 
@@ -515,11 +516,21 @@ export class PathCore {
 
   find(u, gx, gy, face) {
     const pts = this.findOnce(u, gx, gy, 0, face);
-    if (!pts || pts.length) return pts;
+    if (!pts || pts.length || !this.looseStartFreesMore(u)) return pts;
     const used = this.statesUsed || 0,
-      again = this.findOnce(u, gx, gy, 600, face);
+      again = this.findOnce(u, gx, gy, LOOSE_START, face);
     this.statesUsed = used + (this.statesUsed || 0);
     return again;
+  }
+
+  looseStartFreesMore(u) {
+    const q = this.ext(u);
+    return this.still.some(e => {
+      if (e.o === u || !this.sees(u, e.o)) return false;
+      const reach = (e.ext?.r || 0) + q.r,
+        distanceSquared = (e.x - u.x) ** 2 + (e.y - u.y) ** 2;
+      return distanceSquared >= reach * reach && distanceSquared < (reach + LOOSE_START) ** 2;
+    });
   }
 
   findOnce(u, gx, gy, loose, face) {
@@ -566,18 +577,7 @@ export class PathCore {
         progress = 0;
       const until = performance.now() + this.searchMs;
       for (let k = 0; k < K.tries; k++) {
-        if (k >= 1) {
-          rotMult += K.rotInc;
-          fwdMult += K.fwdInc;
-          maxExp *= K.expGrow;
-        }
         if (this.statesUsed >= this.expBudget) break;
-        if (k >= 2) {
-          cutoff = Math.max(cutoff + K.cutK * d, progress);
-          wMult *= K.coef;
-        }
-        if (k >= SOFT_HAZARD_TRY) soft = true;
-        if (k >= 4) speed *= 0.5;
         const pts = this.search(u, q, gx, gy, {
           rotMult,
           fwdMult,
@@ -586,13 +586,23 @@ export class PathCore {
           v: speed,
           cutoff,
           w: 1 / wMult,
-          until: k >= this.triesBeforeTimeLimit ? until : 0,
+          until,
           face: faced && k < 2 ? face : undefined
         });
         this.statesUsed += this.dbg.pushed || 0;
         if (pts) return pts;
-        progress = Math.max(progress, d - this.dbg.best);
-        if (k + 1 >= this.triesBeforeTimeLimit && performance.now() > until) break;
+        progress = Math.max(progress, this.dbg.farthestTravelled);
+        if (performance.now() > until) break;
+        maxExp = nextTryStates(K, k, maxExp);
+        if (k < 1) continue;
+        rotMult += K.rotInc;
+        fwdMult += K.fwdInc;
+        if (k < 2) continue;
+        cutoff = Math.max(cutoff + K.cutK * d, progress);
+        wMult *= K.coef;
+        if (k < SOFT_HAZARD_TRY - 1) continue;
+        soft = true;
+        if (k >= SOFT_HAZARD_TRY) speed *= 0.5;
       }
       return [];
     } finally {
@@ -830,7 +840,7 @@ export class PathCore {
     ]);
     const found = ex.search();
     const R = new Float64Array(mem.buffer, L.P, 80);
-    this.dbg = { pops: R[60], pushed: R[61], best: R[62], op4: R[64], op4hard: R[65], N, D: step };
+    this.dbg = { pops: R[60], pushed: R[61], best: R[62], op4: R[64], op4hard: R[65], farthestTravelled: R[67], N, D: step };
     const buf = mem.buffer,
       NX = new Float64Array(buf, L.NX, cap),
       NY = new Float64Array(buf, L.NY, cap),
@@ -980,7 +990,7 @@ export class PathCore {
       }
       return top;
     };
-    const dbg = (this.dbg = { pops: 0, op4: 0, op4hard: 0, best: Infinity, N: 0, D: 0 });
+    const dbg = (this.dbg = { pops: 0, op4: 0, op4hard: 0, best: Infinity, farthestTravelled: 0, N: 0, D: 0 });
     const startS = u.speed >= v * 0.95 ? v : Math.min(u.speed, v),
       nearOff = near + (v - startS) ** 2 / (2 * dec) + 100;
     NX[0] = ux;
@@ -1050,7 +1060,9 @@ export class PathCore {
       pushed++;
       const id = count++,
         t = t0 + dt,
-        wh = ow > 1 && t * v < cutoff ? ow : 1;
+        travelled = t * v,
+        wh = ow > 1 && travelled < cutoff ? ow : 1;
+      if (travelled > dbg.farthestTravelled) dbg.farthestTravelled = travelled;
       NX[id] = x;
       NY[id] = y;
       NH[id] = h;

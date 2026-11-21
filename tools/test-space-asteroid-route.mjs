@@ -20,7 +20,7 @@ globalThis.fetch = async input => {
 const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const { Pathfinder, layerMask } = await import('../public/js/game/pathfind.js');
-const { PathCore, searchBudget, UNTIMED_TRIES } = await import('../public/js/game/pathcore.js');
+const { PathCore, searchBudget } = await import('../public/js/game/pathcore.js');
 
 const LOGIC_FPS = 30,
   DEG = Math.PI / 180,
@@ -80,7 +80,7 @@ for (const name of spaceMaps) {
   loaded.push({ name, map, fields: fieldsOf(map) });
 }
 loaded.sort((a, b) => b.fields.length - a.fields.length);
-const busiest = loaded.slice(0, Number(process.env.SWR_ASTEROID_MAPS || 4)).filter(entry => entry.fields.length);
+const busiest = loaded.slice(0, Number(process.env.SWR_ASTEROID_MAPS || 10)).filter(entry => entry.fields.length);
 assert(busiest.length, 'a space map with asteroid fields');
 const world = {
   time: 0,
@@ -99,7 +99,9 @@ const core = withWasm => {
   return pathCore;
 };
 const budget = searchBudget(constants);
-assert(budget >= constants.maxExp * (1 + constants.expGrow + constants.expGrow ** 2 + constants.expGrow ** 3) - 1, 'the budget reaches the soft hazard try');
+let everyTry = 0;
+for (let k = 0, tryStates = constants.maxExp; k < constants.tries; k++, tryStates = k >= 2 ? Math.floor(tryStates * constants.expGrow) : tryStates) everyTry += tryStates + 1;
+assert.equal(budget, everyTry, 'the budget is every try of the engine schedule');
 
 const outsideFields = (fields, x, y, pad) => fields.every(field => (field.x - x) ** 2 + (field.y - y) ** 2 > (field.r + pad) ** 2);
 const casesFor = entry => {
@@ -139,7 +141,18 @@ const useMap = entry => {
   world.fields = entry.fields;
 };
 const OLD_STATES = 20000;
-const tally = { old: 0, now: 0, routeThread: 0, total: 0, states: 0, wasmMs: 0, jsMs: 0, worstWasmMs: 0, routeThreadMs: 0, worstRouteThreadMs: 0 };
+const cost = () => ({ ms: 0, worstMs: 0 });
+const add = (entry, ms) => {
+  entry.ms += ms;
+  entry.worstMs = Math.max(entry.worstMs, ms);
+};
+const timed = (pathCore, ship, gx, gy) => {
+  const started = performance.now(),
+    route = pathCore.find(ship, gx, gy);
+  return { route, ms: performance.now() - started, states: pathCore.statesUsed };
+};
+const tally = { old: 0, now: 0, routeThread: 0, total: 0, states: 0, worstStates: 0, wasm: cost(), js: cost(), routeThreadWasm: cost(), batches: 0, deferred: 0, worstBatchMs: 0, worstBatchStates: 0 };
+const perMap = [];
 for (const entry of busiest) {
   useMap(entry);
   const wasmCore = core(true),
@@ -148,40 +161,53 @@ for (const entry of busiest) {
     routeThreadCore = core(true);
   wasmCore.expBudget = jsCore.expBudget = budget;
   oldCore.expBudget = OLD_STATES;
-  routeThreadCore.searchMs = 60;
-  routeThreadCore.triesBeforeTimeLimit = UNTIMED_TRIES;
-  for (const [x, y, heading, gx, gy] of casesFor(entry)) {
+  const cases = casesFor(entry);
+  let found = 0,
+    batchLeft = budget,
+    batchMs = 0,
+    batchStates = 0;
+  for (const [x, y, heading, gx, gy] of cases) {
     tally.total++;
     const oldRoute = oldCore.find(makeShip(x, y, heading), gx, gy);
     if (!oldRoute || oldRoute.length) tally.old++;
-    let started = performance.now();
-    const route = wasmCore.find(makeShip(x, y, heading), gx, gy);
-    const wasmMs = performance.now() - started;
-    tally.wasmMs += wasmMs;
-    tally.worstWasmMs = Math.max(tally.worstWasmMs, wasmMs);
-    tally.states += wasmCore.statesUsed;
-    started = performance.now();
-    const jsRoute = jsCore.find(makeShip(x, y, heading), gx, gy);
-    tally.jsMs += performance.now() - started;
-    assert.deepEqual(route, jsRoute, 'the WebAssembly search is the JS one');
-    if (!route || route.length) tally.now++;
-    started = performance.now();
-    const threadRoute = routeThreadCore.find(makeShip(x, y, heading), gx, gy);
-    const threadMs = performance.now() - started;
-    tally.routeThreadMs += threadMs;
-    tally.worstRouteThreadMs = Math.max(tally.worstRouteThreadMs, threadMs);
-    if (!threadRoute || threadRoute.length) tally.routeThread++;
+    const lockstep = timed(wasmCore, makeShip(x, y, heading), gx, gy),
+      route = lockstep.route;
+    add(tally.wasm, lockstep.ms);
+    tally.states += lockstep.states;
+    tally.worstStates = Math.max(tally.worstStates, lockstep.states);
+    if (batchLeft > 0) {
+      batchLeft -= lockstep.states;
+      batchMs += lockstep.ms;
+      batchStates += lockstep.states;
+    } else tally.deferred++;
+    const jsSearch = timed(jsCore, makeShip(x, y, heading), gx, gy);
+    add(tally.js, jsSearch.ms);
+    assert.deepEqual(route, jsSearch.route, 'the WebAssembly search is the JS one');
+    if (!route || route.length) {
+      tally.now++;
+      found++;
+    }
+    const thread = timed(routeThreadCore, makeShip(x, y, heading), gx, gy);
+    add(tally.routeThreadWasm, thread.ms);
+    assert.deepEqual(thread.route, route, 'the single player route thread finds what lockstep finds');
+    if (!thread.route || thread.route.length) tally.routeThread++;
     if (route && route.length) {
       const end = route[route.length - 1];
       assert(Math.hypot(end.x - gx, end.y - gy) < 600, 'a route ends at the goal: ' + [end.x, end.y, gx, gy]);
     }
   }
+  tally.batches++;
+  tally.worstBatchMs = Math.max(tally.worstBatchMs, batchMs);
+  tally.worstBatchStates = Math.max(tally.worstBatchStates, batchStates);
+  perMap.push(entry.name + ' ' + found + '/' + cases.length);
 }
-console.log(shipType.name + ', budget ' + budget + ' states per search, maps: ' + busiest.map(entry => entry.name + ' (' + entry.fields.length + ' fields)').join(', '));
+const ms = (entry, count) => (entry.ms / count).toFixed(1) + ' ms mean, ' + entry.worstMs.toFixed(1) + ' worst';
+console.log(shipType.name + ', ' + budget + ' states per search (every try), maps: ' + busiest.map(entry => entry.name + ' (' + entry.fields.length + ' fields)').join(', '));
 console.log('routes found: ' + tally.now + ' / ' + tally.total + ' (with ' + OLD_STATES + ' states: ' + tally.old + ', single player route thread: ' + tally.routeThread + ')');
-console.log('single player route thread ' + (tally.routeThreadMs / tally.total).toFixed(1) + ' ms per search (worst ' + tally.worstRouteThreadMs.toFixed(1) + ')');
-console.log(
-  'mean ' + Math.round(tally.states / tally.total) + ' states, wasm ' + (tally.wasmMs / tally.total).toFixed(1) + ' ms (worst ' + tally.worstWasmMs.toFixed(1) + '), js ' + (tally.jsMs / tally.total).toFixed(1) + ' ms per search'
-);
+console.log('per map: ' + perMap.join(', '));
+console.log('states per search: ' + Math.round(tally.states / tally.total) + ' mean, ' + tally.worstStates + ' worst');
+console.log('lockstep search: wasm ' + ms(tally.wasm, tally.total) + '; js ' + ms(tally.js, tally.total));
+console.log('single player route thread: wasm ' + ms(tally.routeThreadWasm, tally.total));
+console.log('lockstep batch of a map: ' + tally.worstBatchMs.toFixed(1) + ' ms worst, ' + tally.worstBatchStates + ' states, ' + tally.deferred + ' searches deferred to the next batch');
 assert(tally.now >= tally.old, 'no route lost to the bigger budget');
 console.log('space asteroid route ok');

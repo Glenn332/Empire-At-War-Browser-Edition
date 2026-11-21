@@ -388,7 +388,8 @@ let slow: f64 = 0,
   shipCost: f64 = 0,
   offMap: f64 = 0,
   ow: f64 = 0,
-  cutoff: f64 = 0;
+  cutoff: f64 = 0,
+  farthestTravelled: f64 = 0;
 let N: i32 = 0,
   hardMask: i32 = 0,
   mapped: bool = false,
@@ -471,7 +472,9 @@ function add(n: i32, op: i32, x: f64, y: f64, h: f64, dt: f64, s: f64, mult: f64
   pushed++;
   const id = count++,
     t = t0 + dt,
-    wh = ow > 1 && t * v < cutoff ? ow : 1.0;
+    travelled = t * v,
+    wh = ow > 1 && travelled < cutoff ? ow : 1.0;
+  if (travelled > farthestTravelled) farthestTravelled = travelled;
   fs(NX, id, x);
   fs(NY, id, y);
   fs(NH, id, h);
@@ -554,6 +557,7 @@ export function search(): i32 {
   pushed = 0;
   op4 = 0;
   op4hard = 0;
+  farthestTravelled = 0;
   fs(NX, 0, ux);
   fs(NY, 0, uy);
   fs(NH, 0, uh);
@@ -672,6 +676,7 @@ export function search(): i32 {
   fs(P, 64, <f64>op4);
   fs(P, 65, <f64>op4hard);
   fs(P, 66, <f64>count);
+  fs(P, 67, farthestTravelled);
   return found;
 }
 

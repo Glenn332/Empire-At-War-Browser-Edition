@@ -124,8 +124,6 @@ onmessage = ({ data: m }) => {
       m.K,
       m.ringStep
     );
-    core.searchMs = m.searchMs;
-    core.triesBeforeTimeLimit = m.triesBeforeTimeLimit;
     if (!m.noWasm)
       loadPathWasm(new URL('./pathsearch.wasm', import.meta.url)).then(w => {
         core.wasm = w;

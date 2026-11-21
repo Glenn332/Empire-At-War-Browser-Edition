@@ -1,6 +1,6 @@
 import { diag } from '../diag.js';
 import { db } from '../gamedata.js';
-import { PathCore, MOVING, STILL, SCELL, loadPathWasm, searchBudget, UNTIMED_TRIES } from './pathcore.js';
+import { PathCore, MOVING, STILL, SCELL, loadPathWasm, searchBudget } from './pathcore.js';
 import { unitHash } from './desyncreport.js';
 
 const LAYER_BITS = { CORVETTE: 1, FRIGATE: 2, CAPITAL: 4, SUPERCAPITAL: 8 };
@@ -23,7 +23,6 @@ const wrap = a => {
 };
 const SEARCH_MS = 6;
 const STEP_MS = 4;
-const WORKER_MS = 60;
 const STEP_SEARCHES = 6;
 const MOVING_GOAL_REPLAN = 150;
 const BATCH_DELAY = 20;
@@ -81,7 +80,7 @@ export class Pathfinder extends PathCore {
     if (typeof Worker !== 'undefined' && !(typeof location !== 'undefined' && /[?&]pathsync\b/.test(location.search))) {
       try {
         const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
-        wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, searchMs: WORKER_MS, triesBeforeTimeLimit: UNTIMED_TRIES, noWasm: noWasm });
+        wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, noWasm: noWasm });
         wk.onmessage = e => {
           if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
           else this.answer(e.data);
