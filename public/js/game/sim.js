@@ -1099,7 +1099,7 @@ export class Unit {
       }
       for (const part of this.parts) this.obj.add(part);
     }
-    if (!this.isFighter && this.visualRadius >= 60 && this.model && castsShadow(this.model.model)) {
+    if (this.model && castsShadow(this.model.model)) {
       const min = this.model.radius * 0.3;
       this.obj.traverse(o => {
         if (!o.isMesh || !o.material || o.material.transparent || !o.material.uniforms || !o.material.uniforms.shadowMap) return;

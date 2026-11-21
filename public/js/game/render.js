@@ -842,6 +842,40 @@ export class Renderer {
     u.fadeDone = false;
   }
 
+  coverShadowedUnits(world, light, cx, cy, cap) {
+    const view = this.camera;
+    _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(view.projectionMatrix, view.matrixWorldInverse));
+    _shadowCentre.set(cx, cy, 0).applyMatrix4(light.matrixWorldInverse);
+    let left = light.left,
+      right = light.right,
+      bottom = light.bottom,
+      top = light.top;
+    const near = this.rig.dist * 1.5;
+    for (const u of world.units) {
+      if (u.dead || !u.obj.visible || u.isFighter) continue;
+      const reach = near + (u.visualRadius || 0);
+      if ((u.x - cx) ** 2 + (u.y - cy) ** 2 > reach * reach) continue;
+      _sphere.center.set(u.x, u.y, u.z || 0);
+      _sphere.radius = u.visualRadius || 0;
+      if (!_frustum.intersectsSphere(_sphere)) continue;
+      _shadowPoint.copy(_sphere.center).applyMatrix4(light.matrixWorldInverse);
+      left = Math.min(left, _shadowPoint.x - _sphere.radius);
+      right = Math.max(right, _shadowPoint.x + _sphere.radius);
+      bottom = Math.min(bottom, _shadowPoint.y - _sphere.radius);
+      top = Math.max(top, _shadowPoint.y + _sphere.radius);
+    }
+    left = Math.max(left, _shadowCentre.x - cap);
+    right = Math.min(right, _shadowCentre.x + cap);
+    bottom = Math.max(bottom, _shadowCentre.y - cap);
+    top = Math.min(top, _shadowCentre.y + cap);
+    if (left === light.left && right === light.right && bottom === light.bottom && top === light.top) return;
+    light.left = left;
+    light.right = right;
+    light.bottom = bottom;
+    light.top = top;
+    light.updateProjectionMatrix();
+  }
+
   updateShadows(world, r = this.renderer) {
     if (!this.shadowsOn) {
       lighting.shadowOn.value = 0;
@@ -874,14 +908,12 @@ export class Renderer {
         batches: new Map(),
         stamp: 0,
         depth: new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }),
-        frame: 0,
         bias: new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
       };
       lighting.shadowMap.value = target.depthTexture;
       lighting.shadowTexel.value = 1 / size;
     }
     lighting.shadowOn.value = 1;
-    if (sh.frame++ % 3) return;
     const rig = this.rig,
       cam = sh.camera,
       half = Math.max(500, Math.min(4500, rig.dist * 0.85)) * shadowReach(),
@@ -897,6 +929,7 @@ export class Renderer {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     fitShadowToView(this.camera, cam, rig.x, rig.y, 0, half);
+    if (world) this.coverShadowedUnits(world, cam, rig.x, rig.y, half);
     lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     const batches = sh.batches;
     for (const b of batches.values()) b.n = 0;
@@ -2255,7 +2288,9 @@ const SPACE_BOLT = { radius: 220, missile: 150, beam: 260, power: 1.4, blastMin:
   _boltAt = new THREE.Vector3();
 const _frustum = new THREE.Frustum(),
   _pm = new THREE.Matrix4(),
-  _sphere = new THREE.Sphere();
+  _sphere = new THREE.Sphere(),
+  _shadowCentre = new THREE.Vector3(),
+  _shadowPoint = new THREE.Vector3();
 const _tq = new THREE.Quaternion(),
   _up = new THREE.Vector3(0, 0, 1);
 const _sq = new THREE.Quaternion(),

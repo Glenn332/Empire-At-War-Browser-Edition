@@ -127,7 +127,7 @@ const GROUPS = [
       [
         'Shadows',
         P,
-        'sun shadows cast by the large pieces of large ships only, to keep the cost low; off by default, switched on in the menu'
+        'sun shadows from every ship whose model has a shadow volume mesh, fighters included, as the engine stencil shadows (the large pieces of each model only), redrawn every frame; the shadow map covers the view and the ships near its centre, so a ship filling the view at full zoom keeps its shadows. Ours: a shadow map in place of stencil volumes; off by default, switched on in the menu'
       ],
       ['Heat haze from heat particle emitters', P, 'optional, off by default; strength set by eye'],
       ['Bloom', P, 'optional, off by default; cutoff and strength set by eye'],
