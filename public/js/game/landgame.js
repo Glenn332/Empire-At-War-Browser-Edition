@@ -926,7 +926,8 @@ export class LandGame {
       const m = marks(this.teams[side]);
       if (m.length) return m;
       const h = homeOf(side);
-      return [world.nearestOpen(h ? h.x + 40 : 400, h ? h.y : 400)];
+      const middle = (world.n * CELL) / 2;
+      return [world.nearestOpen(h ? h.x + 40 : 400, h ? h.y : 400) || world.nearestOpen(middle + side * 200, middle)];
     });
     if (setup.campaign?.tech) world.campaignTech = this.factions.map(f => setup.campaign.tech[f]);
     if (setup.campaign) world.planetCorruption = setup.campaign.corruption ?? -1;

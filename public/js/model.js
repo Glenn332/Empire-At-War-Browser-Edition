@@ -544,6 +544,7 @@ function makeShieldMaterial(p, format) {
 
 const materialCache = new Map();
 export const instanceable = new WeakSet();
+export const alphaInstanceable = new WeakSet();
 export const skinBatchable = new WeakSet();
 const MAX_BONES = 24;
 const DEPTH_FRAG = `
@@ -737,6 +738,7 @@ function makeMaterial(mat, format, teamColor) {
   if (alpha) shaderStates(shader, m);
   m.userData.depthOk = !(additive || alpha);
   if (!skinned && !alpha) instanceable.add(m);
+  if (!skinned && alpha) alphaInstanceable.add(m);
   if (skinned && !alpha) skinBatchable.add(m);
   materialCache.set(key, m);
   hideWithoutShader(shader, m);

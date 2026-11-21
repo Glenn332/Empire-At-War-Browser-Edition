@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { skinBatchable, instanceable } from '../model.js';
+import { skinBatchable, instanceable, alphaInstanceable } from '../model.js';
 import { placeCached } from './posecache.js';
 
 const HIDDEN = 1;
@@ -83,13 +83,17 @@ export class LandInstances {
         src: mesh.geometry,
         mat,
         skinned,
-        order: mesh.renderOrder,
+        renderOrder: mesh.renderOrder,
         n: 0,
         cap: 0,
         im: null,
         tint: null,
         tex: null,
-        ready: !this.renderer
+        ready: !this.renderer,
+        backToFront: !skinned && alphaInstanceable.has(mesh.material),
+        order: null,
+        distances: null,
+        scratch: null
       };
       this.size(p, 32);
       byGeo.set(mesh.geometry, p);
@@ -125,7 +129,8 @@ export class LandInstances {
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     im.frustumCulled = false;
     im.matrixAutoUpdate = false;
-    im.renderOrder = p.order;
+    im.renderOrder = p.renderOrder;
+    if (p.backToFront) im.boundingSphere = new THREE.Sphere();
     im.count = 0;
     im.visible = false;
     im.userData.casts = true;
@@ -198,7 +203,9 @@ export class LandInstances {
   put(m, h, skinned, mats) {
     let b = m._batch;
     if (!b || b.mat !== m.material || b.geo !== m.geometry || b.skinned !== skinned) {
-      const ok = skinned ? skinBatchable.has(m.material) : instanceable.has(m.material);
+      const ok = skinned
+        ? skinBatchable.has(m.material)
+        : instanceable.has(m.material) || alphaInstanceable.has(m.material);
       m._batch = b = { mat: m.material, geo: m.geometry, skinned, ok, pool: ok ? this.poolFor(m, skinned) : null };
     }
     const p = b.pool;
@@ -390,6 +397,7 @@ export class LandInstances {
       im.count = p.n;
       im.visible = p.n > 0;
       if (!p.n) continue;
+      if (p.backToFront) this.sortBackToFront(p, eye);
       drawing.push(im);
       im.instanceMatrix.clearUpdateRanges();
       im.instanceMatrix.addUpdateRange(0, p.n * 16);
@@ -400,6 +408,38 @@ export class LandInstances {
         p.tex.userData.rows = this.noGL ? p.rows : null;
       }
     }
+  }
+
+  sortBackToFront(pool, eye) {
+    const count = pool.n,
+      matrices = pool.im.instanceMatrix.array,
+      center = pool.im.boundingSphere.center;
+    let sumX = 0,
+      sumY = 0,
+      sumZ = 0;
+    for (let i = 0; i < count; i++) {
+      sumX += matrices[i * 16 + 12];
+      sumY += matrices[i * 16 + 13];
+      sumZ += matrices[i * 16 + 14];
+    }
+    center.set(sumX / count, sumY / count, sumZ / count);
+    if (!eye || count < 2) return;
+    if (!pool.order || pool.order.length < pool.cap) {
+      pool.order = new Uint32Array(pool.cap);
+      pool.distances = new Float32Array(pool.cap);
+      pool.scratch = new Float32Array(pool.cap * 16);
+    }
+    const order = pool.order,
+      distances = pool.distances,
+      scratch = pool.scratch;
+    for (let i = 0; i < count; i++) {
+      const at = i * 16;
+      order[i] = i;
+      distances[i] = (matrices[at + 12] - eye.x) ** 2 + (matrices[at + 13] - eye.y) ** 2 + (matrices[at + 14] - eye.z) ** 2;
+    }
+    const sorted = order.subarray(0, count).sort((a, b) => distances[b] - distances[a]);
+    scratch.set(matrices.subarray(0, count * 16));
+    for (let i = 0; i < count; i++) matrices.set(scratch.subarray(sorted[i] * 16, sorted[i] * 16 + 16), i * 16);
   }
 
   sendBones(p) {
