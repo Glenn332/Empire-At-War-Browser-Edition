@@ -166,7 +166,7 @@ const GROUPS = [
       [
         'Capital ship movement and turning',
         D,
-        'as the engine: a turn in place runs at the turn rate divided by TurnInPlaceSlowdown (corvette 2, frigate 3, capital and super capital 4) to the end; a move with a facing (our line-move drag) is planned to arrive on it for the first two tries as the engine planner does. Ours: the route follower flies the arrival arc by heading; the departure tangents and the speed-lowering pass of the engine planner are not used; Lua Turn_To_Face turns at once. Banking as the engine: the roll goal is the full Bank_Turn_Angle once the turn is at least half the turn rate and less below that, reached at Max_Rate_Of_Roll, slowing to a tenth of it as the roll nears its goal'
+        'as the engine: a turn in place runs at the turn rate divided by TurnInPlaceSlowdown (corvette 2, frigate 3, capital and super capital 4) to the end; a move with a facing (our line-move drag) is planned to arrive on it for the first two tries as the engine planner does. Ours: the route follower flies the arrival arc by heading; the departure tangents and the speed-lowering pass of the engine planner are not used; Lua Turn_To_Face turns at once. Banking as the engine: the roll goal is the full Bank_Turn_Angle once the turn is at least half the turn rate and less below that, reached at Max_Rate_Of_Roll, slowing to a tenth of it as the roll nears its goal; a ship and a fighter bank into the turn as the engine (read: the roll is about the forward axis and a left turn puts the left side down), where they used to lean out of it'
       ],
       [
         'Fighter and bomber squadrons',

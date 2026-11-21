@@ -338,7 +338,7 @@ function bankIntoTurn(unit, turn, turnRate, dt) {
     return;
   }
   const turnShare = Math.min(1, Math.abs(turn) / (turnRate * dt || 1));
-  let want = turn >= 0 ? -bank : bank;
+  let want = turn >= 0 ? bank : -bank;
   if (turnShare < 0.5) want *= turnShare * 2;
   const step = clamp(Math.abs(want - unit.roll) / bank, 0.1, 1) * unit.rollRate * dt;
   unit.roll = unit.roll < want ? Math.min(want, unit.roll + step) : Math.max(want, unit.roll - step);
@@ -6337,8 +6337,8 @@ export class World {
         u.flip = true;
       }
     } else {
-      if (Math.abs((u.turnRate * wrapAngle(u.roll)) / F.roll + err) > Math.PI) err -= Math.sign(err) * 2 * Math.PI;
-      const bank = -clamp(err, -F.bank, F.bank);
+      if (Math.abs(err - (u.turnRate * wrapAngle(u.roll)) / F.roll) > Math.PI) err -= Math.sign(err) * 2 * Math.PI;
+      const bank = clamp(err, -F.bank, F.bank);
       u.roll += clamp(bank - u.roll, -F.roll * dt, F.roll * dt);
       if (!(u.roll * bank < 0) || Math.abs(u.roll) < 0.02)
         u.heading = wrapAngle(u.heading + clamp(err, -u.turnRate * dt * k, u.turnRate * dt * k));
