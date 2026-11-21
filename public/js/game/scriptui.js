@@ -1,6 +1,6 @@
 import { db } from '../gamedata.js';
 import { loadNativePanelAssets, tintShell, animateScan } from './nativepanel.js';
-import { drawMesh, uiMeshClipPath } from './hud.js';
+import { drawMesh, uiMeshClipPath, uiBoneTransforms } from './hud.js';
 import { iconUrl, iconCanvasRect, iconAdditiveUrl } from '../icons.js';
 import { fontFamily } from '../fonts.js';
 import { snapNativeText } from '../nativefont.js';
@@ -16,6 +16,33 @@ const pair = s =>
 const css = s => (s ? `url("${s}")` : 'none');
 
 const LOCAL_KEYS = new Set(['B_OPTION_G', 'B_DROID_HELP', 'B_STORY_ARC_G']);
+function boneButton(matrix, bone, component) {
+  const icon = iconCanvasRect(token(component, 'Icon_Texture_Name')),
+    scale = component.num('Scale', 1),
+    w = Math.max(1, (icon?.w || 0) * scale),
+    h = Math.max(1, (icon?.h || 0) * scale),
+    x = matrix[3],
+    y = matrix[7],
+    z = matrix[11];
+  const verts = [
+    { x: x - w / 2, y: y - h / 2, z },
+    { x: x + w / 2, y: y - h / 2, z },
+    { x: x + w / 2, y: y + h / 2, z },
+    { x: x - w / 2, y: y + h / 2, z }
+  ];
+  return {
+    verts,
+    indices: [0, 1, 2, 0, 2, 3],
+    texture: '',
+    hidden: true,
+    noCollision: true,
+    bone,
+    depth: z,
+    origin: { x, y, z },
+    rect: { x: x - w / 2, y: y - h / 2, w, h }
+  };
+}
+
 export class ScriptUI {
   constructor(game, data) {
     this.game = game;
@@ -187,6 +214,13 @@ export class ScriptUI {
         const component = this.comps.get(key);
         if (/^(TextButton|Button)$/i.test(component?.val('Type') || '')) this.buildControl(shell, key, mesh);
       }
+      const transforms = uiBoneTransforms(data.model);
+      data.model.bones.forEach((bone, index) => {
+        const key = bone.name.toUpperCase(),
+          component = this.comps.get(key);
+        if (data.shell.has(key) || this.controls.has(key) || !/^(TextButton|Button)$/i.test(component?.val('Type') || '')) return;
+        this.buildControl(shell, key, boneButton(transforms[index], index, component));
+      });
       shell.anim = await Promise.resolve(loadALA(animName(c.val('Model_Name'), 'IDLE'))).catch(() => null);
       this.resize();
       this.apply(name);
@@ -226,7 +260,7 @@ export class ScriptUI {
     const hit = document.createElement('span');
     hit.className = 'script-button-hit';
     hit.setAttribute('aria-hidden', 'true');
-    Object.assign(hit.style, { position: 'absolute', inset: '0', pointerEvents: 'auto', clipPath: uiMeshClipPath(mesh) });
+    Object.assign(hit.style, { position: 'absolute', inset: '0', pointerEvents: mesh.noCollision ? 'none' : 'auto', clipPath: uiMeshClipPath(mesh) });
     const art = document.createElement('span'),
       text = document.createElement('span');
     art.className = 'script-button-art';
@@ -340,7 +374,7 @@ export class ScriptUI {
     for (const rec of this.controls.values()) {
       const { shell, mesh, name } = rec,
         s = this.state(name);
-      if (!s.visible || !s.enabled || shell.root.hidden || (modal && !shell.dialog)) continue;
+      if (!s.visible || !s.enabled || mesh.noCollision || shell.root.hidden || (modal && !shell.dialog)) continue;
       const anim = shell.boneDelta && mesh.bone !== undefined ? shell.boneDelta(mesh.bone) : [0, 0],
         extra = shell.offsets?.get(name) || [0, 0],
         moved = [anim[0] + extra[0], anim[1] + extra[1]];
