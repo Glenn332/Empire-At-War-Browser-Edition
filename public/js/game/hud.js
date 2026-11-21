@@ -443,6 +443,8 @@ export class CommandBar {
     this.player = game.human;
     this.comps = data.comps;
     this.shell = data.shell;
+    this.helpAt = data.helpAt || { x: 65, y: 310 };
+    this.movieAt = data.movieAt || null;
     this.movieAt = data.movieAt || null;
     this.rshell = data.reinforce;
     this.padShell = data.padMenu || null;
@@ -538,7 +540,7 @@ export class CommandBar {
     win.style.left = 7 * s + 'px';
     win.style.top = 106 * s + 'px';
     const info = document.getElementById('encyc'),
-      help = assets?.helpAt || { x: 65, y: 310 };
+      help = this.helpAt;
     info.style.transform = `scale(${s})`;
     info.style.left = help.x * s + 'px';
     info.style.bottom = help.y * s + 'px';
@@ -1413,7 +1415,7 @@ export class CommandBar {
   lightLoop() {
     const box = this.info,
       want = !!box && !box.classList.contains('hidden'),
-      at = assets?.movieAt;
+      at = this.movieAt;
     if (!at) return;
     let L = this.light;
     if (want && !L) {
