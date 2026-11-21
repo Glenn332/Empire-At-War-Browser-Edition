@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { readBrain, aiSets, aiPlayer, Reason, catParam, typeParam } from './landbrain.js';
+import { readBrain, aiSets, aiPlayer, aiPlayerType, Reason, catParam, typeParam } from './landbrain.js';
 
 const FILES = [
   'OffensiveSpaceEquations',
@@ -13,12 +13,13 @@ const SETS = ['BasicOffensiveSpaceSet', 'AI_GoalSet_Underworld_Space'];
 const LEVELS = { easy: 'Easy', medium: 'Normal', hard: 'Hard' };
 
 const BRAINS = new Map();
-export async function loadSpaceBrain(faction = null) {
-  const sets = (faction && (await aiSets(faction))) || SETS,
+export async function loadSpaceBrain(faction = null, playerTypeName = null) {
+  const named = playerTypeName ? await aiPlayerType(playerTypeName) : null;
+  const sets = named?.sets || (faction && (await aiSets(faction))) || SETS,
     key = sets.join(' ');
   if (!BRAINS.has(key)) BRAINS.set(key, readBrain(FILES, sets));
   const brain = await BRAINS.get(key),
-    p = faction ? await aiPlayer(faction) : null;
+    p = named || (faction ? await aiPlayer(faction) : null);
   return Object.assign(Object.create(brain), {
     player: p ? { space: p.templates.space, land: p.templates.land, ext: p.ext } : null,
     sleep: 1

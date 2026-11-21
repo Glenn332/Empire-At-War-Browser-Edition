@@ -55,7 +55,7 @@ export class SkirmishAI {
     this.brainReady =
       brain !== undefined
         ? Promise.resolve((this.brain = brain))
-        : loadSpaceBrain(player.factionName)
+        : loadSpaceBrain(player.factionName, player.aiPlayerType)
             .then(b => {
               this.brain = b;
             })

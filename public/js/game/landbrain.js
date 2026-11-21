@@ -206,10 +206,10 @@ export async function difficultyAdjustment(faction, difficulty, playerType = nul
   return (await ADJUST).get(((p && p.adjust && p.adjust[lv]) || lv + '_Default').toUpperCase()) || null;
 }
 
-export async function aiFreeStore(faction) {
+export async function aiFreeStore(faction, playerTypeName = null) {
   await aiSets(faction);
   const f = db.faction(faction),
-    p = f && (await PLAYERS).get(f.str('Basic_AI').toUpperCase());
+    p = (playerTypeName && (await PLAYERS).get(String(playerTypeName).toUpperCase())) || (f && (await PLAYERS).get(f.str('Basic_AI').toUpperCase()));
   return { space: (p && p.space) || '', land: (p && p.land) || '' };
 }
 

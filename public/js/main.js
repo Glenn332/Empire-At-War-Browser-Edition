@@ -31,7 +31,7 @@ import { SkirmishAI } from './game/ai.js';
 import { loadSpaceBrain } from './game/spacebrain.js';
 import { SpaceGoals } from './game/spacegoals.js';
 import { ScriptHost } from './game/scripts.js';
-import { aiFreeStore, difficultyAdjustment } from './game/landbrain.js';
+import { aiFreeStore, aiPlayerType, difficultyAdjustment } from './game/landbrain.js';
 import { UI } from './game/ui.js';
 import { Pointers } from './game/pointers.js';
 import { expansion } from './edition.js';
@@ -122,6 +122,10 @@ function tiltAsAuthored(u, o) {
   u.roll = _tiltE.y;
 }
 const FACTIONS = [];
+const ATTRACT_AI_PLAYERS = [
+  [0, 'BasicRebel'],
+  [6, 'AI_Player_Underworld']
+];
 const audio = new Audio();
 let spareRenderer = null;
 
@@ -653,15 +657,17 @@ class Game {
       this.retreat.restore(this.setup.restore.battle.retreat, this.savedThing);
     if (loaded) this.loadedSave = { save: this.setup.restore, refs: loaded.refs };
     this.ais =
-      this.setup.benchmark || this.setup.attract || this.workerMode
+      this.setup.benchmark || this.workerMode
         ? []
-        : world.players.filter(p => !p.human && !p.team.mapSide).map(p => new SkirmishAI(world, p, p.difficulty));
+        : this.setup.attract
+          ? await this.attractAIs(world)
+          : world.players.filter(p => !p.human && !p.team.mapSide).map(p => new SkirmishAI(world, p, p.difficulty));
     world.goals = this.workerMode || new URLSearchParams(location.search).has('oldai') ? null : new SpaceGoals(world, () => this.ais);
     this.freeStores = [];
     if (!new URLSearchParams(location.search).has('nofreestore'))
       for (const ai of this.ais) {
         this.freeStores.push(
-          aiFreeStore(ai.player.factionName)
+          aiFreeStore(ai.player.factionName, ai.player.aiPlayerType)
             .then(async fs => {
               for (let n = 0; n < 200 && !this.scripts; n++) await new Promise(r => setTimeout(r, 100));
               if (this.scripts && fs.space) this.scripts.freeStore(ai.player, fs.space, () => ai.mine().filter(e => !e.aiPlan), ai);
@@ -853,20 +859,23 @@ class Game {
     return p;
   }
 
+  async attractAIs(world) {
+    const factionOrder = [...db.factions.values()],
+      out = [];
+    for (const [index, playerType] of ATTRACT_AI_PLAYERS) {
+      const faction = factionOrder[index],
+        player = faction && world.players.find(p => p.id >= 0 && p.factionName.toUpperCase() === faction.name.toUpperCase());
+      if (!player || !(await aiPlayerType(playerType))) continue;
+      player.aiPlayerType = playerType;
+      out.push(new SkirmishAI(world, player, player.difficulty));
+    }
+    return out;
+  }
+
   startAttract() {
     const w = this.world;
     document.body.classList.add('attract');
     w.fog = false;
-    for (const p of w.players) {
-      const mine = w.units
-        .filter(u => !u.dead && !u.squad && u.player === p && u.isMobile)
-        .concat(w.squads.filter(q => !q.dead && q.player === p));
-      const foes = w.units.filter(u => !u.dead && !u.squad && u.player.id >= 0 && u.player.team !== p.team);
-      if (!mine.length || !foes.length) continue;
-      const x = foes.reduce((a, u) => a + u.x, 0) / foes.length,
-        y = foes.reduce((a, u) => a + u.y, 0) / foes.length;
-      orderMove(mine, x, y, true);
-    }
     this.cine.start();
   }
 
@@ -1199,10 +1208,11 @@ class Game {
       const authored = authoredMapOwner(this.setup, o);
       const side = authored
         ? teams.find(t => t.factionName === authored)
-        : this.setup.attract
+        : this.setup.attract && o.owner < 0
           ? teams.find(t => t.players.length && new RegExp('\\b' + t.factionName + '\\b', 'i').test(o.type.str('Affiliation')))
           : null;
-      const u = w.spawn(o.type, side ? side.players[0] : mapSide(o) || w.neutral, o.pos[0], o.pos[1], heading);
+      const attractOwner = this.setup.attract && !authored && o.owner >= 0 && factionOrder[o.owner] ? this.scriptPlayer(factionOrder[o.owner].name) : null;
+      const u = w.spawn(o.type, attractOwner || (side ? side.players[0] : mapSide(o) || w.neutral), o.pos[0], o.pos[1], heading);
       if (u) w.mapObjects.set(mapIndex, [u]);
       if (u && !u.isSquad) {
         u.z = o.pos[2] + o.type.num('Layer_Z_Adjust', 0);

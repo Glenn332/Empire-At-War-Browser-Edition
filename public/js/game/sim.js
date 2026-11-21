@@ -433,6 +433,7 @@ export class Player {
     this.basePos = { x: 0, y: 0 };
     this.reinforcements = [];
     this.adjust = null;
+    this.aiPlayerType = null;
     this.manualStart = 0;
     this.manualSpan = 0;
   }
