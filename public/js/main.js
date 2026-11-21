@@ -55,6 +55,7 @@ import { startServiceWorker, assetsAvailable } from './pack.js';
 import { ensureCurrentBuild } from './update.js';
 import { showSplash, hideSplash, showMessage } from './splash.js';
 import { Cinematic } from './game/cinematic.js';
+import { TacticalMovies } from './game/tacticalmovies.js';
 import { loadPrioritySets } from './game/priorities.js';
 import { loadDialogs, openDialog } from './game/dialogs.js';
 import { Menus } from './game/menus.js';
@@ -845,6 +846,14 @@ class Game {
     this.bench = null;
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
     if (window.game === this) window.game = null;
+  }
+
+  playScriptMovie(name) {
+    return (this.tacticalMovies ||= new TacticalMovies(this, { missing: new Map() })).play(name);
+  }
+
+  stopScriptMovie() {
+    this.tacticalMovies?.stop();
   }
 
   scriptPlayer(name) {
@@ -2494,7 +2503,7 @@ class Game {
     const storyDelta = this.paused || this.tacticalMovies?.pausesMode ? 0 : real * this.speed;
     this.scripts?.updateStory(storyDelta);
     this.tacticalCinematics?.update(storyDelta);
-    this.tacticalMovies?.update(real, !!this.paused || !!this.menus?.open);
+    this.tacticalMovies?.update(real, !!this.paused || (!!this.menus?.open && !this.setup.attract));
     this.movies?.update(real);
     this.tacticalStory?.update();
     tacticalIntro(this);

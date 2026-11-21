@@ -1410,6 +1410,8 @@ export class ScriptHost {
       'WeightedTypeList',
       (this.weightedLists = { __wrap: true, __name: 'WeightedTypeList', Create: weighted, __missing: this.absent('WeightedTypeList') })
     );
+    vm.global('Play_Bink_Movie', name => this.game.playScriptMovie?.(name));
+    vm.global('Stop_Bink_Movie', () => this.game.stopScriptMovie?.());
     vm.global('Find_Hint', (type, hint) => {
       const t = typeOf(type);
       if (!t) return undefined;
