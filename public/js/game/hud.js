@@ -1558,20 +1558,23 @@ export class CommandBar {
     for (const b of M.buttons) if (b.type) b.el.classList.toggle('off', !!w.cantBuild(pad, b.type, p));
   }
 
+  refreshCredits() {
+    const credits = Math.floor(this.player.credits).toLocaleString('en-US');
+    if (credits === this.creditText) return;
+    this.creditText = this.tCredits.textContent = credits;
+    if (!this.measure) this.measure = document.createElement('canvas').getContext('2d');
+    const style = getComputedStyle(this.tCredits);
+    this.measure.font = `${style.fontSize} ${style.fontFamily}`;
+    this.tCreditIcon.style.left = this.creditRight - this.measure.measureText(credits).width - 9 - 9 + 'px';
+  }
+
   refresh() {
     this.updatePadMenu();
     const p = this.player,
       w = this.world,
       ui = this.ui,
       game = this.game;
-    const credits = Math.floor(p.credits).toLocaleString('en-US');
-    if (credits !== this.creditText) {
-      this.creditText = this.tCredits.textContent = credits;
-      if (!this.measure) this.measure = document.createElement('canvas').getContext('2d');
-      const cs = getComputedStyle(this.tCredits);
-      this.measure.font = `${cs.fontSize} ${cs.fontFamily}`;
-      this.tCreditIcon.style.left = this.creditRight - this.measure.measureText(credits).width - 9 - 9 + 'px';
-    }
+    this.refreshCredits();
     const st = p.team && p.team.station,
       lv = st && !st.dead ? /(\d)\s*$/.exec(st.type.name) : null;
     const shown =

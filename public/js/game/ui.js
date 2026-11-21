@@ -1757,7 +1757,7 @@ export class UI {
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.15;
       this.refreshHud();
-    }
+    } else if (this.bar) this.bar.refreshCredits();
   }
 
   drawPredictionPaths(g) {

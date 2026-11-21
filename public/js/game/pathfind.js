@@ -508,6 +508,7 @@ export class Pathfinder extends PathCore {
   stillGood(u, r, goal) {
     const q = this.ext(u),
       v = Math.max(1, u.maxSpeed || 40);
+    this.fieldsAvoidedOn(u, goal.x, goal.y);
     const here = this.sweep(u, q, u.x, u.y, u.x, u.y, 0, 0) & ~MOVING;
     if (!r.pts) return here || !(this.sweep(u, q, u.x, u.y, goal.x, goal.y, 0, Math.hypot(goal.x - u.x, goal.y - u.y) / v) & ~MOVING);
     let ax = u.x,

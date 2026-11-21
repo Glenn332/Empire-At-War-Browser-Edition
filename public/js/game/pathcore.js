@@ -194,6 +194,8 @@ export class PathCore {
     this.statesUsed = 0;
     this.detourStates = 0;
     this.detourSearchBuffers = null;
+    this.avoidedFields = null;
+    this.avoidedFor = null;
     this.irun = 0;
   }
 
@@ -399,8 +401,9 @@ export class PathCore {
         }
         if (bits & STILL) break;
       }
-    for (const f of this.world.fields) {
-      if (!this.world.hazardous(f, u)) continue;
+    const avoided = this.avoidedFor === u ? this.avoidedFields : null;
+    for (const f of avoided || this.world.fields) {
+      if (!avoided && !this.world.hazardous(f, u)) continue;
       const fe = { ax: f.r, sd: f.r };
       if (touch(q, qdx, qdy, ax, ay, bx, by, fe, 1, 0, f.x, f.y, f.x, f.y)) {
         bits |= FIELD;
@@ -498,10 +501,21 @@ export class PathCore {
     return 0;
   }
 
+  fieldsAvoidedOn(u, gx, gy) {
+    const reach = this.ext(u).r,
+      touches = (x, y, field) => (x - field.x) ** 2 + (y - field.y) ** 2 < (field.r + reach) ** 2,
+      kindOf = field => (field.asteroid ? 1 : 0) | (field.ion ? 2 : 0) | (field.nebula ? 4 : 0),
+      hazards = this.world.fields.filter(field => this.world.hazardous(field, u));
+    let touchedKinds = 0;
+    for (const field of hazards) if (touches(u.x, u.y, field) || touches(gx, gy, field)) touchedKinds |= kindOf(field);
+    this.avoidedFor = u;
+    return (this.avoidedFields = touchedKinds ? hazards.filter(field => !(kindOf(field) & touchedKinds)) : hazards);
+  }
+
   slot(u, x, y) {
     const q = this.ext(u);
     const w = this.world,
-      avoid = w.fields.filter(f => w.hazardous(f, u));
+      avoid = this.fieldsAvoidedOn(u, x, y);
     const free = (px, py) =>
       !(this.sweep(u, q, px, py, px, py, 0, 0) & STILL) && !avoid.some(f => (f.x - px) ** 2 + (f.y - py) ** 2 < (f.r + q.r) ** 2);
     if (free(x, y)) return null;
@@ -837,6 +851,7 @@ export class PathCore {
       gx = free.x;
       gy = free.y;
     }
+    this.fieldsAvoidedOn(u, gx, gy);
     const q = this.ext(u),
       v = Math.max(1, u.maxSpeed || 40),
       d = len(gx - u.x, gy - u.y);
@@ -850,8 +865,7 @@ export class PathCore {
     this.sStill = this.still
       .filter(e => e.o !== u && this.sees(u, e.o) && !inside(e))
       .concat(
-        this.world.fields
-          .filter(f => this.world.hazardous(f, u))
+        this.avoidedFields
           .map(f => ({ field: true, x: f.x, y: f.y, ext: { ax: f.r, sd: f.r, r: f.r } }))
       );
     if (this.wasm) this.wasmScene(q);
@@ -859,9 +873,8 @@ export class PathCore {
       const faced = Number.isFinite(face) && d >= 40;
       if (!faced && !this.sweep(u, q, u.x, u.y, gx, gy, 0, d / v)) return null;
       const K = this.K,
-        inField = this.world.fields.some(
-          f =>
-            this.world.hazardous(f, u) && ((u.x - f.x) ** 2 + (u.y - f.y) ** 2 < f.r * f.r || (gx - f.x) ** 2 + (gy - f.y) ** 2 < f.r * f.r)
+        inField = this.avoidedFields.some(
+          f => (u.x - f.x) ** 2 + (u.y - f.y) ** 2 < f.r * f.r || (gx - f.x) ** 2 + (gy - f.y) ** 2 < f.r * f.r
         );
       let rotMult = 1,
         fwdMult = 1,
