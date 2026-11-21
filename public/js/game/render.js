@@ -12,6 +12,7 @@ import { fetchText, fetchBinary } from '../vfs.js';
 import { parseXML } from '../xml.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { Instances } from './instances.js';
+import { fitShadowToView } from './shadowfit.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
@@ -858,6 +859,7 @@ export class Renderer {
     cam.lookAt(rig.x, rig.y, 0);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
+    fitShadowToView(this.camera, cam, rig.x, rig.y, 0, half);
     lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     const batches = sh.batches;
     for (const b of batches.values()) b.n = 0;

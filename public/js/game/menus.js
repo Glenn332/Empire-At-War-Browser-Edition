@@ -982,13 +982,13 @@ export class Menus {
         'IDC_SHADOW_RANGE_SLIDER',
         (shadowReach() - 1) / (SHADOW_RANGE_MAX - 1),
         v => {
-          const n = Math.round((1 + v * (SHADOW_RANGE_MAX - 1)) * 4) / 4;
+          const n = Math.round((1 + v * (SHADOW_RANGE_MAX - 1)) * 2) / 2;
           if (n !== gfx.shadowRange) {
             gfx.shadowRange = n;
             apply();
           }
         },
-        (SHADOW_RANGE_MAX - 1) * 4 + 1
+        (SHADOW_RANGE_MAX - 1) * 2 + 1
       );
     };
     show();

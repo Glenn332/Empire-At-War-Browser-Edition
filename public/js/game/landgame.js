@@ -67,6 +67,7 @@ import { TacticalStoryHost } from './tacticalstory.js';
 import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
+import { fitShadowToView } from './shadowfit.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
 import { PostFX } from './post.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade, GRADE } from './extrafx.js';
@@ -3956,6 +3957,7 @@ export class LandGame {
       cam.lookAt(cx, cy, z0);
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
+      if (!box) fitShadowToView(this.camera, cam, cx, cy, z0, half);
       const hidden = [],
         L = cam.layers,
         swapped = (this.depthSwaps ||= []);
