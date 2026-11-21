@@ -821,6 +821,11 @@ export class Unit {
     this.isTypes = undefined;
     this._lists = undefined;
     this.prioSet = undefined;
+    this.modsIncome = undefined;
+    this.passives = undefined;
+    this.instTurretsOnly = undefined;
+    this.instPosed = undefined;
+    this.aim = undefined;
     this.setup();
   }
 
