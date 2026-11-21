@@ -1,6 +1,6 @@
 import { diag } from '../diag.js';
 import { db } from '../gamedata.js';
-import { PathCore, MOVING, STILL, SCELL, loadPathWasm } from './pathcore.js';
+import { PathCore, MOVING, STILL, SCELL, loadPathWasm, searchBudget, UNTIMED_TRIES } from './pathcore.js';
 import { unitHash } from './desyncreport.js';
 
 const LAYER_BITS = { CORVETTE: 1, FRIGATE: 2, CAPITAL: 4, SUPERCAPITAL: 8 };
@@ -25,6 +25,7 @@ const SEARCH_MS = 6;
 const STEP_MS = 4;
 const WORKER_MS = 60;
 const STEP_SEARCHES = 6;
+const MOVING_GOAL_REPLAN = 150;
 const BATCH_DELAY = 20;
 const BATCH_MAX = 8;
 const RETRY = 2;
@@ -65,6 +66,7 @@ export class Pathfinder extends PathCore {
     this.structs = -1;
     this.searchMs = SEARCH_MS;
     this.stepMs = STEP_MS;
+    this.stepStates = 0;
     this.note = name => diag.note(name);
     this.worker = null;
     const noWasm = typeof location !== 'undefined' && /[?&]nowasm/.test(location.search);
@@ -79,7 +81,7 @@ export class Pathfinder extends PathCore {
     if (typeof Worker !== 'undefined' && !(typeof location !== 'undefined' && /[?&]pathsync\b/.test(location.search))) {
       try {
         const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
-        wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, searchMs: WORKER_MS, noWasm: noWasm });
+        wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, searchMs: WORKER_MS, triesBeforeTimeLimit: UNTIMED_TRIES, noWasm: noWasm });
         wk.onmessage = e => {
           if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
           else this.answer(e.data);
@@ -106,7 +108,7 @@ export class Pathfinder extends PathCore {
     this.arrived = new Map();
     await this.wasmReady;
     if (!this.worker) {
-      this.expBudget = 20000;
+      this.expBudget = searchBudget(this.K);
       return;
     }
     const wk = this.worker;
@@ -184,7 +186,7 @@ export class Pathfinder extends PathCore {
     if (this.fixed && this.batch.length >= BATCH_MAX) return;
     if (!this.fixed) this.sendWorld();
     const rid = ++this.rid;
-    this.asked.set(u.id, { rid, u, gx: goal.x, gy: goal.y, face, ver: this.version, at: t });
+    this.asked.set(u.id, { rid, u, gx: goal.x, gy: goal.y, face, ver: this.version, order: u.order, at: t });
     (this.fixed ? m => this.batch.push(m) : m => this.worker.postMessage(m))({
       kind: 'find',
       rid,
@@ -215,8 +217,12 @@ export class Pathfinder extends PathCore {
     this.asked.delete(m.id);
     const u = a.u;
     if (u.dead) return;
-    const t = this.world.time,
-      pts = m.pts,
+    const t = this.world.time;
+    if (m.deferred) {
+      if (u.route) u.route.check = u.route.again = t;
+      return;
+    }
+    const pts = m.pts,
       failed = !!pts && !pts.length;
     if (failed && this.holdOld(u, t)) return;
     const r = (u.route = {
@@ -224,6 +230,7 @@ export class Pathfinder extends PathCore {
       gy: a.gy,
       face: a.face,
       ver: a.ver,
+      order: a.order,
       pts,
       i: 0,
       wp: { x: 0, y: 0, via: true, speed: undefined },
@@ -378,7 +385,7 @@ export class Pathfinder extends PathCore {
     return this.trackBy.get(o) || null;
   }
 
-  next(u, goal, park = false, face = undefined) {
+  next(u, goal, park = false, face = undefined, chaseDistance = 0) {
     const t = this.world.time;
     let r = u.route;
     if (park && (t >= (u.slotCheck || 0) || t < (u.slotCheck || 0) - 2 || u.slotX !== goal.x || u.slotY !== goal.y)) {
@@ -391,16 +398,18 @@ export class Pathfinder extends PathCore {
     }
     const end = park ? u.slotAt : null;
     if (end) {
-      const wp = this.next(u, end, false, face);
+      const wp = this.next(u, end, false, face, chaseDistance);
       if (u.route) u.route.end = end;
       return wp || end;
     }
-    const moved = r && ((r.gx - goal.x) ** 2 + (r.gy - goal.y) ** 2 > 150 * 150 || r.face !== face);
+    const replanDistance = Math.max(MOVING_GOAL_REPLAN, chaseDistance),
+      moved = r && ((r.gx - goal.x) ** 2 + (r.gy - goal.y) ** 2 > replanDistance * replanDistance || r.face !== face);
     if (!r || r.ver !== this.version || (moved && t >= r.again) || t >= r.check) {
       const keep = r && r.ver === this.version && !moved && !(r.pts && !r.pts.length) && this.stillGood(u, r, goal);
       if (this.stepAt !== t) {
         this.stepAt = t;
         this.spent = 0;
+        this.stepStates = 0;
       }
       if (!keep && this.worker) {
         this.ask(u, goal, face);
@@ -408,7 +417,7 @@ export class Pathfinder extends PathCore {
           r.check = t + 0.05;
           r.again = t + 0.05;
         } else return null;
-      } else if (!keep && (this.fixed ? this.spent >= STEP_SEARCHES : this.spent >= this.stepMs)) {
+      } else if (!keep && (this.fixed ? this.spent >= STEP_SEARCHES || this.stepStates >= this.expBudget : this.spent >= this.stepMs)) {
         if (r) r.check = t + 0.05;
         else return null;
       } else {
@@ -417,6 +426,7 @@ export class Pathfinder extends PathCore {
           const t0 = this.fixed ? 0 : performance.now(),
             pts = this.find(u, goal.x, goal.y, face);
           this.spent += this.fixed ? 1 : performance.now() - t0;
+          this.stepStates += this.statesUsed;
           held = !!pts && !pts.length && this.holdOld(u, t);
           if (held) r = u.route;
           else
@@ -425,6 +435,7 @@ export class Pathfinder extends PathCore {
               gy: goal.y,
               face,
               ver: this.version,
+              order: u.order,
               pts,
               i: 0,
               wp: { x: 0, y: 0, via: true, speed: undefined }
@@ -475,7 +486,7 @@ export class Pathfinder extends PathCore {
 
   holdOld(u, t) {
     const r = u.route;
-    if (!r || !r.pts || !r.pts.length || !u.order || !(u.order.group > 1)) return false;
+    if (!r || !r.pts || !r.pts.length || !u.order || !(r.order === u.order || u.order.group > 1)) return false;
     r.ver = this.version;
     r.check = r.again = t + RETRY;
     return true;
@@ -492,7 +503,7 @@ export class Pathfinder extends PathCore {
     for (let i = r.i; i < r.pts.length; i++) {
       const p = r.pts[i],
         dt = Math.hypot(p.x - ax, p.y - ay) / Math.max(1, p.speed || v);
-      if (this.sweep(u, q, ax, ay, p.x, p.y, t0, t0 + dt) & ~MOVING && !(i === r.i && here)) return false;
+      if (this.sweep(u, q, ax, ay, p.x, p.y, t0, t0 + dt) & STILL && !(i === r.i && here & STILL)) return false;
       ax = p.x;
       ay = p.y;
       t0 += dt;

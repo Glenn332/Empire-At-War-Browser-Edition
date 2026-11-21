@@ -3936,7 +3936,8 @@ export class World {
     let goal = null,
       stopAt = 12,
       faceOnly = null,
-      hold = false;
+      hold = false,
+      chaseDistance = 0;
     u.facesAuto ??= !u.hardpoints.length || db.constants.bool('Auto_Rotate_For_Space_Targeting');
     if ((ord.kind === 'move' || ord.kind === 'attackmove') && ord.startAt > this.time) hold = true;
     else if (ord.kind === 'move' || ord.kind === 'attackmove') {
@@ -3979,6 +3980,7 @@ export class World {
         } else if (dist2(u, at) > want * want) {
           goal = at;
           stopAt = want;
+          chaseDistance = u.engageRange / 2;
         } else {
           faceOnly = t;
           ord.reached = true;
@@ -4005,6 +4007,7 @@ export class World {
       if (chase > 0 && u.attackMoveStops && dist2(u, t) > (u.engageRange * 0.8) ** 2 && dist2(u.home, t) < (u.maxRange + chase) ** 2) {
         goal = t;
         stopAt = u.engageRange * 0.7;
+        chaseDistance = u.engageRange / 2;
       } else if (u.facesAuto) faceOnly = t;
     }
     if (ord.kind === 'idle' && u.isMobile && !u.isFighter) {
@@ -4033,7 +4036,7 @@ export class World {
     if (goal) {
       const moving = ord.kind === 'move' || ord.kind === 'attackmove',
         face = moving && goal === ord && ord.face !== undefined ? ord.face : undefined;
-      const wp = this.paths.next(u, goal, stopAt < 60 && moving, face);
+      const wp = this.paths.next(u, goal, stopAt < 60 && moving, face, chaseDistance);
       if (wp && wp.x >= this.min.x && wp.x <= this.max.x && wp.y >= this.min.y && wp.y <= this.max.y) {
         goal = wp;
         via = !!wp.via;
