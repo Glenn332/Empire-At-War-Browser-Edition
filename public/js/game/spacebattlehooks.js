@@ -1,5 +1,5 @@
 import { World, Player, Team, Unit, Squad, directState } from './sim.js';
-import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
+import { UNIT, SHOT, POINT, ABILITY, beamMessage } from './spacerecord.js';
 
 const kept = new WeakSet();
 
@@ -119,7 +119,7 @@ export function stepRecord(w, rec, spawns, events) {
       shots,
       points,
       abilities,
-      beams: w.beams.length ? w.beams.map(b => [b.a.id, b.b.id, b.color, b.width, b.bone, b.kind]) : undefined,
+      beams: w.beams.length ? w.beams.map(beamMessage) : undefined,
       players: rec.players,
       queues: rec.queues,
       pads: rec.pads,

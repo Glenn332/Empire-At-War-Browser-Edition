@@ -75,5 +75,25 @@ assert.throws(
     ),
   TypeError
 );
+const { beamMessage, beamFromMessage } = await import('../public/js/game/spacerecord.js');
+const shooter = { id: 7 },
+  victim = { id: 9, type: {} },
+  units = new Map([
+    [7, { id: 7, page: true }],
+    [9, { id: 9, page: true }]
+  ]);
+const pointBeam = { a: shooter, b: { x: 10, y: -20, z: 30 }, color: [0.5, 1, 0.5], width: 4, bone: 'MUZZLEA_00', kind: '' },
+  unitBeam = { a: shooter, b: victim, color: [1, 0, 0], width: 12, bone: null, kind: 'tractor' };
+const sent = structuredClone([pointBeam, unitBeam].map(beamMessage)),
+  [pointBack, unitBack] = sent.map(entry => beamFromMessage(units, entry));
+assert(pointBack, 'a beam to a point crosses the worker');
+assert.equal(pointBack.a, units.get(7));
+assert.deepEqual(pointBack.b, { x: 10, y: -20, z: 30 });
+assert.deepEqual(pointBack.color, [0.5, 1, 0.5]);
+assert.equal(pointBack.width, 4);
+assert.equal(pointBack.bone, 'MUZZLEA_00');
+assert.equal(unitBack.b, units.get(9));
+assert.equal(unitBack.kind, 'tractor');
+assert.equal(beamFromMessage(new Map(), sent[0]), null, 'a beam from an unknown unit is dropped');
 console.error = error;
 console.log('space hooks: ok');

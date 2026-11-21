@@ -4,7 +4,7 @@ import { ProjectileMods } from './projectilemods.js';
 import { survivorPicks } from './survivors.js';
 import { unitTeamColor } from './teamcolor.js';
 import * as THREE from '../../vendor/three/build/three.module.js';
-import { db, spawnList, SPAWN_TIERS } from '../gamedata.js';
+import { db, spawnList, SPAWN_TIERS, particleFile } from '../gamedata.js';
 import { Pathfinder, layerMask, ASTEROID_LAYERS } from './pathfind.js';
 import { prioritySet, priorityOf, setOf } from './priorities.js';
 import { BountyBook, bountyValue } from './bounty.js';
@@ -198,9 +198,31 @@ export function buildListFor(type, factionName) {
   return out;
 }
 
-export function particleFile(typeName) {
-  const t = db.type(typeName);
-  return t ? t.str('Space_Model_Name') || t.str('Land_Model_Name') : '';
+export { particleFile };
+
+const HEAL_PARTICLE_SECONDS = 1;
+
+const xmlList = (node, tag) =>
+  node
+    .val(tag)
+    .split(/[\s,|]+/)
+    .filter(Boolean);
+
+function lightFlashOf(node, side) {
+  if (!/^color_flash$/i.test(node.val(side + '_Light_Effect_Type'))) return null;
+  const color = xmlList(node, side + '_Light_Effect_Color').map(Number);
+  if (color.length < 3 || !color.slice(0, 3).every(Number.isFinite)) return null;
+  return {
+    color: color.slice(0, 3),
+    seconds: node.num(side + '_Light_Effect_Duration', 0.5),
+    pulses: Math.max(1, node.num(side + '_Light_Effect_Pulse_Count', 1))
+  };
+}
+
+function healFeedbackLook(node, side) {
+  const particle = particleFile(node.val(side + '_Particle_Effect')),
+    flash = lightFlashOf(node, side);
+  return particle || flash ? { particle, bones: xmlList(node, side + '_Particle_Bone_Name'), flash } : null;
 }
 
 export const buildCost = (t, faction = null) =>
@@ -710,6 +732,7 @@ export class Unit {
     this._iconSize = undefined;
     this._iconFrame = undefined;
     this.darkHooked = undefined;
+    this.lightFlash = undefined;
     this.spotted = undefined;
     this.spotLine = undefined;
     this.revealSize = undefined;
@@ -1030,6 +1053,8 @@ export class Unit {
           .filter(Boolean)
           .map(c => c.toUpperCase()),
         sfx: heal.val('SFXEvent_Target_Affected'),
+        targetLook: healFeedbackLook(heal, 'Target'),
+        ownerLook: healFeedbackLook(heal, 'Owner'),
         timer: 1
       };
     }
@@ -4343,9 +4368,13 @@ export class World {
       else t.health = Math.min(t.maxHealth, Math.max(0, t.health + t.maxHealth * h.percent + h.amount));
     };
     if (h.range <= 0) {
-      if (u.healthFrac < 1) mend(u);
+      if (u.healthFrac < 1) {
+        mend(u);
+        this.showHealFeedback(u, h.ownerLook);
+      }
       return;
     }
+    let healedAny = false;
     let best = null,
       bf = 1;
     for (const t of this.units) {
@@ -4356,6 +4385,8 @@ export class World {
       if (h.cats.length && !h.cats.some(c => cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))) continue;
       if (!h.single) {
         mend(t);
+        this.showHealFeedback(t, h.targetLook);
+        healedAny = true;
         continue;
       }
       if (f < bf) {
@@ -4365,12 +4396,21 @@ export class World {
     }
     if (best) {
       mend(best);
+      this.showHealFeedback(best, h.targetLook);
+      healedAny = true;
       if (h.sfx && this.time - (h.said ?? -9) > 1.5) {
         h.said = this.time;
         this.audio.playAt(best.player, h.sfx, best.x, best.y);
       }
       this.onEvent('healed', { unit: best, by: u });
     }
+    if (healedAny) this.showHealFeedback(u, h.ownerLook);
+  }
+
+  showHealFeedback(unit, look) {
+    if (!look || !this.viewerSees(unit)) return;
+    if (look.particle) this.fx.attachFx?.(unit, look.particle, HEAL_PARTICLE_SECONDS, look.bones);
+    if (look.flash) this.fx.unitFlash?.(unit, look.flash.color, look.flash.seconds, look.flash.pulses);
   }
 
   updateWeapons(u, dt) {
@@ -4982,16 +5022,12 @@ export class World {
 
   detonate(proj, owner, x, y, z, scale = 1, big = false) {
     const range = proj.num('Projectile_Blast_Area_Range', 150) * scale,
-      dmg = proj.num('Projectile_Blast_Area_Damage', 0) || proj.num('Projectile_Damage', 100);
-    this.fx.explosion(
-      x,
-      y,
-      z,
-      Math.min(600, range * 0.8),
-      big || range > 300,
-      particleFile(proj.str('Projectile_Lifetime_Detonation_Particle')) || particleFile(proj.str('Projectile_Object_Detonation_Particle'))
-    );
-    const healing = proj.bool('Projectile_Instant_Heal_On_Detonation');
+      dmg = proj.num('Projectile_Blast_Area_Damage', 0) || proj.num('Projectile_Damage', 100),
+      healing = proj.bool('Projectile_Instant_Heal_On_Detonation'),
+      detonationParticle =
+        particleFile(proj.str('Projectile_Lifetime_Detonation_Particle')) || particleFile(proj.str('Projectile_Object_Detonation_Particle'));
+    if (healing) this.fx.made?.(detonationParticle, x, y, z);
+    else this.fx.explosion(x, y, z, Math.min(600, range * 0.8), big || range > 300, detonationParticle);
     const sfx = proj.str('Projectile_SFXEvent_Detonate') || (healing ? '' : 'Unit_Star_Destroyer_Death_SFX');
     if (sfx) this.audio.play(sfx, x, y);
     this.areaDamage(x, y, range, dmg, proj.str('Damage_Type'), owner, {
@@ -5011,8 +5047,7 @@ export class World {
         .split(/[|,\s]+/)
         .filter(Boolean)
         .map(c => c.toUpperCase()),
-      look = db.type(proj.str('Projectile_Instant_Heal_Spawn_Effect').trim()),
-      file = look ? look.str('Space_Model_Name') : '';
+      file = particleFile(proj.str('Projectile_Instant_Heal_Spawn_Effect'));
     const team = owner.team || owner.player?.team;
     for (const u of this.units) {
       if (u.dead || u.hyper || u.player.team !== team || (u.x - x) ** 2 + (u.y - y) ** 2 > R * R) continue;

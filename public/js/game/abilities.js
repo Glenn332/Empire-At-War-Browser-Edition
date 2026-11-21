@@ -1,4 +1,4 @@
-import { db } from '../gamedata.js';
+import { db, particleFile } from '../gamedata.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
@@ -61,6 +61,93 @@ const SELF = new Set([
   'DEPLOY_SQUAD'
 ]);
 const TOGGLE = new Set(['HUNT', 'SPOILER_LOCK', 'INTERDICT', 'LURE', 'MISSILE_SHIELD', 'SWAP_WEAPONS']);
+
+const LASER_DEFENSE_DEFAULT_COLOR = [0.3, 0.3, 1];
+const ENGINE_FRAMES_PER_SECOND = 30;
+
+const specList = (spec, tag) =>
+  spec
+    ? spec
+        .val(tag)
+        .split(/[\s,|]+/)
+        .filter(Boolean)
+    : [];
+
+function laserDefenseLook(def) {
+  if (def.laserLook) return def.laserLook;
+  const spec = def.spec,
+    rgb = specList(spec, 'Laser_Color').map(Number);
+  return (def.laserLook = {
+    color: rgb.length >= 3 && rgb.slice(0, 3).every(Number.isFinite) ? rgb.slice(0, 3).map(c => c / 255) : LASER_DEFENSE_DEFAULT_COLOR,
+    width: spec ? spec.num('Laser_Beam_Width', 4) : 4,
+    seconds: Math.max(1, spec ? spec.num('Laser_Beam_Frames', 2) : 2) / ENGINE_FRAMES_PER_SECOND,
+    boneNames: specList(spec, 'Bone_Names'),
+    zapSound: spec ? spec.val('Zap_SFXEvent') : ''
+  });
+}
+
+const laserDefenseBones = new WeakMap();
+
+function laserDefenseBoneLocals(unit, boneNames) {
+  const model = unit.model;
+  if (!model || !model.bone || !unit.localOf || !boneNames.length) return null;
+  let byNames = laserDefenseBones.get(model);
+  if (!byNames) laserDefenseBones.set(model, (byNames = new Map()));
+  const key = boneNames.join();
+  let locals = byNames.get(key);
+  if (!locals) {
+    locals = [];
+    for (const name of boneNames) {
+      const bone = model.bone(name);
+      if (bone) locals.push({ name, local: unit.localOf(bone) });
+    }
+    byNames.set(key, locals);
+  }
+  return locals;
+}
+
+function nearestLaserBone(unit, boneNames, point) {
+  const locals = laserDefenseBoneLocals(unit, boneNames);
+  if (!locals || !locals.length) return null;
+  const cos = Math.cos(unit.heading || 0),
+    sin = Math.sin(unit.heading || 0);
+  let nearest = null,
+    nearestDistance = Infinity;
+  for (const { name, local } of locals) {
+    const dx = unit.x + cos * local.x - sin * local.y - point.x,
+      dy = unit.y + sin * local.x + cos * local.y - point.y,
+      dz = (unit.z || 0) + local.z - point.z,
+      distance = dx * dx + dy * dy + dz * dz;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = name;
+    }
+  }
+  return nearest;
+}
+
+function laserDefenseZap(world, unit, def, projectile) {
+  const look = laserDefenseLook(def),
+    point = { x: projectile.x, y: projectile.y, z: projectile.z || 0 };
+  if (look.zapSound) sound(world, unit, look.zapSound);
+  world.beams.push({
+    a: unit,
+    b: point,
+    color: look.color,
+    until: world.time + look.seconds,
+    width: look.width,
+    bone: nearestLaserBone(unit, look.boneNames, point),
+    kind: ''
+  });
+}
+
+function showOwnerParticle(world, unit, abilityState) {
+  const def = abilityState.def,
+    index = unit.abilities.indexOf(abilityState);
+  if (!def.ownerParticle || index < 0) return;
+  const shown = unit.isSquad ? unit.fighters[0] : unit;
+  if (shown && (!world.viewerSees || world.viewerSees(shown))) world.fx.abilityFx?.(unit, index, def.ownerParticle, def.ownerParticleBones);
+}
 
 function namedSpec(type, name) {
   if (!name) return null;
@@ -127,6 +214,8 @@ export function parseAbilities(type) {
         sfxOff: ab.val('SFXEvent_GUI_Unit_Ability_Deactivated'),
         sfxTarget: ab.val('SFXEvent_Target_Ability').trim(),
         autofire: /^(yes|true)$/i.test(ab.val('Supports_Autofire')),
+        ownerParticle: target === 'none' ? particleFile(ab.val('Particle_Effect')) : '',
+        ownerParticleBones: specList(ab, 'Owner_Attachment_Bone'),
         label: label.charAt(0).toUpperCase() + label.slice(1)
       });
     }
@@ -163,6 +252,8 @@ export function autoSpecials(type) {
         sfxOff: '',
         sfxTarget: '',
         autofire: false,
+        ownerParticle: '',
+        ownerParticleBones: [],
         passive: true,
         label: 'Laser defense'
       });
@@ -341,6 +432,7 @@ function start(world, u, st, target) {
   if (timed) {
     st.active = true;
     st.timer = def.duration;
+    showOwnerParticle(world, u, st);
   } else recharge(u, st);
   if (kind === 'INTERDICT') world.onEvent('interdict', { unit: u, on: true });
   if (kind !== 'STEALTH' && def.target !== 'none') {
@@ -515,6 +607,7 @@ export function tickAbilities(world, u, dt) {
         st.timer = st.def.duration;
         st.acc = 0;
         st.data = { t: 0 };
+        showOwnerParticle(world, u, st);
       } else useAbility(world, u, st.def.kind, true);
     }
     if (!st.active) {
@@ -655,10 +748,8 @@ export function tickAbilities(world, u, dt) {
           if ((p.x - u.x) ** 2 + (p.y - u.y) ** 2 + ((p.z || 0) - (u.z || 0)) ** 2 > r * r) continue;
           p.dead = true;
           world.fx.hit(p.x, p.y, p.z, 10);
-          if (def.kind === 'LASER_DEFENSE') {
-            world.beams.push({ a: u, b: { x: p.x, y: p.y, z: p.z }, color: [0.3, 0.3, 1], until: world.time + 0.12, width: 4 });
-            break;
-          }
+          laserDefenseZap(world, u, def, p);
+          break;
         }
         break;
       }
