@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { db } from '../gamedata.js';
+import { pickCinematicSubject, cinematicShot } from './spacecinematic.js';
 
-const rand = (a, b) => a + Math.random() * (b - a);
+const CINEMATIC_NEAR = 1,
+  CINEMATIC_FAR = 10000;
 const _pos = new THREE.Vector3(),
-  _look = new THREE.Vector3();
+  _look = new THREE.Vector3(),
+  _target = new THREE.Vector3();
 
 export class Cinematic {
   constructor(game) {
@@ -27,6 +30,8 @@ export class Cinematic {
     document.body.classList.add('cinematic');
     document.documentElement.style.setProperty('--letterbox', (letterbox ? this.bars * 100 : 0) + 'vh');
     this.savedFov = R.camera.fov;
+    this.savedNear = R.camera.near;
+    this.savedFar = R.camera.far;
     R.cameraOverride = dt => this.frame(dt);
     g.ui.select([], false);
     g.ui.arm(null);
@@ -42,6 +47,8 @@ export class Cinematic {
     document.body.classList.remove('cinematic');
     R.cameraOverride = null;
     R.camera.fov = this.savedFov;
+    R.camera.near = this.savedNear;
+    R.camera.far = this.savedFar;
     R.camera.updateProjectionMatrix();
     if (this.subject && !this.subject.dead) {
       R.rig.x = this.subject.x;
@@ -51,80 +58,19 @@ export class Cinematic {
     this.subject = null;
   }
 
-  onDeath(u) {
-    if (this.sequence) return;
-    if (!this.on || u.isSquad || u.visualRadius < 150 || !this.visible(u, true)) return;
-    const spot = { x: u.x, y: u.y, z: u.z, heading: u.heading, speed: 0, visualRadius: u.visualRadius, wreck: true };
-    this.subject = null;
-    this.shot = {
-      kind: 'orbit',
-      u: spot,
-      foe: null,
-      t: 0,
-      len: 9,
-      r: Math.max(60, u.visualRadius),
-      a0: u.heading + rand(1.2, 2.2) * (Math.random() < 0.5 ? -1 : 1),
-      spin: rand(0.1, 0.16) * (Math.random() < 0.5 ? -1 : 1),
-      up: rand(0.15, 0.35),
-      dist: rand(2.4, 3.0),
-      side: 1
-    };
-  }
-
   visible(u, evenDead = false) {
     const w = this.game.world,
       me = this.game.human;
     return u && (evenDead || !u.dead) && !u.hyper && (!w.fog || (u.seenBy & me.bit) !== 0);
   }
 
-  pickSubject() {
-    const w = this.game.world;
-    let best = null,
-      bs = -Infinity;
-    for (const u of w.units) {
-      if (u.isFighter && u.squad && u.squad.fighters[0] !== u) continue;
-      if (u.player.id < 0 || u.isPad || !this.visible(u)) continue;
-      const fighting = (u.target && !u.target.dead) || w.time - (u.lastHitTime ?? -99) < 4;
-      let s = Math.min(400, u.visualRadius) * 0.01 + (fighting ? 6 : 0) + (u.isStation ? -1 : 0) + Math.random() * 4;
-      if (u === this.lastSubject) s -= 8;
-      if (s > bs) {
-        bs = s;
-        best = u;
-      }
-    }
-    return best;
-  }
-
-  newShot() {
-    const u = this.pickSubject();
-    if (!u) return null;
-    this.lastSubject = this.subject = u;
-    const r = Math.max(60, u.visualRadius),
-      foe = u.target && !u.target.dead ? u.target : null;
-    const kinds = ['orbit', 'chase', 'flyby'];
-    if (foe) kinds.push('duel', 'duel');
-    const kind = kinds[Math.floor(Math.random() * kinds.length)];
-    const shot = {
-      kind,
-      u,
-      foe,
-      t: 0,
-      len: rand(5, 8.5),
-      r,
-      a0: rand(0, 6.283),
-      spin: rand(0.08, 0.2) * (Math.random() < 0.5 ? -1 : 1),
-      up: rand(0.12, 0.5),
-      dist: rand(2.0, 3.2),
-      side: Math.random() < 0.5 ? -1 : 1
-    };
-    if (kind === 'flyby') {
-      const ahead = Math.max(1.5 * r, (u.speed || 0) * shot.len * 0.5),
-        c = Math.cos(u.heading),
-        s = Math.sin(u.heading);
-      shot.px = u.x + c * ahead - s * shot.side * r * 1.3;
-      shot.py = u.y + s * ahead + c * shot.side * r * 1.3;
-      shot.pz = u.z + r * rand(-0.15, 0.5);
-    }
+  nextShot() {
+    const subject = pickCinematicSubject(this.game, this.subject, !this.lastSubject);
+    if (!subject) return null;
+    this.lastSubject = this.subject = subject;
+    const shot = cinematicShot(this.game, subject);
+    shot.t = 0;
+    shot.fresh = true;
     return shot;
   }
 
@@ -134,51 +80,28 @@ export class Cinematic {
       return;
     }
     const cam = this.game.renderer.camera;
-    const fov = 55;
-    {
-      let sh = this.shot;
-      if (sh) sh.t += dt;
-      if (!sh || sh.t > sh.len || (!sh.u.wreck && (sh.u.dead || !this.visible(sh.u)))) sh = this.shot = this.newShot();
-      if (!sh) {
-        const st = this.game.human.station,
-          x = st && !st.dead ? st.x : 0,
-          y = st && !st.dead ? st.y : 0,
-          t = (performance.now() / 1000) * 0.05;
-        _pos.set(x + Math.cos(t) * 1500, y + Math.sin(t) * 1500, 500);
-        _look.set(x, y, 0);
-      } else {
-        const u = sh.u,
-          r = sh.r,
-          c = Math.cos(u.heading),
-          s = Math.sin(u.heading);
-        const foe = sh.foe && !sh.foe.dead ? sh.foe : null;
-        if (sh.kind === 'orbit') {
-          const a = sh.a0 + sh.t * sh.spin,
-            d = r * sh.dist;
-          _pos.set(u.x + Math.cos(a) * d, u.y + Math.sin(a) * d, u.z + d * sh.up);
-          _look.set(u.x, u.y, u.z);
-        } else if (sh.kind === 'chase') {
-          const back = r * (1.9 + sh.t * 0.05),
-            off = sh.side * r * (0.5 + sh.t * 0.04);
-          _pos.set(u.x - c * back - s * off, u.y - s * back + c * off, u.z + r * (0.45 + sh.up * 0.5));
-          _look.set(u.x + c * r, u.y + s * r, u.z);
-        } else if (sh.kind === 'flyby') {
-          _pos.set(sh.px, sh.py, sh.pz);
-          _look.set(u.x, u.y, u.z);
-        } else {
-          const dx = (foe ? foe.x : u.x + c) - u.x,
-            dy = (foe ? foe.y : u.y + s) - u.y,
-            l = Math.hypot(dx, dy) || 1,
-            nx = dx / l,
-            ny = dy / l;
-          _pos.set(u.x - nx * r * 2.1 - ny * sh.side * r * 0.9, u.y - ny * r * 2.1 + nx * sh.side * r * 0.9, u.z + r * (0.5 + sh.up * 0.4));
-          if (foe) _look.set(u.x + dx * 0.45, u.y + dy * 0.45, (u.z + foe.z) / 2);
-          else _look.set(u.x, u.y, u.z);
-        }
-      }
+    let shot = this.shot;
+    if (shot) shot.t += dt;
+    if (!shot || shot.t > shot.duration || shot.unit.dead || !this.visible(shot.unit)) shot = this.shot = this.nextShot();
+    if (!shot) {
+      const station = this.game.human.station,
+        x = station && !station.dead ? station.x : 0,
+        y = station && !station.dead ? station.y : 0,
+        t = (performance.now() / 1000) * 0.05;
+      _pos.set(x + Math.cos(t) * 1500, y + Math.sin(t) * 1500, 500);
+      _look.set(x, y, 0);
+    } else {
+      shot.camera(shot.t, _target);
+      shot.look(shot.t, _look);
+      if (shot.fresh || !shot.lag) _pos.copy(_target);
+      else _pos.lerp(_target, 1 - Math.pow(shot.lag, dt * 30));
+      shot.fresh = false;
     }
-    if (cam.fov !== fov) {
-      cam.fov = fov;
+    const near = shot ? CINEMATIC_NEAR : this.savedNear,
+      far = shot ? CINEMATIC_FAR : this.savedFar;
+    if (cam.near !== near || cam.far !== far) {
+      cam.near = near;
+      cam.far = far;
       cam.updateProjectionMatrix();
     }
     cam.position.copy(_pos);

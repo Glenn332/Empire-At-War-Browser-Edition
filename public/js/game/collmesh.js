@@ -75,11 +75,20 @@ function meshSet(model, store, keep) {
 }
 
 const boxCache = new WeakMap(),
-  extCache = new WeakMap();
+  extCache = new WeakMap(),
+  visibleExtCache = new WeakMap();
 
 export function extentBoxOf(model) {
+  return cachedHalfExtents(model, extCache, mesh => mesh.collision);
+}
+
+export function visibleExtentsOf(model) {
+  return cachedHalfExtents(model, visibleExtCache, mesh => !mesh.collision && !mesh.hidden && !/^shadow/i.test(mesh.name || ''));
+}
+
+function cachedHalfExtents(model, cache, counts) {
   if (!model || !model.meshes) return null;
-  if (extCache.has(model)) return extCache.get(model);
+  if (cache.has(model)) return cache.get(model);
   const bones = restBones(model);
   let x0 = Infinity,
     y0 = Infinity,
@@ -89,7 +98,7 @@ export function extentBoxOf(model) {
     z1 = -Infinity;
   for (const mesh of model.meshes) {
     const b = mesh.bbox;
-    if (!mesh.collision || !b) continue;
+    if (!b || !counts(mesh)) continue;
     const m = bones[mesh.bone] || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
       cx = (b[0] + b[3]) * 0.5,
       cy = (b[1] + b[4]) * 0.5,
@@ -107,7 +116,7 @@ export function extentBoxOf(model) {
     z1 = Math.max(z1, c[2] + h[2]);
   }
   const out = x1 >= x0 ? [(x1 - x0) * 0.5, (y1 - y0) * 0.5, (z1 - z0) * 0.5] : [1, 1, 1];
-  extCache.set(model, out);
+  cache.set(model, out);
   return out;
 }
 

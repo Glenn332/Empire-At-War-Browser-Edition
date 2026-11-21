@@ -1413,7 +1413,6 @@ class Game {
   }
 
   noteDeath(e) {
-    this.cine.onDeath(e);
     if (e.player.id >= 0 && (e.isSquad || !e.squad) && !e.isPad) {
       const m = this.losses.get(e.player.team) || this.losses.set(e.player.team, new Map()).get(e.player.team);
       m.set(e.type, (m.get(e.type) || 0) + 1);
