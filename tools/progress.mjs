@@ -560,7 +560,11 @@ const GROUPS = [
     'Audio',
     'space',
     [
-      ['SFX events: pools, pitch, volume, limits', D],
+      [
+        'SFX events: pools, pitch, volume, limits',
+        D,
+        'as the engine (read): Max_Instances defaults to 1 and 0 plays nothing; at the cap a 2-D event is refused and a 3-D one takes the place of the farthest instance when it is no farther; 32 3-D voices shared with the loops, and when all are taken the least important (highest Priority, then farthest) gives its voice to a sound at least as important and nearer. Ours: a replaced sound fades over 30 ms, 24 flat effect voices. tools/test-audio-instances.mjs checks the rules. Action points: Overlap_Test for sounds that are not speech, Kills_Previous_Object_SFX, Pre_Samples and Post_Samples'
+      ],
       ['Battle music playlists', D],
       ['Engine loops and station hum', D],
       ['Fighter fly-bys', D],
@@ -1074,7 +1078,7 @@ const GROUPS = [
       [
         'Land audio (footsteps, vehicles, ambience)',
         D,
-        'weapon fire, impacts, deaths, unit replies, announcer lines, music and engine loops; footfalls and the other sounds of the animations at the moments AnimationSFXMaps.txt gives (a company footsteps thinned to one in five); the weather loops and gusts. The game own table of map ambience (AmbientMapSounds.xml) is a stub its makers never filled in, so there is none to play'
+        'weapon fire (a hardpoint shot plays the hardpoint Fire_SFXEvent, else the unit SFXEvent_Fire, as the engine; tools/scan-unit-sfx.mjs lists every unit and hardpoint sound event we would fail to play), impacts, deaths, unit replies, announcer lines, music and engine loops; footfalls and the other sounds of the animations at the moments AnimationSFXMaps.txt gives (a company footsteps thinned to one in five); the weather loops and gusts. The game own table of map ambience (AmbientMapSounds.xml) is a stub its makers never filled in, so there is none to play'
       ],
       [
         'Land victory conditions',
