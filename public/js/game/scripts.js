@@ -2438,6 +2438,15 @@ export class ScriptHost {
   async prime() {
     const w = this.world;
     this.attach();
+    const s = this.scoring;
+    if (s && s.state === 'new') {
+      this.source(s.key);
+      while (this.fetching) await new Promise(r => setTimeout(r, 10));
+      if (this.start(s)) {
+        s.next = w.time + simRandom() * 0.3;
+        for (const [name, args] of this.told.splice(0)) this.tell(name, ...args);
+      }
+    }
     const mine = this.instances.filter(i => i.e && !i.plan && !i.story && !i.fs && i.state === 'new');
     for (let round = 0; round < 8; round++) {
       for (const inst of mine) if (inst.state === 'new') this.source(inst.key);
@@ -2451,15 +2460,6 @@ export class ScriptHost {
         } else if (inst.state === 'new') waiting++;
       }
       if (!waiting) break;
-    }
-    const s = this.scoring;
-    if (s && s.state === 'new') {
-      this.source(s.key);
-      while (this.fetching) await new Promise(r => setTimeout(r, 10));
-      if (this.start(s)) {
-        s.next = w.time + simRandom() * 0.3;
-        for (const [name, args] of this.told.splice(0)) this.tell(name, ...args);
-      }
     }
   }
 
