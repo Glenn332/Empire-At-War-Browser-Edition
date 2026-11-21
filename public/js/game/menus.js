@@ -3,7 +3,7 @@ import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
-import { gfx, storeGfx, presets } from '../gfx.js';
+import { gfx, storeGfx, presets, SHADOW_RANGE_MAX } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
@@ -894,8 +894,31 @@ export class Menus {
   }
 
   async videoAdvanced() {
-    const dlg = await this.push('IDD_ADVANCED_VIDEO_OPTIONS_DIALOG');
+    const def = (await loadDialogs())?.dialogs.get('IDD_ADVANCED_VIDEO_OPTIONS_DIALOG'),
+      row = def?.controls.find(c => c.id === 'IDC_SHADOW_DETAIL'),
+      bar = def?.controls.find(c => c.id === 'IDC_SHADOW_DETAIL_SLIDER'),
+      ends = def?.controls.filter(c => c.kind === 'LTEXT' && c.id === 'IDC_STATIC' && c.y === row?.y),
+      buttons = def ? Math.min(...def.controls.filter(c => /PUSHBUTTON$/.test(c.kind) && c.id !== 'IDC_AUTO_DETECT').map(c => c.y)) : 0,
+      title = def?.controls.find(c => c.id === 'IDC_STATIC_MEDIUM'),
+      gap = row && bar ? 30 : 0,
+      at = row && bar ? Math.min(row.y, bar.y) + gap : 0,
+      moved = y => (gap && y >= at && y < buttons ? y + gap : y);
+    const dlg = await this.push(
+      'IDD_ADVANCED_VIDEO_OPTIONS_DIALOG',
+      gap
+        ? {
+            extra: [
+              { ...row, id: 'IDC_SHADOW_RANGE', text: '', fontOf: row.id, y: row.y + gap, placed: true },
+              { ...bar, id: 'IDC_SHADOW_RANGE_SLIDER', fontOf: bar.id, y: bar.y + gap, placed: true },
+              ...ends.map(c => ({ ...c, y: c.y + gap, placed: true }))
+            ],
+            adjust: c => (!c.placed && moved(c.y) !== c.y ? { ...c, y: moved(c.y) } : null),
+            scroll: { top: title ? title.y + title.h + 20 : 40, bottom: buttons - 8 }
+          }
+        : undefined
+    );
     if (!dlg) return;
+    if (gap) dlg.setText('IDC_SHADOW_RANGE', 'Shadow Distance');
     const was = { ...gfx };
     const apply = () => {
       storeGfx();
@@ -914,7 +937,7 @@ export class Menus {
       bloom = dlg.def.controls.find(c => c.id === 'IDC_BLOOM');
     const shadowsBox = dlg.def.controls.find(c => c.id === 'IDC_SOFT_SHADOWS'),
       detect = dlg.def.controls.find(c => c.id === 'IDC_AUTO_DETECT'),
-      below = heat.y + (heat.y - bloom.y);
+      below = moved(heat.y) + (heat.y - bloom.y);
     const extra = (id, label, x, y, flip) => {
       const c = dlg.clone('IDC_HEAT_DISTORTIONS', id, x, y);
       if (!c) return null;
@@ -929,7 +952,7 @@ export class Menus {
       gfx.flare = !gfx.flare;
       apply();
     });
-    const soft = extra('IDC_SOFT_PARTICLES', 'Soft Particles', detect ? detect.x : null, shadowsBox.y, () => {
+    const soft = extra('IDC_SOFT_PARTICLES', 'Soft Particles', detect ? detect.x : null, moved(shadowsBox.y), () => {
       gfx.soft = gfx.soft === false;
       apply();
     });
@@ -955,6 +978,18 @@ export class Menus {
       step('IDC_TEXTURE_MIP_DETAIL_SLIDER', 'texMip', 2, true);
       step('IDC_SHADER_DETAIL_SLIDER', 'shader', 3);
       step('IDC_SHADOW_DETAIL_SLIDER', 'shadow', 3);
+      dlg.slider(
+        'IDC_SHADOW_RANGE_SLIDER',
+        (Math.max(1, Math.min(SHADOW_RANGE_MAX, +gfx.shadowRange || 1)) - 1) / (SHADOW_RANGE_MAX - 1),
+        v => {
+          const n = Math.round((1 + v * (SHADOW_RANGE_MAX - 1)) * 4) / 4;
+          if (n !== gfx.shadowRange) {
+            gfx.shadowRange = n;
+            apply();
+          }
+        },
+        (SHADOW_RANGE_MAX - 1) * 4 + 1
+      );
     };
     show();
     for (const id of ['IDC_MESH_DETAIL_SLIDER', 'IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER', 'IDC_AUTO_DETECT'])

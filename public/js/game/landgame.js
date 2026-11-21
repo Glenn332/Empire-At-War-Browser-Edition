@@ -66,7 +66,7 @@ import { LandScripts } from './landscripts.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
-import { gfx, pixelRatio, shadowSize, gammaOn } from '../gfx.js';
+import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
 import { PostFX } from './post.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade, GRADE } from './extrafx.js';
@@ -3941,7 +3941,7 @@ export class LandGame {
         cam = S.camera,
         cx = box ? box.x : v.x,
         cy = box ? box.y : v.y,
-        half = box ? box.half : Math.max(350, v.dist * 1.25),
+        half = box ? box.half : Math.max(350, v.dist * 1.25) * shadowReach(),
         far = half * 3,
         dir = box?.dir || lighting.sunDir.value,
         z0 = box && box.z !== undefined ? box.z : heightAt(this.terrain, cx, cy);

@@ -1970,6 +1970,16 @@ body.attract #buildTag {
 .dlg-scroll {
   z-index: 1;
 }
+.dlg-pane {
+  z-index: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c3ab02 rgba(0, 0, 0, 0.35);
+}
+.dlg-pane-end {
+  pointer-events: none;
+}
 .dlg-combo {
   cursor: pointer;
   z-index: 1;

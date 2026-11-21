@@ -16,6 +16,7 @@ const OWN = {
   texMip: 0,
   shader: 3,
   shadow: 3,
+  shadowRange: 1,
   gamma: 0.5,
   level: -1
 };
@@ -45,6 +46,11 @@ export function storeGfx() {
 
 export function shadowSize() {
   return [512, 1024, 2048, 4096][Math.max(0, Math.min(3, gfx.shadow | 0))];
+}
+
+export const SHADOW_RANGE_MAX = 4;
+export function shadowReach() {
+  return Math.max(1, Math.min(SHADOW_RANGE_MAX, +gfx.shadowRange || 1));
 }
 
 export function pixelRatio() {

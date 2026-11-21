@@ -10,7 +10,7 @@ import { getALA, animName, AnimState } from '../ala.js';
 import { loadTexture, whiteTexture, loadTextureCanvas } from '../dds.js';
 import { fetchText, fetchBinary } from '../vfs.js';
 import { parseXML } from '../xml.js';
-import { gfx, pixelRatio, shadowSize, gammaOn } from '../gfx.js';
+import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { Instances } from './instances.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
@@ -846,7 +846,7 @@ export class Renderer {
     if (sh.frame++ % 3) return;
     const rig = this.rig,
       cam = sh.camera,
-      half = Math.max(500, Math.min(4500, rig.dist * 0.85)),
+      half = Math.max(500, Math.min(4500, rig.dist * 0.85)) * shadowReach(),
       far = half * 4;
     const dir = lighting.sunDir.value;
     cam.left = cam.bottom = -half;

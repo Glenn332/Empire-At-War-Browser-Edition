@@ -837,7 +837,8 @@ export async function openDialog(
     nativeFrame = nativeFonts,
     stretch = nativeFonts,
     extra = null,
-    size = null
+    size = null,
+    scroll = null
   } = {}
 ) {
   if (!data) await loadDialogs();
@@ -920,6 +921,7 @@ export async function openDialog(
     sources = new Map(),
     refreshers = new Set(),
     controlFont = (cid, kind) => font(resource.controls.find(c => c.id === cid)?.fontOf || cid, kind, nativeFonts, id);
+  const firstControl = el.children.length;
   for (const c0 of dlg.controls) {
     const c = (adjust && adjust(c0)) || c0;
     const text = /^TEXT_/.test(c.text) ? db.t(c.text) || '' : '';
@@ -1236,6 +1238,18 @@ export async function openDialog(
     if (!ctls.has(c.id)) ctls.set(c.id, d);
     if (/^TEXT_/.test(c.text) && !sources.has(c.id)) sources.set(c.id, () => api._paintText(c.id, db.t(c.text)));
   }
+  if (scroll) {
+    const pane = box(el, 'dlg-pane', 0, scroll.top, dlg.w, scroll.bottom - scroll.top);
+    pane._top = scroll.top;
+    for (const n of [...el.children].slice(firstControl, -1)) {
+      const y = parseFloat(n.style.top);
+      if (y >= scroll.top && y < scroll.bottom) {
+        n.style.top = y - scroll.top + 'px';
+        pane.appendChild(n);
+      }
+    }
+    box(pane, 'dlg-pane-end', 0, Math.max(0, ...[...pane.children].map(n => parseFloat(n.style.top) + parseFloat(n.style.height) || 0)) + 6, 1, 1);
+  }
   parent.appendChild(veil);
   const api = {
     el,
@@ -1258,7 +1272,7 @@ export async function openDialog(
       if (d.classList.contains('dlg-btn'))
         d.addEventListener('mouseenter', () => window.game && window.game.audio.play('GUI_Highlight_Mouse_Over'));
       if (x != null) d.style.left = x + 'px';
-      if (y != null) d.style.top = y + 'px';
+      if (y != null) d.style.top = y - (c.parentNode._top || 0) + 'px';
       c.parentNode.appendChild(d);
       ctls.set(as, d);
       return d;
