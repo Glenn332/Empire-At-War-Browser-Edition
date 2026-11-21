@@ -577,7 +577,11 @@ const GROUPS = [
       ],
       ['Battle music playlists', D],
       ['Engine loops and station hum', D],
-      ['Fighter fly-bys', D],
+      [
+        'Fighter fly-bys',
+        D,
+        'as the engine: a type with the AMBIENT_SFX behavior plays its SFXEvent_Ambient_Moving from the squadron leader alone, while it moves, its Min_ to Max_Delay_Seconds apart, the first one a whole delay after it appears (every fighter of a squadron starting its own at once cut the long fly-by samples off at their start)'
+      ],
       ['Unit responses', D],
       ['Health and damage call-outs', D],
       ['Faction announcer', D],

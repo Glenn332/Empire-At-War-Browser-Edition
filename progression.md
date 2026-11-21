@@ -229,7 +229,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ SFX events: pools, pitch, volume, limits — *as the engine (read): Max_Instances defaults to 1 and 0 plays nothing; at the cap a 2-D event is refused and a 3-D one takes the place of the farthest instance when it is no farther; 32 3-D voices shared with the loops, and when all are taken the least important (highest Priority, then farthest) gives its voice to a sound at least as important and nearer. Ours: a replaced sound fades over 30 ms, 24 flat effect voices. tools/test-audio-instances.mjs checks the rules. Action points: Overlap_Test for sounds that are not speech, Kills_Previous_Object_SFX, Pre_Samples and Post_Samples*
 - ✅ Battle music playlists
 - ✅ Engine loops and station hum
-- ✅ Fighter fly-bys
+- ✅ Fighter fly-bys — *as the engine: a type with the AMBIENT_SFX behavior plays its SFXEvent_Ambient_Moving from the squadron leader alone, while it moves, its Min_ to Max_Delay_Seconds apart, the first one a whole delay after it appears (every fighter of a squadron starting its own at once cut the long fly-by samples off at their start)*
 - ✅ Unit responses
 - ✅ Health and damage call-outs
 - ✅ Faction announcer

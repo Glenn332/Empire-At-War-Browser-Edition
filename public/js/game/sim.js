@@ -316,6 +316,11 @@ const inLookTree = t =>
       .split(/[|,\s]+/)
       .some(k => LOOK_LAYERS.has(k)));
 const MODE_PROXY = { pptw: ['POWER_TO_WEAPONS', 'FULL_SALVO'], prs: ['MISSILE_SHIELD'], pem: ['INVULNERABILITY'] };
+const ambientDelay = type => {
+  const lo = Math.max(0, type.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 0)),
+    hi = Math.max(0, type.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 0));
+  return hi > lo ? rand(lo, hi) : lo;
+};
 const flownThrough = u => (u.isField ??= isFieldType(u.type) || (u.isStructure && !u.type.behaviors().has('SPACE_OBSTACLE')));
 
 const shadowModels = new WeakMap();
@@ -3320,15 +3325,12 @@ export class World {
       if (u.dead) return;
     }
     if (u.flyBy === undefined) {
-      u.flyBy = u.type.str('SFXEvent_Ambient_Moving') || null;
-      u.flyTimer = rand(0, u.type.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 10));
+      u.flyBy = (u.type.behaviors().has('AMBIENT_SFX') && u.type.str('SFXEvent_Ambient_Moving')) || null;
+      if (u.flyBy) u.flyTimer = ambientDelay(u.type);
     }
-    if (u.flyBy && u.speed > 1 && (u.flyTimer -= dt) <= 0) {
-      u.flyTimer = rand(
-        u.type.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 5),
-        u.type.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 10)
-      );
-      this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
+    if (u.flyBy && (u.flyTimer -= dt) <= 0) {
+      u.flyTimer = ambientDelay(u.type);
+      if (u.speed > 1 && (!u.squad || u.squad.fighters?.[0] === u)) this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
     }
     if (u.player.id < 0) {
       if (u.isMobile) u.syncObj();
