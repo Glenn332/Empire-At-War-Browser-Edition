@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
 import { loadParticles } from '../particles.js';
+import { basisOf } from '../particlesim.js';
 
 export class ShotModels {
   constructor(scene) {
@@ -29,7 +30,7 @@ export class ShotModels {
     const data = await loadALO(file).catch(() => null);
     const parts = [],
       proxies = [];
-    if (data && data.isParticle) proxies.push({ name: file, x: 0, y: 0, z: 0 });
+    if (data && data.isParticle) proxies.push({ name: file, x: 0, y: 0, z: 0, basis: null });
     else if (data) {
       const inst = buildModel(data);
       inst.root.updateMatrixWorld(true);
@@ -50,7 +51,7 @@ export class ShotModels {
       for (const px of inst.proxies) {
         if (px.hidden) continue;
         const e = px.bone.matrixWorld.elements;
-        proxies.push({ name: px.name, x: e[12], y: e[13], z: e[14] });
+        proxies.push({ name: px.name, x: e[12], y: e[13], z: e[14], basis: basisOf(e) });
       }
     }
     const files = await Promise.all(proxies.map(px => Promise.resolve(loadParticles(px.name)).catch(() => null)));

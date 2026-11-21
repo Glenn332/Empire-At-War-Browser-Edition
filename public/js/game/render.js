@@ -1452,7 +1452,7 @@ export class Renderer {
         f.vy = p.vy;
         f.vz = p.vz;
         return !p.hidden;
-      });
+      }, { basis: px.basis });
       if (h) hs.push(h);
     }
     if (hs.length) this.shotFx.push(p);
