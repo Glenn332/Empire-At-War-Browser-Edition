@@ -44,6 +44,26 @@ const moduleKey = s =>
     .replace(/\.LUA$/i, '')
     .replace(/\./g, '/');
 const yes = s => /^(true|yes|1)$/i.test(String(s));
+const scriptNames = new WeakMap();
+const objectScriptName = type => {
+  if (!type?.str) return undefined;
+  let name = scriptNames.get(type);
+  if (name === undefined) {
+    name = type.str('Lua_Script')?.trim() || '';
+    scriptNames.set(type, name);
+  }
+  return name;
+};
+const memberNameLists = new WeakMap();
+const memberNames = holder => {
+  let names = memberNameLists.get(holder);
+  if (!names) {
+    names = [...holder.list('Company_Units'), ...holder.list('Squadron_Units')];
+    names.scripted = names.some(name => objectScriptName(db.type(name)));
+    memberNameLists.set(holder, names);
+  }
+  return names;
+};
 const split = s =>
   String(s || '')
     .split(',')
@@ -185,10 +205,7 @@ export class GalacticStoryHost extends StoryPlots {
   async fetchSources() {
     for (const inst of this.instances) if (inst.state !== 'over') this.source(inst.key);
     for (const inst of this.objectScripts?.values() || []) if (inst && inst.state !== 'over') this.source(inst.key);
-    for (const [record] of this.objectScriptHolders()) {
-      const name = record.type?.str?.('Lua_Script')?.trim();
-      if (name) this.source(moduleKey(name));
-    }
+    for (const [record] of this.objectScriptHolders()) this.source(moduleKey(objectScriptName(record.type)));
     while (this.pending.size) await Promise.all([...this.pending.values()]);
   }
 
@@ -2329,20 +2346,29 @@ export class GalacticStoryHost extends StoryPlots {
   }
   objectScriptHolders() {
     const g = this.game.galaxy,
-      out = [];
+      out = [],
+      members = [];
     if (!g?.planets) return out;
+    const visit = (record, planet, owner) => {
+      if (record.dead) return;
+      if (objectScriptName(record.type)) out.push([record, planet, owner]);
+      const holder = record.carries || record.type;
+      if (holder && memberNames(holder).scripted)
+        for (const member of this.membersOf(record)) if (!member.dead && objectScriptName(member.type)) members.push([member, planet, owner]);
+    };
     for (const p of g.planets)
-      for (const record of [...(p.groundStructures || []), ...(p.orbitalStructures || []), ...(p.garrison || [])])
-        if (!record.dead) out.push([record, p, record.owner || p.owner]);
-    for (const fleet of g.fleets || [])
-      for (const record of fleet.units) if (!record.dead) out.push([record, fleet.leg ? null : g.planets[fleet.planet], fleet.owner]);
-    for (const [record, planet, owner] of out.slice()) for (const member of this.membersOf(record)) if (!member.dead) out.push([member, planet, owner]);
+      for (const list of [p.groundStructures, p.orbitalStructures, p.garrison]) for (const record of list || []) visit(record, p, record.owner || p.owner);
+    for (const fleet of g.fleets || []) {
+      const planet = fleet.leg ? null : g.planets[fleet.planet];
+      for (const record of fleet.units) visit(record, planet, fleet.owner);
+    }
+    for (const entry of members) out.push(entry);
     return out;
   }
 
   membersOf(record) {
     const holder = record.carries || record.type,
-      names = holder ? [...holder.list('Company_Units'), ...holder.list('Squadron_Units')] : [];
+      names = holder ? memberNames(holder) : [];
     if (!names.length) return [];
     let members = (this.memberCache ||= new WeakMap()).get(record);
     if (!members || members.holder !== holder) {
@@ -2358,8 +2384,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.objectScripts ||= new Map();
     const live = new Set();
     for (const [record, planet, owner] of this.objectScriptHolders()) {
-      const name = record.type?.str?.('Lua_Script')?.trim();
-      if (!name) continue;
+      const name = objectScriptName(record.type);
       live.add(record);
       const known = this.objectScripts.get(record);
       if (known !== undefined) {

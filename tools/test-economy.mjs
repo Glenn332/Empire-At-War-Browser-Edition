@@ -289,9 +289,14 @@ const requiring = new ObjType(ship.tag, 'TEST_ORBITING_REQUIREMENT');
 requiring.parent = ship;
 requiring.props.set('required_orbiting_units', [ship.name]);
 assert.equal(queueUnit(recheck, p.index, owner, requiring), null);
+site.spaceLevel = ship.num('Required_Star_Base_Level') + 1;
+stepProduction(recheck, 0);
 recheck.fleets = recheck.fleets.filter(f => f.planet !== p.index);
 stepProduction(recheck, 0);
-assert.equal(site.production.space.length, 0, 'Departing required orbiting unit invalidates production');
+assert.equal(site.production.space.length, 1, 'A departing orbiting unit alone does not re-check the queue');
+site.spaceLevel = ship.num('Required_Star_Base_Level');
+stepProduction(recheck, 0);
+assert.equal(site.production.space.length, 0, 'A star base level drop re-checks the queue and drops the item without its orbiting unit');
 console.log(
   `PASS: ${mod < 0 ? 'base' : 'mod'} income/routes/mines/fiscal timing; ${p.name} ${land.name} + ${ship.name}; price, parallel queues, cancellation, limits, battle snapshots and completion placement`
 );
