@@ -921,8 +921,8 @@ export class Renderer {
     const dir = lighting.sunDir.value;
     cam.left = cam.bottom = -half;
     cam.right = cam.top = half;
-    cam.near = 1;
-    cam.far = far * 2;
+    cam.near = Math.max(1, far - half * 1.5);
+    cam.far = far + half * 1.5;
     cam.position.set(rig.x + dir.x * far, rig.y + dir.y * far, dir.z * far);
     cam.up.set(0, 0, 1);
     cam.lookAt(rig.x, rig.y, 0);
