@@ -633,6 +633,7 @@ export class Unit {
     this.income = null;
     this.garrison = [];
     this.spawnTimer = 0;
+    this.startingPlaced = false;
     this.hyper = null;
     this.engineGlows = [];
     this.bonus = { damage: 1, defense: 1, speed: 1, health: 1, shield: 1, hm: 1, fireRate: 1, sight: 1 };
@@ -3469,6 +3470,10 @@ export class World {
 
   updateGarrison(u, dt, byHand = false) {
     if (!byHand && (u.handDeploy ??= u.abilities.some(a => a.def.kind === 'DEPLOY_SQUAD'))) return;
+    if (!u.startingPlaced) {
+      u.startingPlaced = true;
+      if (!u.noGarrison) this.placeStartingSpawns(u);
+    }
     const gs = u.garrison;
     let full = true;
     for (let i = 0; i < gs.length; i++) {
@@ -3507,7 +3512,12 @@ export class World {
       const p = bay.worldPos({});
       const out = u.heading,
         fly = parseFloat(u.type.list('Spawned_Squadron_Location_Flyout_Distances')[0]) || u.radius;
-      const s = this.spawn(g.type, u.player, p.x, p.y, out);
+      const ship = isSquadronType(g.type) || g.type.behaviors().has('FIGHTER_LOCOMOTOR') ? null : this.bayFlyoutSpot(u, bay, g.type);
+      if (ship === false) {
+        u.spawnTimer = u.spawnDelay;
+        return;
+      }
+      const s = ship ? this.spawn(g.type, u.player, ship.x, ship.y, ship.heading) : this.spawn(g.type, u.player, p.x, p.y, out);
       if (s) {
         s.carrier = u;
         this.recountPop();
@@ -3529,6 +3539,70 @@ export class World {
       u.spawnTimer = u.spawnDelay;
       return;
     }
+  }
+
+  placeStartingSpawns(u) {
+    if (!u.garrison.some(g => g.want > 0)) return;
+    const bones = u.type.list('Spawned_Squadron_Location_Bones'),
+      flyouts = u.type.list('Spawned_Squadron_Location_Flyout_Distances').map(parseFloat),
+      half = boxHalfOf(u.type);
+    let x = u.x,
+      y = u.y,
+      heading = u.heading,
+      distance = Math.hypot(half[0], half[1]);
+    if (bones.length) {
+      const index = Math.min(bones.length - 1, Math.floor(simRandom() * bones.length)),
+        bone = u.model?.boneByName.get(bones[index].trim().toUpperCase());
+      if (bone) {
+        const local = u.localOf(bone),
+          c = Math.cos(u.heading),
+          s = Math.sin(u.heading);
+        x = u.x + c * local.x - s * local.y;
+        y = u.y + s * local.x + c * local.y;
+        heading = u.heading + Math.atan2(local.ay, local.ax);
+      }
+      if (index < flyouts.length && Number.isFinite(flyouts[index])) distance = flyouts[index];
+    }
+    const targetX = x + Math.cos(heading) * distance,
+      targetY = y + Math.sin(heading) * distance,
+      searchStart = (heading * 180) / Math.PI - 45;
+    for (const g of u.garrison)
+      for (let i = 0; i < g.want; i++) {
+        if (g.remaining === 0) break;
+        const spot = this.freeSpot(g.type, targetX, targetY, searchStart) || { x: targetX, y: targetY };
+        const spawned = this.spawn(g.type, u.player, spot.x, spot.y, heading);
+        if (!spawned) continue;
+        if (g.remaining > 0) g.remaining--;
+        g.spawned = (g.spawned || 0) + 1;
+        spawned.carrier = u;
+        g.live.push(spawned);
+      }
+    this.recountPop();
+  }
+
+  bayFlyoutSpot(u, bay, type) {
+    const p = bay.worldPos({}),
+      axis = Number.isFinite(bay.local.ax) ? Math.atan2(bay.local.ay, bay.local.ax) : 0,
+      heading = u.heading + axis,
+      flyout = bay.def.num('Fighter_Bay_Flyout_Distance', 0),
+      x = p.x + Math.cos(heading) * flyout,
+      y = p.y + Math.sin(heading) * flyout,
+      half = boxHalfOf(type);
+    const open = (qx, qy) =>
+      !this.units.some(o => {
+        if (o.dead || o.isFighter || o.hyper || o.squad || layerMask(o.type) === 8) return false;
+        const other = boxHalfOf(o.type);
+        return Math.abs(o.x - qx) <= other[0] + half[0] && Math.abs(o.y - qy) <= other[1] + half[1];
+      });
+    if (open(x, y)) return { x, y, heading };
+    for (let r = 200; r < 1000; r += 200)
+      for (let deg = 0; deg < 360; deg += 45) {
+        const a = heading + (deg * Math.PI) / 180,
+          qx = x + Math.cos(a) * r,
+          qy = y + Math.sin(a) * r;
+        if (open(qx, qy)) return { x: qx, y: qy, heading };
+      }
+    return false;
   }
 
   addField(type, x, y, scale = 1) {

@@ -514,6 +514,7 @@ export function restore(game, save) {
       if (o.station) p.team.station = e;
       if (o.first) p.team.firstStation = e;
       if (o.con) e.construction = { left: o.con.left, total: o.con.total, result: db.type(o.con.result) || null };
+      if (o.gar) e.startingPlaced = true;
       if (o.gar)
         o.gar.forEach((g, k) => {
           const x = e.garrison[k];
