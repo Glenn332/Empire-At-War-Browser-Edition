@@ -128,7 +128,7 @@ function readVertices(buf, g, at) {
   return { pos, nrm, uv, tan, bin, col, skinIndex, skinWeight };
 }
 
-function parseMesh(r, c) {
+function parseMesh(r, c, outline) {
   const mesh = { name: '', hidden: false, collision: false, bbox: null, subs: [], bone: -1 };
   let material = null;
   for (const k of r.chunks(c.start, c.end)) {
@@ -137,7 +137,8 @@ function parseMesh(r, c) {
       mesh.bbox = r.vec(k.start + 4, 6);
       mesh.hidden = r.u32(k.start + 32) !== 0;
       mesh.collision = r.u32(k.start + 36) !== 0;
-    } else if (k.type === 0x10100) material = parseMaterial(r, k);
+    } else if (outline) continue;
+    else if (k.type === 0x10100) material = parseMaterial(r, k);
     else if (k.type === 0x10000) {
       mesh.subs.push({ material, geometry: parseGeometry(r, k) });
     }
@@ -145,7 +146,7 @@ function parseMesh(r, c) {
   return mesh;
 }
 
-export function parseALO(buffer) {
+export function parseALO(buffer, { outline = false } = {}) {
   const r = new ChunkReader(buffer);
   const model = { bones: [], meshes: [], proxies: [], isParticle: false };
   const objects = [];
@@ -153,7 +154,7 @@ export function parseALO(buffer) {
     if (c.type === 0x200) {
       for (const k of r.chunks(c.start, c.end)) if (k.type === 0x202) model.bones.push(parseBone(r, k));
     } else if (c.type === 0x400) {
-      const m = parseMesh(r, c);
+      const m = parseMesh(r, c, outline);
       model.meshes.push(m);
       objects.push(m);
     } else if (c.type === 0x1300) {
@@ -188,19 +189,31 @@ export function parseALO(buffer) {
 
 const models = new Map();
 
+const modelStem = name =>
+  name
+    .replace(/^.*[\\/]/, '')
+    .split('.')[0]
+    .toUpperCase();
+
+function fetchModelBytes(name) {
+  const alo = modelStem(name) + '.ALO';
+  return fetchBinary('Data/Art/Models/' + name, { keep: false }).then(buf =>
+    buf || name.toUpperCase() === alo ? buf : fetchBinary('Data/Art/Models/' + alo, { keep: false })
+  );
+}
+
 export function loadALO(name) {
-  const stem = name
-      .replace(/^.*[\\/]/, '')
-      .split('.')[0]
-      .toUpperCase(),
-    key = stem;
+  const key = modelStem(name);
   let p = models.get(key);
   if (!p) {
-    const alo = stem + '.ALO';
-    p = fetchBinary('Data/Art/Models/' + name, { keep: false })
-      .then(buf => (buf || name.toUpperCase() === alo ? buf : fetchBinary('Data/Art/Models/' + alo, { keep: false })))
-      .then(buf => (buf ? diag.task('model ' + name, () => parseALO(buf)) : null));
+    p = fetchModelBytes(name).then(buf => (buf ? diag.task('model ' + name, () => parseALO(buf)) : null));
     models.set(key, p);
   }
   return p;
+}
+
+export function loadALOOutline(name) {
+  const loaded = models.get(modelStem(name));
+  if (loaded) return loaded;
+  return fetchModelBytes(name).then(buf => (buf ? parseALO(buf, { outline: true }) : null));
 }

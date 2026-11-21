@@ -1,6 +1,6 @@
 import { db } from '../gamedata.js';
 import { loadMap, skirmishMaps, registerDynamicMaps } from '../ted.js';
-import { loadALO } from '../alo.js';
+import { loadALOOutline } from '../alo.js';
 
 export const DYNAMIC_SIZES = [
   { key: 'small', label: 'Small', half: 5000, players: 3 },
@@ -233,7 +233,7 @@ const heft = t => {
 };
 async function measure(type) {
   const model = type.str('Space_Model_Name');
-  const a = model && (await loadALO(model).catch(() => null));
+  const a = model && (await loadALOOutline(model).catch(() => null));
   if (!a || a.isParticle) return 0;
   const at = i => {
     let x = 0,
