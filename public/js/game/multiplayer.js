@@ -8,6 +8,7 @@ import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
+import { inApp } from '../platform.js';
 
 const T = (id, fallback) => {
   const s = db.text.get(id);
@@ -53,6 +54,88 @@ export function inviteLink(gameId, kind = 'internet') {
   const lobby = new URLSearchParams(location.search).get('lobby');
   if (lobby) u.search += '&lobby=' + encodeURIComponent(lobby);
   return u.href;
+}
+
+export function inviteLines(gameId, kind = 'internet') {
+  const lines = [];
+  if (!inApp())
+    lines.push({ text: 'Invite link (click to copy, send it to whoever you want to play): ' + inviteLink(gameId, kind), copy: inviteLink(gameId, kind) });
+  lines.push({
+    text: `Join code (click to copy, players enter it at Join by Code in the ${kind === 'lan' ? 'LAN' : 'internet'} lobby): ${gameId}`,
+    copy: gameId
+  });
+  return lines;
+}
+
+const CODE_RE = /^[A-Za-z0-9_-]{6,32}$/;
+export function parseJoinCode(text) {
+  text = String(text || '').trim();
+  if (CODE_RE.test(text)) return text;
+  try {
+    const id = new URL(text).searchParams.get('join');
+    if (id && CODE_RE.test(id)) return id;
+  } catch {}
+  const m = /[?&]join=([A-Za-z0-9_-]{6,32})/.exec(text);
+  return m ? m[1] : null;
+}
+
+async function askJoinCode() {
+  const dlg = await openDialog('IDD_ENTER_GAME_PASSWORD_DIALOG', SCREEN);
+  if (!dlg) {
+    const p = prompt('Enter the join code or invite link:');
+    return p === null ? null : p;
+  }
+  const labels = [...dlg.el.querySelectorAll('[data-id="IDC_STATIC"]')];
+  const paint = (el, text) => {
+    if (!el) return;
+    if (el._setText) el._setText(text);
+    else el.textContent = text;
+  };
+  paint(labels[0], 'Join by Code');
+  paint(labels[1], 'Code');
+  const box = dlg.edit('IDC_INTERNET_GAME_PASSWORD_EDIT');
+  if (box) {
+    box.maxLength = 300;
+    box.placeholder = 'qzbw4yqhd';
+    box.spellcheck = false;
+    box.focus();
+  }
+  dlg.setText('IDC_OK', 'Join');
+  const cancel = dlg.def.controls.find(c => c.id === 'IDC_CANCEL_BUTTON'),
+    ok = dlg.def.controls.find(c => c.id === 'IDC_OK');
+  const paste = cancel && ok && dlg.clone('IDC_CANCEL_BUTTON', 'IDC_SWR_PASTE_CODE', parseFloat(dlg.ctl('IDC_CANCEL_BUTTON').style.left) + (parseFloat(dlg.ctl('IDC_OK').style.left) - parseFloat(dlg.ctl('IDC_CANCEL_BUTTON').style.left)) / 2, null);
+  if (paste) {
+    paste.classList.remove('off');
+    dlg.setText('IDC_SWR_PASTE_CODE', 'Paste');
+  }
+  return new Promise(done => {
+    const finish = v => {
+      dlg.close();
+      done(v);
+    };
+    const hint = () => {
+      if (!box) return;
+      box.value = '';
+      box.placeholder = 'Press Ctrl+V to paste';
+      box.focus();
+    };
+    dlg.on('IDC_SWR_PASTE_CODE', () => {
+      if (!navigator.clipboard?.readText) return hint();
+      navigator.clipboard.readText().then(text => {
+        if (!box) return;
+        box.value = parseJoinCode(text) || text.trim();
+        box.focus();
+      }, hint);
+    });
+    dlg.on('IDC_OK', () => finish(box?.value || ''));
+    box?.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(box.value || '');
+      if (e.key === 'Escape') finish(null);
+    });
+    dlg.on('IDC_CANCEL_BUTTON', () => finish(null));
+    dlg.on('IDC_DIALOG_CLOSE_BUTTON', () => finish(null));
+  });
 }
 
 function resizeFramed(box, w0, h0, w1, h1) {
@@ -414,8 +497,8 @@ export async function openMultiplayer({
     if (priv) {
       dlg.list('IDC_GAME_LIST', [
         { key: 'a', label: 'Games hosted here are private: they are not listed anywhere.' },
-        { key: 'b', label: "Host Game, then send the invite link from the game's chat to your friends." },
-        { key: 'c', label: "To join a friend's game, open their invite link or paste it at Join Game." }
+        { key: 'b', label: "Host Game, then send the join code from the game's chat to your friends." },
+        { key: 'c', label: "To join a friend's game, enter their join code at Join by Code." }
       ]);
       return;
     }
@@ -508,21 +591,20 @@ export async function openMultiplayer({
       back();
     }
   };
-  const join = () => {
-    if (priv) {
-      const text = (prompt('Paste the invite link to the game:') || '').trim();
-      if (!text) return;
-      let id = text;
-      try {
-        id = new URL(text).searchParams.get('join') || '';
-      } catch {}
-      if (!/^[A-Za-z0-9_-]{6,32}$/.test(id)) {
-        say('That is not an invite link.');
-        return;
-      }
-      enter(id, false);
+  const byCode = async () => {
+    if (busy) return;
+    const text = await askJoinCode();
+    if (text === null || !text.trim()) return;
+    const id = parseJoinCode(text);
+    if (!id) {
+      say('That is not a join code.');
       return;
     }
+    say('Joining game ' + id + '…');
+    enter(id, false);
+  };
+  const join = () => {
+    if (priv) return byCode();
     if (!picked) {
       say(T('TEXT_LAN_SELECT_GAME', 'Pick a game from the list first.'));
       return;
@@ -564,6 +646,26 @@ export async function openMultiplayer({
     enter(invited, false);
   }
   dlg.on(K.join, join);
+  {
+    const f = dlg.ctl('IDC_SET_FILTER_BUTTON');
+    if (f && dlg.clone('IDC_SET_FILTER_BUTTON', 'IDC_SWR_JOIN_BY_CODE')) {
+      f.hidden = true;
+      const b = dlg.ctl('IDC_SWR_JOIN_BY_CODE');
+      b.classList.remove('off');
+      b.hidden = false;
+      const px = (el, k) => parseFloat(el.style[k]) || 0;
+      const left = px(b, 'left'),
+        top = px(b, 'top');
+      const row = [...f.parentNode.querySelectorAll('.dlg-btn')].filter(e => e !== b && e !== f && !e.hidden && Math.abs(px(e, 'top') - top) < 8);
+      const prev = Math.max(...row.map(e => px(e, 'left') + px(e, 'width')).filter(x => x <= left)),
+        next = Math.min(...row.map(e => px(e, 'left')).filter(x => x >= left + px(b, 'width')));
+      const gap = Number.isFinite(prev) ? left - prev : 10,
+        want = Math.max(...row.map(e => px(e, 'width')));
+      if (Number.isFinite(next) && Number.isFinite(want)) b.style.width = Math.max(px(b, 'width'), Math.min(want, next - gap - left)) + 'px';
+      dlg.setText('IDC_SWR_JOIN_BY_CODE', 'Join by Code');
+      dlg.on('IDC_SWR_JOIN_BY_CODE', byCode);
+    }
+  }
   dlg.on(K.exit, () => {
     stop();
     back();
@@ -834,7 +936,7 @@ async function openStaging(args) {
         data,
         kind,
         password: host ? options?.password || '' : '',
-        invite: host ? inviteLink(net.gameId, kind) : null,
+        invites: host ? inviteLines(net.gameId, kind) : null,
         initial,
         resume: resumed,
         started: ib => {
@@ -933,9 +1035,9 @@ async function openStaging(args) {
           ok = document.execCommand('copy');
         } catch {}
         t.remove();
-        addChat('', ok ? 'Invite link copied.' : 'Copy the link by hand: ' + row.link);
+        addChat('', ok ? 'Copied: ' + row.link : 'Copy it by hand: ' + row.link);
       };
-      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(row.link).then(() => addChat('', 'Invite link copied.'), fallback);
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(row.link).then(() => addChat('', 'Copied: ' + row.link), fallback);
       else fallback();
     });
     dlg.ctl(K.stagingChat)?.querySelector('.dlg-row:last-child')?.scrollIntoView({ block: 'nearest' });
@@ -1697,8 +1799,7 @@ async function openStaging(args) {
       'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides play without the story.'
     );
   if (host) {
-    const link = inviteLink(net.gameId, kind);
-    addChat('', 'Invite link (click to copy, send it to whoever you want to play): ' + link, link);
+    for (const line of inviteLines(net.gameId, kind)) addChat('', line.text, line.copy);
   }
   return true;
 }

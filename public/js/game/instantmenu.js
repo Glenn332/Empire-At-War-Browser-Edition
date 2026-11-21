@@ -338,7 +338,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     line.append(document.createTextNode(text));
     if (link)
       line.onclick = () => {
-        const done = ok => say('', ok ? 'Invite link copied.' : 'Copy the link by hand: ' + link);
+        const done = ok => say('', ok ? 'Copied: ' + link : 'Copy it by hand: ' + link);
         if (navigator.clipboard?.writeText)
           navigator.clipboard.writeText(link).then(
             () => done(true),
@@ -1066,7 +1066,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   draw();
   if (net && host) {
     publish();
-    if (mp.invite) say('', 'Invite link (click to copy, send it to whoever you want to play): ' + mp.invite, mp.invite);
+    for (const line of mp.invites || []) say('', line.text, line.copy);
   }
   if (net && !host) say('', 'You joined the game. Build your fleet and press Ready.');
   return true;
