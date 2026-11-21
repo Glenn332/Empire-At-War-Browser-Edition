@@ -1,5 +1,5 @@
 import { diag } from './diag.js';
-import { ChunkReader, fetchBinary } from './vfs.js';
+import { ChunkReader, fetchBinary, fetchPart } from './vfs.js';
 
 const PARAM_INT = 0x10102,
   PARAM_FLOAT = 0x10103,
@@ -212,8 +212,101 @@ export function loadALO(name) {
   return p;
 }
 
-export function loadALOOutline(name) {
+const OUTLINE_READ = 4096;
+const WHOLE_CHUNKS = new Set([0x200, 0x600, 0x1300]);
+
+class PartReader {
+  constructor(path) {
+    this.path = path;
+    this.from = 0;
+    this.bytes = new Uint8Array(0);
+  }
+
+  async at(offset, length) {
+    const end = offset + length;
+    if (offset < this.from || end > this.from + this.bytes.length) {
+      const part = await fetchPart(this.path, offset, Math.max(length, OUTLINE_READ));
+      if (!part) return null;
+      this.from = offset;
+      this.bytes = new Uint8Array(part);
+    }
+    const start = offset - this.from;
+    return this.bytes.subarray(start, Math.min(start + length, this.bytes.length));
+  }
+}
+
+const chunkHeader = (type, size, container) => {
+  const header = new DataView(new ArrayBuffer(8));
+  header.setUint32(0, type, true);
+  header.setUint32(4, (size | (container ? 0x80000000 : 0)) >>> 0, true);
+  return new Uint8Array(header.buffer);
+};
+
+async function meshOutline(reader, start, end) {
+  const head = await reader.at(start, Math.min(end - start, OUTLINE_READ - 8));
+  if (!head) return null;
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength),
+    kept = [];
+  for (let at = 0; at + 8 <= head.length; ) {
+    const type = view.getUint32(at, true),
+      size = view.getUint32(at + 4, true) & 0x7fffffff;
+    if (type !== 0x401 && type !== 0x402) break;
+    if (at + 8 + size > head.length) return null;
+    kept.push(head.slice(at, at + 8 + size));
+    at += 8 + size;
+  }
+  return kept;
+}
+
+async function outlineBytes(path) {
+  const reader = new PartReader(path),
+    parts = [];
+  let offset = 0;
+  for (;;) {
+    const header = await reader.at(offset, 8);
+    if (!header) return offset ? null : undefined;
+    if (header.length < 8) break;
+    const view = new DataView(header.buffer, header.byteOffset, 8),
+      type = view.getUint32(0, true),
+      raw = view.getUint32(4, true),
+      size = raw & 0x7fffffff,
+      container = raw >>> 31 === 1,
+      body = offset + 8;
+    if (WHOLE_CHUNKS.has(type)) {
+      const whole = await reader.at(offset, 8 + size);
+      if (!whole || whole.length < 8 + size) return null;
+      parts.push(whole.slice());
+    } else if (type === 0x400) {
+      const kept = await meshOutline(reader, body, body + size);
+      if (!kept) return null;
+      parts.push(chunkHeader(type, kept.reduce((sum, part) => sum + part.length, 0), container), ...kept);
+    } else if (type === 0x900) parts.push(chunkHeader(type, 0, container));
+    offset = body + size;
+  }
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out.buffer;
+}
+
+async function outlineFrom(path) {
+  const bytes = await outlineBytes(path);
+  if (bytes === undefined) return undefined;
+  if (bytes === null) {
+    const whole = await fetchBinary(path, { keep: false });
+    return whole ? parseALO(whole, { outline: true }) : null;
+  }
+  return parseALO(bytes, { outline: true });
+}
+
+export async function loadALOOutline(name) {
   const loaded = models.get(modelStem(name));
   if (loaded) return loaded;
-  return fetchModelBytes(name).then(buf => (buf ? parseALO(buf, { outline: true }) : null));
+  const alo = modelStem(name) + '.ALO';
+  const first = await outlineFrom('Data/Art/Models/' + name);
+  if (first !== undefined || name.toUpperCase() === alo) return first ?? null;
+  return (await outlineFrom('Data/Art/Models/' + alo)) ?? null;
 }

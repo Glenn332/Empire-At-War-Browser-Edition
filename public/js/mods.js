@@ -866,6 +866,12 @@ export async function openOverlay() {
     const meg = await (m.megFiles[e[0]] ||= fileOf(m, m.megs[e[0]]));
     return meg.slice(e[1], e[1] + Math.min(e[2], head)).arrayBuffer();
   };
+  const partOf = async (layer, entry, from, length) => {
+    if (typeof entry === 'string') return (await fileOf(layer, entry)).slice(from, from + length).arrayBuffer();
+    const [megIndex, offset, size] = entry,
+      meg = await (layer.megFiles[megIndex] ||= fileOf(layer, layer.megs[megIndex]));
+    return meg.slice(offset + Math.min(from, size), offset + Math.min(size, from + length)).arrayBuffer();
+  };
   const where = (key, layers = top) => {
     for (const m of layers) {
       if (m.files[key] !== undefined) return [m, m.files[key]];
@@ -885,6 +891,16 @@ export async function openOverlay() {
       if (!hit) return whole && !generated(key) ? null : hit;
       try {
         return await bytes(hit[0], hit[1], head);
+      } catch (e) {
+        console.warn('file from disk', key, e);
+        return whole ? null : undefined;
+      }
+    },
+    async readPart(key, from, length) {
+      const hit = where(key);
+      if (!hit) return whole && !generated(key) ? null : hit;
+      try {
+        return await partOf(hit[0], hit[1], from, length);
       } catch (e) {
         console.warn('file from disk', key, e);
         return whole ? null : undefined;

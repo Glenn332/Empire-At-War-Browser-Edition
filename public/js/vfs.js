@@ -120,6 +120,21 @@ export async function fetchHead(path, bytes) {
   return b.byteLength > bytes ? b.slice(0, bytes) : b;
 }
 
+export async function fetchPart(path, from, length) {
+  const local = await overlay;
+  if (local) {
+    const mine = local.readPart
+      ? await local.readPart(keyOf(path), from, length)
+      : await local.read(keyOf(path), undefined, from + length).then(bytes => (bytes ? bytes.slice(from) : bytes));
+    if (mine !== undefined) return mine;
+  }
+  const response = await fetch(url(path), { headers: { Range: `bytes=${from}-${from + length - 1}` } }).catch(() => null);
+  if (response && response.status === 416) return new ArrayBuffer(0);
+  if (!response || !there(response)) return null;
+  const bytes = await response.arrayBuffer();
+  return response.status === 206 ? bytes : bytes.slice(from, from + length);
+}
+
 export async function fetchText(path) {
   const buf = await fetchBinary(path);
   return buf ? new TextDecoder('windows-1252').decode(buf) : null;

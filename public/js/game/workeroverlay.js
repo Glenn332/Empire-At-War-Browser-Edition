@@ -23,6 +23,7 @@ if (typeof WorkerGlobalScope !== 'undefined' && typeof postMessage === 'function
           names: meta.names,
           whole: meta.whole,
           read: (key, language, bytes) => ask('read', [key, language, bytes]),
+          readPart: (key, from, length) => ask('readPart', [key, from, length]),
           readGame: key => ask('readGame', [key]),
           infoFor: key => ask('infoFor', [key]),
           rank: key => ask('rank', [key]),
