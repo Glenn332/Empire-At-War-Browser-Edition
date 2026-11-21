@@ -1625,9 +1625,9 @@ async function openStaging(args) {
     const hint = !single()
       ? ''
       : menuEntry()
-        ? "Each player may take a side with the menu's faction buttons, else plays with the host. Each side gets the story of its own single-player version of this conquest, where the data has one. Scripts written for a single local player follow the host's side."
+        ? "Each player may take a side with the menu's faction buttons, else plays with the host. Each side gets the story of its own single-player version of this conquest, where the data has one, and its own run of story scripts written for a single local player."
         : slots.some(s => s.kind === 'human' && s.faction !== lead())
-          ? "Each side gets the story of its own single-player version of this conquest, where the data has one. Scripts written for a single local player follow the host's side. Players on the host's side play it in co-op."
+          ? "Each side gets the story of its own single-player version of this conquest, where the data has one, and its own run of story scripts written for a single local player. Players on the host's side play it in co-op."
           : '';
     if (hint && hint !== told) addChat('', hint);
     told = hint;

@@ -310,7 +310,16 @@ export class StoryPlots {
     if (e.disabled || (!force && (e.completed || !(e.active ?? this.prerequisites(e))))) return false;
     if (e.singleOnly && (this.game?.setup?.net || this.game?.net)) return false;
     if (!force && e.plot?.active === false) return false;
-    if (e.plot?.instance) this.invokeStoryCallback(e.plot.instance, e.name);
+    const main = e.plot?.instance;
+    if (main) {
+      const side = this.sideContext,
+        copy = side && main.copies?.find(c => c.side === side);
+      if (copy || side) this.invokeStoryCallback(copy || main, e.name);
+      else {
+        this.invokeStoryCallback(main, e.name);
+        for (const c of main.copies || []) if (c.state !== 'over') this.invokeStoryCallback(c, e.name);
+      }
+    }
     e.completed = true;
     if (e.type === 'STORY_ELAPSED') e.elapsedFrom = this.time;
     if (!e.perpetual) this.timedEvents.delete(e);
@@ -336,15 +345,10 @@ export class StoryPlots {
         completed: false,
         read: false,
         removeAfterRead: !e.tag,
-        ...(this.game.storyAudience ? { audience: this.game.storyLocal?.(e.plot?.owner) } : {})
+        sfx: e.dialogSFX !== false
       };
-      this.storyGoals.unshift(request);
-      this.storyGoalAt = this.time;
-      const shown = !this.game.storyAudience || this.game.storyAudience(e.plot?.owner);
-      if (e.popup) this.game.holdForDialog?.(request, e.plot?.owner);
-      if (shown && e.popup) this.game.showStoryDialog?.(request);
-      else if (shown) this.game.notifyStoryGoal?.(request, e.dialogSFX !== false);
-      this.game.storyDialog?.refreshSummary();
+      this.openDialog(request, this.sideContext || e.plot?.owner);
+      if (this.recording && !this.sideContext) (this.recording.dialogs ||= []).push(request);
     }
     for (const dependent of e.dependents || [])
       if (!dependent.active && !dependent.completed && this.prerequisites(dependent)) {
@@ -358,6 +362,19 @@ export class StoryPlots {
       resetCombatEvent(e);
     }
     return true;
+  }
+  openDialog(request, owner) {
+    if (this.game.storyAudience) request.audience = this.game.storyLocal?.(owner);
+    this.storyGoals.unshift(request);
+    this.storyGoalAt = this.time;
+    const shown = !this.game.storyAudience || this.game.storyAudience(owner);
+    if (request.popup) this.game.holdForDialog?.(request, owner);
+    if (shown && request.popup) this.game.showStoryDialog?.(request);
+    else if (shown) this.game.notifyStoryGoal?.(request, request.sfx !== false);
+    this.game.storyDialog?.refreshSummary();
+  }
+  replayDialog(request, side) {
+    this.openDialog({ ...request, id: ++this.storyGoalId, entries: request.entries.slice(), completed: false, read: false }, side);
   }
   levelEvents(type, owner, level) {
     for (const e of this.eventTypes.get(type) || []) {

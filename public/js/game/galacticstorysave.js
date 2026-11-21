@@ -247,6 +247,7 @@ function writeStory(host, objects) {
       needs: inst.needs.slice(),
       initialCallbacks: s.js(inst.initialCallbacks ?? null),
       plot: inst.plot ? { name: inst.plot.name, owner: inst.plot.owner } : null,
+      ...(inst.side ? { side: inst.side } : {}),
       params: s.js(inst.params),
       values: s.js(inst.values),
       env: inst.env == null ? null : s.enc(persist.refValue(inst.env)),
@@ -341,7 +342,8 @@ export async function restoreStory(host, data) {
     host.instances.push(inst);
     if (si.plot) {
       const plot = [...host.plots.values()].find(p => key(p.name) === key(si.plot.name) && key(p.owner) === key(si.plot.owner));
-      if (plot) {
+      if (plot && si.side && plot.instance) host.linkCopy(plot.instance, inst, si.side);
+      else if (plot) {
         inst.plot = plot;
         plot.instance = inst;
         host.storyScripts.set(plot, inst);

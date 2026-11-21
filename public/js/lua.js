@@ -134,7 +134,7 @@ export class LuaVM {
     lua.lua_getglobal(L, this.str('math'));
     lua.lua_pushjsfunction(L, L2 => {
       const n = lua.lua_gettop(L2),
-        r = simRandom();
+        r = this.randomHook ? this.randomHook() : simRandom();
       if (n === 0) {
         lua.lua_pushnumber(L2, r);
         return 1;
@@ -188,7 +188,7 @@ export class LuaVM {
         return lauxlib.luaL_error(L2, this.str('attempt to call something of the engine that cannot be called'));
       const args = [];
       for (let i = 2, n = lua.lua_gettop(L2); i <= n; i++) args.push(this.get(i, L2));
-      return this.ret(u.__call(...args), L2);
+      return this.ret(this.callHook ? this.callHook(u.__name || '', u, args, u.__call) : u.__call(...args), L2);
     });
     set('__tostring', L2 => {
       const u = lua.lua_touserdata(L2, 1);
@@ -232,10 +232,12 @@ export class LuaVM {
     return this.guard(L => {
       const args = [];
       for (let i = 1, n = this.lua.lua_gettop(L); i <= n; i++) args.push(this.get(i, L));
-      if (!luaTrace.on) return this.ret(f(...args), L);
+      const hook = this.callHook,
+        run = hook ? () => hook(key || f.__luaName || f.name, obj, args, f) : () => f(...args);
+      if (!luaTrace.on) return this.ret(run(), L);
       let out;
       try {
-        out = f(...args);
+        out = run();
       } catch (e) {
         if (!(e && e.status !== undefined && e.message === undefined))
           luaTrace.call(this, key || f.__luaName || f.name, obj, args, undefined, e);

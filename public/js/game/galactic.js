@@ -2377,21 +2377,28 @@ export class GalacticGame {
 
   storyPartner(pid) {
     const cfg = this.setup.players?.[pid];
-    return !!cfg && cfg.human && !cfg.left && String(cfg.faction || '').toUpperCase() === String(this.storyLocal() || '').toUpperCase();
+    if (!cfg || !cfg.human || cfg.left) return false;
+    const side = String(db.faction(cfg.faction)?.name || cfg.faction || '').toUpperCase();
+    return side === String(this.storyLocal() || '').toUpperCase() || !!this.story?.hasSide?.(side);
+  }
+  asStorySide(pid, fn) {
+    const side = String(db.faction(this.setup.players?.[pid]?.faction)?.name || '').toUpperCase();
+    return this.story?.asSide ? this.story.asSide(side, fn) : fn();
   }
   storyZoom(pid, i, out) {
     const p = this.galaxy.planets[i];
-    if (p && this.storyPartner(pid)) this.story?.signal(out ? 'STORY_ZOOM_OUT_PLANET' : 'STORY_ZOOM_INTO_PLANET', p.type.name);
+    if (p && this.storyPartner(pid))
+      this.asStorySide(pid, () => this.story?.signal(out ? 'STORY_ZOOM_OUT_PLANET' : 'STORY_ZOOM_INTO_PLANET', p.type.name));
   }
   storySelect(pid, i) {
     const p = this.galaxy.planets[i];
-    if (p && this.storyPartner(pid)) this.story?.signal('STORY_SELECT_PLANET', p.type.name);
+    if (p && this.storyPartner(pid)) this.asStorySide(pid, () => this.story?.signal('STORY_SELECT_PLANET', p.type.name));
   }
   scriptClick(pid, name, native) {
     const cfg = this.setup.players?.[pid];
     if (!cfg) return;
     if (cfg.peer === 0) {
-      if (native) this.story?.clickGUI(name);
+      if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
       else this.scriptUI?.click(name, false, true);
       return;
     }
@@ -2400,7 +2407,7 @@ export class GalacticGame {
       (this.menuFactions ||= {})[pid] = faction;
       if (pid === this.localPid)
         this.message(`${db.t(db.faction(faction)?.str('Text_ID')) || faction}: your side when the host starts the game.`);
-    } else if (native && this.storyPartner(pid)) this.story?.clickGUI(name);
+    } else if (native && this.storyPartner(pid)) this.asStorySide(pid, () => this.story?.clickGUI(name));
     else if (pid === this.localPid && !this.toldHostOnly) {
       this.toldHostOnly = true;
       this.message('Only the host sets this up; the faction buttons choose your own side.');

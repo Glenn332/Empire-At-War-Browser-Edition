@@ -35,6 +35,17 @@ import { flashSpawned, tutorialFx } from './tutorialrewards.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
 import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
 
+const SIDE_LIVE = new Set([
+  'Find_Player',
+  '_ScriptExit',
+  'GetThreadID',
+  'Set_Reward_Parameter',
+  'Set_Event_Parameter',
+  'Set_Reward_Type',
+  'Set_Dialog',
+  'Set_Story_Dialog'
+]);
+
 const key = s =>
   String(s || '')
     .replace(/\\/g, '/')
@@ -252,7 +263,148 @@ export class GalacticStoryHost extends StoryPlots {
         const inst = (p.instance = this.addScript(p.scriptName));
         inst.plot = p;
         this.storyScripts.set(p, inst);
+        for (const side of this.copySides(p)) this.linkCopy(inst, this.addScript(p.scriptName), side);
       }
+  }
+
+  copySides(plot) {
+    const game = this.game;
+    if (!game.setup?.net || !game.storyLocal || !game.isHuman) return [];
+    if (plot.owner && game.isHuman(plot.owner)) return [];
+    const main = key(game.storyLocal(plot.owner));
+    return [...new Set((game.galaxy.humans || []).map(key))].filter(side => side && side !== main && game.isHuman(side));
+  }
+
+  linkCopy(main, copy, side) {
+    copy.plot = main.plot;
+    copy.side = side;
+    copy.main = main;
+    copy.ledger = new Map();
+    copy.randoms = [];
+    (main.copies ||= []).push(copy);
+    this.vm.callHook = this.sideHook ||= (name, obj, args, f) => this.sideCall(name, obj, args, f);
+    this.vm.randomHook = this.randomSideHook ||= () => this.sideRandom();
+  }
+
+  sideCall(name, obj, args, f) {
+    const inst = this.current;
+    if (!inst || SIDE_LIVE.has(name)) return f(...args);
+    if (inst.side) return this.copyCall(inst, name, obj, args, f);
+    if (!inst.copies?.length || this.sideContext) return f(...args);
+    const sig = this.callSig(name, obj, args);
+    if (sig === null) return f(...args);
+    const entry = { sig, t: this.serviceTime, displays: [], out: undefined },
+      was = this.recording;
+    this.recording = entry;
+    try {
+      entry.out = f(...args);
+    } finally {
+      this.recording = was;
+    }
+    for (const copy of inst.copies) {
+      if (copy.state === 'over') continue;
+      const list = copy.ledger.get(sig);
+      if (list) list.push(entry);
+      else copy.ledger.set(sig, [entry]);
+    }
+    return entry.out;
+  }
+
+  copyCall(inst, name, obj, args, f) {
+    const sig = this.sideContext ? null : this.callSig(name, obj, args),
+      list = sig === null ? null : inst.ledger.get(sig);
+    if (list?.length) {
+      const entry = list.shift();
+      if (!list.length) inst.ledger.delete(sig);
+      if (entry.displays.length && key(inst.side) === key(this.game.me)) for (const show of entry.displays) show();
+      for (const dialog of entry.dialogs || []) this.replayDialog(dialog, inst.side);
+      return entry.out;
+    }
+    const was = this.sideContext;
+    this.sideContext = inst.side;
+    try {
+      return f(...args);
+    } finally {
+      this.sideContext = was;
+    }
+  }
+
+  sideRandom() {
+    const inst = this.current;
+    if (inst?.side && !this.sideContext && inst.randoms.length) return inst.randoms.shift();
+    const r = simRandom();
+    if (inst && !inst.side && inst.copies?.length && !this.sideContext) for (const copy of inst.copies) if (copy.state !== 'over') copy.randoms.push(r);
+    return r;
+  }
+
+  pruneLedger(inst) {
+    const old = this.serviceTime - 1;
+    for (const [sig, list] of inst.ledger) {
+      while (list.length && list[0].t < old) list.shift();
+      if (!list.length) inst.ledger.delete(sig);
+    }
+    if (inst.randoms.length > 256) inst.randoms.splice(0, inst.randoms.length - 256);
+  }
+
+  callSig(name, obj, args) {
+    let s = name + '|' + this.sigOf(obj);
+    for (const a of args) {
+      const v = this.sigOf(a);
+      if (v === null) return null;
+      s += '|' + v;
+    }
+    if (name === 'Story_Event') s += '|' + this.listenerState(args[0]);
+    return s;
+  }
+
+  sigOf(v, depth = 0) {
+    if (v === undefined || v === null) return '~';
+    const t = typeof v;
+    if (t === 'string') return JSON.stringify(v);
+    if (t === 'number' || t === 'boolean') return String(v);
+    if (t === 'function' || v instanceof LuaRef) return null;
+    if (v.__wrap) {
+      const ids = (this.sigIds ||= new WeakMap());
+      let id = ids.get(v);
+      if (!id) ids.set(v, (id = this.sigSeq = (this.sigSeq || 0) + 1));
+      return '#' + id;
+    }
+    if (depth > 4) return '?';
+    const parts = [];
+    for (const k of Array.isArray(v) ? v.keys() : Object.keys(v).sort()) {
+      const x = this.sigOf(v[k], depth + 1);
+      if (x === null) return null;
+      parts.push(k + ':' + x);
+    }
+    return '{' + parts.join(',') + '}';
+  }
+
+  listenerState(name) {
+    const want = key(name),
+      out = [];
+    for (const e of this.eventTypes.get('STORY_AI_NOTIFICATION') || [])
+      if (e.params.some(x => key(x) === want)) out.push(JSON.stringify([e.reward, e.rewards]));
+    return out.join(';');
+  }
+
+  hasSide(side) {
+    return this.instances.some(inst => inst.side === side && inst.state !== 'over');
+  }
+
+  asSide(side, fn) {
+    if (!side || !this.instances.some(inst => inst.side)) return fn();
+    const was = this.sideContext;
+    this.sideContext = side;
+    try {
+      return fn();
+    } finally {
+      this.sideContext = was;
+    }
+  }
+
+  present(show) {
+    if (this.heard()) show();
+    if (this.recording && !this.sideContext) this.recording.displays.push(show);
   }
 
   addScript(name, scoring = false) {
@@ -368,7 +520,7 @@ export class GalacticStoryHost extends StoryPlots {
   }
 
   heard() {
-    const owner = this.firingPlot?.owner ?? this.current?.plot?.owner;
+    const owner = this.sideContext || this.current?.side || (this.firingPlot?.owner ?? this.current?.plot?.owner);
     return this.game.storyAudience ? this.game.storyAudience(owner) : true;
   }
   speechQueued(name) {
@@ -492,7 +644,9 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Find_Object_Type', name => this.type(db.type(String(name || ''))));
     vm.global('Find_Player', name =>
       this.player(
-        key(name) === 'LOCAL' ? (game.storyLocal ? game.storyLocal(this.current?.plot?.owner) : game.me || game.galaxy.active) : name
+        key(name) === 'LOCAL'
+          ? this.current?.side || (game.storyLocal ? game.storyLocal(this.current?.plot?.owner) : game.me || game.galaxy.active)
+          : name
       )
     );
     const findPlanet = name => game.galaxy.planets.find(p => key(p.name) === key(name));
@@ -1927,47 +2081,56 @@ export class GalacticStoryHost extends StoryPlots {
         }
         break;
       }
-      case 'SCREEN_TEXT':
-        if (this.heard())
-          this.game.showScreenText?.({
-            id: p[0],
-            textId: p[0],
-            text: db.t(p[0]),
-            duration: p[1] ? +p[1] : 5,
-            variable: p[2] || '',
-            remove: !!p[3],
-            teletype: !p[4] || +p[4] !== 0,
-            color: p[5] || ''
-          });
+      case 'SCREEN_TEXT': {
+        const text = {
+          id: p[0],
+          textId: p[0],
+          text: db.t(p[0]),
+          duration: p[1] ? +p[1] : 5,
+          variable: p[2] || '',
+          remove: !!p[3],
+          teletype: !p[4] || +p[4] !== 0,
+          color: p[5] || ''
+        };
+        this.present(() => this.game.showScreenText?.(text));
         break;
-      case 'MULTIMEDIA':
+      }
+      case 'MULTIMEDIA': {
         if (p[7]) this.speechQueued(p[7]);
-        if (!this.heard()) break;
-        if (p[0])
-          game.showScreenText?.({
-            id: p[0],
-            textId: p[0],
-            text: db.t(p[0]),
-            duration: p[1] ? +p[1] : 5,
-            variable: p[2] || '',
-            remove: !!p[3],
-            teletype: !p[4] || +p[4] !== 0,
-            color: p[5] || ''
-          });
-        if (p[7]) game.audio?.speech?.replace(p[7]);
-        if (p[8]) game.movies?.play(p[8], !!parseInt(p[9]));
+        const q = p.slice();
+        this.present(() => {
+          if (q[0])
+            game.showScreenText?.({
+              id: q[0],
+              textId: q[0],
+              text: db.t(q[0]),
+              duration: q[1] ? +q[1] : 5,
+              variable: q[2] || '',
+              remove: !!q[3],
+              teletype: !q[4] || +q[4] !== 0,
+              color: q[5] || ''
+            });
+          if (q[7]) game.audio?.speech?.replace(q[7]);
+          if (q[8]) game.movies?.play(q[8], !!parseInt(q[9]));
+        });
         break;
+      }
       case 'SPEECH':
         if (p[0]) {
-          this.speechQueued(p[0]);
-          if (this.heard()) game.audio?.speech?.replace(p[0]);
+          const speech = p[0];
+          this.speechQueued(speech);
+          this.present(() => game.audio?.speech?.replace(speech));
         }
         break;
       case 'COMMANDBAR_MOVIE':
-        if (p[0] && this.heard()) game.movies?.play(p[0], !!parseInt(p[1]));
+        if (p[0]) {
+          const movie = p[0],
+            loop = !!parseInt(p[1]);
+          this.present(() => game.movies?.play(movie, loop));
+        }
         break;
       case 'STOP_COMMANDBAR_MOVIE':
-        if (this.heard()) game.movies?.stop();
+        this.present(() => game.movies?.stop());
         break;
       case 'BUILDABLE_UNIT': {
         const player = game.galaxy.players.find(q => key(q.faction) === key(e.plot.owner || game.me));
@@ -2300,6 +2463,7 @@ export class GalacticStoryHost extends StoryPlots {
           }
           if (inst.state === 'run' && (force || this.serviceTime >= inst.next)) {
             inst.next = this.serviceTime + inst.rate;
+            if (inst.side) this.pruneLedger(inst);
             this.service(inst);
           }
         }
