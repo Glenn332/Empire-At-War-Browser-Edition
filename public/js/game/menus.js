@@ -3,7 +3,7 @@ import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
-import { gfx, storeGfx, presets, SHADOW_RANGE_MAX } from '../gfx.js';
+import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
@@ -980,7 +980,7 @@ export class Menus {
       step('IDC_SHADOW_DETAIL_SLIDER', 'shadow', 3);
       dlg.slider(
         'IDC_SHADOW_RANGE_SLIDER',
-        (Math.max(1, Math.min(SHADOW_RANGE_MAX, +gfx.shadowRange || 1)) - 1) / (SHADOW_RANGE_MAX - 1),
+        (shadowReach() - 1) / (SHADOW_RANGE_MAX - 1),
         v => {
           const n = Math.round((1 + v * (SHADOW_RANGE_MAX - 1)) * 4) / 4;
           if (n !== gfx.shadowRange) {
