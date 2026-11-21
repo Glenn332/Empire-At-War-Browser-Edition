@@ -647,16 +647,33 @@ export async function openMultiplayer({
   }
   dlg.on(K.join, join);
   {
-    const f = dlg.ctl('IDC_SET_FILTER_BUTTON');
+    const px = (el, k) => parseFloat(el.style[k]) || 0;
+    const anchor = dlg.ctl(K.join),
+      f = dlg.ctl('IDC_SET_FILTER_BUTTON');
+    const rowOf = (top, skip) =>
+      anchor ? [...anchor.parentNode.querySelectorAll('.dlg-btn')].filter(e => !skip.includes(e) && !e.hidden && Math.abs(px(e, 'top') - top) < 8) : [];
+    let b = null;
     if (f && dlg.clone('IDC_SET_FILTER_BUTTON', 'IDC_SWR_JOIN_BY_CODE')) {
       f.hidden = true;
-      const b = dlg.ctl('IDC_SWR_JOIN_BY_CODE');
+      b = dlg.ctl('IDC_SWR_JOIN_BY_CODE');
+    } else if (anchor) {
+      const row = rowOf(px(anchor, 'top'), []).sort((a, c) => px(a, 'left') - px(c, 'left'));
+      let slot = null;
+      for (let i = 1; i < row.length; i++) {
+        const l = px(row[i - 1], 'left') + px(row[i - 1], 'width'),
+          r = px(row[i], 'left');
+        if (r - l >= 120 && (!slot || r - l > slot.r - slot.l)) slot = { l, r };
+      }
+      if (slot && dlg.clone(K.join, 'IDC_SWR_JOIN_BY_CODE', slot.l + 10, null)) {
+        b = dlg.ctl('IDC_SWR_JOIN_BY_CODE');
+        b.style.width = slot.r - slot.l - 20 + 'px';
+      }
+    }
+    if (b) {
       b.classList.remove('off');
       b.hidden = false;
-      const px = (el, k) => parseFloat(el.style[k]) || 0;
-      const left = px(b, 'left'),
-        top = px(b, 'top');
-      const row = [...f.parentNode.querySelectorAll('.dlg-btn')].filter(e => e !== b && e !== f && !e.hidden && Math.abs(px(e, 'top') - top) < 8);
+      const left = px(b, 'left');
+      const row = rowOf(px(b, 'top'), [b, f]);
       const prev = Math.max(...row.map(e => px(e, 'left') + px(e, 'width')).filter(x => x <= left)),
         next = Math.min(...row.map(e => px(e, 'left')).filter(x => x >= left + px(b, 'width')));
       const gap = Number.isFinite(prev) ? left - prev : 10,
