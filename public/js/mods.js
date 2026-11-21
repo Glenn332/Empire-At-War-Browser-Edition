@@ -238,7 +238,7 @@ async function megEntries(file) {
 }
 
 async function scanRoot(acc, root, prefix, more, progress) {
-  const { megs, files, gone } = acc;
+  const { megs, files, gone, stamps } = acc;
   const data = await child(root, 'Data', 'directory');
   if (!data) return false;
   const names = [];
@@ -249,8 +249,10 @@ async function scanRoot(acc, root, prefix, more, progress) {
     const hit = await walk(root, rel);
     if (!hit || hit.handle.kind !== 'file' || megs.includes(prefix + hit.path)) continue;
     progress('Reading ' + hit.handle.name);
-    const at = megs.push(prefix + hit.path) - 1;
-    for (const [key, off, size] of await megEntries(await hit.handle.getFile())) {
+    const at = megs.push(prefix + hit.path) - 1,
+      file = await hit.handle.getFile();
+    stamps[at] = stampOf(file);
+    for (const [key, off, size] of await megEntries(file)) {
       files[key] = [at, off, size];
       gone.delete(key);
     }
@@ -281,8 +283,20 @@ async function scanRoot(acc, root, prefix, more, progress) {
   await loose(data, data.name);
   return true;
 }
-const fresh = () => ({ megs: [], files: {}, gone: new Set(), n: 0 });
-const done = acc => ({ megs: acc.megs, files: acc.files, gone: [...acc.gone], count: Object.keys(acc.files).length });
+const fresh = () => ({ megs: [], stamps: [], files: {}, gone: new Set(), n: 0 });
+const done = acc => ({ megs: acc.megs, stamps: acc.stamps, files: acc.files, gone: [...acc.gone], count: Object.keys(acc.files).length });
+const stampOf = f => [f.size, f.lastModified];
+async function megsChanged(m) {
+  if (!m.megs.length) return false;
+  if (!Array.isArray(m.stamps) || m.stamps.length !== m.megs.length) return true;
+  for (let i = 0; i < m.megs.length; i++) {
+    const hit = await walk(m.handle, m.megs[i]).catch(() => null),
+      f = hit && hit.handle.kind === 'file' ? await hit.handle.getFile().catch(() => null) : null,
+      was = m.stamps[i];
+    if (!f || !was || f.size !== was[0] || f.lastModified !== was[1]) return true;
+  }
+  return false;
+}
 
 export async function scan(handle, progress = () => {}) {
   const acc = fresh();
@@ -311,7 +325,8 @@ export async function scanGame(handle, progress = () => {}, language = 0, { expa
     const exe = await walk(handle, name + '/StarWarsG.exe');
     if (!exe) continue;
     progress('Reading the typefaces');
-    const d = new Uint8Array(await (await exe.handle.getFile()).arrayBuffer()),
+    const exeFile = await exe.handle.getFile(),
+      d = new Uint8Array(await exeFile.arrayBuffer()),
       dv = new DataView(d.buffer);
     const at = acc.megs.push(exe.path) - 1,
       latin = (o, n) => {
@@ -319,6 +334,7 @@ export async function scanGame(handle, progress = () => {}, language = 0, { expa
         for (let i = 0; i < n; i++) t += String.fromCharCode(d[o + i]);
         return t;
       };
+    acc.stamps[at] = stampOf(exeFile);
     for (let i = 0; i + 12 < d.length; i++) {
       if (d[i] !== 0 || d[i + 1] !== 1 || d[i + 2] !== 0 || d[i + 3] !== 0) continue;
       const n = dv.getUint16(i + 4);
@@ -771,6 +787,24 @@ export async function openOverlay() {
     mods = mods.filter(m => !asked.includes(m) || ok.includes(m));
   }
   if (!mods.length) return null;
+  openStep = 'checking the folders for changed archives';
+  const saved = m => {
+    const { handle, tar, ...rest } = m;
+    return m.compat || m.local ? rest : { ...rest, handle };
+  };
+  for (const m of mods) {
+    if (m.archive || !(await megsChanged(m).catch(() => true))) continue;
+    console.warn('Archives changed since', m.name, 'was read: reading it again');
+    openStep = 'reading ' + m.name + ' again';
+    try {
+      Object.assign(m, m.game ? await scanGame(m.handle) : await scan(m.handle), { scanned: Date.now() });
+      if (m.game) delete m.eaw;
+      await tx('readwrite', s => s.put(saved(m))).catch(() => {});
+    } catch (e) {
+      console.warn('could not read', m.name, 'again', e);
+    }
+  }
+  if (game && game.eaw && mods.includes(game) && (await megsChanged({ ...game, ...game.eaw }).catch(() => true))) delete game.eaw;
   const eaw = !expansion();
   if (eaw && game && mods.includes(game)) {
     if (!game.eaw) {
