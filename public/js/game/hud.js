@@ -691,7 +691,8 @@ export class CommandBar {
     const kinds = this.abilityKinds();
     for (const r of this.abilityButtons || []) {
       const n = kinds.indexOf(r.def.kind) + 1;
-      r.b.title = (n && n <= 5 ? withKey(r.def.label, 'ABILITY_' + n) : r.def.label) + r.rest;
+      r.hint = (n && n <= 5 ? withKey(r.def.label, 'ABILITY_' + n) : r.def.label) + r.rest;
+      r.b.setAttribute('aria-label', r.hint);
       keyBadge(r.b, n && n <= 5 ? 'ABILITY_' + n : null);
     }
   }
@@ -1377,6 +1378,25 @@ export class CommandBar {
     box.classList.remove('hidden');
   }
 
+  showAbility(rec) {
+    const box = this.info,
+      def = rec.def;
+    this.infoKey = 'ability|' + def.kind + '|' + rec.hint;
+    this.infoPinned = false;
+    box.classList.remove('hint');
+    box.innerHTML = `<div class="etop"><i class="eicon"></i><b></b></div>
+      <div class="ebody"><div class="eclass"><span></span></div><div class="eline"></div><p class="etext"></p></div>`;
+    const q = sel => box.querySelector(sel);
+    q('.etop').style.backgroundImage = css(iconUrl('e_topbar2.tga'));
+    q('.eicon').style.backgroundImage = css(abilityIcon(def.kind, def.icon));
+    q('.etop b').textContent = def.label;
+    q('.ebody').style.backgroundImage = css(iconUrl('e_background.tga'));
+    q('.eclass span').textContent = rec.hint.slice(def.label.length).replace(/^\s*/, '');
+    q('.eline').style.backgroundImage = css(iconUrl('e_line.tga'));
+    q('.etext').textContent = def.description || '';
+    box.classList.remove('hidden');
+  }
+
   infoWhy(type, builder) {
     const why = this.world.cantBuild(builder, type, this.player);
     const w = this.info.querySelector('.ewhy');
@@ -1721,6 +1741,9 @@ export class CommandBar {
               this.game.audio.play('GUI_Button_Press_2_SFX');
               ui.useAbility(def.kind, rec.units);
             };
+            b.onmouseenter = () =>
+              (this.tipTarget = { id: 'ability|' + def.kind, key: 'ability|' + def.kind + '|' + rec.hint, show: () => this.showAbility(rec) });
+            b.onmouseleave = () => this.hideInfo();
             b.oncontextmenu = ev => {
               ev.preventDefault();
               ev.stopPropagation();

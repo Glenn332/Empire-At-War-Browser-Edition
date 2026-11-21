@@ -3,6 +3,7 @@ import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
 import { MOD } from './combatmods.js';
+import { abilityText } from './abilitytext.js';
 
 const sound = (world, u, name) => {
   const a = world.audio,
@@ -184,7 +185,7 @@ export function parseAbilities(type) {
       else if (kind === 'LUCKY_SHOT' || kind === 'DEPLOY_SQUAD') duration = 0;
       else if (kind === 'SUPER_LASER') duration = sn('Fire_Frame', 60) / 30 + (duration || 2);
       const shot = kind === 'LUCKY_SHOT' ? db.type(ab.val('Projectile_Types_Override')) : null;
-      const label = LABELS[kind] || kind.toLowerCase().replace(/_/g, ' ');
+      const { label, description } = abilityText(ab, kind, LABELS[kind] || kind.toLowerCase().replace(/_/g, ' '));
       out.push({
         kind,
         mods,
@@ -216,7 +217,8 @@ export function parseAbilities(type) {
         autofire: /^(yes|true)$/i.test(ab.val('Supports_Autofire')),
         ownerParticle: target === 'none' ? particleFile(ab.val('Particle_Effect')) : '',
         ownerParticleBones: specList(ab, 'Owner_Attachment_Bone'),
-        label: label.charAt(0).toUpperCase() + label.slice(1)
+        label,
+        description
       });
     }
   }
@@ -255,7 +257,7 @@ export function autoSpecials(type) {
         ownerParticle: '',
         ownerParticleBones: [],
         passive: true,
-        label: 'Laser defense'
+        ...abilityText(null, 'LASER_DEFENSE', 'Laser defense')
       });
       break;
     }

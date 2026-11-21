@@ -4,6 +4,7 @@ import { simRandom } from './simrandom.js';
 import { abilityLocked } from './blackmarket.js';
 import { swapped } from './weaponswap.js';
 import { MOD } from './combatmods.js';
+import { abilityText } from './abilitytext.js';
 
 const yes = s => /^(yes|true)$/i.test(String(s || '').trim());
 const names = s =>
@@ -149,11 +150,7 @@ export function landAbilities(type) {
       else if (kind === 'JET_PACK') range = 400;
       else if (kind === 'TARGETED_HACK' || kind === 'TARGETED_REPAIR') range = 100;
       else if (kind === 'MAXIMUM_FIREPOWER' && !range) range = type.num('Targeting_Max_Attack_Distance', 0) || 300;
-      const label =
-        db.t(ab.val('Alternate_Name_Text')) ||
-        db.t(`TEXT_TOOLTIP_ABILITY_${kind}_NAME`) ||
-        LABELS[kind] ||
-        kind.toLowerCase().replace(/_/g, ' ');
+      const { label, description } = abilityText(ab, kind, LABELS[kind] || kind.toLowerCase().replace(/_/g, ' '));
       out.push({
         mustBuy: yes(ab.val('Must_Be_Bought_On_Black_Market')) || (!!spec && yes(spec.val('Must_Be_Bought_On_Black_Market'))),
         gui: ab.val('GUI_Activated_Ability_Name').trim(),
@@ -183,7 +180,8 @@ export function landAbilities(type) {
         sfxOn:
           ab.val('SFXEvent_GUI_Unit_Ability_Activated') || ab.val('SFXEvent_Target_Ability') || (spec ? spec.val('SFXEvent_Activate') : ''),
         sfxOff: ab.val('SFXEvent_GUI_Unit_Ability_Deactivated'),
-        label: label.charAt(0).toUpperCase() + label.slice(1)
+        label,
+        description
       });
     }
   CACHE.set(type, out);
