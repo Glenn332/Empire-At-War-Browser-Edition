@@ -1,7 +1,7 @@
 import * as THREE from '../../vendor/three/build/three.module.js';
 import { db } from '../gamedata.js';
 import { buildListFor } from './sim.js';
-import { UNIT, SHOT, POINT, ABILITY } from './spacerecord.js';
+import { UNIT, SHOT, POINT, ABILITY, beamFromMessage } from './spacerecord.js';
 import { battleSnapshot } from './spaceprobe.js';
 import { TURN } from './netgame.js';
 import { pageOverlay } from '../vfs.js';
@@ -493,10 +493,9 @@ export class SpaceMirror {
       if (hp.maxHealth) hp.health = H[o + 4] * hp.maxHealth;
     }
     if (m.beams || w.beams.length)
-      w.beams = (m.beams || []).flatMap(([a, b, color, width, bone, kind]) => {
-        const from = this.byW.get(a),
-          to = this.byW.get(b);
-        return from && to ? [{ a: from, b: to, color, width, bone, kind, until: Infinity }] : [];
+      w.beams = (m.beams || []).flatMap(entry => {
+        const beam = beamFromMessage(this.byW, entry);
+        return beam ? [beam] : [];
       });
     for (const [wid, child, a, b] of m.pads || []) {
       const e = this.byW.get(wid);

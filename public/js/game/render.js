@@ -463,6 +463,43 @@ const boneLocal = (u, name, bone) => {
 const _sun = new THREE.Vector3(),
   _sunDir = new THREE.Vector3();
 const NO_TINT = new THREE.Vector4(1, 1, 1, 0);
+const ABILITY_FX_GRACE_MS = 500;
+const flashTint = (flash, now) => {
+  if (now >= flash.until) {
+    flash.tint.w = 0;
+    return false;
+  }
+  const progress = (now - flash.from) / (flash.until - flash.from),
+    pulse = 1 - Math.abs(((progress * flash.pulses) % 1) * 2 - 1);
+  flash.tint.set(flash.color[0], flash.color[1], flash.color[2], 0.15 + 0.5 * pulse);
+  return true;
+};
+const ABILITY_FX_RETRY_MS = 250;
+const attachmentLocal = (unit, boneNames) => {
+  if (!boneNames || !boneNames.length || !unit.model || !unit.model.bone || !unit.localOf) return null;
+  for (const name of boneNames) {
+    const bone = unit.model.bone(name);
+    if (bone) return boneLocal(unit, name, bone);
+  }
+  return null;
+};
+const placeAttached = (frame, unit, local) => {
+  const heading = unit.heading || 0;
+  if (local) {
+    const cos = Math.cos(heading),
+      sin = Math.sin(heading);
+    frame.x = unit.x + cos * local.x - sin * local.y;
+    frame.y = unit.y + sin * local.x + cos * local.y;
+    frame.z = (unit.z || 0) + local.z;
+  } else {
+    frame.x = unit.x;
+    frame.y = unit.y;
+    frame.z = unit.z || 0;
+  }
+  frame.rot = local ? heading + Math.PI / 2 : 0;
+  frame.scale = 1;
+  frame.vx = frame.vy = 0;
+};
 const _ringM = new THREE.Matrix4(),
   _ringQ = new THREE.Quaternion(),
   _ringP = new THREE.Vector3(),
@@ -1518,23 +1555,79 @@ export class Renderer {
     if (file && this.fxParticles.systems.length < 450 && this.fxParticles.state(file) === 'ready') this.fxParticles.burst(file, x, y, z);
   }
 
-  attachFx(u, file, seconds) {
+  attachFx(u, file, seconds, boneNames = null) {
     const fx = this.fxParticles;
     if (!u || !file || fx.systems.length >= 450 || fx.state(file) !== 'ready') return;
-    const until = performance.now() + seconds * 1000;
+    const until = performance.now() + seconds * 1000,
+      local = attachmentLocal(u, boneNames);
     fx.spawn(
       file,
       f => {
-        f.x = u.x;
-        f.y = u.y;
-        f.z = u.z || 0;
-        f.rot = 0;
-        f.scale = 1;
-        f.vx = f.vy = 0;
+        placeAttached(f, u, local);
         return !u.dead && performance.now() < until;
       },
       { maxEmit: 4 }
     );
+  }
+
+  abilityFx(u, abilityIndex, file, boneNames = null, requestedAt = performance.now()) {
+    const fx = this.fxParticles,
+      ability = u && !u.dead && u.abilities ? u.abilities[abilityIndex] : null;
+    if (!ability || !file || fx.systems.length >= 450) return;
+    const wanted = () => ability.active || performance.now() - requestedAt < ABILITY_FX_GRACE_MS,
+      state = fx.state(file);
+    if (state === 'missing') return;
+    if (state !== 'ready') {
+      setTimeout(() => {
+        if (wanted()) this.abilityFx(u, abilityIndex, file, boneNames, performance.now());
+      }, ABILITY_FX_RETRY_MS);
+      return;
+    }
+    const local = attachmentLocal(u, boneNames);
+    let handle = null;
+    handle = fx.spawn(file, f => {
+      if (u.dead || !wanted()) {
+        if (handle) handle.release();
+        return false;
+      }
+      placeAttached(f, u, local);
+      return !u.hyper && (!u.obj || u.obj.visible !== false);
+    });
+  }
+
+  unitFlash(u, color, seconds, pulses = 1) {
+    if (!u || u.dead || !u.obj || !(seconds > 0) || !color || color.length < 3) return;
+    const flash = (u.lightFlash ||= { tint: new THREE.Vector4(1, 1, 1, 0), color: [1, 1, 1], from: 0, until: 0, pulses: 1, hooked: false }),
+      brightest = Math.max(1, color[0], color[1], color[2]),
+      now = performance.now();
+    flash.color[0] = color[0] / brightest;
+    flash.color[1] = color[1] / brightest;
+    flash.color[2] = color[2] / brightest;
+    flash.from = now;
+    flash.until = now + seconds * 1000;
+    flash.pulses = Math.max(1, pulses);
+    if (flash.hooked) return;
+    flash.hooked = true;
+    u.obj.traverse(o => {
+      const m = o.material;
+      if (!o.isMesh || !m || !m.uniforms || !m.uniforms.tint) return;
+      const before = o.onBeforeRender,
+        after = o.onAfterRender;
+      o.onBeforeRender = function (...a) {
+        before.apply(this, a);
+        if (flashTint(flash, performance.now())) {
+          this.material.uniforms.tint.value = flash.tint;
+          this.material.uniformsNeedUpdate = true;
+        }
+      };
+      o.onAfterRender = function (...a) {
+        after.apply(this, a);
+        if (flash.tint.w !== 0) {
+          this.material.uniforms.tint.value = NO_TINT;
+          this.material.uniformsNeedUpdate = true;
+        }
+      };
+    });
   }
 
   hit(x, y, z, size, file = '') {

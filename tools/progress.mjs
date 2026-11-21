@@ -349,7 +349,17 @@ const GROUPS = [
       ['Defend', D],
       ['Auto-fire for abilities', D],
       ['Replenish wingmen', D],
-      ['Self-destruct', D]
+      ['Self-destruct', D],
+      [
+        'Point defense (Laser_Defense_Ability)',
+        D,
+        'as the engine (read): every Recharge_Time_In_Secs the unit destroys one enemy projectile of Projectile_Types_Targeted inside Protection_Radius that has flown past Projectile_Dist_Travelled, plays Zap_SFXEvent at the unit and draws a line from the nearest of Bone_Names to the projectile in Laser_Color and Laser_Beam_Width for Laser_Beam_Frames; the point travels through the battle worker as coordinates. Laser_Beam_Texture is not used yet: our beams draw with the shared bolt texture'
+      ],
+      [
+        'Ability feedback effects',
+        P,
+        'read from the engine: a Force_Healing_Ability heal tick spawns Target_Particle_Effect on the first existing Target_Particle_Bone_Name of the healed unit (root when none) and a Target_Light_Effect Color_Flash, and the Owner_ versions on the healer once per tick; an instant heal blast shows its detonation particle and Projectile_Instant_Heal_Spawn_Effect without an explosion; a Unit_Ability Particle_Effect is shown on the owner while the ability is active (the engine LURE path spawns it on activation and removes it on deactivation). Our own guesses: the flash strength and colour scaling, the owner particle at the first existing Owner_Attachment_Bone. Open: Heal_Range_Blob_Material (the engine shows a range blob of twice Heal_Range around a selected local healer) and the LURE particle following the team centre with its scale'
+      ]
     ]
   ],
   [

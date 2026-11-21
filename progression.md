@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **94.1%** | 172 | 23 | 0 | 195 |
-| **Whole game** | **93.6%** | 322 | 41 | 3 | 366 |
+| **Space skirmish** | **93.9%** | 173 | 24 | 0 | 197 |
+| **Whole game** | **93.5%** | 323 | 42 | 3 | 368 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -22,7 +22,7 @@ Regenerate with `node tools/progress.mjs`.
 | Data formats | space skirmish | 86.8% | 14 | 5 | 0 |
 | Rendering | space skirmish | 87.5% | 21 | 7 | 0 |
 | Space simulation | space skirmish | 100.0% | 35 | 0 | 0 |
-| Abilities | space skirmish | 100.0% | 26 | 0 | 0 |
+| Abilities | space skirmish | 98.2% | 27 | 1 | 0 |
 | Skirmish AI | space skirmish | 95.0% | 18 | 2 | 0 |
 | Interface | space skirmish | 93.8% | 35 | 5 | 0 |
 | Audio | space skirmish | 95.8% | 11 | 1 | 0 |
@@ -127,7 +127,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Repair stations and structure self-repair — *as the engine: each heal tick mends only the least healthy live destroyable hardpoint (Heal_Percent of its maximum plus Heal_Amount) and the hull when none is hurt, so a ranged healer never raises the hull past the hardpoints; repair for credits raises the hull toward the hardpoint share every frame*
 - ✅ Waypoints
 
-### Abilities — 100.0%
+### Abilities — 98.2%
 
 - ✅ Hunt — *as the engine (read): a move, attack or guard order from the player switches hunt off for good, and its button with it; a stop does so for a unit with a Space_Layer (a squadron has none, so its hunt stays on); an object script Attack_Target switches it off too; orders the AI and hunt itself give keep it on*
 - ✅ Hero and unit combat bonuses (Combat_Bonus_Ability) — *object categories are the bit masks of Enum/GameObjectCategoryType.xml as in the engine: a type is in every category whose mask meets its own, so the group categories a game or mod defines there (Hero and All in the base game; GroundUnit, SpaceUnit and others in mods) match bonuses, restrictions and lookups by name; auto-resolve keeps building its masks from the listed categories. Read from the engine: every object whose type carries one that holds in space (Space_Automatic, Combat_Automatic, Global or Galactic_Automatic) offers it when made to every allied ship of its types or categories (with Specific_Faction: of that faction; never its own Unique_Space_Unit, not itself unless Apply_Special_Ability_To_Self_On_Creation); later ships take it as they are made and it is taken back when the source dies; the largest of each Stacking_Category counts and categories add; health and shields raise the current value by the gain, and damage, defence (damage taken times one less the bonus, before shields), speed, energy and fire range follow. A hero with Attach_To_Flagship_During_Space_Battle and no space unit of its own (Tarkin, Mon Mothma, the Emperor) rides the fleet flagship as the engine: the arriving ship with the most hull plus shields, counted with its owner's difficulty multipliers, upgrades (galaxy-wide ones included) and bonuses as the engine (never a company, squadron or Super ship), carries it hidden and its tooltip reads Flagship, no transport comes for its company, the flagship takes the bonus too, the hero is lost with the flagship and kept when it retreats; without a flagship, and arriving as reinforcement, it comes in its own transport. A hero elsewhere on the planet, or one still waiting as reinforcement, gives nothing, as in the engine (it is not in the battle until it arrives). Ability recharge (Recharge_Seconds times one plus the unit's own recharge total, in space and land, Lua Force_Ability_Recharge as the engine) and tactical build time (the producing station or factory book, fixed when queued, pads unaffected) are applied. Ours: the tooltip is our encyclopedia card, so the engine's list of who rides the flagship is not shown*
@@ -155,6 +155,8 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Auto-fire for abilities
 - ✅ Replenish wingmen
 - ✅ Self-destruct
+- ✅ Point defense (Laser_Defense_Ability) — *as the engine (read): every Recharge_Time_In_Secs the unit destroys one enemy projectile of Projectile_Types_Targeted inside Protection_Radius that has flown past Projectile_Dist_Travelled, plays Zap_SFXEvent at the unit and draws a line from the nearest of Bone_Names to the projectile in Laser_Color and Laser_Beam_Width for Laser_Beam_Frames; the point travels through the battle worker as coordinates. Laser_Beam_Texture is not used yet: our beams draw with the shared bolt texture*
+- 🟡 Ability feedback effects — *read from the engine: a Force_Healing_Ability heal tick spawns Target_Particle_Effect on the first existing Target_Particle_Bone_Name of the healed unit (root when none) and a Target_Light_Effect Color_Flash, and the Owner_ versions on the healer once per tick; an instant heal blast shows its detonation particle and Projectile_Instant_Heal_Spawn_Effect without an explosion; a Unit_Ability Particle_Effect is shown on the owner while the ability is active (the engine LURE path spawns it on activation and removes it on deactivation). Our own guesses: the flash strength and colour scaling, the owner particle at the first existing Owner_Attachment_Bone. Open: Heal_Range_Blob_Material (the engine shows a range blob of twice Heal_Range around a selected local healer) and the LURE particle following the team centre with its scale*
 
 ### Skirmish AI — 95.0%
 

@@ -209,6 +209,11 @@ const pairs = rows =>
     for (let i = 0; i + 1 < row.length; i += 2) out.push([row[i], parseInt(row[i + 1], 10)]);
     return out;
   });
+export function particleFile(typeName) {
+  const type = db.type(String(typeName || '').trim());
+  return type ? type.str('Space_Model_Name') || type.str('Land_Model_Name') : '';
+}
+
 export function spawnList(type, tech) {
   const reserves = pairs(tierRows(type, 'Reserve_Spawned_Units_Tech_', tech)),
     out = [];

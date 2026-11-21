@@ -3,6 +3,21 @@ export const UNIT = 16,
   POINT = 5,
   ABILITY = 5;
 
+export const beamMessage = beam => [
+  beam.a.id,
+  beam.b.id !== undefined ? beam.b.id : [beam.b.x, beam.b.y, beam.b.z || 0],
+  beam.color,
+  beam.width,
+  beam.bone,
+  beam.kind
+];
+
+export function beamFromMessage(unitById, [from, to, color, width, bone, kind]) {
+  const source = unitById.get(from),
+    target = Array.isArray(to) ? { x: to[0], y: to[1], z: to[2] } : unitById.get(to);
+  return source && target ? { a: source, b: target, color, width, bone, kind, until: Infinity } : null;
+}
+
 export class SpaceRecorder {
   constructor(world) {
     this.world = world;
