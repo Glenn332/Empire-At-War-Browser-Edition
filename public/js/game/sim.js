@@ -302,6 +302,19 @@ const castsShadow = m => {
   if (v === undefined) shadowModels.set(m, (v = !!m.meshes?.some(x => x.subs?.some(s => /shadowvolume/i.test(s.material?.shader || '')))));
   return v;
 };
+function bankIntoTurn(unit, turn, turnRate, dt) {
+  const bank = unit.bankAngle;
+  if (!(dt > 0)) return;
+  if (!(bank > 0) || !(unit.rollRate > 0)) {
+    if (!(bank > 0)) unit.roll = 0;
+    return;
+  }
+  const turnShare = Math.min(1, Math.abs(turn) / (turnRate * dt || 1));
+  let want = turn >= 0 ? -bank : bank;
+  if (turnShare < 0.5) want *= turnShare * 2;
+  const step = clamp(Math.abs(want - unit.roll) / bank, 0.1, 1) * unit.rollRate * dt;
+  unit.roll = unit.roll < want ? Math.min(want, unit.roll + step) : Math.max(want, unit.roll - step);
+}
 const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
 
 function shotDamage(proj, override) {
@@ -549,6 +562,7 @@ export class Unit {
     this.minSpeed = type.num('Min_Speed', 0) * LOGIC_FPS * M;
     this.turnRate = type.num('Max_Rate_Of_Turn', 1) * LOGIC_FPS * DEG * M;
     this.bankAngle = type.num('Bank_Turn_Angle', 0) * DEG;
+    this.rollRate = type.num('Max_Rate_Of_Roll', 0) * LOGIC_FPS * DEG * M;
     this.accel = type.num('OverrideAcceleration', 0) * LOGIC_FPS * LOGIC_FPS * M || Math.max(10, this.maxSpeed * 0.6);
     this.maxShield = type.num('Shield_Points', 0);
     this.shield = this.maxShield;
@@ -2405,7 +2419,7 @@ export class World {
 
   freeSpot(type, x, y, startDeg = 0) {
     const L = layerMask(type);
-    if (type.has('Squadron_Units') || L === 8 || type.behaviors().has('SPACE_OBSTACLE')) return null;
+    if (type.has('Squadron_Units') || L === 8 || !type.str('Space_Layer').trim() || type.behaviors().has('SPACE_OBSTACLE')) return null;
     const e = boxHalfOf(type),
       step = Math.max(e[0], e[1]) * 2 * 1.2;
     if (!(step > 0)) return null;
@@ -4092,8 +4106,7 @@ export class World {
     u.heading = wrapAngle(u.heading + turn);
     const a = u.accel * dt;
     u.speed += clamp(wantSpeed - u.speed, -a * 1.5, a);
-    const bankTarget = dt > 0 ? clamp(-turn / (turnRate * dt || 1), -1, 1) * u.bankAngle : 0;
-    u.roll += (bankTarget - u.roll) * Math.min(1, dt * 1.5);
+    bankIntoTurn(u, turn, turnRate, dt);
     if (u.speed > 0.01) {
       u.x += Math.cos(u.heading) * u.speed * dt;
       u.y += Math.sin(u.heading) * u.speed * dt;
@@ -4170,8 +4183,7 @@ export class World {
     const a = u.accel * dt;
     u.speed += clamp(want - u.speed, -a * (D.throttle < 0 ? 3 : 1.5), a);
     if (u.speed < 0) u.speed = 0;
-    const bankTarget = dt > 0 ? clamp(-turn / (turnRate * dt || 1), -1, 1) * u.bankAngle : 0;
-    u.roll += (bankTarget - u.roll) * Math.min(1, dt * 1.5);
+    bankIntoTurn(u, turn, turnRate, dt);
     if (u.speed > 0.01) {
       u.x += Math.cos(u.heading) * u.speed * dt;
       u.y += Math.sin(u.heading) * u.speed * dt;

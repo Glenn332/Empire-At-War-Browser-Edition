@@ -609,6 +609,17 @@ function nearPath(k, p) {
   return best;
 }
 
+function spotsHeldAgainst(world, target, leadPoint, layer, group) {
+  const spots = [];
+  for (const other of world.units) {
+    const order = other.order;
+    if (other.dead || group.has(other) || other.layer !== layer || !order || order.kind !== 'attack' || order.target !== target || !order.offset)
+      continue;
+    spots.push({ x: leadPoint.x + order.offset.x, y: leadPoint.y + order.offset.y, r: occupation(other) });
+  }
+  return spots;
+}
+
 export function attackSlots(ships, target, through = 0, maxEta) {
   const out = new Map();
   if (!ships.length || !target) return out;
@@ -651,7 +662,7 @@ export function attackSlots(ships, target, through = 0, maxEta) {
       ay /= al;
     }
     const order = layer.slice().sort((p, q) => (q.x - cx) * ax + (q.y - cy) * ay - ((p.x - cx) * ax + (p.y - cy) * ay));
-    const taken = [],
+    const taken = spotsHeldAgainst(world, target, T, layer[0].layer, group),
       rest = [];
     for (const e of order) {
       const d = Math.hypot(e.x - P.x, e.y - P.y);
