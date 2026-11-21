@@ -769,7 +769,18 @@ export class Menus {
       dlg.slider('IDC_SLIDER_MUSIC_VOLUME', A.musicVolume, v => setInput('musicVol', v));
     };
     show();
-    dlg.show('IDC_TEXT_AUDIO_3D_TECHNOLOGY', false);
+    const wasHeadphones = A.headphones;
+    const technology = dlg.combo(
+      'IDC_AUDIO_3D_TECHNOLOGY_COMBOBOX',
+      [
+        { value: 'headphones', label: 'Headphones (3D)' },
+        { value: 'speakers', label: 'Speakers' }
+      ],
+      A.headphones ? 'headphones' : 'speakers',
+      value => A.setHeadphones(value === 'headphones')
+    );
+    dlg.show('IDC_TEXT_AUDIO_3D_TECHNOLOGY', !!technology);
+    dlg.show('IDC_AUDIO_3D_TECHNOLOGY_COMBOBOX', !!technology);
     dlg.check('IDC_USE_MOVIE_SUBTITLES', movieSubtitles(), on => setMovieSubtitles(on));
     const put = v => {
       A.setMasterVolume(v.master);
@@ -783,10 +794,13 @@ export class Menus {
     });
     dlg.on('IDC_CANCEL', () => {
       put(was);
+      A.setHeadphones(wasHeadphones);
       this.pop();
     });
     dlg.on('IDC_RESTORE_DEFAULT', () => {
       put({ master: 1, sfx: 0.7, voice: 0.9, music: 0.45 });
+      A.setHeadphones(true);
+      technology?.set?.('headphones');
       show();
     });
   }

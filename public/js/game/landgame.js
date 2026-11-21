@@ -1231,6 +1231,7 @@ export class LandGame {
         });
     }
     await this.audio.useAudioMode?.('Land');
+    this.audio.heightAt = (x, y) => heightAt(this.terrain, x, y);
     await TacticalStoryHost.create(this, this.scripts?.host, { restoring: !!this.savedScripts });
     if (this.savedScripts) {
       try {
@@ -3300,6 +3301,7 @@ export class LandGame {
       L.cy = cam.position.y;
       L.cz = cam.position.z;
     }
+    this.audio.listenFrom?.(cam);
     if (L && this.shooter) this.shooter.listen(L, cam);
     this.updateMusic();
     if (this.audio.setLoops && (this.loopTimer = (this.loopTimer || 0) - real) <= 0) {

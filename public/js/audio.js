@@ -9,6 +9,16 @@ import { localizedAudioFile } from './localizedmedia.js';
 const POSITIONAL_VOICES = 32;
 const FLAT_VOICES = 24;
 const STOLEN_FADE_SECONDS = 0.03;
+const MAX_HEARING_DISTANCE = 15000;
+const HEADPHONES_KEY = 'swr-audio-headphones';
+
+const storedHeadphones = () => {
+  try {
+    return localStorage.getItem(HEADPHONES_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
 
 const release = el => {
   el.pause();
@@ -50,6 +60,83 @@ export class Audio {
     this.speech = new SpeechPlayer(this);
     this.space3D = null;
     this.spatial = null;
+    this.ear = { x: 0, y: 0, z: 0, rightX: 1, rightY: 0, rightZ: 0, placed: false };
+    this.heightAt = null;
+    this.headphones = storedHeadphones();
+  }
+
+  setHeadphones(on) {
+    this.headphones = !!on;
+    try {
+      localStorage.setItem(HEADPHONES_KEY, on ? '1' : '0');
+    } catch {}
+  }
+
+  listenFrom(camera) {
+    const M = this.space3D;
+    if (!M || !camera?.matrixWorld) return;
+    const m = camera.matrixWorld.elements,
+      eyeX = m[12],
+      eyeY = m[13],
+      eyeZ = m[14];
+    let forwardX = -m[8],
+      forwardY = -m[9],
+      forwardZ = -m[10];
+    const length = Math.hypot(forwardX, forwardY, forwardZ) || 1;
+    forwardX /= length;
+    forwardY /= length;
+    forwardZ /= length;
+    const reach = Math.abs(eyeZ - M.pull),
+      ear = this.ear;
+    ear.x = eyeX + forwardX * reach;
+    ear.y = eyeY + forwardY * reach;
+    ear.z = eyeZ + forwardZ * reach;
+    ear.rightX = m[0];
+    ear.rightY = m[1];
+    ear.rightZ = m[2];
+    ear.placed = true;
+    const listener = this.ctx?.listener;
+    if (!listener || this.spatial) return;
+    if (listener.positionX) {
+      listener.positionX.value = ear.x;
+      listener.positionY.value = ear.y;
+      listener.positionZ.value = ear.z;
+      listener.forwardX.value = forwardX;
+      listener.forwardY.value = forwardY;
+      listener.forwardZ.value = forwardZ;
+      listener.upX.value = m[4];
+      listener.upY.value = m[5];
+      listener.upZ.value = m[6];
+    } else {
+      listener.setPosition(ear.x, ear.y, ear.z);
+      listener.setOrientation(forwardX, forwardY, forwardZ, m[4], m[5], m[6]);
+    }
+  }
+
+  soundHeight(x, y) {
+    return this.heightAt ? this.heightAt(x, y) || 0 : 0;
+  }
+
+  placedPanner(saturation, x, y) {
+    const M = this.space3D;
+    if (!M || !this.ear.placed || !this.ctx.createPanner) return null;
+    const panner = this.ctx.createPanner();
+    panner.panningModel = this.headphones ? 'HRTF' : 'equalpower';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = Math.max(1, saturation * M.sat);
+    panner.rolloffFactor = M.roll;
+    panner.maxDistance = MAX_HEARING_DISTANCE;
+    this.placePanner(panner, x, y);
+    return panner;
+  }
+
+  placePanner(panner, x, y) {
+    const z = this.soundHeight(x, y);
+    if (panner.positionX) {
+      panner.positionX.value = x;
+      panner.positionY.value = y;
+      panner.positionZ.value = z;
+    } else panner.setPosition(x, y, z);
   }
 
   async useAudioMode(prefix) {
@@ -78,6 +165,8 @@ export class Audio {
     this.movieUp = false;
     this.space3D = null;
     this.spatial = null;
+    this.heightAt = null;
+    this.ear.placed = false;
   }
 
   audioXml() {
@@ -142,12 +231,24 @@ export class Audio {
 
   hear(sat, x, y) {
     const M = this.space3D;
+    if (M && this.ear.placed) {
+      const ear = this.ear,
+        dx = x - ear.x,
+        dy = y - ear.y,
+        dz = this.soundHeight(x, y) - ear.z,
+        d = Math.hypot(dx, dy, dz),
+        s = Math.max(1, sat * M.sat),
+        held = Math.min(d, MAX_HEARING_DISTANCE);
+      const gain = held <= s ? 1 : s / (s + M.roll * (held - s));
+      const across = d > 0 ? (dx * ear.rightX + dy * ear.rightY + dz * ear.rightZ) / d : 0;
+      return { gain, pan: Math.max(-1, Math.min(1, across)) };
+    }
     if (M) {
       const dx = x - this.listener.x,
         dy = y - this.listener.y,
         d = Math.hypot(dx, dy, M.pull),
         s = Math.max(1, sat * M.sat);
-      const gain = d <= s ? 1 : d >= 15000 ? 0 : s / (s + M.roll * (d - s));
+      const gain = d <= s ? 1 : d >= MAX_HEARING_DISTANCE ? 0 : s / (s + M.roll * (d - s));
       return { gain, pan: this.panOf(dx, dy, d) };
     }
     const L = this.listener,
@@ -241,15 +342,17 @@ export class Audio {
     }
 
     let gain = (ev.num('Min_Volume', 80) + Math.random() * (ev.num('Max_Volume', 80) - ev.num('Min_Volume', 80))) / 100;
+    const saturation = ev.num('Volume_Saturation_Distance', 400),
+      placed = positional && !this.spatial && !!this.space3D && this.ear.placed && !!this.ctx.createPanner;
     let pan = 0,
       far = 1;
     if (positional) {
-      const h = this.hear(ev.num('Volume_Saturation_Distance', 400), x, y);
+      const h = this.hear(saturation, x, y);
       far = h.gain;
       pan = h.pan;
       if (gain * far < 0.02) return true;
     }
-    gain = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * far * boost;
+    gain = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * (placed ? 1 : far) * boost;
     let file;
     if (ev.bool('Play_Sequentially')) {
       const i = this.seq.get(key) || 0;
@@ -287,8 +390,12 @@ export class Audio {
       instance.source = src;
       instance.gain = g;
       let node = g;
-      const S = positional ? this.spatial : null;
-      if (!S && positional && this.ctx.createStereoPanner) {
+      const S = positional ? this.spatial : null,
+        panner = placed ? this.placedPanner(saturation, x, y) : null;
+      if (panner) {
+        g.connect(panner);
+        node = panner;
+      } else if (!S && positional && this.ctx.createStereoPanner) {
         const p = this.ctx.createStereoPanner();
         p.pan.value = pan;
         g.connect(p);
@@ -319,6 +426,7 @@ export class Audio {
   }
 
   listenerDistance(x, y) {
+    if (this.space3D && this.ear.placed) return Math.hypot(x - this.ear.x, y - this.ear.y, this.soundHeight(x, y) - this.ear.z);
     return Math.hypot(x - this.listener.x, y - this.listener.y);
   }
 
@@ -385,8 +493,9 @@ export class Audio {
       const ev = c.event && db.sfx.get(c.event.toUpperCase());
       if (!ev) continue;
       const h = this.hear(ev.num('Volume_Saturation_Distance', 400), c.x, c.y);
-      const gain = this.ducked((ev.num('Max_Volume', 80) / 100) * this.sfxVolume) * h.gain * 0.55;
-      if (gain > 0.012) scored.push({ c, ev, gain, pan: h.pan });
+      const level = this.ducked((ev.num('Max_Volume', 80) / 100) * this.sfxVolume) * 0.55,
+        gain = level * h.gain;
+      if (gain > 0.012) scored.push({ c, ev, gain, level, pan: h.pan });
     }
     scored.sort((a, b) => b.gain - a.gain);
     const keep = new Map(),
@@ -403,7 +512,9 @@ export class Audio {
       if (k && k.ev.name === l.event) continue;
       this.endLoop(id, l);
     }
-    for (const [id, { c, ev, gain, pan }] of keep) {
+    const placed = !this.spatial && !!this.space3D && this.ear.placed && !!this.ctx.createPanner;
+    for (const [id, { c, ev, gain: heard, level, pan }] of keep) {
+      const gain = placed ? level : heard;
       let l = this.loops.get(id);
       if (!l) {
         const samples = ev.list('Samples');
@@ -413,6 +524,9 @@ export class Audio {
           language: activeLanguage,
           gain: null,
           pan: null,
+          panner: null,
+          x: c.x,
+          y: c.y,
           src: null,
           alive: true,
           fadeOut: ev.num('Loop_Fade_Out_Seconds', 1)
@@ -435,7 +549,11 @@ export class Audio {
           g.gain.linearRampToValueAtTime(target, this.ctx.currentTime + Math.max(0.05, fadeIn));
           src.connect(g);
           let out = g;
-          if (this.ctx.createStereoPanner) {
+          l.panner = placed ? this.placedPanner(ev.num('Volume_Saturation_Distance', 400), l.x, l.y) : null;
+          if (l.panner) {
+            g.connect(l.panner);
+            out = l.panner;
+          } else if (this.ctx.createStereoPanner) {
             l.pan = this.ctx.createStereoPanner();
             l.pan.pan.value = at;
             g.connect(l.pan);
@@ -447,9 +565,12 @@ export class Audio {
           l.gain = g;
           l.out = out;
         });
-      } else if (l.gain) {
-        l.gain.gain.setTargetAtTime(gain, now, 0.15);
+      } else {
+        l.x = c.x;
+        l.y = c.y;
+        if (l.gain) l.gain.gain.setTargetAtTime(gain, now, 0.15);
         if (l.pan) l.pan.pan.setTargetAtTime(pan, now, 0.15);
+        if (l.panner) this.placePanner(l.panner, c.x, c.y);
       }
     }
   }

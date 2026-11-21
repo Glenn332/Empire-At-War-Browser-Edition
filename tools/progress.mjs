@@ -582,7 +582,11 @@ const GROUPS = [
       ['Health and damage call-outs', D],
       ['Faction announcer', D],
       ['Field entry lines', D],
-      ['Positional mix (saturation distance, priority, pan)', D],
+      [
+        'Positional mix (saturation distance, priority, pan)',
+        D,
+        'read from the engine: in space and land battles the ear sits on the camera view ray at the height of the mode Listener_Z_Pullback_Dist (Audio.xml), and a 3-D event fades as Miles does, whole to its Volume_Saturation_Distance times the mode saturation mod, then min over min plus the mode rolloff times the distance past it, held from 15000 on. Ours, an improvement on the original: every 3-D event and engine loop is placed in the world through a Web Audio panner with the camera as the listener, so sounds come from front, back, left, right and above with headphones (head related filtering) and follow camera turns while they play; the original 3D Audio Technology box of the audio options picks Headphones (3D) or Speakers (equal power panning). Battlefront mode keeps its own listener, muffling and reverb'
+      ],
       ['Voice rules (overlap groups, replies, announcer queue)', D],
       ['Ambient / battle music switching', D],
       [

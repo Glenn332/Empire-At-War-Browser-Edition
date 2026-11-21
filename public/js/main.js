@@ -374,6 +374,7 @@ class Game {
     const map = await loadMap(mapFile, { teams: teamFactions.length, instant: !!this.setup.instant });
     ensureMissionPlayers(this.setup, map);
     startEnvironment(map, this.setup);
+    audio.useAudioMode('Space');
     this.map = map;
     Game.loading = this;
     await this.showLoading(map);
@@ -2516,6 +2517,7 @@ class Game {
       audio.listener.cx = c.x;
       audio.listener.cy = c.y;
       audio.listener.cz = c.z;
+      audio.listenFrom(this.renderer.camera);
     }
     if ((this.loopTimer = (this.loopTimer || 0) - real) <= 0) {
       this.loopTimer = 0.2;
