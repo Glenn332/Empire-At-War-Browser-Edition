@@ -97,6 +97,7 @@ export class StoryPlots {
             tag: node.val('Story_Tag'),
             popup: node.child('Story_Dialog_Popup') ? yes(node.val('Story_Dialog_Popup')) : true,
             dialogSFX: node.child('Story_Dialog_SFX') ? yes(node.val('Story_Dialog_SFX')) : true,
+            singleOnly: !!node.child('Multiplayer') && !yes(node.val('Multiplayer')),
             entries: []
           };
           event.active = !event.prereqs.length;
@@ -307,6 +308,7 @@ export class StoryPlots {
   }
   fire(e, force = false, subject = null) {
     if (e.disabled || (!force && (e.completed || !(e.active ?? this.prerequisites(e))))) return false;
+    if (e.singleOnly && (this.game?.setup?.net || this.game?.net)) return false;
     if (!force && e.plot?.active === false) return false;
     if (e.plot?.instance) this.invokeStoryCallback(e.plot.instance, e.name);
     e.completed = true;

@@ -1625,9 +1625,9 @@ async function openStaging(args) {
     const hint = !single()
       ? ''
       : menuEntry()
-        ? "Each player may take a side with the menu's faction buttons, else plays with the host. Only the host's side gets the story: briefings, objectives and the mod's player features."
+        ? "Each player may take a side with the menu's faction buttons, else plays with the host. Each side gets the story of its own single-player version of this conquest, where the data has one. Scripts written for a single local player follow the host's side."
         : slots.some(s => s.kind === 'human' && s.faction !== lead())
-          ? "Only the host's side gets the story: briefings, objectives and the mod's player features. Players on the host's side play it in co-op."
+          ? "Each side gets the story of its own single-player version of this conquest, where the data has one. Scripts written for a single local player follow the host's side. Players on the host's side play it in co-op."
           : '';
     if (hint && hint !== told) addChat('', hint);
     told = hint;
@@ -1813,7 +1813,7 @@ async function openStaging(args) {
   if (host && st.type === 'campaign' && !campaigns.some(c => !c.variants))
     addChat(
       '',
-      'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides play without the story.'
+      'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides get their own faction's story where the conquest has one.'
     );
   if (host) {
     for (const line of inviteLines(net.gameId, kind)) addChat('', line.text, line.copy);
