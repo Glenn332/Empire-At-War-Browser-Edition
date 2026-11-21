@@ -93,11 +93,28 @@ const constants = new Pathfinder({ ...world }).K;
 const wasmBytes = readFileSync(new URL('../public/js/game/pathsearch.wasm', import.meta.url));
 const env = { now: () => performance.now(), cos: Math.cos, sin: Math.sin, atan2: Math.atan2, acos: Math.acos };
 const instance = (await WebAssembly.instantiate(wasmBytes, { env })).instance;
-const core = withWasm => {
+const detourCost = { count: 0, ms: 0, worstMs: 0, states: 0, worstStates: 0 };
+const core = (withWasm, measureDetour = false) => {
   const pathCore = new PathCore(world, constants, 50);
   if (withWasm) pathCore.wasm = { ex: instance.exports, mem: instance.exports.memory };
+  if (measureDetour) {
+    const detour = pathCore.detour;
+    pathCore.detour = function (...request) {
+      const started = performance.now(),
+        route = detour.apply(this, request),
+        ms = performance.now() - started;
+      detourCost.count++;
+      detourCost.ms += ms;
+      detourCost.worstMs = Math.max(detourCost.worstMs, ms);
+      detourCost.states += this.detourStates;
+      detourCost.worstStates = Math.max(detourCost.worstStates, this.detourStates);
+      return route;
+    };
+  }
   return pathCore;
 };
+const detourOf = route => (route && route.length && route[route.length - 1].detour ? (route[route.length - 1].partial ? 'partial' : 'complete') : null);
+const pointsInFields = (route, fields) => (route || []).filter(point => fields.some(field => (point.x - field.x) ** 2 + (point.y - field.y) ** 2 < field.r * field.r)).length;
 const budget = searchBudget(constants);
 let everyTry = 0;
 for (let k = 0, tryStates = constants.maxExp; k < constants.tries; k++, tryStates = k >= 2 ? Math.floor(tryStates * constants.expGrow) : tryStates) everyTry += tryStates + 1;
@@ -151,11 +168,11 @@ const timed = (pathCore, ship, gx, gy) => {
     route = pathCore.find(ship, gx, gy);
   return { route, ms: performance.now() - started, states: pathCore.statesUsed };
 };
-const tally = { old: 0, now: 0, routeThread: 0, total: 0, states: 0, worstStates: 0, wasm: cost(), js: cost(), routeThreadWasm: cost(), batches: 0, deferred: 0, worstBatchMs: 0, worstBatchStates: 0 };
+const tally = { old: 0, now: 0, engine: 0, detourComplete: 0, detourPartial: 0, detourPointsInFields: 0, detourPoints: 0, routeThread: 0, total: 0, states: 0, worstStates: 0, wasm: cost(), js: cost(), routeThreadWasm: cost(), batches: 0, deferred: 0, worstBatchMs: 0, worstBatchStates: 0 };
 const perMap = [];
 for (const entry of busiest) {
   useMap(entry);
-  const wasmCore = core(true),
+  const wasmCore = core(true, true),
     jsCore = core(false),
     oldCore = core(true),
     routeThreadCore = core(true);
@@ -168,7 +185,7 @@ for (const entry of busiest) {
     batchStates = 0;
   for (const [x, y, heading, gx, gy] of cases) {
     tally.total++;
-    const oldRoute = oldCore.find(makeShip(x, y, heading), gx, gy);
+    const oldRoute = oldCore.engineFind(makeShip(x, y, heading), gx, gy);
     if (!oldRoute || oldRoute.length) tally.old++;
     const lockstep = timed(wasmCore, makeShip(x, y, heading), gx, gy),
       route = lockstep.route;
@@ -183,15 +200,22 @@ for (const entry of busiest) {
     const jsSearch = timed(jsCore, makeShip(x, y, heading), gx, gy);
     add(tally.js, jsSearch.ms);
     assert.deepEqual(route, jsSearch.route, 'the WebAssembly search is the JS one');
-    if (!route || route.length) {
+    const detour = detourOf(route);
+    if (!route || (route.length && !detour)) tally.engine++;
+    if (detour) {
+      tally[detour === 'complete' ? 'detourComplete' : 'detourPartial']++;
+      tally.detourPoints += route.length;
+      tally.detourPointsInFields += pointsInFields(route, entry.fields);
+    }
+    if (!route || (route.length && detour !== 'partial')) {
       tally.now++;
       found++;
     }
     const thread = timed(routeThreadCore, makeShip(x, y, heading), gx, gy);
     add(tally.routeThreadWasm, thread.ms);
     assert.deepEqual(thread.route, route, 'the single player route thread finds what lockstep finds');
-    if (!thread.route || thread.route.length) tally.routeThread++;
-    if (route && route.length) {
+    if (!thread.route || (thread.route.length && detourOf(thread.route) !== 'partial')) tally.routeThread++;
+    if (route && route.length && detour !== 'partial') {
       const end = route[route.length - 1];
       assert(Math.hypot(end.x - gx, end.y - gy) < 600, 'a route ends at the goal: ' + [end.x, end.y, gx, gy]);
     }
@@ -203,11 +227,18 @@ for (const entry of busiest) {
 }
 const ms = (entry, count) => (entry.ms / count).toFixed(1) + ' ms mean, ' + entry.worstMs.toFixed(1) + ' worst';
 console.log(shipType.name + ', ' + budget + ' states per search (every try), maps: ' + busiest.map(entry => entry.name + ' (' + entry.fields.length + ' fields)').join(', '));
-console.log('routes found: ' + tally.now + ' / ' + tally.total + ' (with ' + OLD_STATES + ' states: ' + tally.old + ', single player route thread: ' + tally.routeThread + ')');
+console.log('routes found: ' + tally.now + ' / ' + tally.total + ' (engine tries: ' + tally.engine + ', completed with our detour: ' + tally.detourComplete + ', detour to the closest reachable point: ' + tally.detourPartial + '; engine tries with ' + OLD_STATES + ' states: ' + tally.old + ', single player route thread: ' + tally.routeThread + ')');
 console.log('per map: ' + perMap.join(', '));
 console.log('states per search: ' + Math.round(tally.states / tally.total) + ' mean, ' + tally.worstStates + ' worst');
 console.log('lockstep search: wasm ' + ms(tally.wasm, tally.total) + '; js ' + ms(tally.js, tally.total));
 console.log('single player route thread: wasm ' + ms(tally.routeThreadWasm, tally.total));
+if (detourCost.count)
+  console.log(
+    'our detour: ' + detourCost.count + ' run, ' + (detourCost.ms / detourCost.count).toFixed(1) + ' ms mean, ' + detourCost.worstMs.toFixed(1) + ' worst, leg search states ' +
+      Math.round(detourCost.states / detourCost.count) + ' mean, ' + detourCost.worstStates + ' worst; route points inside a field: ' + tally.detourPointsInFields + ' of ' + tally.detourPoints
+  );
 console.log('lockstep batch of a map: ' + tally.worstBatchMs.toFixed(1) + ' ms worst, ' + tally.worstBatchStates + ' states, ' + tally.deferred + ' searches deferred to the next batch');
-assert(tally.now >= tally.old, 'no route lost to the bigger budget');
+assert(tally.engine >= tally.old, 'no route lost to the bigger budget');
+assert(tally.now >= tally.engine, 'our detour only adds routes');
+assert(detourCost.worstStates <= budget, 'the detour leg searches stay within one search budget');
 console.log('space asteroid route ok');

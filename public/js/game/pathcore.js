@@ -146,6 +146,11 @@ export { MOVING, STILL, FIELD, SCELL, touch };
 
 const SOFT_HAZARD_TRY = 4;
 const LOOSE_START = 600;
+const DETOUR_CELLS = 128;
+const DETOUR_MIN_CELL = 100;
+const DETOUR_PADDED = 1;
+const DETOUR_HARD = 2;
+const DETOUR_PADDED_COST = 4;
 
 const nextTryStates = (K, tryNumber, states) => (tryNumber >= 1 ? Math.floor(states * K.expGrow) : states);
 
@@ -187,6 +192,8 @@ export class PathCore {
     this.searchMs = Infinity;
     this.expBudget = Infinity;
     this.statesUsed = 0;
+    this.detourStates = 0;
+    this.detourSearchBuffers = null;
     this.irun = 0;
   }
 
@@ -515,12 +522,301 @@ export class PathCore {
   }
 
   find(u, gx, gy, face) {
+    const pts = this.engineFind(u, gx, gy, face);
+    if (!pts || pts.length) return pts;
+    const engineStates = this.statesUsed || 0,
+      detour = this.detour(u, gx, gy, face);
+    this.statesUsed = engineStates + this.detourStates;
+    return detour || pts;
+  }
+
+  engineFind(u, gx, gy, face) {
     const pts = this.findOnce(u, gx, gy, 0, face);
     if (!pts || pts.length || !this.looseStartFreesMore(u)) return pts;
     const used = this.statesUsed || 0,
       again = this.findOnce(u, gx, gy, LOOSE_START, face);
     this.statesUsed = used + (this.statesUsed || 0);
     return again;
+  }
+
+  detour(u, gx, gy, face) {
+    this.detourStates = 0;
+    const free = this.slot(u, gx, gy);
+    if (free) {
+      gx = free.x;
+      gy = free.y;
+    }
+    const obstacles = this.detourObstacles(u, gx, gy),
+      grid = this.detourGrid(u, obstacles),
+      way = this.coarseWay(grid, u.x, u.y, gx, gy);
+    if (!way) return null;
+    const waypoints = this.pulledWay(way.points, obstacles);
+    return this.flyDetour(u, waypoints, obstacles, way.reached ? face : undefined, !way.reached);
+  }
+
+  detourObstacles(u, gx, gy) {
+    const q = this.ext(u),
+      shipStill = this.stillQ(q),
+      obstacles = [],
+      holds = (x, y, ox, oy, reach) => (x - ox) ** 2 + (y - oy) ** 2 < reach * reach;
+    for (const e of this.still) {
+      if (e.o === u || !this.sees(u, e.o)) continue;
+      const reach = (e.ext?.r || 0) + q.r;
+      if (holds(u.x, u.y, e.x, e.y, reach) || holds(gx, gy, e.x, e.y, reach)) continue;
+      obstacles.push({ x: e.x, y: e.y, hard: (e.ext?.r || 0) + shipStill.r, padded: 0 });
+    }
+    const fieldKind = field => (field.asteroid ? 1 : 0) | (field.ion ? 2 : 0),
+      hazards = this.world.fields.filter(field => this.world.hazardous(field, u));
+    let droppedKinds = 0;
+    for (const field of hazards)
+      if (holds(u.x, u.y, field.x, field.y, field.r) || holds(gx, gy, field.x, field.y, field.r)) droppedKinds |= fieldKind(field);
+    for (const field of hazards)
+      if (!(fieldKind(field) & droppedKinds)) obstacles.push({ x: field.x, y: field.y, hard: field.r + q.r, padded: 0 });
+    return obstacles;
+  }
+
+  detourGrid(u, obstacles) {
+    const w = this.world,
+      width = Math.max(1, w.max.x - w.min.x),
+      height = Math.max(1, w.max.y - w.min.y),
+      cell = Math.max(DETOUR_MIN_CELL, Math.max(width, height) / DETOUR_CELLS),
+      columns = Math.max(1, Math.ceil(width / cell)),
+      rows = Math.max(1, Math.ceil(height / cell)),
+      pad = Math.max(cell, Math.min(Math.max(60, (u.radius || 0) * 0.7), 250)),
+      blocked = new Uint8Array(columns * rows);
+    for (const obstacle of obstacles) {
+      obstacle.padded = obstacle.hard + pad;
+      const outer = obstacle.padded,
+        column0 = Math.max(0, Math.floor((obstacle.x - outer - w.min.x) / cell)),
+        column1 = Math.min(columns - 1, Math.floor((obstacle.x + outer - w.min.x) / cell)),
+        row0 = Math.max(0, Math.floor((obstacle.y - outer - w.min.y) / cell)),
+        row1 = Math.min(rows - 1, Math.floor((obstacle.y + outer - w.min.y) / cell));
+      for (let row = row0; row <= row1; row++)
+        for (let column = column0; column <= column1; column++) {
+          const dx = w.min.x + (column + 0.5) * cell - obstacle.x,
+            dy = w.min.y + (row + 0.5) * cell - obstacle.y,
+            distanceSquared = dx * dx + dy * dy,
+            index = row * columns + column;
+          if (distanceSquared < obstacle.hard * obstacle.hard) blocked[index] = DETOUR_HARD;
+          else if (distanceSquared < outer * outer && blocked[index] < DETOUR_PADDED) blocked[index] = DETOUR_PADDED;
+        }
+    }
+    return { cell, columns, rows, minX: w.min.x, minY: w.min.y, blocked };
+  }
+
+  coarseWay(grid, sx, sy, gx, gy) {
+    const { cell, columns, rows, minX, minY, blocked } = grid,
+      count = columns * rows,
+      cellOf = (x, y) =>
+        Math.min(rows - 1, Math.max(0, Math.floor((y - minY) / cell))) * columns + Math.min(columns - 1, Math.max(0, Math.floor((x - minX) / cell))),
+      start = cellOf(sx, sy),
+      goal = cellOf(gx, gy),
+      goalColumn = goal % columns,
+      goalRow = (goal / columns) | 0,
+      passable = index => blocked[index] !== DETOUR_HARD || index === start || index === goal,
+      { costTo, estimate, parent, closed, heap } = this.detourBuffers(count),
+      octile = index => {
+        const dx = Math.abs((index % columns) - goalColumn),
+          dy = Math.abs(((index / columns) | 0) - goalRow);
+        return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+      };
+    let heapSize = 0;
+    const push = index => {
+      let i = heapSize++;
+      const value = estimate[index];
+      while (i > 0) {
+        const up = (i - 1) >> 1;
+        if (estimate[heap[up]] <= value) break;
+        heap[i] = heap[up];
+        i = up;
+      }
+      heap[i] = index;
+    };
+    const pop = () => {
+      const top = heap[0],
+        last = heap[--heapSize];
+      if (heapSize) {
+        const value = estimate[last];
+        let i = 0;
+        for (;;) {
+          let child = i * 2 + 1;
+          if (child >= heapSize) break;
+          if (child + 1 < heapSize && estimate[heap[child + 1]] < estimate[heap[child]]) child++;
+          if (estimate[heap[child]] >= value) break;
+          heap[i] = heap[child];
+          i = child;
+        }
+        heap[i] = last;
+      }
+      return top;
+    };
+    costTo[start] = 0;
+    estimate[start] = octile(start);
+    push(start);
+    let closest = start,
+      closestEstimate = octile(start);
+    while (heapSize) {
+      const index = pop();
+      if (closed[index]) continue;
+      closed[index] = 1;
+      const remaining = octile(index);
+      if (remaining < closestEstimate) {
+        closest = index;
+        closestEstimate = remaining;
+      }
+      if (index === goal) break;
+      const column = index % columns,
+        row = (index / columns) | 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nextColumn = column + dx,
+            nextRow = row + dy;
+          if (nextColumn < 0 || nextRow < 0 || nextColumn >= columns || nextRow >= rows) continue;
+          const next = nextRow * columns + nextColumn;
+          if (closed[next] || !passable(next)) continue;
+          if (dx && dy && (!passable(row * columns + nextColumn) || !passable(nextRow * columns + column))) continue;
+          const cost = costTo[index] + (dx && dy ? Math.SQRT2 : 1) * (blocked[next] === DETOUR_PADDED ? DETOUR_PADDED_COST : 1);
+          if (cost >= costTo[next] || heapSize >= heap.length) continue;
+          costTo[next] = cost;
+          parent[next] = index;
+          estimate[next] = cost + octile(next);
+          push(next);
+        }
+    }
+    const reached = closed[goal] === 1,
+      end = reached ? goal : closest;
+    if (end === start) return null;
+    const points = [];
+    for (let index = end; index !== start; index = parent[index])
+      points.push({ x: minX + ((index % columns) + 0.5) * cell, y: minY + (((index / columns) | 0) + 0.5) * cell });
+    points.reverse();
+    if (reached) points[points.length - 1] = { x: gx, y: gy };
+    points.unshift({ x: sx, y: sy });
+    return { points, reached };
+  }
+
+  detourBuffers(count) {
+    let buffers = this.detourSearchBuffers;
+    if (!buffers || buffers.count !== count)
+      buffers = this.detourSearchBuffers = {
+        count,
+        costTo: new Float64Array(count),
+        estimate: new Float64Array(count),
+        parent: new Int32Array(count),
+        closed: new Uint8Array(count),
+        heap: new Int32Array(count * 8 + 1)
+      };
+    buffers.costTo.fill(Infinity);
+    buffers.parent.fill(-1);
+    buffers.closed.fill(0);
+    return buffers;
+  }
+
+  detourClear(obstacles, ax, ay, bx, by, padded) {
+    const vx = bx - ax,
+      vy = by - ay,
+      lengthSquared = vx * vx + vy * vy;
+    for (const obstacle of obstacles) {
+      let reach = padded ? obstacle.padded : obstacle.hard;
+      if (padded && ((ax - obstacle.x) ** 2 + (ay - obstacle.y) ** 2 < reach * reach || (bx - obstacle.x) ** 2 + (by - obstacle.y) ** 2 < reach * reach))
+        reach = obstacle.hard;
+      const px = obstacle.x - ax,
+        py = obstacle.y - ay;
+      let along = lengthSquared > 1e-9 ? (px * vx + py * vy) / lengthSquared : 0;
+      along = along < 0 ? 0 : along > 1 ? 1 : along;
+      const cx = px - vx * along,
+        cy = py - vy * along;
+      if (cx * cx + cy * cy < reach * reach) return false;
+    }
+    return true;
+  }
+
+  pulledWay(points, obstacles) {
+    const pulled = [points[0]];
+    let anchor = 0;
+    while (anchor < points.length - 1) {
+      let reach = anchor + 1;
+      while (reach + 1 < points.length && this.detourClear(obstacles, points[anchor].x, points[anchor].y, points[reach + 1].x, points[reach + 1].y, true)) reach++;
+      pulled.push(points[reach]);
+      anchor = reach;
+    }
+    return pulled;
+  }
+
+  flyDetour(u, waypoints, obstacles, face, partial) {
+    const savedX = u.x,
+      savedY = u.y,
+      savedHeading = u.heading,
+      savedSpeed = u.speed,
+      savedBudget = this.expBudget,
+      budget = Math.min(searchBudget(this.K), savedBudget),
+      v = Math.max(1, u.maxSpeed || 40),
+      now = this.world.time,
+      route = [];
+    let states = 0,
+      elapsed = 0,
+      x = u.x,
+      y = u.y,
+      heading = u.heading,
+      speed = u.speed,
+      complete = true;
+    try {
+      for (let k = 1; k < waypoints.length; k++) {
+        const to = waypoints[k],
+          legFace = k === waypoints.length - 1 ? face : undefined;
+        let leg = null;
+        if (k === 1 || legFace !== undefined || !this.detourClear(obstacles, x, y, to.x, to.y, false)) {
+          if (states >= budget) {
+            complete = false;
+            break;
+          }
+          u.x = x;
+          u.y = y;
+          u.heading = heading;
+          u.speed = speed;
+          this.expBudget = budget - states;
+          leg = this.findOnce(u, to.x, to.y, 0, legFace);
+          states += this.statesUsed || 0;
+          if (leg && !leg.length) {
+            complete = false;
+            break;
+          }
+        }
+        if (leg) {
+          for (const point of leg) {
+            point.t += elapsed;
+            route.push(point);
+          }
+          const end = leg[leg.length - 1];
+          elapsed = end.t - now;
+          x = end.x;
+          y = end.y;
+          heading = end.h;
+          speed = end.speed;
+        } else {
+          const direction = Math.atan2(to.y - y, to.x - x);
+          elapsed += len(to.x - x, to.y - y) / v;
+          route.push({ x: to.x, y: to.y, speed: v, t: now + elapsed, h: direction, turn: false });
+          x = to.x;
+          y = to.y;
+          heading = direction;
+          speed = v;
+        }
+      }
+    } finally {
+      u.x = savedX;
+      u.y = savedY;
+      u.heading = savedHeading;
+      u.speed = savedSpeed;
+      this.expBudget = savedBudget;
+      this.detourStates = states;
+    }
+    if (!route.length) return null;
+    const last = route[route.length - 1];
+    last.detour = true;
+    last.partial = partial || !complete;
+    return route;
   }
 
   looseStartFreesMore(u) {

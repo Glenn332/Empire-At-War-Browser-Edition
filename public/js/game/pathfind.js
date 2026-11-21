@@ -448,12 +448,7 @@ export class Pathfinder extends PathCore {
       }
     }
     if (!r.pts) return null;
-    if (!r.pts.length) {
-      r.wp.x = u.x + Math.cos(u.heading) * 1000;
-      r.wp.y = u.y + Math.sin(u.heading) * 1000;
-      r.wp.speed = 0;
-      return r.wp;
-    }
+    if (!r.pts.length) return this.stopAhead(u, r);
     const near = Math.max(60, Math.min(u.radius * 0.7, 250));
     const last = r.pts.length - 1;
     for (;;) {
@@ -469,7 +464,19 @@ export class Pathfinder extends PathCore {
         r.i++;
       else break;
     }
-    if (r.i >= last) return null;
+    if (r.i >= last) {
+      const end = r.pts[last];
+      if (!end.partial) return null;
+      if ((u.x - end.x) ** 2 + (u.y - end.y) ** 2 > near * near) {
+        r.wp.x = end.x;
+        r.wp.y = end.y;
+        r.wp.speed = undefined;
+        return r.wp;
+      }
+      r.pts = [];
+      r.check = r.again = t + RETRY;
+      return this.stopAhead(u, r);
+    }
     const p = r.pts[r.i];
     if (p.turn || p.arc) {
       r.wp.x = u.x + Math.cos(p.h) * 1000;
@@ -480,6 +487,13 @@ export class Pathfinder extends PathCore {
       r.wp.y = p.y;
       r.wp.speed = p.speed;
     }
+    return r.wp;
+  }
+
+  stopAhead(u, r) {
+    r.wp.x = u.x + Math.cos(u.heading) * 1000;
+    r.wp.y = u.y + Math.sin(u.heading) * 1000;
+    r.wp.speed = 0;
     return r.wp;
   }
 
