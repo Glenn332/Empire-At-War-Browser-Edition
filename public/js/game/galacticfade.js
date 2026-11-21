@@ -73,7 +73,9 @@ export class GalacticModelFade {
           }
         }
         if (material.uniforms.opacity) {
-          const opacity = source.uniforms.opacity.value * this.value;
+          const opacity = source.userData.ignoresLightScale
+            ? source.uniforms.opacity.value
+            : source.uniforms.opacity.value * Math.min(1, this.value * (source.userData.lightScaleGain || 1));
           if (material.uniforms.opacity.value !== opacity) {
             material.uniforms.opacity.value = opacity;
             material.uniformsNeedUpdate = true;

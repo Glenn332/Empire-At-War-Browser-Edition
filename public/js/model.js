@@ -382,7 +382,7 @@ function planetEffectInfo() {
 }
 
 function makePlanetMaterial(p) {
-  const c3 = (v, d) => (v ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
+  const c3 = (v, d) => (Array.isArray(v) ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
   const detail = gfx.shader | 0,
     requests = [];
   const definesFor = lod => (lod === 0 ? { PLANET_FIXED: 1 } : lod === 2 ? { PLANET_DX8: 1 } : {});
@@ -597,11 +597,17 @@ function keepSkyAtlas() {
   return c;
 }
 
+function emissiveAdditiveColor(emissive) {
+  const level = Math.min(1, Math.max(0, 1 + (Number(emissive) || 0)));
+  return new THREE.Color(level, level, level);
+}
+
 function makeMaterial(mat, format, teamColor) {
   const shader = mat.shader;
   const p = mat.params;
   const nebula = shader === 'nebula.fx';
-  const nativeAdditive = /^(mesh|rskin)additive(vcolor|2x)?\.fx$/.test(shader) || nebula;
+  const emissiveAdditive = shader === 'meshadditiveemissive.fx';
+  const nativeAdditive = /^(mesh|rskin)additive(vcolor|2x)?\.fx$/.test(shader) || emissiveAdditive || nebula;
   const uvScrollRate = nativeAdditive ? (p.UVScrollRate || [0, 0]).map(v => v * (nebula ? 3 : 1)) : null;
   const skinned = /RSkin|B4I4/.test(format);
   const key =
@@ -624,11 +630,11 @@ function makeMaterial(mat, format, teamColor) {
           format.replace(/RSkin|B4I4/, 'S').endsWith('C'),
           skinned,
           teamColor ? teamColor.getHexString() : '-',
-          (p.Emissive || []).join(),
-          (p.Diffuse || []).join(),
-          (p.Specular || []).join(),
+          String(p.Emissive ?? ''),
+          String(p.Diffuse ?? ''),
+          String(p.Specular ?? ''),
           p.Shininess ?? '',
-          (p.Color || []).join(),
+          String(p.Color ?? ''),
           p.FowDimAllowed ?? '',
           uvScrollRate?.slice(0, 2).join() || '',
           gfx.shader | 0,
@@ -675,8 +681,10 @@ function makeMaterial(mat, format, teamColor) {
   if (rocky) defines.DETAIL = 1;
   if (rock4k) defines.BUMP = 1;
   if (skinned) defines.SKINNED = 1;
-  const c3 = (v, d) => (v ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
-  const diffuse = c3(nativeAdditive ? p.Color : p.Diffuse || p.Color, 1);
+  const c3 = (v, d) => (Array.isArray(v) ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
+  const diffuse = emissiveAdditive
+    ? emissiveAdditiveColor(p.Emissive)
+    : c3(nativeAdditive ? p.Color : p.Diffuse || p.Color, 1);
   if (shader === 'meshadditive2x.fx') diffuse.multiplyScalar(2);
   m = new THREE.ShaderMaterial({
     vertexShader: VERT,
@@ -730,6 +738,8 @@ function makeMaterial(mat, format, teamColor) {
   }
   m.userData.additive = additive;
   m.userData.alpha = alpha;
+  if (shader === 'skydome.fx') m.userData.ignoresLightScale = true;
+  if (emissiveAdditive) m.userData.lightScaleGain = Math.max(1, 1 + (Number(p.Emissive) || 0));
   const base = m.uniforms.map.value;
   if (additive && base?.userData?.ready)
     base.userData.ready.then(t => {

@@ -356,6 +356,8 @@ export function snapshotGalaxy(g) {
       captureRewards: (p.captureRewards || []).slice(),
       lastSpaceDefense: p.lastSpaceDefense,
       lastGroundDefense: p.lastGroundDefense,
+      lastSpaceAttack: p.lastSpaceAttack,
+      lastGroundAttack: p.lastGroundAttack,
       advisorHints: advisorHintFlags(p.advisorHints),
       advisorHintIndex: p.advisorHintIndex || 0,
       advisorHintFrame: p.advisorHintFrame ?? 90,
@@ -497,6 +499,8 @@ export function applyGalaxy(g, s) {
       if (Object.hasOwn(saved, 'ai')) player.ai = saved.ai;
       player.lastSpaceDefense = saved.lastSpaceDefense ?? undefined;
       player.lastGroundDefense = saved.lastGroundDefense ?? undefined;
+      player.lastSpaceAttack = saved.lastSpaceAttack ?? undefined;
+      player.lastGroundAttack = saved.lastGroundAttack ?? undefined;
       player.advisorHints = advisorHintFlags(saved.advisorHints);
       player.advisorHintIndex = saved.advisorHintIndex || 0;
       player.advisorHintFrame = saved.advisorHintFrame ?? 90;

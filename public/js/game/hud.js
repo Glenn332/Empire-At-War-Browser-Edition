@@ -182,10 +182,13 @@ export function meshShade(mesh) {
     additive = /additive/.test(mesh.shader || '');
   const scroll = rate && (rate[0] || rate[1]) && (/scroll/.test(mesh.shader || '') || additive) ? [rate[0] || 0, rate[1] || 0] : null;
   let mult = [1, 1, 1];
-  if (additive && p.Color) mult = p.Color.slice(0, 3);
-  else if (!additive && (p.Emissive || p.Diffuse)) {
-    const e = p.Emissive || [0, 0, 0],
-      d = p.Diffuse || [0, 0, 0];
+  if (mesh.shader === 'meshadditiveemissive.fx') {
+    const level = Math.min(1, Math.max(0, 1 + (Number(p.Emissive) || 0)));
+    mult = [level, level, level];
+  } else if (additive && Array.isArray(p.Color)) mult = p.Color.slice(0, 3);
+  else if (!additive && (Array.isArray(p.Emissive) || Array.isArray(p.Diffuse))) {
+    const e = Array.isArray(p.Emissive) ? p.Emissive : [0, 0, 0],
+      d = Array.isArray(p.Diffuse) ? p.Diffuse : [0, 0, 0];
     mult = [0, 1, 2].map(i => Math.min(1, 2 * e[i] + d[i]));
   }
   return { mult, additive, scroll };

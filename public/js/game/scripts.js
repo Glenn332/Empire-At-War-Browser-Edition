@@ -1,5 +1,5 @@
 import { hintedObjects } from './tacticalobjects.js';
-import { loadFengari, LuaVM, LuaRef, Multi, FORCE_ONLY_METHODS } from '../lua.js';
+import { loadFengari, LuaVM, LuaRef, Multi, engineLacksMethod } from '../lua.js';
 import { db, typeHasProperty } from '../gamedata.js';
 import { tacticalCost } from './tacticalrules.js';
 import { fetchText, findFiles } from '../vfs.js';
@@ -412,7 +412,7 @@ export class ScriptHost {
   }
   absent(kind) {
     return name =>
-      /^[A-Z]/.test(name) && !FORCE_ONLY_METHODS.has(name)
+      /^[A-Z]/.test(name) && !engineLacksMethod(kind, name)
         ? () => {
             const k = kind + '.' + name;
             this.missing.set(k, (this.missing.get(k) || 0) + 1);

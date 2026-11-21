@@ -2657,13 +2657,16 @@ export class GalacticGame {
     this.setFastForward(false);
     const C = db.constants;
     const planet = this.galaxy.planets[p],
-      player = this.galaxy.players.find(p => p.faction === defender);
+      player = this.galaxy.players.find(p => p.faction === defender),
+      attackingPlayer = this.galaxy.players.find(p => p.faction === attacker);
     if (mode === 'space') {
       planet.lastSpaceConflict = this.galaxy.time;
       if (player) player.lastSpaceDefense = this.galaxy.time;
+      if (attackingPlayer) attackingPlayer.lastSpaceAttack = this.galaxy.time;
     } else {
       planet.lastGroundConflict = this.galaxy.time;
       if (player) player.lastGroundDefense = this.galaxy.time;
+      if (attackingPlayer) attackingPlayer.lastGroundAttack = this.galaxy.time;
     }
     this.ai?.plans?.conflict?.(planet, [attacker, defender], mode === 'space', true);
     this.planetInfo.close();

@@ -31,6 +31,8 @@ export class LuaRef {
 }
 
 export const FORCE_ONLY_METHODS = new Set(['Get_Unit_Table', 'Are_All_Units_On_Free_Store', 'Get_Force_Count', 'Produce_Force', 'Release_Forces']);
+const OBJECT_ONLY_METHODS = new Set(['Get_Type']);
+export const engineLacksMethod = (kind, name) => FORCE_ONLY_METHODS.has(name) || (kind === 'Type' && OBJECT_ONLY_METHODS.has(name));
 export const luaTrace = { on: false, call: null, event: null, error: null, script: null };
 export class Multi {
   constructor(...values) {

@@ -357,6 +357,10 @@ export class GalacticMind extends Reason {
       return c.player.lastSpaceDefense === undefined ? 9.999999843067494e17 : g.time - c.player.lastSpaceDefense;
     if (name === 'VARIABLE_SELF.TIMESINCEGROUNDDEFENDER')
       return c.player.lastGroundDefense === undefined ? 9.999999843067494e17 : g.time - c.player.lastGroundDefense;
+    if (name === 'VARIABLE_SELF.TIMESINCESPACEATTACKER')
+      return c.player.lastSpaceAttack === undefined ? 9.999999843067494e17 : g.time - c.player.lastSpaceAttack;
+    if (name === 'VARIABLE_SELF.TIMESINCEGROUNDATTACKER')
+      return c.player.lastGroundAttack === undefined ? 9.999999843067494e17 : g.time - c.player.lastGroundAttack;
     if (name === 'VARIABLE_TARGET.TIMESINCESPACECONFLICT')
       return p?.lastSpaceConflict === undefined ? 9.999999843067494e17 : g.time - p.lastSpaceConflict;
     if (name === 'VARIABLE_TARGET.TIMESINCEGROUNDCONFLICT')

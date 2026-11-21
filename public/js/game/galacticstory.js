@@ -8,7 +8,7 @@ import { planetFactionChange } from './galacticobliterate.js';
 import { StoryPlots } from './storyplots.js';
 import { StoryFlags } from './storyflags.js';
 import { fetchText, findFiles } from '../vfs.js';
-import { LuaVM, LuaRef, Multi, loadFengari, FORCE_ONLY_METHODS } from '../lua.js';
+import { LuaVM, LuaRef, Multi, loadFengari, engineLacksMethod } from '../lua.js';
 import { GalacticNeutralizePopup } from './galacticpopup.js';
 import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
@@ -528,7 +528,7 @@ export class GalacticStoryHost extends StoryPlots {
   }
 
   absent(kind) {
-    return name => (/^[A-Z]/.test(name) && !FORCE_ONLY_METHODS.has(name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined);
+    return name => (/^[A-Z]/.test(name) && !engineLacksMethod(kind, name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined);
   }
   unsupported(name) {
     this.missing.set(name, (this.missing.get(name) || 0) + 1);

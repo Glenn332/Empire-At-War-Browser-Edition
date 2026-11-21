@@ -74,6 +74,8 @@ export class GalacticBattles {
     planet[space ? 'lastSpaceConflict' : 'lastGroundConflict'] = this.game.galaxy.time;
     const player = this.game.galaxy.players.find(p => key(p.faction) === key(defender));
     if (player) player[space ? 'lastSpaceDefense' : 'lastGroundDefense'] = this.game.galaxy.time;
+    const attackingPlayer = this.game.galaxy.players.find(p => key(p.faction) === key(attacker));
+    if (attackingPlayer) attackingPlayer[space ? 'lastSpaceAttack' : 'lastGroundAttack'] = this.game.galaxy.time;
     const row = {
       time: this.game.galaxy.time,
       planet: p,
