@@ -584,7 +584,7 @@ export function stepProduction(g, seconds, ai = null, conflictAt = null) {
       seen = baseLevels.get(p);
     baseLevels.set(p, levels);
     for (const [kind, list] of Object.entries(p.production)) {
-      const changed = seen && seen[kind] !== levels[kind];
+      const changed = seen && levels[kind] < seen[kind];
       for (let i = list.length - 1; i >= 0; i--) {
         const q = list[i];
         if (
