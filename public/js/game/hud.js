@@ -304,10 +304,12 @@ async function tacticalShell(model, comps) {
   const ds = !shell.has('DEATHSTAR_SWITCH') && dsName ? await loadALO(dsName).catch(() => null) : null;
   const matrices = uiBoneTransforms(model),
     timer = model.bones.findIndex(b => b.name.toUpperCase() === 'DS_COUNTDOWN_TIMER'),
-    movieBone = model.bones.findIndex(b => b.name.toUpperCase() === 'MOVIE_TACTICAL');
+    movieBone = model.bones.findIndex(b => b.name.toUpperCase() === 'MOVIE_TACTICAL'),
+    helpBone = model.bones.findIndex(b => b.name.toUpperCase() === 'TEXT_TACTICAL_HELP');
   return {
     shell,
     movieAt: movieBone < 0 ? null : { x: matrices[movieBone][3], y: matrices[movieBone][7] },
+    helpAt: helpBone < 0 ? null : { x: matrices[helpBone][3], y: matrices[helpBone][7] },
     superweapon: {
       shell: ds ? uiMeshes(ds) : shell,
       centered: !!ds,
@@ -535,11 +537,12 @@ export class CommandBar {
     win.style.transform = side.style.transform = `scale(${s})`;
     win.style.left = 7 * s + 'px';
     win.style.top = 106 * s + 'px';
-    const info = document.getElementById('encyc');
+    const info = document.getElementById('encyc'),
+      help = assets?.helpAt || { x: 65, y: 310 };
     info.style.transform = `scale(${s})`;
-    info.style.left = 65 * s + 'px';
-    info.style.bottom = 310 * s + 'px';
-    info.style.setProperty('--encyc-max', Math.max(80, innerHeight / s - 310 - 4) + 'px');
+    info.style.left = help.x * s + 'px';
+    info.style.bottom = help.y * s + 'px';
+    info.style.setProperty('--encyc-max', Math.max(80, innerHeight / s - help.y - 4) + 'px');
     side.style.right = 2 * s + 'px';
     side.style.top = 61 * s + 'px';
     for (const b of Object.values(this.heroBars)) b.el.style.transform = `scale(${s})`;
