@@ -6,6 +6,8 @@ const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', 
 const LUA_PATH = 'Data\\Scripts\\Story\\SideTest.lua';
 const xml = `<Story_Mode>
   <Event Name="Template_Text"><Event_Type>STORY_AI_NOTIFICATION</Event_Type><Event_Param1>SHOW_TEXT</Event_Param1><Perpetual>true</Perpetual><Reward_Type>SCREEN_TEXT</Reward_Type><Reward_Param1></Reward_Param1></Event>
+  <Event Name="Flag"><Event_Type>STORY_AI_NOTIFICATION</Event_Type><Event_Param1>EMPIRE_FLAG</Event_Param1></Event>
+  <Event Name="Later"><Event_Type>STORY_ELAPSED</Event_Type><Event_Param1>0.2</Event_Param1><Story_Dialog>Dialog_Side</Story_Dialog><Story_Dialog_Popup>False</Story_Dialog_Popup><Prereq>Flag</Prereq></Event>
   <Event Name="Clicked"><Event_Type>STORY_AI_NOTIFICATION</Event_Type><Event_Param1>CLICKED</Event_Param1><Perpetual>true</Perpetual></Event>
 </Story_Mode>`;
 const lua = `
@@ -35,6 +37,7 @@ function main()
     Show("TEXT_FOR_REBEL")
   elseif me == Find_Player("Empire") then
     Show("TEXT_FOR_EMPIRE")
+    Story_Event("EMPIRE_FLAG")
   end
   while true do coroutine.yield() end
 end
@@ -89,6 +92,7 @@ async function play(me, clicker) {
 
 const asEmpire = await play('Empire', 'EMPIRE');
 assert.deepEqual(asEmpire.errors, {}, 'the scripts run without errors');
+assert.equal(asEmpire.host.storyGoals.find(r => r.name === 'Dialog_Side')?.audience, 'EMPIRE', 'a timed event after a side copy story event keeps that side');
 assert.equal(asEmpire.host.instances.filter(i => i.side === 'EMPIRE').length, 1, 'one copy for the second human side');
 assert.deepEqual(asEmpire.texts.slice(0, 2), ['TEXT_SHARED', 'TEXT_FOR_EMPIRE'], 'the second side sees the shared text and its own branch');
 assert.ok(!asEmpire.texts.includes('TEXT_FOR_REBEL'), 'the second side does not see the host side branch');

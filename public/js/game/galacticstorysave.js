@@ -297,6 +297,7 @@ function writeStory(host, objects) {
           dialog: e.dialog,
           entries: e.entries,
           battleCount: e.battleCount || 0,
+          ...(e.sideFrom ? { sideFrom: e.sideFrom } : {}),
           remainingCounts: e.remainingCounts || null,
           timed: host.timedEvents.has(e)
         })

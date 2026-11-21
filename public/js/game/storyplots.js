@@ -310,6 +310,19 @@ export class StoryPlots {
     if (e.disabled || (!force && (e.completed || !(e.active ?? this.prerequisites(e))))) return false;
     if (e.singleOnly && (this.game?.setup?.net || this.game?.net)) return false;
     if (!force && e.plot?.active === false) return false;
+    if (e.sideFrom) {
+      const from = e.sideFrom,
+        was = this.sideContext;
+      e.sideFrom = null;
+      if (!was) {
+        this.sideContext = from;
+        try {
+          return this.fire(e, force, subject);
+        } finally {
+          this.sideContext = was;
+        }
+      }
+    }
     const main = e.plot?.instance;
     if (main) {
       const side = this.sideContext,
@@ -353,6 +366,7 @@ export class StoryPlots {
     for (const dependent of e.dependents || [])
       if (!dependent.active && !dependent.completed && this.prerequisites(dependent)) {
         dependent.active = true;
+        dependent.sideFrom = this.sideContext || null;
         if (dependent.type === 'STORY_ELAPSED' && dependent.elapsedFrom === null) dependent.elapsedFrom = this.time;
         if (dependent.type === 'STORY_TRIGGER') this.fire(dependent);
       }
