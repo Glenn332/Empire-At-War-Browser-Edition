@@ -120,7 +120,8 @@ export class SpaceRecorder {
         (u.hyper ? 4 : 0) |
         (u.cloaked ? 8 : 0) |
         (u.flip ? 32 : 0) |
-        (u.hyper && !u.hyper.shown ? 64 : 0);
+        (u.hyper && !u.hyper.shown ? 64 : 0) |
+        (u.shieldBarDown ? 128 : 0);
       u.flip = false;
       U[o + 2] = u.x;
       U[o + 3] = u.y;

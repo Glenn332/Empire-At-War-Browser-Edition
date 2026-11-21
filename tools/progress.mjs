@@ -181,7 +181,7 @@ const GROUPS = [
       [
         'Damage vs armour table, shields, hull',
         D,
-        "as the engine: maximum hull is Tactical_Health and each hardpoint its Health, both times Object_Max_Health_Multiplier_Space (1.5) and the difficulty adjustment; hull and hardpoints are two pools - a direct hit goes to the aimed hardpoint, else the hardpoint whose model it struck, else the hull, a shot at a hardpoint already destroyed does nothing, and every frame the pools are pulled to within Hull_Vs_Hard_Points_Health_Constraint of each other; the ship dies when the hull is gone or (Should_Be_Destroyed_When_All_Hardpoints_Destroyed) the last destroyable hardpoint goes, and its health share is the smaller of the two. A Normal hit with a shooter is scaled by the Diminishing_Firepower curve over the time since the target's last such hit (60% at once, full after a second; off for a shooter whose ability clears ALLOW_TARGET_DIMINISHING_FIREPOWER), on land too. Ion storms stop shields absorbing for Ion_Storm_Shield_Disable_Time without draining them. Ours: the low and critical health voice still uses the health share"
+        "as the engine: maximum hull is Tactical_Health and each hardpoint its Health, both times Object_Max_Health_Multiplier_Space (1.5) and the difficulty adjustment; hull and hardpoints are two pools - a direct hit goes to the aimed hardpoint, else the hardpoint whose model it struck, else the hull, a shot at a hardpoint already destroyed does nothing, and every frame the pools are pulled to within Hull_Vs_Hard_Points_Health_Constraint of each other; the ship dies when the hull is gone or (Should_Be_Destroyed_When_All_Hardpoints_Destroyed) the last destroyable hardpoint goes, and its health share is the smaller of the two. A Normal hit with a shooter is scaled by the Diminishing_Firepower curve over the time since the target's last such hit (60% at once, full after a second; off for a shooter whose ability clears ALLOW_TARGET_DIMINISHING_FIREPOWER), on land too. Ion storms stop shields absorbing for Ion_Storm_Shield_Disable_Time without draining them. While they are stopped that way or depleted, the shield bars over the unit and in the command bar show empty, as the engine draws them, while the shield itself keeps its value. Ours: the low and critical health voice still uses the health share"
       ],
       [
         'Projectiles: lasers, ion, missiles, torpedoes',
@@ -212,7 +212,7 @@ const GROUPS = [
       [
         'Mining income',
         D,
-        'paid a little every frame as the engine (the amount over the interval), with the same totals; tactical credits are capped by the campaign credit cap as the engine, with no cap in skirmish'
+        'paid a little every frame as the engine (the amount over the interval), with the same totals; tactical credits are capped by the campaign credit cap as the engine, with no cap in skirmish; the space credit counter is written every frame'
       ],
       [
         'Capturing pads and structures',
@@ -243,7 +243,7 @@ const GROUPS = [
       [
         'Route search through asteroid fields, nebulae and ion storms',
         D,
-        'read from the engine: each field sits on the static layer with its kind bit; a move avoids asteroid fields when the unit has ASTEROID_FIELD_DAMAGE and every ship avoids nebulae and ion storms, except the kinds it starts or ends in, until the fourth try. Ours, by choice: ships fly straight through any field that does not hurt them'
+        'read from the engine: each field sits on the static layer with its kind bit; a move avoids asteroid fields when the unit has ASTEROID_FIELD_DAMAGE and every ship avoids nebulae and ion storms, except the kinds it starts or ends in, until the fourth try. Ours, by choice: ships fly straight through any field that does not hurt them. As the engine, the kinds touched at the start or goal of a move are dropped from its obstacles and from the free goal search, so a ship sent into or beside an ion storm or a damaging asteroid field flies there'
       ],
       ['Nebula effect on ships inside: Nebula_Effect_Color multiplies their sun and fill light and its alpha is their opacity, alpha blended as the stock shaders do, faded in as the engine does', D],
       [

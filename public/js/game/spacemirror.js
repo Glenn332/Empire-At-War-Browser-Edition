@@ -455,6 +455,7 @@ export class SpaceMirror {
       e.pitch = U[o + 7];
       if (e.maxHealth) e.health = U[o + 8] * e.maxHealth;
       if (e.maxShield) e.shield = U[o + 9] * e.maxShield;
+      e.shieldBarDown = (flags & 128) !== 0;
       e.speed = U[o + 10];
       e.shieldFlash = U[o + 11];
       if (flags & 4) {

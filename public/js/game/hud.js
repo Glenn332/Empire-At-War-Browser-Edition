@@ -1750,7 +1750,7 @@ export class CommandBar {
         s.hp.firstChild.style.backgroundImage = css(iconUrl(`i_bar_health_small${Math.max(0, Math.min(10, Math.round(f * 10)))}.tga`));
         const hasShield = !u.isSquad && u.maxShield > 0;
         s.sh.style.display = hasShield ? '' : 'none';
-        if (hasShield) s.sh.firstChild.style.width = (100 * u.shield) / u.maxShield + '%';
+        if (hasShield) s.sh.firstChild.style.width = (u.shieldBarDown ? 0 : (100 * u.shield) / u.maxShield) + '%';
       } else {
         const why = w.cantBuild(it.builder, it.build, p);
         s.el.classList.toggle('off', !!why);

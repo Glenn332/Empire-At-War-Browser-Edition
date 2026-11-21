@@ -1887,7 +1887,7 @@ export class UI {
           g.fillStyle = 'rgba(0,0,0,0.6)';
           g.fillRect(x - 1, y - 6, w + 2, 4);
           g.fillStyle = '#4fb3ff';
-          g.fillRect(x, y - 5, w * Math.max(0, s.shield / s.maxShield), 2);
+          g.fillRect(x, y - 5, w * (s.shieldBarDown ? 0 : Math.max(0, s.shield / s.maxShield)), 2);
         }
         if (s.construction) {
           g.fillStyle = 'rgba(0,0,0,0.6)';
@@ -2324,7 +2324,7 @@ export class UI {
     for (const d of el.querySelectorAll('.u')) {
       const s = d._s;
       d.lastChild.style.width = 100 * s.healthFrac + '%';
-      d.firstChild.style.width = (!s.isSquad && s.maxShield > 0 ? (100 * s.shield) / s.maxShield : 0) + '%';
+      d.firstChild.style.width = (!s.isSquad && s.maxShield > 0 && !s.shieldBarDown ? (100 * s.shield) / s.maxShield : 0) + '%';
       d.classList.toggle(
         'active',
         s.abilities.some(st => st.active)

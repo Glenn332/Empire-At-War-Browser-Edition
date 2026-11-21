@@ -592,6 +592,7 @@ export class Unit {
     this.shieldDownTimer = 0;
     this.shieldTick = 0;
     this.ionStormAt = -1;
+    this.shieldBarDown = false;
     this.lastNormalHit = -1;
     this.jammedAt = -1;
     const cap = type.behaviors().has('POWERED') ? type.num('Energy_Capacity', 0) : 0;
@@ -3210,6 +3211,7 @@ export class World {
       const base = (this.shieldInterval ??= Math.max(0.05, db.constants.num('ShieldRechargeIntervalInSecs', 3)));
       const every = Math.max(0.05, base * u.mods.shieldInterval);
       if (u.shieldTick + dt >= every) u.ionStormAt = this.ionFieldAt(u) ? this.time : -1;
+      u.shieldBarDown = u.shieldDownTimer > 0 || this.inIonStorm(u);
       if ((u.shieldTick += dt) >= every && u.ionUntil > this.time) u.shieldTick -= every;
       else if (u.shieldTick >= every) {
         u.shieldTick -= every;
