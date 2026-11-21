@@ -1016,20 +1016,18 @@ export class LandGame {
         { maxEmit: 4 }
       );
     };
-    let lastFire = 0;
     world.onShot = s => {
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
       if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
       const own = !!this.shooter && this.shooter.mine(s.from);
       if (this.music && s.from && (this.shooter ? own || this.shooter.nearFight(s.x, s.y) : world.ally(s.from.side, this.me) || (s.target && s.target.side >= 0 && world.ally(s.target.side, this.me))))
         this.music.fought = world.time;
-      if (!own && (s.from?.seen === false || world.time - lastFire < 0.07)) return;
+      if (!own && s.from?.seen === false) return;
       if (own) {
         this.audio.forceNext = true;
         this.audio.boostNext = this.shooter.shotBoost(s);
         this.shooter.recoil(s.from, s);
       }
-      else lastFire = world.time;
       this.audio.play(weaponFireSound(s.from.type, s.w), s.x, s.y);
     };
     world.onSound = (name, x, y, side) => {
