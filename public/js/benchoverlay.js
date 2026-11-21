@@ -1,5 +1,6 @@
 const FT_FRAMES = 240;
 const FT_TOP = 50;
+const GRAPH_BACKGROUND = '#0f1925';
 const W = 236,
   H = 38;
 const HIST_BUCKETS = 10000;
@@ -72,7 +73,8 @@ export class BenchOverlay {
       c.height = H * dpr;
       c.style.width = W + 'px';
       c.style.height = H + 'px';
-      c.getContext('2d').scale(dpr, dpr);
+      c.getContext('2d', { alpha: false }).scale(dpr, dpr);
+      c.addEventListener('contextrestored', () => c.getContext('2d').scale(dpr, dpr));
     }
     if (this.open) box.querySelector('.bp').style.display = 'none';
     parent.appendChild(box);
@@ -255,7 +257,8 @@ export class BenchOverlay {
       n = Math.min(FT_FRAMES, f.length),
       bw = W / FT_FRAMES;
     const y = ms => H - Math.min(1, ms / FT_TOP) * H;
-    g.clearRect(0, 0, W, H);
+    g.fillStyle = GRAPH_BACKGROUND;
+    g.fillRect(0, 0, W, H);
     g.fillStyle = 'rgba(255,255,255,0.08)';
     for (const ms of [16.7, 33.3]) g.fillRect(0, Math.round(y(ms)), W, 1);
     for (let i = 0; i < n; i++) {
@@ -275,7 +278,8 @@ export class BenchOverlay {
       dx = W / (slots - 1);
     const top = Math.max(60, ...p) * 1.1,
       y = v => H - (v / top) * (H - 2) - 1;
-    g.clearRect(0, 0, W, H);
+    g.fillStyle = GRAPH_BACKGROUND;
+    g.fillRect(0, 0, W, H);
     g.fillStyle = 'rgba(255,255,255,0.08)';
     for (const v of [30, 60]) g.fillRect(0, Math.round(y(v)), W, 1);
     g.beginPath();

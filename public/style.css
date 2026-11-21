@@ -1544,7 +1544,7 @@ body:not(.original-hud) .heroframe {
 }
 #bench canvas {
   display: block;
-  background: rgba(255, 255, 255, 0.03);
+  background: #0f1925;
 }
 
 #buildTag {
