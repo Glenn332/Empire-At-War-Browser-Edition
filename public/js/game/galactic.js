@@ -1118,6 +1118,7 @@ export class GalacticGame {
       };
     });
     this.iconPrefix = db.faction(this.me)?.str('Alternate_Icon_Prefix') || '';
+    this.representativeIcons = new Map();
     this.typePortraits = new WeakMap();
     this.stackPictures = new Map();
     this.labelRasterCache = new Map();
@@ -1135,21 +1136,30 @@ export class GalacticGame {
   }
 
   representative(units, owner = null) {
+    const iconCache = (this.representativeIcons ||= new Map());
     const icon = t => {
+      if (iconCache.has(t)) return iconCache.get(t);
       const name = t?.str('Icon_Name');
-      if (!name) return '';
-      const prefixed = this.iconPrefix + name;
-      return iconCanvasRect(prefixed) ? prefixed : iconCanvasRect(name) ? name : '';
+      const prefixed = name ? this.iconPrefix + name : '';
+      const found = !name ? '' : iconCanvasRect(prefixed) ? prefixed : iconCanvasRect(name) ? name : '';
+      if (!name || found) iconCache.set(t, found);
+      return found;
     };
     const health = (t, who) => t.num('Tactical_Health', 0) * (this.ai?.controllers?.get(String(who || '').toUpperCase())?.adjustment?.health ?? 1);
-    const namedHero = (t, depth = 0) => {
+    const heroCache = (this.namedHeroOfType ||= new Map());
+    const findNamedHero = (t, depth) => {
       if (!t || depth > 4) return null;
       if (t.bool('Is_Named_Hero')) return t;
       for (const n of [...t.list('Company_Units'), ...t.list('Squadron_Units')]) {
-        const h = namedHero(db.type(n), depth + 1);
+        const h = findNamedHero(db.type(n), depth + 1);
         if (h) return h;
       }
       return null;
+    };
+    const namedHero = t => {
+      if (!t) return null;
+      if (!heroCache.has(t)) heroCache.set(t, findNamedHero(t, 0));
+      return heroCache.get(t);
     };
     let best = null,
       bestScore = -Infinity,
