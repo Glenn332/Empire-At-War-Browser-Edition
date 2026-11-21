@@ -66,6 +66,7 @@ const NO_CATS = new Set();
 const UNIT_CELL = 1024,
   UNIT_PAD = 200;
 const HIT_CELL = 256;
+const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
 const LOOP_OVER = (170 * Math.PI) / 180,
   LOOP_KEEP = Math.PI / 2,
@@ -778,6 +779,7 @@ export class Unit {
     this.lossRate = undefined;
     this.lossAt = undefined;
     this.hurtBy = undefined;
+    this.hurtByNext = undefined;
     this.radarHit = undefined;
     this.lastAttacker = undefined;
     this.lastAlarm = undefined;
@@ -2618,10 +2620,12 @@ export class World {
       if (r) {
         r.v = r.v * Math.exp(-(this.time - r.at) / 6) + amount;
         r.at = this.time;
+        r.tracked += amount;
       } else {
         if (m.size > 12) m.clear();
-        m.set(from, { v: amount, at: this.time });
+        m.set(from, { v: amount, at: this.time, tracked: amount });
       }
+      if (target.hurtByNext === undefined) target.hurtByNext = this.nextAttackerDecay(target);
     }
     if (quiet) x = undefined;
     target.lastHitTime = this.time;
@@ -3067,6 +3071,7 @@ export class World {
     for (; i < units.length && i < upTo; i++) {
       const u = units[i];
       if (u.dead) continue;
+      if (u.hurtByNext !== undefined && this.time >= u.hurtByNext) this.decayAttackers(u);
       if (u.l1x === undefined) {
         u.l1x = u.x;
         u.l1y = u.y;
@@ -5638,6 +5643,29 @@ export class World {
       return (1 - k) * lead.speed + k * h0;
     }
     return v;
+  }
+
+  nextAttackerDecay(u) {
+    const period = ATTACKER_DECAY_FRAMES / LOGIC_FPS,
+      phase = (Math.abs(u.id | 0) % ATTACKER_DECAY_FRAMES) / LOGIC_FPS,
+      next = phase + Math.ceil((this.time - phase) / period) * period;
+    return next > this.time ? next : next + period;
+  }
+
+  decayAttackers(u) {
+    const records = u.hurtBy;
+    if (records) {
+      const drop = (u.maxHealth + u.maxShield) * (this.attackerDecayStep ??= db.constants.num('AI_SpaceThreatDecayStep', 0.05));
+      for (const [attacker, record] of records) {
+        record.tracked -= drop;
+        if (!(record.tracked > 0)) records.delete(attacker);
+      }
+    }
+    if (records && records.size) u.hurtByNext += ATTACKER_DECAY_FRAMES / LOGIC_FPS;
+    else {
+      u.hurtBy = undefined;
+      u.hurtByNext = undefined;
+    }
   }
 
   hurtBy(v, o) {

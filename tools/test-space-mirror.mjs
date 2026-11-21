@@ -159,6 +159,7 @@ const simOnly = {
     'gridAt',
     'hitReach',
     'hurtBy',
+    'hurtByNext',
     'income.rate',
     'income.timer',
     'influences',
