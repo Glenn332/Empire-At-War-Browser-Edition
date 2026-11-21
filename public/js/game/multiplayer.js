@@ -1813,7 +1813,7 @@ async function openStaging(args) {
   if (host && st.type === 'campaign' && !campaigns.some(c => !c.variants))
     addChat(
       '',
-      'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides get their own faction's story where the conquest has one.'
+      'This game data has no multiplayer campaign: its single-player conquests are offered. Players on the host side play in co-op; other sides get the story of their own faction where the conquest has one.'
     );
   if (host) {
     for (const line of inviteLines(net.gameId, kind)) addChat('', line.text, line.copy);
