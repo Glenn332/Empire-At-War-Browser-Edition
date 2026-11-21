@@ -1,4 +1,4 @@
-import { PathCore, loadPathWasm } from './pathcore.js';
+import { PathCore, loadPathWasm, searchBudget } from './pathcore.js';
 
 let core = null;
 const objs = new Map();
@@ -71,14 +71,17 @@ function run() {
   }
 }
 
-const SEARCH_STATES = 20000,
-  BATCH_STATES = 40000;
 function batch(m) {
   world(m.world);
-  const answers = [];
-  let left = BATCH_STATES;
+  const answers = [],
+    statesPerSearch = searchBudget(core.K);
+  let left = statesPerSearch;
   for (const f of m.finds) {
-    core.expBudget = Math.max(0, Math.min(SEARCH_STATES, left));
+    if (left <= 0) {
+      answers.push({ rid: f.rid, id: f.ship.id, pts: null, deferred: true });
+      continue;
+    }
+    core.expBudget = statesPerSearch;
     const u = stub(f.ship.id);
     Object.assign(u, f.ship);
     u.pathExt = f.ship.ext;
@@ -122,6 +125,7 @@ onmessage = ({ data: m }) => {
       m.ringStep
     );
     core.searchMs = m.searchMs;
+    core.triesBeforeTimeLimit = m.triesBeforeTimeLimit;
     if (!m.noWasm)
       loadPathWasm(new URL('./pathsearch.wasm', import.meta.url)).then(w => {
         core.wasm = w;

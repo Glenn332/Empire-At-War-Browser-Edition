@@ -144,6 +144,19 @@ export function routeOf(NX, NY, NS, NT, NH, NOP, NP, end, now, F) {
 
 export { MOVING, STILL, FIELD, SCELL, touch };
 
+const SOFT_HAZARD_TRY = 3;
+export const UNTIMED_TRIES = SOFT_HAZARD_TRY + 1;
+
+export function searchBudget(K) {
+  let states = 0,
+    tryStates = K.maxExp;
+  for (let k = 0; k <= Math.min(SOFT_HAZARD_TRY, K.tries - 1); k++) {
+    states += Math.ceil(tryStates) + 1;
+    tryStates *= K.expGrow;
+  }
+  return states;
+}
+
 export async function loadPathWasm(url) {
   try {
     const env = { now: () => performance.now(), cos: Math.cos, sin: Math.sin, atan2: Math.atan2, acos: Math.acos };
@@ -172,6 +185,7 @@ export class PathCore {
     this.searchMs = Infinity;
     this.expBudget = Infinity;
     this.statesUsed = 0;
+    this.triesBeforeTimeLimit = 0;
     this.irun = 0;
   }
 
@@ -510,6 +524,7 @@ export class PathCore {
 
   findOnce(u, gx, gy, loose, face) {
     if (this.note) this.note('path search');
+    this.statesUsed = 0;
     const free = this.slot(u, gx, gy);
     if (free) {
       gx = free.x;
@@ -550,7 +565,6 @@ export class PathCore {
         wMult = 1,
         progress = 0;
       const until = performance.now() + this.searchMs;
-      this.statesUsed = 0;
       for (let k = 0; k < K.tries; k++) {
         if (k >= 1) {
           rotMult += K.rotInc;
@@ -562,7 +576,7 @@ export class PathCore {
           cutoff = Math.max(cutoff + K.cutK * d, progress);
           wMult *= K.coef;
         }
-        if (k >= 3) soft = true;
+        if (k >= SOFT_HAZARD_TRY) soft = true;
         if (k >= 4) speed *= 0.5;
         const pts = this.search(u, q, gx, gy, {
           rotMult,
@@ -572,13 +586,13 @@ export class PathCore {
           v: speed,
           cutoff,
           w: 1 / wMult,
-          until,
+          until: k >= this.triesBeforeTimeLimit ? until : 0,
           face: faced && k < 2 ? face : undefined
         });
         this.statesUsed += this.dbg.pushed || 0;
         if (pts) return pts;
         progress = Math.max(progress, d - this.dbg.best);
-        if (performance.now() > until) break;
+        if (k + 1 >= this.triesBeforeTimeLimit && performance.now() > until) break;
       }
       return [];
     } finally {
