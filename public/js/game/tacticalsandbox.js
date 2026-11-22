@@ -143,7 +143,7 @@ export function setSandboxObjectives(host, game, plot, constants) {
           .filter(Boolean);
       const at = key(me) === 'REBEL' ? 0 : key(me) === 'UNDERWORLD' ? 2 : 1,
         text = texts.length ? texts[Math.min(at, texts.length - 1)] : '';
-      if (!text) continue;
+      if (!text || host.objectives.find(text) >= 0) continue;
       const hostile = !friendly;
       host.objectives.add(text, !hostile);
       if (!hostile || ev(u.type.name + '_00')) continue;
