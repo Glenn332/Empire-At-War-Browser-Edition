@@ -373,7 +373,7 @@ export class Audio {
       if (this.hud.length < 4 && !this.hud.some(h => h.name === name)) this.hud.push({ name, at: now, language });
       return true;
     }
-    const spoken = reply && !hud && x !== undefined,
+    const spoken = reply && !hud && x !== undefined && this.headphones,
       priority = ev.num('Priority', 3),
       positional = spoken || (x !== undefined && !voice && ev.bool('Is_3D', !ev.bool('Is_2D'))),
       counted = positional && !spoken,

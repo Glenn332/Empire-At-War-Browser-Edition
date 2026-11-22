@@ -134,6 +134,7 @@ assert.ok(flat.pan.pan.value > 0.5, 'and its pan swings toward the craft');
 
 const human = { id: 0 };
 audio.human = human;
+audio.headphones = true;
 soundEvent('Test_Unit_Move', { Samples: 'Test_Move.wav', Is_2D: 'Yes', Is_Unit_Response_VO: 'Yes', Localize: 'No', Max_Instances: 1, Min_Volume: 100, Max_Volume: 100, Overlap_Test: 'Unit_A' });
 soundEvent('Test_Advisor', { Samples: 'Test_Advisor.wav', Is_2D: 'Yes', Is_HUD_VO: 'Yes', Is_Ambient_VO: 'Yes', Min_Volume: 100, Max_Volume: 100 });
 const cruiser = { x: audio.ear.x, y: audio.ear.y, dead: false };
@@ -161,4 +162,14 @@ audio.playFor(human, 'Test_Advisor', cruiser);
 await settle();
 assert.equal(context.panners.length, flatBefore, 'advisor lines stay flat');
 assert.equal(audio.playFor({ id: 1 }, 'Test_Unit_Move', cruiser), false, 'other players never speak to you');
+
+audio.headphones = false;
+audio.groups.clear();
+audio.instances.clear();
+const speakersBefore = context.panners.length,
+  followedBefore = audio.following.size;
+assert.equal(audio.playFor(human, 'Test_Unit_Move', cruiser), true, 'with Speakers chosen the reply still plays');
+await settle();
+assert.equal(context.panners.length, speakersBefore, 'but flat as the original, without a panner');
+assert.equal(audio.following.size, followedBefore, 'and without following the ship');
 console.log('audio follow ok');
