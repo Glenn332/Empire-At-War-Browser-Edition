@@ -8,7 +8,7 @@ import { abilityText } from './abilitytext.js';
 const sound = (world, u, name) => {
   const a = world.audio,
     e = u && u.isSquad ? u.fighters[0] || u : u;
-  if (a.playAt && e && e.player) a.playAt(e.player, name, u.x, u.y);
+  if (a.playAt && e && e.player) a.playAt(e.player, name, u.x, u.y, e);
   else a.play(name, u.x, u.y);
 };
 

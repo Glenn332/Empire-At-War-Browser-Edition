@@ -2586,7 +2586,7 @@ export class LandGame {
                     ? '#4fb3ff'
                     : '#6be675'
           });
-        if (!spoke) spoke = !!this.audio.play(q.members[0].type.str(attack ? 'SFXEvent_Attack' : 'SFXEvent_Move'));
+        if (!spoke) spoke = !!this.audio.playVoice(q.members[0], q.members[0].type.str(attack ? 'SFXEvent_Attack' : 'SFXEvent_Move'));
       }
     };
     const place = (sx, sy, ex, ey) => {
@@ -2674,7 +2674,7 @@ export class LandGame {
           if (p.z < 1 && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) hit.add(u.squad);
         }
         ui.select([...hit], e.shiftKey);
-        if (hit.size) this.audio.play([...hit][0].members[0].type.str('SFXEvent_Select'));
+        if (hit.size) this.audio.playVoice([...hit][0].members[0], [...hit][0].members[0].type.str('SFXEvent_Select'));
         return;
       }
       if (e.target !== el && !dragged) return;
@@ -2715,10 +2715,10 @@ export class LandGame {
               this.ownSquads(q => q.type === u.squad.type && this.onScreen(q)),
               e.shiftKey
             );
-            this.audio.play(u.type.str('SFXEvent_Select'));
+            this.audio.playVoice(u, u.type.str('SFXEvent_Select'));
           } else if (u.side === me || (u.structure && w.ally(u.side, me))) {
             ui.select([u.squad], e.shiftKey && ui.mine().length === ui.selection.length);
-            this.audio.play(u.type.str('SFXEvent_Select'));
+            this.audio.playVoice(u, u.type.str('SFXEvent_Select'));
           } else if (u.side < 0 || w.ally(u.side, me)) ui.select([u.squad]);
         } else if (pad) ui.select([pad]);
         else if (!e.shiftKey) ui.select([]);
@@ -2739,7 +2739,7 @@ export class LandGame {
             mode: e.ctrlKey ? 'attackmove' : ''
           });
           for (const p of A.pts) (this.pings ||= []).push({ x: p.x, y: p.y, t: 0, color: e.ctrlKey ? '#ffb347' : '#6be675' });
-          this.audio.play(A.squads[0].members[0]?.type.str('SFXEvent_Move'));
+          this.audio.playVoice(A.squads[0].members[0], A.squads[0].members[0]?.type.str('SFXEvent_Move'));
         } else {
           const on = this.unitAt(cx, cy),
             g = this.groundAt(cx, cy);

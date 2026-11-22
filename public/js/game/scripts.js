@@ -1073,7 +1073,7 @@ export class ScriptHost {
       },
       Play_SFX_Event: name => {
         const owner = lead(e) ? lead(e).player : null;
-        if (w.audio.playAt && owner && !self.localizedSFX) w.audio.playAt(owner, String(name || ''), e.x, e.y);
+        if (w.audio.playAt && owner && !self.localizedSFX) w.audio.playAt(owner, String(name || ''), e.x, e.y, lead(e) || e);
         else w.audio.play(String(name || ''), e.x, e.y);
       },
       Attach_Particle_Effect: name => {

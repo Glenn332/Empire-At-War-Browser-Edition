@@ -689,14 +689,20 @@ export class UI {
 
   voiceOf(list) {
     const s = list[0];
+    this.speaker = s || null;
     return s ? (s.isSquad ? s.fighters[0]?.type : s.type) : null;
+  }
+
+  speak(name) {
+    const A = this.game.audio;
+    return A.playVoice ? A.playVoice(this.speaker, name) : A.play(name);
   }
 
   say(voice, ...keys) {
     if (!voice) return;
     for (const k of keys) {
       const ev = voice.str(k);
-      if (ev && this.game.audio.play(ev)) return;
+      if (ev && this.speak(ev)) return;
     }
   }
 
@@ -709,7 +715,7 @@ export class UI {
       : inField('nebula')
         ? voice?.str('SFXEvent_Move_Into_Nebula')
         : '';
-    if (remark && this.game.audio.play(remark)) return;
+    if (remark && this.speak(remark)) return;
     const u = mine[0];
     if (mine.length > 1) return this.say(voice, 'SFXEvent_Fleet_Move', 'SFXEvent_Group_Move', 'SFXEvent_Move');
     let d = Math.atan2(y - u.y, x - u.x) - u.heading;
@@ -722,7 +728,7 @@ export class UI {
     const voice = this.voiceOf(mine);
     if (voice && hardpoint) {
       const t = voice.tuples('SFXEvent_Attack_Hardpoint').find(x => x[0].toUpperCase() === hardpoint.kind);
-      if (t && t[1] && this.game.audio.play(t[1])) return;
+      if (t && t[1] && this.speak(t[1])) return;
     }
     this.say(voice, 'SFXEvent_Attack');
   }
@@ -1370,7 +1376,7 @@ export class UI {
     }
     const mine = this.mine().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
     if (!mine.length) return true;
-    const voice = mine[0].isSquad ? mine[0].fighters[0]?.type : mine[0].type;
+    const voice = this.voiceOf(mine);
     const hit = this.systemUnder(this.hover, x, y) || this.pick(x, y);
     const hostile = hit && hit.player.id >= 0 && hit.player.team !== this.player.team && !hit.isPad;
     if (this.armed === 'attack') {
@@ -1512,8 +1518,8 @@ export class UI {
     for (const s of next) s.selected = true;
     this.game.tacticalStory?.selected?.(fresh);
     if (list.length && list[0].player === this.player) {
-      const t = list[0].isSquad ? (list[0].fighters[0] ? list[0].fighters[0].type : list[0].type) : list[0].type;
-      this.game.audio.play(t.str('SFXEvent_Select'));
+      const t = this.voiceOf(list) || list[0].type;
+      this.speak(t.str('SFXEvent_Select'));
     }
     this.selSig = '';
   }
@@ -1522,7 +1528,7 @@ export class UI {
     const mine = this.mine().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
     if (!mine.length) return;
     const hit = this.systemUnder(this.hover, x, y) || this.pick(x, y) || (this.hover && !this.hover.dead ? this.hover : null);
-    const voice = mine[0].isSquad ? mine[0].fighters[0]?.type : mine[0].type;
+    const voice = this.voiceOf(mine);
     if (hit && hit.player.team !== this.player.team && hit.player.id >= 0 && !hit.isPad) {
       const hp = this.hardpointAt(hit, x, y);
       this.game.command({ c: 'attack', u: ids(mine), t: hit.id, hp: hp && hit.hardpoints ? hit.hardpoints.indexOf(hp) : -1 });

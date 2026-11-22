@@ -11,6 +11,8 @@ const FLAT_VOICES = 24;
 const STOLEN_FADE_SECONDS = 0.03;
 const MAX_HEARING_DISTANCE = 15000;
 const HEADPHONES_KEY = 'swr-audio-headphones';
+const VOICE_SATURATION = 1000;
+const VOICE_FLOOR = 0.2;
 
 const storedHeadphones = () => {
   try {
@@ -125,9 +127,11 @@ export class Audio {
       }
       s.x = u.x + s.dx;
       s.y = u.y + s.dy;
-      if (s.panner) this.placePanner(s.panner, s.x, s.y);
-      else if (s.pan && s.gain) {
-        const h = this.hear(s.saturation, s.x, s.y);
+      if (s.panner) {
+        this.placePanner(s.panner, s.x, s.y);
+        if (s.voice && s.gain) s.gain.gain.value = s.level * this.reach(s.saturation, s.x, s.y, true).gain;
+      } else if (s.pan && s.gain) {
+        const h = this.reach(s.saturation, s.x, s.y, s.voice);
         s.pan.pan.value = h.pan;
         s.gain.gain.value = s.level * h.gain;
       }
@@ -146,18 +150,31 @@ export class Audio {
     return this.play(name, x, y);
   }
 
+  playVoice(unit, name) {
+    const at = unit && unit.isSquad ? unit.fighters?.find(f => !f.dead) || unit : unit;
+    if (!at || at.dead || at.x === undefined) return this.play(name);
+    this.followNext = at;
+    return this.play(name, at.x, at.y);
+  }
+
+  reach(sat, x, y, voice) {
+    const h = this.hear(sat, x, y);
+    if (voice) h.gain = Math.max(VOICE_FLOOR, h.gain);
+    return h;
+  }
+
   soundHeight(x, y) {
     return this.heightAt ? this.heightAt(x, y) || 0 : 0;
   }
 
-  placedPanner(saturation, x, y) {
+  placedPanner(saturation, x, y, flat = false) {
     const M = this.space3D;
     if (!M || !this.ear.placed || !this.ctx.createPanner) return null;
     const panner = this.ctx.createPanner();
     panner.panningModel = this.headphones ? 'HRTF' : 'equalpower';
     panner.distanceModel = 'inverse';
     panner.refDistance = Math.max(1, saturation * M.sat);
-    panner.rolloffFactor = M.roll;
+    panner.rolloffFactor = flat ? 0 : M.roll;
     panner.maxDistance = MAX_HEARING_DISTANCE;
     this.placePanner(panner, x, y);
     return panner;
@@ -356,8 +373,10 @@ export class Audio {
       if (this.hud.length < 4 && !this.hud.some(h => h.name === name)) this.hud.push({ name, at: now, language });
       return true;
     }
-    const priority = ev.num('Priority', 3),
-      positional = x !== undefined && !voice && ev.bool('Is_3D', !ev.bool('Is_2D')),
+    const spoken = reply && !hud && x !== undefined,
+      priority = ev.num('Priority', 3),
+      positional = spoken || (x !== undefined && !voice && ev.bool('Is_3D', !ev.bool('Is_2D'))),
+      counted = positional && !spoken,
       distance = positional ? this.listenerDistance(x, y) : 0,
       instances = this.instances.get(key) || this.instances.set(key, new Set()).get(key);
     let replaced = null,
@@ -369,7 +388,7 @@ export class Audio {
         replaced = positional ? this.farthestOf(instances) : null;
         if (!replaced || distance > this.listenerDistance(replaced.x, replaced.y)) return true;
       }
-      if (positional && this.positional.size - (replaced ? 1 : 0) + this.loops.size >= POSITIONAL_VOICES) {
+      if (counted && this.positional.size - (replaced ? 1 : 0) + this.loops.size >= POSITIONAL_VOICES) {
         displaced = this.leastImportantOf(this.positional, replaced);
         if (!displaced || priority > displaced.priority || distance >= this.listenerDistance(displaced.x, displaced.y)) return true;
       }
@@ -377,18 +396,18 @@ export class Audio {
     }
 
     let gain = (ev.num('Min_Volume', 80) + Math.random() * (ev.num('Max_Volume', 80) - ev.num('Min_Volume', 80))) / 100;
-    const saturation = ev.num('Volume_Saturation_Distance', 400),
+    const saturation = ev.num('Volume_Saturation_Distance', spoken ? VOICE_SATURATION : 400),
       placed = positional && !this.spatial && !!this.space3D && this.ear.placed && !!this.ctx.createPanner;
     let pan = 0,
       far = 1;
     if (positional) {
-      const h = this.hear(saturation, x, y);
+      const h = this.reach(saturation, x, y, spoken);
       far = h.gain;
       pan = h.pan;
       if (gain * far < 0.02) return true;
     }
     const level = (voice ? gain * this.voiceVolume : this.ducked(gain * this.sfxVolume)) * boost;
-    gain = level * (placed ? 1 : far);
+    gain = level * (placed && !spoken ? 1 : far);
     let file;
     if (ev.bool('Play_Sequentially')) {
       const i = this.seq.get(key) || 0;
@@ -412,11 +431,12 @@ export class Audio {
       dy: follows ? y - from.y : 0,
       level,
       saturation,
+      voice: spoken,
       panner: null,
       pan: null
     };
     instances.add(instance);
-    if (positional) this.positional.add(instance);
+    if (counted) this.positional.add(instance);
     this.total++;
     const delay = (ev.num('Min_Predelay', 0) + Math.random() * Math.max(0, ev.num('Max_Predelay', 0) - ev.num('Min_Predelay', 0))) / 1000;
     if (voice && group) this.groups.set(group, now + delay + 1.2);
@@ -444,7 +464,7 @@ export class Audio {
       instance.gain = g;
       let node = g;
       const S = positional ? this.spatial : null,
-        panner = placed ? this.placedPanner(saturation, x, y) : null;
+        panner = placed ? this.placedPanner(saturation, x, y, spoken) : null;
       if (panner) {
         g.connect(panner);
         node = panner;
@@ -652,8 +672,8 @@ export class Audio {
     for (const [id, l] of [...this.loops]) this.endLoop(id, l);
   }
 
-  playFor(player, name) {
-    if (player && player === this.human) return this.play(name);
+  playFor(player, name, from) {
+    if (player && player === this.human) return from ? this.playVoice(from, name) : this.play(name);
     return false;
   }
 
@@ -664,7 +684,7 @@ export class Audio {
 
   playAt(player, name, x, y, from) {
     if (!(name && db.sfx.get(String(name).trim().toUpperCase()))) return false;
-    if (this.isVoice(name)) return this.playFor(player, name);
+    if (this.isVoice(name) && !(player && player === this.human)) return false;
     this.followNext = from || null;
     return this.play(name, x, y);
   }

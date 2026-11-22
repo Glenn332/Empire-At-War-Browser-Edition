@@ -2707,7 +2707,7 @@ export class World {
       const alarm = target.type.str('SFXEvent_Unit_Under_Attack');
       if (alarm && this.time - (this.lastAlarm ?? -99) > 8) {
         target.lastAlarm = this.lastAlarm = this.time;
-        this.audio.playFor(target.player, alarm);
+        this.audio.playFor(target.player, alarm, target);
       }
     }
     let d = amount * db.damageMod(damageType, target.armor);
@@ -2856,7 +2856,7 @@ export class World {
     hp.smoke = !unit.proxies.some(px => px.hp === hp);
     if (unit.player && unit.player.human) {
       const ev = unit.type.tuples('SFXEvent_Hardpoint_Destroyed').find(t => t[0].toUpperCase() === hp.kind);
-      if (ev && ev[1]) this.audio.playFor(unit.player, ev[1]);
+      if (ev && ev[1]) this.audio.playFor(unit.player, ev[1], unit);
     }
     if (unit.isStation) {
       const level = stationLevel(unit),
@@ -3713,19 +3713,22 @@ export class World {
     const level = before > crit && after <= crit ? 'Critical' : before > low && after <= low ? 'Low' : null;
     if (!level || this.time - (this.lastHealthVoice ?? -99) < 5) return;
     let ev = '',
-      who = null;
+      who = null,
+      from = null;
     if (target.player.human) {
       ev = target.type.str(`SFXEvent_Health_${level}_Warning`);
       who = target.player;
+      from = target;
     } else if (attacker && attacker.human) {
       for (const u of this.units) {
         if (u.dead || u.player !== attacker || (u.target !== target && !(u.squad && u.squad.target === (target.squad || target)))) continue;
         ev = u.type.str(`SFXEvent_Enemy_Damaged_Health_${level}_Warning`);
+        from = u;
         if (ev) break;
       }
       who = attacker;
     }
-    if (ev && this.audio.playFor(who, ev)) this.lastHealthVoice = this.time;
+    if (ev && this.audio.playFor(who, ev, from)) this.lastHealthVoice = this.time;
   }
 
   losingTeamBonus(span) {
