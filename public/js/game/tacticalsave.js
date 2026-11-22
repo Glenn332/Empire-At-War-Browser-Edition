@@ -624,10 +624,9 @@ function makePlan(B, host, si) {
   const plans = host.plans,
     thing = pl.thing
       ? pl.thing.e !== undefined
-        ? B.thing(pl.thing.e)
+        ? B.thing(pl.thing.e) || { dead: true }
         : { x: pl.thing.x, y: pl.thing.y, ...(pl.thing.key !== null ? { key: pl.thing.key } : {}) }
       : null;
-  if (pl.thing && pl.thing.e !== undefined && !thing) return null;
   const inst = {
     plan: true,
     global: true,

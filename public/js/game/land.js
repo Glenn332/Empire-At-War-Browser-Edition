@@ -1205,9 +1205,9 @@ export class LandWorld {
       cur = type === MOD.HEALTH ? 'health' : 'shield';
     if (now === was || !(u[max] > 0)) return;
     const next = (u[max] / was) * now;
-    if (adding) u[cur] = Math.max(type === MOD.HEALTH ? Math.min(u[cur], 1) : 0, u[cur] + next - u[max]);
+    if (adding && !u.restoring) u[cur] = Math.max(type === MOD.HEALTH ? Math.min(u[cur], 1) : 0, u[cur] + next - u[max]);
     u[max] = next;
-    if (u[cur] > next) u[cur] = next;
+    if (u[cur] > next && !u.restoring) u[cur] = next;
   }
   wxSpread(w) {
     const name = this.wxNow();
@@ -4364,25 +4364,30 @@ export class LandWorld {
           u.x = o.x;
           u.y = o.y;
         }
-        const sv = saved && saved[n];
+        const sv = saved && saved[n],
+          kept = !!sv && Number.isFinite(sv.hp);
         if (sv) {
           u.x = sv.x;
           u.y = sv.y;
           u.heading = sv.h;
-          u.health = Math.min(u.maxHealth, sv.hp);
-          u.shield = Math.min(u.maxShield, sv.sh || 0);
+          u.health = kept ? Math.max(0, sv.hp) : u.maxHealth;
+          u.shield = kept ? Math.max(0, sv.sh || 0) : Math.min(u.maxShield, sv.sh || 0);
           if (sv.o) u.off = { x: sv.o[0], y: sv.o[1] };
+          if (kept) {
+            u.restoring = true;
+            (this.restored ||= { units: [], ready: false }).units.push(u);
+          }
         }
         if (u.flies) u.captures = false;
         {
           const dm = this.mods[side];
           if (dm && dm.health !== 1) {
             u.maxHealth *= dm.health;
-            u.health *= dm.health;
+            if (!kept) u.health *= dm.health;
           }
           if (dm && dm.shield !== undefined && dm.shield !== 1 && u.maxShield > 0) {
             u.maxShield *= dm.shield;
-            u.shield *= dm.shield;
+            if (!kept) u.shield *= dm.shield;
           }
         }
         this.setAnim(u, 'idle');
@@ -8494,8 +8499,24 @@ export class LandWorld {
     });
   }
 
+  settleRestored() {
+    const r = this.restored;
+    if (!r) return;
+    if (!r.ready) {
+      r.ready = true;
+      return;
+    }
+    for (const u of r.units) {
+      u.restoring = false;
+      if (u.health > u.maxHealth) u.health = u.maxHealth;
+      if (u.shield > u.maxShield) u.shield = u.maxShield;
+    }
+    this.restored = null;
+  }
+
   update(dt) {
     if (this.interp) this.snapPrev();
+    this.settleRestored();
     this.time += dt;
     const sim = !this.puppet;
     if (sim) {
