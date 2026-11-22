@@ -179,6 +179,8 @@ export async function loadPathWasm(url) {
   }
 }
 const WASM_BASE = 1 << 20;
+const STILL_CELLS = 48;
+const STILL_CELL_MIN = 400;
 
 export class PathCore {
   constructor(world, K, ringStep) {
@@ -244,16 +246,14 @@ export class PathCore {
     const Y = (this.iy = this.iy && this.iy.length >= n * S ? this.iy : new Float32Array(Math.max(n * S, 1024)));
     const DX = (this.idx = this.idx && this.idx.length >= n * S ? this.idx : new Float32Array(Math.max(n * S, 1024)));
     const DY = (this.idy = this.idy && this.idy.length >= n * S ? this.idy : new Float32Array(Math.max(n * S, 1024)));
-    const p = {};
-    for (let k = 0; k < n; k++)
-      for (let j = 0; j < S; j++) {
-        this.at(cand[k], now + j * TS, p);
-        const o = k * S + j;
-        X[o] = p.x;
-        Y[o] = p.y;
-        DX[o] = p.dx;
-        DY[o] = p.dy;
-      }
+    for (let k = 0; k < n; k++) {
+      const c = this.samples(cand[k], now, S),
+        o = k * S;
+      X.set(c.X.subarray(0, S), o);
+      Y.set(c.Y.subarray(0, S), o);
+      DX.set(c.DX.subarray(0, S), o);
+      DY.set(c.DY.subarray(0, S), o);
+    }
     const gw = Math.max(1, Math.ceil((w.max.x - w.min.x) / TCELL) + 2),
       gh = Math.max(1, Math.ceil((w.max.y - w.min.y) / TCELL) + 2),
       B = Math.ceil(H / TB) + 1;
@@ -261,7 +261,8 @@ export class PathCore {
       per = Math.round(TB / TS);
     const head = (this.ihead = this.ihead && this.ihead.length >= cells + 1 ? this.ihead : new Int32Array(cells + 1));
     head.fill(0, 0, cells + 1);
-    const cellsOf = (k, b, fn) => {
+    const spans = (this.ispans = this.ispans && this.ispans.length >= n * B * 4 ? this.ispans : new Int32Array(Math.max(n * B * 4, 1024)));
+    const spanOf = (k, b) => {
       let x0 = Infinity,
         y0 = Infinity,
         x1 = -Infinity,
@@ -278,8 +279,21 @@ export class PathCore {
         c1 = Math.min(gw - 1, Math.floor((x1 + r - w.min.x) / TCELL) + 1);
       const r0 = Math.max(0, Math.floor((y0 - r - w.min.y) / TCELL) + 1),
         r1 = Math.min(gh - 1, Math.floor((y1 + r - w.min.y) / TCELL) + 1);
+      const at = (k * B + b) * 4;
+      spans[at] = c0;
+      spans[at + 1] = c1;
+      spans[at + 2] = r0;
+      spans[at + 3] = r1;
+    };
+    const cellsOf = (k, b, fn) => {
+      const at = (k * B + b) * 4,
+        c0 = spans[at],
+        c1 = spans[at + 1],
+        r0 = spans[at + 2],
+        r1 = spans[at + 3];
       for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) fn((b * gh + cy) * gw + cx);
     };
+    for (let k = 0; k < n; k++) for (let b = 0; b < B; b++) spanOf(k, b);
     for (let k = 0; k < n; k++) for (let b = 0; b < B; b++) cellsOf(k, b, c => head[c + 1]++);
     for (let c = 0; c < cells; c++) head[c + 1] += head[c];
     const list = (this.ilist = this.ilist && this.ilist.length >= head[cells] ? this.ilist : new Int32Array(Math.max(head[cells], 1024)));
@@ -296,6 +310,24 @@ export class PathCore {
     this.iB = B;
     this.iN = n;
     this.istamp = this.istamp && this.istamp.length >= n ? this.istamp : new Int32Array(Math.max(n, 256));
+  }
+
+  samples(tr, now, S) {
+    const cache = (this.sampleCache ||= new WeakMap()),
+      had = cache.get(tr);
+    if (had && had.now === now && had.S >= S) return had;
+    const n = Math.max(S, Math.ceil(this.K.horizon / TS) + 1),
+      c = { now, S: n, X: new Float32Array(n), Y: new Float32Array(n), DX: new Float32Array(n), DY: new Float32Array(n) },
+      p = {};
+    for (let j = 0; j < n; j++) {
+      this.at(tr, now + j * TS, p);
+      c.X[j] = p.x;
+      c.Y[j] = p.y;
+      c.DX[j] = p.dx;
+      c.DY[j] = p.dy;
+    }
+    cache.set(tr, c);
+    return c;
   }
 
   at(tr, T, out) {
@@ -954,6 +986,30 @@ export class PathCore {
     for (const k of ['NOP', 'NP', 'NK', 'HEAP']) L[k] = take(cap, 4);
     for (const k of ['HKEY', 'HGEN', 'HSHUT']) L[k] = take(hs, 4);
     L.HVAL = take(hs, 8);
+    const sw = this.world,
+      sminx = sw.min.x,
+      sminy = sw.min.y,
+      sCell = Math.max(STILL_CELL_MIN, Math.max(sw.max.x - sminx, sw.max.y - sminy) / STILL_CELLS),
+      sgw = ns ? Math.max(1, Math.ceil((sw.max.x - sminx) / sCell)) : 0,
+      sgh = ns ? Math.max(1, Math.ceil((sw.max.y - sminy) / sCell)) : 0,
+      clampCell = (v, n) => (v < 0 ? 0 : v > n - 1 ? n - 1 : v),
+      spans = [];
+    let sTotal = 0;
+    for (let i = 0; i < ns && sgw; i++) {
+      const e = ss[i],
+        r = e.ext.r,
+        c0 = clampCell(Math.floor((e.x - r - sminx) / sCell), sgw),
+        c1 = clampCell(Math.floor((e.x + r - sminx) / sCell), sgw),
+        r0 = clampCell(Math.floor((e.y - r - sminy) / sCell), sgh),
+        r1 = clampCell(Math.floor((e.y + r - sminy) / sCell), sgh);
+      spans.push(c0, c1, r0, r1);
+      sTotal += (c1 - c0 + 1) * (r1 - r0 + 1);
+    }
+    const sCells = sgw * sgh;
+    L.SHEAD = take(sCells + 1, 4);
+    L.SLIST = take(sTotal, 4);
+    L.SSTAMP = take(ns, 4);
+    L.SCAND = take(ns, 4);
     const need = Math.ceil(at / 65536) - mem.buffer.byteLength / 65536;
     if (need > 0) mem.grow(need);
     const buf = mem.buffer,
@@ -994,7 +1050,11 @@ export class PathCore {
       'HKEY',
       'HGEN',
       'HSHUT',
-      'HVAL'
+      'HVAL',
+      'SHEAD',
+      'SLIST',
+      'SSTAMP',
+      'SCAND'
     ];
     I(L.table, 40).set(order.map(k => L[k]));
     ex.setup(L.table, hs - 1, cap);
@@ -1035,7 +1095,21 @@ export class PathCore {
       TR[k] = cand[k].ext.r;
     }
     I(L.HGEN, hs).fill(0);
-    this.wl = { L, cap, ns, nT, S, cells };
+    if (sgw) {
+      const head = I(L.SHEAD, sCells + 1),
+        list = I(L.SLIST, sTotal);
+      head.fill(0);
+      for (let i = 0; i < ns; i++)
+        for (let r = spans[i * 4 + 2]; r <= spans[i * 4 + 3]; r++)
+          for (let c = spans[i * 4]; c <= spans[i * 4 + 1]; c++) head[r * sgw + c + 1]++;
+      for (let k = 0; k < sCells; k++) head[k + 1] += head[k];
+      const fill = head.slice(0, sCells);
+      for (let i = 0; i < ns; i++)
+        for (let r = spans[i * 4 + 2]; r <= spans[i * 4 + 3]; r++)
+          for (let c = spans[i * 4]; c <= spans[i * 4 + 1]; c++) list[fill[r * sgw + c]++] = i;
+      I(L.SSTAMP, ns).fill(0);
+    }
+    this.wl = { L, cap, ns, nT, S, cells, still: [sgw, sgh, sCell, sminx, sminy] };
   }
 
   wasmSearch(u, q, gx, gy, o) {
@@ -1147,6 +1221,7 @@ export class PathCore {
       K.matchFace ?? (10 * Math.PI) / 180,
       K.pen180 ?? 1.5
     ]);
+    P.set(this.wl.still, 70);
     const found = ex.search();
     const R = new Float64Array(mem.buffer, L.P, 80);
     this.dbg = { pops: R[60], pushed: R[61], best: R[62], op4: R[64], op4hard: R[65], farthestTravelled: R[67], N, D: step };

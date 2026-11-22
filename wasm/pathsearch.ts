@@ -43,6 +43,16 @@ let HKEY: usize = 0,
   HGEN: usize = 0,
   HSHUT: usize = 0;
 let HVAL: usize = 0;
+let SHEAD: usize = 0,
+  SLIST: usize = 0,
+  SSTAMP: usize = 0,
+  SCAND: usize = 0;
+let sgw: i32 = 0,
+  sgh: i32 = 0,
+  srun: i32 = 0,
+  sCell: f64 = 0,
+  sminx: f64 = 0,
+  sminy: f64 = 0;
 let HMASK: i32 = 0,
   CAP: i32 = 0,
   gen: i32 = 0,
@@ -99,6 +109,10 @@ export function setup(table: usize, hmask: i32, cap: i32): void {
   HGEN = <usize>ii(table, 31);
   HSHUT = <usize>ii(table, 32);
   HVAL = <usize>ii(table, 33);
+  SHEAD = <usize>ii(table, 34);
+  SLIST = <usize>ii(table, 35);
+  SSTAMP = <usize>ii(table, 36);
+  SCAND = <usize>ii(table, 37);
   HMASK = hmask;
   CAP = cap;
 }
@@ -174,6 +188,50 @@ function touch(
   return false;
 }
 
+function stillBits(i: i32, qdx: f64, qdy: f64, ax: f64, ay: f64, bx: f64, by: f64): i32 {
+  const field = f(SF, i) != 0;
+  const ex = f(SX, i),
+    ey = f(SY, i),
+    R = (field ? qr : sqr) + f(SR, i);
+  const px = ax - ex,
+    py = ay - ey,
+    vx = bx - ax,
+    vy = by - ay,
+    vv = vx * vx + vy * vy;
+  let k = vv > 1e-9 ? -(px * vx + py * vy) / vv : 0.0;
+  k = k < 0 ? 0 : k > 1 ? 1 : k;
+  const cx = px + vx * k,
+    cy = py + vy * k;
+  if (cx * cx + cy * cy > R * R) return 0;
+  let hit = false;
+  if (field) hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), 1, 0, ex, ey, ex, ey);
+  else {
+    const keep = qsd;
+    qsd = sqsd;
+    hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), f(SDX, i), f(SDY, i), ex, ey, ex, ey);
+    qsd = keep;
+  }
+  return hit ? (field ? FIELD : STILL) : 0;
+}
+
+@inline function scol(x: f64): i32 {
+  const c = <i32>Math.floor((x - sminx) / sCell);
+  return c < 0 ? 0 : c > sgw - 1 ? sgw - 1 : c;
+}
+
+@inline function srow(y: f64): i32 {
+  const c = <i32>Math.floor((y - sminy) / sCell);
+  return c < 0 ? 0 : c > sgh - 1 ? sgh - 1 : c;
+}
+
+function readStillGrid(): void {
+  sgw = <i32>f(P, 70);
+  sgh = <i32>f(P, 71);
+  sCell = f(P, 72);
+  sminx = f(P, 73);
+  sminy = f(P, 74);
+}
+
 function sweep(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64): i32 {
   let bits: i32 = 0;
   let qdx = bx - ax,
@@ -191,32 +249,37 @@ function sweep(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64): i32 {
     maxx = Math.max(ax, bx) + pad,
     miny = Math.min(ay, by) - pad,
     maxy = Math.max(ay, by) + pad;
-  for (let i = 0; i < nStill; i++) {
-    const field = f(SF, i) != 0;
-    const ex = f(SX, i),
-      ey = f(SY, i),
-      R = (field ? qr : sqr) + f(SR, i);
-    const px = ax - ex,
-      py = ay - ey,
-      vx = bx - ax,
-      vy = by - ay,
-      vv = vx * vx + vy * vy;
-    let k = vv > 1e-9 ? -(px * vx + py * vy) / vv : 0.0;
-    k = k < 0 ? 0 : k > 1 ? 1 : k;
-    const cx = px + vx * k,
-      cy = py + vy * k;
-    if (cx * cx + cy * cy > R * R) continue;
-    let hit = false;
-    if (field) hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), 1, 0, ex, ey, ex, ey);
-    else {
-      const keep = qsd;
-      qsd = sqsd;
-      hit = touch(qdx, qdy, ax, ay, bx, by, f(SAX, i), f(SSD, i), f(SDX, i), f(SDY, i), ex, ey, ex, ey);
-      qsd = keep;
+  if (sgw > 0) {
+    const run = ++srun;
+    let n: i32 = 0;
+    const x0 = scol(minx),
+      x1 = scol(maxx),
+      y0 = srow(miny),
+      y1 = srow(maxy);
+    for (let cy = y0; cy <= y1; cy++)
+      for (let cx = x0; cx <= x1; cx++) {
+        const c = cy * sgw + cx;
+        for (let j = ii(SHEAD, c), e = ii(SHEAD, c + 1); j < e; j++) {
+          const i = ii(SLIST, j);
+          if (ii(SSTAMP, i) == run) continue;
+          is(SSTAMP, i, run);
+          let at = n++;
+          while (at > 0 && ii(SCAND, at - 1) > i) {
+            is(SCAND, at, ii(SCAND, at - 1));
+            at--;
+          }
+          is(SCAND, at, i);
+        }
+      }
+    for (let m = 0; m < n; m++) {
+      bits |= stillBits(ii(SCAND, m), qdx, qdy, ax, ay, bx, by);
+      if (bits & STILL) break;
     }
-    if (hit) bits |= field ? FIELD : STILL;
-    if (bits & STILL) break;
-  }
+  } else
+    for (let i = 0; i < nStill; i++) {
+      bits |= stillBits(i, qdx, qdy, ax, ay, bx, by);
+      if (bits & STILL) break;
+    }
   const run = ++irun;
   let b0 = <i32>Math.floor(t0 / TB);
   if (b0 < 0) b0 = 0;
@@ -512,6 +575,7 @@ export function search(): i32 {
   wminy = f(P, 18);
   wmaxx = f(P, 19);
   wmaxy = f(P, 20);
+  readStillGrid();
   v = f(P, 21);
   om = f(P, 22);
   acc = f(P, 23);
@@ -702,5 +766,6 @@ export function sweepOnly(ax: f64, ay: f64, bx: f64, by: f64, t0: f64, t1: f64):
   wminy = f(P, 18);
   wmaxx = f(P, 19);
   wmaxy = f(P, 20);
+  readStillGrid();
   return sweep(ax, ay, bx, by, t0, t1);
 }
