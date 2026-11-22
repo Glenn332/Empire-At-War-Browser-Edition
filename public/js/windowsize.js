@@ -27,8 +27,8 @@ export async function windowSize(w = 0, h = 0) {
 export async function windowSizes() {
   const now = await windowSize();
   if (!now || !now.w) return null;
-  const mw = now.mw || screen.width * devicePixelRatio,
-    mh = now.mh || screen.height * devicePixelRatio;
+  const mw = now.fw || now.mw || screen.availWidth * devicePixelRatio,
+    mh = now.fh || now.mh || screen.availHeight * devicePixelRatio;
   const list = SIZES.filter(([w, h]) => w <= mw && h <= mh);
   if (!list.some(([w, h]) => w === mw && h === mh)) list.push([mw, mh]);
   if (!list.some(([w, h]) => w === now.w && h === now.h)) list.push([now.w, now.h]);

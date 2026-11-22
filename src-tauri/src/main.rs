@@ -568,32 +568,44 @@ impl Server {
             let num = |k: &str| arg(k).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
             let (w, h) = (num("w"), num("h"));
             if let Some(win) = app.get_webview_window("main") {
+                let monitor = win.current_monitor().ok().flatten();
+                let frame = match (win.outer_size(), win.inner_size()) {
+                    (Ok(o), Ok(i)) => {
+                        let side = o.width.saturating_sub(i.width) / 2;
+                        (side, o.height.saturating_sub(i.height).saturating_sub(side))
+                    }
+                    _ => (0, 0),
+                };
+                let room = monitor.as_ref().map(|m| {
+                    let a = m.work_area();
+                    (a.position, a.size.width, a.size.height.saturating_sub(frame.1))
+                });
                 if w >= 640 && h >= 480 && !win.is_fullscreen().unwrap_or(false) {
-                    let fits = match (
-                        win.current_monitor().ok().flatten(),
-                        win.outer_size(),
-                        win.inner_size(),
-                    ) {
-                        (Some(m), Ok(o), Ok(i)) => {
-                            let area = m.work_area().size;
-                            w + o.width.saturating_sub(i.width) <= area.width
-                                && h + o.height.saturating_sub(i.height) <= area.height
+                    match room {
+                        Some((at, rw, rh)) if w <= rw && h <= rh => {
+                            let _ = win.unmaximize();
+                            let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                            let x = at.x + ((rw - w) / 2) as i32 - frame.0 as i32;
+                            let y = at.y + ((rh - h) / 2) as i32;
+                            let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
                         }
-                        _ => true,
-                    };
-                    if fits {
-                        let _ = win.unmaximize();
-                        let _ = win.set_size(tauri::PhysicalSize::new(w, h));
-                        let _ = win.center();
-                    } else {
-                        let _ = win.maximize();
+                        Some(_) => {
+                            let _ = win.maximize();
+                        }
+                        None => {
+                            let _ = win.unmaximize();
+                            let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                            let _ = win.center();
+                        }
                     }
                 }
                 let size = win.inner_size().ok();
-                let monitor = win.current_monitor().ok().flatten().map(|m| *m.size());
+                let full = monitor.as_ref().map(|m| *m.size());
                 return json(&serde_json::json!({
                     "w": size.map(|s| s.width), "h": size.map(|s| s.height),
-                    "mw": monitor.map(|s| s.width), "mh": monitor.map(|s| s.height)
+                    "mw": full.map(|s| s.width), "mh": full.map(|s| s.height),
+                    "fw": room.map(|r| r.1), "fh": room.map(|r| r.2),
+                    "max": win.is_maximized().unwrap_or(false)
                 }));
             }
             return json(&serde_json::json!({ "ok": false }));
