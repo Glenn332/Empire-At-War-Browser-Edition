@@ -828,7 +828,7 @@ class Game {
     this.missTicker?.stop();
     this.lock?.close();
     if (this.mirror?.worker) this.mirror.stop();
-    this.world?.paths?.worker?.terminate();
+    this.world?.paths?.stop?.();
     this.front?.dispose();
     this.cine?.stop();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();

@@ -72,6 +72,7 @@ function run() {
 }
 
 function batch(m) {
+  objs.clear();
   world(m.world);
   const answers = [],
     statesPerSearch = searchBudget(core.K);

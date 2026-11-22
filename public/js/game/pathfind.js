@@ -28,6 +28,7 @@ const MOVING_GOAL_REPLAN = 150;
 const BATCH_DELAY = 20;
 const BATCH_MAX = 8;
 const RETRY = 2;
+const routeThreads = () => Math.min(4, Math.max(2, Math.floor((globalThis.navigator?.hardwareConcurrency || 4) / 3)));
 
 export class Pathfinder extends PathCore {
   constructor(world) {
@@ -110,24 +111,46 @@ export class Pathfinder extends PathCore {
       this.expBudget = searchBudget(this.K);
       return;
     }
-    const wk = this.worker;
-    if (this.workerWasm === undefined && !/[?&]nowasm/.test(location.search))
-      await new Promise(r => {
-        const was = wk.onmessage;
-        wk.onmessage = e => {
-          was(e);
-          if (e.data.kind === 'wasm') r();
-        };
-        setTimeout(r, 10000);
-      });
-    wk.onmessage = e => {
-      if (e.data.kind === 'batch') {
-        this.arrived.set(e.data.bid, e.data.answers);
-        this.onArrive?.();
-      } else if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
-    };
-    wk.onerror = e => console.error('route thread', e.message || e);
-    wk.postMessage({ kind: 'fixed' });
+    const noWasm = /[?&]nowasm/.test(location.search),
+      wasmOf = (wk, known) =>
+        known !== undefined || noWasm
+          ? Promise.resolve(noWasm ? false : known)
+          : new Promise(r => {
+              const was = wk.onmessage;
+              wk.onmessage = e => {
+                was?.(e);
+                if (e.data.kind === 'wasm') r(!!e.data.ok);
+              };
+              setTimeout(() => r(undefined), 10000);
+            });
+    const extra = [];
+    for (let i = 1; i < routeThreads(); i++) {
+      try {
+        const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+        wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, noWasm });
+        extra.push(wk);
+      } catch {
+        break;
+      }
+    }
+    const [own, ...others] = await Promise.all([wasmOf(this.worker, this.workerWasm), ...extra.map(wk => wasmOf(wk))]);
+    if (own !== undefined) this.workerWasm = own;
+    this.pool = [this.worker];
+    extra.forEach((wk, i) => (others[i] === own ? this.pool.push(wk) : wk.terminate()));
+    for (const wk of this.pool) {
+      wk.onmessage = e => {
+        if (e.data.kind === 'batch') {
+          this.arrived.set(e.data.bid, e.data.answers);
+          this.onArrive?.();
+        }
+      };
+      wk.onerror = e => console.error('route thread', e.message || e);
+      wk.postMessage({ kind: 'fixed' });
+    }
+  }
+
+  stop() {
+    for (const wk of new Set([this.worker, ...(this.pool || [])])) wk?.terminate();
   }
 
   ready() {
@@ -140,7 +163,8 @@ export class Pathfinder extends PathCore {
     if (!this.fixed || !this.worker || !this.batch.length) return;
     const bid = ++this.bid;
     this.due.set(this.stepNo + BATCH_DELAY, bid);
-    this.worker.postMessage({ kind: 'batch', bid, world: this.snapshot(), finds: this.batch });
+    const pool = this.pool || [this.worker];
+    pool[bid % pool.length].postMessage({ kind: 'batch', bid, world: this.snapshot(), finds: this.batch });
     this.batch = [];
   }
 
