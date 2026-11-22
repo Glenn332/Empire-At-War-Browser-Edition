@@ -1612,7 +1612,7 @@ body:not(.original-hud) .heroframe {
 .cinematic #view canvas.overlay {
   display: none;
 }
-.cinematic #view canvas {
+.cinematic:not(.attract) #view canvas {
   cursor: none;
 }
 .shooter-on #hud > *:not(#bench),
