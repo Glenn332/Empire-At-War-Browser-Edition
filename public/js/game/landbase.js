@@ -1506,6 +1506,9 @@ export async function addHouse(world, o) {
   const u = await world.finishSite(site, t, side);
   if (!u) return null;
   u.relevant = false;
+  const spawners = (world.spawners ||= new Map()),
+    kind = t.name.toUpperCase();
+  if (!spawners.has(kind)) spawners.set(kind, { side, paid: false });
   u.house = {
     pack: t.str('Spawned_Indigenous_Pack_Type') || t.list('Spawned_Indigenous_Units_Type')[0],
     every: Math.max(2, t.num('Spawned_Indigenous_Units_Delay_Seconds', 20)),
@@ -1542,7 +1545,19 @@ export function activateSpawners(world, name, f) {
   return true;
 }
 
+function payForSpawners(world) {
+  if (!world.spawners || !(world.spawnerReward > 0)) return;
+  for (const [kind, s] of world.spawners) {
+    if (s.paid || world.units.some(u => u.house && !u.dead && u.type.name.toUpperCase() === kind)) continue;
+    s.paid = true;
+    world.factions.forEach((f, side) => {
+      if (world.spawnerSides?.[side] && !world.ally(side, s.side)) world.credits[side] = Math.max(0, world.credits[side] + world.spawnerReward);
+    });
+  }
+}
+
 function tickHouses(world, dt) {
+  payForSpawners(world);
   for (const u of world.units) {
     const h = u.house;
     if (h && h.leash > 0 && !u.dead)

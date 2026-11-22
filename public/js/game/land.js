@@ -61,7 +61,9 @@ const _tilt = new THREE.Quaternion(),
 const _paint = new THREE.Color();
 const _ms0 = new THREE.Vector3(),
   _ms1 = new THREE.Vector3(),
-  _msM = new THREE.Matrix4();
+  _msM = new THREE.Matrix4(),
+  _msP = new THREE.Vector3(),
+  _msQ = new THREE.Quaternion();
 const _ropeAt = new THREE.Vector3();
 const _q = new THREE.Quaternion(),
   _X = new THREE.Vector3(1, 0, 0),
@@ -5531,7 +5533,7 @@ export class LandWorld {
     let fx = dx / d,
       fy = dy / d,
       fz = dz / d;
-    if ((cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET) && M && u.inst) {
+    if ((cat === CAT.ROCKET || cat === CAT.MPTL_ROCKET) && M && u.inst && !this.fixed) {
       const late = (u.poseDt || 0) + (u.lagDt || 0);
       if (late > 0 && !this.interp) {
         u.poseDt = 0;
@@ -5921,7 +5923,8 @@ export class LandWorld {
           h = Math.max(r, o.aimZ * 0.6),
           reach = Math.max(r, o.collBall || 0) + step;
         if ((o.x - s.x) ** 2 + (o.y - s.y) ** 2 > reach * reach) continue;
-        if (C && (Math.max(z0, s.z) < o.holder.position.z + o.collLo - r || Math.min(z0, s.z) > o.holder.position.z + o.collHi + r)) continue;
+        const oz = this.fixed && !o.structure ? o.z : o.holder.position.z;
+        if (C && (Math.max(z0, s.z) < oz + o.collLo - r || Math.min(z0, s.z) > oz + o.collHi + r)) continue;
         const tall = !C && this.shooter && o.kind === 'INFANTRY' ? this.shooter.heightOf(o) : 0;
         let tt = C
           ? this.meshStrike(o, x0, y0, z0, s.x, s.y, s.z)
@@ -6021,7 +6024,13 @@ export class LandWorld {
         r = o.inst.root;
       o.collT = this.time;
       o.collInv ??= new THREE.Matrix4();
-      o.collInv.compose(h.position, h.quaternion, h.scale);
+      if (this.fixed)
+        o.collInv.compose(
+          _msP.set(o.x, o.y, o.z),
+          _msQ.setFromAxisAngle(_Z, (o.loco?.sec && o.face !== undefined ? o.face : o.heading) + Math.PI / 2),
+          h.scale
+        );
+      else o.collInv.compose(h.position, h.quaternion, h.scale);
       if (r !== h) o.collInv.multiply(_msM.compose(r.position, r.quaternion, r.scale));
       o.collInv.invert();
     }

@@ -719,6 +719,18 @@ export class LandGame {
     if (shooterWanted(setup)) world.shooter = this.shooter = new Shooter(this);
     world.autofireSides = new Set(!setup.net && !this.observer && this.me >= 0 && globalThis.autofireDefault ? [this.me] : []);
     world.isHumanSide = s => !!this.players?.[s]?.human;
+    {
+      const c = setup.campaign,
+        up = s => String(s || '').toUpperCase(),
+        galaxyPlayers = c?.galaxy?.players || [];
+      world.spawnerReward =
+        c && !c.linked && !setup.linkedTactical && !setup.tacticalStoryPlot
+          ? Math.trunc(db.constants.num('Indigenous_Spawn_Destruction_Reward', 0))
+          : 0;
+      world.spawnerSides = this.factions.map(
+        (f, s) => !!this.players?.[s]?.human && !galaxyPlayers.find(q => up(q.faction) === up(f))?.tutorial
+      );
+    }
     const treasury = setup.campaign?.treasury;
     if (treasury)
       world.tacticalSessions = this.factions.map((f, side) => {
@@ -1330,6 +1342,7 @@ export class LandGame {
         houses: w.units
           .filter(u => u.house && !u.dead)
           .map(u => ({ x: Math.round(u.x), y: Math.round(u.y), hp: r1(u.health), timer: r1(u.house.timer), on: u.house.state })),
+        spawnersPaid: [...(w.spawners || [])].filter(([, s]) => s.paid).map(([kind]) => kind),
         queues: w.queues.map(q => ({
           units: q.units.map(x => [x.type.name, r1(x.left)]),
           upgrades: q.upgrades.map(x => [x.type.name, r1(x.left)])
@@ -1686,6 +1699,10 @@ export class LandGame {
           if (sv.on !== undefined) u.house.state = sv.on;
         }
       }
+    for (const kind of b.spawnersPaid || []) {
+      const s = w.spawners?.get(kind);
+      if (s) s.paid = true;
+    }
     if (b.weather && w.weather.phases.length) {
       const wx = w.weather;
       wx.i = b.weather.i % wx.phases.length;

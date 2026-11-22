@@ -154,13 +154,6 @@ export function setSandboxObjectives(host, game, plot, constants) {
         reward: 'OBJECTIVE_COMPLETE',
         rewards: [text]
       });
-      host.addEvent(plot, {
-        name: u.type.name + '_01',
-        type: 'STORY_TRIGGER',
-        prereqs: [[u.type.name + '_00']],
-        reward: 'CREDITS',
-        rewards: [String(Math.trunc(C.num('Indigenous_Spawn_Destruction_Reward', 0)))]
-      });
     }
   }
   return true;
