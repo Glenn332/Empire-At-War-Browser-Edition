@@ -9,7 +9,7 @@ import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { inApp } from '../platform.js';
-import { setMenuOpen } from '../bugreportui.js';
+import '../bugreportui.js';
 import { loadContent, contentDifferences } from '../content.js';
 import { readReplayFile, startReplay, REPLAY_EXT } from './replay.js';
 import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
@@ -105,7 +105,6 @@ export class Menus {
     const below = this.stack[this.stack.length - 1];
     if (below) below.veil.style.display = 'none';
     this.stack.push(dlg);
-    setMenuOpen(this, true);
     return dlg;
   }
 
@@ -115,7 +114,6 @@ export class Menus {
     const old = this.stack.pop();
     if (old) old.close();
     this.stack.push(dlg);
-    setMenuOpen(this, true);
     return dlg;
   }
 
@@ -125,13 +123,11 @@ export class Menus {
     const below = this.stack[this.stack.length - 1];
     if (below) below.veil.style.display = '';
     else this.releasePause();
-    setMenuOpen(this, this.stack.length > 0);
   }
 
   closeAll() {
     while (this.stack.length) this.stack.pop().close();
     this.releasePause();
-    setMenuOpen(this, false);
   }
 
   releasePause() {

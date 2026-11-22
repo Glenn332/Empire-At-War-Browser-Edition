@@ -2451,30 +2451,10 @@ body.attract #buildTag {
   display: none;
 }
 
-.bug-report-button {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: 1000;
-  padding: 6px 12px;
-  font: 13px/1.2 system-ui, sans-serif;
-  color: #e8eef5;
-  background: rgba(20, 28, 40, 0.85);
-  border: 1px solid rgba(160, 190, 220, 0.5);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.bug-report-button:hover:not(:disabled) {
-  background: rgba(40, 56, 80, 0.95);
-}
-.bug-report-button:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
 .bug-report-toast {
   position: fixed;
   left: 12px;
-  bottom: 52px;
+  bottom: 12px;
   z-index: 1000;
   max-width: min(520px, calc(100vw - 24px));
   padding: 8px 12px;
@@ -2485,6 +2465,10 @@ body.attract #buildTag {
   border-radius: 4px;
   overflow-wrap: anywhere;
   cursor: pointer;
+}
+.bug-report-toast[data-kind='busy'] {
+  border-color: rgba(160, 190, 220, 0.5);
+  cursor: progress;
 }
 .bug-report-toast[data-kind='bad'] {
   border-color: rgba(230, 110, 100, 0.7);
