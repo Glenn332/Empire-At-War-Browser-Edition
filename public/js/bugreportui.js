@@ -1,4 +1,5 @@
 import { requestTabCapture, saveBugReport } from './bugreport.js';
+import { startPerfSampler } from './perfsampler.js';
 
 export const BUG_REPORT_HOTKEY = 'Ctrl+Shift+B';
 const BUTTON_LABEL = 'Report a bug';
@@ -93,6 +94,7 @@ function isHotkey(event) {
 
 if (typeof window !== 'undefined' && !window.bugReportHotkey) {
   window.bugReportHotkey = true;
+  startPerfSampler();
   addEventListener(
     'keydown',
     event => {

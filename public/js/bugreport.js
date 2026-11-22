@@ -1,6 +1,7 @@
 import { BUILD } from './build.js';
 import { inApp } from './platform.js';
 import { makeZip } from './zipwriter.js';
+import { collectPerformance, cpuProfile, profileText, performanceWarnings, performanceLines } from './perfreport.js';
 
 const SETTINGS_SKIPPED = new Set(['swr.lobby', 'swr.mpname']);
 const MAX_SETTING_LENGTH = 4000;
@@ -317,15 +318,6 @@ async function currentUnits(game, lock) {
   return null;
 }
 
-async function performanceInfo() {
-  try {
-    const { diag } = await import('./diag.js');
-    return diag.report(true);
-  } catch (error) {
-    return { failed: String(error) };
-  }
-}
-
 async function replayFile(game) {
   try {
     const { captureReplay, replayUnavailableReason } = await import('./game/replay.js');
@@ -454,7 +446,7 @@ function replayLine(replay) {
   return `included (battle.swrreplay: ${inputs.length} inputs, ${checks.length} checkpoints, ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} of battle, import it from Load Game)`;
 }
 
-function summaryText({ created, game, system, app, content, multiplayer, picture, save, replay }) {
+function summaryText({ created, game, system, app, content, multiplayer, picture, save, replay, performanceReport, profileResult }) {
   const state = gameState(game);
   const lines = [
     'Empire at War Browser Edition - bug report',
@@ -475,6 +467,9 @@ function summaryText({ created, game, system, app, content, multiplayer, picture
     `Save game: ${save ? 'included (savegame.swrsave, load it from Load Game)' : 'not included'}`,
     `Replay: ${replayLine(replay)}`,
     '',
+    'Performance:',
+    ...performanceLines(performanceReport, performanceWarnings(performanceReport, system, app?.power), profileResult),
+    '',
     'Last warnings and errors:',
     ...(problemLines(25).length ? problemLines(25) : ['  none'])
   ];
@@ -484,17 +479,22 @@ function summaryText({ created, game, system, app, content, multiplayer, picture
 export async function createBugReport({ game = window.game, hideDuringCapture = [], tabCapture = null } = {}) {
   const created = new Date();
   const { picture, screenText } = await captureScreen(tabCapture, hideDuringCapture);
+  const profileResult = await cpuProfile(game);
   const [system, app, content, multiplayer, performanceReport, save, replay] = await Promise.all([
     systemInfo(),
     appInfo(),
     contentInfo(),
     multiplayerInfo(game),
-    performanceInfo(),
+    collectPerformance(game).catch(error => ({ failed: String(error) })),
     saveGameFile(game),
     replayFile(game)
   ]);
   const files = [
-    { name: 'report.txt', data: summaryText({ created, game, system, app, content, multiplayer, picture, save, replay }) },
+    {
+      name: 'report.txt',
+      data: summaryText({ created, game, system, app, content, multiplayer, picture, save, replay, performanceReport, profileResult })
+    },
+    { name: 'profile.txt', data: profileText(profileResult) },
     { name: 'console.txt', data: consoleText() },
     { name: 'screen.txt', data: screenText + '\n' },
     { name: 'system.json', data: safeJson({ ...system, app }) },
