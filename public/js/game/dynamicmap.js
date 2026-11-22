@@ -218,6 +218,40 @@ const padBuilds = t =>
     .filter(Boolean);
 
 let vocab = null;
+let mapStations = new Map();
+const isStarBase = type => type.tag.toLowerCase() === 'starbase';
+function learnMapStations(maps) {
+  const factionOrder = [...db.factions.values()],
+    tally = new Map();
+  for (const map of maps)
+    for (const object of map.objects) {
+      const faction = object.owner >= 0 && factionOrder[object.owner];
+      if (!faction || !isStarBase(object.type)) continue;
+      const key = faction.name.toUpperCase();
+      if (!tally.has(key)) tally.set(key, new Map());
+      const counts = tally.get(key);
+      counts.set(object.type, (counts.get(object.type) || 0) + 1);
+    }
+  const stations = new Map();
+  for (const [faction, counts] of tally) {
+    const ranked = [...counts].sort(
+      ([typeA, countA], [typeB, countB]) =>
+        typeA.num('Base_Level', 1) - typeB.num('Base_Level', 1) || countB - countA || typeA.name.localeCompare(typeB.name)
+    );
+    stations.set(faction, ranked[0][0]);
+  }
+  return stations;
+}
+export const dynamicMapStation = faction => mapStations.get((faction || '').toUpperCase()) || null;
+const startMarkerType = (kind, slot) => {
+  const playerKind = kind === 'Spawn_Point_Marker' ? 'Spawn_Point_Marker' : 'Position_Marker';
+  return (
+    db.type(`Team_${String(slot).padStart(2, '0')}_${kind}`) ||
+    db.type(`Team_00_${kind}`) ||
+    db.type(`Player_${slot}_${playerKind}`) ||
+    db.type(`Player_0_${playerKind}`)
+  );
+};
 export const warmDynamicMaps = () => vocabulary().catch(() => null);
 const PROP_REACH = 1500;
 const propReach = new Map(),
@@ -276,6 +310,7 @@ function vocabulary() {
         if (!t.num('Space_Obstacle_Radius', 0)) propReach.set(t, r);
       })
     );
+    mapStations = learnMapStations(maps);
     return classify(maps);
   })();
   return vocab;
@@ -591,7 +626,7 @@ export async function generateDynamicMap(name, opts = {}) {
     const face = Math.atan2(f.y, f.x) * DEG;
     const team = (kind, p, heading) =>
       images(p.x, p.y).forEach(q => {
-        const t = db.type(`Team_${String(q.j).padStart(2, '0')}_${kind}`) || db.type(`Team_00_${kind}`);
+        const t = startMarkerType(kind, q.j);
         if (t) add(t, q.x, q.y, 0, [0, 0, heading + q.turn], { team: q.j, role: kind.toUpperCase() });
       });
     team('Space_Station', { x: bx, y: by }, hs * DEG);

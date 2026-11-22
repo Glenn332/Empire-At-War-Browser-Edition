@@ -46,7 +46,7 @@ import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
 import { InstantBattle, placeInstantBattle, shipsOf, leftOutOfInstant } from './game/instantbattle.js';
 import { openInstantBattle } from './game/instantmenu.js';
-import { isDynamic, dynamicMaps, warmDynamicMaps } from './game/dynamicmap.js';
+import { isDynamic, dynamicMaps, warmDynamicMaps, dynamicMapStation } from './game/dynamicmap.js';
 import { showSummary } from './game/summary.js';
 import { showLoadScreen, endLoadScreen, activeLoadScreen, loadProgress } from './game/loadscreen.js';
 import { LandGame } from './game/landgame.js';
@@ -384,7 +384,7 @@ class Game {
     Game.loading = this;
     await this.showLoading(map);
 
-    const stationType = (f, marker = null) => skirmishStation(f, marker);
+    const stationType = (f, marker = null) => skirmishStation(f, marker) || (!marker && isDynamic(mapFile) ? dynamicMapStation(f) : null);
     const factions = (this.artFactions = [...new Set(teamFactions)]);
     const names = (this.artNames = new Set()),
       seen = (this.artSeen = new Set()),
