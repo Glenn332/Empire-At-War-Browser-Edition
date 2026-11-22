@@ -326,6 +326,18 @@ async function performanceInfo() {
   }
 }
 
+async function replayFile(game) {
+  try {
+    const { captureReplay, replayUnavailableReason } = await import('./game/replay.js');
+    const why = replayUnavailableReason(game);
+    if (why) return { why };
+    const replay = await captureReplay(game);
+    return replay ? { replay } : { why: 'the battle thread did not answer' };
+  } catch (error) {
+    return { why: String(error.message || error) };
+  }
+}
+
 async function saveGameFile(game) {
   if (!game || gameMode(game) === 'menu' || game.tacticalCinematics?.on) return null;
   try {
@@ -435,7 +447,14 @@ function stamp(date) {
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}_${two(date.getHours())}-${two(date.getMinutes())}-${two(date.getSeconds())}`;
 }
 
-function summaryText({ created, game, system, app, content, multiplayer, picture, save }) {
+function replayLine(replay) {
+  if (!replay?.replay) return `not included (${replay?.why || 'unknown reason'})`;
+  const { until, inputs, checks } = replay.replay;
+  const seconds = Math.round(until / 30);
+  return `included (battle.swrreplay: ${inputs.length} inputs, ${checks.length} checkpoints, ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} of battle, import it from Load Game)`;
+}
+
+function summaryText({ created, game, system, app, content, multiplayer, picture, save, replay }) {
   const state = gameState(game);
   const lines = [
     'Empire at War Browser Edition - bug report',
@@ -454,6 +473,7 @@ function summaryText({ created, game, system, app, content, multiplayer, picture
     `Console: ${Object.entries(window.swrConsoleLog?.counts || {}).map(([level, count]) => `${count} ${level}`).join(', ') || 'not recorded'}`,
     `Screenshot: ${picture ? 'included' : 'not included (screen capture was declined or is not available)'}`,
     `Save game: ${save ? 'included (savegame.swrsave, load it from Load Game)' : 'not included'}`,
+    `Replay: ${replayLine(replay)}`,
     '',
     'Last warnings and errors:',
     ...(problemLines(25).length ? problemLines(25) : ['  none'])
@@ -464,16 +484,17 @@ function summaryText({ created, game, system, app, content, multiplayer, picture
 export async function createBugReport({ game = window.game, hideDuringCapture = [], tabCapture = null } = {}) {
   const created = new Date();
   const { picture, screenText } = await captureScreen(tabCapture, hideDuringCapture);
-  const [system, app, content, multiplayer, performanceReport, save] = await Promise.all([
+  const [system, app, content, multiplayer, performanceReport, save, replay] = await Promise.all([
     systemInfo(),
     appInfo(),
     contentInfo(),
     multiplayerInfo(game),
     performanceInfo(),
-    saveGameFile(game)
+    saveGameFile(game),
+    replayFile(game)
   ]);
   const files = [
-    { name: 'report.txt', data: summaryText({ created, game, system, app, content, multiplayer, picture, save }) },
+    { name: 'report.txt', data: summaryText({ created, game, system, app, content, multiplayer, picture, save, replay }) },
     { name: 'console.txt', data: consoleText() },
     { name: 'screen.txt', data: screenText + '\n' },
     { name: 'system.json', data: safeJson({ ...system, app }) },
@@ -490,6 +511,7 @@ export async function createBugReport({ game = window.game, hideDuringCapture = 
   }
   for (const file of files) if (typeof file.data === 'string') file.data = redactPaths(file.data);
   if (save) files.push({ name: 'savegame.swrsave', data: save });
+  if (replay.replay) files.push({ name: 'battle.swrreplay', data: JSON.stringify(replay.replay) });
   if (picture) files.push({ name: 'screenshot.png', data: picture });
   return { name: `eaw-bug-report_${stamp(created)}.zip`, blob: await makeZip(files, created), picture: !!picture };
 }

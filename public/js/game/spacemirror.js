@@ -73,7 +73,12 @@ export class SpaceMirror {
         const s = this.saves.get('d' + m.id);
         this.saves.delete('d' + m.id);
         s?.res(m);
-      } else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
+      } else if (m.k === 'replaylog') {
+        const s = this.saves.get('r' + m.id);
+        this.saves.delete('r' + m.id);
+        s?.res(m);
+      } else if (m.k === 'replayed') game.replayFinished?.(m);
+      else if (m.k === 'result') game.commandResult(m.cmd, { why: m.why });
       else if (m.k === 'vfs') this.answerFile(m);
       else if (m.k === 'spawnJobs') {
         for (let i = 0; i < m.n; i++) {
@@ -144,6 +149,14 @@ export class SpaceMirror {
     return new Promise((res, rej) => {
       this.saves.set('d' + id, { res, rej });
       this.worker.postMessage({ k: 'diag', id, step });
+    });
+  }
+
+  replayLog() {
+    const id = (this.saveIds = (this.saveIds || 0) + 1);
+    return new Promise(res => {
+      this.saves.set('r' + id, { res });
+      this.worker.postMessage({ k: 'replaylog', id });
     });
   }
 

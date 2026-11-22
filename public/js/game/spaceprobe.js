@@ -28,7 +28,7 @@ export function battleSnapshot(game, save = null, refs = null) {
       pitch: u.pitch || 0,
       mapIndex: u.mapIndex
     }));
-  const { restore, net, ...rest } = game.setup;
+  const { restore, net, replay, ...rest } = game.setup;
   const setup = JSON.parse(
     JSON.stringify(rest, (k, v) =>
       v && typeof v === 'object' && !Array.isArray(v) && v.constructor && v.constructor !== Object ? undefined : v
@@ -60,6 +60,7 @@ export function battleSnapshot(game, save = null, refs = null) {
     rules: w.tacticalRules || null,
     setup,
     net: net ? { seed: game.setup.seed >>> 0 } : null,
+    record: game.recording ? { seed: game.setup.seed >>> 0, replay: replay || null } : null,
     teams: w.teams.map(t => ({
       faction: t.factionName,
       mapSide: t.mapSide,

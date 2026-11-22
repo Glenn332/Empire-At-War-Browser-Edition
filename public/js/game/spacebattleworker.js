@@ -29,10 +29,16 @@ import { InstantRules } from './instantrules.js';
 const TICK = 1 / 30;
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80,
-  AHEAD = 15;
+  AHEAD = 15,
+  CHECK_EVERY = 300,
+  REPLAY_SPEED = 16;
 const nothing = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : nothing), apply: () => undefined });
 
+const fixedSeed = m => (m.net ? m.net.seed : m.record ? m.record.seed : null);
+
 async function setUp(m, events) {
+  const seed = fixedSeed(m);
+  const fixed = seed !== null;
   const ms = {};
   let t = performance.now();
   const lap = k => {
@@ -65,9 +71,9 @@ async function setUp(m, events) {
   await loadPrioritySets().catch(() => null);
   lap('models');
 
-  if (m.net) {
+  if (fixed) {
     resetEntityIds();
-    seedSim(m.net.seed);
+    seedSim(seed);
   }
   const w = new World({
     scene: new THREE.Scene(),
@@ -212,6 +218,7 @@ onmessage = async e => {
 };
 
 async function minds(w, m, map, events, thing) {
+  const fixed = fixedSeed(m) !== null;
   const has = k => (m.switches || []).includes(k);
   const tell =
     name =>
@@ -235,7 +242,7 @@ async function minds(w, m, map, events, thing) {
         console.warn('space worker: scripts', e);
         return null;
       });
-  if (scripts && m.net) {
+  if (scripts && fixed) {
     const named = new Set(),
       known = new Set();
     for (const e of [...w.units, ...(w.squads || [])]) if (e.type) named.add(e.type.str('Lua_Script').trim());
@@ -255,7 +262,7 @@ async function minds(w, m, map, events, thing) {
   }
   if (scripts) {
     game.scripts = w.scripts = scripts;
-    if (!m.net) scripts.budgetMs = 4;
+    if (!fixed) scripts.budgetMs = 4;
     if (has('noplans')) scripts.plansOff = true;
   }
   const ais = (game.ais = m.ai
@@ -288,7 +295,7 @@ async function minds(w, m, map, events, thing) {
       await scripts.prime().catch(() => null);
     }
   }
-  if (m.net) {
+  if (fixed) {
     await w.paths?.deterministic?.();
     if (scripts) await scripts.preloadAll();
   }
@@ -298,7 +305,7 @@ async function minds(w, m, map, events, thing) {
       const G = w.goals,
         first = (turn = (turn + 1) % ais.length);
       if (G) {
-        if (m.net) G.budget = AI_STEP_WORK;
+        if (fixed) G.budget = AI_STEP_WORK;
         else G.deadline = performance.now() + AI_STEP_MS;
       }
       try {
@@ -325,6 +332,7 @@ async function minds(w, m, map, events, thing) {
 }
 
 async function run(m) {
+  const fixed = fixedSeed(m) !== null;
   const events = [],
     spawns = [];
   const { w, ms, ids, map, thing } = await setUp(m, events);
@@ -350,8 +358,44 @@ async function run(m) {
     steps = 0;
   const hashLog = [];
   const said = new Set();
+  const replay = m.record?.replay || null;
+  const replayInputs = new Map();
+  for (const [at, ...entry] of replay?.inputs || []) {
+    if (at >= replay.until) continue;
+    if (!replayInputs.has(at)) replayInputs.set(at, []);
+    replayInputs.get(at).push(entry);
+  }
+  const expectedChecks = new Map(replay?.checks || []);
+  const recording = m.record
+    ? { inputs: (replay?.inputs || []).filter(([at]) => at < replay.until), checks: [], drift: null, checked: 0 }
+    : null;
+  let replaying = !!replay && replay.until > 0;
+  const applyInput = entry => {
+    const [pid, input] = entry;
+    if (pid !== -1) return false;
+    if (input.k === 'direct') applyDirect(w, input.id, input.m);
+    else if (input.k === 'rules') w.tacticalRules = setTacticalRules(input.rules);
+    else if (input.k === 'viewer') w.viewer = w.players.find(p => p.id === input.id) || null;
+    return true;
+  };
+  const checkpoint = () => {
+    if (!recording || steps % CHECK_EVERY !== 0) return;
+    const hash = stateHash(w);
+    if (!replaying) {
+      recording.checks.push([steps, hash]);
+      return;
+    }
+    const expected = expectedChecks.get(steps);
+    if (expected === undefined) return;
+    recording.checks.push([steps, hash]);
+    recording.checked++;
+    if (expected !== hash && recording.drift === null) recording.drift = steps;
+  };
   const step = (cmds, wantHash) => {
     const s = performance.now();
+    if (replaying) cmds = replayInputs.get(steps) || [];
+    else if (recording) for (const entry of cmds) recording.inputs.push([steps, ...entry]);
+    checkpoint();
     let hash;
     if (wantHash) {
       const keep = { step: steps, ids: [], hs: [] };
@@ -359,7 +403,9 @@ async function run(m) {
       hashLog.push(keep);
       if (hashLog.length > 6) hashLog.shift();
     }
-    for (const [pid, cmd] of cmds) {
+    for (const entry of cmds) {
+      if (applyInput(entry)) continue;
+      const [pid, cmd] = entry;
       const player = w.players.find(p => p.id === pid);
       if (!player) continue;
       if (cmd.c === 'left' && !player.left) takeOver(player);
@@ -392,6 +438,12 @@ async function run(m) {
       send(postMessage, message, transfer, said);
     });
     if (steps % 30 === 0) stepMs = 0;
+    if (replaying && steps >= replay.until) {
+      replaying = false;
+      paused = true;
+      commands.length = 0;
+      postMessage({ k: 'replayed', step: steps, checked: recording.checked, drift: recording.drift });
+    }
   };
   const held = [];
   const drain = () => {
@@ -400,12 +452,21 @@ async function run(m) {
       step(c.cmds, c.hash);
     }
   };
-  if (w.paths) w.paths.onArrive = drain;
   const commands = [];
   let speed = 1,
     paused = false,
     unseen = 0,
-    waiting = false;
+    waiting = false,
+    routesPending = false;
+  if (w.paths)
+    w.paths.onArrive = () => {
+      drain();
+      if (routesPending) {
+        routesPending = false;
+        tick();
+      }
+    };
+  const stepInput = (input, applyNow) => (fixed ? commands.push([-1, input]) : applyNow());
   onmessage = e => {
     const c = e.data;
     if (c.k === 'seen') {
@@ -429,15 +490,18 @@ async function run(m) {
       held.push(c);
       drain();
     } else if (c.k === 'rules') {
-      w.tacticalRules = setTacticalRules(c.rules);
+      stepInput({ k: 'rules', rules: c.rules }, () => (w.tacticalRules = setTacticalRules(c.rules)));
     } else if (c.k === 'viewer') {
-      w.viewer = w.players.find(p => p.id === c.id) || null;
-    } else if (c.k === 'direct') applyDirect(w, c.id, c.m);
+      stepInput({ k: 'viewer', id: c.id }, () => (w.viewer = w.players.find(p => p.id === c.id) || null));
+    } else if (c.k === 'direct') stepInput({ k: 'direct', id: c.id, m: c.m }, () => applyDirect(w, c.id, c.m));
+    else if (c.k === 'replaylog') {
+      postMessage({ k: 'replaylog', id: c.id, step: steps, inputs: recording ? recording.inputs : null, checks: recording ? recording.checks : null });
+    }
     else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
     } else if (c.k === 'pace') {
       speed = c.speed || 1;
-      paused = !!c.paused;
+      paused = !!c.paused && !replaying;
     } else if (c.k === 'save') {
       try {
         const v = c.view,
@@ -463,10 +527,15 @@ async function run(m) {
     const now = performance.now();
     let n = 0;
     if (paused) next = now;
-    while (!paused && next <= now && n < 4 && unseen < AHEAD) {
+    const rate = replaying ? REPLAY_SPEED : speed;
+    while (!paused && next <= now && n < (replaying ? 16 : 4) && unseen < AHEAD) {
+      if (fixed && w.paths && !w.paths.ready()) {
+        routesPending = true;
+        return;
+      }
       step(commands.splice(0), false);
       unseen++;
-      next += (TICK * 1000) / speed;
+      next += (TICK * 1000) / rate;
       n++;
     }
     if (next < now - 200) next = now;

@@ -11,6 +11,7 @@ import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultipl
 import { inApp } from '../platform.js';
 import { setMenuOpen } from '../bugreportui.js';
 import { loadContent, contentDifferences } from '../content.js';
+import { readReplayFile, startReplay, REPLAY_EXT } from './replay.js';
 import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
@@ -68,6 +69,7 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
   { id: 'IDC_TWEAK_KEY_LABELS', input: 'optKeyLabels', label: 'Show hotkeys on HUD buttons' },
   { id: 'IDC_TWEAK_MULTI_PLACE', input: 'optMultiPlace', label: 'Call in several reinforcements at once' },
+  { id: 'IDC_TWEAK_RECORD_BATTLES', input: 'optRecordBattles', label: 'Record space skirmishes for bug report replays' },
   { id: 'IDC_TWEAK_REINFORCE_TURN', input: 'optReinforceTurn', label: 'Turn reinforcements with the wheel and by dragging' },
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
@@ -211,6 +213,16 @@ export class Menus {
     dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', T('TEXT_BUTTON_OK', 'OK'));
     dlg.show('IDC_DIALOG_BOX_BUTTON_RIGHT', false);
     dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => this.pop());
+  }
+
+  async playReplay(replay) {
+    const differences = contentDifferences(replay.content, await loadContent());
+    if (!differences.length) {
+      startReplay(replay);
+      return;
+    }
+    const shown = differences.slice(0, 3).join(', ') + (differences.length > 3 ? ` and ${differences.length - 3} more` : '');
+    this.choose(`This replay was recorded with a different setup: ${shown}. It will not play back the same. Play it anyway?`, () => startReplay(replay));
   }
 
   async choose(text, yes) {
@@ -621,7 +633,7 @@ export class Menus {
     });
     const file = document.createElement('input');
     file.type = 'file';
-    file.accept = '.swrsave,.json,application/json';
+    file.accept = `.swrsave,${REPLAY_EXT},.json,application/json`;
     file.hidden = true;
     dlg.el.appendChild(file);
     file.onchange = async () => {
@@ -629,6 +641,11 @@ export class Menus {
       file.value = '';
       if (!f) return;
       try {
+        const replay = await readReplayFile(f);
+        if (replay) {
+          this.playReplay(replay);
+          return;
+        }
         const { id } = await importSaveFile(f);
         await refresh();
         list.select(id);

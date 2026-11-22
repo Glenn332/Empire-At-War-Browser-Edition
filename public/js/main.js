@@ -517,7 +517,9 @@ class Game {
     }
     diag.warmUpMs = Math.round(performance.now() - warmFrom);
     diag.preloaded = { types: total - later.length, later: later.length, textureMB: Math.round(textureBytes() / 1048576) };
-    if (this.setup.net) {
+    this.recording = this.shouldRecord();
+    if (this.recording && this.setup.seed === undefined) this.setup.seed = (Math.random() * 4294967296) >>> 0;
+    if (this.setup.net || this.recording) {
       resetEntityIds();
       seedSim(this.setup.seed >>> 0);
     }
@@ -526,11 +528,7 @@ class Game {
     world.bring = type => {
       this.bring(type);
     };
-    this.workerMode =
-      (this.setup.spaceWorker !== undefined ? !!this.setup.spaceWorker : !new URLSearchParams(location.search).has('nospaceworker')) &&
-      !this.setup.campaign &&
-      !this.setup.linkedTactical &&
-      !this.setup.attract;
+    this.workerMode = this.wantsWorker();
     if (!this.workerMode && !new URLSearchParams(location.search).has('noscripts'))
       this.scriptsReady = ScriptHost.create(this)
         .then(h => {
@@ -783,6 +781,7 @@ class Game {
     }
     if (this.setup.net) await this.prepareLockstep();
     if (!this.setup.attract) hideSplash();
+    if (this.setup.replay) this.message('Replaying a recorded battle. It pauses at the moment the bug report was made.', 'good');
     $('loading').classList.add('hidden');
     $('hud').classList.remove('hidden');
     if (this.setup.benchmark) this.bench.restart();
@@ -2128,6 +2127,33 @@ class Game {
     if (window.autofireDefault) this.command({ c: 'autofire', on: true });
     this.missTicker = ticker(TICK * 1000, () => this.missedFrame());
   }
+  wantsWorker() {
+    return (
+      (this.setup.spaceWorker !== undefined ? !!this.setup.spaceWorker : !new URLSearchParams(location.search).has('nospaceworker')) &&
+      !this.setup.campaign &&
+      !this.setup.linkedTactical &&
+      !this.setup.attract
+    );
+  }
+
+  shouldRecord() {
+    const setup = this.setup;
+    if (!this.wantsWorker() || setup.net || setup.restore || setup.benchmark || setup.spectate) return false;
+    return !!setup.replay || window.recordBattles !== false;
+  }
+
+  replayFinished(result) {
+    this.paused = true;
+    const checks = result.checked ? ` ${result.checked} checkpoint${result.checked === 1 ? '' : 's'} compared` : '';
+    if (result.drift === null)
+      this.message(`Replay reached the reported moment and is paused.${checks ? checks + ', all matched the recording.' : ''}`, 'good');
+    else
+      this.message(
+        `Replay reached the reported moment and is paused, but it drifted from the recording at ${(result.drift / 30).toFixed(0)} s (step ${result.drift}).${checks}`,
+        'bad'
+      );
+  }
+
   setLanguage(language) {
     return switchLanguage(language);
   }
@@ -3056,6 +3082,23 @@ async function boot() {
       window.showAllUnitIcons = box.checked;
       try {
         localStorage.setItem('swr-alluniticons', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
+    const box = $('optRecordBattles');
+    let on = true;
+    try {
+      on = localStorage.getItem('swr-record-battles') !== '0';
+    } catch {}
+    box.checked = on;
+    window.recordBattles = on;
+    box.parentElement.title =
+      'Space skirmishes run the way multiplayer battles do and keep every order, so a bug report can replay the battle up to the moment it was made. Takes effect from the next battle.';
+    box.onchange = () => {
+      window.recordBattles = box.checked;
+      try {
+        localStorage.setItem('swr-record-battles', box.checked ? '1' : '0');
       } catch {}
     };
   }
