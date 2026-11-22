@@ -21,7 +21,8 @@ use tauri::http::{Request, Response};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use vfs::{Game, View};
 
-const TAURI_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+const TAURI_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
 const UNCAPPED: &str = "--disable-frame-rate-limit --disable-gpu-vsync";
 
 struct Opened {
