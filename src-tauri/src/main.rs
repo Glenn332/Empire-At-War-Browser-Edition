@@ -4,6 +4,7 @@ mod audio;
 mod discord;
 mod fonts;
 mod gog;
+mod report;
 mod setup;
 mod steam;
 mod update;
@@ -631,6 +632,19 @@ impl Server {
             }
             return json(&serde_json::json!({ "ok": true }));
         }
+        if p == "/api/screenshot" {
+            return match report::screenshot(app) {
+                Some(png) => send(200, png, "image/png", &[("Cache-Control", "no-store")]),
+                None => text(503, "screenshot unavailable"),
+            };
+        }
+        if p == "/api/save-report" {
+            let name = arg("name").unwrap_or_else(|| "bug-report.zip".into());
+            return match report::save(app, &name, req.body()) {
+                Ok(path) => json(&serde_json::json!({ "path": path })),
+                Err(e) => text(500, &e),
+            };
+        }
         if p == "/api/pick-folder" {
             let mut d =
                 rfd::FileDialog::new().set_title(arg("title").unwrap_or("Choose a folder".into()));
@@ -694,6 +708,9 @@ impl Server {
         let mut extra = vec![("Cache-Control", "no-cache")];
         if profile {
             extra.push(("Document-Policy", "js-profiling"));
+        }
+        if rel == "js/consolelog.js" {
+            extra.push(("SourceMap", "consolelog.js.map"));
         }
         send(200, bytes, mime(&rel), &extra)
     }

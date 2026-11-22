@@ -61,7 +61,8 @@ function serveStatic(req, res, rel) {
       'Content-Type': mime(file),
       'Content-Length': st.size,
       'Cache-Control': 'no-cache',
-      ...(/\.html$/i.test(file) ? { 'Document-Policy': 'js-profiling' } : {})
+      ...(/\.html$/i.test(file) ? { 'Document-Policy': 'js-profiling' } : {}),
+      ...(/consolelog\.js$/i.test(file) ? { SourceMap: 'consolelog.js.map' } : {})
     });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);

@@ -212,7 +212,7 @@ export class Diag {
     if (this.panel) this.drawPanel();
   }
 
-  report() {
+  report(quiet = false) {
     const by = {};
     for (const h of this.hitches) {
       const b = by[h.cause] || (by[h.cause] = { count: 0, worst: 0, total: 0 });
@@ -239,8 +239,10 @@ export class Diag {
       byCause: by,
       list: this.hitches
     };
-    console.table(this.hitches.map(h => ({ at: h.at, ms: h.ms, usual: h.usual, cause: h.cause, outside: h.outside, ...h.stages })));
-    console.table(by);
+    if (!quiet) {
+      console.table(this.hitches.map(h => ({ at: h.at, ms: h.ms, usual: h.usual, cause: h.cause, outside: h.outside, ...h.stages })));
+      console.table(by);
+    }
     return out;
   }
 

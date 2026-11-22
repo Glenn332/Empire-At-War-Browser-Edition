@@ -24,7 +24,8 @@ discord-rich-presence = "1.1.0"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
+windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_UI_Shell"] }
+webview2-com = "0.39"
 
 [profile.release]
 lto = true
