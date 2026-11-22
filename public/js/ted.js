@@ -211,7 +211,13 @@ function parseEnvironment(r, c) {
   const v3 = id => (m.has(id) && m.get(id).size === 12 ? r.vec(m.get(id).start, 3) : null);
   const f = (id, d) => (m.has(id) && m.get(id).size === 4 ? r.f32(m.get(id).start) : d);
   const name = m.get(0x14);
-  const env = { name: name ? r.str(name.start, name.start + name.size) : '', lights: [], ambient: v3(4) || [0, 0, 0], skydomes: [] };
+  const env = {
+    name: name ? r.str(name.start, name.start + name.size) : '',
+    lights: [],
+    ambient: v3(4) || [0, 0, 0],
+    shadow: v3(0x17) || [0.5, 0.5, 0.5],
+    skydomes: []
+  };
   env.fog = { on: m.has(16) && r.dv.getUint8(m.get(16).start) !== 0, start: f(17, 0), end: f(18, 0), color: v3(15) || [0.8, 0.8, 0.8] };
   env.weather = m.has(41) ? r.str(m.get(41).start, m.get(41).start + m.get(41).size) : '';
   for (let i = 0; i < 3; i++) {

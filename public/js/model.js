@@ -30,6 +30,7 @@ export const lighting = {
   shadowMatrix: { value: new THREE.Matrix4() },
   shadowOn: { value: 0 },
   shadowTexel: { value: 1 / 2048 },
+  shadowTint: { value: new THREE.Color(-1, -1, -1) },
   fogTint: { value: new THREE.Color(0.8, 0.8, 0.8) },
   fogRange: { value: new THREE.Vector2(0, 0) },
   fowMap: {
@@ -186,6 +187,7 @@ float fillTerm(vec3 n, vec3 d) {
 uniform highp sampler2DShadow shadowMap;
 uniform mat4 shadowMatrix;
 uniform float shadowOn, shadowTexel;
+uniform vec3 shadowTint;
 float sunlit(vec3 wp, vec3 n) {
   if (shadowOn < 0.5) return 1.0;
   vec3 p = (shadowMatrix * vec4(wp + n * 3.0, 1.0)).xyz;
@@ -198,7 +200,7 @@ float sunlit(vec3 wp, vec3 n) {
   s += texture(shadowMap, vec3(p.xy + vec2(o, o), d));
   s /= 6.0;
   vec2 e = min(p.xy, 1.0 - p.xy);
-  return mix(1.0, mix(0.38, 1.0, s), smoothstep(0.0, 0.06, min(e.x, e.y)));
+  return mix(1.0, s, smoothstep(0.0, 0.06, min(e.x, e.y)));
 }
 #endif
 uniform vec3 fogTint; uniform vec2 fogRange;
@@ -320,7 +322,12 @@ void main() {
   #ifdef DETAIL
   gn = n;
   #endif
-  float sun = sunlit(vWorldPos, normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0));
+  float shadowLit = sunlit(vWorldPos, normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0));
+  #ifdef SELF_SHADOW
+  if (shadowOn > 0.5) shadowLit = min(shadowLit, smoothstep(-0.05, 0.05, dot(normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0), sunDir)));
+  #endif
+  bool mapShadow = shadowTint.x >= 0.0;
+  float sun = mapShadow ? 1.0 : mix(0.38, 1.0, shadowLit);
   #ifdef BUMP
   float sunTerm = max(dot(n, sunDir), 0.0);
   #else
@@ -358,6 +365,7 @@ void main() {
   if (fowSide > 0.0) col *= mix(0.3, 1.0, texture2D(fowMap, vWorldPos.xy / fowSide).r);
   #endif
   col = mix(fogTint, col, haze(vWorldPos));
+  if (mapShadow) col *= mix(shadowTint, vec3(1.0), shadowLit);
   #ifdef ALPHA
   if (base.a * opacity <= alphaRef) discard;
   gl_FragColor = vec4(col, base.a * opacity * ls.a);
@@ -602,7 +610,7 @@ function emissiveAdditiveColor(emissive) {
   return new THREE.Color(level, level, level);
 }
 
-function makeMaterial(mat, format, teamColor) {
+function makeMaterial(mat, format, teamColor, selfShadow = false) {
   const shader = mat.shader;
   const p = mat.params;
   const nebula = shader === 'nebula.fx';
@@ -638,7 +646,8 @@ function makeMaterial(mat, format, teamColor) {
           p.FowDimAllowed ?? '',
           uvScrollRate?.slice(0, 2).join() || '',
           gfx.shader | 0,
-          /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockBake() : ''
+          /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockBake() : '',
+          selfShadow ? 'shadowed' : ''
         ].join('|');
   let m = materialCache.get(key);
   if (m) return m;
@@ -681,6 +690,7 @@ function makeMaterial(mat, format, teamColor) {
   if (rocky) defines.DETAIL = 1;
   if (rock4k) defines.BUMP = 1;
   if (skinned) defines.SKINNED = 1;
+  if (selfShadow && !unlit) defines.SELF_SHADOW = 1;
   const c3 = (v, d) => (Array.isArray(v) ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
   const diffuse = emissiveAdditive
     ? emissiveAdditiveColor(p.Emissive)
@@ -1177,6 +1187,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
     if (chain !== null && (!lodBest.has(chain) || tris(mesh) > tris(lodBest.get(chain)))) lodBest.set(chain, mesh);
   }
   const tmpBox = new THREE.Box3();
+  const selfShadow = model.meshes.some(mesh => mesh.subs.some(sub => /shadowvolume/i.test(sub.material?.shader || '')));
   const hasAlt = new Set(
     alt
       ? model.meshes
@@ -1222,7 +1233,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
         }
         continue;
       }
-      const obj = new THREE.Mesh(geo, makeMaterial(sub.material, sub.geometry.format, teamColor));
+      const obj = new THREE.Mesh(geo, makeMaterial(sub.material, sub.geometry.format, teamColor, selfShadow));
       if (obj.material.defines.SKINNED && sub.geometry.boneMap) {
         const skin = { mesh: obj, boneMap: sub.geometry.boneMap, mats: null };
         inst.skins.push(skin);

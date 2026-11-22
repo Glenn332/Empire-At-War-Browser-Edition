@@ -336,6 +336,7 @@ export class GalacticGame {
     lighting.ambient.value.setRGB(0.05, 0.05, 0.05);
     lighting.fillColor.value.setRGB(0, 0, 0);
     lighting.fillColor2.value.setRGB(0, 0, 0);
+    lighting.shadowTint.value.setRGB(-1, -1, -1);
     for (const key of Object.keys(planetLighting)) planetLighting[key].value.copy(lighting[key].value);
 
     P('Placing the planets', 0.1);

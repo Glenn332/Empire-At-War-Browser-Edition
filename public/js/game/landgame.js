@@ -1760,6 +1760,7 @@ export class LandGame {
       lighting.fillWrap.value = 0;
       lighting.ambient.value.setRGB(...env.ambient.map(c => Math.max(c, 0.25)));
     }
+    lighting.shadowTint.value.setRGB(-1, -1, -1);
 
     const generation = (this.environmentGeneration = (this.environmentGeneration || 0) + 1);
     this.environmentSkies ||= new Map();

@@ -840,6 +840,8 @@ export class GPURenderer {
     f[o + 83] = L.fillWrap.value;
     v3(84, L.fillColor2.value);
     v3(88, L.sunSpecular.value);
+    if (L.shadowTint) v3(220, L.shadowTint.value);
+    else f[o + 220] = f[o + 221] = f[o + 222] = -1;
     const B = env.bolts,
       bn = B && L === this.lighting ? B.boltN.value : 0;
     f[o + 91] = bn;

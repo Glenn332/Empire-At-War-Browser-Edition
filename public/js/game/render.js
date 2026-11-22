@@ -1016,6 +1016,7 @@ export class Renderer {
     lighting.fillColor2.value.setRGB(...f2.color.map(c => c * 2));
     lighting.fillWrap.value = 1;
     lighting.ambient.value.setRGB(...env.ambient.map(c => c * 2));
+    lighting.shadowTint.value.setRGB(...(env.shadow || [0.5, 0.5, 0.5]));
     for (const t of env.skydomes) {
       const data = getModelData(t.str('Space_Model_Name'));
       if (!data) continue;

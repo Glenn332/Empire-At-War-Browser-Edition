@@ -17,6 +17,7 @@ struct Pass {
   sunSpecular: vec3f, boltN: f32,
   boltAt: array<vec4f, 16>,
   boltTint: array<vec4f, 16>,
+  shadowTint: vec3f, _f: f32,
 }
 @group(0) @binding(0) var<uniform> P: Pass;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
@@ -62,7 +63,8 @@ const MODEL_DEFINES = [
   'DETAIL',
   'SKINNED',
   'INSTSKIN',
-  'REFLECT'
+  'REFLECT',
+  'SELF_SHADOW'
 ];
 const LIGHTING_KEYS = [
   'sunDir',
@@ -77,6 +79,7 @@ const LIGHTING_KEYS = [
   'shadowMatrix',
   'shadowOn',
   'shadowTexel',
+  'shadowTint',
   'fogTint',
   'fogRange',
   'fowMap',
@@ -218,7 +221,7 @@ fn sunlit(wp: vec3f, n: vec3f) -> f32 {
   s += textureSampleCompareLevel(shadowMap, shadowS, p.xy + vec2f(o, o), d);
   s /= 6.0;
   let e = min(p.xy, 1.0 - p.xy);
-  return mix(1.0, mix(0.38, 1.0, s), smoothstep(0.0, 0.06, min(e.x, e.y)));
+  return mix(1.0, s, smoothstep(0.0, 0.06, min(e.x, e.y)));
 }`);
   if (on('DETAIL'))
     L.push(`
@@ -298,7 +301,10 @@ fn rock(p: vec3f) -> f32 {
   }
   if (!front) { n = -n; }
   let gn = ${on('DETAIL') ? 'n' : 'normalize(v.vNormal) * select(-1.0, 1.0, front)'};
-  let sun = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
+  var shadowLit = sunlit(v.vWorldPos, normalize(v.vNormal) * select(-1.0, 1.0, front));
+  ${on('SELF_SHADOW') ? 'if (P.shadowOn > 0.5) { shadowLit = min(shadowLit, smoothstep(-0.05, 0.05, dot(normalize(v.vNormal) * select(-1.0, 1.0, front), P.sunDir))); }' : ''}
+  let mapShadow = P.shadowTint.x >= 0.0;
+  let sun = select(mix(0.38, 1.0, shadowLit), 1.0, mapShadow);
   let sunTerm = ${on('BUMP') ? 'max(dot(n, P.sunDir), 0.0)' : 'fillTerm(gn, P.sunDir)'};
   var light = P.ambient + P.fillColor * fillTerm(gn, P.fillDir) + P.fillColor2 * fillTerm(gn, P.fillDir2) + P.sunColor * sunTerm * sun;
   var boltSum = vec3f(0.0);
@@ -329,6 +335,7 @@ fn rock(p: vec3f) -> f32 {
   if (D.dissolve > 0.0 && bayer4(fc) < D.dissolve) { discard; }
   ${on('FOW_DIM') ? 'if (P.fowSide > 0.0) { col *= mix(0.3, 1.0, textureSample(fowMap, fowS, v.vWorldPos.xy / P.fowSide).r); }' : ''}
   col = mix(P.fogTint, col, haze(v.vWorldPos));
+  if (mapShadow) { col *= mix(P.shadowTint, vec3f(1.0), shadowLit); }
   ${on('ALPHA') ? 'if (base.a * D.opacity <= D.alphaRef) { discard; }\n  return vec4f(col, base.a * D.opacity * ls.a);' : 'return vec4f(col, D.opacity * ls.a);'}
 }`);
   return L.join('');
