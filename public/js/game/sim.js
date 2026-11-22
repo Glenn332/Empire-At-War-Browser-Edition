@@ -3916,6 +3916,13 @@ export class World {
     return t.has('Space_Override_Population_Value') ? t.num('Space_Override_Population_Value', 0) : undefined;
   }
 
+  applyReveal(r) {
+    if (!this.fog) return;
+    const inside = u => !u.dead && !u.cloaked && (u.x - r.x) ** 2 + (u.y - r.y) ** 2 < r.r * r.r;
+    for (const u of this.units) if (inside(u)) u.seenBy |= r.team.bit;
+    for (const s of this.squads) for (const f of s.fighters) if (inside(f)) f.seenBy |= r.team.bit;
+  }
+
   canSee(player, e) {
     if (!this.fog || !player || player.id < 0) return true;
     if (e.isSquad) return e.fighters.some(f => f.seenBy & player.bit);

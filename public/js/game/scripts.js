@@ -1748,6 +1748,7 @@ export class ScriptHost {
         if (!p) return undefined;
         const r = { team: p.team, pl: p, x: 0, y: 0, r: 1e7, until: Infinity, by: this.current, env: this.current && this.current.env };
         w.reveals.push(r);
+        w.applyReveal?.(r);
         return this.revealWrap(r);
       },
       Temporary_Reveal: (player, where, radius) => {
@@ -1756,7 +1757,7 @@ export class ScriptHost {
           e = this.of(where);
         if (!p || !at) return undefined;
         const r = +radius || (e && (e.radius || e.visualRadius)) || 10;
-        w.reveals.push({
+        const shown = {
           team: p.team,
           pl: p,
           x: at.x,
@@ -1765,7 +1766,9 @@ export class ScriptHost {
           until: w.time + 1,
           by: this.current,
           env: this.current && this.current.env
-        });
+        };
+        w.reveals.push(shown);
+        w.applyReveal?.(shown);
         return undefined;
       },
       Reveal: (player, where, radius) => {
@@ -1914,8 +1917,9 @@ export class ScriptHost {
       if (l.length < 20000) l.push(String(text));
     });
     vm.global('Find_Nearest', (o, a, b, c) => {
-      const e = this.of(o) || this.at(o);
-      if (!e) return undefined;
+      const ent = this.of(o),
+        e = ent ? (gone(ent) ? null : ent) : this.at(o);
+      if (!e) throw new Error('Find_Nearest - parameter 1 is already dead; cannot extract a position from it.');
       const name = typeof a === 'string' ? a.trim().toUpperCase() : '',
         names = name
           .split('|')
