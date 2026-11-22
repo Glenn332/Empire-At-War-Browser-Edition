@@ -3,6 +3,7 @@
 mod audio;
 mod discord;
 mod fonts;
+mod gog;
 mod setup;
 mod steam;
 mod update;
@@ -213,6 +214,8 @@ impl Server {
             (Some(c), "chosen")
         } else if let Some(s) = &steam {
             (Some(s.clone()), "steam")
+        } else if let Some(g) = gog::game_folder() {
+            (Some(g), "gog")
         } else if let Some(f) = &self.fallback {
             (Some(f.clone()), "dev")
         } else {
@@ -696,6 +699,7 @@ fn main() {
                 .filter(|p| setup::is_game(p))
         })
         .or_else(steam::game_folder)
+        .or_else(gog::game_folder)
         .or_else(|| fallback.clone());
     let mods = first
         .as_ref()
