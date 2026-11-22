@@ -1,5 +1,6 @@
 import { requestTabCapture, saveBugReport } from './bugreport.js';
 import { startPerfSampler } from './perfsampler.js';
+import { addCommand, toggleConsole } from './aidebug.js';
 
 export const BUG_REPORT_HOTKEY = 'Ctrl+Shift+B';
 const TOAST_MS = 15000;
@@ -70,3 +71,9 @@ if (typeof window !== 'undefined' && !window.bugReportHotkey) {
     true
   );
 }
+
+addCommand('bugreport', '', `saves a bug report zip (screenshot, logs, game state, save, replay, performance) to attach to a bug post; ${BUG_REPORT_HOTKEY} does the same`, (args, print) => {
+  print('collecting a bug report, the message in the bottom-left corner says where it was saved');
+  toggleConsole(false);
+  runBugReport();
+});
