@@ -1,5 +1,6 @@
 import { activeLanguage } from '../language.js';
 import { snapshot, saveRefs } from './savegame.js';
+import { isPlainObject } from './plainobject.js';
 
 export function battleSnapshot(game, save = null, refs = null) {
   const w = game.world;
@@ -31,7 +32,7 @@ export function battleSnapshot(game, save = null, refs = null) {
   const { restore, net, replay, ...rest } = game.setup;
   const setup = JSON.parse(
     JSON.stringify(rest, (k, v) =>
-      v && typeof v === 'object' && !Array.isArray(v) && v.constructor && v.constructor !== Object ? undefined : v
+      v && typeof v === 'object' && !Array.isArray(v) && !isPlainObject(v) ? undefined : v
     )
   );
   return {

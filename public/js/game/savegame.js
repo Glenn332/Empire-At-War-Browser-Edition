@@ -7,6 +7,7 @@ import { contentNow } from '../content.js';
 import { snapshotGalaxy } from './galaxy.js';
 import { saveBattleScripts } from './tacticalsave.js';
 import { SpecialWeapon } from './superweapon.js';
+import { isPlainObject } from './plainobject.js';
 
 export const SAVE_VERSION = 2;
 export const MODES = ['space', 'land', 'galactic'];
@@ -63,8 +64,8 @@ export function withMultiplayer(game, s) {
 
 export function campaignSetup(game) {
   const plain = (k, v) =>
-    v && typeof v === 'object' && !Array.isArray(v) && v.constructor && v.constructor !== Object && typeof v.name === 'string' ? v.name : v;
-  const { restore, ...setup } = game.setup;
+    v && typeof v === 'object' && !Array.isArray(v) && !isPlainObject(v) && typeof v.name === 'string' ? v.name : v;
+  const { restore, net, ...setup } = game.setup;
   const out = JSON.parse(JSON.stringify(setup, plain));
   const tc = game.tacticalCampaign;
   if (tc && tc.galaxy) {

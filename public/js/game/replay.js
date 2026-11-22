@@ -1,6 +1,7 @@
 import { BUILD } from '../build.js';
 import { contentNow } from '../content.js';
 import { stageStart } from './transit.js';
+import { isPlainObject } from './plainobject.js';
 
 export const REPLAY_FORMAT = 'sw-revival-replay';
 export const REPLAY_EXT = '.swrreplay';
@@ -11,7 +12,7 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const plainSetup = setup =>
   JSON.parse(
     JSON.stringify(setup, (key, value) =>
-      value && typeof value === 'object' && !Array.isArray(value) && value.constructor && value.constructor !== Object ? undefined : value
+      value && typeof value === 'object' && !Array.isArray(value) && !isPlainObject(value) ? undefined : value
     )
   );
 
