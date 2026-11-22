@@ -1,4 +1,4 @@
-import { inApp } from './platform.js';
+import { inApp, topFrame } from './platform.js';
 import { db } from './gamedata.js';
 import { loadedMods } from './vfs.js';
 import { mapTitle } from './ted.js';
@@ -104,7 +104,7 @@ export function setDiscord(on) {
 }
 
 export async function initDiscord() {
-  if (!inApp() || timer) return;
+  if (!inApp() || !topFrame() || timer) return;
   try {
     const list = await loadedMods();
     mods = list.length ? 'Mod: ' + list.join(' + ') : '';

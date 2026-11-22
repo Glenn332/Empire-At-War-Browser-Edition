@@ -1,4 +1,4 @@
-import { inApp } from './platform.js';
+import { inApp, topFrame } from './platform.js';
 const VIRTUAL = 1;
 const MOUSE_TYPES = [
   'pointermove',
@@ -57,6 +57,7 @@ const rememberFullscreen = on => {
 };
 
 export function restoreFullscreen() {
+  if (!topFrame()) return;
   let want = false;
   try {
     want = localStorage.getItem(FULLSCREEN_KEY) === '1';

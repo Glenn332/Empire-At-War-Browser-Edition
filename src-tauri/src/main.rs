@@ -569,9 +569,25 @@ impl Server {
             let (w, h) = (num("w"), num("h"));
             if let Some(win) = app.get_webview_window("main") {
                 if w >= 640 && h >= 480 && !win.is_fullscreen().unwrap_or(false) {
-                    let _ = win.unmaximize();
-                    let _ = win.set_size(tauri::PhysicalSize::new(w, h));
-                    let _ = win.center();
+                    let fits = match (
+                        win.current_monitor().ok().flatten(),
+                        win.outer_size(),
+                        win.inner_size(),
+                    ) {
+                        (Some(m), Ok(o), Ok(i)) => {
+                            let area = m.work_area().size;
+                            w + o.width.saturating_sub(i.width) <= area.width
+                                && h + o.height.saturating_sub(i.height) <= area.height
+                        }
+                        _ => true,
+                    };
+                    if fits {
+                        let _ = win.unmaximize();
+                        let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                        let _ = win.center();
+                    } else {
+                        let _ = win.maximize();
+                    }
                 }
                 let size = win.inner_size().ok();
                 let monitor = win.current_monitor().ok().flatten().map(|m| *m.size());
