@@ -3,11 +3,13 @@ import { db } from '../gamedata.js';
 import { fetchBinary, fetchText } from '../vfs.js';
 import { parseXML } from '../xml.js';
 import { loadTexture } from '../dds.js';
+import { gfx } from '../gfx.js';
 
 const BLOOM_CUTOFF = 0.9,
   BLOOM_STRENGTH = 1,
   BLOOM_SIZE = 0.25,
-  BLOOM_PASSES = 4;
+  BLOOM_PASSES = 4,
+  SCENE_SAMPLES = 4;
 const VERT = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
 const BRIGHT = `
@@ -96,6 +98,8 @@ export class PostFX {
   }
 
   ensureTargets() {
+    const samples = gfx.aa !== false ? SCENE_SAMPLES : 0;
+    if (this.targets && this.targets.scene.samples !== samples) this.resize(this.w, this.h);
     if (this.targets) return this.targets;
     const pr = this.r.getPixelRatio(),
       W = Math.max(2, Math.round(this.w * pr)),
@@ -108,7 +112,7 @@ export class PostFX {
       return t;
     };
     this.targets = {
-      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true }),
+      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true, samples }),
       a1: rt(W >> 2, H >> 2),
       a2: rt(W >> 2, H >> 2),
       heat: rt(W >> 2, H >> 2)

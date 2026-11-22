@@ -627,7 +627,11 @@ const GROUPS = [
       ],
       ['Model viewer', D],
       ['Volume settings remembered', D],
-      ['Graphics options: shadows, bloom, heat haze, lens flare', D],
+      [
+        'Graphics options: shadows, bloom, heat haze, lens flare',
+        D,
+        'with bloom or heat haze on, the scene is drawn into a picture that is now 4x multisampled (WebGPU and WebGL) when anti-aliasing is on, so hull edges no longer show stair steps; the old edge filter still runs on top and softens bright rims. Measured at 1920x1080 on the Remake mod: the scene pass costs about 0.9 ms more on the graphics card, frame rate unchanged. Geometry, Water and Environment Detail stay locked and are shown at High: read from the engine, Geometry Detail picks among _LOD meshes (we always draw the most detailed), Environment Detail thins decorations and batched props at random (we draw all), Water Detail picks the land water technique (ours has the reflection, no refraction pass)'
+      ],
       [
         'Touch and mobile',
         P,

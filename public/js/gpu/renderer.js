@@ -568,25 +568,40 @@ export class GPURenderer {
       return s;
     }
     let s = this.targets.get(t);
-    if (!s || s.w !== t.width || s.h !== t.height) {
-      if (s) this.later(s.color, s.depth);
+    const samples = t.samples > 1 && !t.depthTexture ? MSAA : 1;
+    if (!s || s.w !== t.width || s.h !== t.height || s.samples !== samples) {
+      if (s) this.later(s.color, s.depth, s.multisampled);
       const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
       const tx = t.texture,
         levels = tx.generateMipmaps && MIP_FILTERS.has(tx.minFilter) ? Math.floor(Math.log2(Math.max(t.width, t.height))) + 1 : 1;
-      s = { w: t.width, h: t.height, samples: 1, format: 'rgba8unorm', resolve: null, gen: (s ? s.gen : 0) + 1, levels };
+      s = { w: t.width, h: t.height, samples, format: 'rgba8unorm', resolve: null, multisampled: null, gen: (s ? s.gen : 0) + 1, levels };
       s.color = this.device.createTexture({ size: [t.width, t.height], format: 'rgba8unorm', mipLevelCount: levels, usage });
-      s.colorView = s.color.createView({ baseMipLevel: 0, mipLevelCount: 1 });
+      if (samples > 1) {
+        s.multisampled = this.device.createTexture({
+          size: [t.width, t.height],
+          format: 'rgba8unorm',
+          sampleCount: samples,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT
+        });
+        s.colorView = s.multisampled.createView();
+        s.resolve = s.color.createView({ baseMipLevel: 0, mipLevelCount: 1 });
+      } else s.colorView = s.color.createView({ baseMipLevel: 0, mipLevelCount: 1 });
       s.depthFormat = t.depthBuffer ? DEPTH : undefined;
       if (t.depthBuffer) {
-        s.depth = this.device.createTexture({ size: [t.width, t.height], format: DEPTH, usage });
+        s.depth = this.device.createTexture({
+          size: [t.width, t.height],
+          format: DEPTH,
+          sampleCount: samples,
+          usage: samples > 1 ? GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING : usage
+        });
         s.depthView = s.depth.createView();
       }
-      s.key = 'rt|rgba8unorm|' + (t.depthBuffer ? 'd' : '');
+      s.key = 'rt|rgba8unorm|' + (t.depthBuffer ? 'd' : '') + (samples > 1 ? '|ms' + samples : '');
       this.targets.set(t, s);
       if (t.depthTexture && s.depth)
         this.depthViews.set(t.depthTexture, { view: s.depth.createView({ aspect: 'depth-only' }), gen: s.gen });
       this.textures.set(t.texture, {
-        view: levels > 1 ? s.color.createView() : s.colorView,
+        view: levels > 1 ? s.color.createView() : s.resolve || s.colorView,
         gen: s.gen,
         version: t.texture.version,
         rt: true,

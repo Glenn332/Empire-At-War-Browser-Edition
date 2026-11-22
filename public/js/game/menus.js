@@ -1006,8 +1006,9 @@ export class Menus {
       );
     };
     show();
-    for (const id of ['IDC_MESH_DETAIL_SLIDER', 'IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER', 'IDC_AUTO_DETECT'])
-      dlg.enable(id, false);
+    const alwaysHighest = ['IDC_MESH_DETAIL_SLIDER', 'IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
+    for (const id of alwaysHighest) dlg.slider(id, 1, () => {}, 0, false);
+    for (const id of [...alwaysHighest, 'IDC_AUTO_DETECT']) dlg.enable(id, false);
     dlg.on('IDC_OK', () => this.pop());
     dlg.on('IDC_APPLY', () => {});
     dlg.on('IDC_CANCEL', () => {
