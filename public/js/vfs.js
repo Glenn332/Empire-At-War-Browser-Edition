@@ -1,6 +1,7 @@
 import { openOverlay, openStep } from './mods.js';
 import { languageId } from './language.js';
 import { expansion } from './edition.js';
+import { isLua50Chunk, lua50ToSource } from './lua50.js';
 
 const overlay = (globalThis.SWR_OVERLAY ? Promise.resolve(globalThis.SWR_OVERLAY) : openOverlay()).catch(e => {
   console.warn('mods', e);
@@ -137,7 +138,9 @@ export async function fetchPart(path, from, length) {
 
 export async function fetchText(path) {
   const buf = await fetchBinary(path);
-  return buf ? new TextDecoder('windows-1252').decode(buf) : null;
+  if (!buf) return null;
+  if (/\.lua$/i.test(path) && isLua50Chunk(buf)) return lua50ToSource(buf);
+  return new TextDecoder('windows-1252').decode(buf);
 }
 
 export const assetUrl = url;
