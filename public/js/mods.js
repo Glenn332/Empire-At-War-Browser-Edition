@@ -305,6 +305,9 @@ export async function scan(handle, progress = () => {}) {
   return done(acc);
 }
 
+const EXPANSION_DIRS = ['corruption', 'EAWX'],
+  GAME_EXES = ['StarWarsG.exe', 'swfoc.exe', 'sweaw.exe'];
+
 export async function scanGame(handle, progress = () => {}, language = 0, { expansion = true } = {}) {
   const acc = fresh();
   const patches = [
@@ -314,15 +317,18 @@ export async function scanGame(handle, progress = () => {}, language = 0, { expa
     ...['sfx2d_non_localized', 'sfx3d_non_localized', 'sfx2d_' + languageName(language).toLowerCase()].map(f => `Data/Audio/SFX/${f}.meg`)
   ];
   let any = false;
-  for (const name of expansion ? ['GameData', 'corruption'] : ['GameData']) {
+  for (const name of expansion ? ['GameData', ...EXPANSION_DIRS] : ['GameData']) {
     const root = await child(handle, name, 'directory');
     if (root && (await child((await child(root, 'Data', 'directory')) || root, 'megafiles.xml', 'file')))
       any = (await scanRoot(acc, root, root.name + '/', patches, progress)) || any;
   }
   if (!any)
-    throw new Error("This is not the game's folder: choose the one that holds GameData and corruption (“Star Wars Empire at War”).");
-  for (const name of expansion ? ['corruption', 'GameData'] : ['GameData']) {
-    const exe = await walk(handle, name + '/StarWarsG.exe');
+    throw new Error(
+      "This is not the game's folder: choose the one that holds GameData and corruption (“Star Wars Empire at War”), or GameData and EAWX for the GOG release."
+    );
+  for (const name of expansion ? [...EXPANSION_DIRS, 'GameData'] : ['GameData']) {
+    let exe = null;
+    for (const file of GAME_EXES) if (!exe) exe = await walk(handle, name + '/' + file);
     if (!exe) continue;
     progress('Reading the typefaces');
     const exeFile = await exe.handle.getFile(),

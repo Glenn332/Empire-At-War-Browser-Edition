@@ -106,7 +106,7 @@ pub fn mods(args: &[String], game: &Path) -> Vec<PathBuf> {
         let found = if let Some(id) = prefixed(&a, "STEAMMOD=") {
             workshop_item(&id)
         } else if let Some(rel) = prefixed(&a, "MODPATH=") {
-            Some(game.join("corruption").join(rel))
+            crate::setup::expansion_dir(game).map(|c| c.join(rel))
         } else {
             Some(PathBuf::from(&a))
         };

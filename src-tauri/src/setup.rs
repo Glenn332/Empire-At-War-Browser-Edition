@@ -43,6 +43,13 @@ pub fn same(a: &Path, b: &Path) -> bool {
     n(a) == n(b)
 }
 
+pub const EXPANSION_DIRS: [&str; 2] = ["corruption", "EAWX"];
+pub const GAME_EXES: [&str; 3] = ["StarWarsG.exe", "swfoc.exe", "sweaw.exe"];
+
+pub fn expansion_dir(game: &Path) -> Option<PathBuf> {
+    EXPANSION_DIRS.iter().find_map(|name| child_dir(game, name))
+}
+
 pub fn is_game(p: &Path) -> bool {
     child_dir(p, "GameData").is_some()
 }
@@ -70,7 +77,7 @@ pub fn found_sources(game: Option<&Path>) -> Vec<Source> {
         })
         .collect();
     if let Some(m) = game
-        .and_then(|g| child_dir(g, "corruption"))
+        .and_then(expansion_dir)
         .and_then(|c| child_dir(&c, "Mods"))
     {
         out.push(Source {

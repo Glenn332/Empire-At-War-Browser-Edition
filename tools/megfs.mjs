@@ -29,6 +29,9 @@ function findCaseInsensitive(root, rel) {
   return cur;
 }
 
+const EXPANSION_DIRS = ['corruption', 'EAWX'],
+  GAME_EXES = ['StarWarsG.exe', 'swfoc.exe', 'sweaw.exe'];
+
 export function openGame(gameDir, mods = [], { language = 0, expansion = true } = {}) {
   language = languageId(language) ?? 0;
   const languages = new Map();
@@ -87,8 +90,9 @@ export function openGame(gameDir, mods = [], { language = 0, expansion = true } 
     return entries;
   }
 
-  for (const root of [path.join(gameDir, 'GameData'), ...(expansion ? [path.join(gameDir, 'corruption')] : [])]) {
-    if (!fs.existsSync(path.join(root, 'Data', 'megafiles.xml'))) continue;
+  for (const name of ['GameData', ...(expansion ? EXPANSION_DIRS : [])]) {
+    const root = findCaseInsensitive(gameDir, name);
+    if (!root || !fs.existsSync(path.join(root, 'Data', 'megafiles.xml'))) continue;
     const archives = megList(root, language);
     for (const [position, rel] of archives.entries()) {
       const f = findCaseInsensitive(root, rel);
@@ -111,8 +115,8 @@ export function openGame(gameDir, mods = [], { language = 0, expansion = true } 
     mount(indexLoose(root, path.basename(findCaseInsensitive(root, 'Data') || 'Data')));
   }
 
-  for (const root of expansion ? ['corruption', 'GameData'] : ['GameData']) {
-    const exe = findCaseInsensitive(gameDir, root + '/StarWarsG.exe');
+  for (const root of expansion ? [...EXPANSION_DIRS, 'GameData'] : ['GameData']) {
+    const exe = GAME_EXES.map(name => findCaseInsensitive(gameDir, root + '/' + name)).find(Boolean);
     if (!exe) continue;
     const d = fs.readFileSync(exe);
     for (let i = d.indexOf('\x00\x01\x00\x00', 0, 'latin1'); i >= 0; i = d.indexOf('\x00\x01\x00\x00', i + 4, 'latin1')) {

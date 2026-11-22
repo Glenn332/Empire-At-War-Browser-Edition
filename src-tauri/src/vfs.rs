@@ -323,7 +323,11 @@ impl Game {
         };
         let mut roots = vec![game_dir.join("GameData")];
         if expansion {
-            roots.push(game_dir.join("corruption"));
+            roots.extend(
+                crate::setup::EXPANSION_DIRS
+                    .iter()
+                    .filter_map(|name| find_case_insensitive(game_dir, name)),
+            );
         }
         for root in roots {
             if !root.join("Data").join("megafiles.xml").exists() {
@@ -363,12 +367,15 @@ impl Game {
             mount(&mut layers, &mut index, None, loose);
         }
 
-        for root in if expansion {
-            vec!["corruption", "GameData"]
-        } else {
-            vec!["GameData"]
-        } {
-            let Some(exe) = find_case_insensitive(game_dir, &format!("{root}/StarWarsG.exe"))
+        let mut exe_roots: Vec<&str> = vec![];
+        if expansion {
+            exe_roots.extend(crate::setup::EXPANSION_DIRS);
+        }
+        exe_roots.push("GameData");
+        for root in exe_roots {
+            let Some(exe) = crate::setup::GAME_EXES
+                .iter()
+                .find_map(|name| find_case_insensitive(game_dir, &format!("{root}/{name}")))
             else {
                 continue;
             };

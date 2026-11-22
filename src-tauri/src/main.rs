@@ -347,7 +347,7 @@ impl Server {
             "/game" => {
                 let path = arg("path").unwrap_or_default();
                 if !path.is_empty() && !setup::is_game(Path::new(&path)) {
-                    return Err("That folder has no GameData in it: choose the folder the game is installed in (the one with GameData and corruption).".into());
+                    return Err("That folder has no GameData in it: choose the folder the game is installed in (the one with GameData and corruption, or GameData and EAWX for the GOG release).".into());
                 }
                 self.change(|s| s.game = (!path.is_empty()).then_some(path));
             }

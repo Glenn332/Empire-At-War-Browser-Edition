@@ -318,7 +318,8 @@ export async function importPack(source, total, onProgress = () => {}, onStage =
     throw e;
   };
   const base = gameBase(paths);
-  if (base === null) return fail(new Error("This archive does not hold the game's folder (GameData and corruption)."));
+  if (base === null)
+    return fail(new Error("This archive does not hold the game's folder (GameData and corruption, or GameData and EAWX)."));
   onStage("Reading the game's archives");
   let index, eaw;
   try {
@@ -412,7 +413,7 @@ export async function ensureOriginal(onStage = () => {}) {
 function gameBase(paths) {
   let base = null;
   for (const p of paths.keys()) {
-    const m = /^(.*?)(?:gamedata|corruption)\/data\/megafiles\.xml$/.exec(p);
+    const m = /^(.*?)(?:gamedata|corruption|eawx)\/data\/megafiles\.xml$/.exec(p);
     if (m && (base === null || m[1].length < base.length)) base = m[1];
   }
   return base;
