@@ -15,6 +15,26 @@ const MODS = process.argv
   .flatMap((a, i) => (a === '--mod' && process.argv[i + 1] ? [process.argv[i + 1]] : []))
   .concat((process.env.SWR_MOD || '').split(';').filter(Boolean));
 
+function readModInfo(root) {
+  try {
+    const file = fs.readdirSync(root).find(name => name.toLowerCase() === 'modinfo.json');
+    return file ? JSON.parse(fs.readFileSync(path.join(root, file), 'utf8').replace(/^﻿/, '')) : null;
+  } catch {
+    return null;
+  }
+}
+
+function mountedMod(root) {
+  const folder = path.basename(path.resolve(root));
+  const info = readModInfo(root);
+  return {
+    name: info?.name || info?.steamdata?.title || folder,
+    folder,
+    workshop: /^\d+$/.test(folder) ? folder : undefined,
+    version: info?.version ? String(info.version) : undefined
+  };
+}
+
 let game = null;
 const STATIC = !!process.env.SWR_STATIC || process.argv.includes('--static');
 if (fs.existsSync(GAME) && !STATIC) {
@@ -136,6 +156,9 @@ http
       for (const k of gameFor(url).game.index.keys()) if (rx.test(k)) out.push(k);
       return send(res, 200, JSON.stringify(out.sort()), MIME['.json']);
     }
+    if (p === '/api/mounted') {
+      return send(res, 200, JSON.stringify(MODS.map(mountedMod)), MIME['.json']);
+    }
     if (p === '/api/modinfo') {
       const e = game && gameFor(url).game.index.get((url.searchParams.get('key') || '').replace(/\//g, '\\').toUpperCase());
       const at = e && e.file && path.resolve(e.file).toLowerCase(),
@@ -144,12 +167,7 @@ http
           MODS.map(r => path.resolve(r))
             .filter(r => at.startsWith(r.toLowerCase() + path.sep))
             .pop();
-      let info = null;
-      try {
-        const f = root && fs.readdirSync(root).find(n => n.toLowerCase() === 'modinfo.json');
-        if (f) info = JSON.parse(fs.readFileSync(path.join(root, f), 'utf8').replace(/^\ufeff/, ''));
-      } catch {}
-      return send(res, 200, JSON.stringify(info), MIME['.json']);
+      return send(res, 200, JSON.stringify(root ? readModInfo(root) : null), MIME['.json']);
     }
     serveStatic(req, res, p === '/' ? 'index.html' : p.slice(1));
   })

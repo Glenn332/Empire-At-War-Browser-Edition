@@ -89,7 +89,8 @@ function problemLines(limit) {
 function webglInfo() {
   try {
     const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    const options = { powerPreference: 'high-performance' };
+    const gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
     if (!gl) return { available: false };
     const details = gl.getExtension('WEBGL_debug_renderer_info');
     const info = {
@@ -107,22 +108,44 @@ function webglInfo() {
   }
 }
 
-async function webgpuInfo() {
-  if (!navigator.gpu) return { available: false };
+async function webgpuAdapter(powerPreference) {
   try {
-    const adapter = await withTimeout(navigator.gpu.requestAdapter(), 3000);
-    if (!adapter) return { available: true, adapter: null };
+    const adapter = await withTimeout(navigator.gpu.requestAdapter({ powerPreference }), 3000);
+    if (!adapter) return null;
     const info = adapter.info || {};
     return {
-      available: true,
       vendor: info.vendor,
       architecture: info.architecture,
       device: info.device,
       description: info.description,
+      fallback: !!(info.isFallbackAdapter ?? adapter.isFallbackAdapter),
       features: [...adapter.features]
     };
   } catch (error) {
-    return { available: true, error: String(error) };
+    return { error: String(error) };
+  }
+}
+
+const adapterName = adapter => (adapter ? [adapter.vendor, adapter.architecture, adapter.description].filter(Boolean).join(' ') || 'unnamed' : 'none');
+
+async function webgpuInfo() {
+  if (!navigator.gpu) return { available: false };
+  const [highPerformance, lowPower] = await Promise.all([webgpuAdapter('high-performance'), webgpuAdapter('low-power')]);
+  return {
+    available: true,
+    highPerformance,
+    lowPower,
+    twoGpus: !!(highPerformance && lowPower && adapterName(highPerformance) !== adapterName(lowPower))
+  };
+}
+
+async function batteryInfo() {
+  try {
+    const battery = await withTimeout(navigator.getBattery?.(), 2000);
+    if (!battery) return null;
+    return { charging: battery.charging, level: Math.round(battery.level * 100) };
+  } catch {
+    return null;
   }
 }
 
@@ -154,6 +177,7 @@ async function systemInfo() {
     },
     webgl: webglInfo(),
     webgpu: await webgpuInfo(),
+    battery: await batteryInfo(),
     uptimeSeconds: Math.round(performance.now() / 1000)
   };
 }
@@ -168,17 +192,16 @@ async function appInfo() {
       return null;
     }
   };
-  const [app, setup, localMods] = await Promise.all([readJson('api/app'), readJson('api/setup'), readJson('api/localmods')]);
-  return { app, setup, localMods };
+  const [app, setup, localMods, power] = await Promise.all([readJson('api/app'), readJson('api/setup'), readJson('api/localmods'), readJson('api/power')]);
+  return { app, setup, localMods, power };
 }
 
 async function contentInfo() {
   const out = {};
   try {
-    out.edition = (await import('./edition.js')).edition();
-  } catch {}
-  try {
-    out.mods = await withTimeout((await import('./vfs.js')).loadedMods(), 2000, []);
+    const content = await import('./content.js');
+    out.running = await withTimeout(content.loadContent(), 4000);
+    out.description = content.describeContent(out.running);
   } catch {}
   try {
     out.graphics = { ...(await import('./gfx.js')).gfx };
@@ -387,6 +410,26 @@ async function captureScreen(tabCapture, hideDuringCapture) {
   }
 }
 
+function gpuLine(webgpu) {
+  if (!webgpu?.available) return 'not available';
+  if (webgpu.twoGpus) return `two GPUs: high performance ${adapterName(webgpu.highPerformance)}, power saving ${adapterName(webgpu.lowPower)}`;
+  return adapterName(webgpu.highPerformance);
+}
+
+function powerLine(battery, power) {
+  const parts = [];
+  if (power?.hasBattery === false) parts.push('no battery');
+  else if (power && power.pluggedIn != null) parts.push(power.pluggedIn ? 'plugged in' : `on battery${power.batteryPercent != null ? ' ' + power.batteryPercent + '%' : ''}`);
+  else if (battery) parts.push(battery.charging ? (battery.level >= 100 ? 'plugged in or no battery' : `charging ${battery.level}%`) : `on battery ${battery.level}%`);
+  else parts.push('battery not reported');
+  if (power?.batterySaver) parts.push('battery saver on');
+  const mode = power ? (power.pluggedIn === false ? power.powerModeOnBattery : power.powerModePluggedIn) : null;
+  if (mode) parts.push(`Windows power mode ${mode}`);
+  for (const preference of power?.gpuPreferences || [])
+    if (preference.gpu !== 'not set') parts.push(`${preference.program === 'DirectXUserGlobalSettings' ? 'default' : preference.program} GPU setting ${preference.gpu}`);
+  return parts.join(', ');
+}
+
 function stamp(date) {
   const two = value => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}_${two(date.getHours())}-${two(date.getMinutes())}-${two(date.getSeconds())}`;
@@ -400,9 +443,11 @@ function summaryText({ created, game, system, app, content, multiplayer, picture
     `Build: ${BUILD}${app?.app?.version ? `  app ${app.app.version}` : ''}  (${inApp() ? 'desktop app' : 'browser'})`,
     `Page: ${location.pathname}${location.search}`,
     `Browser: ${system.userAgent}`,
-    `GPU: ${system.webgl.renderer || 'unknown'}${system.webgpu.available ? `  WebGPU ${system.webgpu.vendor || ''} ${system.webgpu.architecture || ''}`.trimEnd() : '  no WebGPU'}`,
+    `GPU: ${system.webgl.renderer || 'unknown'}`,
+    `WebGPU: ${gpuLine(system.webgpu)}`,
+    `Power: ${powerLine(system.battery, app?.power)}`,
     `Window: ${system.window.width}x${system.window.height} at ${system.window.devicePixelRatio}x, screen ${system.screen.width}x${system.screen.height}`,
-    `Edition: ${content.edition || 'unknown'}  Mods: ${(content.mods || []).join(', ') || 'none in the browser overlay'}`,
+    `Game and mods: ${content.description || 'not recorded'}`,
     `Mode: ${state.mode}${state.setup?.mapFile || state.setup?.map ? `  map ${state.setup.mapFile || state.setup.map}` : ''}${state.time != null ? `  game time ${Number(state.time).toFixed(1)}` : ''}${state.paused ? '  paused' : ''}${state.over ? '  over' : ''}`,
     `Multiplayer: ${multiplayer ? (multiplayer.lockstep ? `yes, ${multiplayer.lockstep.host ? 'host' : 'client'}, turn ${multiplayer.lockstep.tick}${multiplayer.lockstep.desynced ? ', DESYNCED' : ''}` : 'no game, earlier desync reports kept') : 'no'}`,
     `Desync reports: ${multiplayer?.reports?.length || 0}`,

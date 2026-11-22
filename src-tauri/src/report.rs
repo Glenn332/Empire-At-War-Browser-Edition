@@ -122,3 +122,83 @@ pub fn save(app: &AppHandle, name: &str, bytes: &[u8]) -> Result<Option<PathBuf>
     show_in_folder(&path);
     Ok(Some(path))
 }
+
+#[cfg(windows)]
+fn power_mode_name(guid: &str) -> String {
+    match guid.to_ascii_lowercase().as_str() {
+        "ded574b5-45a0-4f42-8737-46345c09c238" => "best performance".into(),
+        "961cc777-2547-4f9d-8174-7d86181b8a7a" => "best power efficiency".into(),
+        "3af9b8d9-7c97-431d-ad78-34a8bfea439f" => "better performance".into(),
+        "" | "00000000-0000-0000-0000-000000000000" => "balanced".into(),
+        other => other.into(),
+    }
+}
+
+#[cfg(windows)]
+fn gpu_preference_name(setting: &str) -> &'static str {
+    match setting
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("GpuPreference="))
+    {
+        Some("1") => "power saving",
+        Some("2") => "high performance",
+        Some("0") => "let Windows decide",
+        _ => "not set",
+    }
+}
+
+#[cfg(windows)]
+pub fn power() -> serde_json::Value {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    let mut status = SYSTEM_POWER_STATUS::default();
+    let read = unsafe { GetSystemPowerStatus(&mut status) }.is_ok();
+    let schemes = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes")
+        .ok();
+    let overlay = |name: &str| {
+        schemes
+            .as_ref()
+            .map(|key| power_mode_name(&key.get_value::<String, _>(name).unwrap_or_default()))
+    };
+    let preferences: Vec<serde_json::Value> = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\DirectX\UserGpuPreferences")
+        .map(|key| {
+            key.enum_values()
+                .flatten()
+                .filter_map(|(name, _)| {
+                    let program = Path::new(&name)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| name.clone());
+                    let lower = program.to_ascii_lowercase();
+                    let relevant = name == "DirectXUserGlobalSettings"
+                        || lower.contains("msedgewebview2")
+                        || lower.contains("empire")
+                        || lower.contains("chrome")
+                        || lower.contains("msedge")
+                        || lower.contains("firefox");
+                    relevant.then(|| {
+                        let setting: String = key.get_value(&name).unwrap_or_default();
+                        serde_json::json!({ "program": program, "gpu": gpu_preference_name(&setting) })
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({
+        "pluggedIn": read.then_some(status.ACLineStatus == 1),
+        "hasBattery": read.then_some(status.BatteryFlag != 128 && status.BatteryFlag != 255),
+        "batteryPercent": (read && status.BatteryLifePercent <= 100).then_some(status.BatteryLifePercent),
+        "batterySaver": read.then_some(status.SystemStatusFlag == 1),
+        "powerModePluggedIn": overlay("ActiveOverlayAcPowerScheme"),
+        "powerModeOnBattery": overlay("ActiveOverlayDcPowerScheme"),
+        "gpuPreferences": preferences
+    })
+}
+
+#[cfg(not(windows))]
+pub fn power() -> serde_json::Value {
+    serde_json::Value::Null
+}

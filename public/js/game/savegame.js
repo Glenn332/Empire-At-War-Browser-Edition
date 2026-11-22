@@ -3,6 +3,7 @@ import { buildListFor, spaceHealthMultiplier } from './sim.js';
 import { useAbility, refreshMods } from './abilities.js';
 import { BUILD } from '../build.js';
 import { expansion } from '../edition.js';
+import { contentNow } from '../content.js';
 import { snapshotGalaxy } from './galaxy.js';
 import { saveBattleScripts } from './tacticalsave.js';
 import { SpecialWeapon } from './superweapon.js';
@@ -15,8 +16,14 @@ const r1 = v => Math.round(v * 10) / 10;
 
 export async function snapshotNow(game, name = '') {
   if (game.tacticalCinematics?.on) game.tacticalCinematics.endMode();
-  if (game.mirror) return withMultiplayer(game, await game.mirror.save(name));
+  if (game.mirror) return withMultiplayer(game, withContent(await game.mirror.save(name)));
   return snapshot(game, name);
+}
+
+function withContent(save) {
+  const content = contentNow();
+  if (save && content) save.content = content;
+  return save;
 }
 
 export function snapshot(game, name = '') {
@@ -25,7 +32,7 @@ export function snapshot(game, name = '') {
     : game.landBattle
       ? game.landSnapshot(name, { version: SAVE_VERSION, build: BUILD })
       : spaceSnapshot(game, name);
-  return withMultiplayer(game, s);
+  return withMultiplayer(game, withContent(s));
 }
 
 export function withMultiplayer(game, s) {

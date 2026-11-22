@@ -556,6 +556,32 @@ impl Server {
                 _ => text(404, "not found"),
             };
         }
+        if p == "/api/mounted" {
+            let versions = steam::workshop_versions();
+            let list: Vec<serde_json::Value> = self
+                .mods
+                .iter()
+                .map(|root| {
+                    let folder = root
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let workshop = folder
+                        .chars()
+                        .all(|c| c.is_ascii_digit())
+                        .then(|| folder.clone())
+                        .filter(|f| !f.is_empty());
+                    let version = workshop.as_ref().and_then(|id| versions.get(id)).cloned();
+                    serde_json::json!({
+                        "name": steam::info_name(root).unwrap_or_else(|| folder.clone()),
+                        "folder": folder,
+                        "workshop": workshop,
+                        "version": version
+                    })
+                })
+                .collect();
+            return json(&list);
+        }
         if p == "/api/localmods" {
             return json(&self.local_mods());
         }
@@ -631,6 +657,9 @@ impl Server {
                 let _ = w.set_cursor_grab(on);
             }
             return json(&serde_json::json!({ "ok": true }));
+        }
+        if p == "/api/power" {
+            return json(&report::power());
         }
         if p == "/api/screenshot" {
             return match report::screenshot(app) {

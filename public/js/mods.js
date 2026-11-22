@@ -889,6 +889,9 @@ export async function openOverlay() {
     generated = key => key.startsWith('DATA\\FONTS\\RASTER\\');
   return {
     names: mods.filter(m => !m.game).map(m => m.name),
+    layers: mods
+      .filter(m => !m.game)
+      .map(m => ({ name: m.label || m.name, workshop: m.workshop, version: m.version, files: Object.keys(m.files || {}).length })),
     whole,
     async read(key, language, head) {
       const layers = language === undefined ? top : await mediaView(language);

@@ -10,6 +10,7 @@ import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloa
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { inApp } from '../platform.js';
 import { setMenuOpen } from '../bugreportui.js';
+import { loadContent, contentDifferences } from '../content.js';
 import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
@@ -210,6 +211,24 @@ export class Menus {
     dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', T('TEXT_BUTTON_OK', 'OK'));
     dlg.show('IDC_DIALOG_BOX_BUTTON_RIGHT', false);
     dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => this.pop());
+  }
+
+  async choose(text, yes) {
+    const dlg = await this.push('IDD_DIALOG_BOX');
+    if (!dlg) {
+      yes();
+      return;
+    }
+    dlg.setText('IDC_CAPTION', text);
+    for (const id of ['IDC_DIALOG_CLOSE_BUTTON', 'IDC_USER_TEXT_STRING_1', 'IDC_USER_TEXT_STRING_2', 'IDC_USER_TEXT_STRING_3', 'IDC_DIALOG_BOX_BUTTON_CENTER'])
+      dlg.show(id, false);
+    dlg.setText('IDC_DIALOG_BOX_BUTTON_LEFT', T('TEXT_BUTTON_YES', 'Yes'));
+    dlg.setText('IDC_DIALOG_BOX_BUTTON_RIGHT', T('TEXT_BUTTON_NO', 'No'));
+    dlg.on('IDC_DIALOG_BOX_BUTTON_LEFT', () => {
+      this.pop();
+      yes();
+    });
+    dlg.on('IDC_DIALOG_BOX_BUTTON_RIGHT', () => this.pop());
   }
 
   async ask(caption, lines, yes, no = null) {
@@ -561,7 +580,16 @@ export class Menus {
     if (!dlg) return;
     dlg.show('IDC_CHECK_RECORDINGS', false);
     let list;
-    const go = row => loadSaved(row.key);
+    const go = async row => {
+      const saved = await getSave(row.key).catch(() => null);
+      const differences = contentDifferences(saved?.content, await loadContent());
+      if (!differences.length) {
+        loadSaved(row.key);
+        return;
+      }
+      const shown = differences.slice(0, 3).join(', ') + (differences.length > 3 ? ` and ${differences.length - 3} more` : '');
+      this.choose(`This save was made with a different setup: ${shown}. Load it anyway?`, () => loadSaved(row.key));
+    };
     const pick = () => {
       const on = !!(list && list.selected());
       dlg.enable('IDC_LOAD_GAME_BUTTON', on);
