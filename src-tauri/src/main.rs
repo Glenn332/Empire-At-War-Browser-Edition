@@ -651,6 +651,18 @@ impl Server {
             }
             return json(&serde_json::json!({ "ok": true }));
         }
+        if p == "/api/fullscreen" {
+            if let Some(win) = app.get_webview_window("main") {
+                if let Some(on) = arg("on") {
+                    let on = on == "1";
+                    if on != win.is_fullscreen().unwrap_or(false) {
+                        let _ = win.set_fullscreen(on);
+                    }
+                }
+                return json(&serde_json::json!({ "fullscreen": win.is_fullscreen().unwrap_or(false) }));
+            }
+            return json(&serde_json::json!({ "fullscreen": false }));
+        }
         if p == "/api/cursor-grab" {
             let on = arg("on").as_deref() == Some("1");
             CURSOR_GRAB.store(on, Ordering::Relaxed);

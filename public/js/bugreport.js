@@ -1,5 +1,6 @@
 import { BUILD } from './build.js';
 import { inApp } from './platform.js';
+import { fullscreen } from './pointertrap.js';
 import { makeZip } from './zipwriter.js';
 import { collectPerformance, cpuProfile, profileText, performanceWarnings, performanceLines } from './perfreport.js';
 
@@ -165,7 +166,7 @@ async function systemInfo() {
     cores: navigator.hardwareConcurrency,
     deviceMemoryGB: navigator.deviceMemory ?? null,
     screen: { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight, colorDepth: screen.colorDepth },
-    window: { width: innerWidth, height: innerHeight, devicePixelRatio, fullscreen: !!document.fullscreenElement, visible: document.visibilityState },
+    window: { width: innerWidth, height: innerHeight, devicePixelRatio, fullscreen: fullscreen(), visible: document.visibilityState },
     heapMB: memory ? { used: Math.round(memory.usedJSHeapSize / 1048576), limit: Math.round(memory.jsHeapSizeLimit / 1048576) } : null,
     storageMB: storage ? { used: Math.round((storage.usage || 0) / 1048576), quota: Math.round((storage.quota || 0) / 1048576) } : null,
     features: {

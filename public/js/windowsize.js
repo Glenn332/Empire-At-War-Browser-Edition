@@ -1,4 +1,5 @@
 import { inApp } from './platform.js';
+import { fullscreen } from './pointertrap.js';
 import { gfx, storeGfx } from './gfx.js';
 
 const SIZES = [
@@ -44,7 +45,7 @@ export function pickWindowSize(w, h) {
 
 export async function restoreWindowSize() {
   const s = gfx.window;
-  if (!inApp() || !Array.isArray(s) || !(s[0] >= 640 && s[1] >= 480) || document.fullscreenElement) return;
+  if (!inApp() || !Array.isArray(s) || !(s[0] >= 640 && s[1] >= 480) || fullscreen()) return;
   try {
     if (sessionStorage.getItem('swr-window-set')) return;
     sessionStorage.setItem('swr-window-set', '1');

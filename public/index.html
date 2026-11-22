@@ -2055,6 +2055,7 @@
       };
       let busy = false;
       const app = inApp();
+      if (app) fetch('api/fullscreen?on=0').catch(() => {});
 
       async function refresh() {
         const info = await packInfo();

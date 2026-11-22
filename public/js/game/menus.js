@@ -12,7 +12,7 @@ import { inApp } from '../platform.js';
 import '../bugreportui.js';
 import { loadContent, contentDifferences } from '../content.js';
 import { readReplayFile, startReplay, REPLAY_EXT } from './replay.js';
-import { enterFullscreen, exitFullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
+import { enterFullscreen, exitFullscreen, fullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
@@ -875,7 +875,7 @@ export class Menus {
       filling = 0;
     const fill = async () => {
       const n = ++filling,
-        list = !document.fullscreenElement ? await windowSizes() : null;
+        list = !fullscreen() ? await windowSizes() : null;
       if (n !== filling || !dlg.veil.isConnected) return;
       sized = list;
       res = sized
@@ -883,7 +883,7 @@ export class Menus {
             'IDC_RESOLUTION_LIST',
             sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
             row => {
-              if (document.fullscreenElement) return;
+              if (fullscreen()) return;
               const [w, h] = row.key.split('x').map(Number);
               pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
             }
@@ -940,7 +940,7 @@ export class Menus {
           apply();
         });
       dlg.check('IDC_FULLSCREEN_MOUSE_CAPTURE', fullscreenCapture(), setFullscreenCapture);
-      dlg.check('IDC_WINDOWED_MODE', !document.fullscreenElement, on => {
+      dlg.check('IDC_WINDOWED_MODE', !fullscreen(), on => {
         try {
           if (on) exitFullscreen();
           else enterFullscreen();

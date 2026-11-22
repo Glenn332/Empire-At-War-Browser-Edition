@@ -39,7 +39,38 @@ const trap = {
 };
 export default trap;
 
-export const fullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+let appFull = false;
+const appHost = () => {
+  try {
+    return window.top.swrAppFullscreen || null;
+  } catch {
+    return null;
+  }
+};
+export const fullscreen = () =>
+  inApp() ? (topFrame() ? appFull : !!appHost()?.get()) : !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+function announceAppFullscreen(on) {
+  if (on === appFull) return;
+  appFull = on;
+  const docs = [document];
+  for (let i = 0; i < frames.length; i++)
+    try {
+      docs.push(frames[i].document);
+    } catch {}
+  for (const d of docs) d.dispatchEvent(new Event('fullscreenchange'));
+}
+
+function setAppFullscreen(on) {
+  if (!topFrame()) return appHost()?.set(on);
+  return fetch('api/fullscreen?on=' + (on ? 1 : 0))
+    .then(r => r.json())
+    .then(s => announceAppFullscreen(!!s.fullscreen))
+    .catch(e => console.warn('fullscreen:', e.message));
+}
+
+if (typeof window !== 'undefined' && inApp() && topFrame()) window.swrAppFullscreen = { get: () => appFull, set: setAppFullscreen };
+
 const ownFullscreen = () => (document.fullscreenElement || document.webkitFullscreenElement) === document.documentElement;
 
 function toggleFullscreen() {
@@ -65,6 +96,7 @@ export function restoreFullscreen() {
   document.addEventListener('fullscreenchange', () => {
     if (!fullscreen() && !window.swrLeaving && document.visibilityState === 'visible') rememberFullscreen(false);
   });
+  if (inApp()) return setAppFullscreen(want);
   if (!want || fullscreen()) return;
   const events = ['pointerdown', 'keydown'];
   const wait = () => {
@@ -74,18 +106,12 @@ export function restoreFullscreen() {
     for (const k of events) removeEventListener(k, again, true);
     if (!fullscreen()) enterFullscreen();
   };
-  if (!inApp()) return wait();
-  try {
-    keepEscape();
-    const p = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-    if (p && p.catch) p.catch(wait);
-  } catch {
-    wait();
-  }
+  wait();
 }
 
 export function exitFullscreen() {
   rememberFullscreen(false);
+  if (inApp()) return setAppFullscreen(false);
   try {
     const p = document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen?.();
     if (p && p.catch) p.catch(() => {});
@@ -94,6 +120,7 @@ export function exitFullscreen() {
 
 export function enterFullscreen() {
   rememberFullscreen(true);
+  if (inApp()) return setAppFullscreen(true);
   keepEscape();
   const el = document.documentElement,
     p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen?.();
@@ -101,6 +128,7 @@ export function enterFullscreen() {
 }
 
 function keepEscape() {
+  if (inApp()) return;
   trap.keyboard = 'unsupported';
   if (!navigator.keyboard || !navigator.keyboard.lock) return;
   trap.keyboard = 'asked';
