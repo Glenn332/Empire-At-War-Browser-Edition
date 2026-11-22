@@ -404,7 +404,7 @@ function picture(name, repeat) {
 
 const files = new WeakMap();
 const keepData = new WeakSet(),
-  restoring = new WeakSet();
+  restoring = new WeakMap();
 const hasPictures = t => !!(t.mipmaps?.[0]?.data || t.image?.data);
 
 class FileTexture extends THREE.Texture {
@@ -446,15 +446,24 @@ function releasePictures(t) {
 function restorePictures(t, keep = false) {
   if (keep) keepData.add(t);
   const file = files.get(t.source);
-  if (!file || restoring.has(t) || hasPictures(t)) return;
-  restoring.add(t);
-  picture(file.name, file.repeat).then(real => {
+  if (!file || hasPictures(t)) return Promise.resolve(t);
+  if (restoring.has(t)) return restoring.get(t);
+  const restored = picture(file.name, file.repeat).then(real => {
     restoring.delete(t);
     t.mipmaps = real.mipmaps.slice();
     t.source = real.source;
     files.set(t.source, file);
     t.needsUpdate = true;
+    return t;
   });
+  restoring.set(t, restored);
+  return restored;
+}
+
+export async function loadTextureWithPictures(name) {
+  const texture = loadTexture(name);
+  await texture.userData.ready;
+  return restorePictures(texture);
 }
 
 export async function texturesReady() {

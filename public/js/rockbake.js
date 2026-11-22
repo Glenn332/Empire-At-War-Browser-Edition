@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three/build/three.module.js';
-import { loadTexture } from './dds.js';
+import { loadTextureWithPictures } from './dds.js';
 
 const VERT = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
@@ -86,9 +86,7 @@ export async function bakeRockTextures(renderer, base = 'w_asteroid00.tga', norm
   bakes++;
   try {
     const size = Math.min(4096, renderer.capabilities.maxTextureSize);
-    const src = loadTexture(base),
-      srcN = loadTexture(normal);
-    await Promise.all([src.userData.ready, srcN.userData.ready]);
+    const [src, srcN] = await Promise.all([loadTextureWithPictures(base), loadTextureWithPictures(normal)]);
     const target = () => {
       const rt = new THREE.WebGLRenderTarget(size, size, {
         depthBuffer: false,
