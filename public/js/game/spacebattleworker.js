@@ -466,7 +466,7 @@ async function run(m) {
         tick();
       }
     };
-  const stepInput = (input, applyNow) => (fixed ? commands.push([-1, input]) : applyNow());
+  const stepInput = (input, applyNow) => (recording ? commands.push([-1, input]) : applyNow());
   onmessage = e => {
     const c = e.data;
     if (c.k === 'seen') {
