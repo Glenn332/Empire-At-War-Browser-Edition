@@ -123,7 +123,6 @@ const GROUPS = [
         D,
         'nothing to do: no space skirmish unit has one in the game files (only the Eclipse, the Death Star and land units do)'
       ],
-      ['4K asteroid surface (generated)', D],
       [
         'Shadows',
         P,
@@ -1166,7 +1165,7 @@ const GROUPS = [
       [
         'Galaxy: asteroid field planets',
         D,
-        'planets drawn as asteroid fields (Vergesso Asteroids, a destroyed Alderaan) show their rocks textured and lit on the galaxy map. Before this they were black under WebGPU: the map kept the detailed rock texture baked for an earlier space scene, which its own renderer could not use. The galaxy map now draws them with the game texture and the rock detail shader. Models without tangents get tangents worked out from their texture coordinates, so normal mapped surfaces on them no longer go black either'
+        'planets drawn as asteroid fields (Vergesso Asteroids, a destroyed Alderaan) show their rocks textured and lit on the galaxy map. They are drawn with the game texture and the rock detail shader; the generated 4K rock texture used before is gone. Models without tangents get tangents worked out from their texture coordinates, so normal mapped surfaces on them no longer go black either'
       ],
       [
         'Galaxy view and camera',

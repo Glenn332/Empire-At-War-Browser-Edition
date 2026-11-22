@@ -2,7 +2,6 @@ import { diag } from './diag.js';
 import * as THREE from '../vendor/three/build/three.module.js';
 import { loadALO } from './alo.js';
 import { loadTexture, whiteTexture, blackTexture } from './dds.js';
-import { rockTextures, rockBake } from './rockbake.js';
 import { gfx } from './gfx.js';
 import { planetVertex, planetFragment } from './planetshader.js';
 import { effectInfo, effectLOD, selectEffectTechnique } from './fxo.js';
@@ -646,7 +645,6 @@ function makeMaterial(mat, format, teamColor, selfShadow = false) {
           p.FowDimAllowed ?? '',
           uvScrollRate?.slice(0, 2).join() || '',
           gfx.shader | 0,
-          /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockBake() : '',
           selfShadow ? 'shadowed' : ''
         ].join('|');
   let m = materialCache.get(key);
@@ -685,10 +683,8 @@ function makeMaterial(mat, format, teamColor, selfShadow = false) {
   else if (shader.includes('gloss')) defines.GLOSS = 1;
   if (format.endsWith('C')) defines.USE_VCOLOR = 1;
   if (FOW_DIMMED.test(shader) && p.FowDimAllowed !== 0 && p.FowDimAllowed !== false) defines.FOW_DIM = 1;
-  const rock4k = !unlit && /^w_asteroid00\.tga$/i.test(p.BaseTexture || '') ? rockTextures() : null;
-  const rocky = !rock4k && !unlit && /asteroid/i.test(p.BaseTexture || '');
+  const rocky = !unlit && /asteroid/i.test(p.BaseTexture || '');
   if (rocky) defines.DETAIL = 1;
-  if (rock4k) defines.BUMP = 1;
   if (skinned) defines.SKINNED = 1;
   if (selfShadow && !unlit) defines.SELF_SHADOW = 1;
   const c3 = (v, d) => (Array.isArray(v) ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
@@ -703,11 +699,10 @@ function makeMaterial(mat, format, teamColor, selfShadow = false) {
     uniforms: {
       ...lighting,
       ...boltLights,
-      map: { value: rock4k ? rock4k.map : p.BaseTexture ? loadTexture(p.BaseTexture) : whiteTexture() },
+      map: { value: p.BaseTexture ? loadTexture(p.BaseTexture) : whiteTexture() },
       normalMap: {
-        value: rock4k
-          ? rock4k.normalMap
-          : (defines.BUMP || defines.SPECGLOW || defines.REFLECT) && p.NormalTexture
+        value:
+          (defines.BUMP || defines.SPECGLOW || defines.REFLECT) && p.NormalTexture
             ? loadTexture(p.NormalTexture)
             : defines.SPECGLOW
               ? blackTexture()

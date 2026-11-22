@@ -17,7 +17,6 @@ import { gfx, storeGfx, pixelRatio } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
-import { bakeRockTextures } from './rockbake.js';
 import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
@@ -186,8 +185,7 @@ const STAGES = {
   'Loading map': [0, 0.05],
   'Loading models': [0.05, 0.14],
   'Loading animations': [0.14, 0.21],
-  'Preparing surfaces': [0.21, 0.22],
-  'Preparing effects and shaders': [0.22, 0.44],
+  'Preparing effects and shaders': [0.21, 0.44],
   'Loading ships': [0.44, 0.97],
   'Preparing the battle': [0.97, 0.98]
 };
@@ -481,8 +479,6 @@ class Game {
           ' | ' +
           (v ? 'v' + v[1] : 'no version');
     }
-    progress('Preparing surfaces', 1);
-    await bakeRockTextures(this.renderer.renderer);
     this.renderer.setEnvironment(map.environment);
     progress('Preparing effects and shaders', 1);
     const warmFrom = performance.now();

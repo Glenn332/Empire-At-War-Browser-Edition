@@ -1,7 +1,6 @@
 import { expansion } from '../edition.js';
 import { ridesFlagship } from './campaignbattle.js';
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
-import { dropRockTextures } from '../rockbake.js';
 import { switchTarget } from './switchsides.js';
 import { applyCampaignSettings } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
@@ -324,7 +323,6 @@ export class GalacticGame {
     renderer.setPixelRatio(pixelRatio());
     $('view').appendChild(renderer.domElement);
     gammaOn(renderer.domElement);
-    dropRockTextures();
     this.scene = new THREE.Scene();
     this.backgroundScene = new THREE.Scene();
     this.midgroundScene = new THREE.Scene();
