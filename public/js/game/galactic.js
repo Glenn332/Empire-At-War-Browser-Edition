@@ -3363,6 +3363,7 @@ export class GalacticGame {
   fit() {
     const w = innerWidth,
       h = innerHeight;
+    this.renderer.setPixelRatio(pixelRatio());
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.fov = (2 * Math.atan(Math.tan(Math.atan(0.5) / 2) / this.camera.aspect)) / DEG;

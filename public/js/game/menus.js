@@ -3,7 +3,7 @@ import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
-import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX } from '../gfx.js';
+import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX, SUPERSAMPLE_STEPS, supersampling } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
@@ -866,13 +866,22 @@ export class Menus {
     };
     document.addEventListener('fullscreenchange', refill);
     const show = () => {
-      dlg.slider('IDC_ANTI_ALIAS_SLIDER', gfx.aa !== false ? 1 : 0, v => {
-        const on = v >= 0.5;
-        if (on !== gfx.aa) {
+      const aaSteps = SUPERSAMPLE_STEPS.length;
+      const aaStep = gfx.aa === false ? 0 : 1 + Math.max(0, SUPERSAMPLE_STEPS.indexOf(supersampling()));
+      dlg.slider(
+        'IDC_ANTI_ALIAS_SLIDER',
+        aaStep / aaSteps,
+        v => {
+          const step = Math.round(v * aaSteps);
+          const on = step > 0,
+            supersample = SUPERSAMPLE_STEPS[Math.max(0, step - 1)];
+          if (on === (gfx.aa !== false) && supersample === gfx.supersample) return;
           gfx.aa = on;
+          gfx.supersample = supersample;
           apply();
-        }
-      });
+        },
+        aaSteps + 1
+      );
       dlg.slider('IDC_GAMMA_SLIDER', gfx.gamma, v => {
         gfx.gamma = v;
         apply();

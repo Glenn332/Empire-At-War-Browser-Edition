@@ -11,6 +11,7 @@ const OWN = {
   soft: true,
   scale: 1,
   aa: true,
+  supersample: 1,
   particle: 1,
   mesh: 1,
   texMip: 0,
@@ -53,8 +54,19 @@ export function shadowReach() {
   return Math.max(1, Math.min(SHADOW_RANGE_MAX, +gfx.shadowRange || OWN.shadowRange));
 }
 
+export const SUPERSAMPLE_STEPS = [1, 1.5, 2];
+const SUPERSAMPLE_PIXEL_BUDGET = 3840 * 2160;
+
+export function supersampling() {
+  if (gfx.aa === false) return 1;
+  return Math.max(1, Math.min(2, +gfx.supersample || 1));
+}
+
 export function pixelRatio() {
-  return Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1));
+  const screenRatio = Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1));
+  const screenPixels = Math.max(1, innerWidth * innerHeight * screenRatio * screenRatio);
+  const affordable = Math.sqrt(SUPERSAMPLE_PIXEL_BUDGET / screenPixels);
+  return screenRatio * Math.max(1, Math.min(supersampling(), affordable));
 }
 
 const canvases = new Set();

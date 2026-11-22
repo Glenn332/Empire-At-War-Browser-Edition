@@ -13,7 +13,7 @@ import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
-import { gfx, storeGfx } from './gfx.js';
+import { gfx, storeGfx, pixelRatio } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
@@ -3282,8 +3282,8 @@ async function boot() {
     renderer.post.heat = !!gfx.heat;
     renderer.post.flare = !!gfx.flare;
     renderer.fxParticles.heatOn = !!gfx.heat;
-    if (renderer.ratioWas !== gfx.scale) {
-      renderer.ratioWas = gfx.scale;
+    if (renderer.ratioWas !== pixelRatio()) {
+      renderer.ratioWas = pixelRatio();
       if (renderer.ctx) renderer.resize();
     }
   };
