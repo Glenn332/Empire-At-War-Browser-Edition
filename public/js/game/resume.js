@@ -41,7 +41,7 @@ export function watchForResume(game) {
     if (!wrote) return;
     wrote = false;
     setMark(null);
-    deleteSave(ID).catch(() => {});
+    if (!writing) deleteSave(ID).catch(() => {});
   };
   addEventListener('pagehide', e => {
     if (!e.persisted) {
