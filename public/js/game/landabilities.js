@@ -213,7 +213,7 @@ const fx = (world, name, at, dz = 0) => {
   if (name && world.onFx) world.onFx(name, at.x, at.y, (at.z || 0) + dz);
 };
 const sound = (world, name, at, side = at.side) => {
-  if (name && world.onSound) world.onSound(name, at.x, at.y, side);
+  if (name && world.onSound) world.onSound(name, at.x, at.y, side, at.type ? at : null);
 };
 const beam = (world, a, b, secs, color) => world.beams.push({ a, b, until: world.time + secs, color });
 const stun = (world, u, secs) => {

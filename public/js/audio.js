@@ -74,6 +74,9 @@ export class Audio {
     try {
       localStorage.setItem(HEADPHONES_KEY, on ? '1' : '0');
     } catch {}
+    const model = this.headphones ? 'HRTF' : 'equalpower';
+    for (const set of this.instances.values()) for (const s of set) if (s.panner) s.panner.panningModel = model;
+    for (const l of this.loops.values()) if (l.panner) l.panner.panningModel = model;
   }
 
   listenFrom(camera) {
@@ -120,14 +123,18 @@ export class Audio {
 
   followSounds() {
     for (const s of this.following) {
-      const u = s.from;
-      if (s.stopped || !u || u.dead || u.x === undefined) {
+      const u = s.from?.dead ? s.from.wreck : s.from;
+      if (s.stopped || !u || u.gone || u.x === undefined) {
         this.following.delete(s);
         continue;
       }
       s.x = u.x + s.dx;
       s.y = u.y + s.dy;
-      if (s.panner) {
+      if (s.voice && !this.headphones) {
+        if (s.panner) this.setPanner(s.panner, this.ear.x, this.ear.y, this.ear.z);
+        if (s.pan) s.pan.pan.value = 0;
+        if (s.gain) s.gain.gain.value = s.level;
+      } else if (s.panner) {
         this.placePanner(s.panner, s.x, s.y);
         if (s.voice && s.gain) s.gain.gain.value = s.level * this.reach(s.saturation, s.x, s.y, true).gain;
       } else if (s.pan && s.gain) {
@@ -181,7 +188,10 @@ export class Audio {
   }
 
   placePanner(panner, x, y) {
-    const z = this.soundHeight(x, y);
+    this.setPanner(panner, x, y, this.soundHeight(x, y));
+  }
+
+  setPanner(panner, x, y, z) {
     if (panner.positionX) {
       panner.positionX.value = x;
       panner.positionY.value = y;

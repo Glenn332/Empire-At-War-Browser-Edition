@@ -543,6 +543,7 @@ class LandUnit {
     this.hurtBy = undefined;
     this.died = undefined;
     this.deathClone = undefined;
+    this.wreck = undefined;
     this.endFx = undefined;
     this.endSfx = undefined;
     this.lieFor = undefined;
@@ -3714,7 +3715,7 @@ export class LandWorld {
         if (worst) {
           worst.health = Math.min(worst.maxHealth, worst.health + h.amount + worst.maxHealth * h.percent);
           if (this.onFx) this.onFx(h.fx, worst.x, worst.y, worst.z + worst.aimZ);
-          if (this.onSound) this.onSound(h.sfx, worst.x, worst.y, u.side);
+          if (this.onSound) this.onSound(h.sfx, worst.x, worst.y, u.side, worst);
         }
       }
     }
@@ -5390,7 +5391,7 @@ export class LandWorld {
       while (stage + 1 < W.at.length && f <= W.at[stage + 1]) stage++;
       if (stage > W.stage) {
         const s = W.sfx[stage];
-        if (s && !/^null$/i.test(s) && this.onSound) this.onSound(s, u.x, u.y);
+        if (s && !/^null$/i.test(s) && this.onSound) this.onSound(s, u.x, u.y, undefined, u);
       }
       W.stage = stage;
     }
@@ -5414,7 +5415,8 @@ export class LandWorld {
     if (u.health <= 0) {
       if (u.flies && u.type.bool('Spin_Away_On_Death') && simRandom() <= u.type.num('Spin_Away_On_Death_Chance', 0)) {
         u.spin = this.spinAway(u);
-        if (this.onSound) this.onSound(u.type.str('Spin_Away_On_Death_SFXEvent_Start_Die'), u.x, u.y);
+        u.wreck = u;
+        if (this.onSound) this.onSound(u.type.str('Spin_Away_On_Death_SFXEvent_Start_Die'), u.x, u.y, undefined, u);
         const ex = u.type.list('Spin_Away_On_Death_Explosion');
         if (ex.length && this.onFx) this.onFx(ex[Math.floor(Math.random() * ex.length)], u.x, u.y, u.z);
       }
@@ -5797,7 +5799,7 @@ export class LandWorld {
     const [D, back] = pick;
     if (!t.path.length && !(t.cast > this.time) && !(t.pilot && t.once === 'attack' && t.onceEnd > this.time))
       this.cast(t, back ? 'REDIRECT_BLASTER' : 'BLOCK_BLASTER');
-    if (this.onSound) this.onSound(D.sfx, t.x, t.y, t.side);
+    if (this.onSound) this.onSound(D.sfx, t.x, t.y, t.side, t);
     if (back) {
       this.fire(t, s.from, { ...s.w, muzzles: null, quiet: true });
       this.shots[this.shots.length - 1].turned = true;
@@ -5818,7 +5820,7 @@ export class LandWorld {
   absorbs(t, s) {
     const A = t.absorb;
     if (!A || !/LASER/i.test(s.w.proj.str('Projectile_Category')) || simRandom() >= A.chance) return 1;
-    if (this.onSound) this.onSound(A.sfx, t.x, t.y, t.side);
+    if (this.onSound) this.onSound(A.sfx, t.x, t.y, t.side, t);
     if (A.color.length >= 3) this.glow(t, A.color, A.secs, 1);
     return 1 - A.part;
   }

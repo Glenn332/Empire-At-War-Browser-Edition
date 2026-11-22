@@ -1324,8 +1324,9 @@ export class Renderer {
         boom,
         size
       };
+      u.wreck = { x: u.x, y: u.y, gone: false };
     }
-    this.clones.push({ holder, inst, state, proxies, age: 0, limit, path, end: end ? this.particleOf(end) : '', size: size || 40 });
+    this.clones.push({ holder, inst, state, proxies, age: 0, limit, path, wreck: u.wreck || null, end: end ? this.particleOf(end) : '', size: size || 40 });
   }
 
   particleOf(name) {
@@ -1745,6 +1746,10 @@ export class Renderer {
       c.age += dt;
       if (c.state) c.state.step(dt);
       const flying = !c.path || this.spinStep(c, dt);
+      if (c.wreck) {
+        c.wreck.x = c.holder.position.x;
+        c.wreck.y = c.holder.position.y;
+      }
       for (const p of c.proxies) {
         let on = true;
         for (let b = p.bone; b && b !== c.inst.root; b = b.parent)
@@ -1784,6 +1789,7 @@ export class Renderer {
         const h = c.holder.position;
         if (c.path) this.explosion(h.x, h.y, h.z, c.path.size, false, c.path.boom);
         if (c.end) this.explosion(h.x, h.y, h.z, c.size, false, c.end);
+        if (c.wreck) c.wreck.gone = true;
         for (const p of c.proxies) if (p.sys) p.sys.release();
         this.scene.remove(c.holder);
         continue;

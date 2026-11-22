@@ -780,6 +780,7 @@ export class Unit {
     this.fireCone = undefined;
     this.fireIdle = undefined;
     this.flyBy = undefined;
+    this.wreck = undefined;
     this.flyTimer = undefined;
     this.spawnDelay = undefined;
     this.pickAt = undefined;
@@ -2935,7 +2936,7 @@ export class World {
       if (spin) {
         this.fx.explosion(u.x, u.y, u.z, size, false, particleFile(ct.list('Spin_Away_On_Death_Explosion')[0]));
         const sfx = ct.str('Spin_Away_On_Death_SFXEvent_Start_Die');
-        if (sfx) this.audio.play(sfx, u.x, u.y);
+        if (sfx) this.audio.playFrom(u, sfx, u.x, u.y);
       } else {
         this.fx.explosion(u.x, u.y, u.z, size, big > 120, boom);
         this.audio.play(

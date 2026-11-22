@@ -694,7 +694,7 @@ export function tickAbilities(world, u, dt) {
         if (d.t < fireAt) break;
         if (!d.fired) {
           d.fired = true;
-          world.audio.play(def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
+          world.audio.playFrom(u.isSquad ? u.fighters[0] || u : u, def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
         }
         const c = sp
           ? sp

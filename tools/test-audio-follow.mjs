@@ -163,6 +163,37 @@ await settle();
 assert.equal(context.panners.length, flatBefore, 'advisor lines stay flat');
 assert.equal(audio.playFor({ id: 1 }, 'Test_Unit_Move', cruiser), false, 'other players never speak to you');
 
+audio.groups.clear();
+audio.instances.clear();
+audio.voiceUntil = 0;
+const talker = { x: audio.ear.x + 3000, y: audio.ear.y, dead: false };
+audio.playFor(human, 'Test_Unit_Move', talker);
+await settle();
+const talking = [...audio.following].find(s => s.voice && s.from === talker);
+assert.ok(talking.gain.gain.value < talking.level * 0.6, 'a far reply starts quiet');
+audio.setHeadphones(false);
+assert.equal(talking.panner.panningModel, 'equalpower', 'switching to Speakers changes the panning of sounds already playing');
+assert.equal(loop.panner.panningModel, 'equalpower', 'and of engine loops already running');
+audio.listenFrom(camera);
+assert.equal(talking.gain.gain.value, talking.level, 'a reply that is still speaking turns flat');
+assert.equal(talking.panner.positionX.value, audio.ear.x, 'and sits on the listener');
+audio.setHeadphones(true);
+assert.equal(loop.panner.panningModel, 'HRTF', 'switching back restores head related panning');
+
+soundEvent('Test_Spin_Away', { Samples: 'Test_Spin.wav', Is_3D: 'Yes', Max_Instances: 4, Volume_Saturation_Distance: 400, Min_Volume: 100, Max_Volume: 100 });
+const doomed = { x: 0, y: 0, dead: false };
+audio.playFrom(doomed, 'Test_Spin_Away', 0, 0);
+await settle();
+const spinning = context.panners.at(-1);
+doomed.dead = true;
+doomed.wreck = { x: 300, y: 40, gone: false };
+audio.listenFrom(camera);
+assert.equal(spinning.positionX.value, 300, 'a dying ship hands its sound to the wreck that spins away');
+doomed.wreck.gone = true;
+doomed.wreck.x = 900;
+audio.listenFrom(camera);
+assert.equal(spinning.positionX.value, 300, 'and the sound stays where the wreck blew up');
+
 audio.headphones = false;
 audio.groups.clear();
 audio.instances.clear();

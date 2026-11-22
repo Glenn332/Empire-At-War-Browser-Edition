@@ -1031,9 +1031,9 @@ export class LandGame {
       }
       this.audio.playFrom(s.from, weaponFireSound(s.from.type, s.w), s.x, s.y);
     };
-    world.onSound = (name, x, y, side) => {
+    world.onSound = (name, x, y, side, from) => {
       if (side !== undefined && side !== this.me && this.audio.isVoice(name)) return;
-      this.audio.play(name, x, y);
+      this.audio.playFrom(from, name, x, y);
     };
     world.onOverrun = side => {
       if (side === this.me) this.audio.play(db.faction(world.factions[side])?.str('SFXEvent_HUD_Tactical_Victory_Near'));
@@ -1088,9 +1088,9 @@ export class LandGame {
       const t = db.type(name);
       burst(t ? t.str('Land_Model_Name') || t.str('Space_Model_Name') : name, x, y, z);
     };
-    world.onSound = (name, x, y, side) => {
+    world.onSound = (name, x, y, side, from) => {
       if (side !== undefined && side !== this.me && this.audio.isVoice(name)) return;
-      this.audio.play(name, x, y);
+      this.audio.playFrom(from, name, x, y);
     };
     world.onCapture = (pt, was) => {
       transition(pt, 'End_Control_Transition_Radar_Event', was, pt.side);

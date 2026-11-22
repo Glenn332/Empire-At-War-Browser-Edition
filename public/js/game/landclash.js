@@ -115,7 +115,7 @@ function duel(world, d, a, b) {
     }
     const won = a.dead && !b.dead ? d.second : b.dead && !a.dead ? d.first : null,
       who = a.dead ? b : a;
-    if (won && won.speech && world.onSound) world.onSound(won.speech, who.x, who.y);
+    if (won && won.speech && world.onSound) world.onSound(won.speech, who.x, who.y, undefined, who);
   };
   let until = 0,
     hurtAt = 0,

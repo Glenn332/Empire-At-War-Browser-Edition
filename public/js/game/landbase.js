@@ -112,7 +112,7 @@ export function specialAttack(world, u, t, dt) {
         every: Math.max(0.05, a.num('Damage_Interval_In_Secs', 0.4)),
         fx: a.val('Target_Particle_Effect').trim()
       };
-      if (world.onSound) world.onSound(a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side);
+      if (world.onSound) world.onSound(a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side, u);
       return true;
     }
     const ok = world.cast(
@@ -377,7 +377,7 @@ function tickQuakes(world, step) {
     if (!Q || Q.t !== t) {
       if (simRandom() >= S.chance) continue;
       u.quake = { t, acc: 0, phase: '' };
-      if (world.onSound) world.onSound(S.a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side);
+      if (world.onSound) world.onSound(S.a.val('SFXEvent_Activate').trim(), u.x, u.y, u.side, u);
     }
     const q = u.quake,
       every = Math.max(0.05, S.a.num('Damage_Interval_In_Secs', 0.4)),
@@ -537,7 +537,7 @@ export function looks(world, u, dt) {
     const want = world.time - H.needed > H.min ? 1 : 0;
     if (want !== H.want) {
       H.want = want;
-      if (world.onSound) world.onSound(u.type.str(want ? 'SFXEvent_Holster_Weapon' : 'SFXEvent_Draw_Weapon'), u.x, u.y);
+      if (world.onSound) world.onSound(u.type.str(want ? 'SFXEvent_Holster_Weapon' : 'SFXEvent_Draw_Weapon'), u.x, u.y, undefined, u);
     }
     H.k += Math.max(-dt / H.over, Math.min(dt / H.over, H.want - H.k));
     u.holstered = H.quiet && H.k > 0.5;
@@ -595,7 +595,7 @@ function tickAmbient(world, step) {
     const lo = t.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 5),
       hi = Math.max(lo, t.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 10));
     u.ambient.left = lo + Math.random() * (hi - lo);
-    if (world.onSound && u.seen !== false) world.onSound(t.str('SFXEvent_Ambient_Moving'), u.x, u.y, u.side);
+    if (world.onSound && u.seen !== false) world.onSound(t.str('SFXEvent_Ambient_Moving'), u.x, u.y, u.side, u);
   }
 }
 
@@ -1696,7 +1696,7 @@ export function tickBase(world, dt) {
         const l = { a: u, b: e, aBone: D.from, bBone: D.to, effect: D.effect, until: world.time + 0.5 };
         D.links.set(e, l);
         world.bolts.push(l);
-        if (world.onSound) world.onSound(D.sfx, u.x, u.y);
+        if (world.onSound) world.onSound(D.sfx, u.x, u.y, undefined, u);
       }
     }
     for (const e of D.links.keys()) if (!victims.includes(e)) D.links.delete(e);
