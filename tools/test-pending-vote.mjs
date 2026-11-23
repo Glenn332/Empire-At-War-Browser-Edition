@@ -25,6 +25,8 @@ const make = (pid, players) => {
     me: players[pid].faction,
     now: () => clock,
     isHuman: f => players.some(p => p.human && p.faction === f),
+    playable: humans =>
+      humans.length >= 2 || humans.some(f => players.filter(p => p.human && !p.left && p.faction.toUpperCase() === f.toUpperCase()).length >= 2),
     order: o => orders.push(o),
     galaxy: { planets: [{ index: 0, name: 'P', type: db.type('Kuat') || [...db.types.values()].find(t => t.tag.toLowerCase() === 'planet') }], players: [], fleets: [] },
     scriptUI: {
@@ -41,6 +43,7 @@ const make = (pid, players) => {
     battles: { resolveFor: () => (outcomes.push('resolve'), null) }
   };
   const pb = new PendingBattle(game);
+  pb.openVote = async () => {};
   return { game, pb, shown, orders, outcomes, advance: s => (clock += s * 1000) };
 };
 const players = [

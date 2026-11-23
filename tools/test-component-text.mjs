@@ -27,6 +27,9 @@ class Element {
   appendChild(node) {
     this.children.push(node);
   }
+  append(...nodes) {
+    this.children.push(...nodes);
+  }
   getContext() {
     return { putImageData() {} };
   }
@@ -59,6 +62,7 @@ const requests = [];
 globalThis.fetch = async input => {
   const path = decodeURIComponent(String(input));
   requests.push(path);
+  if (!path.includes('Data/Fonts/Raster/')) return new Response(null, { status: 404 });
   const height = +path.split('~')[1];
   const advance = { 13: 9, 12: 8, 10: 7, 9: 6, 8: 5 }[height] || 4,
     glyphHeight = height + 4;
@@ -110,8 +114,11 @@ const scaled = component(
 setComponentText(el, scaled, 'AAA', { scale: 2 });
 await settle(el);
 assert.equal(el.style.transform, 'translate(calc(-50% + 12px),-50%)', 'TextComponent retains native integer physical half-width alignment');
+const [embossBase, embossShine] = el.children[0].children;
+assert.equal(el.children[0].children.length, 2, 'Embossed text is its base glyphs with the shine laid over them');
+assert.equal(embossShine.style.mixBlendMode, 'plus-lighter', 'The emboss shine adds light over the base glyphs');
 assert.equal(
-  el.children[0].style.cssText.includes('width:3.125px'),
+  embossBase.style.cssText.includes('width:3.125px'),
   true,
   'Component Scale affects glyph size independently of model offsets'
 );

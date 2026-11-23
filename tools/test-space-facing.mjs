@@ -318,6 +318,7 @@ const settle = u => {
   const bays = vd.hardpoints.filter(h => h.kind === 'HARD_POINT_FIGHTER_BAY');
   const spawned = u => u.garrison.reduce((s, g) => s + (g.spawned || 0), 0);
   assert(vd.garrison.length && bays.length, 'a Victory carries fighters and has bays');
+  run(1);
   for (const b of bays) w.destroyHardpoint(vd, b, null);
   const n = spawned(vd);
   for (const g of vd.garrison) g.live.length = 0;
@@ -326,7 +327,11 @@ const settle = u => {
   const hutt = w.spawn(T('Skirmish_Hutt_Asteroid_Base'), empire, 3000, 3000, 0);
   assert(hutt.garrison.length, 'the Hutt asteroid base lists squadrons');
   run(30);
-  assert.equal(spawned(hutt), 0, 'a type with no fighter bay never launches');
+  const starting = hutt.garrison.reduce((sum, g) => sum + g.want, 0);
+  assert.equal(spawned(hutt), starting, 'a type with no fighter bay puts down its starting units at once');
+  for (const g of hutt.garrison) g.live.length = 0;
+  run(30);
+  assert.equal(spawned(hutt), starting, 'and never launches reserves without a fighter bay');
 }
 
 {
