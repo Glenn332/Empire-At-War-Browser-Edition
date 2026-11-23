@@ -2245,7 +2245,7 @@ export class GalacticStoryHost extends StoryPlots {
         break;
       }
       case 'LINK_TACTICAL':
-        if (!game.queueLinkedTactical?.(p))
+        if (!game.queueLinkedTactical?.(p, e.plot?.owner))
           this.errors.set(e.name, 'LINK_TACTICAL request rejected: invalid parameters or a transition is already queued');
         break;
       case 'LOAD_CAMPAIGN': {

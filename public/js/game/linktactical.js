@@ -245,11 +245,12 @@ export function finishLinkedTactical(game, session, result) {
     request = session.request,
     p = g.planets[request.planet],
     space = request.mode === 'space',
-    owners = [request.attacker, request.defender];
+    owners = [request.attacker, request.defender],
+    me = request.player ?? game.me;
   const winner = result.winner === 'attacker' ? 0 : 1,
     winning = owners[winner],
     losing = owners[1 - winner],
-    humanWin = winning === game.me;
+    humanWin = winning === me;
   if (request.corruption) {
     session.popped = true;
     if (game.story && (result.storyFlags || result.galaxy?.storyFlags))
@@ -321,19 +322,18 @@ export function finishLinkedTactical(game, session, result) {
     retreating = owner;
   };
   if (humanWin) {
-    if (request.resolution === 1) for (const owner of owners) if (owner === game.me) retire(owner);
-    if (request.resolution === 2) for (const owner of owners) if (owner !== game.me) retire(owner);
+    if (request.resolution === 1) for (const owner of owners) if (owner === me) retire(owner);
+    if (request.resolution === 2) for (const owner of owners) if (owner !== me) retire(owner);
     if (request.resolution === 3) {
       if (space) {
         for (const f of g.fleets)
-          if (f.planet === p.index && !f.leg && f.owner !== game.me)
-            for (const u of f.units) removeRecord(game, p, u, f.owner, winning, true);
+          if (f.planet === p.index && !f.leg && f.owner !== me) for (const u of f.units) removeRecord(game, p, u, f.owner, winning, true);
       } else {
-        for (const u of p.garrison) if (u.owner !== game.me) removeRecord(game, p, u, u.owner, winning, true);
+        for (const u of p.garrison) if (u.owner !== me) removeRecord(game, p, u, u.owner, winning, true);
       }
     }
     const controller = space ? p.stationOwner || p.owner : p.owner,
-      clear = request.resolution === 1 ? controller === game.me : controller !== game.me;
+      clear = request.resolution === 1 ? controller === me : controller !== me;
     if (clear) {
       if (space) {
         if (p.station) {

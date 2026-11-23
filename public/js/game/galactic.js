@@ -5,6 +5,7 @@ import { switchTarget } from './switchsides.js';
 import { applyCampaignSettings } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
+import { preloadLinkedPlots, resolveNetLinked } from './linkednet.js';
 import { galacticLight } from './galacticlighting.js';
 import { pauseGalactic, userPauseGalactic } from './galacticpause.js';
 import {
@@ -516,7 +517,10 @@ export class GalacticGame {
     this.listen('resize', () => this.fit());
     window.game = this;
     startStrategicMusic(this);
-    if (this.setup.net) await this.startNet();
+    if (this.setup.net) {
+      await preloadLinkedPlots(this);
+      await this.startNet();
+    }
     this.last = performance.now();
     requestAnimationFrame(this.frame);
   }
@@ -633,10 +637,11 @@ export class GalacticGame {
     window.parent?.mpGalaxy?.next(next);
   }
 
-  queueLinkedTactical(params) {
+  queueLinkedTactical(params, owner) {
     if (this.pendingLinkedTactical) return false;
     const request = readLinkedTactical(this, params);
     if (!request) return false;
+    if (this.setup.net) request.player = owner || request.attacker;
     this.pendingLinkedTactical = request;
     return true;
   }
@@ -3615,7 +3620,7 @@ export class GalacticGame {
       }
       if (!at || v.pull === v.pullTo) v.anchor = null;
     }
-    if (this.pendingLinkedTactical && !this.battle?.linked) {
+    if (this.pendingLinkedTactical && !this.battle?.linked && !this.setup.net) {
       const request = this.pendingLinkedTactical;
       if (request.pending) {
         if (!this.pendingBattle) {
@@ -3764,9 +3769,18 @@ export class GalacticGame {
     this.story?.update(held ? 0 : dt, false, 1 / LOGIC_FPS);
     storyMoviesDone(this.story);
     if (!held && !this.paused && !this.busy && !this.held && !this.over) this.simulate(dt);
+    if (this.pendingLinkedTactical) this.resolveNetLinked();
     this.pendingBattle?.tick?.();
     this.mpBattles?.tick();
     stampIds(this.galaxy);
+  }
+  resolveNetLinked() {
+    resolveNetLinked(this);
+    this.mergeFleets();
+    for (const fleet of this.galaxy.fleets) if (!this.fleetViews.has(fleet)) this.fleetView(fleet);
+    this.ui?.refresh();
+    this.overview?.refresh();
+    this.radar?.refresh();
   }
 
   simulate(dt) {
