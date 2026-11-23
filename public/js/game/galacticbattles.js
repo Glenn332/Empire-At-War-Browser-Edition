@@ -27,6 +27,40 @@ export class GalacticBattles {
     this.attackers = new Map();
     this.history = [];
   }
+  // who arrived where, and the battle waiting for the player's answer: without them a load
+  // picks the long-standing defender as the attacker
+  snapshot() {
+    const game = this.game,
+      g = game.galaxy,
+      out = { attackers: [...this.attackers].filter(([, l]) => l.length).map(([p, l]) => [p, l.slice()]) };
+    const pb = game.pendingBattle,
+      r = !game.net && !game.battle && (pb?.request || pb?.deferred || game.launchingBattle);
+    if (r) {
+      const live = g.fleets.filter(f => f.units.length),
+        gid = u => {
+          const fi = live.findIndex(f => f.units.includes(u));
+          return fi >= 0 ? fi + ':' + live[fi].units.indexOf(u) : null;
+        },
+        o = r.options || {},
+        ids = (o.leads || o.records || []).map(gid).filter(Boolean);
+      out.request = {
+        p: r.p,
+        attacker: r.attacker,
+        defender: r.defender,
+        mode: r.mode || 'space',
+        ...(o.raid ? { raid: true } : {}),
+        ...(ids.length ? { ids } : {})
+      };
+    }
+    return out;
+  }
+  restore(s) {
+    for (const [p, owners] of s?.attackers || []) this.attackers.set(+p, owners.slice());
+    const r = s?.request;
+    if (!r || !this.game.galaxy.planets[r.p]) return;
+    this.resume = r;
+    if (r.mode === 'space') this.attackers.set(r.p, [r.attacker, ...(this.attackers.get(r.p) || []).filter(o => o !== r.attacker)]);
+  }
   arrive(fleet, p) {
     if (fleet.units.length) {
       this.dirty.add(p);
@@ -282,6 +316,19 @@ export class GalacticBattles {
     const game = this.game,
       g = game.galaxy;
     if (game.paused || game.battle) return;
+    if (this.resume && !game.busy) {
+      const r = this.resume;
+      this.resume = null;
+      const options = { ...(r.ids ? { invasionIds: r.ids } : {}), ...(r.raid ? { raid: true } : {}) };
+      if (r.mode === 'space' || options.invasionIds) {
+        this.dirty.delete(r.p);
+        if (this.engage(r.p, r.attacker, r.defender, r.mode, options)) {
+          this.attackers.delete(r.p);
+          return;
+        }
+        this.dirty.add(r.p);
+      }
+    }
     if (!game.busy) for (const f of g.fleets) for (const u of f.units) if (u.raiding) delete u.raiding;
     for (const p of [...this.dirty]) {
       this.dirty.delete(p);

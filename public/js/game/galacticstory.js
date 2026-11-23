@@ -129,6 +129,7 @@ export class GalacticStoryHost extends StoryPlots {
       await host.restoreCombatEvents(game.galaxy.storySaved || []);
       host.suspended = true;
       host.errors.set('Tactical return', 'The story scripts were not saved with this game: they stay stopped');
+      if (files.length) game.message?.('The story scripts could not be saved with this game, so the story stays stopped.');
       return host;
     }
     await host.initialize(warm);
@@ -526,6 +527,16 @@ export class GalacticStoryHost extends StoryPlots {
   }
   speechQueued(name) {
     if (this.game.setup?.net) (this.speechDone ||= []).push(name);
+    else {
+      // lines still playing are saved, so STORY_SPEECH_DONE still comes after a load or a battle
+      const list = (this.speaking ||= []);
+      list.push(name);
+      if (list.length > 16) list.shift();
+    }
+  }
+  speechFinished(name) {
+    const i = this.speaking ? this.speaking.findIndex(n => key(n) === key(name)) : -1;
+    if (i >= 0) this.speaking.splice(i, 1);
   }
 
   absent(kind) {
@@ -1357,6 +1368,7 @@ export class GalacticStoryHost extends StoryPlots {
       record.planet || record.pos
         ? record
         : { record, type: record.carries || record.type, owner: owner || planet?.owner, planet, dead: false };
+    if (record.noAI) object.noAI = true;
     result = {
       __wrap: true,
       __name: object.type.name,
@@ -1401,7 +1413,10 @@ export class GalacticStoryHost extends StoryPlots {
       },
       Get_Garrisoned_Units: () => [],
       Prevent_AI_Usage: on => {
+        // kept on the galaxy record too, so the save and the return from a battle keep it
         object.noAI = !!on;
+        if (on) record.noAI = true;
+        else delete record.noAI;
       },
       Mark_Parent_Mode_Object_For_Death: () => {
         object.deleteAfterBattle = true;

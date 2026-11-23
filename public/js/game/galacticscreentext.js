@@ -262,6 +262,25 @@ export class GalacticScreenText {
     this.root.hidden = !this.rows.length;
   }
 
+  // story text still on screen: indefinite rows stay until a later reward removes them
+  snapshot() {
+    const out = [];
+    for (const row of this.rows) {
+      if (row.index !== 0 || !row.request || (!row.indefinite && row.duration < 0.5)) continue;
+      const r = row.request,
+        request = { id: String(r.id) };
+      for (const k of [r.textId ? 'textId' : 'text', 'duration', 'variable', 'teletype', 'color', 'kind'])
+        if (r[k] !== undefined && typeof r[k] !== 'object') request[k] = r[k];
+      out.push({ request, duration: row.indefinite ? -1 : +row.duration.toFixed(2) });
+    }
+    return out;
+  }
+
+  restore(list) {
+    for (const { request, duration } of list || [])
+      if (request?.id) this.show(request, { silent: true, preserve: { duration, progress: Infinity } });
+  }
+
   removeAll() {
     this.requests.clear();
     for (const r of this.rows) r.el.remove();

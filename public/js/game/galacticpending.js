@@ -10,7 +10,8 @@ import { intelligence, VIS } from './galacticfog.js';
 import { fleetsVisibleAt } from './orbitpanes.js';
 
 const key = x => String(x || '').toUpperCase();
-const SHELLS = ['PENDING_BATTLE_SHELL', 'STORY_PENDING_BATTLE_SHELL'];
+export const PENDING_SHELLS = ['PENDING_BATTLE_SHELL', 'STORY_PENDING_BATTLE_SHELL'];
+const SHELLS = PENDING_SHELLS;
 const color = s => {
   const v = String(s || '')
     .split(/[\s,]+/)

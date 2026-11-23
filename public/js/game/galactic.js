@@ -82,7 +82,7 @@ import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticecono
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
 import { packContrast, orbitBombingRun } from './galacticautoresolve.js';
-import { PendingBattle } from './galacticpending.js';
+import { PendingBattle, PENDING_SHELLS } from './galacticpending.js';
 import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
 import { campaignScore } from './campaignscore.js';
@@ -403,8 +403,10 @@ export class GalacticGame {
       await prepareComponentFonts(hud.comps, uiTextHeight());
       this.ui = new GalacticBar(this, hud);
       this.scriptUI = new ScriptUI(this, hud);
-      g.scriptUISnapshot = () => this.scriptUI.snapshot();
+      // an open battle prompt is not saved as a dead shell: the battle is asked again after the load
+      g.scriptUISnapshot = () => this.scriptUI.snapshot().map(s => (PENDING_SHELLS.includes(s.name) ? { ...s, visible: false } : s));
       this.screenText = new GalacticScreenText(this, hud.comps);
+      g.screenTextSnapshot = () => this.screenText.snapshot();
       this.movies = new GalacticMovies(this, hud);
       this.radar = new GalacticRadar(this, await loadGalacticRadarAssets(hud));
       $('minimap').hidden = true;
@@ -417,7 +419,10 @@ export class GalacticGame {
     await this.audio?.speech?.load();
     this.speechStoryDone = this.audio?.speech?.on('storydone', record => {
       this.screenText?.show({ id: 'TEXT_SPEECH_' + record.name, remove: true });
-      if (!this.setup.net) this.story?.signal('STORY_SPEECH_DONE', record.name);
+      if (!this.setup.net) {
+        this.story?.speechFinished?.(record.name);
+        this.story?.signal('STORY_SPEECH_DONE', record.name);
+      }
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
@@ -430,14 +435,39 @@ export class GalacticGame {
     onControllerChange((planet, old, now, bonus) => {
       if (!this.over) this.planetChangedHands(planet, old, now, bonus);
     });
-    g.hostSnapshot = () => ({ controlsLocked: !!this.controlsLocked, suspendAI: !!this.suspendAI, tutorialPlayer: !!this.tutorialPlayer });
-    if (g.hostSaved) {
-      this.controlsLocked = g.hostSaved.controlsLocked;
-      this.suspendAI = g.hostSaved.suspendAI;
-      this.tutorialPlayer = g.hostSaved.tutorialPlayer;
+    g.hostSnapshot = () => ({
+      controlsLocked: !!this.controlsLocked,
+      suspendAI: !!this.suspendAI,
+      tutorialPlayer: !!this.tutorialPlayer,
+      scrollLocked: !!this.scrollLocked,
+      planetSelectionLocked: !!this.planetSelectionLocked,
+      ...(this.fleetCombine === false ? { fleetCombine: false } : {}),
+      moviesDisabled: !!this.moviesDisabled,
+      cinematicMode: !!this.cinematicMode,
+      blockedEvents: [...(this.blockedEvents || [])],
+      ...(this.storyMaps ? { storyMaps: { ...this.storyMaps } } : {}),
+      autoresolveLocked: this.pendingBattle ? [...this.pendingBattle.disabled] : g.hostSaved?.autoresolveLocked || [],
+      battles: this.battles ? this.battles.snapshot() : g.hostSaved?.battles || null
+    });
+    const hs = g.hostSaved;
+    if (hs) {
+      this.controlsLocked = hs.controlsLocked;
+      this.suspendAI = hs.suspendAI;
+      this.tutorialPlayer = hs.tutorialPlayer;
+      this.scrollLocked = !!hs.scrollLocked;
+      this.planetSelectionLocked = !!hs.planetSelectionLocked;
+      if (hs.fleetCombine === false) this.fleetCombine = false;
+      this.moviesDisabled = !!hs.moviesDisabled;
+      if (hs.blockedEvents?.length) this.blockedEvents = new Set(hs.blockedEvents);
+      if (hs.storyMaps) this.storyMaps = { ...hs.storyMaps };
+      if (hs.cinematicMode) {
+        this.cinematicMode = true;
+        document.body.classList.add('letterboxed');
+      }
     }
     this.story = await GalacticStoryHost.create(this, { warm: false });
     if (g.scriptUISaved && this.scriptUI) this.scriptUI.restore(g.scriptUISaved);
+    if (g.screenTextSaved && this.screenText) this.screenText.restore(g.screenTextSaved);
     this.ai = await GalacticAI.create(this);
     if (this.story?.unwarmed) {
       this.story.unwarmed = false;
@@ -445,6 +475,8 @@ export class GalacticGame {
     }
     this.battles = new GalacticBattles(this);
     this.pendingBattle = new PendingBattle(this);
+    for (const p of hs?.autoresolveLocked || []) this.pendingBattle.disable(p, true);
+    if (hs?.battles) this.battles.restore(hs.battles);
     if (this.setup.result) {
       this.applyResult(this.setup.result);
       this.galacticBattleChanged();
@@ -2696,10 +2728,14 @@ export class GalacticGame {
     this.radar?.flash(p);
     this.battleFlash = p;
     if (!this.noSave && !this.net) {
+      // the autosave remembers who attacks, so loading it asks for the same battle again
+      this.launchingBattle = { p, attacker, defender, mode, options };
       try {
         putSave(snapshot(this, db.t('TEXT_GUI_AUTO_SAVE')), 'autosave').catch(e => console.warn('autosave', e));
       } catch (e) {
         console.warn('autosave', e);
+      } finally {
+        this.launchingBattle = null;
       }
     }
     if (mode === 'land' && attacker === this.me) this.audio?.play(db.faction(this.me)?.str('SFXEvent_Land_Invasion_Commencing'));

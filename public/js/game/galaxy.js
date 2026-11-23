@@ -319,7 +319,9 @@ export function snapshotGalaxy(g) {
         {
           checkContestedSpace: x.checkContestedSpace,
           ...(x.detectNext ? { detectNext: { ...x.detectNext } } : {}),
-          ...(Number.isInteger(x.guiIndex) ? { guiIndex: x.guiIndex } : {})
+          ...(Number.isInteger(x.guiIndex) ? { guiIndex: x.guiIndex } : {}),
+          ...(x.speedScale ? { speedScale: x.speedScale } : {}),
+          ...(x.noAI ? { noAI: true } : {})
         }
       ]);
   return {
@@ -333,6 +335,7 @@ export function snapshotGalaxy(g) {
     story: g.storySnapshot?.() ?? g.storySaved ?? null,
     storyLua: g.storyLuaSnapshot?.() ?? g.storyLuaSaved ?? null,
     scriptUI: g.scriptUISnapshot?.() ?? g.scriptUISaved ?? null,
+    screenText: g.screenTextSnapshot?.() ?? g.screenTextSaved ?? null,
     hostState: g.hostSnapshot?.() ?? g.hostSaved ?? null,
     storyFlags: g.storyFlagSnapshot?.() ?? g.storyFlagsSaved ?? null,
     retreatDisabled: retreatDisabledList(),
@@ -472,6 +475,7 @@ export function snapshotGalaxy(g) {
           ...(u.speedScale ? { speedScale: u.speedScale } : {}),
           ...(u.group !== undefined ? { group: u.group } : {}),
           ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {}),
+          ...(u.noAI ? { noAI: true } : {}),
           ...(u.detectNext ? { detectNext: { ...u.detectNext } } : {})
         }
       ]),
@@ -496,6 +500,7 @@ export function applyGalaxy(g, s) {
   g.storySaved = s.story || null;
   g.storyLuaSaved = s.storyLua || null;
   g.scriptUISaved = s.scriptUI || null;
+  g.screenTextSaved = s.screenText || null;
   g.hostSaved = s.hostState || null;
   g.storyFlagsSaved = s.storyFlags || null;
   setRetreatDisabledList(s.retreatDisabled);
