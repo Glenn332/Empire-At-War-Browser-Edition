@@ -1,4 +1,4 @@
-import { panelSide } from './panelside.js';
+import { panelSide, offerPanel } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -148,6 +148,7 @@ export function activateSlicer(game, actor, planet, ability) {
     respawn = respawnRoll(player, ability);
   const side = panelSide(game, player.faction, player);
   if (side !== 'ai') {
+    offerPanel(game, 'slice', actor, planet, { rows, respawn, only: rows.length === 1 });
     if (side === 'local') game.openSliceDialog?.({ actor, planet, rows, respawn, only: rows.length === 1 });
     return false;
   }

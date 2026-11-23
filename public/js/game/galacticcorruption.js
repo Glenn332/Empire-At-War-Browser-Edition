@@ -1,4 +1,4 @@
-import { panelSide } from './panelside.js';
+import { panelSide, offerPanel } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -297,6 +297,7 @@ export function activateCorruption(game, actor, planet, ability = null) {
   if (!player || !choices.length) return false;
   const side = panelSide(game, player.faction, player);
   if (side !== 'ai') {
+    offerPanel(game, 'corruption', actor, planet);
     if (side === 'local') game.openCorruptionDialog?.({ actor, planet, choices });
     game.story?.signal?.('STORY_OPEN_CORRUPTION', planet.type.name);
     return false;
