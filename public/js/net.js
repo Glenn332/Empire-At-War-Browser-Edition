@@ -11,9 +11,33 @@ const PART = 20000,
 const ADMIT_WAIT = 120000,
   PASSWORD_TRIES = 5;
 
-export function lobbyUrl() {
+const LOCAL = /^(localhost|127\.0\.0\.1)$/;
+let linkLobby;
+// a ?lobby= link picks the lobby server: on a local page that's development, anywhere else the player is
+// asked once, since that server sees their name and password and can feed them any game
+function lobbyFromLink() {
+  if (linkLobby !== undefined) return linkLobby;
+  linkLobby = null;
   const q = new URLSearchParams(location.search).get('lobby');
-  if (q) return q.replace(/\/$/, '');
+  let u = null;
+  try {
+    u = q && new URL(q);
+  } catch {}
+  if (!u || !/^https?:$/.test(u.protocol)) return null;
+  const url = u.href.replace(/\/$/, '');
+  if (url === LOBBY || LOCAL.test(location.hostname) || LOCAL.test(u.hostname)) return (linkLobby = url);
+  let ok = false;
+  try {
+    ok = confirm(
+      `This link uses another lobby server:\n\n${u.host}\n\nIt will see your player name and any game password you type. Use it?`
+    );
+  } catch {}
+  return (linkLobby = ok ? url : null);
+}
+
+export function lobbyUrl() {
+  const q = lobbyFromLink();
+  if (q) return q;
   try {
     const s = localStorage.getItem('swr.lobby');
     if (s) return s.replace(/\/$/, '');

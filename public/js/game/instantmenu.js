@@ -1052,7 +1052,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           draw();
         } else if (m.k === 'chat') say(m.name, m.text);
         else if (m.k === 'refuse') close(false, m.why);
-        else if (m.k === 'start' && m.setup) {
+        else if (m.k === 'start' && m.setup && players.find(mine)?.ready) {
           close(true);
           audio?.unlock?.();
           start(m.setup);

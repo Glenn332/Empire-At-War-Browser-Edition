@@ -642,8 +642,15 @@ export async function openMultiplayer({
       u.searchParams.delete('join');
       history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString().replace(/=(&|$)/g, '$1'));
     } catch {}
-    say('Joining the game you were invited to…');
-    enter(invited, false);
+    // an invite link only opens the lobby: joining (and with it the host's game and saved game) waits for a yes
+    (async () => {
+      const listed = await listGames().catch(() => []);
+      const g = Array.isArray(listed) ? listed.find(x => x && x.id === invited) : null;
+      const what = g ? `Join "${String(g.name).slice(0, 48)}", hosted by ${String(g.host).slice(0, 32)}?` : 'Join the game you were invited to?';
+      if (!(await confirmBox(what))) return;
+      say('Joining the game you were invited to…');
+      enter(invited, false);
+    })();
   }
   dlg.on(K.join, join);
   {
@@ -1208,6 +1215,8 @@ async function openStaging(args) {
         });
       } else if (m.k === 'kicked') leave('The host removed you from the game.');
       else if (m.k === 'start') {
+        // only a game this player said it was ready for
+        if (!slots.find(s => s.kind === 'human' && s.peer === net.id)?.ready) return;
         if (!m.save) begin(m.setup);
         else {
           note.textContent = 'Opening the saved game...';

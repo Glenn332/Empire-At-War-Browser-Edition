@@ -69,4 +69,23 @@ open.receive(3, { k: 'sh-hello' });
 open.broadcast({ k: 'x' });
 assert.deepEqual(any, ['sh-hello', 'to3:x']);
 open.close();
+
+// a ?lobby= link: kept on a local page, asked about anywhere else
+const { LOBBY } = await import('../public/js/deploy.js');
+let asked = 0;
+const lobbyWith = async (search, hostname, answer, n) => {
+  globalThis.location = { search, hostname };
+  globalThis.confirm = () => (asked++, answer);
+  return (await import('../public/js/net.js?case=' + n)).lobbyUrl();
+};
+assert.equal(await lobbyWith('?lobby=https://evil.example', 'playeaw.com', false, 1), LOBBY, 'a declined lobby server is not used');
+assert.equal(asked, 1);
+assert.equal(await lobbyWith('?lobby=https://mine.example/', 'playeaw.com', true, 2), 'https://mine.example', 'an accepted one is');
+assert.equal(
+  await lobbyWith('?lobby=http://localhost:8787', 'localhost', false, 3),
+  'http://localhost:8787',
+  'local development asks nothing'
+);
+assert.equal(await lobbyWith('?lobby=javascript:alert(1)', 'playeaw.com', true, 4), LOBBY, 'only http(s) lobby servers');
+assert.equal(asked, 2);
 console.log('net admission ok');
