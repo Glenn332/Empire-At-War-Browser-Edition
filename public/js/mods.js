@@ -238,7 +238,7 @@ async function megEntries(file) {
 }
 
 async function scanRoot(acc, root, prefix, more, progress) {
-  const { megs, files, gone, stamps } = acc;
+  const { megs, files, gone, stamps, loose: sigs } = acc;
   const data = await child(root, 'Data', 'directory');
   if (!data) return false;
   const names = [];
@@ -257,11 +257,15 @@ async function scanRoot(acc, root, prefix, more, progress) {
       gone.delete(key);
     }
   }
+  const seen = [];
   const loose = async (dir, rel) => {
     const here = [];
     for await (const [name, h] of dir.entries()) {
       if (h.kind === 'directory') await loose(h, rel + '/' + name);
-      else if (!/\.meg$/i.test(name)) here.push([rel + '/' + name, h]);
+      else if (!/\.meg$/i.test(name)) {
+        here.push([rel + '/' + name, h]);
+        seen.push((rel + '/' + name).toLowerCase());
+      }
     }
     for (let i = 0; i < here.length; i += 64) {
       const part = here.slice(i, i + 64),
@@ -281,10 +285,45 @@ async function scanRoot(acc, root, prefix, more, progress) {
     }
   };
   await loose(data, data.name);
+  sigs.push([prefix, looseSig(seen)]);
   return true;
 }
-const fresh = () => ({ megs: [], stamps: [], files: {}, gone: new Set(), n: 0 });
-const done = acc => ({ megs: acc.megs, stamps: acc.stamps, files: acc.files, gone: [...acc.gone], count: Object.keys(acc.files).length });
+function looseSig(paths) {
+  let h = 0x811c9dc5;
+  for (const p of paths.sort()) {
+    for (let i = 0; i < p.length; i++) h = Math.imul(h ^ p.charCodeAt(i), 0x01000193);
+    h = Math.imul(h ^ 10, 0x01000193);
+  }
+  return paths.length + ':' + (h >>> 0).toString(16);
+}
+async function listLoose(dir, rel, out) {
+  const subs = [];
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind === 'directory') subs.push(listLoose(h, rel + '/' + name, out));
+    else if (!/\.meg$/i.test(name)) out.push((rel + '/' + name).toLowerCase());
+  }
+  await Promise.all(subs);
+  return out;
+}
+async function looseChanged(m) {
+  if (!Array.isArray(m.loose)) return true;
+  for (const [prefix, sig] of m.loose) {
+    const root = prefix ? (await walk(m.handle, prefix))?.handle : m.handle,
+      data = root && root.kind === 'directory' ? await child(root, 'Data', 'directory') : null;
+    if (!data || looseSig(await listLoose(data, data.name, [])) !== sig) return true;
+  }
+  return false;
+}
+const changedSince = async m => (await megsChanged(m)) || (await looseChanged(m));
+const fresh = () => ({ megs: [], stamps: [], files: {}, gone: new Set(), loose: [], n: 0 });
+const done = acc => ({
+  megs: acc.megs,
+  stamps: acc.stamps,
+  loose: acc.loose,
+  files: acc.files,
+  gone: [...acc.gone],
+  count: Object.keys(acc.files).length
+});
 const stampOf = f => [f.size, f.lastModified];
 async function megsChanged(m) {
   if (!m.megs.length) return false;
@@ -793,14 +832,14 @@ export async function openOverlay() {
     mods = mods.filter(m => !asked.includes(m) || ok.includes(m));
   }
   if (!mods.length) return null;
-  openStep = 'checking the folders for changed archives';
+  openStep = 'checking the folders for changed files';
   const saved = m => {
     const { handle, tar, ...rest } = m;
     return m.compat || m.local ? rest : { ...rest, handle };
   };
   for (const m of mods) {
-    if (m.archive || !(await megsChanged(m).catch(() => true))) continue;
-    console.warn('Archives changed since', m.name, 'was read: reading it again');
+    if (m.archive || !(await changedSince(m).catch(() => true))) continue;
+    console.warn('Files changed since', m.name, 'was read: reading it again');
     openStep = 'reading ' + m.name + ' again';
     try {
       Object.assign(m, m.game ? await scanGame(m.handle) : await scan(m.handle), { scanned: Date.now() });
@@ -810,7 +849,7 @@ export async function openOverlay() {
       console.warn('could not read', m.name, 'again', e);
     }
   }
-  if (game && game.eaw && mods.includes(game) && (await megsChanged({ ...game, ...game.eaw }).catch(() => true))) delete game.eaw;
+  if (game && game.eaw && mods.includes(game) && (await changedSince({ ...game, ...game.eaw }).catch(() => true))) delete game.eaw;
   const eaw = !expansion();
   if (eaw && game && mods.includes(game)) {
     if (!game.eaw) {
