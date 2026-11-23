@@ -302,7 +302,8 @@ async function minds(w, m, map, events, thing) {
     if (scripts) await scripts.preloadAll();
   }
   let turn = 0;
-  const think = () => {
+  const think = phaseMs => {
+    const aiFrom = performance.now();
     if (ais.length && !w.aiSuspended) {
       const G = w.goals,
         first = (turn = (turn + 1) % ais.length);
@@ -319,7 +320,10 @@ async function minds(w, m, map, events, thing) {
         }
       }
     }
+    const scriptsFrom = performance.now();
+    phaseMs.ai += scriptsFrom - aiFrom;
     if (scripts) scripts.update(TICK);
+    phaseMs.scripts += performance.now() - scriptsFrom;
   };
   const takeOver = p => {
     const pre = takeovers.get(p);
@@ -358,6 +362,7 @@ async function run(m) {
   const rec = new SpaceRecorder(w);
   let stepMs = 0,
     steps = 0;
+  const phaseMs = { sim: 0, ai: 0, scripts: 0, rules: 0, record: 0, routeWait: 0 };
   const hashLog = [];
   const said = new Set();
   const replay = m.record?.replay || null;
@@ -420,6 +425,7 @@ async function run(m) {
       }
       if (r.why && player === w.viewer) postMessage({ k: 'result', cmd, why: r.why });
     }
+    const simFrom = performance.now();
     guard(said, 'the battle step', () => {
       w.updateBegin(TICK);
       try {
@@ -428,17 +434,29 @@ async function run(m) {
         w.updateEnd();
       }
     });
-    guard(said, 'the computer players and scripts', think);
+    phaseMs.sim += performance.now() - simFrom;
+    guard(said, 'the computer players and scripts', () => think(phaseMs));
+    const rulesFrom = performance.now();
     if (rules) guard(said, 'the battle rules', () => rules.step(TICK));
+    phaseMs.rules += performance.now() - rulesFrom;
     stepMs += performance.now() - s;
     steps++;
+    const recordFrom = performance.now();
     guard(said, 'sending the step', () => {
       const { message, transfer } = stepRecord(w, rec, spawns, events);
       message.hash = hash;
       message.stepMs = steps % 30 === 0 ? stepMs / 30 : undefined;
+      if (steps % 30 === 0) {
+        message.stepPhases = {};
+        for (const phase in phaseMs) {
+          message.stepPhases[phase] = phaseMs[phase] / 30;
+          phaseMs[phase] = 0;
+        }
+      }
       message.jobs = steps % 30 === 0 && w.ahead ? w.ahead.report() : undefined;
       send(postMessage, message, transfer, said);
     });
+    phaseMs.record += performance.now() - recordFrom;
     if (steps % 30 === 0) stepMs = 0;
     if (replaying && steps >= replay.until) {
       replaying = false;
@@ -449,6 +467,7 @@ async function run(m) {
   };
   const held = [];
   let heldFor = null;
+  let heldSince = 0;
   const drain = () => {
     while (held.length && (!w.paths || w.paths.ready())) {
       const c = held.shift();
@@ -456,6 +475,8 @@ async function run(m) {
     }
     const why = held.length ? 'route planning' : null;
     if (why !== heldFor) {
+      if (why) heldSince = performance.now();
+      else if (heldSince) phaseMs.routeWait += performance.now() - heldSince;
       heldFor = why;
       postMessage({ k: 'held', why });
     }

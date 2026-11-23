@@ -413,6 +413,7 @@ export class SpaceMirror {
       st = this.stats;
     st.records++;
     if (m.stepMs !== undefined) st.stepMs = m.stepMs;
+    if (m.stepPhases !== undefined) st.stepPhases = m.stepPhases;
     if (m.jobs) st.jobs = m.jobs;
     w.time = m.time;
     for (const s of m.spawns) {

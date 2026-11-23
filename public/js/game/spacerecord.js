@@ -18,6 +18,19 @@ export function beamFromMessage(unitById, [from, to, color, width, bone, kind]) 
   return source && target ? { a: source, b: target, color, width, bone, kind, until: Infinity } : null;
 }
 
+// Deep equality for the plain values the props channel carries (numbers, strings, null and arrays
+// of them). Compared element by element instead of through JSON text, which cost several
+// milliseconds a step once thousands of units were recorded. NaN equals NaN, as it did as JSON.
+function sameValue(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i])) return false;
+    return true;
+  }
+  return typeof a === 'number' && typeof b === 'number' && a !== a && b !== b;
+}
+
 export class SpaceRecorder {
   constructor(world) {
     this.world = world;
@@ -40,9 +53,8 @@ export class SpaceRecorder {
   }
 
   changed(id, v) {
-    const k = JSON.stringify(v);
-    if (this.sent.get(id) === k) return;
-    this.sent.set(id, k);
+    if (sameValue(this.sent.get(id), v)) return;
+    this.sent.set(id, v);
     this.props.push([id, v]);
   }
 

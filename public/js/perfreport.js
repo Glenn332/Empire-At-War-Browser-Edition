@@ -70,6 +70,7 @@ function threadSnapshot(game) {
   if (!stats) return null;
   return {
     battleThreadStepMs: stats.stepMs ? +stats.stepMs.toFixed(2) : null,
+    battleThreadPhasesMs: stats.stepPhases ? Object.fromEntries(Object.entries(stats.stepPhases).map(([phase, ms]) => [phase, +ms.toFixed(2)])) : null,
     applyMsPerStep: stats.records ? +(stats.applyMs / stats.records).toFixed(2) : null,
     jobs: stats.jobs || null
   };
@@ -226,7 +227,11 @@ export function performanceLines(performance, warnings, profileResult) {
       `  Renderer: ${renderer.kind}${renderer.canvas ? `, ${renderer.canvas.width}x${renderer.canvas.height} pixels` : ''}${renderer.pixelRatio ? ` (${renderer.pixelRatio.toFixed(2)}x)` : ''}${renderer.drawCalls != null ? `, ${renderer.drawCalls} draw calls` : ''}${renderer.triangles != null ? `, ${Math.round(renderer.triangles / 1000)}k triangles` : ''}${renderer.renderThreadMs != null ? `, render thread ${renderer.renderThreadMs} ms per frame` : ''}`
     );
   const threads = performance?.threads;
-  if (threads?.battleThreadStepMs != null) lines.push(`  Battle thread: ${threads.battleThreadStepMs} ms per step`);
+  if (threads?.battleThreadStepMs != null) {
+    const phases = threads.battleThreadPhasesMs;
+    const split = phases ? ` (${Object.entries(phases).map(([phase, ms]) => `${phase} ${ms}`).join(', ')})` : '';
+    lines.push(`  Battle thread: ${threads.battleThreadStepMs} ms per step${split}`);
+  }
   const stages = performance?.stages;
   if (stages?.stages && Object.keys(stages.stages).length)
     lines.push(`  Main thread per frame (ms): ${Object.entries(stages.stages).map(([name, ms]) => `${name} ${ms}`).join(', ')}`);

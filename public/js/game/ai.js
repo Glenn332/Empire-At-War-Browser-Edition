@@ -44,6 +44,7 @@ export class SkirmishAI {
     this.waveSize = this.cfg.waveBase;
     this.lastCredits = player.credits;
     this.plans = [];
+    this.mineKept = null;
     const foe = world.teams.find(t => t !== player.team && t.station);
     const own = player.spawn || player.team.spawnPoints[0] || { x: 0, y: 0 };
     const entry = world.teams
@@ -116,9 +117,20 @@ export class SkirmishAI {
     this.lastCredits = p.credits;
   }
 
+  // The AI's own squadrons and mobile units. Plans, the free store and goal scoring ask for this list
+  // many times a step and each walk covers every object in the battle, so one walk is kept per step
+  // and battle size; every caller gets its own copy because some add to it.
   mine() {
+    const w = this.world,
+      kept = this.mineKept;
+    if (!kept || kept.time !== w.time || kept.units !== w.units.length || kept.squads !== w.squads.length) {
+      const list = [];
+      for (const e of w.selectablesInto((this.scratch ||= []))) if (e.player === this.player && (e.isSquad || e.isMobile) && !e.hyper && !e.noAI) list.push(e);
+      this.mineKept = { time: w.time, units: w.units.length, squads: w.squads.length, list };
+      return list.slice();
+    }
     const out = [];
-    for (const e of this.world.selectablesInto((this.scratch ||= []))) if (e.player === this.player && (e.isSquad || e.isMobile) && !e.hyper && !e.noAI) out.push(e);
+    for (const e of kept.list) if (!e.hyper && !e.noAI) out.push(e);
     return out;
   }
 

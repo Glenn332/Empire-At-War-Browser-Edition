@@ -1879,8 +1879,8 @@ export class World {
     this.solid = [];
     this.unitGridHitReach = 0;
     this.unitGridCells = { minX: 0, maxX: -1, minY: 0, maxY: -1 };
-    this.squadPickNear = [];
-    this.squadPickAround = [];
+    this.squadPickCandidates = [];
+    this.unitsAroundSeen = null;
     this.beams = [];
     this.reveals = [];
     this.fogLifted = 0;
@@ -4066,37 +4066,41 @@ export class World {
     return best;
   }
 
-  // Units whose hit circle can reach within either radius of the two points, in the order of
-  // this.units, so a search over them picks exactly what a search over every unit would.
-  nearEither(first, firstRange, second, secondRange, out, spare) {
-    const reach = this.unitGridHitReach;
-    this.near(first, firstRange + reach, out);
-    if (!second || this.unitGridN > this.units.length || !this.unitGrid) return out;
-    this.near(second, secondRange + reach, spare);
-    const tail = this.units.length - this.unitGridN,
-      firstEnd = out.length - tail,
-      secondEnd = spare.length - tail;
-    const merged = [];
-    let i = 0,
-      j = 0;
-    while (i < firstEnd || j < secondEnd) {
-      const a = i < firstEnd ? out[i] : null,
-        b = j < secondEnd ? spare[j] : null;
-      if (b === null || (a !== null && a.gridAt < b.gridAt)) {
-        merged.push(a);
-        i++;
-      } else if (a === null || b.gridAt < a.gridAt) {
-        merged.push(b);
-        j++;
-      } else {
-        merged.push(a);
-        i++;
-        j++;
-      }
-    }
-    for (let k = this.unitGridN; k < this.units.length; k++) merged.push(this.units[k]);
+  // The units that pass the test and whose hit circle can reach within either radius of the two
+  // points, in the order of this.units. The test runs on grid cells first and only the units that
+  // pass are put in order, so a search over the result picks exactly what a walk over every unit
+  // would, without sorting every unit near a crowded fight.
+  unitsAround(first, firstRange, second, secondRange, accept, out) {
     out.length = 0;
-    for (const o of merged) out.push(o);
+    const units = this.units,
+      grid = this.unitGrid;
+    if (!grid || this.unitGridN > units.length) {
+      for (const unit of units) if (accept(unit)) out.push(unit);
+      return out;
+    }
+    const cellsSeen = (this.unitsAroundSeen ||= new Set()),
+      reach = this.unitGridHitReach + UNIT_PAD;
+    cellsSeen.clear();
+    // Every unit sits in exactly one cell, so visiting each cell once visits each unit once.
+    const gather = (at, range) => {
+      const pad = range + reach,
+        x0 = Math.floor((at.x - pad) / UNIT_CELL),
+        x1 = Math.floor((at.x + pad) / UNIT_CELL),
+        y0 = Math.floor((at.y - pad) / UNIT_CELL),
+        y1 = Math.floor((at.y + pad) / UNIT_CELL);
+      for (let cellX = x0; cellX <= x1; cellX++)
+        for (let cellY = y0; cellY <= y1; cellY++) {
+          const key = cellX * 65536 + cellY;
+          if (cellsSeen.has(key)) continue;
+          cellsSeen.add(key);
+          const list = grid.get(key);
+          if (list) for (const unit of list) if (accept(unit)) out.push(unit);
+        }
+    };
+    gather(first, firstRange);
+    if (second) gather(second, secondRange);
+    if (out.length > 1) out.sort(byGridAt);
+    for (let i = this.unitGridN; i < units.length; i++) if (accept(units[i])) out.push(units[i]);
     return out;
   }
 
@@ -5975,12 +5979,19 @@ export class World {
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
     }
     if (!best) {
-      const around = range < 0 ? null : anchor,
-        candidates = this.nearEither(lead, reach, around, hull + range + ext + reach, this.squadPickNear, this.squadPickAround);
+      const team = s.player.team,
+        sight = s.player.bit;
+      const candidates = this.unitsAround(
+        lead,
+        reach,
+        range < 0 ? null : anchor,
+        hull + range + ext + reach,
+        o =>
+          !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & sight)) &&
+          (inWeapon(o) || respond(o)),
+        this.squadPickCandidates
+      );
       for (const o of candidates) {
-        if (o.dead || o.player.team === s.player.team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & s.player.bit))
-          continue;
-        if (!inWeapon(o) && !respond(o)) continue;
         const r = rate(o);
         if (r < 0) continue;
         if (!best) {
