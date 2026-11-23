@@ -606,7 +606,11 @@ impl Server {
                 };
                 let room = monitor.as_ref().map(|m| {
                     let a = m.work_area();
-                    (a.position, a.size.width, a.size.height.saturating_sub(frame.1))
+                    (
+                        a.position,
+                        a.size.width,
+                        a.size.height.saturating_sub(frame.1),
+                    )
                 });
                 if w >= 640 && h >= 480 && !win.is_fullscreen().unwrap_or(false) {
                     match room {
@@ -659,7 +663,9 @@ impl Server {
                         let _ = win.set_fullscreen(on);
                     }
                 }
-                return json(&serde_json::json!({ "fullscreen": win.is_fullscreen().unwrap_or(false) }));
+                return json(
+                    &serde_json::json!({ "fullscreen": win.is_fullscreen().unwrap_or(false) }),
+                );
             }
             return json(&serde_json::json!({ "fullscreen": false }));
         }
@@ -841,6 +847,14 @@ fn main() {
             {
                 let _ = w.set_cursor_grab(true);
             }
+            #[cfg(windows)]
+            if matches!(e, tauri::WindowEvent::Focused(true)) && w.is_fullscreen().unwrap_or(false)
+            {
+                if let Ok(h) = w.hwnd() {
+                    let h = h.0 as isize;
+                    std::thread::spawn(move || refresh_presentation(h));
+                }
+            }
         })
         .setup(move |app| {
             audio::name_sessions("Empire at War Browser Edition");
@@ -853,4 +867,27 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running the app");
+}
+
+#[cfg(windows)]
+fn refresh_presentation(h: isize) {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowPos,
+    };
+    let hwnd = HWND(h as _);
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let mut r = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
+        return;
+    }
+    let (w, ht) = (r.right - r.left, r.bottom - r.top);
+    let flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    unsafe {
+        let _ = SetWindowPos(hwnd, None, 0, 0, w, ht - 1, flags);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    unsafe {
+        let _ = SetWindowPos(hwnd, None, 0, 0, w, ht, flags);
+    }
 }
