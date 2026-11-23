@@ -1157,7 +1157,7 @@ export class LandGame {
     this.noCull = q.has('nocull');
     this.noLoose = q.has('noloose');
     this.noDepthTwin = q.has('nodepthtwin');
-    this.world.interp = !setup.net && (q.has('fixedstep') || ((!!this.gpuOn || !!this.renderer.webgpu) && !q.has('nofixedstep')));
+    this.world.interp = !setup.net && !q.has('nofixedstep');
     if (!this.noBatch)
       this.world.prepare = holder => {
         holder.userData.ready = false;
