@@ -1685,6 +1685,7 @@ export class GalacticGame {
         else if (surfaceTo && surfaceTo.p !== p) {
           if (this.net) this.order({ ...orders.embark(this.galaxy, p, { fresh: true, to: surfaceTo.p }), landOn: true });
           else {
+            this.groundVoice(p);
             const f = embarkGround(this.galaxy, p, this.me, { fresh: true });
             if (f) {
               this.fleetView(f);
@@ -1700,6 +1701,7 @@ export class GalacticGame {
                 : orders.embark(this.galaxy, p, { fresh: true, slot: target.slot, to: target.p })
             );
         } else if (target && (!target.f || target.f.owner === this.me)) {
+          this.groundVoice(p);
           if (target.p === p) {
             this.story?.generic('drag_land_to_space');
             this.embark(p, { fleet: target.f, slot: target.slot });
@@ -2545,6 +2547,7 @@ export class GalacticGame {
     if (!cmd) return null;
     const g = this.galaxy;
     if (cmd.c === 'move') this.fleetVoice(g.fleets[cmd.f]?.units);
+    else if (cmd.c === 'embark') this.groundVoice(cmd.p);
     if (this.net) {
       this.net.lock.command(cmd);
       return null;
@@ -2552,6 +2555,11 @@ export class GalacticGame {
     const r = runCommand(this, this.me, cmd);
     this.syncFleetViews();
     return r;
+  }
+  // Sending ground units up to orbit (or on to another planet) is a move order, so it gets the same acknowledgement
+  // as moving a fleet; it used to be silent.
+  groundVoice(p) {
+    this.fleetVoice(this.galaxy.planets[p]?.garrison.filter(u => !u.dead && String(u.owner).toUpperCase() === String(this.me).toUpperCase()));
   }
   fleetVoice(units) {
     if (this.paused) return;
