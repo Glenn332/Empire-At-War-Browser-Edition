@@ -102,6 +102,7 @@ Some useful addresses:
 
 - `play.html?autostart&faction=Empire&enemy=Rebel&map=KUAT` skips the setup screen.
 - `play.html?mode=land` starts a land battle.
+- `play.html?autostart&mode=land&shooter&map=ENDOR&deployUI=2005` opens the ground shooter's 2005-style deployment screen. Choose a class and a friendly position, then **Spawn**. Click a friendly unit to spectate it; only eligible squads are spawn points. The selected class stays centered above Spawn, even while watching a teammate. Try Endor for turbolasers on both sides. Use `deployUI=original`, or switch **O → Deployment screen** during a match, to compare layouts.
 - `play.html?benchmark=100` starts the space benchmark, and `play.html?mode=land&benchmark=30` the land one.
 - `viewer.html?model=EV_STARDESTROYER.ALO` opens the model viewer.
 
@@ -113,6 +114,11 @@ Other commands:
 | `npm run build:prod` | build the site into `dist/` |
 | `npm run deploy:prod` | build and publish the site and the multiplayer lobby (`lobby/`) to Cloudflare |
 | `npm run app` | build the Windows app (`src-tauri/`, Tauri) |
+
+`npm run test:deploy` checks deployment logic without retail data. With `SWR_GAME` set, run
+`node tools/test-deploy-disc-catalog.mjs` (add `--base` for the original game) to check the stock skirmish maps.
+With the local server running, Chrome and optional `playwright-core` installed, `node tools/test-deploy-framing-browser.cjs`
+checks the rendered vehicle silhouettes; run again with `--base` to check the other edition. No retail files are bundled.
 
 The code lives in a few places:
 

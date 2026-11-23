@@ -21,6 +21,7 @@ import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
 import { Shooter, shooterWanted } from './shooter.js';
 import { ShooterNet } from './shooternet.js';
+import { noteMapShot } from './defense-marks.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { Menus } from './menus.js';
 import { loadHudAssets } from './hud.js';
@@ -1030,6 +1031,7 @@ export class LandGame {
       );
     };
     world.onShot = s => {
+      if (this.shooter) noteMapShot(s.from, world.time);
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
       if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
       const own = !!this.shooter && this.shooter.mine(s.from);

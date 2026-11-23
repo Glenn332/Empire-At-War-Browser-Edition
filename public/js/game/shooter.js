@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { db, spawnList } from '../gamedata.js';
 import { heightAt } from './terrain.js';
-import { buildsFor, costOf, inCategory, isUpgrade, missingFor, isHeroCompany, animReady, animClip } from './land.js';
+import { buildsFor, costOf, inCategory, isUpgrade, missingFor, isHeroCompany, animReady, animClip, landHealth } from './land.js';
 import { AnimState } from '../ala.js';
 import { setParticleDepth } from '../particles.js';
 import { PostFX } from './post.js';
@@ -22,6 +22,10 @@ import { Overlord } from './overlord.js';
 import { ShuttleWaves } from './shuttle.js';
 import { isSpawner, sideTech } from './landgarrison.js';
 import { eawSkin } from './eawskin.js';
+import { BattlefrontDeploy, bfPanel } from './battlefront-deploy.js';
+import { defenseMarks, drawDefense, unitArrow } from './defense-marks.js';
+import { playDeployClick } from './deploy-click.js';
+import { groupRoster, cardGroup } from './deploy-roster.js';
 import { TERRAIN } from './landtables.js';
 import { thiefOut } from './landabilities.js';
 
@@ -354,6 +358,14 @@ const _fwd = new THREE.Vector3(),
 
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
+function cameraHeight(u) {
+  _box.setFromObject(u.holder);
+  return Math.max(6, Math.min(40, _box.max.z - _box.min.z || u.aimZ * 1.6 || 10));
+}
+function shoulderPosition(cam, b, d, yaw, back, side, z) {
+  cam.position.set(b.x - d.x * back + Math.sin(yaw) * side, b.y - d.y * back - Math.cos(yaw) * side, z - d.z * back);
+}
+
 export const shooterWanted = setup =>
   setup.mode === 'land' &&
   !setup.net &&
@@ -374,6 +386,8 @@ export class Shooter {
     this.deadAt = 0;
     this.readyAt = 0;
     this.cfg = loadCfg();
+    const ui = new URLSearchParams(location.search).get('deployUI');
+    this.deployUI = (['original', '2005'].includes(ui) ? ui : this.cfg.deployUI) === 'original' ? 'original' : '2005';
     usePalette(this.cfg.colorblind);
     this.third = this.cfg.view !== 'first';
     this.yaw = 0;
@@ -2742,6 +2756,14 @@ export class Shooter {
   setCfg(key, value) {
     const C = this.cfg;
     C[key] = value;
+    if (key === 'deployUI') {
+      this.deployUI = value;
+      const url = new URL(location.href);
+      url.searchParams.set('deployUI', value);
+      history.replaceState(history.state, '', url);
+      this.buildDeployPanel();
+      if (this.panel.style.display !== 'none') this.refreshDeploy(true);
+    }
     if (key === 'view') this.third = value !== 'first';
     if (key === 'crosshair') this.reticle();
     if (key === 'colorblind') {
@@ -2816,7 +2838,7 @@ export class Shooter {
         o.textContent = t;
         i.appendChild(o);
       }
-      i.value = C[key];
+      i.value = key === 'deployUI' ? this.deployUI : C[key];
       i.onchange = () => this.setCfg(key, i.value);
       row(label, i);
     };
@@ -2828,6 +2850,7 @@ export class Shooter {
       ['third', 'Third person'],
       ['first', 'First person']
     ]);
+    pick('Deployment screen', 'deployUI', [['2005', 'Battlefront 2005'], ['original', 'Browser original']]);
     pick('Crosshair', 'crosshair', [
       ['ring', 'Ring'],
       ['dot', 'Dot'],
@@ -2898,22 +2921,20 @@ export class Shooter {
       M.f = M.s = 0;
       if (down(0)) {
         if (this.introUntil > performance.now()) this.introUntil = 0;
-        else this.deploy();
+        else this.submitDeploy();
       }
       if ((down(14) || down(15)) && this.panel.style.display !== 'none') {
         const cls = this.cards();
         if (cls.length) {
-          const i = Math.max(0, cls.findIndex(c => c === this.pick));
-          this.pick = cls[(i + (down(15) ? 1 : cls.length - 1)) % cls.length];
-          this.refreshDeploy(true);
+          const key = this.pick && this.cardKey(this.pick), i = Math.max(0, cls.findIndex(c => this.cardKey(c) === key));
+          this.chooseClass(cls[(i + (down(15) ? 1 : cls.length - 1)) % cls.length]);
         }
       }
       if ((down(4) || down(5)) && this.panel.style.display !== 'none') {
         const pts = this.spawnSpots();
         if (pts.length) {
           const i = Math.max(0, pts.indexOf(this.from));
-          this.from = pts[(i + (down(5) ? 1 : pts.length - 1)) % pts.length];
-          this.refreshDeploy(true);
+          this.chooseSpawn(pts[(i + (down(5) ? 1 : pts.length - 1)) % pts.length]);
         }
       }
       if (down(9)) this.openSettings();
@@ -5137,6 +5158,32 @@ export class Shooter {
     }
   }
 
+  teammateView(cam, u, real) {
+    const old = this.squadCamera;
+    const C = old?.unit === u ? old : (this.squadCamera = { unit: u, h: cameraHeight(u), yaw: u.heading, pitch: -0.05 });
+    const k = 1 - Math.exp(-14 * real), t = u.target;
+    C.yaw += wrap(u.heading - C.yaw) * k;
+    const pitch = t && !t.dead ? Math.atan2((t.z || 0) + (t.aimZ || 0) - u.z - (u.aimZ || 0), Math.max(1, Math.hypot(t.x - u.x, t.y - u.y))) : -0.05;
+    C.pitch += (Math.max(-0.8, Math.min(0.8, pitch)) - C.pitch) * k;
+    const yaw = C.yaw, eye = C.h * 0.9, cp = Math.cos(C.pitch), d = _v.set(Math.cos(yaw) * cp, Math.sin(yaw) * cp, Math.sin(C.pitch));
+    const at = u.holder.position;
+    const vehicle = !u.foot && u.kind === 'VEHICLE', inside = vehicle ? this.cockpit : !this.third;
+    if (vehicle && inside) cam.position.copy(this.seatView(u, d, real));
+    else if (vehicle) {
+      const top = this.heightOfSeat(u), tall = !u.flies && top > u.hitRadius * RIDE_CAM.tall;
+      const back = Math.max(60, u.hitRadius * 4.5, tall ? top * RIDE_CAM.back : 0);
+      shoulderPosition(cam, at, d, yaw, back, tall ? top * RIDE_CAM.side : 0,
+        at.z + (tall ? top * RIDE_CAM.lift : Math.max(u.aimZ || 0, u.hitRadius * 0.8) + back * 0.12));
+    } else if (!inside) shoulderPosition(cam, at, d, yaw, C.h * 2.6, eye * 0.35, at.z + eye * 1.05);
+    else cam.position.set(at.x - Math.cos(yaw) * C.h * FP_EYE.back + Math.sin(yaw) * C.h * FP_EYE.right,
+      at.y - Math.sin(yaw) * C.h * FP_EYE.back - Math.cos(yaw) * C.h * FP_EYE.right, at.z + eye + C.h * FP_EYE.up);
+    cam.position.z = Math.max(cam.position.z, heightAt(this.world.terrain, cam.position.x, cam.position.y) + 2);
+    cam.up.set(0, 0, 1); cam.lookAt(cam.position.x + d.x, cam.position.y + d.y, cam.position.z + d.z);
+    // Clip past the helmet in first person without hiding, posing or possessing the AI soldier.
+    this.setFov(cam, this.cfg.fov, !inside ? 1 : vehicle ? 0.3 : C.h * 0.34);
+    this.game.view.x = at.x; this.game.view.y = at.y;
+  }
+
   watch(cam, real) {
     const w = this.world,
       now = w.time;
@@ -5778,8 +5825,7 @@ export class Shooter {
     this.kickDebt = 0;
     this.pain = 0;
     this.state = 'alive';
-    _box.setFromObject(u.holder);
-    const h = Math.max(6, Math.min(40, _box.max.z - _box.min.z || u.aimZ * 1.6 || 10));
+    const h = cameraHeight(u);
     this.eye = h * 0.9;
     this.camBack = h * 2.6;
     this.big = u.kind !== 'INFANTRY' && !u.foot ? { top: Math.max(4, _box.max.z - u.z), len: Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5), z: null } : null;
@@ -6191,9 +6237,10 @@ export class Shooter {
     return (sq && sq.members[0]) || null;
   }
 
+  cardKey(c) { return cardGroup(c, k => this.cardName(k)); }
+
   cards() {
-    const cls = this.classes();
-    return [...cls, ...this.rides(), ...this.heroCards()];
+    return groupRoster([...this.classes(), ...this.rides(), ...this.heroCards()], c => this.cardName(c), this.pick);
   }
 
   spawnSpots() {
@@ -6773,7 +6820,15 @@ export class Shooter {
           e.stopImmediatePropagation();
           return;
         }
-        if (e.code === 'Enter') this.deploy();
+        if (this.panel.contains(e.target) && e.target.closest('button') && ['Enter', 'Space'].includes(e.code)) return;
+        if (this.bf && !['none', ''].includes(this.panel.style.display)) {
+          if (['ArrowLeft', 'ArrowRight'].includes(e.code)) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            this.bf.cycle(e.code === 'ArrowLeft' ? -1 : 1);
+            return;
+          }
+        }
+        if (e.code === 'Enter') { if (!e.repeat) this.submitDeploy(); }
         else if (/^(Key[WASD]|Arrow)/.test(e.code)) return;
         e.stopImmediatePropagation();
         return;
@@ -6959,8 +7014,10 @@ export class Shooter {
         this.lastCam = null;
       }
       if (this.state === 'deploy' && this.intro(cam, real)) return;
-      this.setFov(cam, 55, 5);
       if (this.state === 'deploy' && !g.over && this.panel.style.display === 'none') this.openDeploy();
+      const deployment = this.panel.style.display !== 'none' && !g.over ? this.bf : null;
+      if (!deployment?.setBackdrop(cam, real)) this.setFov(cam, 55, 5);
+      deployment?.preview.tick(real);
       return;
     }
     const k = this.keys,
@@ -7090,7 +7147,7 @@ export class Shooter {
       const back = this.camBack * (this.melee ? MELEE.cam : this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
         side = this.eye * 0.35,
         pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5 + pk * this.camBack * 1.2;
-      cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
+      shoulderPosition(cam, b, d, this.yaw, back, side, pz);
     }
     if (artyV && AB.over > 0.001) {
       const V = this.artyPose(artyV, real),
@@ -7489,7 +7546,19 @@ export class Shooter {
     this.panel = el('div', '');
     this.panel.className = 'sh-deploy';
     this.panel.style.display = 'none';
-    this.panel.innerHTML = `
+    for (const ev of ['mousedown', 'mouseup', 'click', 'wheel', 'contextmenu']) this.panel.addEventListener(ev, e => e.stopPropagation());
+    this.buildDeployPanel();
+  }
+
+  buildDeployPanel() {
+    this.bf?.dispose();
+    this.bf = null;
+    this.listKey = null;
+    this.mapAt = 0;
+    this.tipEl = null;
+    const redesigned = this.deployUI === '2005';
+    this.panel.classList.toggle('bf-deploy', redesigned);
+    this.panel.innerHTML = redesigned ? bfPanel : `
       <div class="sh-frame eaw-frame">
         <div class="sh-head"><div class="sh-title">Deploy</div><div class="sh-sub"></div></div>
         <div class="sh-body">
@@ -7505,7 +7574,7 @@ export class Shooter {
           </div>
         </div>
       </div>`;
-    for (const ev of ['mousedown', 'mouseup', 'click', 'wheel', 'contextmenu']) this.panel.addEventListener(ev, e => e.stopPropagation());
+    if (redesigned) this.bf = new BattlefrontDeploy(this, this.panel);
     const q = s => this.panel.querySelector(s);
     this.title = q('.sh-title');
     this.sub = q('.sh-sub');
@@ -7517,11 +7586,12 @@ export class Shooter {
     this.statBars = q('.sh-stats');
     this.wait = q('.sh-status');
     this.go = q('.sh-go');
-    this.go.onclick = () => this.deploy();
-    this.mapCv.addEventListener('mousedown', e => this.mapClick(e));
+    this.go.onclick = () => this.submitDeploy();
+    this.mapCv.addEventListener('mousedown', e => { if (e.button === 0) this.mapClick(e); });
     this.mapCv.addEventListener('mousemove', e => {
       this.mapHover = this.mapPoint(e);
       this.mapCv.style.cursor = this.mapHover ? 'pointer' : 'default';
+      if (this.bf) this.mapCv.title = this.mapHover?.watchUnit ? `Spectate ${this.nameOf(this.mapHover.watchUnit.type)}` : this.mapHover ? '' : this.bf.defenseTitle(e);
     });
   }
 
@@ -7530,13 +7600,18 @@ export class Shooter {
   }
 
   groundImage() {
+    if (this.bf) return this.bf.ground();
     const ui = this.game.ui;
     if (!ui) return null;
     if (!ui.ground && ui.radarGround) ui.ground = ui.radarGround();
     return ui.ground || null;
   }
 
-  mapFrame(cv = this.mapCv) {
+  mapFrame(cv = this.mapCv, scope = !!this.bf) {
+    // Picking must use exactly the view in the displayed frame, even if a
+    // squad has moved or the full-screen map was drawn in the meantime.
+    const drawn = scope && this.bf?.views.get(cv)?.frame;
+    if (drawn) return drawn;
     const g = this.game,
       lo = g.map.playMin || [0, 0],
       side = (g.terrain.size - 1) * 20,
@@ -7563,19 +7638,57 @@ export class Shooter {
         best = p;
       }
     }
+    if (this.bf && bd > 5) {
+      const hit = this.bf.teammateHit(sx, sy, Math.min(bd, 9));
+      if (hit) return hit;
+    }
     return best;
   }
 
   mapClick(e) {
     const p = this.mapPoint(e);
-    if (!p) return;
+    if (p?.watchUnit) this.chooseSpawn(null, p.watchUnit);
+    else if (p) this.chooseSpawn(p);
+  }
+
+  // Only explicit deployment inputs come here, never automatic roster or map refreshes.
+  deploySound(kind) {
+    return playDeployClick(this.game.audio, kind);
+  }
+
+  chooseClass(c) {
+    this.deploySound('unit');
+    this.pick = c;
+    this.refreshDeploy(true);
+  }
+
+  async submitDeploy() {
+    if (this.submittingDeploy || this.spawning || this.state === 'alive' || this.panel.style.display === 'none' || !this.pick) return;
+    // Seats and safe squad spawns can disappear between clicks. Rebind to a
+    // live source of the same class, never silently deploy the fallback class.
+    const key = this.cardKey(this.pick), watched = this.bf?.teammate;
+    this.refreshDeploy(true);
+    if (this.go.disabled || this.bf?.teammate !== watched || !this.pick || this.cardKey(this.pick) !== key) return;
+    this.submittingDeploy = true;
+    try {
+      this.deploySound('spawn');
+      await this.deploy();
+    } finally {
+      this.submittingDeploy = false;
+    }
+  }
+
+  chooseSpawn(p, unit = null) {
+    this.deploySound('post');
+    if (this.bf) this.bf.teammate = unit || p?.squad?.lead || null;
     this.from = p;
-    this.game.view.x = p.x;
-    this.game.view.y = p.y;
+    this.game.view.x = (p || unit).x;
+    this.game.view.y = (p || unit).y;
     this.refreshDeploy(true);
   }
 
   drawMap(cv = this.mapCv) {
+    if (this.bf) return this.bf.draw(cv);
     const big = cv !== this.mapCv,
       x = cv.getContext('2d'),
       F = this.mapFrame(this.mapCv),
@@ -7604,17 +7717,24 @@ export class Shooter {
       x.lineTo(F.W, v);
       x.stroke();
     }
+    const defenses = defenseMarks(w, this.me);
     for (const u of w.units) {
-      if (u.dead || u.inside || u.side < 0 || u.side === w.wild) continue;
+      if (u.dead || u.gone || u.inside || u.side < 0 || u.side === w.wild || defenses.has(u) || (u.structure && u.seen === false)) continue;
       const ally = w.ally(u.side, this.me);
       x.fillStyle = ally ? `rgba(${PAL.allyRGB},0.9)` : `rgba(${PAL.enemyRGB},0.9)`;
       const px = F.X(u.x),
         py = F.Y(u.y);
       if (u.structure) x.fillRect(px - 3, py - 3, 6, 6);
-      else x.fillRect(px - 1.5, py - 1.5, u.kind === 'INFANTRY' ? 3 : 4.5, u.kind === 'INFANTRY' ? 3 : 4.5);
+      else unitArrow(x, px, py, u, w.time, x.fillStyle, u.kind === 'INFANTRY' ? 4 : 5.5);
     }
     const mine = this.spawnSpots();
+    const occupied = new Set();
+    for (const [u, mark] of defenses) {
+      drawDefense(x, F.X(u.x), F.Y(u.y), 0.85, mark, PAL.ally, PAL.enemy);
+      occupied.add(u.capturable || u.site?.point);
+    }
     for (const p of [...w.points, ...mine.filter(m => m.home || m.squad)]) {
+      if (occupied.has(p) && !p.reinforce && !mine.includes(p)) continue;
       const px = F.X(p.x),
         py = F.Y(p.y),
         spawn = mine.includes(p),
@@ -7714,10 +7834,16 @@ export class Shooter {
       }
   }
 
-  statsOf(c) {
-    const w = this.world,
-      t = c.unit,
-      u = (c.hero && c.hero.members[0]) || w.units.find(x => !x.dead && x.type === t);
+  statsOf(c, preview = false) {
+    const w = this.world, t = c.unit;
+    let u = c.hero?.members?.[0] || (preview && c.vehicle?.members?.[0]) || w.units.find(x => !x.dead && x.type === t);
+    // A locked hero need not exist in the world yet. Read its starting loadout
+    // using the same resolver as a spawn, without spawning or consuming RNG.
+    if (!u && preview) {
+      const range = t.num('Targeting_Max_Attack_Distance', 140);
+      u = { range, baseRange: range, maxHealth: landHealth(t, 50) };
+      w.arm(u, t, this.me, () => 0);
+    }
     const wp = u && u.weapon;
     return {
       health: u ? u.maxHealth : t.num('Tactical_Health', 0),
@@ -7728,6 +7854,7 @@ export class Shooter {
   }
 
   openDeploy() {
+    if (this.bf) this.bf.teammate = null;
     this.panel.style.display = 'flex';
     this.listKey = '';
     this.refreshDeploy(true);
@@ -7736,7 +7863,7 @@ export class Shooter {
   refreshDeploy(force = false) {
     if (this.panel.style.display === 'none') return;
     const now = performance.now();
-    if (now >= (this.mapAt || 0)) {
+    if (force || now >= (this.mapAt || 0)) {
       this.mapAt = now + 50;
       this.drawMap();
     }
@@ -7747,32 +7874,35 @@ export class Shooter {
       cls = this.cards(),
       pts = this.spawnSpots(),
       heroOk = this.matchScore >= this.heroAt;
-    if (!this.pick || !cls.some(c => c.unit === this.pick.unit && c.vehicle === this.pick.vehicle)) this.pick = cls[0] || null;
-    else this.pick = cls.find(c => c.unit === this.pick.unit && c.vehicle === this.pick.vehicle);
-    if (!this.from || !pts.includes(this.from)) this.from = pts[0] || null;
-    const key = cls.map(c => c.unit.name + c.cost + (c.vehicle ? 'v' : '')).join() + '|' + this.pick?.unit.name + '|' + heroOk;
+    const pickedKey = this.pick && this.cardKey(this.pick);
+    this.pick = cls.find(c => this.cardKey(c) === pickedKey) || cls.find(c => c.dummy && c.dummy === this.pick?.dummy && c.company === this.pick.company) || cls[0] || null;
+    if (!this.bf?.syncTeammate(pts) && !pts.includes(this.from)) this.from = pts[0] || null;
+    const key = cls.map(c => this.cardKey(c) + ':' + c.unit.name + ':' + c.cost).join('|') + '|' + cls.indexOf(this.pick) + '|' + heroOk;
     if (key !== this.listKey) {
       this.listKey = key;
-      this.title.textContent = this.state === 'dead' ? (this.killerName ? `Killed by ${this.killerName}` : 'You were killed') : 'Deploy';
+      if (!this.bf) this.title.textContent = this.state === 'dead' ? (this.killerName ? `Killed by ${this.killerName}` : 'You were killed') : 'Deploy';
       this.list.textContent = '';
+      const roleClasses = this.classes(); // Gameplay role thresholds are not based on the grouped display.
       for (const c of cls) {
         const b = document.createElement('button');
         const heroic = c.hero || c.heroSpawn;
         b.className = 'sh-card eaw-frame-s' + (c === this.pick ? ' on' : '') + (heroic ? ' hero' : '') + (c.vehicle ? ' ride' : '') + (heroic && !heroOk ? ' locked' : '');
         const icon = this.iconOf(c.unit);
-        b.innerHTML = `<div class="sh-icon"${icon ? ` style="background-image:url('${icon}')"` : ''}></div><div class="sh-cname"></div><div class="sh-cost"></div>`;
-        b.querySelector('.sh-cname').textContent = this.cardName(c);
-        b.querySelector('.sh-cost').textContent = heroic ? (heroOk ? 'Hero' : `${this.heroAt} points`) : c.vehicle ? 'Vehicle' : this.tickets ? 'Free' : `${c.cost} credits`;
-        b.onclick = () => {
-          this.pick = c;
-          this.refreshDeploy(true);
-        };
+        const cost = heroic ? (heroOk ? 'Hero' : `${this.heroAt} points`) : c.vehicle ? 'Vehicle' : this.tickets ? 'Free' : `${c.cost} credits`;
+        if (this.bf) this.bf.card(b, c, roleClasses, cost);
+        else {
+          b.innerHTML = `<div class="sh-icon"${icon ? ` style="background-image:url('${icon}')"` : ''}></div><div class="sh-cname"></div><div class="sh-cost"></div>`;
+          b.querySelector('.sh-cname').textContent = this.cardName(c);
+          b.querySelector('.sh-cost').textContent = cost;
+        }
+        b.onclick = () => this.chooseClass(c);
         this.list.appendChild(b);
       }
       const c = this.pick;
-      if (c) {
+      if (this.bf) this.bf.select(c, !!(c?.hero || c?.heroSpawn) && !heroOk);
+      else if (c) {
         const icon = this.iconOf(c.unit);
-        this.portrait.style.backgroundImage = icon ? `url('${icon}')` : 'none';
+        if (this.portrait) this.portrait.style.backgroundImage = icon ? `url('${icon}')` : 'none';
         this.dname.textContent = this.cardName(c);
         this.dkind.textContent = c.hero
           ? 'Hero - takes over the hero where it stands, health drains over time and kills restore it'
@@ -7780,7 +7910,7 @@ export class Shooter {
             ? 'Hero - health drains over time and kills restore it'
             : c.vehicle
               ? 'Vehicle - spawn in the driver seat'
-              : ROLE_TEXT[this.roleOf(c, cls)] || 'Infantry';
+              : ROLE_TEXT[this.roleOf(c, roleClasses)] || 'Infantry';
         const all = cls.map(x => this.statsOf(x)),
           mine = this.statsOf(c),
           rows = [
@@ -7801,10 +7931,11 @@ export class Shooter {
         }
       }
     }
+    this.bf?.update(pts);
     const left = Math.ceil(this.readyAt - w.time),
       money = Math.floor(w.credits[this.me]);
     const out = this.tickets && this.tickets[this.me] <= 0;
-    this.sub.textContent = `${g.factions[this.me]}${this.tickets ? `  -  ${this.tickets[this.me]} tickets` : `  -  ${money} credits`}`;
+    if (!this.bf) this.sub.textContent = `${g.factions[this.me]}${this.tickets ? `  -  ${this.tickets[this.me]} tickets` : `  -  ${money} credits`}`;
     const pc = this.pick,
       locked = !!pc && (pc.hero || pc.heroSpawn) && !heroOk,
       free = !!pc && (pc.hero || pc.vehicle);
@@ -7813,7 +7944,7 @@ export class Shooter {
       this.tipN = (this.tipN + 1) % TIPS.length;
       if (this.tipEl) this.tipEl.textContent = `Tip: ${TIPS[this.tipN]}`;
     }
-    if (!this.tipEl && this.go && this.go.parentElement) {
+    if (!this.bf && !this.tipEl && this.go && this.go.parentElement) {
       const foot = this.go.parentElement;
       this.tipEl = document.createElement('div');
       this.tipEl.className = 'sh-tip';
@@ -7840,7 +7971,8 @@ export class Shooter {
       this.go.disabled = true;
       return;
     }
-    this.wait.textContent = out
+    const watchOnly = this.bf?.teammate && !this.from && !free;
+    this.wait.textContent = watchOnly ? 'Spectating · choose a spawn point to deploy' : out
       ? 'No tickets left'
       : locked
         ? `Hero unlocks at ${this.heroAt} points - you have ${this.matchScore}`
@@ -7851,8 +7983,8 @@ export class Shooter {
           : !this.from && !free
             ? 'Hold a reinforcement point to spawn'
             : this.from?.squad && !free
-              ? `Spawn with squad ${this.from.n} - press Enter or Deploy`
-              : 'Press Enter or Deploy';
+              ? (this.bf ? '' : `Spawn with squad ${this.from.n} - press Enter or Deploy`)
+              : this.bf ? '' : 'Press Enter or Deploy';
     this.go.disabled = out || locked || left > 0 || !this.pick || (!this.from && !free) || (!this.tickets && !this.pick?.hero && money < (this.pick?.cost || 0));
   }
 
@@ -8367,8 +8499,9 @@ export class Shooter {
       x.closePath();
       x.fill();
     }
+    const defenses = defenseMarks(w, this.me);
     for (const u of w.units) {
-      if (u.dead || u.inside || u === this.body || u.side < 0) continue;
+      if (u.dead || u.gone || u.inside || u === this.body || u.side < 0 || defenses.has(u) || (u.structure && u.seen === false)) continue;
       const dx = u.x - at.x,
         dy = u.y - at.y;
       if (dx * dx + dy * dy > R * R) continue;
@@ -8377,11 +8510,12 @@ export class Shooter {
       x.fillStyle = u.side === w.wild ? '#c8b070' : ally ? PAL.ally : PAL.enemy;
       const r = u.structure ? 3.5 : u.kind === 'INFANTRY' ? 1.6 : 2.6;
       if (u.structure) x.fillRect(px - r, py - r, r * 2, r * 2);
-      else {
-        x.beginPath();
-        x.arc(px, py, r, 0, Math.PI * 2);
-        x.fill();
-      }
+      else unitArrow(x, px, py, u, w.time, x.fillStyle, r * 1.85, rot);
+    }
+    for (const [u, mark] of defenses) {
+      if (Math.hypot(u.x - at.x, u.y - at.y) > R) continue;
+      const [px, py] = put(u.x, u.y);
+      drawDefense(x, px, py, 0.73, mark, PAL.ally, PAL.enemy);
     }
     for (const T of this.teams) {
       const L = T.lead;
@@ -8507,6 +8641,7 @@ export class Shooter {
     if (this.world?.terrain) this.world.terrain.padTop = null;
     document.body.classList.remove('shooter-on');
     this.hud.remove();
+    this.bf?.dispose();
     this.panel.remove();
     this.endEl?.remove();
     this.ticketEl?.remove();
