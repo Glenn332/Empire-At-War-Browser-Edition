@@ -120,7 +120,7 @@ export class Pathfinder extends PathCore {
       this.expBudget = searchBudget(this.K);
       return;
     }
-    const noWasm = /[?&]nowasm/.test(location.search),
+    const noWasm = typeof location !== 'undefined' && /[?&]nowasm/.test(location.search),
       wasmOf = (wk, known) =>
         known !== undefined || noWasm
           ? Promise.resolve(noWasm ? false : known)
