@@ -2473,3 +2473,7 @@ body.attract #buildTag {
 .bug-report-toast[data-kind='bad'] {
   border-color: rgba(230, 110, 100, 0.7);
 }
+.cursor-refresh,
+.cursor-refresh * {
+  cursor: default !important;
+}
