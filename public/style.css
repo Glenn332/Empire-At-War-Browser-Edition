@@ -23,6 +23,7 @@ body {
     Tahoma,
     sans-serif;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 #view {
   position: fixed;

@@ -2568,7 +2568,7 @@ export class UI {
       head.className = 'head';
       const research = items.filter(x => isUpgradeType(x.it.type)).length,
         recruit = items.length - research;
-      head.innerHTML = '<span></span><span>click to cancel</span>';
+      head.innerHTML = '<span></span><span>click or right-click to cancel</span>';
       head.firstChild.textContent = [recruit ? `Recruitment ${recruit}` : '', research ? `Research ${research}` : '']
         .filter(Boolean)
         .join(' · ');
@@ -2589,6 +2589,10 @@ export class UI {
         d.onclick = () => {
           this.game.command({ c: 'cancel', b: x.u.id, q: x.name, i: x.u.buildQueues.get(x.name).indexOf(x.it), type: x.it.type.name });
           this.hudTimer = 0;
+        };
+        d.oncontextmenu = e => {
+          e.preventDefault();
+          d.onclick();
         };
         d._x = x;
         grid.appendChild(d);

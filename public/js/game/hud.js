@@ -1136,18 +1136,10 @@ export class CommandBar {
       q.style.backgroundImage = css(this.tex('tqueue00', 'Blank_Texture_Name'));
       q.innerHTML = '<i class="ic"></i><i class="prog"></i><span></span>';
       q.querySelector('.prog').style.backgroundImage = css(this.tex('tqueue00', 'Build_Texture_Name'));
-      q.onclick = () => {
-        const it = q._item;
-        if (it) {
-          this.game.command({
-            c: 'cancel',
-            b: it.u.id,
-            q: it.name,
-            i: it.u.buildQueues.get(it.name).indexOf(it.it),
-            type: it.it.type.name
-          });
-          ui.hudTimer = 0;
-        }
+      q.onclick = () => this.cancelQueued(q._item);
+      q.oncontextmenu = e => {
+        e.preventDefault();
+        this.cancelQueued(q._item);
       };
       q.onmouseenter = () => this.queueHover(i, true);
       q.onmouseleave = () => this.queueHover(i, false);
@@ -1239,6 +1231,14 @@ export class CommandBar {
 
   coveredColumns(build) {
     return (this.covers || []).some(c => (!build || c.build) && c.node.isConnected && !c.node.closest('[hidden]') && c.node.style.display !== 'none') ? 1 : 0;
+  }
+
+  // left or right click on a queued build or research cancels it (the build is refunded by cancelBuild)
+  cancelQueued(x) {
+    const q = x && x.u.buildQueues.get(x.name);
+    if (!q) return;
+    this.game.command({ c: 'cancel', b: x.u.id, q: x.name, i: q.indexOf(x.it), type: x.it.type.name });
+    this.ui.hudTimer = 0;
   }
 
   slotClick(i, ev) {
@@ -1909,11 +1909,13 @@ export class CommandBar {
           d.firstChild.style.backgroundImage = css(iconUrl(iconNameFor(r.type)));
           d.onmouseenter = () => this.tipOn('side' + i, r.type);
           d.onmouseleave = () => this.hideInfo();
-          if (r.it)
-            d.onclick = () => {
-              this.game.command({ c: 'cancel', b: r.u.id, q: r.name, i: r.u.buildQueues.get(r.name).indexOf(r.it), type: r.it.type.name });
-              this.ui.hudTimer = 0;
+          if (r.it) {
+            d.onclick = () => this.cancelQueued(r);
+            d.oncontextmenu = e => {
+              e.preventDefault();
+              this.cancelQueued(r);
             };
+          }
           return d;
         });
       const columns = [];

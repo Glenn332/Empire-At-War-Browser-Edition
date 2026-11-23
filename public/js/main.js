@@ -112,10 +112,12 @@ import { SpectatorView } from './game/spectator.js';
 import { switchTarget } from './game/switchsides.js';
 import { restoreWindowSize } from './windowsize.js';
 import { EXTRA_FX_TIP, extraFxSetting, setExtraFx } from './game/extrafx.js';
+import { guardNativeUI } from './nativeui.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
 guardLeaving();
+guardNativeUI();
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
