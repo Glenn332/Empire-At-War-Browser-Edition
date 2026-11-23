@@ -818,6 +818,8 @@ export class Unit {
     this.holdFire = undefined;
     this.invulnerable = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.noGarrison = undefined;
     this.suspended = undefined;
     this.aiPower = undefined;
@@ -1728,6 +1730,8 @@ export class Squad {
     this._iconFrame = undefined;
     this.scripted = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.spotted = undefined;
     this.spotLine = undefined;
     this.aiPower = undefined;

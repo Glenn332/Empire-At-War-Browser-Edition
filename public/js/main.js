@@ -76,7 +76,7 @@ import {
   importSaveFile
 } from './game/savegame.js';
 import { watchForResume, pendingResume, forgetResume } from './game/resume.js';
-import { restoreBattleScripts } from './game/tacticalsave.js';
+import { restoreBattleScripts, SCRIPTS_LOST_WARNING } from './game/tacticalsave.js';
 import { orderMove } from './game/orders.js';
 import { placeSpecialWeapons, placeCampaignSpecialWeapons, specialWeaponSource } from './game/superweapon.js';
 import { placeCampaignBattle, sideBeaten, battleResult, campaignIntro } from './game/campaignbattle.js';
@@ -2908,8 +2908,10 @@ async function boot() {
       return;
     }
     try {
-      await putSave(await snapshotNow(g));
-      saveStatus('Game saved.', 'good');
+      const snap = await snapshotNow(g);
+      await putSave(snap);
+      if (snap.scriptsLost) saveStatus(SCRIPTS_LOST_WARNING, 'bad');
+      else saveStatus('Game saved.', 'good');
       renderSaves();
     } catch (e) {
       console.error(e);

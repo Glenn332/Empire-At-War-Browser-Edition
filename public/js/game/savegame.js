@@ -5,7 +5,7 @@ import { BUILD } from '../build.js';
 import { expansion } from '../edition.js';
 import { contentNow } from '../content.js';
 import { snapshotGalaxy } from './galaxy.js';
-import { saveBattleScripts } from './tacticalsave.js';
+import { trySaveBattleScripts, scriptFlags, applyScriptFlags } from './tacticalsave.js';
 import { SpecialWeapon } from './superweapon.js';
 import { isPlainObject } from './plainobject.js';
 
@@ -158,6 +158,8 @@ function spaceSnapshot(game, name) {
     const o = { x: r1(x), y: r1(y), z: r1(u.z), h: +u.heading.toFixed(3), hu: r1(u.health), sh: r1(u.shield) };
     if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
     if (u.energy) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
+    const fl = scriptFlags(u);
+    if (fl) o.fl = fl;
     return o;
   };
   const unit = u => {
@@ -208,6 +210,8 @@ function spaceSnapshot(game, name) {
       f: s.fighters.map(body)
     };
     if (s.alone) o.alone = 1;
+    const fl = scriptFlags(s);
+    if (fl) o.fl = fl;
     if (s.queue && s.queue.length) o.way = s.queue.map(order);
     if (s.target) {
       const t = ref(s.target);
@@ -241,24 +245,22 @@ function spaceSnapshot(game, name) {
       const q = queues(u);
       if (q.length) o.q = q;
       if (u.everSeenBy) o.seen = u.everSeenBy;
+      const fl = scriptFlags(u);
+      if (fl) o.fl = fl;
     }
     if (Object.keys(o).length) map[u.mapIndex] = o;
   }
   const setup = game.setup;
   const campaign = setup.campaign && game.campaignBook ? spaceCampaign(game, ref) : undefined;
   const thingRef = u => (u.squad ? (r => (r ? r + '.' + u.squad.fighters.indexOf(u) : null))(ref(u.squad)) : ref(u));
-  let scripts = null;
-  try {
-    scripts = saveBattleScripts(game, thingRef);
-  } catch (error) {
-    console.warn('the battle is saved without its scripts (they start over when it is loaded):', error.message || error);
-  }
+  const { scripts, lost } = trySaveBattleScripts(game, thingRef);
   return {
     format: 'sw-revival-save',
     version: SAVE_VERSION,
     build: BUILD,
     saved: new Date().toISOString(),
     ...(campaign ? { campaign } : {}),
+    ...(lost ? { scriptsLost: lost } : {}),
     name:
       name ||
       `${game.map.planet || db.t(game.map.textId) || 'Skirmish'} — ${Math.floor(w.time / 60)}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`,
@@ -484,6 +486,7 @@ export function restore(game, save) {
     if (o.seen) u.everSeenBy = o.seen;
     if (o.limbo) u.limbo = true;
     if (o.nof) u.noOpportunity = true;
+    applyScriptFlags(u, o.fl);
   }
   w.units = w.units.filter(u => !u.dead);
   w.unitGridN = Infinity;
@@ -516,7 +519,10 @@ export function restore(game, save) {
         damage(f, o.f[k]);
         if (o.f[k].limbo) f.limbo = true;
         if (o.f[k].nof) f.noOpportunity = true;
+        applyScriptFlags(f, o.f[k].fl);
       });
+      applyScriptFlags(e, o.fl);
+      if (e.scriptSelectable === false) for (const f of e.fighters) f.selectable = false;
       e.x = o.x;
       e.y = o.y;
       e.heading = o.h;
@@ -541,6 +547,7 @@ export function restore(game, save) {
       // a script's Hide_Object / Prevent_Opportunity_Fire survives the reload
       if (o.limbo) e.limbo = true;
       if (o.nof) e.noOpportunity = true;
+      applyScriptFlags(e, o.fl);
     }
     made.push(e);
     refs.set('e' + i, e);

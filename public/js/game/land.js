@@ -688,6 +688,8 @@ export class LandSquad {
     this.crew = undefined;
     this.craft = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.selectable = undefined;
     this.advance = undefined;
     this.spot = undefined;

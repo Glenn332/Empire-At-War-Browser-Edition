@@ -74,7 +74,7 @@ import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade, GRADE } from './ex
 import { categoryOf, CAT } from './projflight.js';
 import { placeLandInvasion, invasionWinner, landInvasionResult, invasionStructureDeath, restoreSheltered } from './campaignland.js';
 import { campaignSetup } from './savegame.js';
-import { saveBattleScripts, restoreBattleScripts } from './tacticalsave.js';
+import { trySaveBattleScripts, restoreBattleScripts, scriptFlags, applyScriptFlags } from './tacticalsave.js';
 
 async function landCamera() {
   const own = {
@@ -1290,17 +1290,13 @@ export class LandGame {
       r1 = v => Math.round(v * 10) / 10,
       en = u => (u.energy ? { en: [r1(u.energy.value), +u.energy.tick.toFixed(3), +u.energy.every.toFixed(3)] } : {});
     const live = w.squads.filter(q => !q.structure && !q.arriving && q.members.length);
-    let scripts = null;
-    try {
-      scripts = saveBattleScripts(this, this.thingRef(live));
-    } catch (error) {
-      console.warn('the battle is saved without its scripts (they start over when it is loaded):', error.message || error);
-    }
+    const { scripts, lost } = trySaveBattleScripts(this, this.thingRef(live));
     return {
       format: 'sw-revival-save',
       version,
       build,
       saved: new Date().toISOString(),
+      ...(lost ? { scriptsLost: lost } : {}),
       name:
         name ||
         `${db.t(this.map.textId) || this.map.planet || 'Land skirmish'} — ${Math.floor(w.time / 60)}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`,
@@ -1395,8 +1391,10 @@ export class LandGame {
             ...en(u),
             ...(u.rider ? { rider: u.rider.name } : {}),
             ...(u.limbo ? { limbo: 1 } : {}),
-            ...(u.noOpportunity ? { nof: 1 } : {})
-          }))
+            ...(u.noOpportunity ? { nof: 1 } : {}),
+            ...(fl => (fl ? { fl } : {}))(scriptFlags(u, w.time, false))
+          })),
+          ...(fl => (fl ? { fl } : {}))(scriptFlags(q))
         })),
         unloading: w.transports
           .filter(t => t.stage === 'unload' && t.queue?.length)
@@ -1720,7 +1718,16 @@ export class LandGame {
                 if (q.members[i]?.limbo) u.limbo = true;
                 if (q.members[i]?.nof) u.noOpportunity = true;
                 if (q.members[i]?.en) energies.push([u, q.members[i].en]);
+                applyScriptFlags(u, q.members[i]?.fl);
               });
+              if (sq && q.fl) {
+                applyScriptFlags(sq, q.fl);
+                if (sq.scriptHidden)
+                  for (const u of sq.members) {
+                    u.scriptHidden = true;
+                    if (u.holder) u.holder.visible = false;
+                  }
+              }
               if (sq && q.co !== undefined) sq.company = 's' + q.co;
               if (sq && q.in >= 0 && w.sites[q.in] && w.sites[q.in].structure) putInside(w, sq, w.sites[q.in].structure);
               if (sq && q.home) {
