@@ -1,4 +1,4 @@
-import { panelSide } from './panelside.js';
+import { panelSide, offerPanel } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -191,12 +191,15 @@ function structureOutcome(game, actor, planet, ability) {
     player = playerOf(g, actor.owner),
     side = panelSide(game, actor.owner, player);
   if (side !== 'ai') {
+    const rows = structuresOf(planet)
+      .map(structure => ({
+        structure,
+        price: sabotagePrice(ability, planet, structure, !!player?.tutorial)
+      }))
+      .filter(r => r.price >= 1);
+    offerPanel(game, 'sabotage', actor, planet, { rows });
     if (side === 'remote') return false;
-    const rows = structuresOf(planet).map(structure => ({
-      structure,
-      price: sabotagePrice(ability, planet, structure, !!player?.tutorial)
-    }));
-    game.openSabotageMenu?.({ actor, planet, ability, rows: rows.filter(r => r.price >= 1) });
+    game.openSabotageMenu?.({ actor, planet, ability, rows });
     return false;
   }
   const can = structuresOf(planet).filter(structure => {

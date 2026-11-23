@@ -231,7 +231,7 @@ export class Lobby {
 
   async fetch(req) {
     const url = new URL(req.url);
-    const name = (url.searchParams.get('name') || 'Player').slice(0, NAME_LEN);
+    const name = cleanName(url.searchParams.get('name'));
     const lobby = url.searchParams.get('lobby');
     const present = this.sockets();
     const host = present.find(s => s.a.role === 'host');

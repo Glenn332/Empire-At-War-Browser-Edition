@@ -15,6 +15,7 @@ const DELAY = 2;
 const MAX_AHEAD = 8;
 const HASH_EVERY = 10;
 const MAX_RESYNCS = 5;
+const MAX_TURN_CMDS = 64;
 const REPORT_WAIT = 15000;
 const TAGGED = new Set(['cmd', 'loaded', 'go', 'turn', 'ack', 'desync', 'resume']);
 
@@ -233,8 +234,10 @@ export class Lockstep {
     if (TAGGED.has(m.k) && (m.e | 0) !== this.epoch) return;
     if (this.host) {
       const pid = this.playerOf.get(from);
-      if (m.k === 'cmd' && pid !== undefined && !this.gone.has(from) && m.cmd && typeof m.cmd.c === 'string')
-        this.collected.push([pid, m.cmd]);
+      if (m.k === 'cmd' && pid !== undefined && !this.gone.has(from) && m.cmd && typeof m.cmd.c === 'string') {
+        // a peer flooding orders could stall every machine: keep a turn's worth that a person could give
+        if (this.collected.filter(([p]) => p === pid).length < MAX_TURN_CMDS) this.collected.push([pid, m.cmd]);
+      }
       else if (m.k === 'loaded') {
         this.loaded.add(from);
         if (this.started) this.tx(from, { k: 'go' });

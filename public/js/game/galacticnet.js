@@ -1,3 +1,4 @@
+import { panelOffer, closeOffer } from './panelside.js';
 import { Lockstep, TURN } from './netgame.js';
 import { ticker } from '../net.js';
 import { simRandomState } from './simrandom.js';
@@ -10,7 +11,7 @@ import { choicesOf, executeCorruption } from './galacticcorruption.js';
 import { executeSlice } from './galacticslicer.js';
 import { executeHack } from './galactichack.js';
 import { sabotageStructure } from './galacticsabotage.js';
-import { blackMarketItems, completePurchase } from './blackmarket.js';
+import { completePurchase } from './blackmarket.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -227,25 +228,33 @@ export function runCommand(game, faction, cmd) {
       const rec = fromRecordRef(g, cmd.rec),
         planet = g.planets[cmd.p];
       if (!rec || !planet || key(rec.owner ?? faction) !== key(faction)) return {};
+      // only a row the game offered this hero here, at the price it rolled
+      const offer = panelOffer(game, rec, cmd.kind, planet);
+      if (!offer) return {};
       const actor = game.story?.object?.(rec, planet, faction)?.__object || { owner: faction, record: rec, type: rec.carries || rec.type };
-      let done = false;
+      const credits = g.players.find(p => key(p.faction) === key(faction))?.credits ?? 0;
+      let done = false,
+        spent = false;
       if (cmd.kind === 'corruption') {
         const choice = choicesOf(planet.type).find(c => c.slot === cmd.slot);
         done = !!choice && executeCorruption(game, actor, planet, choice);
       } else if (cmd.kind === 'slice') {
-        const type = db.type(cmd.type);
-        done = !!type && executeSlice(game, actor, planet, { type, cost: +cmd.cost || 0, chance: cmd.chance ?? undefined }, !!cmd.only, +cmd.respawn || 0);
+        const row = offer.rows.find(r => key(r.type.name) === key(cmd.type));
+        spent = !!row && row.cost <= credits;
+        done = !!row && executeSlice(game, actor, planet, row, offer.only, offer.respawn);
       } else if (cmd.kind === 'hack') done = executeHack(game, actor, planet);
       else if (cmd.kind === 'sabotage') {
-        const structure = fromRecordRef(g, cmd.s);
-        done = !!structure && sabotageStructure(game, actor, planet, structure, +cmd.price || 0);
+        const structure = fromRecordRef(g, cmd.s),
+          row = structure && offer.rows.find(r => r.structure === structure);
+        done = !!row && sabotageStructure(game, actor, planet, structure, row.price);
       } else if (cmd.kind === 'market') {
-        const item = blackMarketItems().find(i => key(i.name) === key(cmd.item));
-        if (item) {
-          game.story?.signal?.('STORY_BUY_BLACK_MARKET', item.name);
-          done = completePurchase(game, actor, planet, { item, price: +cmd.price || 0 }, +cmd.respawn || 0);
+        const row = offer.rows.find(r => key(r.item.name) === key(cmd.item));
+        if (row) {
+          game.story?.signal?.('STORY_BUY_BLACK_MARKET', row.item.name);
+          done = completePurchase(game, actor, planet, row, offer.respawn);
         }
       }
+      if (done || spent) closeOffer(game, rec);
       if (done) game.galacticBattleChanged?.();
       return done ? { ok: true } : {};
     }
@@ -253,7 +262,9 @@ export function runCommand(game, faction, cmd) {
       const mine = game.actingPid === game.localPid,
         name = String(cmd.name || '').slice(0, 64);
       try {
-        putSave(snapshot(game, name), mine && cmd.slot != null ? cmd.slot : null)
+        // another player's save lands in one slot per player here, so a flood of saves can't fill this disk
+        const slot = mine ? (cmd.slot != null ? String(cmd.slot) : null) : 'net-' + key(faction).replace(/[^A-Z0-9_]/g, '');
+        putSave(snapshot(game, name), slot)
           .then(() => game.message?.(`${db.t('TEXT_SAVE_GAME_TITLE') || 'Save Game'}: ${name}`, 'good'))
           .catch(error => console.error(error));
       } catch (error) {

@@ -1134,8 +1134,9 @@ export class UI {
     const def = users[0].abilityState(kind).def;
     const anyActive = users.some(s => s.abilityState(kind).active);
     const ready = s => {
-      const st = s.abilityState(kind);
-      return !st.active && !(st.cooldown > 0);
+      const st = s.abilityState(kind),
+        lead = s.isSquad ? s.fighters[0] || s : s;
+      return !st.active && !(st.cooldown > 0) && !((lead.abilityLock || 0) > this.world.time);
     };
     const turnOn = users.some(ready);
     if (!anyActive && !turnOn) return;
