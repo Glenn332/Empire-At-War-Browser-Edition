@@ -14,7 +14,7 @@ const { chromium } = require('playwright-core');
       localStorage.setItem('swr-shooter-settings', '{"shuttle":false}');
     }, process.argv.includes('--base'));
     await page.goto(
-      (process.env.BASE_URL || 'http://localhost:8412') +
+      (process.env.BASE_URL || 'http://localhost:8377') +
         '/play.html?autostart&mode=land&shooter&map=ENDOR&faction=Empire&enemy=Rebel&deployUI=2005'
     );
     await page.locator('.sh-deploy .sh-go').waitFor({ timeout: 150000 });

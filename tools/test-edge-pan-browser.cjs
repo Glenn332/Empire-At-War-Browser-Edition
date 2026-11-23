@@ -11,7 +11,7 @@ const { chromium } = require('playwright-core');
     const right = [1119, 300];
     for (const mode of ['land', 'space', 'galactic']) {
       await page.goto(
-        new URL(`/play.html?autostart&mode=${mode}&map=ENDOR&faction=Empire&enemy=Rebel`, process.env.BASE_URL || 'http://localhost:8412')
+        new URL(`/play.html?autostart&mode=${mode}&map=ENDOR&faction=Empire&enemy=Rebel`, process.env.BASE_URL || 'http://localhost:8377')
           .href
       );
       if (mode === 'galactic') {

@@ -18,6 +18,7 @@
     "test:space-direct": "node tools/test-space-direct.mjs",
     "test:modules": "node tools/test-module-graph.mjs",
     "test:deploy": "node tools/test-deploy-framing.mjs && node tools/test-deploy-motion.mjs && node tools/test-deploy-roster.mjs && node tools/test-deploy-disc.mjs && node tools/test-defense-marks.mjs",
+    "test:battlefront": "node tools/test-camera-input.mjs && node tools/test-combat-hud.mjs && node tools/test-first-person-kit.mjs && node tools/test-infantry-roll.mjs && node tools/test-shooter-view.mjs && node tools/test-shot-presentation.mjs && node tools/test-shooter-reload.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

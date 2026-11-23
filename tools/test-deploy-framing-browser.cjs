@@ -94,6 +94,13 @@ async function measure(page, name) {
       );
     };
     for (const name of names) await check(name);
+    // An XML-only type need not have 3D art. A stale portrait must not cover the fallback.
+    const fallback = await page.evaluate(async () => {
+      const preview = game.shooter.bf.preview;
+      await preview.show({ str: () => '' }, null, '/favicon.ico');
+      return !preview.inst && !preview.host.classList.contains('rendered') && preview.host.style.getPropertyValue('--unit-icon').includes('favicon.ico');
+    });
+    assert.ok(fallback, 'missing model retains the selected icon');
     for (const size of [
       { width: 1440, height: 810 },
       { width: 390, height: 844 }

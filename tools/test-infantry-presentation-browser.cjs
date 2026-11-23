@@ -128,7 +128,7 @@ async function checkFocusedBolt(page, fp) {
     await p.goto(
       new URL(
         '/play.html?autostart&mode=land&shooter&map=ENDOR&faction=Empire&enemy=Rebel&deployUI=2005',
-        process.env.BASE_URL || 'http://localhost:8412'
+        process.env.BASE_URL || 'http://localhost:8377'
       ).href
     );
     await p.locator('.sh-deploy .sh-go').waitFor({ timeout: 150000 });
