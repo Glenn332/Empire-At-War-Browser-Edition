@@ -319,7 +319,7 @@ export class GalacticFreeStore {
       return;
     }
     const m = this.plans.network.matrix(this.c),
-      cost = m.cost[at.index * m.n + s.dest.index];
+      cost = m.row(at.index).cost[s.dest.index];
     if (cost === INF || cost >>> 16 > 0) {
       s.done = true;
       return;
