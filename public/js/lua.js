@@ -23,6 +23,9 @@ export async function loadFengari() {
   return (F = globalThis.fengari);
 }
 
+// constructor, __proto__, __defineGetter__ and the like lead from an engine object to Function: never hand them to Lua
+const jsInternal = (u, key) => key === 'constructor' || key === '__proto__' || (key in Object.prototype && u[key] === Object.prototype[key]);
+
 export class LuaRef {
   constructor(vm, ref) {
     this.vm = vm;
@@ -133,6 +136,9 @@ export class LuaVM {
     lualib.luaL_openlibs(L);
     this.str = s => fengari.to_luastring(String(s));
     this.exec(COMPAT, 'compat');
+    // scripts come from mods, saves and other players: no way out of the Lua sandbox into page JavaScript
+    // (package.loadlib fetches a URL and runs it as JS; debug.debug blocks on prompt())
+    this.exec('package.loadlib = nil; package.cpath = ""; package.searchers = { package.searchers[1] }; debug.debug = nil', 'sandbox');
     lua.lua_getglobal(L, this.str('math'));
     lua.lua_pushjsfunction(L, L2 => {
       const n = lua.lua_gettop(L2),
@@ -172,7 +178,7 @@ export class LuaVM {
     set('__index', L2 => {
       const u = lua.lua_touserdata(L2, 1),
         key = lua.lua_type(L2, 2) === lua.LUA_TSTRING ? lua.lua_tojsstring(L2, 2) : null;
-      let v = u && key !== null ? u[key] : undefined;
+      let v = u && key !== null && !jsInternal(u, key) ? u[key] : undefined;
       if (v === undefined && u && key !== null && typeof u.__missing === 'function') v = u.__missing(key);
       if (typeof v === 'function') {
         const g = v.__raw ? this.raw(v, key, u) : this.fn(v, key, u);
@@ -202,7 +208,7 @@ export class LuaVM {
   }
 
   member(u, key) {
-    let v = u[key];
+    let v = jsInternal(u, key) ? undefined : u[key];
     if (v === undefined && typeof u.__missing === 'function') v = u.__missing(key);
     if (typeof v !== 'function') throw new Error('an engine object has no function ' + key);
     const g = v.__raw ? this.raw(v, key, u) : this.fn(v, key, u);

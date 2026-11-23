@@ -3,6 +3,8 @@ import { executeLand } from './landcommands.js';
 import { inCategory } from './land.js';
 import { keysOf, keyName } from './keybinds.js';
 import { heightAt } from './terrain.js';
+// game and mod text goes into markup escaped, so a unit name can't carry HTML
+const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const OV = {
   pullStep: 0.3,
@@ -338,7 +340,7 @@ export class Overlord {
   startBlend(kind, title, sub) {
     const cam = this.sh.game.camera;
     this.blend = { p: cam.position.clone(), q: cam.quaternion.clone(), fov: cam.fov, near: cam.near, t0: performance.now(), dur: kind === 'out' ? OV.outDur : OV.inDur, kind };
-    this.card.innerHTML = `${title}<small>${sub}</small>`;
+    this.card.innerHTML = `${html(title)}<small>${html(sub)}</small>`;
     this.whoosh(kind);
   }
 
@@ -637,7 +639,7 @@ export class Overlord {
       this.tip.style.left = m.x + 'px';
       this.tip.style.top = m.y + 'px';
       const near = g.view.dist <= this.minDist() * OV.takeDist;
-      this.tip.innerHTML = `${sh.nameOf(this.hover.type)}<span>${near ? 'Scroll in' : 'Zoom in'} or ${this.key()} to take control</span>`;
+      this.tip.innerHTML = `${html(sh.nameOf(this.hover.type))}<span>${near ? 'Scroll in' : 'Zoom in'} or ${this.key()} to take control</span>`;
     } else this.tip.style.display = 'none';
   }
 

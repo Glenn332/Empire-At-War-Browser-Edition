@@ -24,6 +24,8 @@ import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { playerSpecial, specialTargets } from './superweapon.js';
+// game and mod text goes into markup escaped, so a unit name can't carry HTML
+const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const $ = id => document.getElementById(id);
 const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -1085,7 +1087,7 @@ export class UI {
       d.className = 'b';
       const url = iconFor(t);
       if (url) d.style.backgroundImage = `url(${url})`;
-      else d.innerHTML = `<span class="label">${typeName(t)}</span>`;
+      else d.innerHTML = `<span class="label">${html(typeName(t))}</span>`;
       const c = document.createElement('span');
       c.className = 'n';
       c.textContent = n > 1 ? n : '';
@@ -2435,7 +2437,7 @@ export class UI {
         d.className = 'b';
         const url = iconFor(t);
         if (url) d.style.backgroundImage = `url(${url})`;
-        else d.innerHTML = `<span class="label">${typeName(t)}</span>`;
+        else d.innerHTML = `<span class="label">${html(typeName(t))}</span>`;
         const cost = document.createElement('span');
         cost.className = 'cost';
         cost.textContent = buildCost(t);
@@ -2495,7 +2497,7 @@ export class UI {
         d.className = 'b' + (isUpgradeType(x.it.type) ? ' research' : '');
         const url = iconFor(x.it.type);
         if (url) d.style.backgroundImage = `url(${url})`;
-        else d.innerHTML = `<span class="label">${typeName(x.it.type)}</span>`;
+        else d.innerHTML = `<span class="label">${html(typeName(x.it.type))}</span>`;
         const prog = document.createElement('span');
         prog.className = 'prog';
         const t = document.createElement('span');
