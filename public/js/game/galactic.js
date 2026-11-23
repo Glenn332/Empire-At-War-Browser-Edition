@@ -3918,13 +3918,13 @@ export class GalacticGame {
       this.scene.matrixWorldAutoUpdate = true;
     }
     if (this.renderer.endFrame) this.renderer.endFrame();
-    this.drawNames(zoom);
+    if (this.namesDue(real, zoom)) this.drawNames(zoom);
     this.drawCountdowns();
     this.overview?.update();
     this.corruptionTip();
     this.updatePointer();
     this.radar?.drawFrame(real);
-    this.radar?.refresh();
+    this.radar?.tick(real);
   }
 
   drawCountdowns() {
@@ -4147,6 +4147,44 @@ export class GalacticGame {
       return 1;
     }
     return 0.5 + 0.5 * Math.cos(((now - f.start) / 1000) * f.speed);
+  }
+
+  // The label overlay repaints when the camera, pointer, selection, drag or filters change, while a stack flashes, and every 0.1 s otherwise.
+  namesDue(dt, zoom) {
+    const c = this.camera,
+      M = this.mouse,
+      k = (this.namesKey ||= []);
+    let i = 0,
+      same = true;
+    const put = v => {
+      if (!Object.is(k[i], v)) {
+        k[i] = v;
+        same = false;
+      }
+      i++;
+    };
+    for (const e of c.matrixWorld.elements) put(e);
+    for (const e of c.projectionMatrix.elements) put(e);
+    put(zoom);
+    put(this.view.zoom);
+    put(this.names.width);
+    put(this.names.height);
+    put(innerWidth);
+    put(innerHeight);
+    put(this.selected);
+    put(this.hover);
+    put(this.filters);
+    put(M.x);
+    put(M.y);
+    put(M.in);
+    put(this.dragFleet);
+    put(this.dragGround);
+    put(this.galaxy.fleets.length);
+    if ((this.namesIn = (this.namesIn || 0) - dt) <= 0 || !same || this.stackFlashes?.size) {
+      this.namesIn = 0.1;
+      return true;
+    }
+    return false;
   }
 
   drawNames(zoom) {
