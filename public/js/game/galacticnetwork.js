@@ -51,7 +51,7 @@ export class GalacticNetwork {
     const n = g.planets.length,
       { dist } = edges(g),
       view = this.ai.forces();
-    const usable = p => !p.background && !p.destroyed && !p.restricted && (g.autoReveal !== false || p.revealed),
+    const usable = p => !p.background && !p.destroyed && !p.restricted && (g.autoReveal !== false || p.revealed || !!g.humans),
       power = g.planets.map(
         p =>
           view.total(id, false, true, null, p) +

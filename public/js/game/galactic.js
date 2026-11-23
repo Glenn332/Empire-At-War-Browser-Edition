@@ -2207,7 +2207,8 @@ export class GalacticGame {
   mergeDraggedStack() {
     const f = this.dragFleet,
       planet = this.galaxy.planets[f.planet];
-    if (!planet || f.leg || this.fleetCombine === false) return;
+    // a pointer drag runs on one machine only: in a network game it must not reshape the shared fleet list
+    if (!planet || f.leg || this.fleetCombine === false || this.net) return;
     const slot = f.slot ?? 0,
       own = this.galaxy.fleets.filter(x => x.owner === this.me && x.planet === f.planet && !x.leg && x.units.length),
       group =
@@ -2354,8 +2355,11 @@ export class GalacticGame {
       }
     const custom = g.campaign.bool('Supports_Custom_Settings') && !this.setup.singlePlayerCampaign && !this.setup.restore;
     for (const p of g.players) {
-      const slot = slots.find(s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction));
+      // a human slot wins over an AI slot on the same faction (that faction is in g.humans either way)
+      const mine = s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction),
+        slot = slots.find(s => s.human && mine(s)) || slots.find(mine);
       if (!slot) continue;
+      if (!slot.human && slot.difficulty) p.difficulty = slot.difficulty; // each AI slot keeps its own difficulty
       p.humanType = slot.human ? this.setup.humanTypes?.[key(p.faction)] || 'Human' : undefined;
       p.ai = slot.human ? p.humanType : null;
       if (custom && Number.isFinite(+opt.credits)) p.credits = +opt.credits;
@@ -2796,7 +2800,7 @@ export class GalacticGame {
             team,
             auto: true,
             color: team ? '#e0352b' : '#3686f2',
-            difficulty: this.setup.difficulty || 'medium',
+            difficulty: this.galaxy.players.find(p => String(p.faction).toUpperCase() === String(f).toUpperCase())?.difficulty || this.setup.difficulty || 'medium',
             faction: f
           };
     return [side(b.attacker, 0), side(b.defender, 1)];
