@@ -9,7 +9,7 @@ export function panelSide(game, owner, player = null) {
 // What a human's ability panel offered, so a networked pick can only take a row the game itself
 // rolled: prices, chances and respawn times come from here, never from the command.
 export function offerPanel(game, kind, actor, planet, offer = {}) {
-  (game.panelOffers ||= new Map()).set(actor.record || actor, { kind, planet, ...offer });
+  (game.panelOffers ||= new Map()).set(actor.record || actor, { kind, planet, owner: actor.owner, ...offer });
 }
 export function panelOffer(game, record, kind, planet) {
   const o = game.panelOffers?.get(record);

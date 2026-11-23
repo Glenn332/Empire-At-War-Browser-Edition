@@ -12,6 +12,7 @@ import { executeSlice } from './galacticslicer.js';
 import { executeHack } from './galactichack.js';
 import { sabotageStructure } from './galacticsabotage.js';
 import { completePurchase } from './blackmarket.js';
+import { locateRecord } from './galacticsell.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -94,6 +95,11 @@ export function fromRecordRef(g, r) {
   const p = g.planets[a];
   return (p && { g: p.garrison, s: p.groundStructures, o: p.orbitalStructures }[w]?.[b]) || null;
 }
+// fleet units carry no owner of their own: ask where the record sits, so another faction's hero can't be borrowed
+const ownsRecord = (g, rec, faction, planet = null) => {
+  const at = !rec?.dead && locateRecord(g, rec);
+  return !!at && key(at.owner) === key(faction) && (!planet || at.planet === planet.index);
+};
 const fleetRef = (g, f) => (f ? g.fleets.indexOf(f) : -1);
 const fleetOf = (g, i) => (Number.isInteger(i) && i >= 0 ? g.fleets[i] || null : null);
 const refs = (g, list) => (list ? list.map(u => recordRef(g, u)) : null);
@@ -200,13 +206,13 @@ export function runCommand(game, faction, cmd) {
     case 'slot': {
       const rec = fromRecordRef(g, cmd.rec),
         p = g.planets[cmd.p];
-      if (rec && p && key(rec.owner ?? faction) === key(faction) && game.activateHeroSlot(rec, p, faction)) game.galacticBattleChanged();
+      if (rec && p && ownsRecord(g, rec, faction) && game.activateHeroSlot(rec, p, faction)) game.galacticBattleChanged();
       return {};
     }
     case 'marker': {
       const rec = fromRecordRef(g, cmd.rec),
         p = g.planets[cmd.p];
-      if (!rec || !p || key(p.owner) !== key(faction) || key(rec.owner ?? faction) !== key(faction) || !Number.isInteger(cmd.id)) return {};
+      if (!rec || !p || key(p.owner) !== key(faction) || !ownsRecord(g, rec, faction, p) || !Number.isInteger(cmd.id)) return {};
       rec.markerId = cmd.id;
       return { ok: true };
     }
@@ -227,10 +233,10 @@ export function runCommand(game, faction, cmd) {
     case 'panel': {
       const rec = fromRecordRef(g, cmd.rec),
         planet = g.planets[cmd.p];
-      if (!rec || !planet || key(rec.owner ?? faction) !== key(faction)) return {};
+      if (!rec || !planet || !ownsRecord(g, rec, faction)) return {};
       // only a row the game offered this hero here, at the price it rolled
       const offer = panelOffer(game, rec, cmd.kind, planet);
-      if (!offer) return {};
+      if (!offer || key(offer.owner) !== key(faction)) return {};
       const actor = game.story?.object?.(rec, planet, faction)?.__object || { owner: faction, record: rec, type: rec.carries || rec.type };
       const credits = g.players.find(p => key(p.faction) === key(faction))?.credits ?? 0;
       let done = false,
@@ -261,6 +267,11 @@ export function runCommand(game, faction, cmd) {
     case 'save': {
       const mine = game.actingPid === game.localPid,
         name = String(cmd.name || '').slice(0, 64);
+      // another player's saves are written here at most every 30 seconds: each one serializes the whole galaxy
+      const last = (game.netSavedAt ||= new Map()),
+        now = typeof performance !== 'undefined' ? performance.now() : 0;
+      if (!mine && now - (last.get(key(faction)) ?? -Infinity) < 30000) return {};
+      if (!mine) last.set(key(faction), now);
       try {
         // another player's save lands in one slot per player here, so a flood of saves can't fill this disk
         const slot = mine ? (cmd.slot != null ? String(cmd.slot) : null) : 'net-' + key(faction).replace(/[^A-Z0-9_]/g, '');

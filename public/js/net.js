@@ -324,17 +324,21 @@ export class NetSession extends Emitter {
       // a peer's split message: bound its size and how many are open at once, so a bad peer can't eat memory
       const n = msg.n,
         key = from + ':' + msg._part;
-      if (!Number.isInteger(n) || n < 2 || n > MAX_PARTS || typeof msg.s !== 'string' || msg.s.length > PART) return;
+      const i = msg.i;
+      if (!Number.isInteger(n) || n < 2 || n > MAX_PARTS || !Number.isInteger(i) || i < 0 || i >= n) return;
+      if (typeof msg.s !== 'string' || msg.s.length > PART) return;
       let got = this.pieces.get(key);
       if (!got) {
         const open = [...this.pieces.keys()].filter(k => k.startsWith(from + ':'));
         if (open.length >= MAX_OPEN_PARTS) this.pieces.delete(open[0]);
-        this.pieces.set(key, (got = []));
+        this.pieces.set(key, (got = { n, have: 0, s: new Array(n) }));
       }
-      got.push(msg.s);
-      if (got.length < n) return;
+      // each piece once, by its index: a repeated or out-of-range piece can't grow the buffer
+      if (got.n !== n || got.s[i] !== undefined) return;
+      got.s[i] = msg.s;
+      if (++got.have < n) return;
       this.pieces.delete(key);
-      msg = parse(got.join(''));
+      msg = parse(got.s.join(''));
       if (msg === undefined) return;
     }
     this.emit('message', from, msg);
