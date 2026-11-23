@@ -415,7 +415,10 @@ export async function loadGameData(onProgress = () => {}, { language } = {}) {
   for (const t of db.types.values()) db.typesByCrc.set(crc32(t.name.toUpperCase()), t);
 
   const hpTexts = await Promise.all(hpFiles.map(f => fetchText(XML + f).then(t => (tick('Hardpoints'), t))));
-  for (const txt of hpTexts) if (txt) readObjects(parseXML(txt), db.hardpoints, null);
+  // mods derive hardpoints with Variant_Of_Existing_Type too; without the parent link they lose health, type and weapons
+  const hpVariants = [];
+  for (const txt of hpTexts) if (txt) readObjects(parseXML(txt), db.hardpoints, hpVariants);
+  for (const h of hpVariants) h.parent = acyclic(h, db.hardpoint(h.str('Variant_Of_Existing_Type')));
 
   const sfxTexts = await Promise.all(sfxFiles.map(f => fetchText(XML + f).then(t => (tick('Sound events'), t))));
   for (const txt of sfxTexts) if (txt) readObjects(parseXML(txt), db.sfx, null);
