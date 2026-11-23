@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 static CURSOR_GRAB: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static TASKBAR_FULL: AtomicBool = AtomicBool::new(false);
 use tauri::http::{Request, Response};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use vfs::{Game, View};
@@ -848,11 +850,16 @@ fn main() {
                 let _ = w.set_cursor_grab(true);
             }
             #[cfg(windows)]
-            if matches!(e, tauri::WindowEvent::Focused(true)) && w.is_fullscreen().unwrap_or(false)
-            {
-                if let Ok(h) = w.hwnd() {
+            if let tauri::WindowEvent::Resized(size) = e {
+                let full = w.is_fullscreen().unwrap_or(false);
+                if let (Ok(Some(m)), Ok(h)) = (w.current_monitor(), w.hwnd()) {
                     let h = h.0 as isize;
-                    std::thread::spawn(move || refresh_presentation(h));
+                    if full && *size == *m.size() {
+                        keep_off_scanout(h, *m.position(), *m.size());
+                    }
+                    if full != TASKBAR_FULL.swap(full, Ordering::Relaxed) {
+                        mark_fullscreen(h, full);
+                    }
                 }
             }
         })
@@ -870,24 +877,38 @@ fn main() {
 }
 
 #[cfg(windows)]
-fn refresh_presentation(h: isize) {
-    use windows::Win32::Foundation::{HWND, RECT};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowPos,
+fn keep_off_scanout(h: isize, at: tauri::PhysicalPosition<i32>, size: tauri::PhysicalSize<u32>) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    let (w, h2) = (size.width as i32, size.height as i32 - 1);
+    unsafe {
+        let _ = SetWindowPos(
+            HWND(h as _),
+            None,
+            at.x,
+            at.y,
+            w,
+            h2,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+#[cfg(windows)]
+fn mark_fullscreen(h: isize, on: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
     };
-    let hwnd = HWND(h as _);
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    let mut r = RECT::default();
-    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
-        return;
-    }
-    let (w, ht) = (r.right - r.left, r.bottom - r.top);
-    let flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    use windows::Win32::UI::Shell::{ITaskbarList2, TaskbarList};
     unsafe {
-        let _ = SetWindowPos(hwnd, None, 0, 0, w, ht - 1, flags);
-    }
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    unsafe {
-        let _ = SetWindowPos(hwnd, None, 0, 0, w, ht, flags);
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if let Ok(list) =
+            CoCreateInstance::<_, ITaskbarList2>(&TaskbarList, None, CLSCTX_INPROC_SERVER)
+        {
+            if list.HrInit().is_ok() {
+                let _ = list.MarkFullscreenWindow(HWND(h as _), on);
+            }
+        }
     }
 }
