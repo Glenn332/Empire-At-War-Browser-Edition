@@ -382,6 +382,8 @@ input[type='range'] {
 #minimap {
   left: 10px;
   bottom: 10px;
+  width: 222px;
+  height: 222px;
   background: rgba(2, 6, 12, 0.85);
   border: 1px solid var(--line);
   cursor: crosshair;
