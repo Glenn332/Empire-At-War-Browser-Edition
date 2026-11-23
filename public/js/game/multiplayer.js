@@ -5,7 +5,7 @@ import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
-import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
+import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { startMarks } from './mapstarts.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
@@ -1289,12 +1289,15 @@ async function openStaging(args) {
         autoResolve: o.autoResolve ?? st.autoResolve
       });
     } else {
-      if (![maps, landMaps, customMaps.space, customMaps.land].some(l => l.includes(base.mapFile))) {
+      const knownMap = isDynamic(base.mapFile)
+        ? !!parseDynamic(base.mapFile)
+        : [maps, landMaps, customMaps.space, customMaps.land].some(list => list.includes(base.mapFile));
+      if (!knownMap) {
         addChat('', 'The map of that save is not in this game data.');
         return;
       }
       Object.assign(st, {
-        mapFile: base.mapFile,
+        mapFile: isDynamic(base.mapFile) ? adoptDynamic(base.mapFile) : base.mapFile,
         teamFactions: base.teamFactions.slice(),
         credits: base.credits,
         popCap: base.popCap,
