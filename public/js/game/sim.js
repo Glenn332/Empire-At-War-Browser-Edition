@@ -4035,7 +4035,7 @@ export class World {
     } else for (const o of this.units) take(o);
     if (u.squad) return;
     const ord = u.order;
-    if (ord.kind === 'attack' && ord.target && this.resolveTarget(ord.target)) {
+    if (ord.kind === 'attack' && ord.target && this.resolveTarget(ord.target) && !this.befriended(u, ord.target)) {
       u.target = this.resolveTarget(ord.target);
       return;
     }
@@ -4085,6 +4085,10 @@ export class World {
     return o.lossRate ? o.lossRate * Math.exp(-(this.time - o.lossAt) / 2) : 0;
   }
 
+  befriended(e, t) {
+    return !!t && !t.dead && !!t.player && t.player.id >= 0 && t.player.team === e.player.team;
+  }
+
   resolveTarget(t) {
     if (!t || t.dead) return null;
     if (t.isSquad) return t.fighters[0] || null;
@@ -4132,7 +4136,7 @@ export class World {
       }
     } else if (ord.kind === 'attack') {
       const t = this.resolveTarget(ord.target);
-      if (!t) {
+      if (!t || this.befriended(u, t)) {
         u.setOrder({ kind: 'idle' });
       } else {
         const sys =
@@ -6065,7 +6069,7 @@ export class World {
     s.cruise = undefined;
     const wing = ord.wing && (ord.kind === 'move' || ord.kind === 'attackmove' || ord.kind === 'attack') ? ord.wing : null,
       esc = wing && wing.escort && s.fighters[0] ? this.escortGoal(s, wing) : null;
-    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead ? ord.target : null;
+    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
     if (!esc && !tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
@@ -6081,7 +6085,7 @@ export class World {
     }
     const lead = s.fighters[0];
     if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
-    else if (ord.kind === 'attack' && ord.target && !ord.target.dead) s.fireTarget = ord.target;
+    else if (ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target)) s.fireTarget = ord.target;
     else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
