@@ -11,8 +11,9 @@ const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 Object.assign(globalThis, { innerWidth: 1024, innerHeight: 768 });
 const { PendingBattle } = await import('../public/js/game/galacticpending.js');
+const { GalacticGame } = await import('../public/js/game/galactic.js');
 
-const make = (pid, players) => {
+const make = (pid, players, campaign = null) => {
   const shown = new Map(),
     orders = [],
     outcomes = [];
@@ -25,8 +26,11 @@ const make = (pid, players) => {
     me: players[pid].faction,
     now: () => clock,
     isHuman: f => players.some(p => p.human && p.faction === f),
+    playable(humans) {
+      return GalacticGame.prototype.playable.call(this, humans);
+    },
     order: o => orders.push(o),
-    galaxy: { planets: [{ index: 0, name: 'P', type: db.type('Kuat') || [...db.types.values()].find(t => t.tag.toLowerCase() === 'planet') }], players: [], fleets: [] },
+    galaxy: { planets: [{ index: 0, name: 'P', type: db.type('Kuat') || [...db.types.values()].find(t => t.tag.toLowerCase() === 'planet') }], players: [], fleets: [], campaign },
     scriptUI: {
       shells: new Map([['PENDING_BATTLE_SHELL', {}], ['STORY_PENDING_BATTLE_SHELL', {}]]),
       visibility: (n, on) => shown.set(n, on),
@@ -76,9 +80,52 @@ const request = () => ({ p: 0, attacker: 'Rebel', defender: 'Empire', mode: 'spa
   for (let i = 0; i < steps; i++) pb.tick();
   assert.ok(outcomes.length, 'the countdown decides with the default when time runs out');
 }
+const solo = [
+  { human: true, faction: 'Rebel' },
+  { human: true, faction: 'Underworld' },
+  { human: false, faction: 'Empire' }
+];
 {
-  const { pb, outcomes } = make(0, [{ human: true, faction: 'Rebel' }, { human: false, faction: 'Empire' }]);
+  const { pb, outcomes } = make(0, solo);
   pb.begin(request());
-  assert.deepEqual(outcomes, ['resolve', 'fight'], 'a battle against the AI resolves at once');
+  assert.deepEqual(pb.request?.voters, [0], 'one human side against the AI is put to that side');
+  pb.answer('Rebel', 1, 'fight');
+  assert.deepEqual(outcomes, ['fight'], 'and can be fought');
+}
+{
+  const { pb, outcomes, game } = make(0, solo);
+  game.setup.options.autoResolve = 0;
+  pb.begin(request());
+  assert.equal(pb.request, null, 'the lobby asked to always auto-resolve');
+  assert.deepEqual(outcomes, ['resolve', 'fight']);
+}
+{
+  const { pb, outcomes } = make(0, [{ human: false, faction: 'Rebel' }, ...solo.slice(1)]);
+  pb.begin(request());
+  assert.deepEqual(outcomes, ['resolve', 'fight'], 'AI against AI resolves at once');
+}
+{
+  const campaign = { bool: (tag, d) => (tag === 'Is_Autoresolve_Allowed' ? false : d), list: () => [] };
+  const { pb, outcomes, game } = make(0, players, campaign);
+  pb.begin(request());
+  assert.ok(pb.request.locked, 'the campaign rules out auto-resolve');
+  assert.equal(pb.request.fallback, 'fight');
+  pb.answer('Rebel', 1, 'resolve');
+  assert.ok(!pb.request.answers.has(0), 'a resolve vote is refused');
+  pb.answer('Rebel', 1, 'fight');
+  game.actingPid = 1;
+  pb.answer('Empire', 1, 'fight');
+  assert.deepEqual(outcomes, ['fight']);
+}
+{
+  const story = { bool: (tag, d) => (tag === 'Is_Story_Campaign' ? true : d), list: () => [] };
+  const { pb, outcomes, game } = make(0, players, story);
+  pb.begin(request());
+  assert.ok(!pb.request.locked);
+  pb.answer('Rebel', 1, 'resolve');
+  pb.disable(0, true);
+  game.actingPid = 1;
+  pb.answer('Empire', 1, 'resolve');
+  assert.deepEqual(outcomes, ['fight'], 'auto-resolve forbidden while the vote ran: fought anyway');
 }
 console.log('ok');
