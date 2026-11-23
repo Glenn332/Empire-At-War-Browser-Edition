@@ -55,6 +55,7 @@ const moduleKey = s =>
     .replace(/\.LUA$/i, '')
     .replace(/\./g, '/');
 const yes = s => /^(true|yes|1)$/i.test(String(s));
+const WARM_PASSES = 600;
 const scriptNames = new WeakMap();
 const objectScriptName = type => {
   if (!type?.str) return undefined;
@@ -2453,8 +2454,10 @@ export class GalacticStoryHost extends StoryPlots {
       this.objectCache = null;
       this.reasonCache.clear();
     }
+    // modeSuspended follows each peer's own battle window; in a net game hold on the lockstep battle state instead
+    const suspended = this.game.net ? !!this.game.busy : this.game.modeSuspended;
     try {
-      if (service && !this.game.paused && !this.game.modeSuspended) this.replayDelayed();
+      if (service && !this.game.paused && !suspended) this.replayDelayed();
       if (service) this.pollEvents(false, 'elapsed');
       if (service && !this.suspended)
         for (const inst of this.instances) {
@@ -2467,7 +2470,7 @@ export class GalacticStoryHost extends StoryPlots {
             this.service(inst);
           }
         }
-      if (service && !this.suspended && !this.game.paused && !this.game.modeSuspended) this.serviceObjectScripts(force);
+      if (service && !this.suspended && !this.game.paused && !suspended) this.serviceObjectScripts(force);
       if (service && this.eventTypes.get('STORY_BEGIN_ERA')?.length)
         this.signalEra(Math.max(0, ...this.game.galaxy.players.map(p => p.tech || 0)));
       if (this.techPending) {
@@ -2486,16 +2489,26 @@ export class GalacticStoryHost extends StoryPlots {
     }
   }
 
-  async warmInstance(inst, timeout = 12000) {
+  // A net game must reach the same story state on every peer before lockstep starts, so it waits for slow
+  // script loads and bounds the warm-up by passes instead of wall-clock time.
+  warmBudget(timeout) {
+    if (this.game.setup?.net) {
+      let passes = WARM_PASSES;
+      return () => passes-- > 0;
+    }
     const start = performance.now();
-    while (performance.now() - start < timeout && inst.state === 'new') {
+    return () => performance.now() - start < timeout;
+  }
+  async warmInstance(inst, timeout = 12000) {
+    const more = this.warmBudget(timeout);
+    while (inst.state === 'new' && more()) {
       if (this.pending.size) await Promise.all([...this.pending.values()]);
       else this.start(inst);
     }
   }
   async warm(timeout = 12000) {
-    const start = performance.now();
-    while (performance.now() - start < timeout && !this.disposed) {
+    const more = this.warmBudget(timeout);
+    while (!this.disposed && more()) {
       if (this.pending.size) await Promise.all([...this.pending.values()]);
       this.update(0, true);
       if (
