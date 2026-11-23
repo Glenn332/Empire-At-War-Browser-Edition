@@ -3208,7 +3208,17 @@ export class LandGame {
         paintFog(this.terrain, null, false);
       }
     }
-    this.ui.drawRadar();
+    {
+      // The minimap repaints at the space HUD's 0.15 s cadence, or at once when the camera moves so its view box stays smooth.
+      const v = this.view;
+      if ((this.radarTimer = (this.radarTimer || 0) - real) <= 0 || v.x !== this.radarX || v.y !== this.radarY || v.dist !== this.radarDist) {
+        this.radarTimer = 0.15;
+        this.radarX = v.x;
+        this.radarY = v.y;
+        this.radarDist = v.dist;
+        this.ui.drawRadar();
+      }
+    }
     this.fogFade(real);
     if (w.interp) {
       w.lerpIn((this.acc || 0) / LAND_TICK);
