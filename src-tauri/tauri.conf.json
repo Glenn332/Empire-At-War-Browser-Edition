@@ -28,8 +28,8 @@
         "installerHooks": "installer-hooks.nsh"
       }
     },
-    "publisher": "RIRA",
-    "copyright": "© RIRA. Star Wars is a trademark of Lucasfilm Ltd. A fan project, not affiliated with Lucasfilm.",
+    "publisher": "Glenn332",
+    "copyright": "© Glenn332. Star Wars is a trademark of Lucasfilm Ltd. A fan project, not affiliated with Lucasfilm.",
     "shortDescription": "Star Wars: Empire at War in a desktop app, played from your own copy of the game",
     "longDescription": "Star Wars: Empire at War and Forces of Corruption in a desktop app, played from your own copy of the game, with your Steam Workshop mods."
   },

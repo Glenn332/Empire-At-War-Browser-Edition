@@ -123,7 +123,7 @@ The code lives in a few places:
 
 ## License
 
-Copyright (C) 2026 RIRA
+Copyright (C) 2026 Glenn332
 
 The engine's code is free software: you can redistribute it and/or modify it under the terms of the GNU General
 Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)
