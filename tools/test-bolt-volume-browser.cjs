@@ -10,15 +10,17 @@ const { chromium } = require('playwright-core');
   try {
     const page = await b.newPage(),
       gpu = process.argv.includes('--gpu');
+    const errors = [];
+    page.on('pageerror', err => errors.push(err.message));
     page.on('console', msg => {
-      if (/shader|GL_INVALID|WebGL:|WebGLProgram/i.test(msg.text())) console.error(msg.text());
+      if (/GL_INVALID|WebGLProgram: Shader Error|GPUValidationError|Error while parsing WGSL/i.test(msg.text())) errors.push(msg.text());
     });
     await page.addInitScript(base => {
       localStorage.setItem('swr.game', base ? 'eaw' : 'foc');
       localStorage.setItem('swr-shooter-hints', '1');
     }, process.argv.includes('--base'));
     await page.goto(
-      (process.env.BASE_URL || 'http://localhost:8412') +
+      (process.env.BASE_URL || 'http://localhost:8377') +
         '/play.html?autostart&mode=land&shooter&map=ENDOR&faction=Empire&enemy=Rebel&deployUI=2005' +
         (gpu ? '' : '&webgl')
     );
@@ -35,19 +37,21 @@ const { chromium } = require('playwright-core');
         target = new T.WebGLRenderTarget(N, N),
         bytes = new Uint8Array(N * N * 4);
       scene.background = new T.Color(0);
-      for (const batch of [looks.beams, looks.kites]) {
+      for (const batch of looks.batches) {
         const draw = batch.mesh.clone();
         draw.visible = true;
         scene.add(draw);
       }
-      await looks.beams.mesh.material.uniforms.map.value.userData.ready;
+      await Promise.all(looks.batches.map(batch => batch.mesh.material.uniforms.map.value.userData.ready));
+      if (looks.lookOf(db.type('Proj_Ship_Proton_Torpedo')).batch !== looks.kites) throw Error('missile lost its authored kite');
       await renderer.compileAsync(scene, cam);
       const prev = renderer.getRenderTarget(),
         cases = [];
       try {
         if (gpu) {
           // The project's WebGPU backend builds separate pipelines for offscreen targets.
-          looks.update([{ x: 0, y: 0, z: -9, vx: 0, vy: 0, vz: -1, w: { proj: db.type('Proj_Hand_Blaster_Red') } }], cam, null);
+          looks.update(['Proj_Hand_Blaster_Red', 'Proj_Hand_Jawa_Ion_Blaster'].map(type =>
+            ({ x: 0, y: 0, z: -9, vx: 0, vy: 0, vz: -1, w: { proj: db.type(type) } })), cam, null);
           renderer.setRenderTarget(target);
           renderer.render(scene, cam);
           renderer.endFrame();
@@ -59,7 +63,9 @@ const { chromium } = require('playwright-core');
           ['Proj_Hand_Blaster_Red', 'nose', 0, 1],
           ['Proj_Hand_Blaster_Red', 'oblique', 0.48, -0.877],
           ['Proj_Hand_Blaster_Red', 'side', 1, 0],
-          ['Proj_Hand_Blaster_Green', 'green', 0, -1]
+          ['Proj_Hand_Blaster_Green', 'green', 0, -1],
+          ['Proj_Hand_Jawa_Ion_Blaster', 'ion nose', 0, 1],
+          ['Proj_Hand_Jawa_Ion_Blaster', 'ion tail', 0, -1]
         ]) {
           const P = db.type(type);
           if (!P) throw Error('missing retail projectile ' + type);
@@ -113,10 +119,11 @@ const { chromium } = require('playwright-core');
       }
       return cases;
     }, gpu);
+    assert.deepEqual(errors, [], 'no shader or pipeline errors');
     console.table(result);
     for (const c of result) {
       assert.ok(c.h >= 6 && c.w >= 6, c.label + ': must retain visible thickness');
-      if (['tail', 'nose', 'green'].includes(c.label)) {
+      if (!['oblique', 'side'].includes(c.label)) {
         assert.ok(Math.abs(c.w - c.h) < 3 && c.coverage > 0.62 && c.coverage < 0.89, c.label + ': circular, not a point or square');
         assert.ok(Math.max(...c.center) > Math.max(...c.rim) * 1.12, c.label + ': bright core fades into rim');
       } else {
@@ -124,6 +131,7 @@ const { chromium } = require('playwright-core');
         assert.ok(Math.max(...c.center) > 215, c.label + ': continuous luminous core, not separated dots');
       }
       if (c.label === 'green') assert.ok(c.green > c.red * 1.3, 'authored green bolt');
+      else if (c.label.startsWith('ion')) assert.ok(c.center[2] > c.center[0] * 1.4 && c.center[2] > c.center[1], 'authored ion tint');
       else assert.ok(c.red > c.green * 1.3, 'authored red bolt');
     }
   } finally {

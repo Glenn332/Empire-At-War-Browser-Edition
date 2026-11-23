@@ -36,7 +36,9 @@ void main() {
   float radius = min(1., length(tail + along * span));
   // Each pill lies diagonally across its atlas cell. Read from its hot spine
   // toward its colored fringe, not across the boundary into the next slot.
-  vec4 t = texture2D(map, vCell.xy + vec2(.5 + .17 * radius) * vCell.z);
+  // The smaller cells on the particle atlas instead have a radial glow.
+  vec2 profile = vCell.z < .2 ? vec2(.5 + .45 * radius, .5) : vec2(.5 + .17 * radius);
+  vec4 t = texture2D(map, vCell.xy + profile * vCell.z);
   gl_FragColor = vec4(t.rgb * vTint * t.a * (1. - smoothstep(.82, 1., radius)), 1.);
 }`;
 

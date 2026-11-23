@@ -3,6 +3,7 @@ import { loadModel } from '../model.js';
 import { db } from '../gamedata.js';
 import { LaserBatch } from './laser.js';
 import { MuzzleLaunches } from './shot-presentation.js';
+import { CAT, categoryOf } from './projflight.js';
 
 const MAX = 900;
 const _q = new THREE.Quaternion(),
@@ -15,7 +16,11 @@ export class Shots {
     this.fx = fx;
     this.beams = new LaserBatch(MAX, false, battlefront);
     this.kites = new LaserBatch(MAX, true);
-    scene.add(this.beams.mesh, this.kites.mesh);
+    // Tinted, particle-atlas blasters (e.g. ion bolts) use the same round
+    // silhouette, without turning a missile that uses that atlas into a laser.
+    this.kiteBolts = battlefront ? new LaserBatch(MAX, true, true) : null;
+    this.batches = [this.beams, this.kites, ...(this.kiteBolts ? [this.kiteBolts] : [])];
+    scene.add(...this.batches.map(b => b.mesh));
     this.looks = new Map();
     this.live = new Map();
     this.launches = new MuzzleLaunches();
@@ -29,29 +34,25 @@ export class Shots {
       mode = P.num('Projectile_Custom_Render', 0);
     if (/INVISIBLE/i.test(file)) L = { kind: 'none' };
     else if (!mode && !file) L = { kind: 'none' };
-    else if (mode > 0)
-      L = { kind: 'pill', laser: LaserBatch.lookOf(P), long: P.num('Projectile_Length', 3), wide: P.num('Projectile_Width', 0.3) };
-    else if (/^P_/i.test(file)) L = { kind: 'fx', file };
+    else if (mode > 0) {
+      const laser = LaserBatch.lookOf(P);
+      let batch = laser.kite ? this.kites : this.beams;
+      if (laser.kite && this.kiteBolts && categoryOf(P) === CAT.LASER) batch = this.kiteBolts;
+      L = { kind: 'pill', laser, batch, long: P.num('Projectile_Length', 3), wide: P.num('Projectile_Width', 0.3) };
+    } else if (/^P_/i.test(file)) L = { kind: 'fx', file };
     else L = { kind: 'model', file, scale: P.num('Scale_Factor', 1) };
     this.looks.set(P, L);
     return L;
   }
 
   update(shots, camera, look, source = null) {
-    const seen = new Set(),
-      beams = this.beams,
-      kites = this.kites;
-    beams.begin();
-    kites.begin();
-    {
-      const span = 1 / Math.max(1, camera.far - camera.near),
-        C = db.constants,
-        bu = beams.mesh.material.uniforms,
-        ku = kites.mesh.material.uniforms;
-      bu.depthSpan.value.set(span, camera.near * span);
-      ku.depthSpan.value.set(span, camera.near * span);
-      bu.zScale.value = C.num('Laser_Beam_Z_Scale_Factor', 8);
-      ku.zScale.value = C.num('Laser_Kite_Z_Scale_Factor', 1.2);
+    const seen = new Set(), span = 1 / Math.max(1, camera.far - camera.near),
+      beamScale = db.constants.num('Laser_Beam_Z_Scale_Factor', 8), kiteScale = db.constants.num('Laser_Kite_Z_Scale_Factor', 1.2);
+    for (const batch of this.batches) {
+      batch.begin();
+      const u = batch.mesh.material.uniforms;
+      u.depthSpan.value.set(span, camera.near * span);
+      u.zScale.value = batch.kite ? kiteScale : beamScale;
     }
     for (const s of shots) {
       if (s.hidden) continue;
@@ -71,7 +72,7 @@ export class Shots {
           width = L.wide * scale * (focused ? 1.8 : 1);
         // The pill is centered. Its trailing cap, not its middle, leaves the tip.
         const front = (p.launch || 0) * (len * 0.5 + width);
-        (L.laser.kite ? kites : beams).add(p.x + dx * front, p.y + dy * front, p.z + dz * front, dx, dy, dz, len, width, L.laser);
+        L.batch.add(p.x + dx * front, p.y + dy * front, p.z + dz * front, dx, dy, dz, len, width, L.laser);
         continue;
       }
       seen.add(s);
@@ -121,8 +122,7 @@ export class Shots {
           .multiply(_q.setFromAxisAngle(_X, -Math.atan2(rise, sp)));
       }
     }
-    beams.end();
-    kites.end();
+    for (const batch of this.batches) batch.end();
     for (const [s, it] of this.live) {
       if (seen.has(s)) continue;
       if (it.sys) it.sys.release();

@@ -1210,7 +1210,8 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) eye: vec3f, @location(
   let tail = v.tail - eye * dot(v.tail, eye); let span = v.span - eye * dot(v.span, eye);
   let along = clamp(-dot(tail, span) / max(dot(span, span), 1e-8), 0.0, 1.0);
   let radius = min(1.0, length(tail + along * span));
-  let t = textureSample(mapT, mapS, v.cell.xy + vec2f(0.5 + 0.17 * radius) * v.cell.z);
+  let profile = select(vec2f(0.5 + 0.17 * radius), vec2f(0.5 + 0.45 * radius, 0.5), v.cell.z < 0.2);
+  let t = textureSample(mapT, mapS, v.cell.xy + profile * v.cell.z);
   return vec4f(t.rgb * v.tint * t.a * (1.0 - smoothstep(0.82, 1.0, radius)), 1.0);
 }`
 });
