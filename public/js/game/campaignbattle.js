@@ -453,6 +453,7 @@ export function placeCampaignBattle(w, map, teams, cb) {
     waiting: [],
     absent: [],
     station: null,
+    orbital: new Map(),
     anchors: { [cb.attacker.team]: { ...entry, toward: defend }, [cb.defender.team]: { ...defend, toward: entry } }
   };
   const owner = team => team.players.find(p => p.human) || team.players[0];
@@ -539,9 +540,10 @@ export function placeCampaignBattle(w, map, teams, cb) {
   }
   const orbital = markers(map, 'Orbital Special Structure Position');
   (d.orbital || []).forEach((n, i) => {
-    const t = db.type(n),
-      at = orbital[i];
-    if (t && at) w.spawn(t, owner(teams[d.team]), at.x, at.y, at.heading);
+    const t = db.type(n.type ?? n),
+      at = orbital[i],
+      e = t && at && w.spawn(t, owner(teams[d.team]), at.x, at.y, at.heading);
+    if (n.gid) book.orbital.set(n.gid, e || null);
   });
   side(d, defend, Math.atan2(entry.y - defend.y, entry.x - defend.x), false);
   side(cb.attacker, entry, Math.atan2(defend.y - entry.y, defend.x - entry.x), true);
@@ -623,11 +625,15 @@ export function battleResult(w, book, cb, winnerTeam) {
   }
   const stationLevel =
     book.station && !book.station.dead ? (book.station.stationLevel ?? book.station.type.num('Base_Level', 0)) : undefined;
+  // orbital structures that never spawned (no marker) count as surviving
+  for (const [gid, e] of book.orbital || []) if (!e || !e.dead) alive.push(gid);
   return {
     planet: cb.planet,
     alive,
     station: !!(book.station && !book.station.dead),
     stationLevel,
+    stationFought: cb.defender.station || null,
+    orbitalFought: [...(book.orbital || new Map()).keys()],
     winner: winnerTeam === cb.attacker.team ? 'attacker' : 'defender',
     ...linked
   };

@@ -2881,7 +2881,7 @@ export class GalacticGame {
           team: 1,
           units: units(b.defender),
           station: pl.station && (pl.stationOwner || pl.owner) === b.defender ? pl.station.name : null,
-          orbital: pl.orbitalStructures.filter(s => s.owner === b.defender).map(s => s.type.name)
+          orbital: pl.orbitalStructures.flatMap((s, i) => (s.owner === b.defender ? [{ gid: 'o:' + i, type: s.type.name }] : []))
         }
       }
     };
@@ -2962,25 +2962,39 @@ export class GalacticGame {
     g.fleets = g.fleets.filter(f => f.units.length);
     if ((r.victoryType === 11 || r.victoryType === 12) && r.sides)
       this.battles.retreat(r.planet, r.winner === 'attacker' ? r.sides[1] : r.sides[0]);
-    if (!r.station && pl.station) {
-      pl.station = null;
-      pl.spaceLevel = 0;
-    } else if (pl.station && r.stationLevel !== undefined && r.stationLevel < (pl.spaceLevel || 0)) {
-      let type = pl.station;
-      while (type && type.num('Base_Level', 0) > r.stationLevel) {
-        const n = type.name;
-        type = db.type(n.slice(0, -1) + String.fromCharCode(n.charCodeAt(n.length - 1) - 1));
-      }
-      if (r.stationLevel <= 0) {
-        pl.station = null;
-        pl.spaceLevel = 0;
-      } else {
-        pl.station = type || pl.station;
-        pl.spaceLevel = r.stationLevel;
+    const stationOwner = pl.stationOwner || pl.owner,
+      killer = r.sides?.find(o => o !== stationOwner) ?? null,
+      // only the station that was actually in the battle (the defender's) can be lost
+      fought =
+        !!pl.station && (!r.sides || stationOwner === r.sides[1]) && (r.stationFought === undefined || pl.station.name === r.stationFought);
+    let next = pl.station,
+      level = pl.spaceLevel || 0;
+    if (fought && (!r.station || r.stationLevel <= 0)) next = null;
+    else if (fought && r.stationLevel !== undefined && r.stationLevel < level) {
+      const seen = new Set();
+      level = r.stationLevel;
+      while (next.num('Base_Level', 0) > level && !seen.has(next)) {
+        seen.add(next);
+        const prev = db.type(next.str('Prev_Level_Base').trim());
+        if (!prev) break;
+        next = prev;
       }
     }
+    if (next !== pl.station) {
+      story?.stationChanged(pl, pl.station, next, killer);
+      pl.station = next;
+    }
+    const baseLost = fought && !next;
+    if (fought) pl.spaceLevel = next ? level : 0;
+    if (baseLost) pl.stationOwner = null;
+    // orbital structures go down with the starbase, as in autoresolve
+    const orbitalIds = new Set(r.orbitalFought || []),
+      wrecked = pl.orbitalStructures.filter((u, i) => baseLost || (orbitalIds.has('o:' + i) && !alive.has('o:' + i)));
+    pl.orbitalStructures = pl.orbitalStructures.filter(u => !wrecked.includes(u));
+    for (const u of wrecked) lost.push([u, u.owner, r.sides?.find(o => o !== u.owner) ?? killer]);
     if (r.planetDestroyed) destroyPlanet(this, pl, false);
     told(pl, lost, r.winner === 'attacker' ? 0 : 1, true);
+    for (const u of wrecked) u.dead = true;
     this.lastResult = r;
   }
   inBattle(f, r) {

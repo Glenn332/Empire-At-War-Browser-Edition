@@ -92,6 +92,7 @@ function spaceCampaign(game, ref) {
       })),
       absent: book.absent.slice(),
       station: book.station ? (!book.station.dead && ref(book.station)) || gone(book.station) : null,
+      orbital: [...(book.orbital || [])].map(([gid, e]) => [gid, e && ((!e.dead && ref(e)) || gone(e))]),
       called: [...(book.called || new Map())].map(([team, list]) => [team, list.map(e => (!e.dead && ref(e)) || gone(e))])
     }
   };
@@ -108,6 +109,7 @@ export function restoreSpaceCampaign(game, save, refs) {
     .filter(u => u.type);
   book.absent = c.book.absent.slice();
   book.station = c.book.station ? get(c.book.station) : null;
+  book.orbital = new Map((c.book.orbital || []).map(([gid, r]) => [gid, r && get(r)]));
   book.called = new Map(c.book.called.map(([team, list]) => [+team, list.map(get)]));
   if (game.tacticalCampaign && c.destroyedBy) game.tacticalCampaign.destroyedBy = c.destroyedBy;
 }
