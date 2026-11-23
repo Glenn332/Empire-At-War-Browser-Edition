@@ -15,7 +15,7 @@ import {
   randomArmy,
   entryPoints
 } from './instantbattle.js';
-import { SPECTATOR_TEAM } from './lobby.js';
+import { SPECTATOR_TEAM, listingNote } from './lobby.js';
 import { paintCrest } from './spectator.js';
 
 const KEY = 'swr-instant-setup';
@@ -1029,6 +1029,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           }
         }
       }),
+      net.on('listing', (ok, why) => say('', listingNote(ok, why))),
       net.on('leave', peer => {
         const s = players.find(p => p.kind === 'human' && p.peer === peer);
         if (!s) return;

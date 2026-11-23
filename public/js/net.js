@@ -318,6 +318,7 @@ export class NetSession extends Emitter {
     } else if (msg.t === 'leave' && this.host) {
       if (msg.bye || !this.links.get(msg.id)?.direct()) this.lost(msg.id);
     } else if (msg.t === 'closed') this.roomGone();
+    else if (msg.t === 'listing') this.emit('listing', !!msg.ok, String(msg.why || ''));
     else if (msg.t === 'from') {
       const link = this.links.get(msg.from),
         d = msg.d || {};

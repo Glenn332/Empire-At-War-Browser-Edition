@@ -3,7 +3,7 @@ import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
 import { openDialog } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId } from '../net.js';
-import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
+import { advancedOptions, SPECTATOR_TEAM, listingNote } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { loadCampaignData } from './galaxy.js';
@@ -1174,6 +1174,7 @@ async function openStaging(args) {
         }
       }
     });
+    track('listing', (ok, why) => addChat('', listingNote(ok, why)));
     track('leave', peer => {
       const s = slots.find(x => x.kind === 'human' && x.peer === peer);
       if (!s) return;
