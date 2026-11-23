@@ -59,7 +59,8 @@ export function stationLevel(unit) {
 }
 const PROBE_CELL = 1024,
   PROBE_PAD = 80;
-const _nearCap = [],
+const _seek = { p: null, best: null, bi: 0, bd: 0 },
+  _nearCap = [],
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
 const NO_CATS = new Set();
@@ -3991,6 +3992,45 @@ export class World {
     return out;
   }
 
+  // Nearest enemy within a homing projectile's scan range; ties go to the earlier unit, as a scan of this.units in order would.
+  seekTarget(p) {
+    const ug = this.unitGrid,
+      units = this.units,
+      sk = _seek;
+    sk.p = p;
+    sk.best = null;
+    sk.bi = 0;
+    sk.bd = p.scan * p.scan;
+    if (!ug || this.unitGridN > units.length) {
+      for (let i = 0; i < units.length; i++) this.seekTake(units[i], i);
+      return sk.best;
+    }
+    const pad = p.scan + UNIT_PAD,
+      x0 = Math.floor((p.x - pad) / UNIT_CELL),
+      x1 = Math.floor((p.x + pad) / UNIT_CELL),
+      y0 = Math.floor((p.y - pad) / UNIT_CELL),
+      y1 = Math.floor((p.y + pad) / UNIT_CELL);
+    for (let ix = x0; ix <= x1; ix++)
+      for (let iy = y0; iy <= y1; iy++) {
+        const l = ug.get(ix * 65536 + iy);
+        if (l) for (const o of l) this.seekTake(o, o.gridAt);
+      }
+    for (let i = this.unitGridN; i < units.length; i++) this.seekTake(units[i], i);
+    return sk.best;
+  }
+
+  seekTake(o, i) {
+    const sk = _seek,
+      p = sk.p;
+    if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
+    const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
+    if ((d2 < sk.bd || (d2 === sk.bd && sk.best && i < sk.bi)) && !this.jammed(o)) {
+      sk.bd = d2;
+      sk.best = o;
+      sk.bi = i;
+    }
+  }
+
   scan(u) {
     const range = u.maxRange + 250;
     const r2 = range * range;
@@ -5292,17 +5332,7 @@ export class World {
       if (p.homing && (!t || t.dead || t.hyper)) {
         p.target = p.targetHp = null;
         if (p.scan > 0) {
-          let best = null,
-            bd = p.scan * p.scan;
-          for (const o of this.units)
-            if (!o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== p.team && !this.jammed(o)) {
-              const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
-              if (d2 < bd) {
-                bd = d2;
-                best = o;
-              }
-            }
-          p.target = best;
+          p.target = this.seekTarget(p);
         }
       }
       const x0 = p.x,
