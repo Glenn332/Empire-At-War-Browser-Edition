@@ -512,6 +512,8 @@ export function restore(game, save) {
       e.fighters.forEach((f, k) => {
         place(f, o.f[k]);
         damage(f, o.f[k]);
+        if (o.f[k].limbo) f.limbo = true;
+        if (o.f[k].nof) f.noOpportunity = true;
       });
       e.x = o.x;
       e.y = o.y;
@@ -534,6 +536,9 @@ export function restore(game, save) {
       if (o.inc !== undefined && e.income) e.income.timer = o.inc;
       if (o.sw) e.swarm = { ...o.sw };
       if (o.seen) e.everSeenBy = o.seen;
+      // a script's Hide_Object / Prevent_Opportunity_Fire survives the reload
+      if (o.limbo) e.limbo = true;
+      if (o.nof) e.noOpportunity = true;
     }
     made.push(e);
     refs.set('e' + i, e);
