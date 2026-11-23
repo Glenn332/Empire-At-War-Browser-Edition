@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { openGame } from './megfs.mjs';
+import { readBaseline, recordSample, sampleFile, updateBaseline } from './lockstep-baseline.mjs';
 
 const arg = (k, d = null) => {
   const i = process.argv.indexOf(k);
@@ -18,6 +19,8 @@ const mod = arg('--mod'),
   update = flag('--update'),
   noScripts = flag('--noscripts'),
   verbose = flag('--verbose');
+
+if (update) updateBaseline('lockstep', fileURLToPath(import.meta.url));
 
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), mod ? [mod] : []);
 globalThis.fetch = async input => {
@@ -310,22 +313,17 @@ if (dAC >= 0) fails.push(`the same battle ran differently twice: checkpoint ${dA
 if (dAB >= 0) fails.push(`2 and 4 route threads went apart at checkpoint ${dAB} (step ${dAB * HASH_EVERY})`);
 if (now.worst2 < minTps) fails.push(`with 2 route threads the worst second falls to ${now.worst2} ticks/s (minimum ${minTps})`);
 
-const file = fileURLToPath(new URL('./baselines/lockstep.json', import.meta.url));
-const all = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+const sample = sampleFile();
 const key = `${hostname()}|${mapName}|${steps}|${ships}|${mod || ''}${noScripts ? '|noscripts' : ''}`;
-const base = all[key];
-if (base && !update) {
+const base = sample ? null : readBaseline('lockstep', key);
+if (base) {
   if (now.simMs > base.simMs * (1 + slack)) fails.push(`a step takes ${now.simMs} ms, ${Math.round((now.simMs / base.simMs - 1) * 100)}% over the baseline ${base.simMs} ms`);
   if (now.routeMs > base.routeMs * (1 + slack) && now.routeMs - base.routeMs > 0.5)
     fails.push(`route searches take ${now.routeMs} ms a step, ${Math.round((now.routeMs / base.routeMs - 1) * 100)}% over the baseline ${base.routeMs} ms`);
   console.log(`  baseline ${base.simMs} ms a step, ${base.routeMs} ms routes (${base.at})`);
-} else if (!base && !update) console.log('  no baseline for this machine yet: run with --update to keep these numbers');
-if (update) {
-  all[key] = { ...now, at: new Date().toISOString().slice(0, 10) };
-  mkdirSync(fileURLToPath(new URL('./baselines/', import.meta.url)), { recursive: true });
-  writeFileSync(file, JSON.stringify(all, null, 2) + '\n');
-  console.log('  baseline kept for ' + key);
-}
+} else if (!sample)
+  console.log('  no baseline for this machine yet: run with --update to keep the median of three runs');
+if (sample) recordSample(sample, key, now);
 if (fails.length) {
   for (const f of fails) console.error('FAIL ' + f);
   process.exit(1);

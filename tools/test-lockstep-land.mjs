@@ -1,8 +1,9 @@
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { openGame } from './megfs.mjs';
+import { readBaseline, recordSample, sampleFile, updateBaseline } from './lockstep-baseline.mjs';
 
 const arg = (k, d = null) => {
   const i = process.argv.indexOf(k);
@@ -17,6 +18,8 @@ const mod = arg('--mod'),
   slack = +arg('--slack', 0.25),
   update = flag('--update'),
   verbose = flag('--verbose');
+
+if (update) updateBaseline('lockstep-land', fileURLToPath(import.meta.url));
 const HASH_EVERY = 30,
   ORDER_EVERY = 240;
 
@@ -57,21 +60,16 @@ if (!flag('--child')) {
   const fails = [];
   if (diff >= 0) fails.push(`the same land battle ran differently twice: checkpoint ${diff} (step ${diff * HASH_EVERY}) differs`);
   if (now.worst < minTps) fails.push(`the worst second falls to ${now.worst} ticks/s (second ${worstAt}, minimum ${minTps})`);
-  const file = fileURLToPath(new URL('./baselines/lockstep-land.json', import.meta.url));
-  const all = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  const sample = sampleFile();
   const key = `${hostname()}|${a.map}|${steps}|${companies}|${mod || ''}`;
-  const base = all[key];
-  if (base && !update) {
+  const base = sample ? null : readBaseline('lockstep-land', key);
+  if (base) {
     if (now.stepMs > base.stepMs * (1 + slack) && now.stepMs - base.stepMs > 0.2)
       fails.push(`a land step takes ${now.stepMs} ms, ${Math.round((now.stepMs / base.stepMs - 1) * 100)}% over the baseline ${base.stepMs} ms`);
     console.log(`  baseline ${base.stepMs} ms a step (p99 ${base.p99}, ${base.at})`);
-  } else if (!base && !update) console.log('  no baseline for this machine yet: run with --update to keep these numbers');
-  if (update) {
-    all[key] = { ...now, at: new Date().toISOString().slice(0, 10) };
-    mkdirSync(fileURLToPath(new URL('./baselines/', import.meta.url)), { recursive: true });
-    writeFileSync(file, JSON.stringify(all, null, 2) + '\n');
-    console.log('  baseline kept for ' + key);
-  }
+  } else if (!sample)
+    console.log('  no baseline for this machine yet: run with --update to keep the median of three runs');
+  if (sample) recordSample(sample, key, now);
   if (fails.length) {
     for (const f of fails) console.error('FAIL ' + f);
     process.exit(1);
