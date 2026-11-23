@@ -5,6 +5,7 @@ import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
 import { HYPER, LOGIC_FPS, spaceHullHealth } from './sim.js';
 import { MOD } from './combatmods.js';
+import { simRandom } from './simrandom.js';
 import { giveFreeUpgrades } from './planetabilities.js';
 
 const CLASS = s => {
@@ -532,7 +533,7 @@ export function placeCampaignBattle(w, map, teams, cb) {
         );
   const d = cb.defender;
   if (d.station) {
-    const st = stations[Math.floor(Math.random() * stations.length)] || defend;
+    const st = stations[Math.floor(simRandom() * stations.length)] || defend; // seeded: every peer puts the station in the same place
     const team = teams[d.team];
     book.station = team.station = team.firstStation = w.spawn(db.type(d.station), owner(team), st.x, st.y, st.heading);
   }

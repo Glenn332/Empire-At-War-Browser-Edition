@@ -1374,8 +1374,9 @@ export class GalacticGame {
 
   galacticBattleChanged() {
     this.mergeFleets();
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -2626,8 +2627,9 @@ export class GalacticGame {
     if (!this.fleetViews) return;
     this.mergeFleets?.();
     for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         if (v?.inst) this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -3068,8 +3070,9 @@ export class GalacticGame {
       return true;
     }
     const changed = landFriendly(this.galaxy, fleet, p, { records: chosen, raid });
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -3743,7 +3746,7 @@ export class GalacticGame {
             delete f.landOn;
             const planet = this.galaxy.planets[p];
             if (!this.busy && planet && routeAllied(planet.owner, f.owner) && !blocks(this.galaxy, p, f.owner, f) && there.units.length)
-              this.land(there, p);
+              this.asFaction(f.owner, () => this.land(there, p)); // every machine lands it, not just the owner's
           }
           if (raid) this.raidLanding(raid, p);
         });

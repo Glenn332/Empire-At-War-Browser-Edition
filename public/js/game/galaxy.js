@@ -399,6 +399,7 @@ export function snapshotGalaxy(g) {
       piracy: p.piracy || 0,
       ...(p.politicalEffects?.length ? { politicalEffects: p.politicalEffects.map(e => ({ ...e })) } : {}),
       sabotageCount: p.sabotageCount || 0,
+      ...(p.fleetSeq ? { fleetSeq: p.fleetSeq } : {}),
       incomeHaltUntil: p.incomeHaltUntil || 0,
       incomeMult: p.incomeMult ?? 1,
       gambling: p.gambling ? { ...p.gambling } : null,
@@ -455,6 +456,7 @@ export function snapshotGalaxy(g) {
           ...(u.pathfinder ? { pathfinder: true } : {}),
           ...(Number.isInteger(u.guiIndex) ? { guiIndex: u.guiIndex } : {}),
           ...(u.speedScale ? { speedScale: u.speedScale } : {}),
+          ...(u.group !== undefined ? { group: u.group } : {}),
           ...(u.pendingAbility !== undefined ? { pendingAbility: u.pendingAbility } : {}),
           ...(u.detectNext ? { detectNext: { ...u.detectNext } } : {})
         }
@@ -580,6 +582,7 @@ export function applyGalaxy(g, s) {
     p.piracy = sp.piracy || 0;
     p.politicalEffects = (sp.politicalEffects || []).map(e => ({ ...e }));
     p.sabotageCount = sp.sabotageCount || 0;
+    if (sp.fleetSeq) p.fleetSeq = sp.fleetSeq;
     p.incomeHaltUntil = sp.incomeHaltUntil || 0;
     p.incomeMult = sp.incomeMult ?? 1;
     p.gambling = sp.gambling ? { ...sp.gambling } : null;
