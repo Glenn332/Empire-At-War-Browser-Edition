@@ -470,6 +470,7 @@ export function restore(game, save) {
       continue;
     }
     if (o.p !== undefined && P(o.p) && u.player !== P(o.p)) {
+      u.placedFor ??= u.player;
       u.player = P(o.p);
       u.buildList = buildListFor(u.type, u.player.factionName);
     }

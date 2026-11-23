@@ -20,7 +20,7 @@ export function battleSnapshot(game, save = null, refs = null) {
     .filter(u => !u.dead && !u.squad && u.mapIndex !== undefined)
     .map(u => ({
       type: u.type.name,
-      player: u.player.id,
+      player: (u.placedFor || u.player).id,
       x: u.x,
       y: u.y,
       z: u.z,
