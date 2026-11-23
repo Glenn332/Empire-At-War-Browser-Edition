@@ -11,6 +11,8 @@
     "app": "node tools/build-app.mjs",
     "app:bump": "node tools/release-app.mjs bump",
     "test:lockstep": "node tools/test-lockstep.mjs",
+    "test:lockstep-galaxy": "node tools/test-lockstep-galaxy.mjs",
+    "test:lockstep-land": "node tools/test-lockstep-land.mjs",
     "test:space-mirror": "node tools/test-space-mirror.mjs",
     "test:space-hooks": "node tools/test-space-hooks.mjs",
     "test:space-direct": "node tools/test-space-direct.mjs",

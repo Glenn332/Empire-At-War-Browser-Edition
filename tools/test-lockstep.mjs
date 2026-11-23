@@ -16,6 +16,7 @@ const mod = arg('--mod'),
   minTps = +arg('--min-tps', 28),
   slack = +arg('--slack', 0.25),
   update = flag('--update'),
+  noScripts = flag('--noscripts'),
   verbose = flag('--verbose');
 
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), mod ? [mod] : []);
@@ -75,6 +76,9 @@ const { execute } = await import('../public/js/game/commands.js');
 const { stateHash } = await import('../public/js/game/netgame.js');
 const { SkirmishAI } = await import('../public/js/game/ai.js');
 const { SpaceGoals } = await import('../public/js/game/spacegoals.js');
+const { ScriptHost } = await import('../public/js/game/scripts.js');
+const { scriptTypes } = await import('../public/js/game/storyart.js');
+const { aiFreeStore } = await import('../public/js/game/landbrain.js');
 
 const TICK = 1 / 30,
   HASH_EVERY = 30,
@@ -166,12 +170,40 @@ async function battle(threads) {
   }
   w.viewer = players[0];
   w.recountPop();
-  await Promise.all([w.paths.worker?.whenReady, ...(w.paths.pool || []).map(p => p.whenReady)].filter(Boolean));
-  await w.paths.deterministic();
-  await Promise.all((w.paths.pool || []).map(p => p.whenReady).filter(Boolean));
-  const ais = players.filter(p => !p.human).map(p => new SkirmishAI(w, p, 'hard'));
+  const game = {
+    world: w,
+    land: false,
+    map,
+    setup: { mode: 'space', mapFile: mapName, seed: 4242, net: { me: 0 } },
+    human: w.viewer,
+    ais: [],
+    message() {},
+    setEnvironmentIndex() {},
+    startCinematicRetreat() {}
+  };
+  const scripts = noScripts ? null : await ScriptHost.create(game);
+  if (scripts) {
+    const named = new Set(),
+      known = new Set(),
+      more = new Set();
+    for (const e of [...w.units, ...w.squads]) if (e.type) named.add(e.type.str('Lua_Script').trim());
+    for (const t of await scriptTypes([...named]).catch(() => [])) S.modelsForType(t, null, more, known);
+    await preloadModels([...more].filter(Boolean)).catch(() => null);
+    game.scripts = w.scripts = scripts;
+  }
+  const ais = (game.ais = players.filter(p => !p.human).map(p => new SkirmishAI(w, p, 'hard')));
   w.goals = new SpaceGoals(w, () => ais);
+  for (const ai of ais) {
+    const fs = await aiFreeStore(ai.player.factionName).catch(() => null);
+    if (scripts && fs && fs.space) scripts.freeStore(ai.player, fs.space, () => ai.mine().filter(e => !e.aiPlan), ai);
+  }
   await Promise.all(ais.map(ai => ai.brainReady));
+  if (scripts) {
+    await scripts.prime();
+    await scripts.compileAll(3000);
+  }
+  await w.paths.deterministic();
+  if (scripts) await scripts.preloadAll();
   const spots = [
     [-0.8, 0.8],
     [0.8, -0.8],
@@ -216,6 +248,7 @@ async function battle(threads) {
         w.goals.budget = undefined;
       }
     }
+    if (scripts) scripts.update(TICK);
     simMs.push(performance.now() - t0);
     shots = Math.max(shots, (w.projectiles || []).length);
     routeAt.push(routeMs);
@@ -225,7 +258,7 @@ async function battle(threads) {
     squads = w.squads.filter(q => !q.dead).length;
   w.paths.stop?.();
   const routePer = routeAt.map((v, i) => v - (routeAt[i - 1] || 0));
-  return { log, simMs, routePer, units, squads, held, lost: players.reduce((n, p) => n + p.stats.lost, 0), shots, gap: (() => { const c = t => { const l = w.units.filter(u => !u.dead && u.player.team?.id === t && u.isMobile); return [l.reduce((x, u) => x + u.x, 0) / Math.max(1, l.length), l.reduce((y, u) => y + u.y, 0) / Math.max(1, l.length), l.length]; }; const a = c(0), b = c(1); return [Math.round(Math.hypot(a[0] - b[0], a[1] - b[1])), a[2], b[2]]; })() };
+  return { log, simMs, routePer, units, squads, held, lost: players.reduce((n, p) => n + p.stats.lost, 0), scripts: scripts ? scripts.instances.filter(i => i.state === 'run').length : 0, shots, gap: (() => { const c = t => { const l = w.units.filter(u => !u.dead && u.player.team?.id === t && u.isMobile); return [l.reduce((x, u) => x + u.x, 0) / Math.max(1, l.length), l.reduce((y, u) => y + u.y, 0) / Math.max(1, l.length), l.length]; }; const a = c(0), b = c(1); return [Math.round(Math.hypot(a[0] - b[0], a[1] - b[1])), a[2], b[2]]; })() };
 }
 
 const mean = a => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
@@ -264,7 +297,7 @@ const now = {
   worst4: +four.worst.toFixed(1)
 };
 console.log(
-  `lockstep: ${mapName}, ${steps} steps, ${a.units} ships and stations, ${a.squads} squadrons at the end, ${a.lost} lost in the fighting, ${a.log.length} checkpoints, ${Math.round((performance.now() - t0) / 1000)} s`
+  `lockstep: ${mapName}, ${steps} steps, ${a.units} ships and stations, ${a.squads} squadrons at the end, ${a.lost} lost in the fighting, ${noScripts ? 'no Lua AI scripts' : a.scripts + ' Lua AI scripts'}, ${a.log.length} checkpoints, ${Math.round((performance.now() - t0) / 1000)} s`
 );
 console.log(
   `  step ${now.simMs} ms (p99 ${now.simP99}), route searches ${now.routeMs} ms a step; 2 route threads ${now.tps2} ticks/s (worst second ${now.worst2}), 4 threads ${now.tps4} (worst ${now.worst4})`
@@ -279,7 +312,7 @@ if (now.worst2 < minTps) fails.push(`with 2 route threads the worst second falls
 
 const file = fileURLToPath(new URL('./baselines/lockstep.json', import.meta.url));
 const all = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-const key = `${hostname()}|${mapName}|${steps}|${ships}|${mod || ''}`;
+const key = `${hostname()}|${mapName}|${steps}|${ships}|${mod || ''}${noScripts ? '|noscripts' : ''}`;
 const base = all[key];
 if (base && !update) {
   if (now.simMs > base.simMs * (1 + slack)) fails.push(`a step takes ${now.simMs} ms, ${Math.round((now.simMs / base.simMs - 1) * 100)}% over the baseline ${base.simMs} ms`);
