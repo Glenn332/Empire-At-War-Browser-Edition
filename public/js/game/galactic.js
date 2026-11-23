@@ -112,7 +112,8 @@ import { stageStart } from './transit.js';
 import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
-import { pressed, held, edgePan } from './keybinds.js';
+import { pressed, held } from './keybinds.js';
+import { edgeCursor, panAxis } from './edge-scroll.js';
 import { planetMaxStarbase } from './planetstats.js';
 
 const $ = id => document.getElementById(id);
@@ -1605,6 +1606,7 @@ export class GalacticGame {
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     this.mouse = { x: innerWidth / 2, y: innerHeight / 2, in: false };
+    this.edgeCursor = edgeCursor(el, this.life.signal);
     el.addEventListener('pointermove', e => {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
@@ -3482,13 +3484,11 @@ export class GalacticGame {
         region = c.num('Strategic_Edge_Scroll_Region', 2),
         lo = c.num('Strategic_Min_Scroll_Speed', 80),
         hi = c.num('Strategic_Max_Scroll_Speed', 400),
-        m = this.mouse,
         speed = lo + (hi - lo) / 2,
-        side = (key, depth) => (held(k, key) || (m.in && edge && depth > 0) ? speed : 0),
         dt = Math.min(1, elapsed),
-        edge = edgePan();
-      const r = side('SCROLL_RIGHT', m.x - (innerWidth - region - 1)) - side('SCROLL_LEFT', region - m.x),
-        f = (side('SCROLL_UP', region - m.y) - side('SCROLL_DOWN', m.y - (innerHeight - region - 1))) * 1.2;
+        edge = !this.drag && !this.dragFleet && this.dragGround === undefined && this.edgeCursor(region);
+      const r = speed * panAxis(k, 'SCROLL_RIGHT', 'SCROLL_LEFT', edge?.right),
+        f = speed * 1.2 * panAxis(k, 'SCROLL_UP', 'SCROLL_DOWN', edge?.forward);
       scrollVelocity(this.scroll, r * dt, f * dt, c.num('Scroll_Acceleration_Factor', 0.08), c.num('Scroll_Deceleration_Factor', 1.5));
     } else scrollVelocity(this.scroll, 0, 0, 0, db.constants.num('Scroll_Deceleration_Factor', 1.5));
     {

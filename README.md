@@ -86,7 +86,15 @@ The controls are the same as the original:
 | P, + / - | pause, game speed |
 | Esc | cancel, deselect, menu |
 
+In land and space strategy views or on the galaxy map, park the mouse at an edge of the battlefield to scroll; move inward to stop. Edge scrolling is on by default and can be disabled with **Pan the camera at the screen edges** in Game Options. It does not steer a possessed soldier or vehicle.
+
 **Battlefront mode (land battles):** press **B** (controller **Y / Triangle**) to switch between first and third person as a trooper. In a vehicle, the same button switches between a centered chase camera and the driver or gunner's view. Press **E** to get out; your infantry view is unchanged. **O → Infantry view / Vehicle view** lets you set each preference. Both are remembered on this browser. Melee heroes keep their third-person camera, and deployed artillery keeps its overhead sight.
+
+The default Battlefront sight is grey over empty ground, blue over allies and red over enemies (orange with colourblind-safe markers). Blaster heat lights the bottom squares from the center out and drains as the weapon cools; ammo weapons keep their count and reload bar. **O → Zoom input** switches between holding and tapping the right mouse button or left trigger. In third person the infantry camera retracts in front of terrain ridges, then eases back out.
+
+In third person, focusing shifts to the right shoulder and leaves just a dot. It stays at the unzoomed sight’s height, slightly left toward the helmet. Zooming in or out without moving your aim keeps the same spot under the sight. In first person, sprinting brings the lowered weapon across the bottom of the view. **V / RB** rolls in the held movement direction (including diagonals), or forward from a standstill. First person dips and tucks the weapon; turn off **Head bob** to disable the camera bank.
+
+In a live ground battle, faction emblems and ticket counts flank the center readout. Aim at a unit to see its name and remaining health; each hit leaves a short-lived white segment marking only the health just lost. Look away and the center clears. There is no reinforcement split bar. The reticle is 20% opaque. Blaster bolts have a bright core and rounded ends that stay visible even when viewed straight down the barrel. Focused shots start at the animated muzzle and converge on the dot; recoil still moves your aim. At a command post, the ring around the emblem drains toward neutral white as control is lost, then fills in the capturing side’s color (blue for allies, red for enemies). Vehicles use the same equipment panel as infantry: vehicle name, weapon icon, and one hull meter with a cyan shield outline. No speedometer or vehicle ammo counter. The upper-right radar rotates with your view: units are local, while distant command posts stay on its rim. Your equipment and health are at bottom left, with the compass along the bottom. Hold **Tab** for personal combat stats or use **M** for the full battlefield map.
 
 ## For developers
 

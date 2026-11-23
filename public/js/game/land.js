@@ -5522,7 +5522,7 @@ export class LandWorld {
           fixed,
           false
         );
-    if (this.shooter) this.shooter.aimError(u, t, dist, off);
+    if (this.shooter) this.shooter.aimError(u, t, dist, off, w);
     const ax = aimsOff(cat) ? lead.x + off.x : lead.x,
       ay = aimsOff(cat) ? lead.y + off.y : lead.y,
       z1 = aimsOff(cat) ? lead.z + off.z : lead.z;

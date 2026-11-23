@@ -1,5 +1,6 @@
 // A map-only view of land combat. Identify emplacements by their live weapons
 // or firing ports, not by model names (many decorative towers share those).
+import { facingArrow } from './combat-hud.js';
 const shots = new WeakMap();
 export function noteMapShot(from, time) {
   if (!from) return;
@@ -20,17 +21,7 @@ export function shotFlash(u, time) {
 
 // The map projects world +Y upwards. Radar supplies its extra world rotation.
 export function unitArrow(ctx, x, y, u, time, color, size, rotation = 0) {
-  const a = (u.heading || 0) + rotation,
-    dx = Math.cos(a) * size,
-    dy = -Math.sin(a) * size;
-  ctx.beginPath();
-  ctx.moveTo(x + dx, y + dy);
-  ctx.lineTo(x - 0.62 * dx - 0.58 * dy, y - 0.62 * dy + 0.58 * dx);
-  ctx.lineTo(x - 0.32 * dx, y - 0.32 * dy);
-  ctx.lineTo(x - 0.62 * dx + 0.58 * dy, y - 0.62 * dy - 0.58 * dx);
-  ctx.closePath();
-  ctx.fillStyle = shotFlash(u, time) ? '#fff' : color;
-  ctx.fill();
+  facingArrow(ctx, x, y, (u.heading || 0) + rotation, size, shotFlash(u, time) ? '#fff' : color);
 }
 
 export function defenseMarks(w, me) {

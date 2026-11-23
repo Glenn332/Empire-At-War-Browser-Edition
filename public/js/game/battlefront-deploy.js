@@ -1,5 +1,6 @@
 import { DeployPreview } from './deploy-preview.js';
 import { defenseMarks, drawDefense, unitArrow } from './defense-marks.js';
+import { arrowRadius, facingArrow } from './combat-hud.js';
 import { TERRAIN } from './landtables.js';
 import { heightAt } from './terrain.js';
 import { iconAdditiveUrl } from '../icons.js';
@@ -346,8 +347,8 @@ export class BattlefrontDeploy {
     x.stroke();
     x.save();
     x.scale(W / 520, W / 520);
-    const k = 520 / W;
-    // Crisp, tiny blips leave the map layout dominant. Only command posts get numbers.
+    const k = 520 / W, person = arrowRadius(cv, 520, 6);
+    // Keep infantry readable at the displayed disc size; only posts get numbers.
     for (const u of w.units) {
       if (u.dead || u.gone || u.inside || u.side < 0 || u.side === w.wild || defenses.has(u) || (u.structure && u.seen === false)) continue;
       const px = F.X(u.x) * k,
@@ -361,7 +362,7 @@ export class BattlefrontDeploy {
       if (u.seen === false || u.scriptHidden || u.netHidden) continue;
       const ally = w.ally(u.side, s.me);
       if (ally && cv === s.mapCv && Math.hypot(px - 260, py - 260) < 520 * DISC_EDGE) friends.push({ x: px / k, y: py / k, watchUnit: u });
-      unitArrow(x, px, py, u, w.time, ally ? blue : red, u.kind === 'INFANTRY' ? 4.5 : 6);
+      unitArrow(x, px, py, u, w.time, ally ? blue : red, u.kind === 'INFANTRY' || u.foot ? person : 6);
     }
     for (const [u, mark] of defenses) drawDefense(x, F.X(u.x) * k, F.Y(u.y) * k, 1.05, mark, blue, red);
     for (const p of [...extras, ...posts]) {
@@ -409,17 +410,7 @@ export class BattlefrontDeploy {
     if (s.body && s.state === 'alive') {
       const px = F.X(s.body.x) * k,
         py = F.Y(s.body.y) * k;
-      x.save();
-      x.translate(px, py);
-      x.rotate(-s.yaw);
-      x.fillStyle = 'white';
-      x.beginPath();
-      x.moveTo(8, 0);
-      x.lineTo(-5, -4);
-      x.lineTo(-3, 0);
-      x.lineTo(-5, 4);
-      x.fill();
-      x.restore();
+      facingArrow(x, px, py, s.yaw, person*1.85, '#fff8e9');
     }
     x.restore();
     x.restore();

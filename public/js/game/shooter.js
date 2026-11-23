@@ -21,6 +21,13 @@ import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
 import { ShuttleWaves } from './shuttle.js';
 import { vehicleRig, vehicleEye, chaseVehicle } from './vehicle-camera.js';
+import { FirstPersonKit } from './first-person-kit.js';
+import { BattleReadout, pinRadarPoint, spaceRimPins, kitIcon, cannonIcon, grenadeIcon, arrowRadius, facingArrow } from './combat-hud.js';
+import { factionBadge } from './faction-badges.js';
+import { CaptureDial } from './capture-dial.js';
+import { BattleReticle } from './battle-reticle.js';
+import { terrainBoom, infantryChase, composeSight, FOOT_SIGHT, SHOULDER_X } from './infantry-camera.js';
+import { ROLL, startRoll, rollPhase, rollTuck } from './infantry-roll.js';
 import { isSpawner, sideTech } from './landgarrison.js';
 import { eawSkin } from './eawskin.js';
 import { BattlefrontDeploy, bfPanel } from './battlefront-deploy.js';
@@ -47,7 +54,7 @@ const REACH = 1600,
   BOT_TICK = 0.25,
   LIGHT_HIT = 14,
   AIR = { slow: 0.35, cruise: 0.7, accel: 0.8, floor: 12, ceil: 380, climb: 0.9, lift: 0.6, roll: 0.9, look: 60 },
-  RADAR = { size: 170, range: 900 },
+  RADAR = { size: 200, range: 580 },
   ADS_SPEED = 0.65,
   HOME = { reach: 420, out: 70, tries: 12 },
   FIELD_CAP = 50,
@@ -56,7 +63,6 @@ const REACH = 1600,
   REGEN = { wait: 5, rate: 0.05, heal: 0.12, reach: 1.25, tick: 0.5 },
   KICK = { heat: 0.012, ammo: 0.05, yaw: 0.35, recover: 7 },
   BOB = { walk: 0.012, run: 0.02, rate: 0.055 },
-  DODGE = { speed: 2.6, time: 0.32, cool: 1.4 },
   SPRINT_FOV = 8,
   MARKERS = { fade: 140, names: 220, maxFeed: 5, feedLife: 6, feedNear: 700 },
   COMPASS = { w: 460, h: 30, span: Math.PI * 0.9 },
@@ -67,9 +73,7 @@ const REACH = 1600,
   BOT_RESPAWN = { delay: 10, perTick: 3, vehicle: 0.12, maxVehicles: 6 },
   ALLY_TAGS = { range: 700, size: 4.5, min: 2.2 },
   RECOIL = 0.09,
-  FP_TILT = { min: -0.1, max: 0.45 },
   FIX = { yaw: 0.9, pitch: 0.8 },
-  FP_MUZZLE_Y = -0.42,
   SOUND_FALLOFF = 2,
   DUMMY = { wait: 15 },
   REMOTE = { delay: 0.1, keep: 10, fire: 0.04, reach: 45 },
@@ -124,9 +128,9 @@ const REACH = 1600,
   STEP_SFX = { grass: 'GRASS', snow: 'SNOW', ice: 'SNOW', water: 'WATER', concrete: 'CONCRETE', mud: 'MUD' },
   ENGAGE_SCAN = 0.4,
   FIGHT_HOLD = 12,
-  FP_EYE = { back: 0.135, right: -0.06, up: 0.087, crouchLift: 0.12, headroom: 0.08 },
+  FP_EYE = { back: 0.135, right: -0.077, up: 0.035 },
   TICKETS = { start: 150, foot: 1, vehicle: 2, bleed: 5 },
-  AIM_PITCH = { chest: 0.35, arms: 0.65, raise: 0.45, min: -1, max: 1.1 },
+  AIM_PITCH = { chest: 0.35, arms: 0.65, min: -1, max: 1.1 },
   SPREAD_OUT = { far: 120, min: 10, max: 55 },
   HOP = { min: 40, max: 70, every: [5, 8] },
   CALM = { blind: 1, end: 1.5, stop: 60 },
@@ -157,9 +161,11 @@ function usePalette(safe) {
   const r = document.documentElement.style;
   r.setProperty('--sh-ally-soft', PAL.allySoft);
   r.setProperty('--sh-enemy-soft', PAL.enemySoft);
+  r.setProperty('--sh-ret-ally', PAL.ally);
+  r.setProperty('--sh-ret-enemy', PAL.enemy);
 }
 const CFG_KEY = 'swr-shooter-settings',
-  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, view: 'third', vehicleView: 'chase', crosshair: 'ring', bob: true, colorblind: false, assist: true, shuttle: true };
+  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, aimMode: 'hold', view: 'third', vehicleView: 'chase', crosshair: 'ring', bob: true, colorblind: false, assist: true, shuttle: true };
 function loadCfg() {
   let got = {};
   try {
@@ -191,10 +197,6 @@ const SHOOTER_CSS = `
 .sh-banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 55; pointer-events: none; font: 400 calc(26px * var(--eaw-k, 1)) var(--eaw-bold); color: rgb(225,70,45); text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; opacity: 0; white-space: nowrap; }
 .sh-banner.show { animation: sh-fade 3.2s linear forwards; }
 @keyframes sh-fade { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
-.sh-cap { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: calc(330px * var(--eaw-k, 1)); padding: 4px 10px 6px; text-align: center; }
-.sh-cap-t { margin-bottom: 4px; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
-.sh-cap-bar { width: 100%; }
-.sh-cap-bar i { transition: width .2s linear; }
 .sh-vig { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(150,0,0,.5) 85%, rgba(110,0,0,.8) 100%); }
 .sh-wpn { position: absolute; right: 222px; bottom: 26px; width: calc(250px * var(--eaw-k, 1)); padding: 4px 10px 6px; }
 .sh-wpn-n { font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 4px; }
@@ -238,12 +240,6 @@ const SHOOTER_CSS = `
 .sh-tbl td:not(:first-child), .sh-tbl th:not(:first-child) { text-align: right; }
 .sh-end-aw div { margin: 3px 0; font: 400 calc(12px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
 .sh-end .sh-foot { padding: 6px 6px 2px; }
-.sh-ret-rocket { border-radius: 3px !important; border-style: dashed !important; }
-.sh-ret-scout { border-width: 1px !important; }
-.sh-ret-scout::before { content: ''; position: absolute; left: 50%; top: -9px; bottom: -9px; width: 1px; background: rgba(255,215,106,.85); }
-.sh-ret-scout::after { content: ''; position: absolute; top: 50%; left: -9px; right: -9px; height: 1px; background: rgba(255,215,106,.85); }
-.sh-ret-heavy { border-width: 4px !important; border-style: double !important; }
-.sh-ret-hero { border-color: rgba(124,199,255,.95) !important; }
 .sh-scope { position: fixed; inset: 0; z-index: 39; pointer-events: none; display: none; background: radial-gradient(circle at center, transparent 0, transparent 34vmin, rgba(0,0,0,.94) calc(34vmin + 2px)); }
 .sh-scope::before { content: ''; position: absolute; left: 50%; top: 16vmin; bottom: 16vmin; width: 1px; background: rgba(0,0,0,.85); }
 .sh-scope::after { content: ''; position: absolute; top: 50%; left: calc(50% - 34vmin); right: calc(50% - 34vmin); height: 1px; background: rgba(0,0,0,.85); }
@@ -251,21 +247,6 @@ const SHOOTER_CSS = `
 .sh-card.ride::after { content: 'Ride'; }
 .sh-card.hero::after { content: 'Hero'; }
 .sh-card.locked { opacity: .45; }
-.sh-vhud { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: calc(300px * var(--eaw-k, 1)); padding: 4px 10px 6px; }
-.sh-vh-n { font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: var(--eaw-gold); margin-bottom: 4px; }
-.sh-vh-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-.sh-vh-row span { width: calc(64px * var(--eaw-k, 1)); font: 400 calc(10px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .08em; color: var(--eaw-cream); }
-.sh-vh-row .sh-bar { flex: 1; }
-.sh-vh-rd { display: flex; align-items: center; gap: 3px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); color: var(--eaw-cream); white-space: nowrap; }
-.sh-vh-rd i { width: calc(5px * var(--eaw-k, 1)); height: calc(10px * var(--eaw-k, 1)); background: rgba(255,215,106,0.25); border: 1px solid rgba(255,215,106,0.6); }
-.sh-vh-rd i.on { background: #ffd76a; }
-.sh-vh-row i.s { filter: hue-rotate(170deg) saturate(1.4); }
-.sh-vh-info { margin-top: 4px; font: 400 calc(11px * var(--eaw-k, 1)) var(--eaw-font); letter-spacing: .06em; color: var(--eaw-cream); }
-.sh-vh-warn { display: none; margin-top: 5px; text-align: center; font: 400 calc(13px * var(--eaw-k, 1)) var(--eaw-bold); color: rgb(235,80,50); text-shadow: 1px 1px 0 #000; animation: sh-blink .5s steps(1) infinite; }
-.sh-ch-dot { border-color: transparent !important; }
-.sh-ch-cross { border-color: transparent !important; }
-.sh-ch-cross::before { content: ''; position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: rgba(255,215,106,.85); box-shadow: 0 0 2px #000; }
-.sh-ch-cross::after { content: ''; position: absolute; top: 50%; left: -6px; right: -6px; height: 2px; margin-top: -1px; background: rgba(255,215,106,.85); box-shadow: 0 0 2px #000; }
 .sh-set { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
 .sh-frame.sh-set-box { width: min(calc(580px * var(--eaw-k, 1)), 94vw); }
 .sh-set-body { padding: 8px 6px 4px; display: flex; flex-direction: column; gap: 7px; }
@@ -329,7 +310,6 @@ const SHOOTER_CSS = `
 `;
 
 const _fwd = new THREE.Vector3(),
-  _hd = new THREE.Vector3(),
   _nu = new THREE.Vector3(),
   _tq = new THREE.Quaternion(),
   _sv = new THREE.Vector3(),
@@ -428,14 +408,12 @@ export class Shooter {
     this.stats = { heads: 0, vehicles: 0 };
     this.losses = [];
     this.counted = new WeakSet();
-    this.twist = { bone: null, head: null, arms: [], want: 0, pitch: 0, raise: 0, live: [], overlay: false, upper: null, muzzle: null, barrel: null, loose: [], fixYaw: 0, fixPitch: 0, mask: null, rigid: [], kick: 0 };
+    this.twist = { bone: null, arms: [], want: 0, pitch: 0, live: [], overlay: false, upper: null, muzzle: null, barrel: null, loose: [], fixYaw: 0, fixPitch: 0, kick: 0 };
     const tk = new URLSearchParams(location.search).get('tickets');
     this.ticketStart = Math.max(1, parseInt(tk, 10) || (+globalThis.shooterTickets >= 50 ? Math.round(+globalThis.shooterTickets) : TICKETS.start));
     this.tickets = game.setup.benchmark ? null : game.factions.map(() => this.ticketStart);
     this.conquest = game.setup.campaign ? { ready: false, pools: new Map(), byUnit: new WeakMap(), crewed: new WeakSet() } : null;
     this.bleedAt = 0;
-    this.ticketEl = null;
-    if (this.tickets) this.ticketBar();
     this.radarAt = 0;
     this.ended = false;
     this.letters = new Map();
@@ -558,8 +536,10 @@ export class Shooter {
     this.respawnAt = 0;
     this.sizes = new Map();
     this.homes = new Map();
-    this.fpMuzzleY = FP_MUZZLE_Y;
+    this.viewKit = null;
+    this.firstPerson = false;
     this.eyeAt = new THREE.Vector3();
+    this.hipEye = new THREE.Vector3();
     this.lastOf = new WeakMap();
     this.hitUntil = 0;
     this.killUntil = 0;
@@ -824,18 +804,15 @@ export class Shooter {
     let dx = (cy * f + sy * s) * sp * dt,
       dy = (sy * f - cy * s) * sp * dt;
     if (P.dodge) {
-      P.dodge = false;
-      if (w.time >= this.dodgeAt + DODGE.cool && P.h <= 0) {
+      if (P.dodge !== true && !this.big && w.time >= this.dodgeAt + ROLL.cooldown && P.h <= 0 && !sw) {
         this.dodgeAt = w.time;
-        const l = Math.hypot(f, s) || 1,
-          mf = f || s ? f / l : 0,
-          ms = f || s ? s / l : 1;
-        P.dash = { t: DODGE.time, x: cy * mf + sy * ms, y: sy * mf - cy * ms };
-        this.dip = Math.max(this.dip, this.eye * 0.35);
+        P.dash = P.dodge;
+        P.dash.heading = u.heading;
       }
+      P.dodge = false;
     }
     if (P.dash) {
-      const v = u.speed * DODGE.speed * dt;
+      const v = u.speed * ROLL.distance * Math.min(dt, P.dash.t) / ROLL.duration;
       dx = P.dash.x * v;
       dy = P.dash.y * v;
       if ((P.dash.t -= dt) <= 0) P.dash = null;
@@ -852,8 +829,8 @@ export class Shooter {
       const fp = this.third === false && !mel,
         tw = (aiming || fp) && !mel;
       const ws = !!(sw && go && sw.clip);
-      let want = sw ? sw.face : P.yaw;
-      if (go && (!sw || ws)) {
+      let want = P.dash ? P.dash.heading : sw ? sw.face : P.yaw;
+      if (go && !P.dash && (!sw || ws)) {
         const md = Math.atan2(dy, dx),
           face = ws ? sw.face : P.yaw,
           rel = wrap(md - face);
@@ -864,9 +841,8 @@ export class Shooter {
       u.heading += Math.abs(da) <= st ? da : Math.sign(da) * st;
       this.twist.want = ws ? Math.max(-1.1, Math.min(1.1, wrap(sw.face - u.heading))) : tw ? Math.max(-1.1, Math.min(1.1, wrap(P.yaw - u.heading))) : 0;
       this.twist.pitch = tw ? Math.max(AIM_PITCH.min, Math.min(AIM_PITCH.max, this.pitch)) : 0;
-      this.twist.raise = fp ? AIM_PITCH.raise : 0;
     }
-    if (P.jump && P.h <= 0) P.vz = JUMP;
+    if (P.jump && !P.dash && P.h <= 0) P.vz = JUMP;
     P.jump = false;
     if (P.h > 0 || P.vz > 0) {
       P.vz -= GRAVITY * dt;
@@ -900,7 +876,8 @@ export class Shooter {
     const walkSwing = !!(sw && go && sw.clip);
     this.twist.swing = walkSwing ? sw : null;
     this.twist.overlay = walkSwing || (!mel && ((go && (shooting || aiming)) || fp) && !(go && has('FIRE_MOVE')) && has('ATTACKIDLE'));
-    if (walkSwing) kind = P.run && has('MOVE') ? 'move' : has('WALKMOVE') ? 'WALKMOVE' : 'move';
+    if (P.dash && has('CROUCHIDLE')) kind = 'CROUCHIDLE';
+    else if (walkSwing) kind = P.run && has('MOVE') ? 'move' : has('WALKMOVE') ? 'WALKMOVE' : 'move';
     else if (sw) {
       kind = 'attack';
       this.holdSwing(u, sw);
@@ -1222,29 +1199,13 @@ export class Shooter {
     }
   }
 
-  ticketBar() {
-    const e = (this.ticketEl = document.createElement('div'));
-    e.className = 'sh-tickets eaw-frame-s';
-    document.body.appendChild(e);
-  }
-
   drawTickets() {
-    if (!this.ticketEl) return;
+    if (!this.readout) return;
     const T = this.teamTickets(),
       key = T.map(e => `${e.mine ? 1 : 0}${e.label}:${e.t}`).join('|');
     if (this.ticketKey === key) return;
     this.ticketKey = key;
-    this.ticketEl.replaceChildren(
-      ...T.map(e => {
-        const sp = document.createElement('span'),
-          b = document.createElement('b');
-        if (e.mine) sp.className = 'mine';
-        sp.textContent = e.label;
-        b.textContent = String(e.t);
-        sp.appendChild(b);
-        return sp;
-      })
-    );
+    this.readout.tickets(T);
   }
 
   skill(side) {
@@ -1903,8 +1864,12 @@ export class Shooter {
     return now >= a.at;
   }
 
-  aimError(u, t, dist, off) {
-    if (u && u === this.body && this.swing && this.swing.u === u) {
+  focusedBlaster(u) {
+    return u === this.body && this.zoom && !this.big && !this.seatOf() && !this.melee && this.gun.kind === 'heat';
+  }
+
+  aimError(u, t, dist, off, wp) {
+    if ((t === this.spot && wp === u?.weapon && this.focusedBlaster(u)) || (u && u === this.body && this.swing && this.swing.u === u)) {
       off.x = off.y = off.z = 0;
       return;
     }
@@ -2558,6 +2523,14 @@ export class Shooter {
   }
 
   jitter(u) {
+    // The focus dot represents a single ray. Keep recoil on that ray, but
+    // don't add a second, invisible hip-fire cone over the player's dot.
+    if (this.focusedBlaster(u)) {
+      this.spot.x = this.aim.x;
+      this.spot.y = this.aim.y;
+      this.spot.z = this.aim.z;
+      return;
+    }
     const a = this.aim,
       s = this.spot,
       d = Math.hypot(a.x - u.x, a.y - u.y, a.z - u.z - this.eye),
@@ -2741,8 +2714,16 @@ export class Shooter {
       .multiply(_q.setFromAxisAngle(_X, A.tilt));
   }
 
-  reticle() {
-    this.cross.className = `sh-ret sh-ret-${this.role} sh-ch-${this.cfg.crosshair}`;
+  requestRoll() {
+    if (this.seatOf()) { this.P.dodge = true; return; } // Aircraft keep their own barrel roll.
+    const k = this.keys, m = this.padMove;
+    const axis = (pos, neg, stick) => Math.max(-1, Math.min(1, +held(k, pos) - +held(k, neg) + stick));
+    this.P.dodge = startRoll(axis('SCROLL_UP','SCROLL_DOWN',m.f), axis('SCROLL_RIGHT','SCROLL_LEFT',m.s), this.yaw);
+  }
+
+  aimButton(down) {
+    if (this.cfg.aimMode !== 'toggle') this.zoom = down;
+    else if (down) this.zoom = !this.zoom;
   }
 
   get third() { return this.cfg.view !== 'first'; }
@@ -2780,7 +2761,7 @@ export class Shooter {
     }
     const select = this.setEl?.querySelector(`select[name="${key}"]`);
     if (select) select.value = value;
-    if (key === 'crosshair') this.reticle();
+    if (key === 'aimMode') this.zoom = false;
     if (key === 'colorblind') {
       usePalette(value);
       this.feedDirty = true;
@@ -2862,6 +2843,7 @@ export class Shooter {
     range('Mouse sensitivity', 'sens', 0.3, 2.5, 0.05, v => `${v.toFixed(2)}x`);
     range('Aiming sensitivity', 'ads', 0.3, 2, 0.05, v => `${v.toFixed(2)}x`);
     check('Invert look', () => C.invert, v => this.setCfg('invert', v));
+    pick('Zoom input', 'aimMode', [['hold', 'Hold to zoom'], ['toggle', 'Toggle zoom']]);
     pick('Vehicle view', 'vehicleView', [
       ['chase', 'Chase camera'],
       ['seat', 'Driver / gunner view']
@@ -2872,7 +2854,7 @@ export class Shooter {
     ]);
     pick('Deployment screen', 'deployUI', [['2005', 'Battlefront 2005'], ['original', 'Browser original']]);
     pick('Crosshair', 'crosshair', [
-      ['ring', 'Ring'],
+      ['ring', 'Battlefront 2005'],
       ['dot', 'Dot'],
       ['cross', 'Cross']
     ]);
@@ -2970,13 +2952,13 @@ export class Shooter {
       this.pitch = Math.max(-1.4, Math.min(1.35, this.pitch - ry * rate * (C.invert ? -1 : 1)));
       if (down(7)) this.fire = true;
       if (up(7)) this.fire = false;
-      if (down(6)) this.zoom = true;
-      if (up(6)) this.zoom = false;
+      if (down(6)) this.aimButton(true);
+      if (up(6)) this.aimButton(false);
       if (down(0)) this.P.jump = true;
       if (down(1) && !this.seatOf()) this.crouched = !this.crouched;
       if (down(2)) this.seated() ? this.leave() : this.enter();
       if (down(3)) this.toggleView();
-      if (down(5)) this.P.dodge = true;
+      if (down(5)) this.requestRoll();
       if (down(4)) this.nadeHeld = true;
       if (up(4) && this.nadeHeld) {
         this.nadeHeld = false;
@@ -3045,7 +3027,7 @@ export class Shooter {
       ['Move', `${K('SCROLL_UP')} ${K('SCROLL_LEFT')} ${K('SCROLL_DOWN')} ${K('SCROLL_RIGHT')}`, 'Left stick'],
       ['Look, fire, aim', 'Mouse, left and right button', 'Right stick, RT, LT'],
       ['Sprint, crouch, jump', `${K('SHOOTER_SPRINT')}, ${K('SHOOTER_CROUCH')}, ${K('SHOOTER_JUMP')}`, 'L3, B, A'],
-      ['Dodge', K('SHOOTER_DODGE'), 'RB'],
+      ['Roll in movement direction', K('SHOOTER_DODGE'), 'RB'],
       ['Thermal detonator', `hold ${K('SHOOTER_GRENADE')}`, 'hold LB'],
       ['Reload', K('SHOOTER_RELOAD'), 'automatic when empty'],
       ['Enter or leave', K('SHOOTER_ENTER'), 'X'],
@@ -3434,44 +3416,25 @@ export class Shooter {
   }
 
   drawVehicleHud(now) {
-    const seat = this.rideQ || this.gunQ,
-      v = seat ? seat.members[0] : null,
-      E = this.vhud;
+    const seat = this.rideQ || this.gunQ, v = seat?.members[0] || (this.big ? this.body : null);
     if (!v || v.dead) {
-      if (E.style.display !== 'none') E.style.display = 'none';
       this.warning = '';
+      this.vhWarn.hidden = true;
       return;
     }
-    E.style.display = 'block';
-    const w = this.world,
-      hull = Math.max(0, Math.min(1, v.health / (v.maxHealth || 1))),
-      sh = v.maxShield > 0 ? Math.max(0, Math.min(1, v.shield / v.maxShield)) : -1,
-      wp = v.weapon || (v.guns && v.guns[0]),
-      ready = wp ? 1 - Math.max(0, Math.min(1, (wp.cooldown || 0) / Math.max(0.1, (wp.recharge || 1) * w.fireDelay(v)))) : 1,
-      spd = Math.round((v.flies ? this.A.v : v.v || 0) * 0.45),
-      alt = v.flies ? Math.round((v.z - heightAt(w.terrain, v.x, v.y)) / 8) : null,
+    const name = `${this.nameOf(v.type)}${this.gunQ ? ' · gunner' : ''}`,
       warn = this.vehicleWarning(v);
-    this.vhN.textContent = `${this.nameOf(v.type)}${this.gunQ === seat ? '  -  gunner' : ''}`;
-    this.vhHull.style.width = `${Math.round(hull * 100)}%`;
-    this.vhHull.style.background = hull < DAMAGE_FX.fire ? '#ff4a32' : hull < DAMAGE_FX.smoke ? '#ffa040' : '#5fd27a';
-    this.vhShRow.style.display = sh >= 0 ? 'flex' : 'none';
-    if (sh >= 0) this.vhSh.style.width = `${Math.round(sh * 100)}%`;
-    this.vhWp.style.width = `${Math.round(ready * 100)}%`;
-    {
-      const max = wp ? Math.max(1, wp.pulses || 1) : 0,
-        left = !wp ? 0 : wp.left > 0 ? wp.left : (wp.cooldown || 0) <= 0 ? max : 0,
-        key = max + ':' + left;
-      if (this.vhRdKey !== key) {
-        this.vhRdKey = key;
-        this.vhRd.innerHTML = max > 1 && max <= 12 ? Array.from({ length: max }, (_, i) => `<i class="${i < left ? 'on' : ''}"></i>`).join('') + `&nbsp;${left} / ${max}` : max ? `${left} / ${max}` : '';
-      }
+    if (this.vhN.textContent !== name) this.vhN.textContent = name;
+    const wp = (this.gunQ && v.guns?.[0]) || v.weapon || v.guns?.[0];
+    this.vhGun.hidden = !wp;
+    if (wp?.proj) {
+      const kind = categoryOf(wp.proj), missile = kind === CAT.MISSILE || kind === CAT.ROCKET || kind === CAT.MPTL_ROCKET;
+      this.vhGun.dataset.weapon = missile ? 'missile' : 'cannon';
     }
-    const info = `${spd} km/h${alt !== null ? `   ALT ${alt} m` : ''}${this.A.boost && v.flies ? '   BOOST' : ''}`;
-    if (this.vhInfo.textContent !== info) this.vhInfo.textContent = info;
     if (warn !== this.warning) {
       this.warning = warn;
       this.vhWarn.textContent = warn;
-      this.vhWarn.style.display = warn ? 'block' : 'none';
+      this.vhWarn.hidden = !warn;
     }
     if (warn && now >= this.warnAt) {
       this.warnAt = now + WARN.beep * 1000 * (warn === 'MISSILE INCOMING' ? 0.5 : 1);
@@ -5779,22 +5742,26 @@ export class Shooter {
 
   untwist() {
     const T = this.twist;
-    if (T.head) T.head.scale.setScalar(1);
-    if (this.body && this.body.inst) {
-      this.body.inst.skinMask = null;
-      this.body.inst.skinPin = null;
-      for (const o of T.rigid || []) o.visible = true;
-      this.body.inst.syncFromBones();
-    }
-    T.mask = null;
-    T.rigid = [];
-    T.bone = T.head = null;
+    this.dropViewKit();
+    T.bone = null;
     T.arms = [];
     T.loose = [];
     T.live = [];
   }
 
+  dropViewKit() {
+    this.readout?.aim(null);
+    this.P.dash = null;
+    this.P.dodge = false;
+    this.shoulder = 0;
+    this.focusSight = false;
+    this.firstPerson = false;
+    this.viewKit?.dispose();
+    this.viewKit = null;
+  }
+
   possess(q, u, hero) {
+    this.dropViewKit();
     const landed = !!this.waves?.inRoom() || this.landingIn;
     this.landingIn = false;
     this.waves?.endRoom();
@@ -5819,7 +5786,7 @@ export class Shooter {
     this.nadeAt = 0;
     this.lockT = null;
     this.lockK = 0;
-    this.reticle();
+    this.hipBoom = this.boomFraction = 1;
     this.smoothZ = null;
     this.dip = 0;
     this.kickDebt = 0;
@@ -5831,7 +5798,6 @@ export class Shooter {
     this.big = u.kind !== 'INFANTRY' && !u.foot;
     const T = this.twist;
     T.bone = u.inst?.bone('B_CHEST') || u.inst?.bone('B_SPINE') || u.inst?.bone('B_TORSO') || null;
-    T.head = u.inst?.bone('B_HEAD') || null;
     T.arms = [
       ['B_CLAV_R', 'B_BICEP_R', 'B_UPPERARM_R'],
       ['B_CLAV_L', 'B_BICEP_L', 'B_UPPERARM_L']
@@ -5839,10 +5805,9 @@ export class Shooter {
       .map(names => names.map(n => u.inst?.bone(n)).find(Boolean))
       .filter(Boolean);
     T.live = [];
-    T.muzzle = u.inst?.bones?.find(x => /^MUZZLE/i.test(x.name)) || null;
+    T.muzzle = u.weapon?.muzzles?.[0]?.bone || u.inst?.bones?.find(x => /^MUZZLE/i.test(x.name)) || null;
     {
-      const keep = new Set(),
-        bones = u.inst?.bones || [],
+      const bones = u.inst?.bones || [],
         all = new Set(bones);
       T.gunRoot = null;
       if (T.muzzle && T.bone) {
@@ -5861,15 +5826,9 @@ export class Shooter {
         chestTree = new Set();
       T.bone?.traverse(o => chestTree.add(o));
       T.loose = T.bone ? [...armParts, ...fingers].filter(bone => !chestTree.has(bone) && !armParts.includes(bone.parent) && !fingers.includes(bone.parent)) : [];
-      for (const root of [...T.arms, ...armParts, ...fingers, ...(T.gunRoot ? [T.gunRoot] : [])]) root.traverse(o => all.has(o) && keep.add(o));
-      T.mask = keep.size ? new Set(bones.filter(x => !keep.has(x))) : null;
-      T.rigid = [];
-      if (T.mask) for (const bn of T.mask) for (const c of bn.children) if (!all.has(c) && c.visible) T.rigid.push(c);
     }
     T.fixYaw = T.fixPitch = 0;
     T.calib = null;
-    T.heads = null;
-    T.headNow = 0;
     this.fpZ = undefined;
     T.anchor = null;
     T.barrel = null;
@@ -5987,6 +5946,11 @@ export class Shooter {
       size = k ? Math.max(12, (k.hitRadius || 6) * 3) : 40,
       want = Math.max(22, Math.min(FOV, ((2 * Math.atan(size / Math.max(1, d))) * 180) / Math.PI));
     this.setFov(cam, Math.round((D.fov + (want - D.fov) * ease) * 10) / 10, 1);
+  }
+
+  get shotSource() {
+    if (this.state !== 'alive' || this.big || this.seatOf()) return null;
+    return this.firstPerson ? this.viewKit : this.focusSight ? this.body : null;
   }
 
   shotBoost(s) {
@@ -6842,7 +6806,7 @@ export class Shooter {
         this.crouched = false;
       }
       if (pressed(e, 'SHOOTER_CROUCH') && !this.seatOf()) this.crouched = !this.crouched;
-      if (pressed(e, 'SHOOTER_DODGE')) this.P.dodge = true;
+      if (pressed(e, 'SHOOTER_DODGE')) this.requestRoll();
       if (pressed(e, 'SHOOTER_GRENADE')) this.nadeHeld = true;
       const rl = pressed(e, 'SHOOTER_RELOAD');
       if (rl && this.state === 'alive' && !this.seatOf()) this.reload();
@@ -6884,11 +6848,11 @@ export class Shooter {
         return;
       }
       if (e.button === 0) this.fire = true;
-      if (e.button === 2) this.zoom = true;
+      if (e.button === 2) this.aimButton(true);
     });
     on('mouseup', e => {
       if (e.button === 0) this.fire = false;
-      if (e.button === 2) this.zoom = false;
+      if (e.button === 2) this.aimButton(false);
       if (this.state === 'alive' && this.owns(e)) e.stopImmediatePropagation();
     });
     on('wheel', e => {
@@ -6918,23 +6882,23 @@ export class Shooter {
     );
   }
 
-  aimRay(o, d) {
+  aimRay(o, d, limit = REACH, endpoint = null) {
     const w = this.world,
       skip = this.body,
       ride = this.rideQ,
       gq = this.gunQ,
       post = this.post;
-    let best = REACH,
-      hit = null;
+    let best = limit,
+      hit = endpoint;
     for (const u of w.units) {
-      if (u.dead || u.inside || u === skip || u === post || (ride && u.squad === ride) || (gq && u.squad === gq) || !(u.hitRadius > 0) || u.holder?.visible === false) continue;
+      if (u === endpoint || u.dead || u.inside || u === skip || u === post || (ride && u.squad === ride) || (gq && u.squad === gq) || !(u.hitRadius > 0) || u.holder?.visible === false) continue;
       const tall = u.kind === 'INFANTRY' ? this.heightOf(u) : 0,
         r = u.structure ? u.hitRadius * 0.8 : Math.max(u.hitRadius, 3),
         cx = u.x - o.x,
         cy = u.y - o.y,
         cz = (tall ? u.z + tall * 0.5 : u.z + (u.aimZ || 0) * 0.6) - o.z,
         t = cx * d.x + cy * d.y + cz * d.z;
-      if (t <= 0 || t - r > best) continue;
+      if (t <= 0 || t > best) continue;
       const px = cx - d.x * t,
         py = cy - d.y * t,
         pz = (cz - d.z * t) * (u.structure ? 1 : tall ? r / (tall * 0.5) : 0.6);
@@ -6964,6 +6928,7 @@ export class Shooter {
   }
 
   frame(real, cam) {
+    this.firstPerson = false;
     if (this.state === 'command' && this.ov?.on) this.ov.frame(real, cam);
     else {
       if (this.state === 'alive') this.ov?.tickAlive(real);
@@ -7025,6 +6990,7 @@ export class Shooter {
       s = Math.max(-1, Math.min(1, (held(k, 'SCROLL_RIGHT') ? 1 : 0) - (held(k, 'SCROLL_LEFT') ? 1 : 0) + M.s));
     const up = (held(k, 'SHOOTER_JUMP') ? 1 : 0) - (held(k, 'SHOOTER_CROUCH') ? 1 : 0);
     if (seat) {
+      P.dash = null;
       P.f = P.s = 0;
       P.fire = false;
       const lead = ride ? ride.members[0] : null,
@@ -7064,7 +7030,7 @@ export class Shooter {
       cp = Math.cos(this.pitch),
       sp = Math.sin(this.pitch);
     const d = _v.set(cy * cp, sy * cp, sp);
-    const scoped = !seat && !this.big && this.zoom && this.role === 'scout',
+    const scoped = !this.third && !seat && !this.big && this.zoom && this.role === 'scout',
       pk = this.ov ? this.ov.pull * this.ov.pull : 0,
       fp = !seat && !this.big && (!this.third || scoped) && pk < 0.02 && !this.melee;
     {
@@ -7075,8 +7041,10 @@ export class Shooter {
       if (this.smoothZ === null || Math.abs(b.z - this.smoothZ) > this.eye * 3) this.smoothZ = b.z;
       else this.smoothZ += (b.z - this.smoothZ) * Math.min(1, real * (b.z > this.smoothZ ? 14 : 22));
     }
-    const moving = !seat && (b.v || 0) > 1 && P.h <= 0,
-      running = moving && P.run && !this.zoom,
+    const dash = !seat && !this.big && P.dash, tuck = rollTuck(rollPhase(dash));
+    const rollF = dash ? cy*dash.x + sy*dash.y : 0, rollS = dash ? sy*dash.x - cy*dash.y : 0;
+    const moving = !dash && !seat && (b.v || 0) > 1 && P.h <= 0,
+      running = moving && P.run && f > 0 && !this.zoom && !this.fire && !P.crouch,
       hh = this.eye / 0.9;
     if (moving) this.bobPhase += real * (b.v || 0) * BOB.rate;
     const bobA = moving && this.cfg.bob ? hh * (running ? BOB.run : BOB.walk) * (this.zoom ? 0.35 : 1) : 0,
@@ -7107,6 +7075,11 @@ export class Shooter {
     }
     const vehicle = !this.post && (seat || (this.big ? b : null));
     const inner = !!vehicle && !artyOn && this.cockpit && pk < 0.02;
+    const footChase = !vehicle && !seat && !fp;
+    this.focusSight = footChase && this.zoom && !this.melee;
+    const shoulderGoal = +this.focusSight;
+    this.shoulder = footChase ? shoulderGoal + ((this.shoulder || 0) - shoulderGoal)*Math.exp(-real*15) : 0;
+    if (Math.abs(this.shoulder - shoulderGoal)<.002) this.shoulder = shoulderGoal;
     if (inner) cam.position.copy(this.seatView(vehicle, d));
     else if (vehicle) {
       chaseVehicle(cam.position, this.rigOf(vehicle), d, real, cam.aspect, this.fovNow, this.zoom, pk, ARTY_CAM.lift * AB.raise);
@@ -7119,18 +7092,27 @@ export class Shooter {
       const h = this.eye / 0.9,
         back = h * FP_EYE.back,
         side = h * FP_EYE.right;
-      const hn = this.twist.headNow,
-        floor = hn > 0 ? bz + hn + this.eye * 0.03 + h * (FP_EYE.up + (P.crouch ? FP_EYE.crouchLift : 0)) : -Infinity,
-        byBox = P.crouch ? bz + this.eye * 0.65 + h * FP_EYE.up : bz + this.eye + h * FP_EYE.up,
-        off = Math.max(hn > 0 ? Math.min(byBox, floor + h * FP_EYE.headroom) : byBox, floor) - bz;
+      const off = this.eye * (P.crouch ? 0.65 : 1) + h * FP_EYE.up;
       this.fpZ = this.fpZ === undefined ? off : this.fpZ + (off - this.fpZ) * Math.min(1, real * 10);
-      const ez = bz + this.fpZ;
+      const ez = bz + this.fpZ - this.eye*.38*tuck;
       cam.position.set(b.x - cy * back + sy * (side + bobX), b.y - sy * back - cy * (side + bobX), ez + bobZ);
     } else {
-      const back = this.camBack * (this.melee ? MELEE.cam : this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
-        side = this.eye * 0.35,
-        pz = bz + this.eye * (P.crouch ? 0.75 : 1.05) + bobZ * 0.5 + pk * this.camBack * 1.2;
-      shoulderPosition(cam, b, d, this.yaw, back, side, pz);
+      const back = hh * 1.34 * (1 + pk * 4.5),
+        pz = bz + this.eye * (P.crouch ? .74 : 1.02) + bobZ * .5 + pk * this.camBack * 1.2;
+      // Mouse/stick aim always originates at the unzoomed boom. Using the
+      // lowered shoulder eye with the same pitch fired a parallel ray at the
+      // target's legs. Keep this boom terrain-safe even during a quick reversal.
+      const hip = this.hipEye;
+      infantryChase(hip, b.x, b.y, pz, this.yaw, this.pitch, back, this.cfg.fov);
+      this.hipBoom = terrainBoom(hip, b.x, b.y, pz, w.terrain, this.hipBoom, real);
+      hip.z = Math.max(hip.z, heightAt(w.terrain, hip.x, hip.y) + 2);
+      if (this.shoulder > 0) {
+        infantryChase(cam.position, b.x, b.y, pz, this.yaw, this.pitch, back, this.fovNow, this.shoulder);
+        this.boomFraction = terrainBoom(cam.position, b.x, b.y, pz, w.terrain, this.boomFraction, real);
+      } else {
+        cam.position.copy(hip);
+        this.boomFraction = this.hipBoom;
+      }
     }
     if (artyV && AB.over > 0.001) {
       const V = this.artyPose(artyV, real),
@@ -7147,6 +7129,17 @@ export class Shooter {
     this.shake *= Math.exp(-real * 8);
     const floor = heightAt(w.terrain, cam.position.x, cam.position.y) + 2;
     if (cam.position.z < floor) cam.position.z = floor;
+    const shifted = footChase && this.shoulder > 0;
+    if (shifted) {
+      // Resolve the actual hip sight point anew each frame (no stored enemy
+      // or aim lock). Converge the shoulder ray on it, then respect anything
+      // nearer that occludes it from the rendered shoulder position.
+      const target = this.aimRay(this.hipEye, d);
+      d.set(this.aim.x, this.aim.y, this.aim.z).sub(cam.position);
+      const distance = d.length();
+      if (distance > 1e-5) this.aimRay(cam.position, d.multiplyScalar(1 / distance), distance, target);
+      else d.set(cy * cp, sy * cp, sp);
+    }
     cam.up.set(0, 0, 1);
     cam.lookAt(cam.position.x + d.x, cam.position.y + d.y, cam.position.z + d.z);
     {
@@ -7155,9 +7148,25 @@ export class Shooter {
       this.fovNow += (want - this.fovNow) * Math.min(1, real * 10);
       this.setFov(cam, Math.round(this.fovNow * 10) / 10, fp || inner ? 0.3 : 1);
     }
+    const aimHeight = footChase ? FOOT_SIGHT : .5,
+      aimX = footChase ? .5 + (SHOULDER_X - .5) * this.shoulder : .5;
+    if (footChase) composeSight(cam, aimX, aimHeight);
+    // The horizon banks around the firing ray, never changing the player's aim.
+    // Turning head bob off removes the bank but preserves the hands' roll pose.
+    if (fp && dash && this.cfg.bob) cam.rotateZ(-tuck*(.43*rollS + .19*rollF));
+    const sightX = `${aimX * 100}%`, sightY = `${aimHeight * 100}%`;
+    if (this.sightX !== sightX) this.hud.style.setProperty('--bf-aim-x', this.sightX = sightX);
+    if (this.sightY !== sightY) this.hud.style.setProperty('--bf-aim-y', this.sightY = sightY);
     b.holder.visible = !b.inside;
     this.eyeAt.copy(cam.position);
-    this.pose(b, fp);
+    this.pose(b);
+    this.firstPerson = fp && !scoped;
+    if (this.firstPerson) {
+      if (!this.viewKit || this.viewKit.model !== b.inst?.model || this.viewKit.weapon !== b.weapon) {
+        this.viewKit?.dispose();
+        this.viewKit = new FirstPersonKit(b, animClip(b.type, 'ATTACKIDLE') || b.anims?.attack || b.anims?.idle, this.world.teamColorFor(b.side, b.type));
+      }
+    }
     if (scoped) b.holder.visible = false;
     this.scopeEl.style.display = scoped ? 'block' : 'none';
     this.feedGround();
@@ -7167,7 +7176,10 @@ export class Shooter {
     }
     this.lockOn(real, d);
     if (overWant) this.aimHit = null;
-    else this.aimRay(cam.position, d);
+    else if (!shifted) this.aimRay(cam.position, d);
+    if (this.firstPerson) this.viewKit.place(cam, this.twist.kick, w.time - this.gun.lastShot < 0.06, real,
+      moving ? b.v / hh : 0, running, !this.cfg.bob ? 0 : this.zoom ? .25 : P.crouch ? .5 : 1, tuck, rollF, rollS,
+      this.zoom && !dash ? this.aim : null);
     P.spot = this.aim;
     P.fire = !seat && this.fire;
     if (ride && ride.direct) {
@@ -7189,37 +7201,15 @@ export class Shooter {
     this.drawTags(cam);
   }
 
-  pose(u, fp) {
+  pose(u) {
     const T = this.twist,
       B = T.bone;
-    if (T.head) {
-      const s = fp ? 0.001 : 1;
-      if (T.head.scale.x !== s) T.head.scale.setScalar(s);
-    }
-    const view = fp && !u.inside && T.mask && T.mask.size > 0;
-    if (view !== !!u.inst.skinMask) {
-      u.inst.skinMask = view ? T.mask : null;
-      u.inst.skinPin = view ? T.bone : null;
-      for (const o of T.rigid) o.visible = !view;
-    }
     for (const L of T.live)
       if (L.bone.quaternion.equals(L.after)) {
         L.bone.quaternion.premultiply(_q2.copy(L.delta).invert());
         if (L.pos0 && L.bone.position.equals(L.pos1)) L.bone.position.copy(L.pos0);
       }
     T.live.length = 0;
-    const base = u.anim && u.anim.anim;
-    if (fp && base && T.head && !u.inside) {
-      const heads = (T.heads ||= new Map());
-      if (!heads.has(base)) {
-        new AnimState(u.inst, base, { loop: true }).pose();
-        u.holder.updateMatrixWorld(true);
-        T.head.getWorldPosition(_hd);
-        heads.set(base, _hd.z - u.holder.position.z);
-        u.anim.pose();
-      }
-      T.headNow = heads.get(base);
-    }
     if (!T.calib && T.muzzle && T.muzzle.parent && !u.inside) {
       const clip = animClip(u.type, 'ATTACKIDLE');
       if (clip) {
@@ -7273,14 +7263,13 @@ export class Shooter {
       T.fixYaw *= 0.8;
       T.fixPitch *= 0.8;
     }
-    const held = view && T.overlay && T.upper,
-      chestYaw = yaw + (aimed ? T.fixYaw : 0),
-      chestPitch = held ? pitch : pitch * (T.arms.length ? AIM_PITCH.chest : 1),
-      gunPivot = (T.gunRoot || T.loose.length) && B ? (held ? _gpv.copy(this.eyeAt) : B.getWorldPosition(_gpv)) : null;
-    bend(B, chestYaw, chestPitch, held ? this.eyeAt : null);
+    const chestYaw = yaw + (aimed ? T.fixYaw : 0),
+      chestPitch = pitch * (T.arms.length ? AIM_PITCH.chest : 1),
+      gunPivot = (T.gunRoot || T.loose.length) && B ? B.getWorldPosition(_gpv) : null;
+    bend(B, chestYaw, chestPitch);
     const kick = T.kick;
     T.kick *= Math.exp(-(this.realDt || 0) * 14);
-    const armPitch = (held ? 0 : pitch * AIM_PITCH.arms) + (u.inside ? 0 : T.raise || 0) + (aimed ? T.fixPitch : 0) + kick;
+    const armPitch = pitch * AIM_PITCH.arms + (aimed ? T.fixPitch : 0) + kick;
     const toss = u === this.body ? this.throwPitch() : 0;
     for (const arm of T.arms) if (!T.loose.includes(arm)) bend(arm, 0, armPitch + (arm === T.arms[0] ? toss : 0));
     if (gunPivot) for (const part of T.loose) bend(part, chestYaw, chestPitch + armPitch + (part.name === T.arms[0]?.name ? toss : 0), gunPivot);
@@ -7301,17 +7290,9 @@ export class Shooter {
       const ey = wrap(Math.atan2(_barrelDir.y, _barrelDir.x) - this.yaw),
         ep = Math.atan2(_barrelDir.z, Math.hypot(_barrelDir.x, _barrelDir.y)) - this.pitch - kick;
       if (T.calib && Math.abs(ey) < 1.4) T.fixYaw = Math.max(-FIX.yaw, Math.min(FIX.yaw, T.fixYaw - ey * 0.35));
-      if (fp) {
-        const C = this.game.camera;
-        C.updateMatrixWorld();
-        _ndc.copy(_mz).project(C);
-        let err = _ndc.z < 1 ? _ndc.y - this.fpMuzzleY : 0;
-        if (ep > FP_TILT.max) err = Math.max(err, (ep - FP_TILT.max) * 2);
-        if (ep < FP_TILT.min) err = Math.min(err, (ep - FP_TILT.min) * 2);
-        T.fixPitch = Math.max(-FIX.pitch, Math.min(FIX.pitch, T.fixPitch - err * 0.25));
-      } else if (T.calib && Math.abs(ep) < 1.4) T.fixPitch = Math.max(-FIX.pitch, Math.min(FIX.pitch, T.fixPitch - ep * 0.3));
+      if (T.calib && Math.abs(ep) < 1.4) T.fixPitch = Math.max(-FIX.pitch, Math.min(FIX.pitch, T.fixPitch - ep * 0.3));
     }
-    if (B || T.head || T.arms.length) u.inst.syncFromBones();
+    if (B || T.arms.length) u.inst.syncFromBones();
   }
 
   barrelBone(T) {
@@ -7399,7 +7380,7 @@ export class Shooter {
     this.panel.style.display = 'none';
     this.bigMap.style.display = 'none';
     this.introEl.style.display = 'none';
-    if (this.ticketEl) this.ticketEl.style.display = 'none';
+    this.readout.el.hidden = true;
     if (document.pointerLockElement) document.exitPointerLock?.();
   }
 
@@ -7424,30 +7405,18 @@ export class Shooter {
       st.id = 'shooter-css';
       st.textContent = SHOOTER_CSS;
       document.head.appendChild(st);
+      const skin = document.createElement('link');
+      skin.rel = 'stylesheet';
+      skin.href = new URL('../../battlefront-hud.css', import.meta.url).href;
+      document.head.appendChild(skin);
     }
     this.hud = el('div', 'position:fixed;inset:0;pointer-events:none;z-index:40;display:none');
-    this.cross = el(
-      'div',
-      'position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2px solid rgba(255,215,106,.85);box-shadow:0 0 2px #000',
-      this.hud
-    );
-    this.dot = el('div', 'position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px 0 0 -1.5px;background:#ffd76a', this.hud);
-    this.vhud = el('div', '', this.hud);
-    this.vhud.className = 'sh-vhud eaw-frame-s';
-    this.vhud.style.display = 'none';
-    this.vhud.innerHTML =
-      '<div class="sh-vh-n"></div><div class="sh-vh-row"><span>Hull</span><div class="sh-bar eaw-bar"><i class="h"></i></div></div><div class="sh-vh-row s"><span>Shield</span><div class="sh-bar eaw-bar"><i class="s"></i></div></div><div class="sh-vh-row"><span>Weapon</span><div class="sh-bar eaw-bar"><i class="w"></i></div><b class="sh-vh-rd"></b></div><div class="sh-vh-info"></div><div class="sh-vh-warn"></div>';
-    this.vhN = this.vhud.querySelector('.sh-vh-n');
-    this.vhHull = this.vhud.querySelector('i.h');
-    this.vhSh = this.vhud.querySelector('i.s');
-    this.vhShRow = this.vhud.querySelector('.sh-vh-row.s');
-    this.vhWp = this.vhud.querySelector('i.w');
-    this.vhRd = this.vhud.querySelector('.sh-vh-rd');
-    this.vhInfo = this.vhud.querySelector('.sh-vh-info');
-    this.vhWarn = this.vhud.querySelector('.sh-vh-warn');
+    this.hud.className = 'bf-combat';
+    this.readout = new BattleReadout(this.hud, factionBadge);
+    this.drawTickets();
+    this.sight = new BattleReticle(this.hud);
     this.scopeEl = el('div', '', document.body);
     this.scopeEl.className = 'sh-scope';
-    this.wpnX = null;
     this.compass = el('canvas', '', this.hud);
     this.compass.className = 'sh-compass';
     this.compass.width = COMPASS.w;
@@ -7468,11 +7437,21 @@ export class Shooter {
     this.introEl.style.display = 'none';
     this.vig = el('div', '', this.hud);
     this.vig.className = 'sh-vig';
-    this.wpn = el('div', '', this.hud);
-    this.wpn.className = 'sh-wpn eaw-frame-s';
-    this.wpn.innerHTML = '<div class="sh-wpn-n"></div><div class="sh-wpn-bar eaw-bar"><i></i></div><div class="sh-wpn-s"></div>';
-    this.wpnN = this.wpn.querySelector('.sh-wpn-n');
-    this.wpnBar = this.wpn.querySelector('i');
+    this.bars = el('div', '', this.hud);
+    this.bars.className = 'bf-kit';
+    const vehicleRow = el('div', '', this.bars);
+    vehicleRow.className = 'bf-kit-row bf-vehicle';
+    vehicleRow.innerHTML = `<span aria-label="Vehicle weapon">${cannonIcon}</span><strong></strong>`;
+    this.vhGun = vehicleRow.firstElementChild;
+    this.vhN = vehicleRow.lastElementChild;
+    this.vhWarn = el('div', '', this.bars);
+    this.vhWarn.className = 'bf-vehicle-warning';
+    this.vhWarn.hidden = true;
+    this.wpn = el('div', '', this.bars);
+    this.wpn.className = 'sh-wpn';
+    this.wpn.innerHTML = `<div class="bf-kit-row">${kitIcon}<span class="bf-grenade">${grenadeIcon}<b></b></span><span class="sh-wpn-s"></span></div><div class="sh-wpn-bar bf-meter"><i></i></div>`;
+    this.nadeCount = this.wpn.querySelector('.bf-grenade b');
+    this.wpnBar = this.wpn.querySelector('.sh-wpn-bar i');
     this.wpnS = this.wpn.querySelector('.sh-wpn-s');
     this.wpnX = el('div', '', this.wpn);
     this.wpnX.className = 'sh-wpn-x';
@@ -7485,44 +7464,33 @@ export class Shooter {
     this.arcs = [0, 1, 2, 3].map(() =>
       el(
         'div',
-        'position:absolute;left:50%;top:50%;width:180px;height:180px;margin:-90px 0 0 -90px;border-radius:50%;border:5px solid transparent;border-top-color:rgba(255,40,30,.85);display:none',
+        'position:absolute;left:var(--bf-aim-x,50%);top:var(--bf-aim-y,50%);width:180px;height:180px;margin:-90px 0 0 -90px;border-radius:50%;border:5px solid transparent;border-top-color:rgba(255,40,30,.85);display:none',
         this.hud
       )
     );
-    this.bars = el('div', '', this.hud);
-    this.bars.className = 'sh-me eaw-frame-s';
-    this.name = el('div', '', this.bars);
-    this.name.className = 'sh-me-n';
-    const bar = color => {
+    const bar = (stat, label) => {
       const o = el('div', '', this.bars);
-      o.className = 'eaw-bar';
-      return el('i', `width:100%;background:${color}`, o);
+      o.className = `bf-meter bf-${stat}`;
+      o.setAttribute('aria-label', label);
+      return el('i', '', o);
     };
-    this.hpBar = bar('#5fd35f');
-    this.shBar = bar('#5fb3ff');
-    this.shBar.parentElement.style.display = 'none';
-    this.score = el('div', '', this.bars);
-    this.score.className = 'sh-me-s';
+    this.hpBar = bar('hp', 'Health');
+    this.shBar = el('b', '', this.hpBar.parentElement);
+    this.shBar.className = 'bf-shield-outline';
+    this.shBar.hidden = true;
     this.hint = el('div', 'position:absolute;left:50%;top:62%;transform:translateX(-50%)', this.hud);
     this.hint.className = 'sh-hudtext';
-    this.tip = el('div', 'position:absolute;left:50%;top:86px;transform:translateX(-50%);white-space:nowrap', this.hud);
-    this.tip.className = 'sh-hudtext';
-    this.credit = el('div', 'position:absolute;right:24px;bottom:24px', this.hud);
+    this.tip = el('div', '', this.hud);
+    this.tip.className = 'sh-hudtext bf-prompt';
+    this.credit = el('div', '', this.bars);
     this.credit.className = 'sh-credit';
-    this.radar = el(
-      'canvas',
-      `position:absolute;right:20px;bottom:50px;width:${RADAR.size}px;height:${RADAR.size}px`,
-      this.hud
-    );
+    this.radar = el('canvas', '', this.hud);
+    this.radar.setAttribute('aria-label', 'Local radar, forward is up; distant objectives marked on the rim');
     this.radar.className = 'sh-radar';
     this.radar.width = this.radar.height = RADAR.size;
     this.tagCv = el('canvas', 'position:absolute;inset:0;width:100%;height:100%', this.hud);
-    this.cap = el('div', '', this.hud);
-    this.cap.className = 'sh-cap eaw-frame-s';
-    this.cap.innerHTML = '<div class="sh-cap-t"></div><div class="sh-cap-bar eaw-bar"><i></i></div>';
-    this.capT = this.cap.querySelector('.sh-cap-t');
-    this.capBar = this.cap.querySelector('i');
-    this.abil = el('div', 'position:absolute;left:22px;bottom:122px;line-height:18px', this.hud);
+    this.captureDial = new CaptureDial(this.hud);
+    this.abil = el('div', '', this.bars);
     this.abil.className = 'sh-hudtext';
     this.scoreEl = el('div', '');
     this.scoreEl.className = 'sh-board eaw-frame';
@@ -7700,7 +7668,7 @@ export class Shooter {
       x.lineTo(F.W, v);
       x.stroke();
     }
-    const defenses = defenseMarks(w, this.me);
+    const defenses = defenseMarks(w, this.me), person = arrowRadius(cv, F.W, 6);
     for (const u of w.units) {
       if (u.dead || u.gone || u.inside || u.side < 0 || u.side === w.wild || defenses.has(u) || (u.structure && u.seen === false)) continue;
       const ally = w.ally(u.side, this.me);
@@ -7708,7 +7676,7 @@ export class Shooter {
       const px = F.X(u.x),
         py = F.Y(u.y);
       if (u.structure) x.fillRect(px - 3, py - 3, 6, 6);
-      else unitArrow(x, px, py, u, w.time, x.fillStyle, u.kind === 'INFANTRY' ? 4 : 5.5);
+      else unitArrow(x, px, py, u, w.time, x.fillStyle, u.kind === 'INFANTRY' || u.foot ? person : 5.5);
     }
     const mine = this.spawnSpots();
     const occupied = new Set();
@@ -7763,25 +7731,8 @@ export class Shooter {
       }
     }
     if (big && this.body) {
-      const b = this.body,
-        px = F.X(b.x),
-        py = F.Y(b.y),
-        a = -this.yaw;
-      x.save();
-      x.translate(px, py);
-      x.rotate(a);
-      x.fillStyle = '#ffd76a';
-      x.strokeStyle = '#05080b';
-      x.lineWidth = 2;
-      x.beginPath();
-      x.moveTo(10, 0);
-      x.lineTo(-6, 6);
-      x.lineTo(-3, 0);
-      x.lineTo(-6, -6);
-      x.closePath();
-      x.fill();
-      x.stroke();
-      x.restore();
+      const b = this.body;
+      facingArrow(x, F.X(b.x), F.Y(b.y), this.yaw, person*1.85, '#ffd76a');
     }
     const at = this.lastCam ? this.lastCam.p : null;
     if (at && this.state === 'dead') {
@@ -7803,7 +7754,7 @@ export class Shooter {
         const px = F.X(u.x),
           py = F.Y(u.y),
           ally = w.ally(u.side, this.me);
-        this.playerMark(x, px, py, ally, 7);
+        this.playerMark(x, px, py, ally, person*1.3);
         x.font = '700 12px "EmpireAtWar-Bold","Segoe UI",sans-serif';
         x.textAlign = 'left';
         x.textBaseline = 'middle';
@@ -7980,17 +7931,18 @@ export class Shooter {
     const b = this.body,
       now = performance.now(),
       ride = this.rideQ,
-      u = ride ? ride.members[0] : b;
+      u = this.seatOf() || b;
     if (!u) return;
-    this.name.textContent = this.nameOf(u.type);
+    const target = this.aimHit;
+    const targetMode = this.readout.aim(target, t => this.nameOf(t), target && target.side >= 0 && this.world.ally(target.side, this.me), target && (target.side < 0 || target.side === this.world.wild));
+    this.bars.classList.toggle('mounted', !!(this.rideQ || this.gunQ || this.big));
     const tip = `<b>${this.keyText('SHOOTER_CONTROLS')}</b> Show controls`;
     if (this.controlsTip.innerHTML !== tip) this.controlsTip.innerHTML = tip;
     this.hpBar.style.width = `${Math.max(0, Math.min(1, u.health / (u.maxHealth || 1))) * 100}%`;
-    const sh = u.maxShield > 0;
-    this.shBar.parentElement.style.display = sh ? 'block' : 'none';
-    if (sh) this.shBar.style.width = `${Math.max(0, Math.min(1, u.shield / u.maxShield)) * 100}%`;
-    this.score.textContent = `Kills ${this.kills}   Deaths ${this.deaths}   Score ${this.matchScore}`;
-    this.credit.textContent = this.tickets ? `Tickets ${this.tickets[this.me]}` : `Credits ${Math.floor(this.world.credits[this.me])}`;
+    const shield = u.maxShield > 0 ? Math.max(0, Math.min(1, u.shield / u.maxShield)) : 0;
+    this.shBar.hidden = shield <= 0;
+    if (shield > 0) this.shBar.style.width = `${shield * 100}%`;
+    this.credit.textContent = this.tickets ? '' : `Credits ${Math.floor(this.world.credits[this.me])}`;
     {
       const hit = Math.max(this.hitUntil, this.killUntil, this.headUntil);
       if (hit !== this.markShown && now < hit) {
@@ -8007,8 +7959,9 @@ export class Shooter {
     const cam = this.game.camera,
       focal = innerHeight / 2 / Math.tan((cam.fov * Math.PI) / 360),
       size = ride ? 22 : Math.max(10, Math.min(120, 2 * Math.tan(this.spread) * focal + 8));
-    this.cross.style.width = this.cross.style.height = `${size}px`;
-    this.cross.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`;
+    const heatGun = !this.seatOf() && !this.big && !this.melee && this.gun.kind === 'heat';
+    const diameter = Math.round(Math.max(48, Math.min(innerHeight, innerWidth) * 0.14) + size * 0.30);
+    this.sight.draw(targetMode, (this.focusSight || (this.firstPerson && this.zoom)) ? 'focus' : this.cfg.crosshair, diameter, heatGun ? this.gun.heat : null, this.gun.hot);
     const marks = this.hurtMarks;
     for (let i = 0; i < this.arcs.length; i++) {
       const m = marks[i],
@@ -8034,7 +7987,7 @@ export class Shooter {
     }
     this.drawCapture(u);
     if (now >= this.radarAt) {
-      this.radarAt = now;
+      this.radarAt = now + 33;
       this.drawRadar(u);
       if (this.scoreEl.style.display === 'block') this.drawBoard();
     }
@@ -8123,7 +8076,7 @@ export class Shooter {
       const L = T.lead;
       if (!L || L.dead || L.inside || !this.world.ally(T.side, this.me) || !T.role) continue;
       const d = Math.hypot(L.x - at.x, L.y - at.y);
-      if (d > SQUAD_ICON.reach || d < 30) continue;
+      if (d > SQUAD_ICON.reach || d < 30 || (L !== this.aimHit && !this.zoom)) continue;
       _ndc.set(L.x, L.y, L.z + this.heightOf(L) * SQUAD_ICON.up + 4).project(cam);
       if (_ndc.z > 1 || Math.abs(_ndc.x) > 1 || Math.abs(_ndc.y) > 1) continue;
       x.globalAlpha = Math.min(1, Math.max(0.35, 1.2 - d / SQUAD_ICON.reach));
@@ -8149,7 +8102,7 @@ export class Shooter {
       x.arc(px, py, r, 0, Math.PI * 2);
       x.fill();
       x.stroke();
-      if (d < MARKERS.names && !players?.has(u)) {
+      if (u === this.aimHit && d < MARKERS.names && !players?.has(u)) {
         x.font = `${10 * dpr}px Arial,sans-serif`;
         x.textAlign = 'center';
         x.textBaseline = 'bottom';
@@ -8232,9 +8185,13 @@ export class Shooter {
     const g = this.gun,
       b = this.body,
       seat = this.rideQ || this.gunQ;
-    this.wpn.style.display = seat ? 'none' : 'block';
     if (!seat) {
-      if (this.wpnN.textContent !== g.name) this.wpnN.textContent = g.name || '';
+      this.wpnBar.parentElement.hidden = !this.melee && g.kind === 'heat';
+      const kind = this.melee ? 'blade' : this.role === 'rocket' ? 'launcher' : 'blaster';
+      if (this.wpn.dataset.weapon !== kind) this.wpn.dataset.weapon = kind;
+      const grenades = this.role === 'trooper' && !!this.nadeW;
+      this.nadeCount.parentElement.hidden = !grenades;
+      if (grenades) this.nadeCount.textContent = this.nades;
       if (this.melee && b && b.weapon) {
         const S = this.swing,
           wp = b.weapon,
@@ -8245,9 +8202,7 @@ export class Shooter {
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.remove('hot');
       } else if (g.kind === 'heat') {
-        this.wpnBar.style.width = `${Math.round(g.heat * 100)}%`;
-        this.wpnBar.style.background = g.hot ? '#ff4a32' : g.heat > 0.7 ? '#ffa040' : '';
-        const t = g.hot ? 'OVERHEATED' : 'HEAT';
+        const t = g.hot ? 'OVERHEATED' : '∞';
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', g.hot);
       } else {
@@ -8258,19 +8213,7 @@ export class Shooter {
         if (this.wpnS.textContent !== t) this.wpnS.textContent = t;
         this.wpn.classList.toggle('hot', !g.ammo && !g.reloadAt);
       }
-      const extra = this.melee
-        ? 'Click to swing, hold to chain a combo, right mouse to guard'
-        : this.role === 'trooper' && this.nadeW
-          ? `Thermal detonators ${this.nades} / ${GRENADE.count}  (${this.keyText('SHOOTER_GRENADE')})`
-          : this.role === 'rocket'
-            ? this.lockK >= 1
-              ? 'Target locked'
-              : 'Aim at a vehicle to lock on'
-            : this.role === 'scout'
-              ? 'Right mouse for the scope'
-              : this.role === 'hero'
-                ? 'Hero - kills restore health'
-                : '';
+      const extra = this.role === 'rocket' && this.zoom && this.lockK > 0 ? (this.lockK >= 1 ? 'Target locked' : 'Acquiring lock') : '';
       if (this.wpnX && this.wpnX.textContent !== extra) this.wpnX.textContent = extra;
     }
     const real = Math.min(0.1, (now - (this.hudAt || now)) / 1000);
@@ -8387,32 +8330,7 @@ export class Shooter {
         pt = p;
       }
     }
-    if (!pt) {
-      if (this.cap.style.display !== 'none') this.cap.style.display = 'none';
-      return;
-    }
-    this.cap.style.display = 'block';
-    const name = s => (s >= 0 ? String(g.factions[s] || 'Side ' + s) : 'Neutral'),
-      kind = pt.reinforce ? 'Reinforcement point' : 'Capture point',
-      mine = pt.side >= 0 && w.ally(pt.side, this.me);
-    let text, fill, color;
-    if (pt.taker === -1) {
-      text = `${kind} - ${pt.side >= 0 ? 'held by ' + name(pt.side) : 'neutral'}`;
-      fill = pt.side >= 0 ? 1 : 0;
-      color = pt.side < 0 ? '#9a9a9a' : mine ? PAL.friend : PAL.enemy;
-    } else if (pt.taker >= 0) {
-      const us = w.ally(pt.taker, this.me);
-      text = `${kind} - ${us ? 'capturing' : name(pt.taker) + ' capturing'}`;
-      fill = Math.min(1, pt.progress);
-      color = us ? PAL.friend : PAL.enemy;
-    } else {
-      text = `${kind} - contested`;
-      fill = Math.min(1, pt.progress);
-      color = '#ffd76a';
-    }
-    if (this.capT.textContent !== text) this.capT.textContent = text;
-    this.capBar.style.width = `${Math.round(fill * 100)}%`;
-    this.capBar.style.background = color;
+    this.captureDial.draw(pt, g.factions, side => w.ally(side, this.me), pt ? this.letterOf(pt) : '', performance.now());
   }
 
   drawAbilities() {
@@ -8457,7 +8375,7 @@ export class Shooter {
       const C = 20,
         side = (this.game.terrain.size - 1) * C;
       x.setTransform(k * cr * C, -k * sr * C, k * sr * C, k * cr * C, S / 2 + k * (-cr * at.x - sr * (side - at.y)), S / 2 - k * (-sr * at.x + cr * (side - at.y)));
-      x.globalAlpha = 0.85;
+      x.globalAlpha = 0.40;
       x.imageSmoothingEnabled = true;
       x.drawImage(ground, 0, 0);
       x.globalAlpha = 1;
@@ -8470,30 +8388,29 @@ export class Shooter {
         dy = py - at.y;
       return [S / 2 + (dx * cr - dy * sr) * k, S / 2 - (dx * sr + dy * cr) * k];
     };
-    for (const p of w.points) {
-      if (Math.hypot(p.x - at.x, p.y - at.y) > R * 1.1) continue;
-      const [px, py] = put(p.x, p.y);
-      x.fillStyle = p.side < 0 ? '#bbb' : w.ally(p.side, this.me) ? PAL.friend : PAL.enemy;
-      x.beginPath();
-      x.moveTo(px, py - 6);
-      x.lineTo(px + 6, py);
-      x.lineTo(px, py + 6);
-      x.lineTo(px - 6, py);
-      x.closePath();
-      x.fill();
-    }
-    const defenses = defenseMarks(w, this.me);
+    // Heading-up disc: the terrain and contacts rotate under a fixed view cone.
+    const mid = S / 2, cam = this.game.camera;
+    const halfFov = Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect);
+    x.beginPath();
+    x.moveTo(mid, mid);
+    x.arc(mid, mid, mid - 1, -Math.PI / 2 - halfFov, -Math.PI / 2 + halfFov);
+    x.closePath();
+    x.fillStyle = 'rgba(233,243,248,.13)';
+    x.strokeStyle = 'rgba(235,244,245,.64)';
+    x.lineWidth = 1.4;
+    x.fill(); x.stroke();
+    const defenses = defenseMarks(w, this.me), person = arrowRadius(c, S, 4.8);
     for (const u of w.units) {
-      if (u.dead || u.gone || u.inside || u === this.body || u.side < 0 || defenses.has(u) || (u.structure && u.seen === false)) continue;
+      if (u.dead || u.gone || u.inside || u === this.body || u === at || u.side < 0 || defenses.has(u) || (u.structure && u.seen === false)) continue;
       const dx = u.x - at.x,
         dy = u.y - at.y;
       if (dx * dx + dy * dy > R * R) continue;
       const [px, py] = put(u.x, u.y),
         ally = w.ally(u.side, this.me);
       x.fillStyle = u.side === w.wild ? '#c8b070' : ally ? PAL.ally : PAL.enemy;
-      const r = u.structure ? 3.5 : u.kind === 'INFANTRY' ? 1.6 : 2.6;
+      const r = u.structure ? 3.5 : 2.6;
       if (u.structure) x.fillRect(px - r, py - r, r * 2, r * 2);
-      else unitArrow(x, px, py, u, w.time, x.fillStyle, r * 1.85, rot);
+      else unitArrow(x, px, py, u, w.time, x.fillStyle, u.kind === 'INFANTRY' || u.foot ? person : r*1.85, rot);
     }
     for (const [u, mark] of defenses) {
       if (Math.hypot(u.x - at.x, u.y - at.y) > R) continue;
@@ -8524,16 +8441,40 @@ export class Shooter {
         x.beginPath();
         x.arc(px, py, pulse, 0, Math.PI * 2);
         x.stroke();
-        this.playerMark(x, px, py, ally, 5.5);
+        this.playerMark(x, px, py, ally, person*1.3);
       }
+    // Only objectives pin; distant soldiers must not turn the rim into a full-map radar.
+    const rim = mid - 10, pins = [];
+    const drawPost = (p, px, py) => {
+      const tint = p.side < 0 ? '#d9d6c9' : w.ally(p.side, this.me) ? PAL.ally : PAL.enemy;
+      x.beginPath(); x.arc(px, py, p.reinforce ? 7.4 : 3.5, 0, 2 * Math.PI);
+      x.fillStyle = '#152028'; x.fill(); x.lineWidth = 1.7; x.strokeStyle = tint; x.stroke();
+      if (p.reinforce) {
+        x.font = 'bold 11px sans-serif'; x.textBaseline = 'middle'; x.textAlign = 'center';
+        x.fillStyle = tint; x.fillText(this.letterOf(p), px, py + .5);
+      }
+    };
+    for (const p of w.points) {
+      const [x0, y0] = put(p.x, p.y);
+      const [x1, y1] = pinRadarPoint(x0, y0, mid, rim);
+      if (x1 === x0 && y1 === y0) drawPost(p, x0, y0);
+      // Only command posts are long-range objectives. EaW also puts dozens of
+      // ordinary build pads in points; those belong on the local terrain only.
+      else if (p.reinforce) {
+        const bearing = Math.atan2(y1 - mid, x1 - mid);
+        pins.push({ p, bearing, angle: bearing });
+      }
+    }
+    spaceRimPins(pins, rim);
+    for (const pin of pins) {
+      const px = mid + rim * Math.cos(pin.angle), py = mid + rim * Math.sin(pin.angle);
+      x.beginPath(); x.moveTo(px, py);
+      x.lineTo(mid + (mid - 1) * Math.cos(pin.bearing), mid + (mid - 1) * Math.sin(pin.bearing));
+      x.strokeStyle = '#e5dec8'; x.lineWidth = 1; x.stroke();
+      drawPost(pin.p, px, py);
+    }
     x.restore();
-    x.fillStyle = '#ffd76a';
-    x.beginPath();
-    x.moveTo(S / 2, S / 2 - 7);
-    x.lineTo(S / 2 + 5, S / 2 + 5);
-    x.lineTo(S / 2 - 5, S / 2 + 5);
-    x.closePath();
-    x.fill();
+    facingArrow(x, mid, mid, Math.PI/2, person*1.85, '#fff8e9');
   }
 
   drawBoard() {
@@ -8554,7 +8495,7 @@ export class Shooter {
     }
     const lines = [];
     if (this.tickets) lines.push('Tickets: ' + this.teamTickets().map(e => `${e.label} ${e.t}`).join('   '));
-    lines.push(`You: ${this.kills} kills   ${this.stats.heads} headshots   ${this.stats.vehicles} vehicles   ${this.deaths} deaths`);
+    lines.push(`You: ${this.kills} kills   ${this.stats.heads} headshots   ${this.stats.vehicles} vehicles   ${this.deaths} deaths   ${this.matchScore} score`);
     const players = this.playerTable(),
       key = JSON.stringify([rows, lines, players]);
     if (this.boardKey === key) return;
@@ -8618,6 +8559,7 @@ export class Shooter {
   }
 
   dispose() {
+    this.dropViewKit();
     this.waves?.dispose();
     if (this.game.audio) this.game.audio.falloff = 1;
     setParticleDepth(false);
@@ -8627,7 +8569,6 @@ export class Shooter {
     this.bf?.dispose();
     this.panel.remove();
     this.endEl?.remove();
-    this.ticketEl?.remove();
     this.bannerEl?.remove();
     this.setEl?.remove();
     this.hintEl?.remove();

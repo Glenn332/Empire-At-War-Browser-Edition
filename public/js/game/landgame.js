@@ -58,6 +58,7 @@ import { loadClashes } from './landclash.js';
 import { LandCinematic } from './landcine.js';
 import { Wildlife, isAmbient } from './landlife.js';
 import { Bolts } from './landbolts.js';
+import { RollPose } from './infantry-roll.js';
 import { Shots } from './landshots.js';
 import { BenchOverlay } from '../benchoverlay.js';
 import { loadBrain, Mind, target, buildGoal, aiFreeStore } from './landbrain.js';
@@ -149,6 +150,7 @@ import { openDialog } from './dialogs.js';
 import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
 import { pressed, held, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
+import { edgeCursor, panAxis } from './edge-scroll.js';
 import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
 
@@ -1004,7 +1006,7 @@ export class LandGame {
         this.audio.play(db.faction(this.factions[side]).str('Reinforcements_Ready_SFXEvent'));
     };
     const fx = (this.fx = new ParticleManager(scene));
-    this.shotLooks = new Shots(scene, fx);
+    this.shotLooks = new Shots(scene, fx, !!this.shooter);
     const decals = (this.decals = new Decals(world, scene));
     const particle = name => {
       const t = db.type(name);
@@ -1033,7 +1035,9 @@ export class LandGame {
     world.onShot = s => {
       if (this.shooter) noteMapShot(s.from, world.time);
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
-      if (made && !world.viewFogged(s.x, s.y)) burst(made, s.x, s.y, s.z);
+      const sh = this.shooter;
+      const tip = sh && s.from === sh.body && this.shotLooks.launches.start(s, sh.shotSource, sh.zoom);
+      if (made && !world.viewFogged(s.x, s.y)) { const p = tip || s; burst(made, p.x, p.y, p.z); }
       const own = !!this.shooter && this.shooter.mine(s.from);
       if (this.music && s.from && (this.shooter ? own || this.shooter.nearFight(s.x, s.y) : world.ally(s.from.side, this.me) || (s.target && s.target.side >= 0 && world.ally(s.target.side, this.me))))
         this.music.fought = world.time;
@@ -2378,6 +2382,7 @@ export class LandGame {
       ui = this.ui,
       w = this.world,
       me = this.me;
+    this.edgeCursor = edgeCursor(el, this.life.signal);
     const addEventListener = (ev, fn, opts) => this.listen(ev, this.setup.attract && ev !== 'resize' ? () => {} : fn, opts);
     addEventListener('keydown', e => {
       if (
@@ -3122,8 +3127,12 @@ export class LandGame {
         fx = -Math.cos(v.yaw),
         fy = -Math.sin(v.yaw);
       const steer = !!this.direct && this.steerDirect();
-      const f = steer ? 0 : (held(k, 'SCROLL_UP') ? 1 : 0) - (held(k, 'SCROLL_DOWN') ? 1 : 0);
-      const r = steer ? 0 : (held(k, 'SCROLL_RIGHT') ? 1 : 0) - (held(k, 'SCROLL_LEFT') ? 1 : 0);
+      const free = !steer && (!this.shooter || this.shooter.state === 'command') && !this.setup.attract && !this.warming && !this.over &&
+        !this.down && !this.turnDrag && !this.moveDragOn && !this.chase?.on && !this.track?.on && !this.cine?.on &&
+        !this.tacticalCinematics?.on && !this.tacticalMovies?.active && !this.chatDlg;
+      const edge = free && this.edgeCursor?.();
+      const f = steer ? 0 : panAxis(k, 'SCROLL_UP', 'SCROLL_DOWN', edge?.forward);
+      const r = steer ? 0 : panAxis(k, 'SCROLL_RIGHT', 'SCROLL_LEFT', edge?.right);
       v.x += (fx * f + fy * r) * sp;
       v.y += (fy * f - fx * r) * sp;
       if (held(k, 'ROTATE_LEFT')) v.yaw -= real * 1.2;
@@ -3374,6 +3383,15 @@ export class LandGame {
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
       w.look.see = viewTest(cam);
     }
+    // Suppress the local avatar for drawing only. The simulated unit retains its
+    // real pose, visibility and muzzle for AI, projectiles and network updates.
+    const kit = this.shooter?.firstPerson && !this.cine?.on && !this.tacticalCinematics?.on ? this.shooter.viewKit : null;
+    const hiddenBody = kit && this.shooter.body?.holder.visible ? this.shooter.body.holder : null;
+    if (hiddenBody) hiddenBody.visible = false;
+    const sh = this.shooter;
+    const tumble = sh?.state === 'alive' && sh.body?.holder.visible && !sh.body.dead && sh.third && sh.P.dash && !sh.seatOf() && !sh.big &&
+      !this.cine?.on && !this.tacticalCinematics?.on && (this.rollPose ||= new RollPose());
+    if (tumble) tumble.apply(sh.body.holder, sh.P.dash, sh.eye / .9);
     if (B) {
       const loose = (this.looseList ||= []);
       loose.length = 0;
@@ -3392,6 +3410,10 @@ export class LandGame {
         off = fx ? fx.begin() : false;
       R.clear();
       draw(cam);
+      if (kit?.root) {
+        R.clearDepth();
+        R.render(kit.scene, cam);
+      }
       if (off) fx.end(cam);
       if (R === this.gpu) R.endFrame();
       if (this.sameFrame) this.sameFrame(cam);
@@ -3400,6 +3422,8 @@ export class LandGame {
       this.scene.matrixWorldAutoUpdate = true;
       B.restore();
     }
+    if (tumble) tumble.restore();
+    if (hiddenBody) hiddenBody.visible = true;
     if (!skip) {
       this.drawBars();
       this.shooter?.ov?.paint();
@@ -4430,7 +4454,7 @@ export class LandGame {
     this.boltGeo ||= new THREE.BoxGeometry(1, 1, 1);
     const mat = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     this.boltMats ||= { red: mat(0xff3a2a), green: mat(0x4dff5a), other: mat(0xffd070) };
-    this.shotLooks.update(w.shots, this.camera, w.look);
+    this.shotLooks.update(w.shots, this.camera, w.look, this.shooter?.shotSource);
     if (!this.shadows) {
       const cv = document.createElement('canvas');
       cv.width = cv.height = 64;

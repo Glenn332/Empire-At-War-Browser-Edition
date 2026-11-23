@@ -8,7 +8,8 @@ import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
-import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan } from './keybinds.js';
+import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
+import { edgeCursor, panAxis } from './edge-scroll.js';
 
 const ORDER_KEYS = [
   ['ATTACK_MOVE', 'attackmove'],
@@ -196,6 +197,9 @@ export class UI {
   bind() {
     const dom = this.r.dom;
     this.handlers = [];
+    const edgeLife = new AbortController();
+    this.edgeCursor = edgeCursor(dom, edgeLife.signal);
+    this.handlers.push(() => edgeLife.abort());
     const on = (el, ev, fn, opts) => {
       el.addEventListener(ev, fn, opts);
       this.handlers.push(() => el.removeEventListener(ev, fn, opts));
@@ -1667,20 +1671,11 @@ export class UI {
       this.beaconView.update(w.beacons.live(w.time).filter(b => b.owner.team === this.player.team));
     }
     const pan = rig.dist * 0.9 * dt;
-    let px = 0,
-      py = 0;
-    if (held(k, 'SCROLL_LEFT')) px -= 1;
-    if (held(k, 'SCROLL_RIGHT')) px += 1;
-    if (held(k, 'SCROLL_UP')) py += 1;
-    if (held(k, 'SCROLL_DOWN')) py -= 1;
-    const m = this.mouse;
-    if (m.inside && m.moved && edgePan() && !this.drag && !this.track?.on && document.hasFocus()) {
-      const edge = 6;
-      if (m.x < edge) px -= 1;
-      else if (m.x > this.r.width - edge) px += 1;
-      if (m.y < edge) py += 1;
-      else if (m.y > this.r.height - edge) py -= 1;
-    }
+    const g = this.game, m = this.mouse;
+    const edge = !this.drag && !this.panDrag && !this.turnDrag && !this.direct && !this.track?.on && !this.r.chase?.on && !g.menus?.open && !g.chatDlg &&
+      !g.controlsLocked && !g.cine?.on && !g.tacticalCinematics?.on && !g.tacticalMovies?.active && !g.setup.attract && !g.over && this.edgeCursor();
+    let px = panAxis(k, 'SCROLL_RIGHT', 'SCROLL_LEFT', edge?.right),
+        py = panAxis(k, 'SCROLL_UP', 'SCROLL_DOWN', edge?.forward);
     if (this.direct) {
       px = py = 0;
       this.driveDirect();

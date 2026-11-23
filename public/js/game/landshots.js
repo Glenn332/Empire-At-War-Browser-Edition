@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { loadModel } from '../model.js';
 import { db } from '../gamedata.js';
 import { LaserBatch } from './laser.js';
+import { MuzzleLaunches } from './shot-presentation.js';
 
 const MAX = 900;
 const _q = new THREE.Quaternion(),
@@ -9,14 +10,15 @@ const _q = new THREE.Quaternion(),
   _up = new THREE.Vector3(0, 0, 1);
 
 export class Shots {
-  constructor(scene, fx) {
+  constructor(scene, fx, battlefront = false) {
     this.scene = scene;
     this.fx = fx;
-    this.beams = new LaserBatch(MAX, false);
+    this.beams = new LaserBatch(MAX, false, battlefront);
     this.kites = new LaserBatch(MAX, true);
     scene.add(this.beams.mesh, this.kites.mesh);
     this.looks = new Map();
     this.live = new Map();
+    this.launches = new MuzzleLaunches();
     this.spare = new Map();
   }
 
@@ -35,7 +37,7 @@ export class Shots {
     return L;
   }
 
-  update(shots, camera, look) {
+  update(shots, camera, look, source = null) {
     const seen = new Set(),
       beams = this.beams,
       kites = this.kites;
@@ -55,28 +57,40 @@ export class Shots {
       if (s.hidden) continue;
       const L = this.lookOf(s.w.proj);
       if (L.kind === 'none') continue;
+      const p = this.launches.sample(s, source);
       if (L.kind === 'pill') {
         if (look && (s.x - look.x) ** 2 + (s.y - look.y) ** 2 > look.r * look.r * 1.5) continue;
-        const sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
-        (L.laser.kite ? kites : beams).add(s.x, s.y, s.z, s.vx / sp, s.vy / sp, s.vz / sp, L.long, L.wide, L.laser);
+        const sp = Math.hypot(p.vx, p.vy, p.vz) || 1,
+          dx = p.vx / sp,
+          dy = p.vy / sp,
+          dz = p.vz / sp;
+        const near = p.near || 0,
+          scale = 1 - near * 0.91,
+          focused = this.launches.focused.has(s),
+          len = L.long * scale * (focused ? 1.7 : 1),
+          width = L.wide * scale * (focused ? 1.8 : 1);
+        // The pill is centered. Its trailing cap, not its middle, leaves the tip.
+        const front = (p.launch || 0) * (len * 0.5 + width);
+        (L.laser.kite ? kites : beams).add(p.x + dx * front, p.y + dy * front, p.z + dz * front, dx, dy, dz, len, width, L.laser);
         continue;
       }
       seen.add(s);
       let it = this.live.get(s);
       if (!it) {
         if (L.kind === 'fx') {
-          const sys = this.fx.spawn(L.file, f => {
-            f.x = s.x;
-            f.y = s.y;
-            f.z = s.z;
-            f.rot = Math.atan2(s.vy, s.vx) + Math.PI / 2;
-            f.scale = 1;
-            f.vx = s.vx;
-            f.vy = s.vy;
-            f.vz = s.vz || 0;
+          it = { pose: p };
+          it.sys = this.fx.spawn(L.file, f => {
+            const a = it.pose;
+            f.x = a.x;
+            f.y = a.y;
+            f.z = a.z;
+            f.rot = Math.atan2(a.vy, a.vx) + Math.PI / 2;
+            f.scale = 1 - 0.91 * (a.near || 0);
+            f.vx = a.vx;
+            f.vy = a.vy;
+            f.vz = a.vz || 0;
           });
-          if (!sys) continue;
-          it = { sys };
+          if (!it.sys) continue;
         } else {
           const pool = this.spare.get(L.file) || [];
           let holder = pool.pop();
@@ -95,13 +109,15 @@ export class Shots {
         }
         this.live.set(s, it);
       }
+      if (it.sys) it.pose = p;
       if (it.holder) {
-        const sp = Math.hypot(s.vx, s.vy) || 1e-3,
+        const sp = Math.hypot(p.vx, p.vy) || 1e-3,
           k = Math.max(0, 1 - s.left / s.total);
-        const rise = s.vz + (s.arc ? (s.arc * 4 * (1 - 2 * k) * (s.speed ?? s.w.speed)) / Math.max(1, s.total) : 0);
-        it.holder.position.set(s.x, s.y, s.z);
+        const rise = p.vz + (s.arc ? (s.arc * 4 * (1 - 2 * k) * (s.speed ?? s.w.speed)) / Math.max(1, s.total) : 0);
+        it.holder.position.set(p.x, p.y, p.z);
+        it.holder.scale.setScalar(L.scale * (1 - 0.91 * (p.near || 0)));
         it.holder.quaternion
-          .setFromAxisAngle(_up, Math.atan2(s.vy, s.vx) + Math.PI / 2)
+          .setFromAxisAngle(_up, Math.atan2(p.vy, p.vx) + Math.PI / 2)
           .multiply(_q.setFromAxisAngle(_X, -Math.atan2(rise, sp)));
       }
     }
