@@ -1,0 +1,420 @@
+/* Deployment uses the reference screen's four anchors. No surrounding console. */
+.sh-deploy.bf-deploy {
+  background: radial-gradient(ellipse at 48% 49%, transparent 20%, #08070655 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.56), rgba(0, 0, 0, 0.47) 45%, rgba(0, 0, 0, 0.63));
+}
+body:has(.bf-deploy[style*='display: flex']) :is(.sh-tickets, .sh-ann, .sh-banner) {
+  visibility: hidden;
+}
+.bf-screen {
+  position: relative;
+  width: min(100%, 163vh);
+  height: 100%;
+  margin: auto;
+  color: #fff;
+  font:
+    700 clamp(11px, 1.63vh, 19px) / 1.2 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.105em;
+  text-shadow:
+    1px 1px 2px #070707,
+    -1px 0 2px #070707;
+  isolation: isolate;
+  --bf-gold: #f4ce63;
+  --bf-ivory: #f2ecd8;
+  --bf-brass: #a18951;
+}
+.bf-screen * {
+  box-sizing: border-box;
+}
+.bf-screen .sh-cards {
+  position: absolute;
+  z-index: 2;
+  left: 4.9%;
+  top: 2.6%;
+  width: 31.2%;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, 0.58vh, 7px);
+  padding: 1px 2px 4px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #8d969b #14171a44;
+}
+.bf-card {
+  position: relative;
+  display: block;
+  flex: none;
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0 2px 2px;
+  background: transparent;
+  color: #ced0d2;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-shadow: inherit;
+  text-align: center;
+}
+.bf-card strong {
+  display: block;
+  position: relative;
+  border: clamp(1px, 0.28vh, 3px) solid #77776b;
+  border-radius: 999px;
+  background: linear-gradient(#92948b, #444846 16%, #303535 49%, #24292a 53%, #383c3c 85%, #646961);
+  box-shadow:
+    0 0 0 1px #0d1114,
+    inset 0 1px 0 #d8d9d7a6,
+    inset 0 -2px 2px #20262bc7;
+}
+.bf-card strong {
+  margin: 0 2%;
+  height: auto;
+  min-height: 2.25vh;
+  line-height: 1.25;
+  padding: 0 5px;
+  font-size: clamp(10px, 1.65vh, 18px);
+  color: #e3e1d3;
+  text-shadow: 0 1px 2px #030403;
+  letter-spacing: 0.13em;
+}
+.bf-card .bf-loadout {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-height: 9.55vh;
+  gap: 0.3vh;
+  margin-top: 0.35vh;
+  padding: 0.55vh 3%;
+  background: linear-gradient(110deg, #181910d9, #060705dc 65%);
+  border: clamp(2px, 0.5vh, 5px) solid;
+  border-image: linear-gradient(125deg, #34383b 0%, #aeb3b5 7%, #4d5256 21%, #8b9093 33%, #383b3e 47%, #aeb2b5 66%, #393e43 88%, #909699) 1;
+  box-shadow:
+    inset 0 0 0 1px #151515,
+    0 1px 2px #000;
+  line-height: 1.1;
+  font-size: clamp(10px, 1.47vh, 17px);
+  overflow-wrap: anywhere;
+}
+.bf-loadout {
+  container-type: inline-size;
+}
+.bf-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  width: min(96%, 27em);
+  margin-top: 0.24em;
+  padding-top: 0.24em;
+  border-top: 1px solid #a99a6c48;
+  color: #f0eede;
+  font:
+    700 clamp(10px, 1.48vh, 17px) / 1.1 Arial,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.025em;
+}
+.bf-stat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28em;
+  white-space: nowrap;
+}
+.bf-stat i {
+  flex: none;
+  width: 1.44em;
+  aspect-ratio: 1;
+  background-color: var(--stat-ink);
+  mask: none center/contain no-repeat;
+}
+.bf-stat-health {
+  --stat-ink: #91e6aa;
+}
+.bf-stat-fire {
+  --stat-ink: #ffa27e;
+}
+.bf-stat-range {
+  --stat-ink: #89daff;
+}
+.bf-stat-speed {
+  --stat-ink: #e4bdff;
+}
+.bf-price {
+  color: #e6ca84;
+}
+@container (max-width: 175px) {
+  .bf-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(98%, 12em);
+    row-gap: 2px;
+  }
+}
+.bf-loadout:before,
+.bf-loadout:after {
+  content: '';
+  position: absolute;
+  inset: -4px auto -4px -4px;
+  width: 5px;
+  background: linear-gradient(#dadbdd 0 7%, #5d6064 7% 12%, transparent 12% 87%, #45494d 87% 94%, #b2b4b6 94%);
+  pointer-events: none;
+}
+.bf-loadout:after {
+  left: auto;
+  right: -4px;
+}
+.bf-card.on {
+  color: #fff;
+}
+.bf-card.on strong {
+  color: var(--bf-gold);
+  background: linear-gradient(#8b8162, #484333 15%, #322f24 48%, #211f18 52%, #373427 85%, #71664a);
+  border-color: var(--bf-brass);
+}
+.bf-card.on .bf-loadout {
+  color: var(--bf-ivory);
+  background: linear-gradient(105deg, #201d12dc, #090a08e3 65%);
+  border-image: linear-gradient(125deg, #c6b57c, #635d48 25%, #baad7c 47%, #5e5a4e 74%, #a39975) 1;
+}
+.bf-card.locked:not(.on) {
+  filter: brightness(0.68);
+}
+.bf-card:hover strong {
+  filter: brightness(1.12);
+}
+.bf-screen button:focus-visible,
+.bf-screen canvas:focus-visible {
+  outline: 2px solid var(--bf-gold);
+  outline-offset: 1px;
+}
+.bf-model {
+  pointer-events: none;
+  position: absolute;
+  /* The portrait and Spawn share a centerline. Fit wide vehicles inside the
+     free column rather than letting them disappear beneath the map or cards. */
+  top: 17%;
+  bottom: 21%;
+  left: 39%;
+  width: 22%;
+  background: var(--unit-icon) center/auto 33% no-repeat;
+  z-index: 1;
+}
+.bf-model.rendered {
+  background: none;
+}
+.bf-model:not(.rendered) canvas {
+  visibility: hidden;
+}
+/* Apply to the transparent model layer, including the native icon fallback,
+   not the scene or the lock price. No fade that could reveal a locked skin. */
+.bf-model.bf-locked {
+  filter: brightness(0) drop-shadow(0 0 1px #dbd4ae80);
+}
+.bf-model canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(2px 5px 3px #0006);
+}
+.bf-spawn {
+  position: absolute;
+  left: 38%;
+  width: 24%;
+  top: 80%;
+  z-index: 3;
+  text-align: center;
+}
+.bf-count {
+  margin: 0 auto 2.5vh;
+  font-size: clamp(11px, 1.65vh, 18px);
+  color: var(--bf-ivory);
+  min-height: 1em;
+}
+.bf-screen .bf-go {
+  /* Reference bar: about 204 × 22 at 1024 × 768. A pewter lip,
+     black inner groove and flat slate face, rather than a shiny pill. */
+  appearance: none;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  padding: 0 1em;
+  color: #fffdf4;
+  width: 84%;
+  min-width: 0;
+  height: clamp(18px, 2.9vh, 34px);
+  border: clamp(1px, 0.24vh, 3px) solid #8e8d83;
+  border-radius: 1.25vh;
+  font:
+    800 clamp(12px, 1.96vh, 23px) / 1 'Verdana',
+    Arial,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 2px #232323;
+  background: linear-gradient(#62636a, #5b5d65 34%, #555760 78%, #51535b);
+  box-shadow:
+    0 0 0 1px #10110f,
+    inset 0 0 0 clamp(1px, 0.23vh, 3px) #212222,
+    inset 0 0 4px 2px #37383a;
+  cursor: pointer;
+}
+.bf-screen .bf-go:is(:hover, :focus-visible):not(:disabled) {
+  border-color: #d1bd86;
+  color: var(--bf-gold);
+  background: linear-gradient(#6d6c69, #585958);
+}
+.bf-screen .bf-go:active:not(:disabled) {
+  background: #4a4945;
+  box-shadow:
+    0 0 0 1px #151410,
+    inset 0 2px 3px 2px #22221d;
+}
+.bf-screen .bf-go:disabled {
+  cursor: default;
+  filter: brightness(0.55);
+}
+.bf-screen .sh-status {
+  margin-top: 1vh;
+  font:
+    700 clamp(10px, 1.5vh, 16px) / 1.2 Arial,
+    sans-serif;
+  color: #ffe585;
+  letter-spacing: 0.05em;
+}
+.bf-objective {
+  position: absolute;
+  left: 60%;
+  right: 3%;
+  top: 10.25%;
+  text-align: center;
+  color: var(--bf-gold);
+  font:
+    700 clamp(12px, 2vh, 24px) / 1.2 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.105em;
+}
+.bf-map {
+  position: absolute;
+  left: 60%;
+  right: 3%;
+  top: 22.3%;
+  aspect-ratio: 1;
+  max-height: 54%;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bf-screen .sh-map {
+  display: block;
+  width: min(100%, 54vh);
+  height: auto;
+  max-height: 54vh;
+  aspect-ratio: 1;
+  touch-action: manipulation;
+  border-radius: 50%;
+}
+.bf-north {
+  position: absolute;
+  top: -7%;
+  width: 7.6%;
+  height: auto;
+  left: 46.2%;
+  filter: drop-shadow(0 1px 2px #333);
+}
+.bf-post {
+  appearance: none;
+  position: absolute;
+  left: 64%;
+  width: 27%;
+  top: 83.7%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.15vw;
+  min-height: 4vh;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #eeefef;
+  font:
+    700 clamp(9px, 1.35vh, 16px) / 1.2 Arial,
+    sans-serif;
+  letter-spacing: 0.18em;
+  text-shadow: 1px 1px 2px #000;
+  cursor: pointer;
+}
+.bf-post:disabled {
+  cursor: default;
+}
+.bf-post i {
+  display: inline-block;
+  width: clamp(18px, 3.9vh, 44px);
+  aspect-ratio: 1;
+  border: clamp(2px, 0.4vh, 4px) solid #2164b5;
+  border-radius: 50%;
+  background: radial-gradient(circle, #2279d8 0 37%, transparent 42%);
+  box-shadow:
+    0 0 0 1px #d6b259,
+    inset 0 0 2px #081426;
+}
+@media (max-aspect-ratio: 1/1) {
+  .bf-screen {
+    height: min(100%, 150vw);
+  }
+  .bf-screen .sh-cards {
+    left: 2%;
+    width: 34%;
+    top: 5%;
+  }
+  .bf-screen .bf-loadout {
+    min-height: 8vw;
+  }
+  .bf-card strong {
+    font-size: 10px;
+  }
+  .bf-map {
+    left: 59%;
+    right: 1%;
+    top: 29%;
+    max-height: none;
+  }
+  .bf-north {
+    top: -11%;
+  }
+  .bf-objective {
+    left: 60%;
+    right: 1%;
+    top: 14%;
+    font-size: 11px;
+  }
+  .bf-spawn {
+    left: 32%;
+    width: 32%;
+    top: 76%;
+  }
+  .bf-model {
+    left: 36%;
+    width: 24%;
+    top: 25%;
+    bottom: 25%;
+  }
+  .bf-post {
+    left: 62%;
+    width: 36%;
+    top: 78%;
+    gap: 6px;
+    font-size: 9px;
+  }
+  .bf-count {
+    font-size: 10px;
+  }
+  .bf-screen .bf-go {
+    font-size: 14px;
+  }
+}

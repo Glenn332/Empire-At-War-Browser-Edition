@@ -17,6 +17,7 @@
     "test:space-hooks": "node tools/test-space-hooks.mjs",
     "test:space-direct": "node tools/test-space-direct.mjs",
     "test:modules": "node tools/test-module-graph.mjs",
+    "test:deploy": "node tools/test-deploy-framing.mjs && node tools/test-deploy-motion.mjs && node tools/test-deploy-roster.mjs && node tools/test-deploy-disc.mjs && node tools/test-defense-marks.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
