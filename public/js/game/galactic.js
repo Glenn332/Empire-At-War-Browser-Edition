@@ -30,7 +30,7 @@ import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { fontPixels } from '../fontpolicy.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
-import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
+import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, stampIds, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
@@ -278,7 +278,10 @@ export class GalacticGame {
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     else if (this.setup.campaignSettings) applyCampaignSettings(g, this.setup.campaignSettings, camp.str('Starting_Active_Player'));
-    if (this.setup.net) this.multiplayerGalaxy(g);
+    if (this.setup.net) {
+      this.multiplayerGalaxy(g);
+      stampIds(g);
+    }
     g.budgetCreditChange = (owner, amount) => this.ai?.creditChange?.(owner, amount);
     g.storyEntry = (fleet, planet) => !!this.story?.entryAllowed?.(fleet, planet);
     g.onBounce = (fleet, to) => this.story?.fleetBounced?.(fleet, g.planets[to]);
@@ -1793,7 +1796,7 @@ export class GalacticGame {
             this.order(
               special.raid
                 ? f.planet === special.p
-                  ? orders.land(g, f, special.p)
+                  ? orders.land(g, f, special.p, null, true)
                   : orders.move(g, f, special.p, null, { raid: true })
                 : f.planet === special.p
                   ? orders.slot(g, special.record, special.p)
@@ -3763,6 +3766,7 @@ export class GalacticGame {
     if (!held && !this.paused && !this.busy && !this.held && !this.over) this.simulate(dt);
     this.pendingBattle?.tick?.();
     this.mpBattles?.tick();
+    stampIds(this.galaxy);
   }
 
   simulate(dt) {
@@ -3823,7 +3827,9 @@ export class GalacticGame {
           if (!raid && blocks(this.galaxy, p, f.owner, f))
             for (const o of pullIn(this.galaxy, p, f)) this.story?.fleetEntered?.(o, this.galaxy.planets[p]);
           this.mergeFleets();
-          const there = this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg) || f;
+          // the fleet it merged into in its own orbital slot, not just any of the owner's fleets here
+          const there =
+            this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg && (x.slot ?? 0) === (f.slot ?? 0)) || f;
           this.checkConflict(there, p);
           this.fireArrival(there, p);
           if (f.landOn === p) {

@@ -309,6 +309,24 @@ const visibilitySnapshot = v => ({
 });
 const visibilityState = v => ({ viewer: v.viewer, clock: v.clock || 0, planets: (v.planets || []).map(p => ({ ...p })) });
 
+// every fleet and unit record gets an id that multiplayer orders name, since array positions shift before an order runs;
+// called from the lockstep simulation only, so all peers hand out the same ids
+export function stampIds(g) {
+  const seen = new Set();
+  let next = Math.max(1, g.nextId || 1);
+  const stamp = x => {
+    if (!Number.isInteger(x.nid) || x.nid <= 0 || seen.has(x.nid)) x.nid = next++;
+    else if (x.nid >= next) next = x.nid + 1;
+    seen.add(x.nid);
+  };
+  for (const f of g.fleets) {
+    stamp(f);
+    for (const u of f.units) stamp(u);
+  }
+  for (const p of g.planets) for (const l of [p.garrison, p.groundStructures, p.orbitalStructures]) for (const u of l) stamp(u);
+  g.nextId = next;
+}
+
 export function snapshotGalaxy(g) {
   const n = t => (t ? t.name : null),
     list = l =>
@@ -318,6 +336,7 @@ export function snapshotGalaxy(g) {
         x.markerId ?? -1,
         {
           checkContestedSpace: x.checkContestedSpace,
+          ...(x.nid ? { nid: x.nid } : {}),
           ...(x.detectNext ? { detectNext: { ...x.detectNext } } : {}),
           ...(Number.isInteger(x.guiIndex) ? { guiIndex: x.guiIndex } : {}),
           ...(x.speedScale ? { speedScale: x.speedScale } : {}),
@@ -328,6 +347,7 @@ export function snapshotGalaxy(g) {
     campaign: g.campaign.name,
     ...(g.humans ? { humans: g.humans.slice() } : {}),
     time: g.time || 0,
+    ...(g.nextId ? { nextId: g.nextId } : {}),
     sabotageOff: !!g.sabotageOff,
     victoryMovies: !!g.victoryMovies,
     fiscal: g.fiscal ? { ...g.fiscal } : null,
@@ -453,6 +473,7 @@ export function snapshotGalaxy(g) {
       production: Object.fromEntries(['space', 'ground'].map(k => [k, p.production[k].map(q => ({ ...q, type: n(q.type) }))]))
     })),
     fleets: g.fleets.map(f => ({
+      ...(f.nid ? { nid: f.nid } : {}),
       owner: f.owner,
       planet: f.planet,
       ...(f.slot !== undefined ? { slot: f.slot } : {}),
@@ -469,6 +490,7 @@ export function snapshotGalaxy(g) {
         u.markerId ?? -1,
         {
           checkContestedSpace: u.checkContestedSpace,
+          ...(u.nid ? { nid: u.nid } : {}),
           ...(u.raiding ? { raiding: true } : {}),
           ...(u.pathfinder ? { pathfinder: true } : {}),
           ...(Number.isInteger(u.guiIndex) ? { guiIndex: u.guiIndex } : {}),
@@ -491,6 +513,8 @@ export function applyGalaxy(g, s) {
   const t = name => (name ? db.type(name) || null : null),
     list = l => l.map(([n, owner, markerId = -1, flags = {}]) => ({ type: t(n), owner, markerId, ...flags })).filter(x => x.type);
   g.time = s.time || 0;
+  if (s.nextId) g.nextId = s.nextId;
+  else delete g.nextId;
   g.diplomacy = s.diplomacy ? { ...s.diplomacy } : undefined;
   setDiplomacy(g.diplomacy);
   g.sabotageOff = !!s.sabotageOff;
@@ -617,6 +641,7 @@ export function applyGalaxy(g, s) {
   });
   g.fleets = s.fleets
     .map(f => ({
+      ...(f.nid ? { nid: f.nid } : {}),
       owner: f.owner,
       planet: f.planet,
       ...(f.slot !== undefined ? { slot: f.slot } : {}),

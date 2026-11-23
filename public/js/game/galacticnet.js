@@ -13,6 +13,7 @@ import { executeHack } from './galactichack.js';
 import { sabotageStructure } from './galacticsabotage.js';
 import { completePurchase } from './blackmarket.js';
 import { locateRecord } from './galacticsell.js';
+import { isRaidForce } from './raid.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -58,6 +59,7 @@ export function galaxyHash(game) {
   }
   mixInt(g.fleets.length);
   for (const f of g.fleets) {
+    mixInt(f.nid);
     mixStr(f.owner);
     mixInt(f.planet);
     mixInt(f.dest);
@@ -71,8 +73,10 @@ export function galaxyHash(game) {
   return h >>> 0;
 }
 
+// by stable id where the simulation stamped one (multiplayer), else by position
 export function recordRef(g, u) {
   if (!u) return null;
+  if (Number.isInteger(u.nid)) return ['n', u.nid];
   for (let fi = 0; fi < g.fleets.length; fi++) {
     const ui = g.fleets[fi].units.indexOf(u);
     if (ui >= 0) return ['f', fi, ui];
@@ -91,29 +95,46 @@ export function recordRef(g, u) {
 export function fromRecordRef(g, r) {
   if (!Array.isArray(r)) return null;
   const [w, a, b] = r;
+  if (w === 'n') return Number.isInteger(a) ? recordById(g, a) : null;
   if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
   if (w === 'f') return g.fleets[a]?.units[b] || null;
   const p = g.planets[a];
   return (p && { g: p.garrison, s: p.groundStructures, o: p.orbitalStructures }[w]?.[b]) || null;
+}
+function recordById(g, id) {
+  for (const f of g.fleets) for (const u of f.units) if (u.nid === id) return u;
+  for (const p of g.planets)
+    for (const l of [p.garrison, p.groundStructures, p.orbitalStructures]) for (const u of l) if (u.nid === id) return u;
+  return null;
 }
 // fleet units carry no owner of their own: ask where the record sits, so another faction's hero can't be borrowed
 const ownsRecord = (g, rec, faction, planet = null) => {
   const at = !rec?.dead && locateRecord(g, rec);
   return !!at && key(at.owner) === key(faction) && (!planet || at.planet === planet.index);
 };
-const fleetRef = (g, f) => (f ? g.fleets.indexOf(f) : -1);
-const fleetOf = (g, i) => (Number.isInteger(i) && i >= 0 ? g.fleets[i] || null : null);
+export const fleetRef = (g, f) => (!f ? -1 : Number.isInteger(f.nid) ? ['n', f.nid] : g.fleets.indexOf(f));
+const fleetOf = (g, r) =>
+  Array.isArray(r)
+    ? (r[0] === 'n' && Number.isInteger(r[1]) && g.fleets.find(f => f.nid === r[1])) || null
+    : Number.isInteger(r) && r >= 0
+      ? g.fleets[r] || null
+      : null;
+// a fleet the order named that is gone by now: the order is dropped rather than run on whatever took its place
+const lostFleet = (g, r) => r != null && r !== -1 && !fleetOf(g, r);
 const refs = (g, list) => (list ? list.map(u => recordRef(g, u)) : null);
 const records = (g, list) => (Array.isArray(list) ? list.map(r => fromRecordRef(g, r)).filter(Boolean) : null);
+const lostRecords = (g, list) => Array.isArray(list) && records(g, list).length !== list.length;
 
 function sideRef(g, s) {
   return s && { kind: s.kind, planet: s.planet, fleet: fleetRef(g, s.fleet), recs: refs(g, s.records), slot: s.slot, pf: !!s.pf };
 }
 const SIDE_KINDS = new Set(['fleet', 'ground']);
 const index = v => v == null || Number.isInteger(v);
+const fleetIndex = v => index(v) || (Array.isArray(v) && v[0] === 'n' && Number.isInteger(v[1]));
 function sideOf(g, s) {
-  if (!s || typeof s !== 'object' || !SIDE_KINDS.has(s.kind) || !Number.isInteger(s.planet) || !index(s.fleet) || !index(s.slot))
+  if (!s || typeof s !== 'object' || !SIDE_KINDS.has(s.kind) || !Number.isInteger(s.planet) || !fleetIndex(s.fleet) || !index(s.slot))
     return null;
+  if (lostFleet(g, s.fleet) || lostRecords(g, s.recs)) return null;
   return { kind: s.kind, planet: s.planet, fleet: fleetOf(g, s.fleet), records: records(g, s.recs), slot: s.slot, pf: !!s.pf };
 }
 
@@ -141,7 +162,7 @@ export const orders = {
         ? humanPath(g, { owner: g.planets[p]?.garrison.find(u => u.owner)?.owner, units: recs || g.planets[p]?.garrison || [] }, to, p)
         : null
   }),
-  land: (g, f, p, recs = null) => ({ c: 'land', f: fleetRef(g, f), p, recs: refs(g, recs) }),
+  land: (g, f, p, recs = null, raid = false) => ({ c: 'land', f: fleetRef(g, f), p, recs: refs(g, recs), raid: !!raid }),
   drop: (g, s, t) => ({ c: 'drop', s: sideRef(g, s), t: sideRef(g, t) }),
   build: (g, p, type) => ({ c: 'build', p, type: type.name }),
   cancel: (g, p, item) => {
@@ -156,14 +177,16 @@ export const orders = {
   sell: (g, rec) => ({ c: 'sell', rec: recordRef(g, rec) })
 };
 
-// planet, fleet, slot and list indices must be plain integers: a string "3" still finds planet 3 but then
+// planet, slot and list indices must be plain integers (fleets may also be named by id): a string "3" still finds planet 3 but then
 // never matches it again in the battle and blockade checks
-const INDEX_FIELDS = ['p', 'to', 'f', 'tf', 'slot', 'i'],
+const INDEX_FIELDS = ['p', 'to', 'slot', 'i'],
+  FLEET_FIELDS = ['f', 'tf'],
   COUNTED_IDS = new Set(['marker', 'layoutLand', 'choice', 'battle', 'result']);
 const validCommand = cmd =>
   !!cmd &&
   typeof cmd === 'object' &&
   INDEX_FIELDS.every(k => index(cmd[k])) &&
+  FLEET_FIELDS.every(k => fleetIndex(cmd[k])) &&
   (!COUNTED_IDS.has(cmd.c) || Number.isInteger(cmd.id)) &&
   (cmd.c !== 'choice' || Number.isInteger(cmd.index));
 
@@ -186,13 +209,13 @@ export function runCommand(game, faction, cmd) {
     case 'transfer': {
       const f = fleetOf(g, cmd.f),
         tf = fleetOf(g, cmd.tf);
-      if (!own(f) || (tf && !own(tf))) return {};
+      if (!own(f) || (tf && !own(tf)) || lostFleet(g, cmd.tf) || lostRecords(g, cmd.recs)) return {};
       if (game.transferUnits(f, cmd.slot, records(g, cmd.recs), tf)) game.galacticBattleChanged();
       return {};
     }
     case 'embark': {
       const tf = fleetOf(g, cmd.tf);
-      if (tf && !own(tf)) return {};
+      if ((tf && !own(tf)) || lostFleet(g, cmd.tf) || lostRecords(g, cmd.recs)) return {};
       if (cmd.fresh) {
         if (g.planets[cmd.to] && !Array.isArray(cmd.path)) return {};
         const f = game.embarkFresh(cmd.p, cmd.slot);
@@ -202,7 +225,7 @@ export function runCommand(game, faction, cmd) {
     }
     case 'land': {
       const f = fleetOf(g, cmd.f);
-      if (own(f)) game.land(f, cmd.p, { records: records(g, cmd.recs) });
+      if (own(f) && !lostRecords(g, cmd.recs)) game.land(f, cmd.p, { records: records(g, cmd.recs), raid: !!cmd.raid && isRaidForce(f) });
       return {};
     }
     case 'drop': {
