@@ -1880,6 +1880,8 @@ export class World {
     this.fogLifted = 0;
     this.interdictors = [];
     this.timers = [];
+    this.respawns = [];
+    this.mapGone = new Set();
     this.fields = [];
     this.onEvent = () => {};
     this.hitPart = null;
@@ -2910,6 +2912,43 @@ export class World {
     }
   }
 
+  razable(t) {
+    return !!t && !t.dead && !t.squad && t.mapIndex !== undefined && t.type.num('Tactical_Respawn_Time_In_Secs', 0) > 0;
+  }
+
+  respawnLater(u) {
+    const after = u.mapIndex !== undefined && !u.squad ? u.type.num('Tactical_Respawn_Time_In_Secs', 0) : 0;
+    if (!(after > 0)) return;
+    this.respawns.push({
+      at: this.time + after,
+      type: u.type,
+      x: u.x,
+      y: u.y,
+      z: u.z,
+      heading: u.heading,
+      mapIndex: u.mapIndex,
+      owner: u.capture ? this.neutral : u.player,
+      old: u
+    });
+  }
+
+  respawnDue() {
+    const due = this.respawns.filter(r => r.at <= this.time);
+    if (!due.length) return;
+    this.respawns = this.respawns.filter(r => r.at > this.time);
+    for (const r of due) {
+      const owner = r.owner && (r.owner.id < 0 || !r.owner.defeated) ? r.owner : this.neutral,
+        u = this.spawn(r.type, owner, r.x, r.y, r.heading);
+      if (!u || u.isSquad) continue;
+      if (r.old && r.old.mapIndex === r.mapIndex) r.old.mapIndex = undefined;
+      this.mapGone.delete(r.mapIndex);
+      u.z = r.z;
+      u.mapIndex = r.mapIndex;
+      u.syncObj?.();
+      this.mapObjects?.set(r.mapIndex, [u]);
+    }
+  }
+
   kill(u, attacker) {
     if (u.dead) return;
     if (u.cannotDie) {
@@ -2917,6 +2956,8 @@ export class World {
       return;
     }
     this.removeUnit(u);
+    if (u.mapIndex !== undefined && !u.squad) this.mapGone.add(u.mapIndex);
+    this.respawnLater(u);
     for (const pick of survivorPicks(u.type)) {
       const a = simRandom() * Math.PI * 2,
         d = (u.hitRadius > 0 ? u.hitRadius : 20) + 20;
@@ -3014,6 +3055,7 @@ export class World {
     this.stepAt = 0;
     this.time += dt;
     this.launches = 0;
+    if (this.respawns.length) this.respawnDue();
     if (this.repairs && this.repairs.size) this.tickRepairs(dt);
     const units = this.units;
     this.interdictors.length = 0;
@@ -5456,7 +5498,7 @@ export class World {
       C = HIT_CELL;
     for (const l of hg.values()) l.length = 0;
     for (const o of this.units) {
-      if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0) continue;
+      if (o.dead || o.hyper || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
       const r = Math.max(
         o.hitA ? (o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL)) : o.hitRadius,
