@@ -1,5 +1,5 @@
 import { fetchBinary } from './vfs.js';
-import { decodeTGA as decodePixels } from './dds.js';
+import { decodeTGA as decodePixels, loadTextureCanvas } from './dds.js';
 
 const decodeTGA = buf => {
   const p = decodePixels(buf);
@@ -68,6 +68,15 @@ export async function loadIcons() {
       w: d.getUint32(o + 72, true),
       h: d.getUint32(o + 76, true)
     });
+  }
+  // The engine reads a .dds in place of a missing .tga, and many mods ship the atlas only as MT_CommandBar.dds,
+  // which the file system then hands us for the .tga name. Decoding that as a TGA left every icon blank.
+  if (new DataView(tga).getUint32(0, true) === 0x20534444) {
+    const cv = await loadTextureCanvas('MT_CommandBar.tga').catch(e => console.warn('MT_CommandBar', e));
+    if (!cv) return;
+    pixels = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    atlas = cv;
+    return;
   }
   const img = (pixels = decodeTGA(tga));
   atlas = document.createElement('canvas');

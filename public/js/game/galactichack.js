@@ -1,4 +1,4 @@
-import { panelSide } from './panelside.js';
+import { panelSide, offerPanel } from './panelside.js';
 import { startRemoval } from './galacticcorruption.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
@@ -31,6 +31,7 @@ export function activateHack(game, actor, planet, ability) {
   const player = playerOf(game.galaxy, actor.owner);
   if (!player || !target(game, actor, planet)) return false;
   if (humanHacker(game, player)) {
+    offerPanel(game, 'hack', actor, planet);
     if (panelSide(game, player.faction, player) === 'local') game.openHackDialog?.({ actor, planet });
     return false;
   }

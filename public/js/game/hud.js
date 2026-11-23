@@ -1590,9 +1590,11 @@ export class CommandBar {
     const credits = Math.floor(this.player.credits).toLocaleString('en-US');
     if (credits === this.creditText) return;
     this.creditText = this.tCredits.textContent = credits;
-    if (!this.measure) this.measure = document.createElement('canvas').getContext('2d');
-    const style = getComputedStyle(this.tCredits);
-    this.measure.font = `${style.fontSize} ${style.fontFamily}`;
+    if (!this.measure) {
+      const style = getComputedStyle(this.tCredits);
+      this.measure = document.createElement('canvas').getContext('2d');
+      this.measure.font = `${style.fontSize} ${style.fontFamily}`;
+    }
     this.tCreditIcon.style.left = this.creditRight - this.measure.measureText(credits).width - 9 - 9 + 'px';
   }
 

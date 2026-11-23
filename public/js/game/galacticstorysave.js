@@ -67,7 +67,7 @@ function describeObject(host, o) {
   if (o.__object) {
     const object = o.__object,
       record = object.record || object,
-      where = locate(host, record);
+      where = locateObject(host, record);
     const flags = {};
     if (object.noAI) flags.noAI = 1;
     if (object.deleteAfterBattle) flags.del = 1;
@@ -186,7 +186,7 @@ function resolveObject(host, d) {
       return dist;
     }
     case 'ob': {
-      let found = recordAt(host, d);
+      let found = objectAt(host, d);
       if (found === undefined) found = { record: { type: db.type(d.t), owner: d.ow, planet: null, pos: [0, 0, 0], dead: true } };
       if (!found) return undefined;
       const { record, planet, owner } = found;
@@ -275,8 +275,12 @@ function writeStory(host, objects) {
       ow: o.owner,
       p: o.planet ? o.planet.index : -1,
       pos: o.pos.slice(),
-      dead: !!o.dead
+      dead: !!o.dead,
+      ...(o.noAI ? { noAI: 1 } : {})
     })),
+    ...(host.bountyOn !== undefined ? { bountyOn: !!host.bountyOn } : {}),
+    ...(host.speaking?.length ? { speaking: host.speaking.slice() } : {}),
+    ...(host.speechDone?.length ? { speechDone: host.speechDone.slice() } : {}),
     plotBuckets: host.plotHash?.buckets || 8,
     plots: [...host.plots.values()].map(p => ({
       name: p.name,
@@ -353,6 +357,18 @@ export async function restoreStory(host, data) {
     if (si.scoring) host.scoring = inst;
     if (si.env !== null) inst.env = host.environment(inst);
   }
+  // created objects come first: object scripts and Lua values refer to them by index
+  host.created.length = 0;
+  for (const c of data.created)
+    host.created.push({
+      type: db.type(c.t),
+      owner: c.ow,
+      planet: c.p >= 0 ? host.game.galaxy.planets[c.p] : null,
+      pos: c.pos.slice(),
+      dead: c.dead,
+      ...(c.noAI ? { noAI: true } : {})
+    });
+  host.objectCache = null;
   host.objectScripts = new Map();
   host.objectSeq = data.objectSeq || 0;
   const objects = [],
@@ -416,15 +432,10 @@ export async function restoreStory(host, data) {
   host.neutralized = new Map(data.neutralized || []);
   host.battleClasses = (data.battleClasses || [[], []]).map(list => new Set(list));
   host.aiFlags = new Map(data.aiFlags.map(([k, ids]) => [k, new Set(ids)]));
-  host.created.length = 0;
-  for (const c of data.created)
-    host.created.push({
-      type: db.type(c.t),
-      owner: c.ow,
-      planet: c.p >= 0 ? host.game.galaxy.planets[c.p] : null,
-      pos: c.pos.slice(),
-      dead: c.dead
-    });
+  if (data.bountyOn !== undefined) host.bountyOn = data.bountyOn;
+  // a line cut off by the save counts as finished once the game goes on
+  host.speaking = [];
+  host.speechDone = [...(data.speechDone || []), ...(data.speaking || [])];
   for (const sp of data.plots) {
     const plot = [...host.plots.values()].find(p => key(p.name) === key(sp.name) && key(p.owner) === key(sp.owner));
     if (!plot) continue;

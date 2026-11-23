@@ -55,6 +55,7 @@ const moduleKey = s =>
     .replace(/\.LUA$/i, '')
     .replace(/\./g, '/');
 const yes = s => /^(true|yes|1)$/i.test(String(s));
+const WARM_PASSES = 600;
 const scriptNames = new WeakMap();
 const objectScriptName = type => {
   if (!type?.str) return undefined;
@@ -128,6 +129,7 @@ export class GalacticStoryHost extends StoryPlots {
       await host.restoreCombatEvents(game.galaxy.storySaved || []);
       host.suspended = true;
       host.errors.set('Tactical return', 'The story scripts were not saved with this game: they stay stopped');
+      if (files.length) game.message?.('The story scripts could not be saved with this game, so the story stays stopped.');
       return host;
     }
     await host.initialize(warm);
@@ -525,6 +527,16 @@ export class GalacticStoryHost extends StoryPlots {
   }
   speechQueued(name) {
     if (this.game.setup?.net) (this.speechDone ||= []).push(name);
+    else {
+      // lines still playing are saved, so STORY_SPEECH_DONE still comes after a load or a battle
+      const list = (this.speaking ||= []);
+      list.push(name);
+      if (list.length > 16) list.shift();
+    }
+  }
+  speechFinished(name) {
+    const i = this.speaking ? this.speaking.findIndex(n => key(n) === key(name)) : -1;
+    if (i >= 0) this.speaking.splice(i, 1);
   }
 
   absent(kind) {
@@ -1356,6 +1368,7 @@ export class GalacticStoryHost extends StoryPlots {
       record.planet || record.pos
         ? record
         : { record, type: record.carries || record.type, owner: owner || planet?.owner, planet, dead: false };
+    if (record.noAI) object.noAI = true;
     result = {
       __wrap: true,
       __name: object.type.name,
@@ -1400,7 +1413,10 @@ export class GalacticStoryHost extends StoryPlots {
       },
       Get_Garrisoned_Units: () => [],
       Prevent_AI_Usage: on => {
+        // kept on the galaxy record too, so the save and the return from a battle keep it
         object.noAI = !!on;
+        if (on) record.noAI = true;
+        else delete record.noAI;
       },
       Mark_Parent_Mode_Object_For_Death: () => {
         object.deleteAfterBattle = true;
@@ -1693,7 +1709,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.choices.delete(id);
     if (key(this.game.localFaction ?? this.game.me) === c.owner) this.popup.close();
     if (index >= 0) this.neutralizeExecute(c.object, c.ability, c.planet, c.rows[index]);
-    if (gui) this.clickGUI(String(gui));
+    if (gui && NeutralizeShell.control(gui, index >= 0)) this.clickGUI(gui);
   }
   heroTypes(type) {
     const members = [...type.list('Company_Units'), ...type.list('Squadron_Units')].map(n => db.type(n)).filter(Boolean);
@@ -2229,7 +2245,7 @@ export class GalacticStoryHost extends StoryPlots {
         break;
       }
       case 'LINK_TACTICAL':
-        if (!game.queueLinkedTactical?.(p))
+        if (!game.queueLinkedTactical?.(p, e.plot?.owner))
           this.errors.set(e.name, 'LINK_TACTICAL request rejected: invalid parameters or a transition is already queued');
         break;
       case 'LOAD_CAMPAIGN': {
@@ -2453,8 +2469,10 @@ export class GalacticStoryHost extends StoryPlots {
       this.objectCache = null;
       this.reasonCache.clear();
     }
+    // modeSuspended follows each peer's own battle window; in a net game hold on the lockstep battle state instead
+    const suspended = this.game.net ? !!this.game.busy : this.game.modeSuspended;
     try {
-      if (service && !this.game.paused && !this.game.modeSuspended) this.replayDelayed();
+      if (service && !this.game.paused && !suspended) this.replayDelayed();
       if (service) this.pollEvents(false, 'elapsed');
       if (service && !this.suspended)
         for (const inst of this.instances) {
@@ -2467,7 +2485,7 @@ export class GalacticStoryHost extends StoryPlots {
             this.service(inst);
           }
         }
-      if (service && !this.suspended && !this.game.paused && !this.game.modeSuspended) this.serviceObjectScripts(force);
+      if (service && !this.suspended && !this.game.paused && !suspended) this.serviceObjectScripts(force);
       if (service && this.eventTypes.get('STORY_BEGIN_ERA')?.length)
         this.signalEra(Math.max(0, ...this.game.galaxy.players.map(p => p.tech || 0)));
       if (this.techPending) {
@@ -2486,16 +2504,26 @@ export class GalacticStoryHost extends StoryPlots {
     }
   }
 
-  async warmInstance(inst, timeout = 12000) {
+  // A net game must reach the same story state on every peer before lockstep starts, so it waits for slow
+  // script loads and bounds the warm-up by passes instead of wall-clock time.
+  warmBudget(timeout) {
+    if (this.game.setup?.net) {
+      let passes = WARM_PASSES;
+      return () => passes-- > 0;
+    }
     const start = performance.now();
-    while (performance.now() - start < timeout && inst.state === 'new') {
+    return () => performance.now() - start < timeout;
+  }
+  async warmInstance(inst, timeout = 12000) {
+    const more = this.warmBudget(timeout);
+    while (inst.state === 'new' && more()) {
       if (this.pending.size) await Promise.all([...this.pending.values()]);
       else this.start(inst);
     }
   }
   async warm(timeout = 12000) {
-    const start = performance.now();
-    while (performance.now() - start < timeout && !this.disposed) {
+    const more = this.warmBudget(timeout);
+    while (!this.disposed && more()) {
       if (this.pending.size) await Promise.all([...this.pending.values()]);
       this.update(0, true);
       if (

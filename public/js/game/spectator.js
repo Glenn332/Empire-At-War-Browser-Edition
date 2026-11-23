@@ -1219,7 +1219,7 @@ export class SpectatorView {
       const head = el('div', 'sp-rep-tip-row', tip);
       head.style.setProperty('--tc', team.color);
       el('i', '', head);
-      el('span', '', head, `${this.teamLabel(best.i)} · ${this.factionLabel(team)} lost ${best.n}`);
+      el('span', '', head).textContent = `${this.teamLabel(best.i)} · ${this.factionLabel(team)} lost ${best.n}`;
       const byType = new Map();
       for (const d of best.list) {
         const key = d.type.name + '|' + (d.by || '');
@@ -1315,7 +1315,7 @@ export class SpectatorView {
         const r = el('div', 'sp-rep-tip-row', tip);
         r.style.setProperty('--tc', this.teams[i].color);
         el('i', '', r);
-        el('span', '', r, `${this.teamLabel(i)} · ${this.factionLabel(this.teams[i])}`);
+        el('span', '', r).textContent = `${this.teamLabel(i)} · ${this.factionLabel(this.teams[i])}`;
         el('b', '', r, g.fmt(v, h[k], i));
       }
       tip.style.display = 'block';

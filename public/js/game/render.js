@@ -1893,6 +1893,19 @@ export class Renderer {
         _sphere.radius = u.visualRadius;
         if (_frustum.intersectsSphere(_sphere)) hulls.push(u.x, u.y, u.z || 0, u.visualRadius);
       }
+      if (hulls.length) {
+        // Hulls are bucketed by x/y in cells wide enough that a bolt only needs its own and the neighbouring cells.
+        let big = 0;
+        for (let i = 3; i < hulls.length; i += 4) if (hulls[i] > big) big = hulls[i];
+        const G = (hullGrid.size = big + Math.max(SPACE_BOLT.missile, SPACE_BOLT.radius) * zk);
+        for (const l of hullGrid.cells.values()) l.length = 0;
+        for (let i = 0; i < hulls.length; i += 4) {
+          const k = Math.floor(hulls[i] / G) * 65536 + Math.floor(hulls[i + 1] / G);
+          let l = hullGrid.cells.get(k);
+          if (!l) hullGrid.cells.set(k, (l = []));
+          l.push(i);
+        }
+      }
       if (this.blasts) {
         const now = performance.now();
         this.blasts = this.blasts.filter(b => now < b.until);
@@ -1913,20 +1926,35 @@ export class Renderer {
           const reach = (p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius) * zk;
           let gap = Infinity,
             hi = -1;
-          for (let i = 0; i < hulls.length; i += 4) {
-            const dx = p.x - hulls[i],
-              dy = p.y - hulls[i + 1],
-              dz = p.z - hulls[i + 2],
-              out = hulls[i + 3] + reach,
-              d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 >= out * out) continue;
-            const g = Math.sqrt(d2) - hulls[i + 3];
-            if (g < gap) {
-              gap = g;
-              hi = i;
+          const G = hullGrid.size,
+            cx = Math.floor(p.x / G),
+            cy = Math.floor(p.y / G);
+          for (let ix = cx - 1; ix <= cx + 1; ix++)
+            for (let iy = cy - 1; iy <= cy + 1; iy++) {
+              const l = hullGrid.cells.get(ix * 65536 + iy);
+              if (l)
+                for (const i of l) {
+                  const dx = p.x - hulls[i],
+                    dy = p.y - hulls[i + 1],
+                    dz = p.z - hulls[i + 2],
+                    out = hulls[i + 3] + reach,
+                    d2 = dx * dx + dy * dy + dz * dz;
+                  if (d2 >= out * out) continue;
+                  const g = Math.sqrt(d2) - hulls[i + 3];
+                  if (g < gap || (g === gap && i < hi)) {
+                    gap = g;
+                    hi = i;
+                  }
+                }
             }
+          if (hi >= 0) {
+            const c = (boltPool[cand.length] ||= { p: null, hi: 0, reach: 0, prio: 0 });
+            c.p = p;
+            c.hi = hi;
+            c.reach = reach;
+            c.prio = (Math.max(0, gap) + cpos.distanceTo(_boltAt) * SPACE_BOLT.camK) ** 2;
+            cand.push(c);
           }
-          if (hi >= 0) cand.push({ p, hi, reach, prio: (Math.max(0, gap) + cpos.distanceTo(_boltAt) * SPACE_BOLT.camK) ** 2 });
         }
         if (!(P._cr ??= P.num('Projectile_Custom_Render', 0)) && !(P._sm ??= P.str('Space_Model_Name'))) continue;
         const inv = 1 / p.speed;
@@ -1943,10 +1971,12 @@ export class Renderer {
       }
       if (lit && cand.length) {
         cand.sort((a, b) => a.prio - b.prio);
-        const seen = new Set();
+        const seen = boltSeen,
+          used = boltUsed;
+        seen.clear();
+        used.clear();
         for (const c of cand) seen.add(c.hi);
-        const cap = Math.max(SPACE_BOLT.perHull, Math.ceil(lit.slots / seen.size)),
-          used = new Map();
+        const cap = Math.max(SPACE_BOLT.perHull, Math.ceil(lit.slots / seen.size));
         let n = 0;
         for (const c of cand) {
           const k = used.get(c.hi) || 0;
@@ -2292,7 +2322,11 @@ const _v = new THREE.Vector3(),
   _w = { x: 0, y: 0, z: 0 },
   _s = { x: 0, y: 0, behind: false };
 const SPACE_BOLT = { radius: 220, missile: 150, beam: 260, power: 1.4, blastMin: 200, blastScale: 4, blastTime: 0.45, blastPower: 2.4, hull: 60, zoomAt: 1500, zoomMax: 2.5, camK: 0.02, perHull: 2, beamLag: 120 },
-  _boltAt = new THREE.Vector3();
+  _boltAt = new THREE.Vector3(),
+  hullGrid = { size: 1, cells: new Map() },
+  boltPool = [],
+  boltSeen = new Set(),
+  boltUsed = new Map();
 const _frustum = new THREE.Frustum(),
   _pm = new THREE.Matrix4(),
   _sphere = new THREE.Sphere(),

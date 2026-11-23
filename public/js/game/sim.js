@@ -59,7 +59,8 @@ export function stationLevel(unit) {
 }
 const PROBE_CELL = 1024,
   PROBE_PAD = 80;
-const _nearCap = [],
+const _seek = { p: null, best: null, bi: 0, bd: 0 },
+  _nearCap = [],
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
 const ESCORT_SPACING = 140;
@@ -820,6 +821,8 @@ export class Unit {
     this.holdFire = undefined;
     this.invulnerable = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.noGarrison = undefined;
     this.suspended = undefined;
     this.aiPower = undefined;
@@ -1730,6 +1733,8 @@ export class Squad {
     this._iconFrame = undefined;
     this.scripted = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.spotted = undefined;
     this.spotLine = undefined;
     this.aiPower = undefined;
@@ -3844,24 +3849,56 @@ export class World {
       if (!l) grid.set(k, (l = []));
       l.push(u);
     }
+    // A squadron's fighters scan their shared cells once; each target still tests every fighter's own circle and cell box.
+    const groups = (this.visGroups ||= new Map()),
+      box = (this.visBox ||= []);
+    for (const g of groups.values()) g.length = 0;
+    box.length = 0;
     for (const o of units) {
       if (o.dead || o.player.id < 0) continue;
-      const bit = o.player.bit,
-        reach = Math.max(o.revealRange + maxHit, 160);
+      const reach = Math.max(o.revealRange + maxHit, 160);
       if (!(reach >= 0)) continue;
-      const x0 = Math.max(gx0, Math.floor((o.x - reach) / C)),
-        x1 = Math.min(gx1, Math.floor((o.x + reach) / C)),
-        y0 = Math.max(gy0, Math.floor((o.y - reach) / C)),
-        y1 = Math.min(gy1, Math.floor((o.y + reach) / C));
+      const key = o.squad || o;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = []));
+      g.push(o, box.length);
+      box.push(
+        Math.max(gx0, Math.floor((o.x - reach) / C)),
+        Math.min(gx1, Math.floor((o.x + reach) / C)),
+        Math.max(gy0, Math.floor((o.y - reach) / C)),
+        Math.min(gy1, Math.floor((o.y + reach) / C))
+      );
+    }
+    for (const [key, g] of groups) {
+      if (!g.length) {
+        groups.delete(key);
+        continue;
+      }
+      let x0 = Infinity,
+        x1 = -Infinity,
+        y0 = Infinity,
+        y1 = -Infinity;
+      for (let i = 1; i < g.length; i += 2) {
+        const b = g[i];
+        if (box[b] < x0) x0 = box[b];
+        if (box[b + 1] > x1) x1 = box[b + 1];
+        if (box[b + 2] < y0) y0 = box[b + 2];
+        if (box[b + 3] > y1) y1 = box[b + 3];
+      }
       for (let ix = x0; ix <= x1; ix++)
         for (let iy = y0; iy <= y1; iy++) {
           const l = grid.get(ix * 65536 + iy);
           if (l)
-            for (const u of l) {
-              if (u.visMask & bit) continue;
-              const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
-              if (dist2(u, o) <= r * r) u.visMask |= bit;
-            }
+            for (const u of l)
+              for (let i = 0; i < g.length; i += 2) {
+                const o = g[i],
+                  bit = o.player.bit;
+                if (u.visMask & bit) continue;
+                const b = g[i + 1];
+                if (ix < box[b] || ix > box[b + 1] || iy < box[b + 2] || iy > box[b + 3]) continue;
+                const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
+                if (dist2(u, o) <= r * r) u.visMask |= bit;
+              }
         }
     }
     const FC = (this.fowCell ||= db.constants.num('DesiredSpaceFOWCellSize', 100)),
@@ -4000,6 +4037,45 @@ export class World {
     if (out.length > 1) out.sort(byGridAt);
     for (let i = this.unitGridN; i < this.units.length; i++) out.push(this.units[i]);
     return out;
+  }
+
+  // Nearest enemy within a homing projectile's scan range; ties go to the earlier unit, as a scan of this.units in order would.
+  seekTarget(p) {
+    const ug = this.unitGrid,
+      units = this.units,
+      sk = _seek;
+    sk.p = p;
+    sk.best = null;
+    sk.bi = 0;
+    sk.bd = p.scan * p.scan;
+    if (!ug || this.unitGridN > units.length) {
+      for (let i = 0; i < units.length; i++) this.seekTake(units[i], i);
+      return sk.best;
+    }
+    const pad = p.scan + UNIT_PAD,
+      x0 = Math.floor((p.x - pad) / UNIT_CELL),
+      x1 = Math.floor((p.x + pad) / UNIT_CELL),
+      y0 = Math.floor((p.y - pad) / UNIT_CELL),
+      y1 = Math.floor((p.y + pad) / UNIT_CELL);
+    for (let ix = x0; ix <= x1; ix++)
+      for (let iy = y0; iy <= y1; iy++) {
+        const l = ug.get(ix * 65536 + iy);
+        if (l) for (const o of l) this.seekTake(o, o.gridAt);
+      }
+    for (let i = this.unitGridN; i < units.length; i++) this.seekTake(units[i], i);
+    return sk.best;
+  }
+
+  seekTake(o, i) {
+    const sk = _seek,
+      p = sk.p;
+    if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
+    const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
+    if ((d2 < sk.bd || (d2 === sk.bd && sk.best && i < sk.bi)) && !this.jammed(o)) {
+      sk.bd = d2;
+      sk.best = o;
+      sk.bi = i;
+    }
   }
 
   scan(u) {
@@ -5319,17 +5395,7 @@ export class World {
       if (p.homing && (!t || t.dead || t.hyper)) {
         p.target = p.targetHp = null;
         if (p.scan > 0) {
-          let best = null,
-            bd = p.scan * p.scan;
-          for (const o of this.units)
-            if (!o.dead && !o.hyper && o.targetableUnit && o.player.id >= 0 && o.player.team !== p.team && !this.jammed(o)) {
-              const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
-              if (d2 < bd) {
-                bd = d2;
-                best = o;
-              }
-            }
-          p.target = best;
+          p.target = this.seekTarget(p);
         }
       }
       const x0 = p.x,

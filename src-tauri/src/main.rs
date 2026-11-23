@@ -14,7 +14,7 @@ use fonts::NativeFonts;
 use setup::{Settings, Source};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 static CURSOR_GRAB: AtomicBool = AtomicBool::new(false);
 use tauri::http::{Request, Response};
@@ -24,6 +24,9 @@ use vfs::{Game, View};
 const TAURI_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
 const UNCAPPED: &str = "--disable-frame-rate-limit --disable-gpu-vsync";
+// the page needs inline and eval'd script (its own pages, Lua glue); it may reach any https or wss lobby
+// (custom ones too) and GitHub's release feed, but it can't be framed or post forms elsewhere
+const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://storage.ko-fi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: blob: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self' blob: https://ko-fi.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'";
 
 struct Opened {
     game: Arc<View>,
@@ -36,6 +39,8 @@ struct Server {
     env_game: Option<PathBuf>,
     fallback: Option<PathBuf>,
     state: RwLock<State>,
+    // folders the player chose in the native folder dialog: the only ones the page may add as sources
+    picked: Mutex<Vec<PathBuf>>,
 }
 
 struct State {
@@ -346,11 +351,22 @@ impl Server {
             .collect()
     }
 
+    fn chosen(&self, path: &str) -> bool {
+        self.picked
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| setup::same(p, Path::new(path)))
+    }
+
     fn set(&self, what: &str, arg: impl Fn(&str) -> Option<String>) -> Result<(), String> {
         match what {
             "" => {}
             "/game" => {
                 let path = arg("path").unwrap_or_default();
+                if !path.is_empty() && !self.chosen(&path) {
+                    return Err("Choose the folder with Choose your game folder.".into());
+                }
                 if !path.is_empty() && !setup::is_game(Path::new(&path)) {
                     return Err("That folder has no GameData in it: choose the folder the game is installed in (the one with GameData and corruption, or GameData and EAWX for the GOG release).".into());
                 }
@@ -358,6 +374,9 @@ impl Server {
             }
             "/source" => {
                 if let Some(a) = arg("add") {
+                    if !self.chosen(&a) {
+                        return Err("Choose the folder with Add a folder.".into());
+                    }
                     if !Path::new(&a).is_dir() {
                         return Err("No such folder.".into());
                     }
@@ -407,6 +426,17 @@ impl Server {
             return text(400, "bad path");
         };
         let p = p.into_owned();
+        // anything that changes settings, installs, writes a file or opens a dialog: a POST the app's own
+        // code makes with its header, never a plain GET that a link, an image or a script's loadfile can make
+        let changes = (p.starts_with("/api/setup/") && p != "/api/setup/")
+            || p == "/api/update/install"
+            || p == "/api/pick-folder"
+            || p == "/api/save-report";
+        if changes
+            && (req.method() != tauri::http::Method::POST || req.headers().get("x-swr").is_none())
+        {
+            return text(405, "use POST");
+        }
         if let Some(rel) = p.strip_prefix("/asset/") {
             let which = self.game_for(&q);
             let assets = which.as_ref().map(|w| match arg("language") {
@@ -696,7 +726,11 @@ impl Server {
             if let Some(from) = arg("from").map(PathBuf::from).filter(|p| p.is_dir()) {
                 d = d.set_directory(from);
             }
-            return json(&serde_json::json!({ "path": d.pick_folder() }));
+            let path = d.pick_folder();
+            if let Some(p) = &path {
+                self.picked.lock().unwrap().push(p.clone());
+            }
+            return json(&serde_json::json!({ "path": path }));
         }
         if let Some(what) = p.strip_prefix("/api/local/") {
             let Some(path) = arg("path").map(PathBuf::from).filter(|p| self.may_read(p)) else {
@@ -748,6 +782,9 @@ impl Server {
         };
         let profile = rel.to_lowercase().ends_with(".html") || arg("jsprofile").is_some();
         let mut extra = vec![("Cache-Control", "no-cache")];
+        if rel.to_lowercase().ends_with(".html") {
+            extra.push(("Content-Security-Policy", CSP));
+        }
         if profile {
             extra.push(("Document-Policy", "js-profiling"));
         }
@@ -811,6 +848,7 @@ fn main() {
         env_game,
         fallback,
         state: RwLock::new(blank),
+        picked: Mutex::new(vec![]),
     };
     let settled = server.settle(settings, None);
     server.state = RwLock::new(settled);

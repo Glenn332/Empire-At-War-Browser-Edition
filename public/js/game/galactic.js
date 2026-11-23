@@ -5,6 +5,7 @@ import { switchTarget } from './switchsides.js';
 import { applyCampaignSettings } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
+import { preloadLinkedPlots, resolveNetLinked } from './linkednet.js';
 import { galacticLight } from './galacticlighting.js';
 import { pauseGalactic, userPauseGalactic } from './galacticpause.js';
 import {
@@ -30,7 +31,7 @@ import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { fontPixels } from '../fontpolicy.js';
 import { gfx, pixelRatio, gammaOn } from '../gfx.js';
-import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
+import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, stampIds, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
 import { seedSim } from './simrandom.js';
@@ -82,7 +83,7 @@ import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticecono
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
 import { packContrast, orbitBombingRun } from './galacticautoresolve.js';
-import { PendingBattle } from './galacticpending.js';
+import { PendingBattle, PENDING_SHELLS } from './galacticpending.js';
 import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
 import { campaignScore } from './campaignscore.js';
@@ -90,6 +91,7 @@ import { ParticleManager, loadParticles } from '../particles.js';
 import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction, ownedTypes, onProductionEvent } from './galacticproduction.js';
 import {
   stepVisibility,
+  stepOtherVisibility,
   intelligence,
   displayOwner,
   displayIncome,
@@ -121,6 +123,27 @@ const SILENT = new Proxy(function () {}, {
   apply: () => undefined
 });
 const DEG = Math.PI / 180;
+const _pickRay = new THREE.Raycaster(),
+  _pickAt = new THREE.Vector2(),
+  _pickC = new THREE.Vector3(),
+  _pickHit = new THREE.Vector3(),
+  _pickBall = new THREE.Sphere(),
+  _overlayAt = new THREE.Vector3();
+let typeRanks = null,
+  typeRankSize = -1;
+// Position of a type in the game object list, the order fleet tooltips sort their rows by.
+const typeRank = t => {
+  if (!typeRanks || typeRankSize !== db.types.size) {
+    typeRanks = new Map();
+    typeRankSize = db.types.size;
+    let i = 0;
+    for (const x of db.types.values()) {
+      if (!typeRanks.has(x)) typeRanks.set(x, i);
+      i++;
+    }
+  }
+  return typeRanks.get(t) ?? -1;
+};
 const smooth = t => t * t * (3 - 2 * t);
 
 const rgb = s => {
@@ -256,7 +279,10 @@ export class GalacticGame {
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     else if (this.setup.campaignSettings) applyCampaignSettings(g, this.setup.campaignSettings, camp.str('Starting_Active_Player'));
-    if (this.setup.net) this.multiplayerGalaxy(g);
+    if (this.setup.net) {
+      this.multiplayerGalaxy(g);
+      stampIds(g);
+    }
     g.budgetCreditChange = (owner, amount) => this.ai?.creditChange?.(owner, amount);
     g.storyEntry = (fleet, planet) => !!this.story?.entryAllowed?.(fleet, planet);
     g.onBounce = (fleet, to) => this.story?.fleetBounced?.(fleet, g.planets[to]);
@@ -402,8 +428,10 @@ export class GalacticGame {
       await prepareComponentFonts(hud.comps, uiTextHeight());
       this.ui = new GalacticBar(this, hud);
       this.scriptUI = new ScriptUI(this, hud);
-      g.scriptUISnapshot = () => this.scriptUI.snapshot();
+      // an open battle prompt is not saved as a dead shell: the battle is asked again after the load
+      g.scriptUISnapshot = () => this.scriptUI.snapshot().map(s => (PENDING_SHELLS.includes(s.name) ? { ...s, visible: false } : s));
       this.screenText = new GalacticScreenText(this, hud.comps);
+      g.screenTextSnapshot = () => this.screenText.snapshot();
       this.movies = new GalacticMovies(this, hud);
       this.radar = new GalacticRadar(this, await loadGalacticRadarAssets(hud));
       $('minimap').hidden = true;
@@ -416,7 +444,10 @@ export class GalacticGame {
     await this.audio?.speech?.load();
     this.speechStoryDone = this.audio?.speech?.on('storydone', record => {
       this.screenText?.show({ id: 'TEXT_SPEECH_' + record.name, remove: true });
-      if (!this.setup.net) this.story?.signal('STORY_SPEECH_DONE', record.name);
+      if (!this.setup.net) {
+        this.story?.speechFinished?.(record.name);
+        this.story?.signal('STORY_SPEECH_DONE', record.name);
+      }
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
@@ -429,14 +460,39 @@ export class GalacticGame {
     onControllerChange((planet, old, now, bonus) => {
       if (!this.over) this.planetChangedHands(planet, old, now, bonus);
     });
-    g.hostSnapshot = () => ({ controlsLocked: !!this.controlsLocked, suspendAI: !!this.suspendAI, tutorialPlayer: !!this.tutorialPlayer });
-    if (g.hostSaved) {
-      this.controlsLocked = g.hostSaved.controlsLocked;
-      this.suspendAI = g.hostSaved.suspendAI;
-      this.tutorialPlayer = g.hostSaved.tutorialPlayer;
+    g.hostSnapshot = () => ({
+      controlsLocked: !!this.controlsLocked,
+      suspendAI: !!this.suspendAI,
+      tutorialPlayer: !!this.tutorialPlayer,
+      scrollLocked: !!this.scrollLocked,
+      planetSelectionLocked: !!this.planetSelectionLocked,
+      ...(this.fleetCombine === false ? { fleetCombine: false } : {}),
+      moviesDisabled: !!this.moviesDisabled,
+      cinematicMode: !!this.cinematicMode,
+      blockedEvents: [...(this.blockedEvents || [])],
+      ...(this.storyMaps ? { storyMaps: { ...this.storyMaps } } : {}),
+      autoresolveLocked: this.pendingBattle ? [...this.pendingBattle.disabled] : g.hostSaved?.autoresolveLocked || [],
+      battles: this.battles ? this.battles.snapshot() : g.hostSaved?.battles || null
+    });
+    const hs = g.hostSaved;
+    if (hs) {
+      this.controlsLocked = hs.controlsLocked;
+      this.suspendAI = hs.suspendAI;
+      this.tutorialPlayer = hs.tutorialPlayer;
+      this.scrollLocked = !!hs.scrollLocked;
+      this.planetSelectionLocked = !!hs.planetSelectionLocked;
+      if (hs.fleetCombine === false) this.fleetCombine = false;
+      this.moviesDisabled = !!hs.moviesDisabled;
+      if (hs.blockedEvents?.length) this.blockedEvents = new Set(hs.blockedEvents);
+      if (hs.storyMaps) this.storyMaps = { ...hs.storyMaps };
+      if (hs.cinematicMode) {
+        this.cinematicMode = true;
+        document.body.classList.add('letterboxed');
+      }
     }
     this.story = await GalacticStoryHost.create(this, { warm: false });
     if (g.scriptUISaved && this.scriptUI) this.scriptUI.restore(g.scriptUISaved);
+    if (g.screenTextSaved && this.screenText) this.screenText.restore(g.screenTextSaved);
     this.ai = await GalacticAI.create(this);
     if (this.story?.unwarmed) {
       this.story.unwarmed = false;
@@ -444,6 +500,8 @@ export class GalacticGame {
     }
     this.battles = new GalacticBattles(this);
     this.pendingBattle = new PendingBattle(this);
+    for (const p of hs?.autoresolveLocked || []) this.pendingBattle.disable(p, true);
+    if (hs?.battles) this.battles.restore(hs.battles);
     if (this.setup.result) {
       this.applyResult(this.setup.result);
       this.galacticBattleChanged();
@@ -459,7 +517,10 @@ export class GalacticGame {
     this.listen('resize', () => this.fit());
     window.game = this;
     startStrategicMusic(this);
-    if (this.setup.net) await this.startNet();
+    if (this.setup.net) {
+      await preloadLinkedPlots(this);
+      await this.startNet();
+    }
     this.last = performance.now();
     requestAnimationFrame(this.frame);
   }
@@ -576,10 +637,11 @@ export class GalacticGame {
     window.parent?.mpGalaxy?.next(next);
   }
 
-  queueLinkedTactical(params) {
+  queueLinkedTactical(params, owner) {
     if (this.pendingLinkedTactical) return false;
     const request = readLinkedTactical(this, params);
     if (!request) return false;
+    if (this.setup.net) request.player = owner || request.attacker;
     this.pendingLinkedTactical = request;
     return true;
   }
@@ -1129,7 +1191,7 @@ export class GalacticGame {
   }
 
   overlayPoint(pos, dx = 0, dy = 0, scale = this.overlayScale()) {
-    const v = new THREE.Vector3(...pos).project(this.camera);
+    const v = _overlayAt.set(pos[0] ?? 0, pos[1] ?? 0, pos[2] ?? 0).project(this.camera);
     if (v.z < -1 || v.z > 1 || Math.abs(v.x) > 1.3 || Math.abs(v.y) > 1.3) return null;
     return { x: Math.trunc((v.x * 0.5 + 0.5) * innerWidth) + dx * scale, y: Math.trunc((-v.y * 0.5 + 0.5) * innerHeight) - dy * scale };
   }
@@ -1374,8 +1436,9 @@ export class GalacticGame {
 
   galacticBattleChanged() {
     this.mergeFleets();
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -1685,6 +1748,7 @@ export class GalacticGame {
         else if (surfaceTo && surfaceTo.p !== p) {
           if (this.net) this.order({ ...orders.embark(this.galaxy, p, { fresh: true, to: surfaceTo.p }), landOn: true });
           else {
+            this.groundVoice(p);
             const f = embarkGround(this.galaxy, p, this.me, { fresh: true });
             if (f) {
               this.fleetView(f);
@@ -1700,6 +1764,7 @@ export class GalacticGame {
                 : orders.embark(this.galaxy, p, { fresh: true, slot: target.slot, to: target.p })
             );
         } else if (target && (!target.f || target.f.owner === this.me)) {
+          this.groundVoice(p);
           if (target.p === p) {
             this.story?.generic('drag_land_to_space');
             this.embark(p, { fleet: target.f, slot: target.slot });
@@ -1736,7 +1801,7 @@ export class GalacticGame {
             this.order(
               special.raid
                 ? f.planet === special.p
-                  ? orders.land(g, f, special.p)
+                  ? orders.land(g, f, special.p, null, true)
                   : orders.move(g, f, special.p, null, { raid: true })
                 : f.planet === special.p
                   ? orders.slot(g, special.record, special.p)
@@ -1804,17 +1869,17 @@ export class GalacticGame {
   pick(sx, sy) {
     const label = this.view.zoom === 0 && (this.nameHits || []).find(n => sx >= n.x && sx <= n.x + n.w && sy >= n.y && sy <= n.y + n.h);
     if (label && this.galaxy.planets[label.i]?.selectable && !this.galaxy.planets[label.i].background) return label.i;
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
+    const ray = _pickRay;
+    ray.setFromCamera(_pickAt.set((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
     let best = -1,
       bestD = Infinity;
-    const c = new THREE.Vector3(),
-      hit = new THREE.Vector3();
+    const c = _pickC,
+      hit = _pickHit;
     this.galaxy.planets.forEach((p, i) => {
       if (p.background || !p.selectable) return;
       const r = p.type.num('Mouse_Collide_Override_Sphere_Radius', 0) || p.type.num('Scale_Factor', 1) * PLANET_RADIUS;
       c.set(...p.pos);
-      if (ray.ray.intersectSphere(new THREE.Sphere(c, r), hit)) {
+      if (ray.ray.intersectSphere(_pickBall.set(c, r), hit)) {
         const d = hit.distanceTo(ray.ray.origin);
         if (d < bestD) {
           bestD = d;
@@ -2125,7 +2190,6 @@ export class GalacticGame {
       nodes = new Map();
     let reveal = !hostile,
       countOnly = false;
-    const order = [...db.types.values()];
     for (const f of listed) {
       if (hostile) {
         if (stealthy(f)) continue;
@@ -2141,7 +2205,7 @@ export class GalacticGame {
       }
     }
     if (!nodes.size) return null;
-    const list = [...nodes.values()].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+    const list = [...nodes.values()].sort((a, b) => typeRank(a.type) - typeRank(b.type));
     const first = list[0],
       faction = key => String(key || '').toUpperCase(),
       owner = faction(first.fleet.owner),
@@ -2204,7 +2268,8 @@ export class GalacticGame {
   mergeDraggedStack() {
     const f = this.dragFleet,
       planet = this.galaxy.planets[f.planet];
-    if (!planet || f.leg || this.fleetCombine === false) return;
+    // a pointer drag runs on one machine only: in a network game it must not reshape the shared fleet list
+    if (!planet || f.leg || this.fleetCombine === false || this.net) return;
     const slot = f.slot ?? 0,
       own = this.galaxy.fleets.filter(x => x.owner === this.me && x.planet === f.planet && !x.leg && x.units.length),
       group =
@@ -2267,8 +2332,9 @@ export class GalacticGame {
     if (humans.length >= 2) return true;
     if (!humans.length) return false;
     if (this.setup.singlePlayerCampaign) return true;
+    // one human side against the AI is fought too; the other players watch
     const k = x => String(x || '').toUpperCase();
-    return humans.some(f => (this.setup.players || []).filter(p => p.human && !p.left && k(p.faction) === k(f)).length >= 2);
+    return humans.some(f => (this.setup.players || []).some(p => p.human && !p.left && k(p.faction) === k(f)));
   }
   humanFor(faction) {
     const g = this.galaxy,
@@ -2351,14 +2417,22 @@ export class GalacticGame {
       }
     const custom = g.campaign.bool('Supports_Custom_Settings') && !this.setup.singlePlayerCampaign && !this.setup.restore;
     for (const p of g.players) {
-      const slot = slots.find(s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction));
+      // a human slot wins over an AI slot on the same faction (that faction is in g.humans either way)
+      const mine = s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction),
+        slot = slots.find(s => s.human && mine(s)) || slots.find(mine);
       if (!slot) continue;
+      if (!slot.human && slot.difficulty) p.difficulty = slot.difficulty; // each AI slot keeps its own difficulty
       p.humanType = slot.human ? this.setup.humanTypes?.[key(p.faction)] || 'Human' : undefined;
       p.ai = slot.human ? p.humanType : null;
       if (custom && Number.isFinite(+opt.credits)) p.credits = +opt.credits;
       if (custom && Number.isFinite(+opt.maxTech)) p.maxTech = +opt.maxTech;
       if (custom && Number.isFinite(+opt.tech)) p.tech = Math.min(p.maxTech || +opt.tech, +opt.tech);
     }
+    const sideOf = s => key(db.faction(s.faction)?.name || s.faction);
+    slots.forEach((s, i) => {
+      if (!s.human && slots.some((o, j) => sideOf(o) === sideOf(s) && (o.human || j < i)))
+        console.warn(`multiplayer: computer slot ${i} (${s.faction}) is ignored, that faction already has a player`);
+    });
     const mine = humans.find(p => p.peer === this.setup.net.me);
     this.localFaction = db.faction(mine?.faction)?.name || g.players.find(p => key(p.faction) === g.humans[0])?.faction;
     const ai = slots.find(p => !p.human && p.difficulty);
@@ -2396,6 +2470,8 @@ export class GalacticGame {
   scriptClick(pid, name, native) {
     const cfg = this.setup.players?.[pid];
     if (!cfg) return;
+    // a native click must name one of the galaxy screen's own buttons
+    if (native && this.scriptUI?.nativeControls && !this.scriptUI.nativeControls.has(name)) return;
     if (cfg.peer === 0) {
       if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
       else this.scriptUI?.click(name, false, true);
@@ -2545,6 +2621,7 @@ export class GalacticGame {
     if (!cmd) return null;
     const g = this.galaxy;
     if (cmd.c === 'move') this.fleetVoice(g.fleets[cmd.f]?.units);
+    else if (cmd.c === 'embark') this.groundVoice(cmd.p);
     if (this.net) {
       this.net.lock.command(cmd);
       return null;
@@ -2552,6 +2629,11 @@ export class GalacticGame {
     const r = runCommand(this, this.me, cmd);
     this.syncFleetViews();
     return r;
+  }
+  // Sending ground units up to orbit (or on to another planet) is a move order, so it gets the same acknowledgement
+  // as moving a fleet; it used to be silent.
+  groundVoice(p) {
+    this.fleetVoice(this.galaxy.planets[p]?.garrison.filter(u => !u.dead && String(u.owner).toUpperCase() === String(this.me).toUpperCase()));
   }
   fleetVoice(units) {
     if (this.paused) return;
@@ -2618,8 +2700,9 @@ export class GalacticGame {
     if (!this.fleetViews) return;
     this.mergeFleets?.();
     for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         if (v?.inst) this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -2671,11 +2754,16 @@ export class GalacticGame {
     this.planetInfo.close();
     this.galacticLog?.close();
     this.radar?.flash(p);
+    this.battleFlash = p;
     if (!this.noSave && !this.net) {
+      // the autosave remembers who attacks, so loading it asks for the same battle again
+      this.launchingBattle = { p, attacker, defender, mode, options };
       try {
         putSave(snapshot(this, db.t('TEXT_GUI_AUTO_SAVE')), 'autosave').catch(e => console.warn('autosave', e));
       } catch (e) {
         console.warn('autosave', e);
+      } finally {
+        this.launchingBattle = null;
       }
     }
     if (mode === 'land' && attacker === this.me) this.audio?.play(db.faction(this.me)?.str('SFXEvent_Land_Invasion_Commencing'));
@@ -2785,7 +2873,7 @@ export class GalacticGame {
             team,
             auto: true,
             color: team ? '#e0352b' : '#3686f2',
-            difficulty: this.setup.difficulty || 'medium',
+            difficulty: this.galaxy.players.find(p => String(p.faction).toUpperCase() === String(f).toUpperCase())?.difficulty || this.setup.difficulty || 'medium',
             faction: f
           };
     return [side(b.attacker, 0), side(b.defender, 1)];
@@ -2857,7 +2945,7 @@ export class GalacticGame {
           team: 1,
           units: units(b.defender),
           station: pl.station && (pl.stationOwner || pl.owner) === b.defender ? pl.station.name : null,
-          orbital: pl.orbitalStructures.filter(s => s.owner === b.defender).map(s => s.type.name)
+          orbital: pl.orbitalStructures.flatMap((s, i) => (s.owner === b.defender ? [{ gid: 'o:' + i, type: s.type.name }] : []))
         }
       }
     };
@@ -2938,25 +3026,39 @@ export class GalacticGame {
     g.fleets = g.fleets.filter(f => f.units.length);
     if ((r.victoryType === 11 || r.victoryType === 12) && r.sides)
       this.battles.retreat(r.planet, r.winner === 'attacker' ? r.sides[1] : r.sides[0]);
-    if (!r.station && pl.station) {
-      pl.station = null;
-      pl.spaceLevel = 0;
-    } else if (pl.station && r.stationLevel !== undefined && r.stationLevel < (pl.spaceLevel || 0)) {
-      let type = pl.station;
-      while (type && type.num('Base_Level', 0) > r.stationLevel) {
-        const n = type.name;
-        type = db.type(n.slice(0, -1) + String.fromCharCode(n.charCodeAt(n.length - 1) - 1));
-      }
-      if (r.stationLevel <= 0) {
-        pl.station = null;
-        pl.spaceLevel = 0;
-      } else {
-        pl.station = type || pl.station;
-        pl.spaceLevel = r.stationLevel;
+    const stationOwner = pl.stationOwner || pl.owner,
+      killer = r.sides?.find(o => o !== stationOwner) ?? null,
+      // only the station that was actually in the battle (the defender's) can be lost
+      fought =
+        !!pl.station && (!r.sides || stationOwner === r.sides[1]) && (r.stationFought === undefined || pl.station.name === r.stationFought);
+    let next = pl.station,
+      level = pl.spaceLevel || 0;
+    if (fought && (!r.station || r.stationLevel <= 0)) next = null;
+    else if (fought && r.stationLevel !== undefined && r.stationLevel < level) {
+      const seen = new Set();
+      level = r.stationLevel;
+      while (next.num('Base_Level', 0) > level && !seen.has(next)) {
+        seen.add(next);
+        const prev = db.type(next.str('Prev_Level_Base').trim());
+        if (!prev) break;
+        next = prev;
       }
     }
+    if (next !== pl.station) {
+      story?.stationChanged(pl, pl.station, next, killer);
+      pl.station = next;
+    }
+    const baseLost = fought && !next;
+    if (fought) pl.spaceLevel = next ? level : 0;
+    if (baseLost) pl.stationOwner = null;
+    // orbital structures go down with the starbase, as in autoresolve
+    const orbitalIds = new Set(r.orbitalFought || []),
+      wrecked = pl.orbitalStructures.filter((u, i) => baseLost || (orbitalIds.has('o:' + i) && !alive.has('o:' + i)));
+    pl.orbitalStructures = pl.orbitalStructures.filter(u => !wrecked.includes(u));
+    for (const u of wrecked) lost.push([u, u.owner, r.sides?.find(o => o !== u.owner) ?? killer]);
     if (r.planetDestroyed) destroyPlanet(this, pl, false);
     told(pl, lost, r.winner === 'attacker' ? 0 : 1, true);
+    for (const u of wrecked) u.dead = true;
     this.lastResult = r;
   }
   inBattle(f, r) {
@@ -3059,8 +3161,9 @@ export class GalacticGame {
       return true;
     }
     const changed = landFriendly(this.galaxy, fleet, p, { records: chosen, raid });
+    const live = new Set(this.galaxy.fleets);
     for (const [f, v] of this.fleetViews)
-      if (!this.galaxy.fleets.includes(f)) {
+      if (!live.has(f)) {
         this.scene.remove(v.inst.root);
         this.fleetViews.delete(f);
       }
@@ -3517,7 +3620,7 @@ export class GalacticGame {
       }
       if (!at || v.pull === v.pullTo) v.anchor = null;
     }
-    if (this.pendingLinkedTactical && !this.battle?.linked) {
+    if (this.pendingLinkedTactical && !this.battle?.linked && !this.setup.net) {
       const request = this.pendingLinkedTactical;
       if (request.pending) {
         if (!this.pendingBattle) {
@@ -3560,8 +3663,17 @@ export class GalacticGame {
         if (this.over) return;
       }
     }
+    if (this.battleFlash !== undefined && !this.battle) this.endBattleFlash();
     this.stepPlanetFlashes(real);
     this.present(real, elapsed, zoom);
+  }
+
+  // The radar ping a battle starts has no timeout, so turn it off once the battle is over, however it ended
+  // (tactical, multiplayer or linked). A new battle choice at the same planet keeps its own ping.
+  endBattleFlash() {
+    const p = this.battleFlash;
+    delete this.battleFlash;
+    if (this.pendingBattle?.request?.p !== p) this.radar?.flash(p, false);
   }
 
   cullPlanets() {
@@ -3657,7 +3769,18 @@ export class GalacticGame {
     this.story?.update(held ? 0 : dt, false, 1 / LOGIC_FPS);
     storyMoviesDone(this.story);
     if (!held && !this.paused && !this.busy && !this.held && !this.over) this.simulate(dt);
+    if (this.pendingLinkedTactical) this.resolveNetLinked();
     this.pendingBattle?.tick?.();
+    this.mpBattles?.tick();
+    stampIds(this.galaxy);
+  }
+  resolveNetLinked() {
+    resolveNetLinked(this);
+    this.mergeFleets();
+    for (const fleet of this.galaxy.fleets) if (!this.fleetViews.has(fleet)) this.fleetView(fleet);
+    this.ui?.refresh();
+    this.overview?.refresh();
+    this.radar?.refresh();
   }
 
   simulate(dt) {
@@ -3718,20 +3841,23 @@ export class GalacticGame {
           if (!raid && blocks(this.galaxy, p, f.owner, f))
             for (const o of pullIn(this.galaxy, p, f)) this.story?.fleetEntered?.(o, this.galaxy.planets[p]);
           this.mergeFleets();
-          const there = this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg) || f;
+          // the fleet it merged into in its own orbital slot, not just any of the owner's fleets here
+          const there =
+            this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg && (x.slot ?? 0) === (f.slot ?? 0)) || f;
           this.checkConflict(there, p);
           this.fireArrival(there, p);
           if (f.landOn === p) {
             delete f.landOn;
             const planet = this.galaxy.planets[p];
             if (!this.busy && planet && routeAllied(planet.owner, f.owner) && !blocks(this.galaxy, p, f.owner, f) && there.units.length)
-              this.land(there, p);
+              this.asFaction(f.owner, () => this.land(there, p)); // every machine lands it, not just the owner's
           }
           if (raid) this.raidLanding(raid, p);
         });
         this.warnApproaching();
         this.battles.update();
         stepVisibility(this.galaxy, this.me, dt * LOGIC_FPS);
+        if (this.net) stepOtherVisibility(this.galaxy, dt * LOGIC_FPS);
         if (this.galaxy.visibility?.revealed) this.audio?.playAudioEvent('SFXEvent_Planet_Revealed');
         this.popCapWarning();
         this.victory.update();
@@ -3832,13 +3958,13 @@ export class GalacticGame {
       this.scene.matrixWorldAutoUpdate = true;
     }
     if (this.renderer.endFrame) this.renderer.endFrame();
-    this.drawNames(zoom);
+    if (this.namesDue(real, zoom)) this.drawNames(zoom);
     this.drawCountdowns();
     this.overview?.update();
     this.corruptionTip();
     this.updatePointer();
     this.radar?.drawFrame(real);
-    this.radar?.refresh();
+    this.radar?.tick(real);
   }
 
   drawCountdowns() {
@@ -4061,6 +4187,44 @@ export class GalacticGame {
       return 1;
     }
     return 0.5 + 0.5 * Math.cos(((now - f.start) / 1000) * f.speed);
+  }
+
+  // The label overlay repaints when the camera, pointer, selection, drag or filters change, while a stack flashes, and every 0.1 s otherwise.
+  namesDue(dt, zoom) {
+    const c = this.camera,
+      M = this.mouse,
+      k = (this.namesKey ||= []);
+    let i = 0,
+      same = true;
+    const put = v => {
+      if (!Object.is(k[i], v)) {
+        k[i] = v;
+        same = false;
+      }
+      i++;
+    };
+    for (const e of c.matrixWorld.elements) put(e);
+    for (const e of c.projectionMatrix.elements) put(e);
+    put(zoom);
+    put(this.view.zoom);
+    put(this.names.width);
+    put(this.names.height);
+    put(innerWidth);
+    put(innerHeight);
+    put(this.selected);
+    put(this.hover);
+    put(this.filters);
+    put(M.x);
+    put(M.y);
+    put(M.in);
+    put(this.dragFleet);
+    put(this.dragGround);
+    put(this.galaxy.fleets.length);
+    if ((this.namesIn = (this.namesIn || 0) - dt) <= 0 || !same || this.stackFlashes?.size) {
+      this.namesIn = 0.1;
+      return true;
+    }
+    return false;
   }
 
   drawNames(zoom) {

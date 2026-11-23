@@ -201,13 +201,41 @@ export const displayIncome = (g, p, orbit = null) =>
     : (p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : planetCreditValue(p));
 export const connectionOwner = (g, p) => (intelligence(g, p)?.ownerKnown ? p.owner : intelligence(g, p)?.rememberedOwner);
 
+// Multiplayer keeps a fog history for every human faction, so a save loaded by another faction never shows
+// it what the saver discovered. Single player keeps one history that follows the viewer.
+const tracked = g => (g.humans?.length ? (g.visibilityByFaction ||= {}) : null);
+
 export function stepVisibility(g, viewer, elapsedFrames = 0) {
-  roster = g;
   let state = g.visibility;
   if (!state || !same(state.viewer, viewer)) {
-    const kept = state?.planets.map(v => ({ discovered: !!v?.discovered, revealFrames: 0, rememberedOwner: null })) || [];
-    state = g.visibility = { viewer, clock: 0, planets: kept };
+    const byFaction = tracked(g);
+    if (byFaction) {
+      if (state?.viewer) byFaction[up(String(state.viewer))] = state;
+      state = byFaction[up(String(viewer))] || { viewer, clock: 0, planets: [] };
+      delete byFaction[up(String(viewer))];
+      state.viewer = viewer;
+    } else {
+      const kept = state?.planets.map(v => ({ discovered: !!v?.discovered, revealFrames: 0, rememberedOwner: null })) || [];
+      state = { viewer, clock: 0, planets: kept };
+    }
+    g.visibility = state;
   }
+  return advance(g, state, viewer, elapsedFrames);
+}
+
+// Keeps the fog history of the other human factions current, so whichever peer saves records all of them.
+export function stepOtherVisibility(g, elapsedFrames = 0) {
+  const byFaction = tracked(g);
+  if (!byFaction) return;
+  for (const faction of g.humans) {
+    if (same(faction, g.visibility?.viewer)) continue;
+    const name = db.faction(faction)?.name || faction;
+    advance(g, (byFaction[up(String(faction))] ||= { viewer: name, clock: 0, planets: [] }), name, elapsedFrames);
+  }
+}
+
+function advance(g, state, viewer, elapsedFrames) {
+  roster = g;
   state.clock = (state.clock || 0) + elapsedFrames;
   const ticks = Math.floor(state.clock + 1e-8);
   state.clock -= ticks;
