@@ -124,7 +124,8 @@ const handle = async (req, res) => {
         nativeFonts = which && which.fonts;
       const assets = which && (url.searchParams.has('language') ? which.game.forLanguage(url.searchParams.get('language')) : which.game);
       let key = assets && assets.resolve(p.slice(7));
-      if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7))) {
+      // rasterising runs a GDI worker: only for the game's own pages, not a request another site makes
+      if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7)) && req.headers['sec-fetch-site'] !== 'cross-site') {
         try {
           const bytes = await nativeFonts.asset(p.slice(7));
           if (bytes)
