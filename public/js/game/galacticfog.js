@@ -201,6 +201,8 @@ export const displayIncome = (g, p, orbit = null) =>
     : (p.destroyed ? p.type.num('Planet_Destroyed_Credit_Value', 0) : planetCreditValue(p));
 export const connectionOwner = (g, p) => (intelligence(g, p)?.ownerKnown ? p.owner : intelligence(g, p)?.rememberedOwner);
 
+// Multiplayer keeps a fog history for every human faction, so a save loaded by another faction never shows
+// it what the saver discovered. Single player keeps one history that follows the viewer.
 const tracked = g => (g.humans?.length ? (g.visibilityByFaction ||= {}) : null);
 
 export function stepVisibility(g, viewer, elapsedFrames = 0) {
@@ -221,6 +223,7 @@ export function stepVisibility(g, viewer, elapsedFrames = 0) {
   return advance(g, state, viewer, elapsedFrames);
 }
 
+// Keeps the fog history of the other human factions current, so whichever peer saves records all of them.
 export function stepOtherVisibility(g, elapsedFrames = 0) {
   const byFaction = tracked(g);
   if (!byFaction) return;

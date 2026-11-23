@@ -3,13 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { openGame } from './megfs.mjs';
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), []);
 globalThis.fetch = async input => {
-  const key = archive.resolve(
-      decodeURIComponent(
-        String(input)
-          .replace(/^asset\//, '')
-          .split('?')[0]
-      )
-    ),
+  const key = archive.resolve(decodeURIComponent(String(input).replace(/^asset\//, '').split('?')[0])),
     data = key && archive.read(key);
   return new Response(data ? new Uint8Array(data) : null, { status: data ? 200 : 404 });
 };
@@ -58,6 +52,7 @@ const [a, b] = factions;
   assert.equal(g.players.find(p => p.faction.toUpperCase() === a.toUpperCase()).ai, 'Human', 'the human keeps the side');
 }
 
+// a lone human side against the AI is a battle that can be fought; nobody left is not
 const playable = (players, humans, extra = {}) => P.playable.call({ setup: { players, ...extra } }, humans);
 const lone = [
   { human: true, peer: 0, faction: a },

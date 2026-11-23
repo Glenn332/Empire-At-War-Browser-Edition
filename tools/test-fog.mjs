@@ -87,6 +87,7 @@ assert.equal(intelligence(returned, returned.planets[p.index]).fleetOverlay, fal
   assert(intelligence(early, hidden).discovered, 'discovery belongs to the planet, not to the viewer');
 }
 {
+  // multiplayer: every human faction keeps its own discoveries across a save, whichever faction loads it
   const mp = G(),
     other = mp.players.find(q => q.faction !== viewer).faction;
   mp.humans = [viewer, other].map(f => String(f).toUpperCase());

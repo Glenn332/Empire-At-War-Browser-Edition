@@ -484,6 +484,7 @@ export function queueAIProduction(g, planet, owner, type, adjustment = null) {
   const p = g.planets[planet],
     context = productionContext(g, p, owner),
     kind = strategicProductionKind(type);
+  // Galactic production takes Galactic_Build_Time_Multiplier; Space_/Land_Build_Time_Multiplier are for tactical builds.
   const total = Math.max(0, Math.trunc(productionTime(g, p, owner, type, context) * (adjustment?.build?.galactic ?? 1) * 30) / 30);
   const q = { type, owner, planet, cost: productionCost(g, p, owner, type, context), total, left: total, ai: true, paid: 0 };
   p.production[kind].push(q);

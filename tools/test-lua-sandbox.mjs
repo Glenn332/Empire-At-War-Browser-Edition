@@ -1,3 +1,4 @@
+// The Lua sandbox: no way out to the network or the host, and a script that never ends can't keep the page.
 import assert from 'node:assert/strict';
 import fengariPkg from 'fengari';
 const F = fengariPkg.default || fengariPkg;
@@ -33,6 +34,7 @@ for (const name of [
   assert.equal(value(`return type(${name}) == "nil"`), true, name + ' is out of reach');
 assert.equal(value('return type(debug.traceback) == "function" and type(os.time) == "function" and type(os.clock) == "function"'), true);
 
+// an error still carries its traceback
 vm.run('function Fails() error("boom") end', 'fails', env);
 const failed = vm.call(env, 'Fails');
 assert.equal(failed.ok, false);
@@ -57,6 +59,7 @@ stops(
 );
 stops('while true do xpcall(function() while true do end end, function(e) while true do end end) end', 'an endless error handler');
 
+// a thread that yields keeps its full budget per resume
 vm.run('function Ticker() local n = 0 while true do for i = 1, 1000 do n = n + 1 end coroutine.yield(n) end end', 'ticker', env);
 const t = vm.thread(env, 'Ticker');
 for (let i = 0; i < 5; i++) assert.equal(vm.resume(t).done, false);

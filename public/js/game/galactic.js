@@ -131,6 +131,7 @@ const _pickRay = new THREE.Raycaster(),
   _overlayAt = new THREE.Vector3();
 let typeRanks = null,
   typeRankSize = -1;
+// Position of a type in the game object list, the order fleet tooltips sort their rows by.
 const typeRank = t => {
   if (!typeRanks || typeRankSize !== db.types.size) {
     typeRanks = new Map();
@@ -427,6 +428,7 @@ export class GalacticGame {
       await prepareComponentFonts(hud.comps, uiTextHeight());
       this.ui = new GalacticBar(this, hud);
       this.scriptUI = new ScriptUI(this, hud);
+      // an open battle prompt is not saved as a dead shell: the battle is asked again after the load
       g.scriptUISnapshot = () => this.scriptUI.snapshot().map(s => (PENDING_SHELLS.includes(s.name) ? { ...s, visible: false } : s));
       this.screenText = new GalacticScreenText(this, hud.comps);
       g.screenTextSnapshot = () => this.screenText.snapshot();
@@ -2266,6 +2268,7 @@ export class GalacticGame {
   mergeDraggedStack() {
     const f = this.dragFleet,
       planet = this.galaxy.planets[f.planet];
+    // a pointer drag runs on one machine only: in a network game it must not reshape the shared fleet list
     if (!planet || f.leg || this.fleetCombine === false || this.net) return;
     const slot = f.slot ?? 0,
       own = this.galaxy.fleets.filter(x => x.owner === this.me && x.planet === f.planet && !x.leg && x.units.length),
@@ -2329,6 +2332,7 @@ export class GalacticGame {
     if (humans.length >= 2) return true;
     if (!humans.length) return false;
     if (this.setup.singlePlayerCampaign) return true;
+    // one human side against the AI is fought too; the other players watch
     const k = x => String(x || '').toUpperCase();
     return humans.some(f => (this.setup.players || []).some(p => p.human && !p.left && k(p.faction) === k(f)));
   }
@@ -2413,6 +2417,7 @@ export class GalacticGame {
       }
     const custom = g.campaign.bool('Supports_Custom_Settings') && !this.setup.singlePlayerCampaign && !this.setup.restore;
     for (const p of g.players) {
+      // a human slot wins over an AI slot on the same faction (that faction is in g.humans either way)
       const mine = s => key(db.faction(s.faction)?.name || s.faction) === key(p.faction),
         slot = slots.find(s => s.human && mine(s)) || slots.find(mine);
       if (!slot) continue;
@@ -2465,6 +2470,7 @@ export class GalacticGame {
   scriptClick(pid, name, native) {
     const cfg = this.setup.players?.[pid];
     if (!cfg) return;
+    // a native click must name one of the galaxy screen's own buttons
     if (native && this.scriptUI?.nativeControls && !this.scriptUI.nativeControls.has(name)) return;
     if (cfg.peer === 0) {
       if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
@@ -2624,6 +2630,8 @@ export class GalacticGame {
     this.syncFleetViews();
     return r;
   }
+  // Sending ground units up to orbit (or on to another planet) is a move order, so it gets the same acknowledgement
+  // as moving a fleet; it used to be silent.
   groundVoice(p) {
     this.fleetVoice(this.galaxy.planets[p]?.garrison.filter(u => !u.dead && String(u.owner).toUpperCase() === String(this.me).toUpperCase()));
   }
@@ -2748,6 +2756,7 @@ export class GalacticGame {
     this.radar?.flash(p);
     this.battleFlash = p;
     if (!this.noSave && !this.net) {
+      // the autosave remembers who attacks, so loading it asks for the same battle again
       this.launchingBattle = { p, attacker, defender, mode, options };
       try {
         putSave(snapshot(this, db.t('TEXT_GUI_AUTO_SAVE')), 'autosave').catch(e => console.warn('autosave', e));
@@ -3019,6 +3028,7 @@ export class GalacticGame {
       this.battles.retreat(r.planet, r.winner === 'attacker' ? r.sides[1] : r.sides[0]);
     const stationOwner = pl.stationOwner || pl.owner,
       killer = r.sides?.find(o => o !== stationOwner) ?? null,
+      // only the station that was actually in the battle (the defender's) can be lost
       fought =
         !!pl.station && (!r.sides || stationOwner === r.sides[1]) && (r.stationFought === undefined || pl.station.name === r.stationFought);
     let next = pl.station,
@@ -3041,6 +3051,7 @@ export class GalacticGame {
     const baseLost = fought && !next;
     if (fought) pl.spaceLevel = next ? level : 0;
     if (baseLost) pl.stationOwner = null;
+    // orbital structures go down with the starbase, as in autoresolve
     const orbitalIds = new Set(r.orbitalFought || []),
       wrecked = pl.orbitalStructures.filter((u, i) => baseLost || (orbitalIds.has('o:' + i) && !alive.has('o:' + i)));
     pl.orbitalStructures = pl.orbitalStructures.filter(u => !wrecked.includes(u));
@@ -3657,6 +3668,8 @@ export class GalacticGame {
     this.present(real, elapsed, zoom);
   }
 
+  // The radar ping a battle starts has no timeout, so turn it off once the battle is over, however it ended
+  // (tactical, multiplayer or linked). A new battle choice at the same planet keeps its own ping.
   endBattleFlash() {
     const p = this.battleFlash;
     delete this.battleFlash;
@@ -3828,6 +3841,7 @@ export class GalacticGame {
           if (!raid && blocks(this.galaxy, p, f.owner, f))
             for (const o of pullIn(this.galaxy, p, f)) this.story?.fleetEntered?.(o, this.galaxy.planets[p]);
           this.mergeFleets();
+          // the fleet it merged into in its own orbital slot, not just any of the owner's fleets here
           const there =
             this.galaxy.fleets.find(x => x.planet === p && x.owner === f.owner && !x.leg && (x.slot ?? 0) === (f.slot ?? 0)) || f;
           this.checkConflict(there, p);
@@ -4175,6 +4189,7 @@ export class GalacticGame {
     return 0.5 + 0.5 * Math.cos(((now - f.start) / 1000) * f.speed);
   }
 
+  // The label overlay repaints when the camera, pointer, selection, drag or filters change, while a stack flashes, and every 0.1 s otherwise.
   namesDue(dt, zoom) {
     const c = this.camera,
       M = this.mouse,

@@ -73,6 +73,7 @@ export function galaxyHash(game) {
   return h >>> 0;
 }
 
+// by stable id where the simulation stamped one (multiplayer), else by position
 export function recordRef(g, u) {
   if (!u) return null;
   if (Number.isInteger(u.nid)) return ['n', u.nid];
@@ -106,6 +107,7 @@ function recordById(g, id) {
     for (const l of [p.garrison, p.groundStructures, p.orbitalStructures]) for (const u of l) if (u.nid === id) return u;
   return null;
 }
+// fleet units carry no owner of their own: ask where the record sits, so another faction's hero can't be borrowed
 const ownsRecord = (g, rec, faction, planet = null) => {
   const at = !rec?.dead && locateRecord(g, rec);
   return !!at && key(at.owner) === key(faction) && (!planet || at.planet === planet.index);
@@ -117,6 +119,7 @@ const fleetOf = (g, r) =>
     : Number.isInteger(r) && r >= 0
       ? g.fleets[r] || null
       : null;
+// a fleet the order named that is gone by now: the order is dropped rather than run on whatever took its place
 const lostFleet = (g, r) => r != null && r !== -1 && !fleetOf(g, r);
 const refs = (g, list) => (list ? list.map(u => recordRef(g, u)) : null);
 const records = (g, list) => (Array.isArray(list) ? list.map(r => fromRecordRef(g, r)).filter(Boolean) : null);
@@ -174,6 +177,8 @@ export const orders = {
   sell: (g, rec) => ({ c: 'sell', rec: recordRef(g, rec) })
 };
 
+// planet, slot and list indices must be plain integers (fleets may also be named by id): a string "3" still finds planet 3 but then
+// never matches it again in the battle and blockade checks
 const INDEX_FIELDS = ['p', 'to', 'slot', 'i'],
   FLEET_FIELDS = ['f', 'tf'],
   COUNTED_IDS = new Set(['marker', 'layoutLand', 'choice', 'battle', 'result']);
@@ -192,6 +197,7 @@ export function runCommand(game, faction, cmd) {
   switch (cmd.c) {
     case 'move': {
       const f = fleetOf(g, cmd.f);
+      // the sender's route only: a peer finding its own would read its own fog of war and could disagree
       if (!own(f) || !g.planets[cmd.to] || !Array.isArray(cmd.path)) return {};
       const hero = cmd.ability ? fromRecordRef(g, cmd.ability) : null;
       if (game.moveFleet(f, cmd.to, Number.isInteger(cmd.slot) ? cmd.slot : null, Array.isArray(cmd.path) ? cmd.path : null)) {
@@ -270,6 +276,7 @@ export function runCommand(game, faction, cmd) {
       const rec = fromRecordRef(g, cmd.rec),
         planet = g.planets[cmd.p];
       if (!rec || !planet || !ownsRecord(g, rec, faction)) return {};
+      // only a row the game offered this hero here, at the price it rolled
       const offer = panelOffer(game, rec, cmd.kind, planet);
       if (!offer || key(offer.owner) !== key(faction)) return {};
       const actor = game.story?.object?.(rec, planet, faction)?.__object || { owner: faction, record: rec, type: rec.carries || rec.type };
@@ -302,11 +309,13 @@ export function runCommand(game, faction, cmd) {
     case 'save': {
       const mine = game.actingPid === game.localPid,
         name = String(cmd.name || '').slice(0, 64);
+      // another player's saves are written here at most every 30 seconds: each one serializes the whole galaxy
       const last = (game.netSavedAt ||= new Map()),
         now = typeof performance !== 'undefined' ? performance.now() : 0;
       if (!mine && now - (last.get(key(faction)) ?? -Infinity) < 30000) return {};
       if (!mine) last.set(key(faction), now);
       try {
+        // another player's save lands in one slot per player here, so a flood of saves can't fill this disk
         const slot = mine ? (cmd.slot != null ? String(cmd.slot) : null) : 'net-' + key(faction).replace(/[^A-Z0-9_]/g, '');
         putSave(snapshot(game, name), slot)
           .then(() => game.message?.(`${db.t('TEXT_SAVE_GAME_TITLE') || 'Save Game'}: ${name}`, 'good'))

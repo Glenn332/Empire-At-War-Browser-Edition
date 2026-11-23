@@ -69,6 +69,8 @@ export async function loadIcons() {
       h: d.getUint32(o + 76, true)
     });
   }
+  // The engine reads a .dds in place of a missing .tga, and many mods ship the atlas only as MT_CommandBar.dds,
+  // which the file system then hands us for the .tga name. Decoding that as a TGA left every icon blank.
   if (new DataView(tga).getUint32(0, true) === 0x20534444) {
     const cv = await loadTextureCanvas('MT_CommandBar.tga').catch(e => console.warn('MT_CommandBar', e));
     if (!cv) return;

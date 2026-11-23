@@ -32,6 +32,7 @@ export class NeutralizeShell {
     this.generation = 0;
   }
 
+  // the controls this popup itself clicks, the only GUI names a 'choice' order may pass on to the story
   static control(name, picked) {
     return picked ? /^H_0[0-5]0[01]$/.test(name) : name === 'H_CLOSE';
   }

@@ -38,6 +38,7 @@ function edges(g) {
   edgeCache.set(g, e);
   return e;
 }
+// Cheapest routes from one planet, computed on first use (Dijkstra over usable planets; ties go to the lower planet index).
 function routeRow(m, from) {
   let row = m.rows.get(from);
   if (row) return row;

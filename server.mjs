@@ -101,81 +101,86 @@ function gameFor(url) {
   return games.eaw;
 }
 const handle = async (req, res) => {
-  if (!LOCAL_HOST.test(req.headers.host || '')) return send(res, 403, 'forbidden host');
-  if (!STATIC) {
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  }
-  const url = new URL(req.url, 'http://x');
-  if (url.searchParams.has('jsprofile')) res.setHeader('Document-Policy', 'js-profiling');
-  let p;
-  try {
-    p = decodeURIComponent(url.pathname);
-  } catch {
-    return send(res, 400, 'bad path');
-  }
-  if (p.includes('\0')) return send(res, 400, 'bad path');
-
-  if (p.startsWith('/asset/')) {
-    const which = gameFor(url),
-      nativeFonts = which && which.fonts;
-    const assets = which && (url.searchParams.has('language') ? which.game.forLanguage(url.searchParams.get('language')) : which.game);
-    let key = assets && assets.resolve(p.slice(7));
-    if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7)) && req.headers['sec-fetch-site'] !== 'cross-site') {
-      try {
-        const bytes = await nativeFonts.asset(p.slice(7));
-        if (bytes)
-          return send(res, 200, zlib.gzipSync(bytes), MIME['.json'], { 'Content-Encoding': 'gzip', 'Cache-Control': 'max-age=86400' });
-      } catch (error) {
-        console.warn('font raster:', error.message);
-      }
+    // only answer pages on this machine: a site that rebinds its name to 127.0.0.1 can't read the game files or tie up the server
+    if (!LOCAL_HOST.test(req.headers.host || '')) return send(res, 403, 'forbidden host');
+    if (!STATIC) {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     }
-    if (!key) return send(res, 204, '');
-    const size = assets.index.get(key).size,
-      range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
-    if (range && (range[1] || range[2])) {
-      const a = range[1] ? +range[1] : Math.max(0, size - +range[2]),
-        b = range[1] && range[2] ? Math.min(+range[2], size - 1) : size - 1;
-      if (a > b || a >= size) return send(res, 416, '', 'text/plain', { 'Content-Range': `bytes */${size}` });
-      return send(res, 206, assets.readPart(key, a, b - a + 1), mime(key), {
-        'Content-Range': `bytes ${a}-${b}/${size}`,
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'max-age=86400'
-      });
-    }
-    return send(res, 200, assets.read(key), mime(key), { 'Accept-Ranges': 'bytes', 'Cache-Control': 'max-age=86400' });
-  }
-  if (p.startsWith('/api/') && req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, 'forbidden');
-  if (p === '/api/find') {
-    if (!game) return send(res, 404, 'no game mounted');
-    let rx;
+    const url = new URL(req.url, 'http://x');
+    if (url.searchParams.has('jsprofile')) res.setHeader('Document-Policy', 'js-profiling');
+    let p;
     try {
-      const q = url.searchParams.get('q') || '.';
-      if (q.length > 512) return send(res, 400, 'bad regex');
-      rx = new RegExp(q, 'i');
+      p = decodeURIComponent(url.pathname);
     } catch {
-      return send(res, 400, 'bad regex');
+      return send(res, 400, 'bad path');
     }
-    const out = [];
-    for (const k of gameFor(url).game.index.keys()) if (rx.test(k)) out.push(k);
-    return send(res, 200, JSON.stringify(out.sort()), MIME['.json']);
-  }
-  if (p === '/api/mounted') {
-    return send(res, 200, JSON.stringify(MODS.map(mountedMod)), MIME['.json']);
-  }
-  if (p === '/api/modinfo') {
-    const e = game && gameFor(url).game.index.get((url.searchParams.get('key') || '').replace(/\//g, '\\').toUpperCase());
-    const at = e && e.file && path.resolve(e.file).toLowerCase(),
-      root =
-        at &&
-        MODS.map(r => path.resolve(r))
-          .filter(r => at.startsWith(r.toLowerCase() + path.sep))
-          .pop();
-    return send(res, 200, JSON.stringify(root ? readModInfo(root) : null), MIME['.json']);
-  }
-  serveStatic(req, res, p === '/' ? 'index.html' : p.slice(1));
+    // a NUL byte makes fs throw synchronously, which would take the whole server down
+    if (p.includes('\0')) return send(res, 400, 'bad path');
+
+    if (p.startsWith('/asset/')) {
+      const which = gameFor(url),
+        nativeFonts = which && which.fonts;
+      const assets = which && (url.searchParams.has('language') ? which.game.forLanguage(url.searchParams.get('language')) : which.game);
+      let key = assets && assets.resolve(p.slice(7));
+      // rasterising runs a GDI worker: only for the game's own pages, not a request another site makes
+      if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7)) && req.headers['sec-fetch-site'] !== 'cross-site') {
+        try {
+          const bytes = await nativeFonts.asset(p.slice(7));
+          if (bytes)
+            return send(res, 200, zlib.gzipSync(bytes), MIME['.json'], { 'Content-Encoding': 'gzip', 'Cache-Control': 'max-age=86400' });
+        } catch (error) {
+          console.warn('font raster:', error.message);
+        }
+      }
+      if (!key) return send(res, 204, '');
+      const size = assets.index.get(key).size,
+        range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+      if (range && (range[1] || range[2])) {
+        const a = range[1] ? +range[1] : Math.max(0, size - +range[2]),
+          b = range[1] && range[2] ? Math.min(+range[2], size - 1) : size - 1;
+        if (a > b || a >= size) return send(res, 416, '', 'text/plain', { 'Content-Range': `bytes */${size}` });
+        return send(res, 206, assets.readPart(key, a, b - a + 1), mime(key), {
+          'Content-Range': `bytes ${a}-${b}/${size}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'max-age=86400'
+        });
+      }
+      return send(res, 200, assets.read(key), mime(key), { 'Accept-Ranges': 'bytes', 'Cache-Control': 'max-age=86400' });
+    }
+    // the search API runs a caller's regex: only the game's own pages may use it, not another site's
+    if (p.startsWith('/api/') && req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, 'forbidden');
+    if (p === '/api/find') {
+      if (!game) return send(res, 404, 'no game mounted');
+      let rx;
+      try {
+        const q = url.searchParams.get('q') || '.';
+        if (q.length > 512) return send(res, 400, 'bad regex');
+        rx = new RegExp(q, 'i');
+      } catch {
+        return send(res, 400, 'bad regex');
+      }
+      const out = [];
+      for (const k of gameFor(url).game.index.keys()) if (rx.test(k)) out.push(k);
+      return send(res, 200, JSON.stringify(out.sort()), MIME['.json']);
+    }
+    if (p === '/api/mounted') {
+      return send(res, 200, JSON.stringify(MODS.map(mountedMod)), MIME['.json']);
+    }
+    if (p === '/api/modinfo') {
+      const e = game && gameFor(url).game.index.get((url.searchParams.get('key') || '').replace(/\//g, '\\').toUpperCase());
+      const at = e && e.file && path.resolve(e.file).toLowerCase(),
+        root =
+          at &&
+          MODS.map(r => path.resolve(r))
+            .filter(r => at.startsWith(r.toLowerCase() + path.sep))
+            .pop();
+      return send(res, 200, JSON.stringify(root ? readModInfo(root) : null), MIME['.json']);
+    }
+    serveStatic(req, res, p === '/' ? 'index.html' : p.slice(1));
 };
+// one bad request answers 500 instead of ending the server for the whole session
 http
   .createServer((req, res) =>
     handle(req, res).catch(error => {

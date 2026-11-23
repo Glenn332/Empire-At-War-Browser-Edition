@@ -200,6 +200,7 @@ function barred(galaxy, fleet, to) {
   const planet = galaxy.planets[to];
   if (!planet?.restricted) return false;
   const owner = galaxy.players.find(p => p.faction === fleet.owner);
+  // multiplayer humans carry an AI type name ("Human"), so ask who is human instead of reading owner.ai
   return !!owner && (galaxy.humans ? isHumanFaction(galaxy, fleet.owner) : !owner.ai) && !galaxy.storyEntry?.(fleet, planet);
 }
 

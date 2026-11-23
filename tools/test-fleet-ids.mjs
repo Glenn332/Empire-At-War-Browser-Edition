@@ -2,15 +2,10 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { openGame } from './megfs.mjs';
 
+// multiplayer orders name fleets and units by stable ids, so a fleet list that shifts before the order runs can't redirect it
 const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)), []);
 globalThis.fetch = async input => {
-  const key = archive.resolve(
-      decodeURIComponent(
-        String(input)
-          .replace(/^asset\//, '')
-          .split('?')[0]
-      )
-    ),
+  const key = archive.resolve(decodeURIComponent(String(input).replace(/^asset\//, '').split('?')[0])),
     bytes = key && archive.read(key);
   return new Response(bytes ? new Uint8Array(bytes) : null, { status: bytes ? 200 : 404 });
 };
@@ -44,6 +39,7 @@ const game = { galaxy: g, land: (f, at, opts) => landed.push({ f, at, opts }) };
 const land = orders.land(g, b, p, [b.units[1]]),
   unit = recordRef(g, b.units[1]);
 assert.deepEqual(land.f, ['n', b.nid]);
+// an earlier fleet leaves the list (swept, merged) between the order and its turn
 g.fleets.splice(g.fleets.indexOf(a), 1);
 runCommand(game, owner, land);
 assert.equal(landed.length, 1);
@@ -51,10 +47,12 @@ assert.equal(landed[0].f, b, 'the order still lands the fleet it named');
 assert.deepEqual(landed[0].opts.records, [b.units[1]], 'and the unit it named');
 assert.equal(fromRecordRef(g, unit), b.units[1]);
 
+// the named unit is gone: nothing lands rather than another unit
 const gone = b.units.pop();
 runCommand(game, owner, land);
 assert.equal(landed.length, 1, 'an order for a unit that no longer exists is dropped');
 b.units.push(gone);
+// the named fleet is gone
 g.fleets.splice(g.fleets.indexOf(b), 1);
 runCommand(game, owner, orders.land(g, b, p));
 assert.equal(landed.length, 1, 'an order for a fleet that no longer exists is dropped');
@@ -64,10 +62,12 @@ runCommand({ galaxy: g, transferUnits: () => moved++ }, owner, transfer);
 assert.equal(moved, 0, 'a transfer into a fleet that is gone does not start a new fleet');
 g.fleets.push(b);
 
+// the raid flag travels with a land order
 landed.length = 0;
 runCommand(game, owner, orders.land(g, b, p, null, true));
 assert.equal(landed[0].opts.raid, !!(await import('../public/js/game/raid.js')).isRaidForce(b), 'raid only for a raid force');
 
+// copies of a record get their own id, the first keeps it
 const copy = { ...b.units[0] };
 g.planets[p].garrison.push(copy);
 const before = b.units[0].nid;
@@ -76,6 +76,7 @@ assert.equal(b.units[0].nid, before);
 assert.notEqual(copy.nid, before);
 g.planets[p].garrison.pop();
 
+// ids and the counter survive a save
 const snap = JSON.parse(JSON.stringify(snapshotGalaxy(g)));
 const h = startingGalaxy(data, campaign);
 applyGalaxy(h, snap);
@@ -87,6 +88,7 @@ assert.equal(h.nextId, g.nextId);
 stampIds(h);
 assert.equal(h.nextId, g.nextId, 'loading hands out no new ids');
 
+// an older save without ids gets them the same way on every machine
 const old = JSON.parse(JSON.stringify(snap), (k, v) => (k === 'nid' || k === 'nextId' ? undefined : v));
 assert(!JSON.stringify(old).includes('nid'));
 const x = startingGalaxy(data, campaign),
@@ -104,6 +106,7 @@ assert.deepEqual(
   y.fleets.flatMap(f => f.units.map(u => recordRef(y, u)))
 );
 
+// unstamped (single-player) records keep the positional refs
 const sp = startingGalaxy(data, campaign);
 const r = recordRef(sp, sp.fleets[0].units[0]);
 assert.equal(r[0], 'f');

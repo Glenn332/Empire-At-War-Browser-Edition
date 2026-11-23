@@ -262,6 +262,7 @@ export class GalacticScreenText {
     this.root.hidden = !this.rows.length;
   }
 
+  // story text still on screen: indefinite rows stay until a later reward removes them
   snapshot() {
     const out = [];
     for (const row of this.rows) {

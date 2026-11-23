@@ -137,6 +137,8 @@ export async function aiPlayer(faction) {
   await aiSets(faction);
   const f = db.faction(faction),
     players = await PLAYERS;
+  // factions with no Basic_AI (Pirates, Hutts, many mod factions) fall back to the data's None player, so their
+  // tactical goal system still gets templates instead of switching nothing on
   return (f && (players.get(f.str('Basic_AI').toUpperCase()) || players.get('NONE'))) || null;
 }
 

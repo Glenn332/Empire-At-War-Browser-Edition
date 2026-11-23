@@ -357,6 +357,7 @@ export async function restoreStory(host, data) {
     if (si.scoring) host.scoring = inst;
     if (si.env !== null) inst.env = host.environment(inst);
   }
+  // created objects come first: object scripts and Lua values refer to them by index
   host.created.length = 0;
   for (const c of data.created)
     host.created.push({
@@ -432,6 +433,7 @@ export async function restoreStory(host, data) {
   host.battleClasses = (data.battleClasses || [[], []]).map(list => new Set(list));
   host.aiFlags = new Map(data.aiFlags.map(([k, ids]) => [k, new Set(ids)]));
   if (data.bountyOn !== undefined) host.bountyOn = data.bountyOn;
+  // a line cut off by the save counts as finished once the game goes on
   host.speaking = [];
   host.speechDone = [...(data.speechDone || []), ...(data.speaking || [])];
   for (const sp of data.plots) {

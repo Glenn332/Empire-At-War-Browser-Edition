@@ -528,6 +528,7 @@ export class GalacticStoryHost extends StoryPlots {
   speechQueued(name) {
     if (this.game.setup?.net) (this.speechDone ||= []).push(name);
     else {
+      // lines still playing are saved, so STORY_SPEECH_DONE still comes after a load or a battle
       const list = (this.speaking ||= []);
       list.push(name);
       if (list.length > 16) list.shift();
@@ -1412,6 +1413,7 @@ export class GalacticStoryHost extends StoryPlots {
       },
       Get_Garrisoned_Units: () => [],
       Prevent_AI_Usage: on => {
+        // kept on the galaxy record too, so the save and the return from a battle keep it
         object.noAI = !!on;
         if (on) record.noAI = true;
         else delete record.noAI;
@@ -2467,6 +2469,7 @@ export class GalacticStoryHost extends StoryPlots {
       this.objectCache = null;
       this.reasonCache.clear();
     }
+    // modeSuspended follows each peer's own battle window; in a net game hold on the lockstep battle state instead
     const suspended = this.game.net ? !!this.game.busy : this.game.modeSuspended;
     try {
       if (service && !this.game.paused && !suspended) this.replayDelayed();
@@ -2501,6 +2504,8 @@ export class GalacticStoryHost extends StoryPlots {
     }
   }
 
+  // A net game must reach the same story state on every peer before lockstep starts, so it waits for slow
+  // script loads and bounds the warm-up by passes instead of wall-clock time.
   warmBudget(timeout) {
     if (this.game.setup?.net) {
       let passes = WARM_PASSES;

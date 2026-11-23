@@ -564,6 +564,7 @@ export function restore(game, save) {
       if (o.inc !== undefined && e.income) e.income.timer = o.inc;
       if (o.sw) e.swarm = { ...o.sw };
       if (o.seen) e.everSeenBy = o.seen;
+      // a script's Hide_Object / Prevent_Opportunity_Fire survives the reload
       if (o.limbo) e.limbo = true;
       if (o.nof) e.noOpportunity = true;
       applyScriptFlags(e, o.fl);
@@ -788,6 +789,7 @@ const canPack = () => typeof CompressionStream !== 'undefined' && typeof Decompr
 const pack = async text =>
   new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
 const unpack = async blob => new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+// a save from another player: a few hundred KB of gzip can stand for gigabytes, so stop reading past a limit
 const PEER_SAVE_MAX = 128 * 1024 * 1024;
 const TOO_LARGE = 'The saved game is too large.';
 async function unpackCapped(blob, limit) {
@@ -808,6 +810,8 @@ async function unpackCapped(blob, limit) {
   return parts.join('');
 }
 
+// One write at a time per slot (across tabs where the browser has Web Locks): two overlapping
+// saves could otherwise each delete the payload the other one just wrote.
 const slotQueue = new Map();
 function inSlot(id, fn) {
   if (typeof navigator !== 'undefined' && navigator.locks?.request) return navigator.locks.request('swr-save' + OWN + ':' + id, fn);
@@ -818,6 +822,7 @@ function inSlot(id, fn) {
   return run;
 }
 
+// the newer of id.swz / id.json: a write cut off before the old one was removed leaves both
 async function payload(d, id) {
   const files = [];
   for (const ext of ['.swz', '.json']) {
@@ -844,6 +849,7 @@ export async function listSaves() {
         listed.add(fname.slice(0, -5));
       } catch {}
     }
+    // a save whose .meta was never written is listed from its data
     for (const id of ids) {
       if (listed.has(id)) continue;
       try {
@@ -874,6 +880,7 @@ async function writeFile(d, name, data) {
     await w.write(data);
     await w.close();
   } catch (error) {
+    // the old contents stay until close(); a file made for this write goes again
     await w?.abort().catch(() => {});
     if (!existed) await d.removeEntry(name).catch(() => {});
     throw error;
@@ -889,6 +896,7 @@ export async function putSave(snap, id = null) {
     try {
       await inSlot(id, async () => {
         const data = packed ? await pack(text) : text;
+        // without a .meta the list reads the data itself, so a cut-off write never shows the old name
         await d.removeEntry(id + '.meta').catch(() => {});
         await writeFile(d, id + (packed ? '.swz' : '.json'), data);
         await d.removeEntry(id + (packed ? '.json' : '.swz')).catch(() => {});

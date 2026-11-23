@@ -1,3 +1,5 @@
+// server.mjs rasterises font pages on request: what a caller asks for is bounded (faces, sizes, memory).
+// The GDI worker is stood in for, so this runs anywhere.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

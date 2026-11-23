@@ -440,6 +440,7 @@ export class Radar {
       player = ui.player,
       r = ui.r,
       S = this.settings;
+    // Size the backing store from the content box (the rect includes the border), so drawing never grows the canvas.
     const box = cv.getBoundingClientRect(),
       dpr = window.devicePixelRatio || 1;
     const cw = Math.round(((box.width * cv.clientWidth) / cv.offsetWidth) * dpr),

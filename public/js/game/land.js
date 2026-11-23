@@ -92,6 +92,7 @@ async function animOf(type, kind) {
 
 const SETS = new Map();
 
+// Sight eyes are bucketed into every cell their reveal circle overlaps, so a target only tests the eyes of its own cell.
 const EYE_CELL = 256;
 const eyeKey = (cx, cy) => (cx + 32768) * 65536 + cy + 32768;
 function gridEyes(g, eyes) {

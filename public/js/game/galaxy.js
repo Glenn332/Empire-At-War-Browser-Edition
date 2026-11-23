@@ -309,6 +309,8 @@ const visibilitySnapshot = v => ({
 });
 const visibilityState = v => ({ viewer: v.viewer, clock: v.clock || 0, planets: (v.planets || []).map(p => ({ ...p })) });
 
+// every fleet and unit record gets an id that multiplayer orders name, since array positions shift before an order runs;
+// called from the lockstep simulation only, so all peers hand out the same ids
 export function stampIds(g) {
   const seen = new Set();
   let next = Math.max(1, g.nextId || 1);

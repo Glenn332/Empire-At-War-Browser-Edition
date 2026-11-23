@@ -16,6 +16,7 @@ const { loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const S = await import('../public/js/game/sim.js');
 
+// Space fog scans a squadron's cells once; every target must still get exactly the bits a per-unit scan gives.
 let seed = 11;
 const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32;
 for (let round = 0; round < 6; round++) {

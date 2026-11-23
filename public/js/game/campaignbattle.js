@@ -625,6 +625,7 @@ export function battleResult(w, book, cb, winnerTeam) {
   }
   const stationLevel =
     book.station && !book.station.dead ? (book.station.stationLevel ?? book.station.type.num('Base_Level', 0)) : undefined;
+  // orbital structures that never spawned (no marker) count as surviving
   for (const [gid, e] of book.orbital || []) if (!e || !e.dead) alive.push(gid);
   return {
     planet: cb.planet,

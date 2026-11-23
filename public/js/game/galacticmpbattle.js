@@ -3,9 +3,12 @@ import { isTacticalSuperweapon } from './tacticalsuperweapon.js';
 
 const key = x => String(x || '').toUpperCase();
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// the tactical battle runs on the very same setup object and swaps unit type names for the types themselves
 const typeOf = t => (typeof t === 'string' ? db.type(t) : t && typeof t.list === 'function' ? t : null);
+// Lockstep ticks a PvP battle waits for every side's report before taking the tactical host's.
 export const REPORT_TIMEOUT = 1800;
 
+// The parts of a reported tactical result that the battle could have produced; null when it is not about this battle.
 export function checkedResult(galaxy, b, r) {
   const cb = b?.setup?.campaign,
     sides = [b?.attacker, b?.defender],
@@ -49,6 +52,7 @@ export function checkedResult(galaxy, b, r) {
   } else {
     const fought = !!cb.defender?.station;
     out.station = fought ? !!r.station : !!pl?.station;
+    // which starbase and orbital structures were in the battle comes from the setup, never from the report
     out.stationFought = cb.defender?.station || null;
     out.orbitalFought = list(cb.defender?.orbital).map(o => String(o.gid));
     if (fought && r.station && Number.isInteger(r.stationLevel) && r.stationLevel >= 0) out.stationLevel = r.stationLevel;
@@ -86,6 +90,7 @@ export function checkedResult(galaxy, b, r) {
         : { credits, ai: false };
     }
   }
+  // story events the battle held back (a lost mission); nothing else is ever replayed from these
   if (Array.isArray(r.storyDelayed))
     out.storyDelayed = r.storyDelayed
       .flatMap(d => (d?.type === 'STORY_MISSION_LOST' && typeof d.name === 'string' ? [{ type: d.type, name: d.name.slice(0, 128) }] : []))
@@ -187,6 +192,7 @@ export class MpBattles {
     this.autoresolve(b);
   }
 
+  // nobody is left to fight it, or no usable report came in: resolve it the same way on every machine
   autoresolve(b) {
     const game = this.game;
     b.done = true;
@@ -275,6 +281,7 @@ export class MpBattles {
     }
     if (!v) {
       console.warn(`Battle ${id}: ignored a result from ${game.playerName?.(faction) || faction} that does not match the battle`);
+      // still start the clock, so a battle whose every report is refused can't hold the galaxy forever
       b.reports ||= new Map();
       b.refused = (b.refused || 0) + 1;
       return this.settle(b);
@@ -288,6 +295,7 @@ export class MpBattles {
     this.settle(b);
   }
 
+  // Every human side has to report the same result; otherwise the tactical host's report stands.
   settle(b) {
     if (!b || b.done || !b.reports) return;
     const got = b.humans.map(f => b.reports.get(key(f))).filter(Boolean),
@@ -303,6 +311,7 @@ export class MpBattles {
       );
       return this.finish(b, fallback.r);
     }
+    // the host's report never came: after the wait take the first usable one, or resolve the battle if there is none
     if ((b.waited || 0) < REPORT_TIMEOUT) return;
     if (b.first) {
       console.warn(`Battle ${b.id}: the tactical host sent no result; using the first report that came in`);

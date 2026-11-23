@@ -108,6 +108,7 @@ export class PendingBattle {
       .map((p, i) => (p.human && !p.left && sides.includes(key(p.faction)) ? i : -1))
       .filter(i => i >= 0);
     request.humans = humans;
+    // the campaign or a story script can rule out auto-resolve here: the vote only offers the tactical battle
     request.locked = !this.allowed(request);
     request.answers = new Map();
     request.steps = 0;

@@ -7,11 +7,14 @@ const PART = 20000,
   MAX_PARTS = 4000,
   MAX_OPEN_PARTS = 4,
   FAST_MAX = 15000;
+// a gated host hears only 'hello' from a peer it has not admitted, and drops it if it isn't admitted in time
 const ADMIT_WAIT = 120000,
   PASSWORD_TRIES = 5;
 
 const LOCAL = /^(localhost|127\.0\.0\.1)$/;
 let linkLobby;
+// a ?lobby= link picks the lobby server: on a local page that's development, anywhere else the player is
+// asked once, since that server sees their name and password and can feed them any game
 export function lobbyFromLink() {
   if (linkLobby !== undefined) return linkLobby;
   linkLobby = null;
@@ -356,6 +359,7 @@ export class NetSession extends Emitter {
   receive(from, msg) {
     if (this.gated && !this.admitted.has(from) && (!msg || msg._part !== undefined || msg.k !== 'hello')) return;
     if (msg && msg._part !== undefined) {
+      // a peer's split message: bound its size and how many are open at once, so a bad peer can't eat memory
       const n = msg.n,
         key = from + ':' + msg._part;
       const i = msg.i;
@@ -367,6 +371,7 @@ export class NetSession extends Emitter {
         if (open.length >= MAX_OPEN_PARTS) this.pieces.delete(open[0]);
         this.pieces.set(key, (got = { n, have: 0, s: new Array(n) }));
       }
+      // each piece once, by its index: a repeated or out-of-range piece can't grow the buffer
       if (got.n !== n || got.s[i] !== undefined) return;
       got.s[i] = msg.s;
       if (++got.have < n) return;
@@ -403,6 +408,7 @@ export class NetSession extends Emitter {
     for (const [p, l] of this.links) if (p !== except && (!this.gated || this.admitted.has(p))) l.send(msg);
   }
 
+  // the host let this peer in (right game, right password, a seat): from now on it hears and is heard
   admit(peer) {
     if (!this.links.has(peer)) return;
     this.admitted.add(peer);
@@ -418,6 +424,7 @@ export class NetSession extends Emitter {
     setTimeout(() => this.kick(peer), 300);
   }
 
+  // refuse new players once the game has started (players already in can still reconnect)
   lock(on) {
     if (this.host) this.out({ t: 'lock', on: !!on });
   }

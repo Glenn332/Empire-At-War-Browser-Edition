@@ -84,6 +84,7 @@ export function localFolder(
 }
 
 const asJson = async r => (r.ok && /json/.test(r.headers.get('content-type') || '') ? r.json() : null);
+// a change goes as a POST with the app's header: the app refuses it as a plain GET
 const call = async (url, params = {}, change = false) => {
   const r = await fetch(url + '?' + new URLSearchParams(params), change ? { method: 'POST', headers: { 'X-SWR': '1' } } : undefined);
   if (r.status === 400) throw new Error(await r.text());

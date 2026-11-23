@@ -44,6 +44,7 @@ assert.equal(g.players[0].credits, 1000 - 10, 'the price is the one the game off
 assert.deepEqual(runCommand(host, 'Underworld', buy(10)), {}, 'an offer is used once');
 assert.deepEqual(runCommand(host, 'Empire', { c: 'panel', kind: 'market', rec: recordRef(g, record), p: 0, item: item.name, price: 10, respawn: 0 }), {}, 'never for another player unit');
 {
+  // a fleet unit has no owner of its own: another faction can't pick from its panel
   const enemy = { type: hero };
   g.fleets.push({ owner: 'Empire', planet: 0, units: [enemy] });
   g.players.push({ faction: 'Empire', credits: 1000, blackMarket: [] });

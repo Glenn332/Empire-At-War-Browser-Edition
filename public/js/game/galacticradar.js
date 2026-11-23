@@ -204,6 +204,7 @@ export class GalacticRadar {
     this.refresh();
   }
 
+  // Called every frame: blips are rebuilt every 0.1 s or when the selection changes, flashes animate every frame.
   tick(dt) {
     if ((this.refreshIn = (this.refreshIn || 0) - dt) <= 0 || this.game.selected !== this.shownSelected) {
       this.refreshIn = 0.1;

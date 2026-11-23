@@ -8,6 +8,7 @@ const key = s =>
     .replace(/\\/g, '/')
     .toUpperCase();
 
+// unit flags the mission scripts set once and never set again after a load
 const FLAGS = [
   ['cannotDie', 'cd'],
   ['invulnerable', 'inv'],
@@ -21,6 +22,7 @@ export function scriptFlags(u, time = 0, keepHidden = true) {
   const o = {};
   for (const [k, s] of FLAGS) if (u[k] && (keepHidden || s !== 'hid')) o[s] = 1;
   if (u.scriptSelectable === false) o.sel = 0;
+  // JSON writes Infinity as null
   if (u.invulnUntil > time) o.invU = u.invulnUntil === Infinity ? 'inf' : Math.round(u.invulnUntil * 100) / 100;
   return Object.keys(o).length ? o : null;
 }
@@ -260,6 +262,8 @@ function recipeIn(B, host, o) {
   return r;
 }
 
+// A story mission whose scripts restart on load would replay its intro and spawns on top of the
+// restored units, so such a save is refused; any other battle is saved and flagged.
 export function trySaveBattleScripts(game, ref) {
   try {
     return { scripts: saveBattleScripts(game, ref) };
