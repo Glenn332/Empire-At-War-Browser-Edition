@@ -15,7 +15,7 @@ const LOCAL = /^(localhost|127\.0\.0\.1)$/;
 let linkLobby;
 // a ?lobby= link picks the lobby server: on a local page that's development, anywhere else the player is
 // asked once, since that server sees their name and password and can feed them any game
-function lobbyFromLink() {
+export function lobbyFromLink() {
   if (linkLobby !== undefined) return linkLobby;
   linkLobby = null;
   const q = new URLSearchParams(location.search).get('lobby');
