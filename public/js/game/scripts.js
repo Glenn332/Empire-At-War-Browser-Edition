@@ -56,6 +56,7 @@ function shouldSwitch(u, t) {
 const HARM_FADE = 6;
 const gone = e => !e || e.dead || (e.isSquad && !e.fighters.length);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const PROXIMITY_EVENTS_PER_SERVICE = 6;
 const hasProp = typeHasProperty;
 
 export class ScriptHost {
@@ -1683,6 +1684,7 @@ export class ScriptHost {
     });
     vm.global('Master_Volume_Restore', () => w.audio?.restoreMaster?.());
     const nearest = (from, pred) => {
+      if (typeof w.nearestUnit === 'function' && w.squads) return nearestInSpace(from, pred);
       let best = null,
         bd = 1e18;
       for (const e of live()) {
@@ -1694,6 +1696,22 @@ export class ScriptHost {
         }
       }
       return best;
+    };
+    // Same answer as the walk over world.selectables() above (squadrons first, then single units in
+    // world order, the first of equal distances kept), with the units found through the unit grid.
+    const nearestInSpace = (from, pred) => {
+      let best = null,
+        bestDistance = 1e18;
+      for (const squad of w.squads) {
+        if (squad === from || gone(squad) || !pred(squad)) continue;
+        const distance = dist(squad, from);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = squad;
+        }
+      }
+      const unit = w.nearestUnit(from, u => !u.squad && u.selectable && !(u.isPad && u.padChild) && pred(u));
+      return unit && dist(unit, from) < bestDistance ? unit : best;
     };
     const worth = u => {
       const l = lead(u);
@@ -2370,6 +2388,27 @@ export class ScriptHost {
     }
   }
 
+  // Up to six selectable objects within the registered range, in the order of world.selectables():
+  // squadrons first, then single units in world order. In space the units come from the unit grid,
+  // which keeps that order, instead of a walk over every object in the battle.
+  queueProximity(inst, prox) {
+    const w = this.world,
+      centre = prox.of;
+    let found = 0;
+    const take = o => {
+      if (o === centre || gone(o) || (prox.who && o.player !== prox.who) || dist(o, centre) > prox.range) return false;
+      inst.events.push({ fn: prox.fn, params: [this.wrap(centre), this.wrap(o)] });
+      return ++found >= PROXIMITY_EVENTS_PER_SERVICE;
+    };
+    if (typeof w.near !== 'function' || !w.squads) {
+      for (const o of w.selectables()) if (take(o)) return;
+      return;
+    }
+    for (const squad of w.squads) if (!squad.dead && take(squad)) return;
+    for (const unit of w.near(centre, prox.range, (this.proximityNear ||= [])))
+      if (!unit.dead && !unit.squad && unit.selectable && !(unit.isPad && unit.padChild) && take(unit)) return;
+  }
+
   service(inst) {
     const vm = this.vm,
       w = this.world,
@@ -2385,16 +2424,7 @@ export class ScriptHost {
         inst.next = clock + 0.1;
         return;
       }
-    } else
-      for (const p of inst.prox) {
-        if (gone(p.of)) continue;
-        let n = 0;
-        for (const o of w.selectables()) {
-          if (o === p.of || gone(o) || (p.who && o.player !== p.who) || dist(o, p.of) > p.range) continue;
-          inst.events.push({ fn: p.fn, params: [this.wrap(p.of), this.wrap(o)] });
-          if (++n >= 6) break;
-        }
-      }
+    } else for (const p of inst.prox) if (!gone(p.of)) this.queueProximity(inst, p);
     if (inst.poll && !inst.pollEachStep) inst.poll();
     this.current = inst;
     let r;

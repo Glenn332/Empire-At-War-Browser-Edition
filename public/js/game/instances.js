@@ -260,7 +260,13 @@ export class Instances {
       }
       if (whole) obj.updateWorldMatrix(obj.parent !== scene, true);
       else obj.matrixWorld.copy(obj.matrix);
-      if (!inView) continue;
+      if (!inView) {
+        // Only the shadow pass, which has already drawn this frame, needs a ship off screen; it keeps
+        // its pose for the next frame's shadow map but stays out of the camera draw.
+        obj.visible = false;
+        put.push(obj);
+        continue;
+      }
       let tr = 0,
         tg = 0,
         tb = 0,
@@ -374,7 +380,7 @@ export class Instances {
           });
         }
       }
-      if (!whole && !rest) {
+      if (!rest) {
         obj.visible = false;
         put.push(obj);
       }

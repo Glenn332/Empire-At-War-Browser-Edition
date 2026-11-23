@@ -1877,6 +1877,10 @@ export class World {
     this.reveal = false;
     this.fogTimer = 0;
     this.solid = [];
+    this.unitGridHitReach = 0;
+    this.unitGridCells = { minX: 0, maxX: -1, minY: 0, maxY: -1 };
+    this.squadPickNear = [];
+    this.squadPickAround = [];
     this.beams = [];
     this.reveals = [];
     this.fogLifted = 0;
@@ -3084,16 +3088,28 @@ export class World {
     }
     const ug = this.unitGrid || (this.unitGrid = new Map());
     for (const l of ug.values()) l.length = 0;
+    let hitReach = 0;
+    const cells = this.unitGridCells;
+    cells.minX = cells.minY = Infinity;
+    cells.maxX = cells.maxY = -Infinity;
     for (let i = 0; i < units.length; i++) {
       const o = units[i];
       o.gridAt = i;
       if (o.dead) continue;
-      const k = Math.floor(o.x / UNIT_CELL) * 65536 + Math.floor(o.y / UNIT_CELL);
+      if (o.hitRadius > hitReach) hitReach = o.hitRadius;
+      const cellX = Math.floor(o.x / UNIT_CELL),
+        cellY = Math.floor(o.y / UNIT_CELL);
+      if (cellX < cells.minX) cells.minX = cellX;
+      if (cellX > cells.maxX) cells.maxX = cellX;
+      if (cellY < cells.minY) cells.minY = cellY;
+      if (cellY > cells.maxY) cells.maxY = cellY;
+      const k = cellX * 65536 + cellY;
       let l = ug.get(k);
       if (!l) ug.set(k, (l = []));
       l.push(o);
     }
     this.unitGridN = units.length;
+    this.unitGridHitReach = hitReach;
     (this.ahead ||= new ScanAhead()).prepare(units, dt);
     if (this.timers.length) {
       const due = this.timers.filter(t => t.at <= this.time);
@@ -3999,6 +4015,88 @@ export class World {
       }
     if (out.length > 1) out.sort(byGridAt);
     for (let i = this.unitGridN; i < this.units.length; i++) out.push(this.units[i]);
+    return out;
+  }
+
+  // The live unit nearest to the point (by centre) that passes the test, searched ring by ring over
+  // the unit grid. Ties go to the unit earlier in this.units, as a walk over every unit would give.
+  nearestUnit(from, accept) {
+    const units = this.units;
+    let best = null,
+      bestDistance = Infinity;
+    const orderOf = unit => (units[unit.gridAt] === unit ? unit.gridAt : units.indexOf(unit));
+    const consider = unit => {
+      if (unit === from || unit.dead || !accept(unit)) return;
+      const distance = Math.hypot(unit.x - from.x, unit.y - from.y);
+      if (distance < bestDistance || (distance === bestDistance && orderOf(unit) < orderOf(best))) {
+        best = unit;
+        bestDistance = distance;
+      }
+    };
+    const grid = this.unitGrid;
+    if (!grid || this.unitGridN > units.length) {
+      for (const unit of units) consider(unit);
+      return best;
+    }
+    for (let i = this.unitGridN; i < units.length; i++) consider(units[i]);
+    const cells = this.unitGridCells,
+      centreX = Math.floor(from.x / UNIT_CELL),
+      centreY = Math.floor(from.y / UNIT_CELL);
+    const lastRing = Math.max(centreX - cells.minX, cells.maxX - centreX, centreY - cells.minY, cells.maxY - centreY);
+    const visit = (cellX, cellY) => {
+      if (cellX < cells.minX || cellX > cells.maxX || cellY < cells.minY || cellY > cells.maxY) return;
+      const list = grid.get(cellX * 65536 + cellY);
+      if (list) for (const unit of list) consider(unit);
+    };
+    for (let ring = 0; ring <= lastRing; ring++) {
+      if (best && bestDistance < (ring - 1) * UNIT_CELL - UNIT_PAD) break;
+      if (ring === 0) {
+        visit(centreX, centreY);
+        continue;
+      }
+      for (let cellX = centreX - ring; cellX <= centreX + ring; cellX++) {
+        visit(cellX, centreY - ring);
+        visit(cellX, centreY + ring);
+      }
+      for (let cellY = centreY - ring + 1; cellY <= centreY + ring - 1; cellY++) {
+        visit(centreX - ring, cellY);
+        visit(centreX + ring, cellY);
+      }
+    }
+    return best;
+  }
+
+  // Units whose hit circle can reach within either radius of the two points, in the order of
+  // this.units, so a search over them picks exactly what a search over every unit would.
+  nearEither(first, firstRange, second, secondRange, out, spare) {
+    const reach = this.unitGridHitReach;
+    this.near(first, firstRange + reach, out);
+    if (!second || this.unitGridN > this.units.length || !this.unitGrid) return out;
+    this.near(second, secondRange + reach, spare);
+    const tail = this.units.length - this.unitGridN,
+      firstEnd = out.length - tail,
+      secondEnd = spare.length - tail;
+    const merged = [];
+    let i = 0,
+      j = 0;
+    while (i < firstEnd || j < secondEnd) {
+      const a = i < firstEnd ? out[i] : null,
+        b = j < secondEnd ? spare[j] : null;
+      if (b === null || (a !== null && a.gridAt < b.gridAt)) {
+        merged.push(a);
+        i++;
+      } else if (a === null || b.gridAt < a.gridAt) {
+        merged.push(b);
+        j++;
+      } else {
+        merged.push(a);
+        i++;
+        j++;
+      }
+    }
+    for (let k = this.unitGridN; k < this.units.length; k++) merged.push(this.units[k]);
+    out.length = 0;
+    for (const o of merged) out.push(o);
     return out;
   }
 
@@ -5877,7 +5975,9 @@ export class World {
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
     }
     if (!best) {
-      for (const o of this.units) {
+      const around = range < 0 ? null : anchor,
+        candidates = this.nearEither(lead, reach, around, hull + range + ext + reach, this.squadPickNear, this.squadPickAround);
+      for (const o of candidates) {
         if (o.dead || o.player.team === s.player.team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & s.player.bit))
           continue;
         if (!inWeapon(o) && !respond(o)) continue;
