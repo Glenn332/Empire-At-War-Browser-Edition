@@ -1,6 +1,6 @@
 import { heroAttachRefused } from './heroattach.js';
 import { simRandom } from './simrandom.js';
-import { db } from '../gamedata.js';
+import { db, isCategoryList } from '../gamedata.js';
 import { forceKind, placeStartingForce } from './galaxy.js';
 import {
   aiProductionBlock,
@@ -77,7 +77,7 @@ function forceDefinition(def) {
         .split('|')
         .map(n => n.trim())
         .filter(Boolean),
-      types = [...new Set(names.flatMap(n => baseLevels(db.type(n))))];
+      types = isCategoryList(names) ? [] : [...new Set(names.flatMap(n => baseLevels(db.type(n))))];
     force.specs.push({
       types: types.length ? types : null,
       cats: types.length ? null : names.map(key),

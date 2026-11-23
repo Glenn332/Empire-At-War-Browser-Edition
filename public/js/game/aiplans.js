@@ -1,4 +1,4 @@
-import { db } from '../gamedata.js';
+import { db, isCategoryList } from '../gamedata.js';
 import { buildCost, isUpgradeType } from './sim.js';
 import { fetchText } from '../vfs.js';
 import { simRandom } from './simrandom.js';
@@ -110,6 +110,23 @@ function fits(e, spec) {
   );
 }
 
+const FORCE_LINE = /"([A-Za-z_0-9 |-]+?)=\s*(\d+)\s*(?:,\s*(\d+))?\s*"/g;
+const FORCE_TOTAL = /^MinimumTotal(Size|Force)$/i;
+
+// The unit lines of every task force in a plan script: the names before "=", the minimum and the maximum.
+// MinimumTotalSize and MinimumTotalForce set limits on the whole force and are not unit lines.
+function* forceLines(code) {
+  for (const match of code.matchAll(FORCE_LINE)) {
+    const names = match[1]
+      .split('|')
+      .map(name => name.trim())
+      .filter(Boolean);
+    if (names.length === 1 && FORCE_TOTAL.test(names[0])) continue;
+    const min = +match[2];
+    yield { names, min, max: match[3] !== undefined ? +match[3] : min };
+  }
+}
+
 export function readForce(def) {
   const f = { name: String(def[0]), specs: [], flags: new Set(), minSize: 0, minForce: 0 },
     not = [];
@@ -136,7 +153,7 @@ export function readForce(def) {
         .split('|')
         .map(x => x.trim())
         .filter(Boolean),
-      types = names.map(n => db.type(n)).filter(Boolean);
+      types = isCategoryList(names) ? [] : names.map(n => db.type(n)).filter(Boolean);
     f.specs.push({
       types: types.length ? types : null,
       cats: types.length ? null : names.map(n => n.toUpperCase()),
@@ -247,39 +264,32 @@ export class Plans {
       const needs = [],
         code = src.replace(/--[^\n]*/g, '').replace(/"\s*\.\.\s*"/g, '');
       const built = [];
-      for (const x of code.matchAll(/"([A-Za-z_0-9 |-]+?)=\s*(\d+)\s*(?:,\s*(\d+))?\s*"/g)) {
-        const types = x[1]
-          .split('|')
-          .map(n => db.type(n.trim()))
-          .filter(Boolean)
-          .filter(t => t.has('Tactical_Buildable_Constructed'));
-        if (types.length) built.push({ types, max: Math.max(1, x[3] !== undefined ? +x[3] : +x[2]) });
+      for (const line of forceLines(code)) {
+        const types = isCategoryList(line.names)
+          ? []
+          : line.names
+              .map(n => db.type(n))
+              .filter(Boolean)
+              .filter(t => t.has('Tactical_Buildable_Constructed'));
+        if (types.length) built.push({ types, max: Math.max(1, line.max) });
       }
       if (built.length) this.builds.set(key, built);
       if (!/^[ \t]*AllowFreeStoreUnits\s*=\s*false/m.test(code))
-        for (const x of code.matchAll(/"([A-Za-z_0-9 |-]+?)=\s*(\d+)\s*(?:,\s*\d+)?\s*"/g)) {
-          const names = x[1]
-              .split('|')
-              .map(n => n.trim())
-              .filter(Boolean),
-            types = names.map(n => db.type(n)).filter(Boolean);
+        for (const { names, min } of forceLines(code)) {
+          const types = isCategoryList(names) ? [] : names.map(n => db.type(n)).filter(Boolean);
           if (types.length && types.every(t => t.has('Tactical_Buildable_Constructed'))) continue;
-          if (+x[2] > 0 && names.length)
-            needs.push({ types: types.length ? types : null, cats: types.length ? null : names.map(n => n.toUpperCase()), min: +x[2] });
+          if (min > 0 && names.length)
+            needs.push({ types: types.length ? types : null, cats: types.length ? null : names.map(n => n.toUpperCase()), min });
         }
       else {
         const specs = [];
-        for (const x of code.matchAll(/"([A-Za-z_0-9 |-]+?)=\s*(\d+)\s*(?:,\s*(\d+))?\s*"/g)) {
-          const names = x[1]
-              .split('|')
-              .map(n => n.trim())
-              .filter(Boolean),
-            types = names.map(n => db.type(n)).filter(Boolean);
+        for (const { names, min, max } of forceLines(code)) {
+          const types = isCategoryList(names) ? [] : names.map(n => db.type(n)).filter(Boolean);
           specs.push({
             types: types.length ? types : null,
             cats: types.length ? null : names.map(n => n.toUpperCase()),
-            min: +x[2],
-            max: x[3] !== undefined ? +x[3] : +x[2]
+            min,
+            max
           });
         }
         const req = /RequiredCategories\s*=\s*\{([^}]*)\}/.exec(code);
@@ -1997,7 +2007,9 @@ export class Plans {
         }
         const at = this.at(v);
         f.pool = f.pool.filter(x => x.owner === inst && (p.aiPool || []).includes(x));
-        if (!at || !f.pool.length || (w.skirmish && (!p.station || p.station.dead))) return undefined;
+        // A position worked out from a division by zero (NaN) has no place to arrive at.
+        if (!at || Number.isNaN(at.x) || Number.isNaN(at.y)) return undefined;
+        if (!f.pool.length || (w.skirmish && (!p.station || p.station.dead))) return undefined;
         return this.reinforceWait(f, at, most > 0 ? w.time + +most : Infinity);
       },
       Move_To: (v, tol, zones) =>

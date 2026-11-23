@@ -1492,7 +1492,9 @@ export class ScriptHost {
     vm.global('Allow_Localized_SFX', on => {
       if (this.land) this.localizedSFX = on === true || on === 1;
     });
-    vm.global('Create_Position', (x, y, z) => this.pos(+x || 0, +y || 0, +z || 0));
+    // The engine keeps the three numbers as given, NaN and infinity included.
+    const coordinate = value => (typeof value === 'number' ? value : +value || 0);
+    vm.global('Create_Position', (x, y, z) => this.pos(coordinate(x), coordinate(y), coordinate(z)));
     vm.global('StringCompare', (a, b) => String(a ?? '').toUpperCase() === String(b ?? '').toUpperCase());
     vm.global('Is_Multiplayer_Mode', () => !!(this.game && this.game.setup && this.game.setup.net));
     vm.global('Cancel_Fast_Forward', () => {

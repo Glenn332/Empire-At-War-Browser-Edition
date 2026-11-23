@@ -9,6 +9,13 @@ let categoryMasks = null;
 export function categoryMask(name) {
   return categoryMasks?.get(String(name).trim().toUpperCase()) ?? 0n;
 }
+
+// A task force line such as "Corvette | Frigate = 0,3" names categories when every part is in the
+// GameObjectCategoryType enum; only otherwise are the parts read as object type names. The engine
+// reads the line this way round, so a mod object called Corvette does not hide the category.
+export function isCategoryList(names) {
+  return !!categoryMasks?.size && names.length > 0 && names.every(name => categoryMask(name) !== 0n);
+}
 const typeNames = new Map(),
   factionNames = new Map();
 function sealedLookup(names, map, name) {
