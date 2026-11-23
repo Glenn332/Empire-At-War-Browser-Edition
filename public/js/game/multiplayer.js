@@ -6,6 +6,7 @@ import { NetSession, Hall, listGames, newGameId } from '../net.js';
 import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
+import { startMarks } from './mapstarts.js';
 import { loadCampaignData } from './galaxy.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 import { inApp } from '../platform.js';
@@ -1375,6 +1376,7 @@ async function openStaging(args) {
     compact: true
   });
   dockSeedBar(dlg, seeds);
+  const starts = startMarks(dlg, team => `${T('TEXT_TEAM', 'Team')} ${team + 1}`);
   const preview = async m => {
     seeds.update();
     const teams = Math.max(2, usedTeams().length),
@@ -1387,7 +1389,10 @@ async function openStaging(args) {
           .catch(() => '')
       );
     const url = await previews.get(key);
-    if (st.mapFile === m) dlg.setImage('IDC_IMAGE', url);
+    if (st.mapFile !== m) return;
+    dlg.setImage('IDC_IMAGE', url);
+    const used = usedTeams();
+    starts.show(m, key, { teams }, team => st.teamFactions?.[isDynamic(m) ? (used[team] ?? team) : team]);
   };
   dlg.enable('IDC_LOAD_GAME', host);
   for (const id of ['IDC_STAGING_MAP_LIST', 'IDC_SELECT_OFFICIAL_MAPS', 'IDC_SELECT_CUSTOM_MAPS']) dlg.show(id, host);
@@ -1618,6 +1623,7 @@ async function openStaging(args) {
     }
     if (!campaign()) preview(st.mapFile);
     else {
+      starts.clear();
       dlg.setImage('IDC_IMAGE', '');
       seeds.update();
     }

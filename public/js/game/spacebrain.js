@@ -30,7 +30,8 @@ const power = u => (u.aiPower ??= Math.max(0, u.type.num('AI_Combat_Power', 0)))
 const cats = u => u.type.categories();
 const inCats = (u, want) =>
   !want || want.some(c => cats(u).has(c) || (c === 'HERO' && cats(u).has('SPACEHERO')));
-const fits = (u, c, types) => inCats(u, c) && (!types.length || types.includes(u.type.name.toUpperCase()));
+const upperName = t => (t._upperName ??= t.name.toUpperCase());
+const fits = (u, c, types) => inCats(u, c) && (!types.length || types.includes(upperName(u.type)));
 
 export class SpaceMind extends Reason {
   constructor(brain, world, player, { enemies, seen = null, enemyStart = null } = {}) {
@@ -219,19 +220,19 @@ export class SpaceMind extends Reason {
         case 'ISDIFFICULTY':
           return params.some(([, v]) => new RegExp('\\[' + (LEVELS[p.difficulty] || 'Normal') + '\\]', 'i').test(v)) ? 1 : 0;
         case 'HASUNIT':
-          return types.length && own.some(u => types.includes(u.type.name.toUpperCase())) ? 1 : 0;
+          return types.length && own.some(u => types.includes(upperName(u.type))) ? 1 : 0;
         case 'TACTICALBUILTSTRUCTURECOUNT':
           return own.filter(
             u =>
               u.isStructure &&
               (!types.length ||
-                types.includes(u.type.name.toUpperCase()) ||
-                (u.construction && u.construction.result && types.includes(u.construction.result.name.toUpperCase())))
+                types.includes(upperName(u.type)) ||
+                (u.construction && u.construction.result && types.includes(upperName(u.construction.result))))
           ).length;
         case 'OPENBUILDPADCOUNT':
           return self
             ? w.units.filter(
-                u => !u.dead && u.isPad && !u.padChild && u.padOwner === p && (!types.length || types.includes(u.type.name.toUpperCase()))
+                u => !u.dead && u.isPad && !u.padChild && u.padOwner === p && (!types.length || types.includes(upperName(u.type)))
               ).length
             : 0;
         case 'ISDEFENDER': {
@@ -253,7 +254,7 @@ export class SpaceMind extends Reason {
       const u = t.unit;
       switch (what) {
         case 'TYPE.ISTYPE':
-          return t.type && types.includes(t.type.name.toUpperCase()) ? 1 : 0;
+          return t.type && types.includes(upperName(t.type)) ? 1 : 0;
         case 'ISCONTESTABLE':
           return u && u.capture ? 1 : 0;
         case 'HASBUILTOBJECT':

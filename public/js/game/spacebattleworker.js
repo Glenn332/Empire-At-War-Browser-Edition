@@ -174,6 +174,8 @@ onmessage = async e => {
     if (m.k === 'run') {
       globalThis.SWR_NOJOBS = !!m.nojobs;
       globalThis.SWR_SPAWN_JOBS = (sh, n) => postMessage({ k: 'spawnJobs', sh, n });
+      globalThis.SWR_PAGE_ROUTES = !!m.pageroutes;
+      globalThis.SWR_SPAWN_ROUTE = port => postMessage({ k: 'spawnRoute', port }, [port]);
       return await run(m);
     }
     const { w, ms } = await setUp(m, null);
@@ -446,10 +448,16 @@ async function run(m) {
     }
   };
   const held = [];
+  let heldFor = null;
   const drain = () => {
     while (held.length && (!w.paths || w.paths.ready())) {
       const c = held.shift();
       step(c.cmds, c.hash);
+    }
+    const why = held.length ? 'route planning' : null;
+    if (why !== heldFor) {
+      heldFor = why;
+      postMessage({ k: 'held', why });
     }
   };
   const commands = [];

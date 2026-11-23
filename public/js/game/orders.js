@@ -291,6 +291,7 @@ export function wingSpeed(w, now) {
 }
 
 export function dropEscort(w) {
+  if (w.escort) w.escorted = w.escort;
   w.escort = null;
   w.follow = false;
   w.at = null;

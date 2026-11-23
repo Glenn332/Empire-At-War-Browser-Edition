@@ -28,6 +28,15 @@ const MOVING_GOAL_REPLAN = 150;
 const BATCH_DELAY = 20;
 const BATCH_MAX = 8;
 const RETRY = 2;
+const newRouteThread = () => {
+  if (typeof Worker !== 'undefined' && !globalThis.SWR_PAGE_ROUTES)
+    return new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+  if (typeof globalThis.SWR_SPAWN_ROUTE !== 'function') throw new Error('no route thread');
+  const channel = new MessageChannel();
+  globalThis.SWR_SPAWN_ROUTE(channel.port2);
+  channel.port1.terminate = () => channel.port1.close();
+  return channel.port1;
+};
 const routeThreads = () => Math.min(4, Math.max(2, Math.floor((globalThis.navigator?.hardwareConcurrency || 4) / 3)));
 
 export class Pathfinder extends PathCore {
@@ -78,9 +87,9 @@ export class Pathfinder extends PathCore {
         });
     this.asked = new Map();
     this.rid = 0;
-    if (typeof Worker !== 'undefined' && !(typeof location !== 'undefined' && /[?&]pathsync\b/.test(location.search))) {
+    if ((typeof Worker !== 'undefined' || typeof globalThis.SWR_SPAWN_ROUTE === 'function') && !(typeof location !== 'undefined' && /[?&]pathsync\b/.test(location.search))) {
       try {
-        const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+        const wk = newRouteThread();
         wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, noWasm: noWasm });
         wk.onmessage = e => {
           if (e.data.kind === 'wasm') this.workerWasm = e.data.ok;
@@ -111,7 +120,7 @@ export class Pathfinder extends PathCore {
       this.expBudget = searchBudget(this.K);
       return;
     }
-    const noWasm = /[?&]nowasm/.test(location.search),
+    const noWasm = typeof location !== 'undefined' && /[?&]nowasm/.test(location.search),
       wasmOf = (wk, known) =>
         known !== undefined || noWasm
           ? Promise.resolve(noWasm ? false : known)
@@ -126,7 +135,7 @@ export class Pathfinder extends PathCore {
     const extra = [];
     for (let i = 1; i < routeThreads(); i++) {
       try {
-        const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+        const wk = newRouteThread();
         wk.postMessage({ kind: 'init', K: this.K, ringStep: this.ringStep, noWasm });
         extra.push(wk);
       } catch {

@@ -4,6 +4,7 @@ let core = null;
 const objs = new Map();
 const waiting = new Map();
 let scheduled = false;
+let send = m => postMessage(m);
 
 const stub = id => {
   let o = objs.get(id);
@@ -62,7 +63,7 @@ function run() {
     } catch (e) {
       pts = null;
     }
-    postMessage({ rid: m.rid, id, pts, time: core.world.time });
+    send({ rid: m.rid, id, pts, time: core.world.time });
     if (waiting.size) {
       scheduled = true;
       setTimeout(run, 0);
@@ -96,13 +97,13 @@ function batch(m) {
     answers.push({ rid: f.rid, id: f.ship.id, pts });
   }
   core.expBudget = Infinity;
-  postMessage({ kind: 'batch', bid: m.bid, answers });
+  send({ kind: 'batch', bid: m.bid, answers });
 }
 
-onmessage = ({ data: m }) => {
+const handle = m => {
   if (m.kind === 'fixed') {
     core.searchMs = Infinity;
-    postMessage({ kind: 'fixed', wasm: !!core.wasm });
+    send({ kind: 'fixed', wasm: !!core.wasm });
     return;
   }
   if (m.kind === 'batch') {
@@ -128,7 +129,7 @@ onmessage = ({ data: m }) => {
     if (!m.noWasm)
       loadPathWasm(new URL('./pathsearch.wasm', import.meta.url)).then(w => {
         core.wasm = w;
-        postMessage({ kind: 'wasm', ok: !!w });
+        send({ kind: 'wasm', ok: !!w });
       });
     return;
   }
@@ -144,4 +145,14 @@ onmessage = ({ data: m }) => {
       setTimeout(run, 0);
     }
   }
+};
+
+onmessage = ({ data: m }) => {
+  if (m && m.kind === 'port') {
+    const port = m.port;
+    send = x => port.postMessage(x);
+    port.onmessage = e => handle(e.data);
+    return;
+  }
+  handle(m);
 };

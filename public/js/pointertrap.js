@@ -69,7 +69,26 @@ function setAppFullscreen(on) {
     .catch(e => console.warn('fullscreen:', e.message));
 }
 
-if (typeof window !== 'undefined' && inApp() && topFrame()) window.swrAppFullscreen = { get: () => appFull, set: setAppFullscreen };
+if (typeof window !== 'undefined' && inApp() && topFrame()) {
+  window.swrAppFullscreen = { get: () => appFull, set: setAppFullscreen };
+  let stale = false;
+  addEventListener('focus', () => {
+    stale = appFull;
+  });
+  addEventListener(
+    'pointermove',
+    () => {
+      if (!stale) return;
+      stale = false;
+      const b = document.body.classList;
+      if (document.pointerLockElement || b.contains('track-cam') || b.contains('chase-view') || b.contains('shooter-on')) return;
+      const root = document.documentElement;
+      root.classList.add('cursor-refresh');
+      requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('cursor-refresh')));
+    },
+    true
+  );
+}
 
 const ownFullscreen = () => (document.fullscreenElement || document.webkitFullscreenElement) === document.documentElement;
 
