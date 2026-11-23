@@ -62,6 +62,8 @@ const PROBE_CELL = 1024,
 const _nearCap = [],
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
+const ESCORT_SPACING = 140;
+const ESCORT_EASE = 200;
 const NO_CATS = new Set();
 const UNIT_CELL = 1024,
   UNIT_PAD = 200;
@@ -4455,10 +4457,22 @@ export class World {
   arrived(e) {
     const next = e.queue && e.queue.shift();
     if (next) e.setOrder(next, true);
-    else {
+    else if (e.isSquad && this.keepEscorting(e)) {
+      e.setOrder({ kind: 'guard', target: e.order.wing.escort || e.order.wing.escorted });
+      e.alone = false;
+    } else {
       e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
       if (e.isSquad) e.alone = true;
     }
+  }
+
+  keepEscorting(s) {
+    const w = s.order.wing,
+      ship = w && (w.escort || w.escorted),
+      lead = s.fighters[0];
+    if (!ship || ship.dead || ship.isSquad || !lead || ship.player.team !== s.player.team || ship.order.kind !== 'idle') return false;
+    const reach = (ship.radius || 0) + s.type.num('Guard_Chase_Range', 0);
+    return (lead.x - ship.x) ** 2 + (lead.y - ship.y) ** 2 <= reach * reach;
   }
 
   repairHardpoint(player, u, index) {
@@ -6259,10 +6273,20 @@ export class World {
       }
     }
     if (!w.follow) return w.at;
-    const o = sh.order;
-    if (o.kind === 'attack' && sh.slotAt && o.offset) return sh.slotAt;
-    if ((o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined) return o;
-    return sh;
+    const o = sh.order,
+      base = o.kind === 'attack' && sh.slotAt && o.offset ? sh.slotAt : (o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined ? o : sh;
+    const mates = w.squads.filter(q => !q.dead && q.order.wing === w);
+    if (!mates.length) return base;
+    const k = mates.indexOf(s),
+      side = (Math.max(0, k) - (mates.length - 1) / 2) * ESCORT_SPACING,
+      back = -(sh.radius || 0) * 0.5,
+      c = Math.cos(sh.heading),
+      n = Math.sin(sh.heading),
+      at = (s.escortAt ||= { x: 0, y: 0, z: 0 });
+    at.x = base.x + c * back - n * side;
+    at.y = base.y + n * back + c * side;
+    at.z = base.z ?? sh.z;
+    return at;
   }
 
   escortSpeed(s, w, lead) {
@@ -6270,8 +6294,8 @@ export class World {
     if (!w.follow) return group;
     const sh = w.escort,
       v = sh.cruise || sh.maxSpeed || 0,
-      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading);
-    return Math.min(group, ahead > 20 ? v * 0.5 : v * 2);
+      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading) + (sh.radius || 0) * 0.5;
+    return Math.min(group, v * clamp(1 - ahead / ESCORT_EASE, 0.5, 2));
   }
 
   idleCell(s, p) {
