@@ -220,15 +220,19 @@ class PartReader {
     this.path = path;
     this.from = 0;
     this.bytes = new Uint8Array(0);
+    this.total = null;
   }
 
   async at(offset, length) {
+    if (this.total !== null && offset >= this.total) return new Uint8Array(0);
     const end = offset + length;
     if (offset < this.from || end > this.from + this.bytes.length) {
-      const part = await fetchPart(this.path, offset, Math.max(length, OUTLINE_READ));
+      const wanted = Math.max(length, OUTLINE_READ),
+        part = await fetchPart(this.path, offset, this.total === null ? wanted : Math.min(wanted, this.total - offset));
       if (!part) return null;
+      if (part.total !== null) this.total = part.total;
       this.from = offset;
-      this.bytes = new Uint8Array(part);
+      this.bytes = new Uint8Array(part.bytes);
     }
     const start = offset - this.from;
     return this.bytes.subarray(start, Math.min(start + length, this.bytes.length));

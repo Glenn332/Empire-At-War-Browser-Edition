@@ -121,19 +121,25 @@ export async function fetchHead(path, bytes) {
   return b.byteLength > bytes ? b.slice(0, bytes) : b;
 }
 
+const totalOf = response => {
+  const match = /\/(\d+)\s*$/.exec(response.headers.get('Content-Range') || '');
+  return match ? +match[1] : null;
+};
+
 export async function fetchPart(path, from, length) {
   const local = await overlay;
   if (local) {
     const mine = local.readPart
       ? await local.readPart(keyOf(path), from, length)
       : await local.read(keyOf(path), undefined, from + length).then(bytes => (bytes ? bytes.slice(from) : bytes));
-    if (mine !== undefined) return mine;
+    if (mine !== undefined) return mine && { bytes: mine, total: null };
   }
   const response = await fetch(url(path), { headers: { Range: `bytes=${from}-${from + length - 1}` } }).catch(() => null);
-  if (response && response.status === 416) return new ArrayBuffer(0);
+  if (response && response.status === 416) return { bytes: new ArrayBuffer(0), total: totalOf(response) };
   if (!response || !there(response)) return null;
   const bytes = await response.arrayBuffer();
-  return response.status === 206 ? bytes : bytes.slice(from, from + length);
+  if (response.status === 206) return { bytes, total: totalOf(response) };
+  return { bytes: bytes.slice(from, from + length), total: bytes.byteLength };
 }
 
 export async function fetchText(path) {
