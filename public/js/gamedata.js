@@ -257,9 +257,9 @@ export function autoColors(players, teamFactions, palette) {
 
 export function skirmishFactions() {
   const marked = !!db.type('Team_00_Space_Station');
-  return [...db.factions.values()]
-    .filter(f => /^(yes|true)$/i.test(f.str('Is_Playable')) && (!marked || skirmishStation(f.name)))
-    .map(f => f.name);
+  const playable = [...db.factions.values()].filter(f => /^(yes|true)$/i.test(f.str('Is_Playable')));
+  const stationed = marked ? playable.filter(f => skirmishStation(f.name)) : playable;
+  return (stationed.length ? stationed : playable).map(f => f.name);
 }
 
 export const db = {
