@@ -3575,7 +3575,9 @@ export class World {
     const targetX = x + Math.cos(heading) * distance,
       targetY = y + Math.sin(heading) * distance,
       searchStart = (heading * 180) / Math.PI - 45;
-    for (const g of u.garrison)
+    const bays = u.hardpoints.some(h => h.kind === 'HARD_POINT_FIGHTER_BAY' && h.alive);
+    for (const g of u.garrison) {
+      if (bays && (isSquadronType(g.type) || g.type.behaviors().has('FIGHTER_LOCOMOTOR'))) continue;
       for (let i = 0; i < g.want; i++) {
         if (g.remaining === 0) break;
         const spot = this.freeSpot(g.type, targetX, targetY, searchStart) || { x: targetX, y: targetY };
@@ -3586,6 +3588,7 @@ export class World {
         spawned.carrier = u;
         g.live.push(spawned);
       }
+    }
     this.recountPop();
   }
 
