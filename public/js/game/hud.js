@@ -28,6 +28,9 @@ const el = (cls, parent) => {
   return d;
 };
 const css = url => (url ? `url("${url}")` : 'none');
+// Blank_Texture_Name on the unit/build slots lists a ground pad then a space pad, the same pairing the
+// galactic build bar uses per tab.
+export const selectPadIndex = game => (game?.land === true ? 0 : 1);
 let tipBar = null;
 if (typeof addEventListener === 'function')
   addEventListener('mousemove', e => {
@@ -1085,20 +1088,7 @@ export class CommandBar {
       b.style.backgroundImage = css(this.tex('special_border_00', 'Icon_Alternate_Texture_Name', 0));
       this.borders.push(b);
     }
-    for (let i = 0; i < 24; i++) {
-      const id = String(i).padStart(2, '0');
-      const s = this.place(el('hslot', root), 's_select_' + id);
-      s.innerHTML = '<i class="ic"></i><i class="dark"></i><span class="cost"></span><span class="num"></span>';
-      const hp = this.thin(el('hbar hp', root), 's_health_' + id),
-        sh = this.thin(el('hbar sh', root), 's_shield_' + id);
-      hp.innerHTML = sh.innerHTML = '<i></i>';
-      hp.style.backgroundImage = sh.style.backgroundImage = css(iconUrl('i_bar_control_wide.tga'));
-      sh.firstChild.style.backgroundImage = css(iconUrl('i_bar_shield_small10.tga'));
-      s.onclick = ev => this.slotClick(i, ev);
-      s.onmouseenter = () => this.slotHover(i);
-      s.onmouseleave = () => this.hideInfo();
-      this.slots.push({ el: s, hp, sh, item: null });
-    }
+    for (let i = 0; i < 24; i++) this.slots.push(this.selectSlot(i));
     this.buildBar = this.scrollBar(
       this.slots.map((_, i) => 's_select_' + String(i).padStart(2, '0')),
       o => {
@@ -1145,6 +1135,27 @@ export class CommandBar {
       q.onmouseleave = () => this.queueHover(i, false);
       this.queueSlots.push(q);
     }
+  }
+
+  selectSlot(i) {
+    const root = this.root,
+      id = String(i).padStart(2, '0');
+    const s = this.place(el('hslot', root), 's_select_' + id);
+    s.innerHTML = '<i class="ic"></i><i class="dark"></i><span class="cost"></span><span class="num"></span>';
+    // Pad frame (Blank_Texture_Name) under the unit icon.
+    const pad = document.createElement('i');
+    pad.className = 'pad';
+    pad.style.backgroundImage = css(this.tex('s_select_' + id, 'Blank_Texture_Name', selectPadIndex(this.game)));
+    s.prepend(pad);
+    const hp = this.thin(el('hbar hp', root), 's_health_' + id),
+      sh = this.thin(el('hbar sh', root), 's_shield_' + id);
+    hp.innerHTML = sh.innerHTML = '<i></i>';
+    hp.style.backgroundImage = sh.style.backgroundImage = css(iconUrl('i_bar_control_wide.tga'));
+    sh.firstChild.style.backgroundImage = css(iconUrl('i_bar_shield_small10.tga'));
+    s.onclick = ev => this.slotClick(i, ev);
+    s.onmouseenter = () => this.slotHover(i);
+    s.onmouseleave = () => this.hideInfo();
+    return { el: s, hp, sh, item: null };
   }
 
   layout() {

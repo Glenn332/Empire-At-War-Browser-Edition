@@ -256,6 +256,7 @@ export class LandUI {
     };
     this.view = view;
     const host = {
+      land: true,
       world: view,
       human: this.player,
       audio: game.audio,

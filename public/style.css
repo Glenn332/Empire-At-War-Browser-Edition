@@ -1125,12 +1125,20 @@ body:not(.original-hud) .heroframe {
   inset: 0;
   background: center/100% 100% no-repeat;
 }
+.hslot .pad {
+  /* 56px pad around a 50px icon, as the engine draws them */
+  inset: -6%;
+  pointer-events: none;
+}
 .hslot .dark {
   display: none;
   background: rgba(0, 0, 0, 0.6);
 }
 .hslot.off .dark {
   display: block;
+}
+.hslot.off .pad {
+  filter: brightness(0.4);
 }
 .hslot:hover .ic {
   filter: brightness(1.25);
