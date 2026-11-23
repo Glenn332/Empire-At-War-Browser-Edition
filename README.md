@@ -88,13 +88,38 @@ The controls are the same as the original:
 
 In land and space strategy views or on the galaxy map, park the mouse at an edge of the battlefield to scroll; move inward to stop. Edge scrolling is on by default and can be disabled with **Pan the camera at the screen edges** in Game Options. It does not steer a possessed soldier or vehicle.
 
-**Battlefront mode (land battles):** press **B** (controller **Y / Triangle**) to switch between first and third person as a trooper. In a vehicle, the same button switches between a centered chase camera and the driver or gunner's view. Press **E** to get out; your infantry view is unchanged. **O → Infantry view / Vehicle view** lets you set each preference. Both are remembered on this browser. Melee heroes keep their third-person camera, and deployed artillery keeps its overhead sight.
+## Battlefront land battles: present and proposed
 
-The default Battlefront sight is grey over empty ground, blue over allies and red over enemies (orange with colourblind-safe markers). Blaster heat lights the bottom squares from the center out and drains as the weapon cools; ammo weapons keep their count and reload bar. **O → Zoom input** switches between holding and tapping the right mouse button or left trigger. In third person the infantry camera retracts in front of terrain ridges, then eases back out.
+Each pair shows the **present** browser edition ([`main` at `d69de4b`](https://github.com/Glenn332/Empire-At-War-Browser-Edition/commit/d69de4b)) on the left and the **proposed** [PR #7](https://github.com/Glenn332/Empire-At-War-Browser-Edition/pull/7) on the right. The gameplay captures use *Forces of Corruption*, Endor, the same units and a 1200 × 780 viewport. They are separate local runs, not mockups. Click a pair to enlarge it.
 
-In third person, focusing shifts to the right shoulder and leaves just a dot. It stays at the unzoomed sight’s height, slightly left toward the helmet. Zooming in or out without moving your aim keeps the same spot under the sight. In first person, sprinting brings the lowered weapon across the bottom of the view. **V / RB** rolls in the held movement direction (including diagonals), or forward from a standstill. First person dips and tucks the weapon; turn off **Head bob** to disable the camera bank.
+**1. Choose where to spawn — menu proposed in [PR #6](https://github.com/Glenn332/Empire-At-War-Browser-Edition/pull/6), shown integrated in #7.** The present screen puts a rectangular map and class statistics in a modal. The [deployment-only PR](https://github.com/Glenn332/Empire-At-War-Browser-Edition/pull/6) keeps the battlefield visible: choose a class on the left, a friendly spawn on the command-post disc, then **Spawn** beneath the selected unit. The original layout is still available under **O → Deployment screen**.
 
-In a live ground battle, faction emblems and ticket counts flank the center readout. Aim at a unit to see its name and remaining health; each hit leaves a short-lived white segment marking only the health just lost. Look away and the center clears. There is no reinforcement split bar. The reticle is 20% opaque. Blaster bolts have a bright core and rounded ends that stay visible even when viewed straight down the barrel. Focused shots start at the animated muzzle and converge on the dot; recoil still moves your aim. At a command post, the ring around the emblem drains toward neutral white as control is lost, then fills in the capturing side’s color (blue for allies, red for enemies). Vehicles use the same equipment panel as infantry: vehicle name, weapon icon, and one hull meter with a cyan shield outline. No speedometer or vehicle ammo counter. The upper-right radar rotates with your view: units are local, while distant command posts stay on its rim. Your equipment and health are at bottom left, with the compass along the bottom. Hold **Tab** for personal combat stats or use **M** for the full battlefield map.
+[![Same Stormtrooper on Endor: present map-and-stats dialog versus proposed class portrait above Spawn with a round deployment map](docs/battlefront/deploy.png)](docs/battlefront/deploy.png)
+
+**2. Aim at a trooper.** The proposed right-shoulder view keeps one faint dot just above and left of center. Press and release focus without moving the mouse: the same point on the target stays under the dot. Faction emblems flank the ticket counts; the center meter shows **only the unit you aim at**. Hits briefly mark only the health just lost. Look away and both name and meter clear. The upper-right radar shows local contacts and pins distant command posts by bearing.
+
+[![Stormtrooper aiming at a Rebel: present boxed readouts and lower-right map versus proposed shoulder sight, target health and upper-right radar](docs/battlefront/shoulder.png)](docs/battlefront/shoulder.png)
+
+**3. Look down the blaster.** In the proposed first-person view the carried weapon is visible at the lower right, stays attached through turns, and swings across the bottom when sprinting. The 20%-opacity sight is grey over terrain, blue over allies and red over enemies (orange with colourblind-safe markers). Outside dot-only focus, blaster heat grows outward along the lower arc. Ammo weapons retain their count and reload indicator.
+
+[![Stormtrooper first person: present weapon below the frame versus proposed hands and blaster visible at the lower right](docs/battlefront/first.png)](docs/battlefront/first.png)
+
+**4. Drive onto a command post.** The proposed chase camera frames the T4-B’s hull below the sight. The same lower-left equipment panel used on foot now shows vehicle name, weapon, hull and remaining shields without a speedometer or ammo count. The capture ring around the emblem drains to neutral white, then fills blue for allies or red for enemies.
+
+[![T4-B at a command post: present distant tank and separate status boxes versus proposed centered tank, shared equipment panel and capture ring](docs/battlefront/vehicle.png)](docs/battlefront/vehicle.png)
+
+**5. Follow a bolt.** These are renderer captures of the same stock red blaster shot at the same scale, isolated from the muzzle flash. On `main` the strip disappears when viewed exactly from the rear or front. In the proposal both ends remain visibly circular. Local focused shots leave the animated barrel and converge on the sight; recoil still applies. Ordinary RTS and space projectiles keep their original presentation.
+
+[![Red blaster rendered from four angles on each branch: the present rear and front panels are black; the proposed ones show two round red ends](docs/battlefront/bolt.png)](docs/battlefront/bolt.png)
+
+| In a Battlefront land battle | Control |
+|---|---|
+| Switch infantry first/third person **or** vehicle chase/driver/gunner | **B / Y / Triangle**. Infantry and vehicle choices are saved separately; **E** exits without changing the on-foot view. |
+| Focus | **Right mouse / left trigger**. Choose hold or toggle in **O → Zoom input**. |
+| Roll | **V / RB** with a movement direction, including diagonals; stationary rolls go forward. Disable **Head bob** to remove the first-person camera bank. |
+| Open the full map / show combat stats | **M** / hold **Tab** |
+
+The views use each unit’s own model, weapon and hull rather than an Endor-specific list. Melee heroes keep third person, deployed artillery keeps its overhead sight, and missiles and model/particle weapons keep their own effects. Modded rigs, textures and loadouts can differ; see [coverage and how to test](docs/battlefront/README.md).
 
 ## For developers
 
@@ -112,7 +137,7 @@ Some useful addresses:
 
 - `play.html?autostart&faction=Empire&enemy=Rebel&map=KUAT` skips the setup screen.
 - `play.html?mode=land` starts a land battle.
-- `play.html?autostart&mode=land&shooter&map=ENDOR&deployUI=2005` opens the ground shooter's 2005-style deployment screen. Choose a class and a friendly position, then **Spawn**. Click a friendly unit to spectate it; only eligible squads are spawn points. The selected class stays centered above Spawn, even while watching a teammate. Try Endor for turbolasers on both sides. Use `deployUI=original`, or switch **O → Deployment screen** during a match, to compare layouts.
+- [Start Battlefront on Endor locally](http://localhost:8377/play.html?autostart&mode=land&shooter&map=ENDOR&faction=Empire&enemy=Rebel&deployUI=2005). Use `deployUI=original` to compare deployment layouts in the same build.
 - `play.html?benchmark=100` starts the space benchmark, and `play.html?mode=land&benchmark=30` the land one.
 - `viewer.html?model=EV_STARDESTROYER.ALO` opens the model viewer.
 
