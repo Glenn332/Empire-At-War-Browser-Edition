@@ -26,6 +26,7 @@ import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { playerSpecial, specialTargets } from './superweapon.js';
+import { spaceBarWidth } from './healthbars.js';
 // game and mod text goes into markup escaped, so a unit name can't carry HTML
 const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -1960,7 +1961,8 @@ export class UI {
             const k = size / 28,
               fw = Math.round(rect.w * k),
               fh = Math.round(rect.h * k);
-            g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, Math.round(p.x + size / 2 + 1), Math.round(y + 3 - fh), fw, fh);
+            const fx = Math.round(p.x + Math.max(size, w) / 2 + 1);
+            g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, fx, Math.round(y + 3 - fh), fw, fh);
           }
         }
         if (!s.isSquad && s.maxShield > 0) {

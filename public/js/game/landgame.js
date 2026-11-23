@@ -27,6 +27,7 @@ import { loadHudAssets } from './hud.js';
 import { LandUI, sidePlayersOf } from './landhud.js';
 import { SelectionRings, loadBlobMaterials } from './render.js';
 import { shownAbility, abilityIconName } from './ui.js';
+import { landBarWidth } from './healthbars.js';
 import { Pointers, tacticalPointer } from './pointers.js';
 import { showSummary } from './summary.js';
 import { openRetryDialog } from './retrydialog.js';
@@ -4877,7 +4878,7 @@ export class LandGame {
       if (!s) continue;
       if (pips) this.garrisonPips(g, u, s[0], s[1] - 2);
       if (!u.squad.selected && u.health >= u.maxHealth && u.shield >= u.maxShield) continue;
-      const wd = u.structure ? 70 : u.maxHealth > 150 ? 44 : 22,
+      const wd = landBarWidth(u),
         f = Math.max(0, u.health / u.maxHealth);
       g.fillStyle = 'rgba(0,0,0,.7)';
       g.fillRect(s[0] - wd / 2 - 1, s[1] - 1, wd + 2, u.maxShield ? 8 : 5);
