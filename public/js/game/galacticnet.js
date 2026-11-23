@@ -157,7 +157,8 @@ export function runCommand(game, faction, cmd) {
   switch (cmd.c) {
     case 'move': {
       const f = fleetOf(g, cmd.f);
-      if (!own(f) || !g.planets[cmd.to]) return {};
+      // the sender's route only: a peer finding its own would read its own fog of war and could disagree
+      if (!own(f) || !g.planets[cmd.to] || !Array.isArray(cmd.path)) return {};
       const hero = cmd.ability ? fromRecordRef(g, cmd.ability) : null;
       if (game.moveFleet(f, cmd.to, Number.isInteger(cmd.slot) ? cmd.slot : null, Array.isArray(cmd.path) ? cmd.path : null)) {
         if (cmd.raid) f.raid = cmd.to;
@@ -176,6 +177,7 @@ export function runCommand(game, faction, cmd) {
       const tf = fleetOf(g, cmd.tf);
       if (tf && !own(tf)) return {};
       if (cmd.fresh) {
+        if (g.planets[cmd.to] && !Array.isArray(cmd.path)) return {};
         const f = game.embarkFresh(cmd.p, cmd.slot);
         if (f && g.planets[cmd.to] && game.moveFleet(f, cmd.to, cmd.slot, Array.isArray(cmd.path) ? cmd.path : null) && cmd.landOn) f.landOn = cmd.to;
       } else game.embark(cmd.p, { records: records(g, cmd.recs), fleet: tf, slot: cmd.slot });
