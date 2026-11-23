@@ -308,7 +308,7 @@ export function runCommand(game, faction, cmd) {
       game.story?.neutralizeAnswer?.(faction, cmd.id, cmd.index | 0, typeof cmd.gui === 'string' ? cmd.gui : null);
       return {};
     case 'result':
-      game.mpBattles?.result(faction, cmd.id, cmd.r);
+      game.mpBattles?.result(faction, cmd.id, cmd.r, game.actingPid);
       return {};
     case 'left':
       return {};

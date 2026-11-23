@@ -3683,6 +3683,7 @@ export class GalacticGame {
     storyMoviesDone(this.story);
     if (!held && !this.paused && !this.busy && !this.held && !this.over) this.simulate(dt);
     this.pendingBattle?.tick?.();
+    this.mpBattles?.tick();
   }
 
   simulate(dt) {
