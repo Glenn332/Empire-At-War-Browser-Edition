@@ -1716,6 +1716,21 @@ async function openStaging(args) {
         note.textContent = 'Pick a campaign.';
         return;
       }
+      // a computer slot on a side someone else already has would be dropped from the galaxy
+      const sideOf = s => String((s.kind === 'human' && entry.menu) || s.faction).toUpperCase(),
+        held = new Set(players.filter(s => s.kind === 'human').map(sideOf));
+      let clash = null;
+      for (const s of players.filter(s => s.kind !== 'human')) {
+        if (held.has(sideOf(s))) {
+          clash = s;
+          break;
+        }
+        held.add(sideOf(s));
+      }
+      if (clash) {
+        note.textContent = `${fLabel(clash.faction)} already has a player. Give the computer player a side of its own.`;
+        return;
+      }
       note.textContent = '';
       const variant = campaignVariant(entry, players.find(s => s.peer === 0)?.faction || players[0].faction);
       const humanTypes = entry.variants

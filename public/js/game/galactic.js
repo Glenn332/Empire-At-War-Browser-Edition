@@ -2367,6 +2367,11 @@ export class GalacticGame {
       if (custom && Number.isFinite(+opt.maxTech)) p.maxTech = +opt.maxTech;
       if (custom && Number.isFinite(+opt.tech)) p.tech = Math.min(p.maxTech || +opt.tech, +opt.tech);
     }
+    const sideOf = s => key(db.faction(s.faction)?.name || s.faction);
+    slots.forEach((s, i) => {
+      if (!s.human && slots.some((o, j) => sideOf(o) === sideOf(s) && (o.human || j < i)))
+        console.warn(`multiplayer: computer slot ${i} (${s.faction}) is ignored, that faction already has a player`);
+    });
     const mine = humans.find(p => p.peer === this.setup.net.me);
     this.localFaction = db.faction(mine?.faction)?.name || g.players.find(p => key(p.faction) === g.humans[0])?.faction;
     const ai = slots.find(p => !p.human && p.difficulty);
