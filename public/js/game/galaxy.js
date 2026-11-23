@@ -297,6 +297,18 @@ export function isHumanFaction(g, faction) {
   return !!id && (g.humans ? g.humans.includes(id) : id === String(g.active || '').toUpperCase());
 }
 
+const visibilitySnapshot = v => ({
+  viewer: v.viewer,
+  clock: v.clock,
+  planets: v.planets.map(p => ({
+    discovered: p?.discovered,
+    revealFrames: p?.revealFrames,
+    rememberedOwner: p?.rememberedOwner,
+    mask: p?.mask || 0
+  }))
+});
+const visibilityState = v => ({ viewer: v.viewer, clock: v.clock || 0, planets: (v.planets || []).map(p => ({ ...p })) });
+
 export function snapshotGalaxy(g) {
   const n = t => (t ? t.name : null),
     list = l =>
@@ -333,14 +345,16 @@ export function snapshotGalaxy(g) {
     ...(g.diplomacy ? { diplomacy: { ...g.diplomacy } } : {}),
     visibility: g.visibility
       ? {
-          viewer: g.visibility.viewer,
-          clock: g.visibility.clock,
-          planets: g.visibility.planets.map(v => ({
-            discovered: v.discovered,
-            revealFrames: v.revealFrames,
-            rememberedOwner: v.rememberedOwner,
-            mask: v.mask || 0
-          }))
+          ...visibilitySnapshot(g.visibility),
+          ...(g.visibilityByFaction
+            ? {
+                byFaction: Object.fromEntries(
+                  Object.entries(g.visibilityByFaction)
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => [k, visibilitySnapshot(v)])
+                )
+              }
+            : {})
         }
       : null,
     players: g.players.map(p => ({
@@ -492,9 +506,10 @@ export function applyGalaxy(g, s) {
   if (Object.hasOwn(s, 'autoReveal')) g.autoReveal = s.autoReveal;
   if (Object.hasOwn(s, 'campaignAutoResolve')) g.campaignAutoResolve = s.campaignAutoResolve;
   if (Object.hasOwn(s, 'aiPathfinders')) g.aiPathfinders = !!s.aiPathfinders;
-  g.visibility = s.visibility
-    ? { viewer: s.visibility.viewer, clock: s.visibility.clock || 0, planets: s.visibility.planets.map(v => ({ ...v })) }
-    : null;
+  g.visibility = s.visibility ? visibilityState(s.visibility) : null;
+  g.visibilityByFaction = s.visibility?.byFaction
+    ? Object.fromEntries(Object.entries(s.visibility.byFaction).map(([k, v]) => [k, visibilityState(v)]))
+    : undefined;
   for (const saved of s.players || []) {
     const player = g.players.find(p => p.faction === saved.faction);
     if (player) {

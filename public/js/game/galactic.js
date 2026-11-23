@@ -90,6 +90,7 @@ import { ParticleManager, loadParticles } from '../particles.js';
 import { stepProduction, populationUsed, populationCap, queueUnit, cancelProduction, ownedTypes, onProductionEvent } from './galacticproduction.js';
 import {
   stepVisibility,
+  stepOtherVisibility,
   intelligence,
   displayOwner,
   displayIncome,
@@ -3764,6 +3765,7 @@ export class GalacticGame {
         this.warnApproaching();
         this.battles.update();
         stepVisibility(this.galaxy, this.me, dt * LOGIC_FPS);
+        if (this.net) stepOtherVisibility(this.galaxy, dt * LOGIC_FPS);
         if (this.galaxy.visibility?.revealed) this.audio?.playAudioEvent('SFXEvent_Planet_Revealed');
         this.popCapWarning();
         this.victory.update();
