@@ -448,10 +448,16 @@ async function run(m) {
     }
   };
   const held = [];
+  let heldFor = null;
   const drain = () => {
     while (held.length && (!w.paths || w.paths.ready())) {
       const c = held.shift();
       step(c.cmds, c.hash);
+    }
+    const why = held.length ? 'route planning' : null;
+    if (why !== heldFor) {
+      heldFor = why;
+      postMessage({ k: 'held', why });
     }
   };
   const commands = [];

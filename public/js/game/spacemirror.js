@@ -62,7 +62,8 @@ export class SpaceMirror {
       } else if (m.k === 'step') {
         this.queue.push(m);
         if (game.lock) this.lockStepped(m);
-      } else if (m.k === 'saved') {
+      } else if (m.k === 'held') this.heldFor = m.why;
+      else if (m.k === 'saved') {
         const s = this.saves.get(m.id);
         this.saves.delete(m.id);
         if (s) {
@@ -292,7 +293,7 @@ export class SpaceMirror {
     g.owed = Math.min((g.owed || 0) + (g.paused ? 0 : real * g.speed), (4 + behind * TURN) * TICK);
     if (behind > 1) g.owed = Math.max(g.owed, Math.min(behind, 3) * TICK);
     this.pump();
-    lock.frame(g.owed / TICK, 1, this.inFlight ? 'the battle thread' : null, 0);
+    lock.frame(g.owed / TICK, 1, this.inFlight ? this.heldFor || 'the battle thread' : null, 0);
     if (lock.started && !g.paused && g.owed >= 2 * TICK) {
       if ((g.stalled = (g.stalled || 0) + real) > 2 && !g.stallSaid) {
         g.stallSaid = true;
