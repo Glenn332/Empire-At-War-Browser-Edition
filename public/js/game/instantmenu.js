@@ -963,6 +963,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       setup.seed = crypto.getRandomValues(new Uint32Array(1))[0];
       setup.spaceWorker = !new URLSearchParams(location.search).has('nospaceworker');
       net.setListing(null);
+      net.lock(true);
       net.broadcast({ k: 'start', setup });
       mp.started?.({ st: { ...st }, players: JSON.parse(JSON.stringify(players)) });
     }
@@ -983,7 +984,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
             return;
           }
           if (mp.password && m.password !== mp.password) {
-            net.send(from, { k: 'password', wrong: m.password !== undefined });
+            net.askPassword(from, m.password !== undefined);
             return;
           }
           if (s) return;
@@ -996,6 +997,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           }
           const back = slot.was === who && slot.army.length;
           Object.assign(slot, { kind: 'human', peer: from, name: who, ready: false });
+          net.admit(from);
           if (!back) slot.army = randomArmy(rosterOf(slot), slot.budget);
           const text = `${slot.name} joined the game.`;
           say('', text);
@@ -1065,6 +1067,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   document.body.appendChild(root);
   draw();
   if (net && host) {
+    net.lock(false);
     publish();
     for (const line of mp.invites || []) say('', line.text, line.copy);
   }

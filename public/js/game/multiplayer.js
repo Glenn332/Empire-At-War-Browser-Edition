@@ -556,7 +556,7 @@ export async function openMultiplayer({
     storeName(myName());
     const net = new NetSession();
     try {
-      await net.connect(gameId, { host, name: myName() });
+      await net.connect(gameId, { host, name: myName(), gated: true });
     } catch (e) {
       busy = false;
       say((host ? 'Could not open the game: ' : 'Could not join: ') + e.message);
@@ -1125,7 +1125,7 @@ async function openStaging(args) {
           return;
         }
         if (password && m.password !== password) {
-          net.send(from, { k: 'password', wrong: m.password !== undefined });
+          net.askPassword(from, m.password !== undefined);
           return;
         }
         if (slots.some(s => s.kind === 'human' && s.peer === from)) return;
@@ -1137,6 +1137,7 @@ async function openStaging(args) {
           return;
         }
         Object.assign(free, { kind: 'human', peer: from, name: who, ready: false, auto: !free.saved });
+        net.admit(from);
         if (single() && lead() && !free.saved) free.faction = lead();
         unready();
         publish();
@@ -1806,6 +1807,7 @@ async function openStaging(args) {
   const begin = setup => {
     if (started) return;
     started = true;
+    if (host) net.lock(true);
     clearInterval(beat);
     for (const off of offs) off();
     dlg.close();
@@ -1820,8 +1822,10 @@ async function openStaging(args) {
     launch({ ...setup, net: link });
   };
 
-  if (host) publish();
-  else render();
+  if (host) {
+    net.lock(false);
+    publish();
+  } else render();
   const beat = host && kind !== 'lan' ? setInterval(listing, 30000) : 0;
   if (host && st.type === 'campaign' && !campaigns.some(c => !c.variants))
     addChat(

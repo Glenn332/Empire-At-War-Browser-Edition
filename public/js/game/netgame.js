@@ -203,6 +203,8 @@ export class Lockstep {
   }
 
   receive(from, m) {
+    // the host hears only the players and spectators of this game
+    if (this.host && !this.peers.includes(from)) return;
     if (m.k === 'ping') {
       this.session.send(from, { k: 'pong', t: m.t });
       return;

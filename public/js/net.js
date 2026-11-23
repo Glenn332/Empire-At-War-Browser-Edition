@@ -7,6 +7,9 @@ const PART = 20000,
   MAX_PARTS = 4000,
   MAX_OPEN_PARTS = 4,
   FAST_MAX = 15000;
+// a gated host hears only 'hello' from a peer it has not admitted, and drops it if it isn't admitted in time
+const ADMIT_WAIT = 120000,
+  PASSWORD_TRIES = 5;
 
 export function lobbyUrl() {
   const q = new URLSearchParams(location.search).get('lobby');
@@ -228,10 +231,14 @@ export class NetSession extends Emitter {
     this.host = false;
     this.parts = 0;
     this.pieces = new Map();
+    this.admitted = new Set();
+    this.waits = new Map();
+    this.tries = new Map();
   }
 
-  connect(gameId, { host, name }) {
+  connect(gameId, { host, name, gated = false }) {
     this.host = !!host;
+    this.gated = this.host && !!gated;
     this.gameId = gameId;
     this.name = name || 'Player';
     this.outbox = [];
@@ -271,7 +278,7 @@ export class NetSession extends Emitter {
         return;
       }
       if (this.closing) return;
-      if (e.code === 4004 || e.code === 4000) {
+      if (e.code === 4004 || e.code === 4000 || e.code === 4003) {
         this.roomGone();
         return;
       }
@@ -302,6 +309,11 @@ export class NetSession extends Emitter {
   control(msg) {
     if (msg.t === 'join' && this.host) {
       this.links.set(msg.id, new Link(this, msg.id, false));
+      if (this.gated)
+        this.waits.set(
+          msg.id,
+          setTimeout(() => !this.admitted.has(msg.id) && this.kick(msg.id), ADMIT_WAIT)
+        );
       this.emit('join', msg.id, msg.name);
     } else if (msg.t === 'leave' && this.host) {
       if (msg.bye || !this.links.get(msg.id)?.direct()) this.lost(msg.id);
@@ -320,6 +332,7 @@ export class NetSession extends Emitter {
   }
 
   receive(from, msg) {
+    if (this.gated && !this.admitted.has(from) && (!msg || msg._part !== undefined || msg.k !== 'hello')) return;
     if (msg && msg._part !== undefined) {
       // a peer's split message: bound its size and how many are open at once, so a bad peer can't eat memory
       const n = msg.n,
@@ -349,6 +362,10 @@ export class NetSession extends Emitter {
     if (!link) return;
     link.close();
     this.links.delete(peer);
+    this.admitted.delete(peer);
+    this.tries.delete(peer);
+    clearTimeout(this.waits.get(peer));
+    this.waits.delete(peer);
     if (this.host) this.emit('leave', peer);
     else if (!this.closing) {
       this.closing = true;
@@ -363,7 +380,28 @@ export class NetSession extends Emitter {
     this.links.get(peer)?.sendFast(msg);
   }
   broadcast(msg, except = null) {
-    for (const [p, l] of this.links) if (p !== except) l.send(msg);
+    for (const [p, l] of this.links) if (p !== except && (!this.gated || this.admitted.has(p))) l.send(msg);
+  }
+
+  // the host let this peer in (right game, right password, a seat): from now on it hears and is heard
+  admit(peer) {
+    if (!this.links.has(peer)) return;
+    this.admitted.add(peer);
+    clearTimeout(this.waits.get(peer));
+    this.waits.delete(peer);
+  }
+
+  askPassword(peer, wrong) {
+    const n = (this.tries.get(peer) || 0) + (wrong ? 1 : 0);
+    this.tries.set(peer, n);
+    if (n < PASSWORD_TRIES) return this.send(peer, { k: 'password', wrong });
+    this.send(peer, { k: 'refuse', why: 'The password was wrong too many times.' });
+    setTimeout(() => this.kick(peer), 300);
+  }
+
+  // refuse new players once the game has started (players already in can still reconnect)
+  lock(on) {
+    if (this.host) this.out({ t: 'lock', on: !!on });
   }
 
   setListing(meta) {
@@ -372,7 +410,10 @@ export class NetSession extends Emitter {
 
   kick(peer) {
     this.send(peer, { k: 'kicked' });
-    setTimeout(() => this.lost(peer), 200);
+    setTimeout(() => {
+      this.lost(peer);
+      this.out({ t: 'kick', id: peer });
+    }, 200);
   }
 
   linkMode(peer) {
@@ -387,6 +428,8 @@ export class NetSession extends Emitter {
     if (this.onHide) removeEventListener('pagehide', this.onHide);
     for (const l of this.links.values()) l.close();
     this.links.clear();
+    for (const t of this.waits.values()) clearTimeout(t);
+    this.waits.clear();
     try {
       if (this.ws?.readyState === 1) this.ws.send('{"t":"bye"}');
       this.ws?.close(1000, 'bye');
