@@ -250,6 +250,7 @@ function spaceSnapshot(game, name) {
     }
     if (Object.keys(o).length) map[u.mapIndex] = o;
   }
+  for (const idx of w.mapGone || []) map[idx] = { dead: true };
   const setup = game.setup;
   const campaign = setup.campaign && game.campaignBook ? spaceCampaign(game, ref) : undefined;
   const thingRef = u => (u.squad ? (r => (r ? r + '.' + u.squad.fighters.indexOf(u) : null))(ref(u.squad)) : ref(u));
@@ -299,6 +300,20 @@ function spaceSnapshot(game, name) {
         ? { carried: w.carried.map(c => ({ p: c.owner.id, type: c.type.name, company: c.company.name })) }
         : {}),
       map,
+      ...(w.respawns && w.respawns.length
+        ? {
+            respawns: w.respawns.map(r => ({
+              at: r1(r.at),
+              type: r.type.name,
+              x: r1(r.x),
+              y: r1(r.y),
+              z: r1(r.z || 0),
+              h: +(r.heading || 0).toFixed(3),
+              m: r.mapIndex,
+              p: r.owner ? r.owner.id : -1
+            }))
+          }
+        : {}),
       groups: [...game.ui.groups].map(([n, list]) => [n, list.map(ref).filter(Boolean)]).filter(([, l]) => l.length),
       selection: game.ui.selection.map(ref).filter(Boolean),
       storyBlips: [...(w.storyBlips || new Map())].map(([n, b]) => (b.obj ? [n, ref(b.obj)] : [n, null, r1(b.x), r1(b.y)])),
@@ -471,9 +486,11 @@ export function restore(game, save) {
     if (!u) continue;
     if (o.dead) {
       w.removeUnit(u);
+      w.mapGone?.add(+idx);
       continue;
     }
     if (o.p !== undefined && P(o.p) && u.player !== P(o.p)) {
+      u.placedFor ??= u.player;
       u.player = P(o.p);
       u.buildList = buildListFor(u.type, u.player.factionName);
     }
@@ -490,6 +507,9 @@ export function restore(game, save) {
   }
   w.units = w.units.filter(u => !u.dead);
   w.unitGridN = Infinity;
+  w.respawns = (snap.respawns || [])
+    .map(r => ({ at: r.at, type: db.type(r.type), x: r.x, y: r.y, z: r.z, heading: r.h, mapIndex: r.m, owner: P(r.p) || w.neutral }))
+    .filter(r => r.type);
 
   const made = [];
   snap.entities.forEach((o, i) => {

@@ -24,7 +24,7 @@ import { ShooterNet } from './shooternet.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { Menus } from './menus.js';
 import { loadHudAssets } from './hud.js';
-import { LandUI } from './landhud.js';
+import { LandUI, sidePlayersOf } from './landhud.js';
 import { SelectionRings, loadBlobMaterials } from './render.js';
 import { shownAbility, abilityIconName } from './ui.js';
 import { Pointers, tacticalPointer } from './pointers.js';
@@ -1125,17 +1125,22 @@ export class LandGame {
     this.menus = new Menus(this);
     this.buildHud();
     P('Command bar', 0.95);
-    const assets = await loadHudAssets(this.factions[this.me]).catch(e => {
-      console.warn('command bar', e);
-      return null;
-    });
-    if (!assets) throw new Error('the command bar art is missing');
-    this.ui = new LandUI(this, assets);
-    this.cine = new LandCinematic(this);
-    this.cam = await landCamera();
+    if (setup.headless) {
+      Object.assign(this, { ui: setup.headless.ui, cine: setup.headless.cine, cam: setup.headless.cam });
+      sidePlayersOf(this);
+    } else {
+      const assets = await loadHudAssets(this.factions[this.me]).catch(e => {
+        console.warn('command bar', e);
+        return null;
+      });
+      if (!assets) throw new Error('the command bar art is missing');
+      this.ui = new LandUI(this, assets);
+      this.cine = new LandCinematic(this);
+      this.cam = await landCamera();
+    }
     this.view.dist = this.cam.start;
     this.viewHome = { ...this.view };
-    this.bindInput();
+    if (!setup.headless) this.bindInput();
     const me = db.faction(this.factions[this.me]);
     const climate = String(db.type(this.map.planet || '')?.str('Terrain') || '').toUpperCase();
     const tracks = tag => {
@@ -1156,6 +1161,7 @@ export class LandGame {
     this.noBatch = q.has('nobatch');
     this.noCull = q.has('nocull');
     this.noLoose = q.has('noloose');
+    this.noMerge = q.has('nomerge');
     this.noDepthTwin = q.has('nodepthtwin');
     this.world.interp = !setup.net && !q.has('nofixedstep');
     if (!this.noBatch)
@@ -3379,6 +3385,7 @@ export class LandGame {
     if (B) {
       B.poseNow ||= u => w.pose(u, 0);
       B.noGL = R === this.gpu;
+      B.noMerge = this.noMerge;
     }
     if (w.look && w.look.see) {
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();

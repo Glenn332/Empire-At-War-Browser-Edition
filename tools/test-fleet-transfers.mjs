@@ -67,7 +67,7 @@ game.inBattle = GalacticGame.prototype.inBattle;
 game.land = (...args) => GalacticGame.prototype.land.call(game, ...args);
 game.startBattle = (planet, attacker, defender, mode, options) => (game.battle = { p: planet, attacker, defender, mode, ...options });
 Object.defineProperty(game, 'busy', { get: () => !!game.battle });
-game.battles = { engage: (...args) => game.startBattle(...args) };
+game.battles = { game, engage: (...args) => game.startBattle(...args), landRecords: GalacticBattles.prototype.landRecords };
 assert(dropOverviewUnits(game, { kind: 'ground', planet: p.index, records: [a] }, { kind: 'fleet', planet: p.index, slot: 2 }));
 const f = g.fleets[0];
 assert.equal(f.slot, 2);

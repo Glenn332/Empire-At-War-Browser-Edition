@@ -63,7 +63,7 @@ export function execute(world, player, cmd) {
     case 'attack': {
       const mine = own().filter(s => s.isSquad || s.isMobile || s.hasWeapons),
         t = find(cmd.t);
-      if (!mine.length || !t || t.player.id < 0 || t.player.team === player.team || t.isPad) return {};
+      if (!mine.length || !t || (t.player.id < 0 && !world.razable?.(t)) || t.player.team === player.team || t.isPad) return {};
       const hp = cmd.hp >= 0 && t.hardpoints ? t.hardpoints[cmd.hp] || null : null;
       endHunt(world, mine);
       orderAttack(mine, t, hp);

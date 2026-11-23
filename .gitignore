@@ -7,3 +7,5 @@ src-tauri/target/
 src-tauri/gen/
 dist-app/
 dist-release/
+
+tools/baselines/

@@ -184,6 +184,7 @@ const simOnly = {
     'shieldDownTimer',
     'shieldTick',
     'spawnTimer',
+    'startingPlaced',
     'weapon',
     'weapons',
     'going',

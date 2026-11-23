@@ -124,8 +124,9 @@ const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   assert(capped, 'then no faster than twice the ship');
   assert.equal(sd.order.kind, 'idle', 'the Star Destroyer got there');
   assert(!wn.escort && stoppedAt > 0, 'once its ship has stopped the escort is given up');
+  const goal = near.order.kind === 'idle' ? { x: tie.x, y: tie.y, z: tie.z } : { x: near.order.x, y: near.order.y, z: near.order.z ?? tie.z };
   run(20);
-  assert(d2(tie, near.order.kind === 'idle' ? tie : near.order) < 900, 'and the squadron flies its own order on');
+  assert(d2(tie, goal) < 900, 'and the squadron flies its own order on to its goal, where it stays on guard');
 }
 
 {

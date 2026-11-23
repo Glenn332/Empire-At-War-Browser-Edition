@@ -123,10 +123,8 @@ const run = (structure, { defend = false, weather = { name: 'rain', level: 1 } }
   assert.deepEqual(items[1], ['TEXT_TACTICAL_INDIGENOUS_OBJECTIVE_E_EWOK', false]);
   assert.deepEqual(
     added.map(e => [e.name, e.type, e.reward]),
-    [
-      ['Ewok_Spawn_House_00', 'STORY_CHECK_DESTROYED', 'OBJECTIVE_COMPLETE'],
-      ['Ewok_Spawn_House_01', 'STORY_TRIGGER', 'CREDITS']
-    ]
+    [['Ewok_Spawn_House_00', 'STORY_CHECK_DESTROYED', 'OBJECTIVE_COMPLETE']],
+    'the spawner credits are paid by the world to every hostile side, not by a story event in one local plot'
   );
   assert.deepEqual(added[0].params, ['Empire', 'DESTROY_ALL_INDIGENOUS_SPAWNERS', 'Ewok_Spawn_House']);
   game.setup.campaign.galaxy.players[0].captureRewards = ['Tatooine'];

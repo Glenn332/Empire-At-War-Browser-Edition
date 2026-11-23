@@ -62,7 +62,8 @@ export class SpaceMirror {
       } else if (m.k === 'step') {
         this.queue.push(m);
         if (game.lock) this.lockStepped(m);
-      } else if (m.k === 'saved') {
+      } else if (m.k === 'held') this.heldFor = m.why;
+      else if (m.k === 'saved') {
         const s = this.saves.get(m.id);
         this.saves.delete(m.id);
         if (s) {
@@ -87,6 +88,11 @@ export class SpaceMirror {
           wk.postMessage({ sh: m.sh, slot: i });
           this.jobWorkers.push(wk);
         }
+      } else if (m.k === 'spawnRoute') {
+        const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+        wk.onerror = e => console.error('route thread', e.message);
+        wk.postMessage({ kind: 'port', port: m.port }, [m.port]);
+        this.jobWorkers.push(wk);
       } else if (m.ok === false) console.error('space worker:', m.error);
     };
     this.worker.onerror = e => console.error('space worker', e.message);
@@ -94,7 +100,8 @@ export class SpaceMirror {
       ...start,
       k: 'run',
       base: new URL('.', location.href).href,
-      nojobs: new URLSearchParams(location.search).has('nojobs')
+      nojobs: new URLSearchParams(location.search).has('nojobs'),
+      pageroutes: new URLSearchParams(location.search).has('pageroutes')
     });
     this.whenReady = new Promise(res => {
       this.onReady = res;
@@ -286,7 +293,7 @@ export class SpaceMirror {
     g.owed = Math.min((g.owed || 0) + (g.paused ? 0 : real * g.speed), (4 + behind * TURN) * TICK);
     if (behind > 1) g.owed = Math.max(g.owed, Math.min(behind, 3) * TICK);
     this.pump();
-    lock.frame(g.owed / TICK, 1, this.inFlight ? 'the battle thread' : null, 0);
+    lock.frame(g.owed / TICK, 1, this.inFlight ? this.heldFor || 'the battle thread' : null, 0);
     if (lock.started && !g.paused && g.owed >= 2 * TICK) {
       if ((g.stalled = (g.stalled || 0) + real) > 2 && !g.stallSaid) {
         g.stallSaid = true;

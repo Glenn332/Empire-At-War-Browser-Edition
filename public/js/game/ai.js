@@ -118,7 +118,7 @@ export class SkirmishAI {
 
   mine() {
     const out = [];
-    for (const e of this.world.selectables()) if (e.player === this.player && (e.isSquad || e.isMobile) && !e.hyper && !e.noAI) out.push(e);
+    for (const e of this.world.selectablesInto((this.scratch ||= []))) if (e.player === this.player && (e.isSquad || e.isMobile) && !e.hyper && !e.noAI) out.push(e);
     return out;
   }
 

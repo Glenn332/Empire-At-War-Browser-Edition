@@ -121,9 +121,26 @@ The code lives in a few places:
 - `public/js/game/` holds the simulation, AI, HUD, land battles and galactic conquest.
 - `tools/` has Node helpers and tests.
 
+## Use of AI
+
+This project is AI-assisted. I use AI to:
+
+- study how the original engine behaves, which is where it helps the most,
+- write functions, from editor autocomplete to fully generated functions,
+- write most of the automated tests,
+- write git commit messages.
+
+Implementation is done with Anthropic's Claude models and testing with OpenAI's GPT models.
+
+I inspect and test every generated function myself, and everything that ships is my responsibility. Game behaviour
+is checked by hand against the original game and against the mods people have sent me, and automated tests guard
+against regressions.
+
+The project has no generated assets. Every model, texture, sound and voice line comes from your own copy of the game.
+
 ## License
 
-Copyright (C) 2026 RIRA
+Copyright (C) 2026 Glenn332
 
 The engine's code is free software: you can redistribute it and/or modify it under the terms of the GNU General
 Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)

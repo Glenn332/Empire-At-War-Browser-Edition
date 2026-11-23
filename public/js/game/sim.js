@@ -63,6 +63,8 @@ const _seek = { p: null, best: null, bi: 0, bd: 0 },
   _nearCap = [],
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
+const ESCORT_SPACING = 140;
+const ESCORT_EASE = 200;
 const NO_CATS = new Set();
 const UNIT_CELL = 1024,
   UNIT_PAD = 200;
@@ -1885,6 +1887,8 @@ export class World {
     this.fogLifted = 0;
     this.interdictors = [];
     this.timers = [];
+    this.respawns = [];
+    this.mapGone = new Set();
     this.fields = [];
     this.onEvent = () => {};
     this.hitPart = null;
@@ -2915,6 +2919,43 @@ export class World {
     }
   }
 
+  razable(t) {
+    return !!t && !t.dead && !t.squad && t.mapIndex !== undefined && t.type.num('Tactical_Respawn_Time_In_Secs', 0) > 0;
+  }
+
+  respawnLater(u) {
+    const after = u.mapIndex !== undefined && !u.squad ? u.type.num('Tactical_Respawn_Time_In_Secs', 0) : 0;
+    if (!(after > 0)) return;
+    this.respawns.push({
+      at: this.time + after,
+      type: u.type,
+      x: u.x,
+      y: u.y,
+      z: u.z,
+      heading: u.heading,
+      mapIndex: u.mapIndex,
+      owner: u.capture ? this.neutral : u.player,
+      old: u
+    });
+  }
+
+  respawnDue() {
+    const due = this.respawns.filter(r => r.at <= this.time);
+    if (!due.length) return;
+    this.respawns = this.respawns.filter(r => r.at > this.time);
+    for (const r of due) {
+      const owner = r.owner && (r.owner.id < 0 || !r.owner.defeated) ? r.owner : this.neutral,
+        u = this.spawn(r.type, owner, r.x, r.y, r.heading);
+      if (!u || u.isSquad) continue;
+      if (r.old && r.old.mapIndex === r.mapIndex) r.old.mapIndex = undefined;
+      this.mapGone.delete(r.mapIndex);
+      u.z = r.z;
+      u.mapIndex = r.mapIndex;
+      u.syncObj?.();
+      this.mapObjects?.set(r.mapIndex, [u]);
+    }
+  }
+
   kill(u, attacker) {
     if (u.dead) return;
     if (u.cannotDie) {
@@ -2922,6 +2963,8 @@ export class World {
       return;
     }
     this.removeUnit(u);
+    if (u.mapIndex !== undefined && !u.squad) this.mapGone.add(u.mapIndex);
+    this.respawnLater(u);
     for (const pick of survivorPicks(u.type)) {
       const a = simRandom() * Math.PI * 2,
         d = (u.hitRadius > 0 ? u.hitRadius : 20) + 20;
@@ -3019,6 +3062,7 @@ export class World {
     this.stepAt = 0;
     this.time += dt;
     this.launches = 0;
+    if (this.respawns.length) this.respawnDue();
     if (this.repairs && this.repairs.size) this.tickRepairs(dt);
     const units = this.units;
     this.interdictors.length = 0;
@@ -3580,7 +3624,9 @@ export class World {
     const targetX = x + Math.cos(heading) * distance,
       targetY = y + Math.sin(heading) * distance,
       searchStart = (heading * 180) / Math.PI - 45;
-    for (const g of u.garrison)
+    const bays = u.hardpoints.some(h => h.kind === 'HARD_POINT_FIGHTER_BAY' && h.alive);
+    for (const g of u.garrison) {
+      if (bays && (isSquadronType(g.type) || g.type.behaviors().has('FIGHTER_LOCOMOTOR'))) continue;
       for (let i = 0; i < g.want; i++) {
         if (g.remaining === 0) break;
         const spot = this.freeSpot(g.type, targetX, targetY, searchStart) || { x: targetX, y: targetY };
@@ -3591,6 +3637,7 @@ export class World {
         spawned.carrier = u;
         g.live.push(spawned);
       }
+    }
     this.recountPop();
   }
 
@@ -4066,7 +4113,7 @@ export class World {
     } else for (const o of this.units) take(o);
     if (u.squad) return;
     const ord = u.order;
-    if (ord.kind === 'attack' && ord.target && this.resolveTarget(ord.target)) {
+    if (ord.kind === 'attack' && ord.target && this.resolveTarget(ord.target) && !this.befriended(u, ord.target)) {
       u.target = this.resolveTarget(ord.target);
       return;
     }
@@ -4116,6 +4163,10 @@ export class World {
     return o.lossRate ? o.lossRate * Math.exp(-(this.time - o.lossAt) / 2) : 0;
   }
 
+  befriended(e, t) {
+    return !!t && !t.dead && !!t.player && t.player.id >= 0 && t.player.team === e.player.team;
+  }
+
   resolveTarget(t) {
     if (!t || t.dead) return null;
     if (t.isSquad) return t.fighters[0] || null;
@@ -4163,7 +4214,7 @@ export class World {
       }
     } else if (ord.kind === 'attack') {
       const t = this.resolveTarget(ord.target);
-      if (!t) {
+      if (!t || this.befriended(u, t)) {
         u.setOrder({ kind: 'idle' });
       } else {
         const sys =
@@ -4482,10 +4533,22 @@ export class World {
   arrived(e) {
     const next = e.queue && e.queue.shift();
     if (next) e.setOrder(next, true);
-    else {
+    else if (e.isSquad && this.keepEscorting(e)) {
+      e.setOrder({ kind: 'guard', target: e.order.wing.escort || e.order.wing.escorted });
+      e.alone = false;
+    } else {
       e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
       if (e.isSquad) e.alone = true;
     }
+  }
+
+  keepEscorting(s) {
+    const w = s.order.wing,
+      ship = w && (w.escort || w.escorted),
+      lead = s.fighters[0];
+    if (!ship || ship.dead || ship.isSquad || !lead || ship.player.team !== s.player.team || ship.order.kind !== 'idle') return false;
+    const reach = (ship.radius || 0) + s.type.num('Guard_Chase_Range', 0);
+    return (lead.x - ship.x) ** 2 + (lead.y - ship.y) ** 2 <= reach * reach;
   }
 
   repairHardpoint(player, u, index) {
@@ -5519,7 +5582,7 @@ export class World {
       C = HIT_CELL;
     for (const l of hg.values()) l.length = 0;
     for (const o of this.units) {
-      if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0) continue;
+      if (o.dead || o.hyper || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
       const r = Math.max(
         o.hitA ? (o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL)) : o.hitRadius,
@@ -6086,7 +6149,7 @@ export class World {
     s.cruise = undefined;
     const wing = ord.wing && (ord.kind === 'move' || ord.kind === 'attackmove' || ord.kind === 'attack') ? ord.wing : null,
       esc = wing && wing.escort && s.fighters[0] ? this.escortGoal(s, wing) : null;
-    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead ? ord.target : null;
+    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
     if (!esc && !tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
@@ -6102,7 +6165,7 @@ export class World {
     }
     const lead = s.fighters[0];
     if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
-    else if (ord.kind === 'attack' && ord.target && !ord.target.dead) s.fireTarget = ord.target;
+    else if (ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target)) s.fireTarget = ord.target;
     else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
@@ -6276,10 +6339,20 @@ export class World {
       }
     }
     if (!w.follow) return w.at;
-    const o = sh.order;
-    if (o.kind === 'attack' && sh.slotAt && o.offset) return sh.slotAt;
-    if ((o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined) return o;
-    return sh;
+    const o = sh.order,
+      base = o.kind === 'attack' && sh.slotAt && o.offset ? sh.slotAt : (o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined ? o : sh;
+    const mates = w.squads.filter(q => !q.dead && q.order.wing === w);
+    if (!mates.length) return base;
+    const k = mates.indexOf(s),
+      side = (Math.max(0, k) - (mates.length - 1) / 2) * ESCORT_SPACING,
+      back = -(sh.radius || 0) * 0.5,
+      c = Math.cos(sh.heading),
+      n = Math.sin(sh.heading),
+      at = (s.escortAt ||= { x: 0, y: 0, z: 0 });
+    at.x = base.x + c * back - n * side;
+    at.y = base.y + n * back + c * side;
+    at.z = base.z ?? sh.z;
+    return at;
   }
 
   escortSpeed(s, w, lead) {
@@ -6287,8 +6360,8 @@ export class World {
     if (!w.follow) return group;
     const sh = w.escort,
       v = sh.cruise || sh.maxSpeed || 0,
-      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading);
-    return Math.min(group, ahead > 20 ? v * 0.5 : v * 2);
+      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading) + (sh.radius || 0) * 0.5;
+    return Math.min(group, v * clamp(1 - ahead / ESCORT_EASE, 0.5, 2));
   }
 
   idleCell(s, p) {

@@ -212,7 +212,7 @@ assert.equal(lines.at(-1), 'Before');
 ctx.advance(4);
 speech.update();
 assert.equal(lines.at(-1), 'Before|After');
-assert(movieStops > 0);
+assert.equal(movieStops, 0, 'The speaker hologram keeps playing after the line ends');
 panel.replay(
   [
     { op: 'DIALOG', value: event.name },

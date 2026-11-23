@@ -1,8 +1,8 @@
 import { db, factionColor, autoColors } from '../gamedata.js';
 import { openDialog } from './dialogs.js';
 import { Menus } from './menus.js';
-import { loadMap, mapHeader, mapTitle, loadMapPreview } from '../ted.js';
-import { iconUrl } from '../icons.js';
+import { mapHeader, mapTitle, loadMapPreview } from '../ted.js';
+import { startMarks } from './mapstarts.js';
 import { PALETTE, ROWS, slotWindow, rowsOf } from './slotrows.js';
 import { leaveTo } from '../leaveguard.js';
 import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, liveMaps, seedBar, dockSeedBar } from './dynamicmap.js';
@@ -151,51 +151,11 @@ export async function openLobby({
             : a.name.localeCompare(b.name))
       );
   const previews = new Map();
-  const starts = new Map();
-  const marks = [];
-  const markStarts = async () => {
+  const starts = startMarks(dlg, team => `${T('TEXT_TEAM', 'Team')} ${team + 1}`);
+  const markStarts = () => {
     const m = st.mapFile,
-      key = viewKey(m);
-    if (!starts.has(key)) {
-      starts.set(
-        key,
-        loadMap(m, mapOpts())
-          .then(map => {
-            const at = [];
-            for (const o of map.objects) {
-              const t = /^TEAM_(\d\d)_(SPACE_STATION|BASE_POSITION_MARKER)$/.exec(
-                o.role ? `TEAM_${String(o.team).padStart(2, '0')}_${o.role}` : o.type.name.toUpperCase()
-              );
-              if (t) at[+t[1]] = o.pos;
-            }
-            return { at, min: map.min, max: map.max };
-          })
-          .catch(() => null)
-      );
-    }
-    const info = await starts.get(key);
-    if (viewKey(st.mapFile) !== key) return;
-    for (const e of marks.splice(0)) e.remove();
-    if (!info) return;
-    const box = dlg.ctl('IDC_IMAGE'),
-      W = parseFloat(box.style.width),
-      H = parseFloat(box.style.height),
-      SIZE = 26;
-    const used = teamsUsed();
-    info.at.forEach((p, team) => {
-      const f = st.teamFactions[isDynamic(m) ? used[team] : team];
-      if (!p || !f) return;
-      const icon = iconUrl(db.faction(f).str('Multiplayer_Map_Preview_Icon'));
-      if (!icon) return;
-      const u = (p[0] - info.min[0]) / (info.max[0] - info.min[0]),
-        v = 1 - (p[1] - info.min[1]) / (info.max[1] - info.min[1]);
-      const e = document.createElement('div');
-      e.className = 'dlg-mark';
-      e.style.cssText = `position:absolute;left:${u * W - SIZE / 2}px;top:${v * H - SIZE / 2}px;width:${SIZE}px;height:${SIZE}px;background:url(${icon}) center / 100% 100% no-repeat`;
-      e.title = `${T('TEXT_TEAM', 'Team')} ${team + 1}`;
-      box.appendChild(e);
-      marks.push(e);
-    });
+      used = teamsUsed();
+    return starts.show(m, viewKey(m), mapOpts(), team => st.teamFactions[isDynamic(m) ? (used[team] ?? team) : team]);
   };
   const preview = async m => {
     const key = viewKey(m);
@@ -244,7 +204,7 @@ export async function openLobby({
     st.mapFile = lastMap[lastKey()] || null;
     forceDynamic();
     if (!st.mapFile) {
-      for (const e of marks.splice(0)) e.remove();
+      starts.clear();
       dlg.setImage('IDC_IMAGE', '');
     }
     dlg

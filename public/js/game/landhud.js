@@ -64,6 +64,36 @@ function playerOf(world, side, factionName, game = null) {
   };
 }
 
+export function sidePlayersOf(game) {
+  const w = game.world;
+  w.sidePlayers = game.factions.map((f, side) => playerOf(w, side, f, game));
+  w.sidePlayers[w.wild] = {
+    id: -1,
+    team: { id: -1 },
+    faction: db.faction('Neutral') || w.sidePlayers[game.me].faction,
+    factionName: 'Neutral',
+    credits: 0,
+    pop: 0,
+    popCap: 0,
+    reinforcements: [],
+    upgrades: new Set(),
+    techLevel: 1
+  };
+  w.hostilePlayer = {
+    id: -2,
+    team: { id: -2 },
+    faction: db.faction('Hostile') || w.sidePlayers[w.wild].faction,
+    factionName: 'Hostile',
+    credits: 0,
+    pop: 0,
+    popCap: 0,
+    reinforcements: [],
+    upgrades: new Set(),
+    techLevel: 1
+  };
+  return w.sidePlayers;
+}
+
 const NONE = new Map();
 const padReach = s => {
   const b = s.point?.inst?.box || s.inst?.box;
@@ -133,32 +163,8 @@ export class LandUI {
     this.mouse = { x: 0, y: 0, inside: false };
     this.r = { rig: game.view };
     this.pads = new Map();
-    w.sidePlayers = game.factions.map((f, side) => playerOf(w, side, f, game));
+    sidePlayersOf(game);
     this.player = w.sidePlayers[me];
-    w.sidePlayers[w.wild] = {
-      id: -1,
-      team: { id: -1 },
-      faction: db.faction('Neutral') || this.player.faction,
-      factionName: 'Neutral',
-      credits: 0,
-      pop: 0,
-      popCap: 0,
-      reinforcements: [],
-      upgrades: new Set(),
-      techLevel: 1
-    };
-    w.hostilePlayer = {
-      id: -2,
-      team: { id: -2 },
-      faction: db.faction('Hostile') || w.sidePlayers[w.wild].faction,
-      factionName: 'Hostile',
-      credits: 0,
-      pop: 0,
-      popCap: 0,
-      reinforcements: [],
-      upgrades: new Set(),
-      techLevel: 1
-    };
 
     const siteFor = (b, uc) => {
       const own = this.siteOf(b);
