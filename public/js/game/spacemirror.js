@@ -87,6 +87,11 @@ export class SpaceMirror {
           wk.postMessage({ sh: m.sh, slot: i });
           this.jobWorkers.push(wk);
         }
+      } else if (m.k === 'spawnRoute') {
+        const wk = new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
+        wk.onerror = e => console.error('route thread', e.message);
+        wk.postMessage({ kind: 'port', port: m.port }, [m.port]);
+        this.jobWorkers.push(wk);
       } else if (m.ok === false) console.error('space worker:', m.error);
     };
     this.worker.onerror = e => console.error('space worker', e.message);
@@ -94,7 +99,8 @@ export class SpaceMirror {
       ...start,
       k: 'run',
       base: new URL('.', location.href).href,
-      nojobs: new URLSearchParams(location.search).has('nojobs')
+      nojobs: new URLSearchParams(location.search).has('nojobs'),
+      pageroutes: new URLSearchParams(location.search).has('pageroutes')
     });
     this.whenReady = new Promise(res => {
       this.onReady = res;

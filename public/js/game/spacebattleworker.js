@@ -174,6 +174,8 @@ onmessage = async e => {
     if (m.k === 'run') {
       globalThis.SWR_NOJOBS = !!m.nojobs;
       globalThis.SWR_SPAWN_JOBS = (sh, n) => postMessage({ k: 'spawnJobs', sh, n });
+      globalThis.SWR_PAGE_ROUTES = !!m.pageroutes;
+      globalThis.SWR_SPAWN_ROUTE = port => postMessage({ k: 'spawnRoute', port }, [port]);
       return await run(m);
     }
     const { w, ms } = await setUp(m, null);
