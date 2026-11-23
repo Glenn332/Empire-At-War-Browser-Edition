@@ -397,7 +397,7 @@ class Game {
     if (cb)
       for (const n of [
         cb.defender.station,
-        ...(cb.defender.orbital || []),
+        ...(cb.defender.orbital || []).map(o => o.type ?? o),
         ...(cb.planetWeapons || []),
         ...cb.attacker.units.map(u => u.type),
         ...cb.defender.units.map(u => u.type)
@@ -1793,14 +1793,14 @@ class Game {
       linkedParent(this).returnLinkedTactical(result);
       return;
     }
-    if (mpBattleParent()) {
-      mpBattleParent().mpBattles.returned(this.campaignOutcome);
-      return;
-    }
     if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
     const { galaxy, ...result } = this.campaignOutcome || {};
     result.storyDelayed = this.storyDelayed || [];
     if (this.builtUpgrades?.length) result.upgradesBuilt = this.builtUpgrades.slice();
+    if (mpBattleParent()) {
+      mpBattleParent().mpBattles.returned(result);
+      return;
+    }
     stageStart({ mode: 'galactic', players: [], teamFactions: [], campaign: cb.campaignName, restore: galaxy || cb.galaxy, result });
   }
 

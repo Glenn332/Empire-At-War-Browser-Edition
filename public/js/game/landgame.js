@@ -4327,7 +4327,7 @@ export class LandGame {
         return;
       }
       this.returned = true;
-      mpBattleParent().mpBattles.returned(this.campaignOutcome);
+      mpBattleParent().mpBattles.returned(this.campaignOutcome && { ...this.campaignOutcome, storyDelayed: this.storyDelayed || [] });
       return;
     }
     if (this.tacticalStory) cb.galaxy.storyFlags = this.tacticalStory.flags.snapshot();
