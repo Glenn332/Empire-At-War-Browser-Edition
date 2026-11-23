@@ -311,13 +311,17 @@ export function executeCorruption(game, actor, planet, choice) {
     player = playerOf(g, actor.owner);
   if (!player || actor.dead || corruptionOf(planet) !== -1 || planet.corruptionKind || planet.destroyed) return false;
   if (player.credits < choice.cost) return false;
+  // Multiplayer has no networked tactical mission, so the mission counts as won straight away.
+  const mission =
+    choice.map && choice.mode && panelSide(game, player.faction, player) !== 'ai' && !game.setup?.noCorruptionMission && !game.setup?.net;
+  if (mission && (game.pendingLinkedTactical || game.linkedMission || game.battle)) return false;
   if (choice.cost > 0) adjustCredits(g, player.faction, -choice.cost);
   const r = requirements(game, player, choice);
   if (!r.units) return false;
   if (choice.unitCount > 0 && choice.units.length) {
     const everyone = [
-      ...g.fleets.flatMap(f => f.units.map(u => ({ u, fleet: f }))),
-      ...g.planets.flatMap(q => q.garrison.map(u => ({ u, planet: q })))
+      ...g.fleets.filter(f => same(f.owner, player.faction)).flatMap(f => f.units.map(u => ({ u, fleet: f }))),
+      ...g.planets.flatMap(q => q.garrison.filter(u => same(u.owner, player.faction)).map(u => ({ u, planet: q })))
     ].filter(x => !x.u.dead);
     const type = choice.units.find(t => everyone.some(x => holds(x.u, [t]))) || choice.units[0];
     if (type.bool('Destroy_When_Used_As_Corruption_Prereq', true)) {
@@ -338,10 +342,8 @@ export function executeCorruption(game, actor, planet, choice) {
       }
     }
   }
-  const mission = choice.map && choice.mode && panelSide(game, player.faction, player) !== 'ai' && !game.setup?.noCorruptionMission;
-  if (mission) {
-    if (!queueMission(game, actor, planet, choice)) return false;
-  } else {
+  if (mission) queueMission(game, actor, planet, choice);
+  else {
     begin(game, player, planet, choice.type);
     game.story?.abilityLanded?.(planet, actor);
   }
@@ -362,7 +364,6 @@ function begin(game, player, planet, type, choice = null) {
 const planetName = p => db.t(p.type.str('Text_ID')) || p.name;
 
 function queueMission(game, actor, planet, choice) {
-  if (game.pendingLinkedTactical || game.linkedMission || game.battle) return false;
   const request = {
     planet: planet.index,
     mode: choice.mode,
@@ -382,7 +383,6 @@ function queueMission(game, actor, planet, choice) {
   };
   game.pendingLinkedTactical = request;
   if (choice.commencing && same(actor.owner, game.me)) game.audio?.speech?.replace?.(choice.commencing);
-  return true;
 }
 
 export function missionResult(game, request, won) {
