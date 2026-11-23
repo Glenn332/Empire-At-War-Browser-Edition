@@ -2410,6 +2410,8 @@ export class GalacticGame {
   scriptClick(pid, name, native) {
     const cfg = this.setup.players?.[pid];
     if (!cfg) return;
+    // a native click must name one of the galaxy screen's own buttons
+    if (native && this.scriptUI?.nativeControls && !this.scriptUI.nativeControls.has(name)) return;
     if (cfg.peer === 0) {
       if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
       else this.scriptUI?.click(name, false, true);

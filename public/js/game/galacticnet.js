@@ -91,6 +91,7 @@ export function recordRef(g, u) {
 export function fromRecordRef(g, r) {
   if (!Array.isArray(r)) return null;
   const [w, a, b] = r;
+  if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
   if (w === 'f') return g.fleets[a]?.units[b] || null;
   const p = g.planets[a];
   return (p && { g: p.garrison, s: p.groundStructures, o: p.orbitalStructures }[w]?.[b]) || null;
@@ -108,8 +109,12 @@ const records = (g, list) => (Array.isArray(list) ? list.map(r => fromRecordRef(
 function sideRef(g, s) {
   return s && { kind: s.kind, planet: s.planet, fleet: fleetRef(g, s.fleet), recs: refs(g, s.records), slot: s.slot, pf: !!s.pf };
 }
+const SIDE_KINDS = new Set(['fleet', 'ground']);
+const index = v => v == null || Number.isInteger(v);
 function sideOf(g, s) {
-  return s && { kind: s.kind, planet: s.planet, fleet: fleetOf(g, s.fleet), records: records(g, s.recs), slot: s.slot, pf: !!s.pf };
+  if (!s || typeof s !== 'object' || !SIDE_KINDS.has(s.kind) || !Number.isInteger(s.planet) || !index(s.fleet) || !index(s.slot))
+    return null;
+  return { kind: s.kind, planet: s.planet, fleet: fleetOf(g, s.fleet), records: records(g, s.recs), slot: s.slot, pf: !!s.pf };
 }
 
 export const orders = {
@@ -151,9 +156,21 @@ export const orders = {
   sell: (g, rec) => ({ c: 'sell', rec: recordRef(g, rec) })
 };
 
+// planet, fleet, slot and list indices must be plain integers: a string "3" still finds planet 3 but then
+// never matches it again in the battle and blockade checks
+const INDEX_FIELDS = ['p', 'to', 'f', 'tf', 'slot', 'i'],
+  COUNTED_IDS = new Set(['marker', 'layoutLand', 'choice', 'battle', 'result']);
+const validCommand = cmd =>
+  !!cmd &&
+  typeof cmd === 'object' &&
+  INDEX_FIELDS.every(k => index(cmd[k])) &&
+  (!COUNTED_IDS.has(cmd.c) || Number.isInteger(cmd.id)) &&
+  (cmd.c !== 'choice' || Number.isInteger(cmd.index));
+
 export function runCommand(game, faction, cmd) {
   const g = game.galaxy,
     own = f => f && key(f.owner) === key(faction);
+  if (!validCommand(cmd)) return {};
   switch (cmd.c) {
     case 'move': {
       const f = fleetOf(g, cmd.f);
@@ -191,7 +208,7 @@ export function runCommand(game, faction, cmd) {
     case 'drop': {
       const s = sideOf(g, cmd.s),
         t = sideOf(g, cmd.t);
-      if (s && t && game.dropUnits(s, t)) game.galacticBattleChanged();
+      if (s && t && (s.kind !== 'fleet' || s.fleet) && game.dropUnits(s, t)) game.galacticBattleChanged();
       return {};
     }
     case 'build': {
@@ -201,7 +218,7 @@ export function runCommand(game, faction, cmd) {
       return why ? { why } : { ok: true, type };
     }
     case 'cancel': {
-      const item = g.planets[cmd.p]?.production[cmd.q]?.[cmd.i];
+      const item = (cmd.q === 'space' || cmd.q === 'ground') && g.planets[cmd.p]?.production[cmd.q]?.[cmd.i];
       if (item && item.type.name === cmd.type && game.cancelBuild(cmd.p, item)) return { ok: true, type: item.type };
       return {};
     }
@@ -305,7 +322,7 @@ export function runCommand(game, faction, cmd) {
       game.dialogDone?.(game.actingPid, cmd.id);
       return {};
     case 'choice':
-      game.story?.neutralizeAnswer?.(faction, cmd.id, cmd.index | 0, typeof cmd.gui === 'string' ? cmd.gui : null);
+      game.story?.neutralizeAnswer?.(faction, cmd.id, cmd.index, typeof cmd.gui === 'string' ? cmd.gui : null);
       return {};
     case 'result':
       game.mpBattles?.result(faction, cmd.id, cmd.r, game.actingPid);

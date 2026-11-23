@@ -1694,7 +1694,7 @@ export class GalacticStoryHost extends StoryPlots {
     this.choices.delete(id);
     if (key(this.game.localFaction ?? this.game.me) === c.owner) this.popup.close();
     if (index >= 0) this.neutralizeExecute(c.object, c.ability, c.planet, c.rows[index]);
-    if (gui) this.clickGUI(String(gui));
+    if (gui && NeutralizeShell.control(gui, index >= 0)) this.clickGUI(gui);
   }
   heroTypes(type) {
     const members = [...type.list('Company_Units'), ...type.list('Squadron_Units')].map(n => db.type(n)).filter(Boolean);
