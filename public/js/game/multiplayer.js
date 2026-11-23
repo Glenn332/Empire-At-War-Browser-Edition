@@ -748,12 +748,12 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', !!st.randomEvents, v => {
-      st.randomEvents = v;
-    });
+    // random story events come from single-player story rewards only; the galaxy has none to offer here
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
+  dlg.show('IDC_ALLOW_RANDOM_EVENTS', false);
   dlg.enable('IDC_ALLOW_RANDOM_EVENTS', false);
   show();
   return new Promise(done => {
@@ -771,8 +771,7 @@ async function campaignOptions(st, campaign) {
         credits: C.num('MP_Default_Credits', 6000),
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-        randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
+        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
       });
       show();
     });
@@ -1000,8 +999,7 @@ async function openStaging(args) {
     preBuilt: true,
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-    randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
+    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1755,7 +1753,7 @@ async function openStaging(args) {
         humanTypes,
         ...(globalThis.shooterMode ? { shooter: true } : {}),
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
-        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve, randomEvents: !!st.randomEvents },
+        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve },
         players: players.map(s =>
           s.kind === 'human'
             ? { human: true, peer: s.peer, name: s.name, faction: entry.menu || s.faction, color: s.color }
