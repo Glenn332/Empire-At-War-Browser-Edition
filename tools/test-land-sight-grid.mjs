@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { openGame } from './megfs.mjs';
-const archive = openGame(fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url)));
+let gameDir = fileURLToPath(new URL('../../Star Wars Empire at War', import.meta.url));
+for (let up = new URL('../../../', import.meta.url); !existsSync(gameDir) && up.pathname.split('/').length > 3; up = new URL('../', up))
+  gameDir = fileURLToPath(new URL('Star Wars Empire at War', up));
+const archive = openGame(gameDir);
 globalThis.fetch = async input => {
   const path = String(input);
   const key = archive.resolve(decodeURIComponent(path.replace(/^asset\//, '').split('?')[0])),

@@ -3801,24 +3801,56 @@ export class World {
       if (!l) grid.set(k, (l = []));
       l.push(u);
     }
+    // A squadron's fighters scan their shared cells once; each target still tests every fighter's own circle and cell box.
+    const groups = (this.visGroups ||= new Map()),
+      box = (this.visBox ||= []);
+    for (const g of groups.values()) g.length = 0;
+    box.length = 0;
     for (const o of units) {
       if (o.dead || o.player.id < 0) continue;
-      const bit = o.player.bit,
-        reach = Math.max(o.revealRange + maxHit, 160);
+      const reach = Math.max(o.revealRange + maxHit, 160);
       if (!(reach >= 0)) continue;
-      const x0 = Math.max(gx0, Math.floor((o.x - reach) / C)),
-        x1 = Math.min(gx1, Math.floor((o.x + reach) / C)),
-        y0 = Math.max(gy0, Math.floor((o.y - reach) / C)),
-        y1 = Math.min(gy1, Math.floor((o.y + reach) / C));
+      const key = o.squad || o;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = []));
+      g.push(o, box.length);
+      box.push(
+        Math.max(gx0, Math.floor((o.x - reach) / C)),
+        Math.min(gx1, Math.floor((o.x + reach) / C)),
+        Math.max(gy0, Math.floor((o.y - reach) / C)),
+        Math.min(gy1, Math.floor((o.y + reach) / C))
+      );
+    }
+    for (const [key, g] of groups) {
+      if (!g.length) {
+        groups.delete(key);
+        continue;
+      }
+      let x0 = Infinity,
+        x1 = -Infinity,
+        y0 = Infinity,
+        y1 = -Infinity;
+      for (let i = 1; i < g.length; i += 2) {
+        const b = g[i];
+        if (box[b] < x0) x0 = box[b];
+        if (box[b + 1] > x1) x1 = box[b + 1];
+        if (box[b + 2] < y0) y0 = box[b + 2];
+        if (box[b + 3] > y1) y1 = box[b + 3];
+      }
       for (let ix = x0; ix <= x1; ix++)
         for (let iy = y0; iy <= y1; iy++) {
           const l = grid.get(ix * 65536 + iy);
           if (l)
-            for (const u of l) {
-              if (u.visMask & bit) continue;
-              const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
-              if (dist2(u, o) <= r * r) u.visMask |= bit;
-            }
+            for (const u of l)
+              for (let i = 0; i < g.length; i += 2) {
+                const o = g[i],
+                  bit = o.player.bit;
+                if (u.visMask & bit) continue;
+                const b = g[i + 1];
+                if (ix < box[b] || ix > box[b + 1] || iy < box[b + 2] || iy > box[b + 3]) continue;
+                const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
+                if (dist2(u, o) <= r * r) u.visMask |= bit;
+              }
         }
     }
     const FC = (this.fowCell ||= db.constants.num('DesiredSpaceFOWCellSize', 100)),
