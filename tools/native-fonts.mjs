@@ -8,7 +8,6 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { fontInfo, fontFileFace } from '../public/js/fontname.js';
 
-// a page asks for a handful of faces and sizes; these bound what any caller can make the GDI worker do
 const KEEP = 256,
   QUEUE_MAX = 256,
   DISK_MAX = 4000,
@@ -112,13 +111,11 @@ export class NativeFonts {
     const key = JSON.stringify([face.toUpperCase(), height, stretch, page, bold, charset]);
     let job = this.pending.get(key);
     if (job) {
-      // most recently used last, so the oldest is the first to go
       this.pending.delete(key);
       this.pending.set(key, job);
       return job;
     }
     await this.start();
-    // the game's own faces always; a few others (system fonts a mod names), not any name a caller makes up
     const upper = face.toUpperCase();
     if (!this.alias.has(upper) && !this.otherFaces.has(upper)) {
       if (this.otherFaces.size >= OTHER_FACES) return null;
@@ -142,7 +139,6 @@ export class NativeFonts {
     while (this.pending.size > KEEP) this.pending.delete(this.pending.keys().next().value);
     return job;
   }
-  // the disk cache keeps the most recently written pages
   prune() {
     try {
       const files = fs

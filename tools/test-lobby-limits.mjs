@@ -1,5 +1,3 @@
-// The lobby worker: origins fail closed, one address can't fill the hall, the game list or a game,
-// a host can lock its game and drop a peer's socket. Durable Objects are stood in for by small fakes.
 import assert from 'node:assert/strict';
 
 class FakeSocket {
@@ -80,7 +78,6 @@ const socketOf = async p => {
   return r.socket || null;
 };
 
-// origins: no ALLOWED_ORIGINS means no other site, not every site
 {
   const lobbies = { fetch: async () => new RealResponse('[]') };
   const env = { REGISTRY: { idFromName: () => 0, get: () => lobbies } };
@@ -104,7 +101,6 @@ const socketOf = async p => {
   );
 }
 
-// the hall: a few sockets per address
 {
   const hall = new Hall(ctxFor());
   const opened = [];
@@ -113,7 +109,6 @@ const socketOf = async p => {
   assert.equal(accepted, 6, 'one address gets six hall sockets');
   await hall.fetch(req('https://lobby/hall?name=b', '5.6.7.8'));
   assert.equal(hall.ctx.getWebSockets().length, 7, 'another address still gets in');
-  // chat and renames are rate limited per socket
   const ws = hall.ctx.getWebSockets()[0],
     other = hall.ctx.getWebSockets()[1];
   other.sent.length = 0;
@@ -121,7 +116,6 @@ const socketOf = async p => {
   assert.ok(other.sent.length <= 20, 'a socket renaming itself in a loop is cut off: ' + other.sent.length);
 }
 
-// the game list: a few listings per address, and the host is told when its listing was refused
 {
   const reg = new Registry(ctxFor());
   const put = (id, ip) =>
@@ -154,7 +148,6 @@ const socketOf = async p => {
   );
 }
 
-// a game: seats per address, lock, kick
 {
   const reg = new Registry(ctxFor());
   const env = { REGISTRY: { idFromName: () => 0, get: () => ({ fetch: (u, init) => reg.fetch(new Request(u, init)) }) } };
@@ -169,12 +162,10 @@ const socketOf = async p => {
   const fws = room.ctx.sockets.at(-1),
     fid = fws.deserializeAttachment().id;
 
-  // relayed messages are rate limited per socket
   hws.sent.length = 0;
   for (let i = 0; i < 2500; i++) await room.webSocketMessage(fws, JSON.stringify({ t: 'to', to: 0, d: { m: 'x' } }));
   assert.ok(hws.sent.length >= 2000 && hws.sent.length < 2100, 'a joiner flooding the relay is cut off: ' + hws.sent.length);
 
-  // a joiner can't lock or kick
   await room.webSocketMessage(fws, JSON.stringify({ t: 'lock', on: true }));
   assert.equal(await room.ctx.storage.get('locked'), undefined);
   await room.webSocketMessage(hws, JSON.stringify({ t: 'lock', on: true }));

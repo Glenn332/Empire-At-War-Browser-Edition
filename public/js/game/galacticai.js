@@ -136,8 +136,13 @@ export function galacticControllerName(game, player) {
 }
 
 export function galacticTargetMatches(game, player, planet, bits) {
-  if (planet.background || planet.destroyed || planet.restricted || (game.galaxy.autoReveal === false && !planet.revealed && !game.galaxy.humans)) return false;
-  // (in multiplayer the story's reveal state is the humans' map: AI opponents still see the whole galaxy)
+  if (
+    planet.background ||
+    planet.destroyed ||
+    planet.restricted ||
+    (game.galaxy.autoReveal === false && !planet.revealed && !game.galaxy.humans)
+  )
+    return false;
   if (key(planet.owner) === key(player.faction)) return !!(bits & 1);
   const faction = db.faction(planet.owner);
   if (faction?.bool('Is_Neutral')) return !!(bits & 4);

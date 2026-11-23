@@ -22,7 +22,6 @@ const { loadCampaignData, startingGalaxy } = await import('../public/js/game/gal
 const { GalacticNetwork } = await import('../public/js/game/galacticnetwork.js');
 const data = await loadCampaignData();
 
-// AI route rows are computed per source on demand; each must give the all-pairs cheapest cost and a path of that cost.
 const INF = 0xffffffff;
 function allPairs(m) {
   const { n, use, weight, dist } = m,

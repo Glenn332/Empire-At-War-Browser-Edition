@@ -3,7 +3,6 @@ import { executeLand } from './landcommands.js';
 import { inCategory } from './land.js';
 import { keysOf, keyName } from './keybinds.js';
 import { heightAt } from './terrain.js';
-// game and mod text goes into markup escaped, so a unit name can't carry HTML
 const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const OV = {

@@ -490,7 +490,6 @@ export class GalacticBar extends CommandBar {
         if (i >= 0 && v.planet !== i) game.zoomIn(i);
         return;
       }
-      // A hero in hyperspace has no planet to zoom into: leave the planet it left and look at its fleet.
       game.zoomOut();
     }
     v.x = at[0];

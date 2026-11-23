@@ -643,7 +643,6 @@ export async function openMultiplayer({
       u.searchParams.delete('join');
       history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString().replace(/=(&|$)/g, '$1'));
     } catch {}
-    // an invite link only opens the lobby: joining (and with it the host's game and saved game) waits for a yes
     (async () => {
       const listed = await listGames().catch(() => []);
       const g = Array.isArray(listed) ? listed.find(x => x && x.id === invited) : null;
@@ -756,7 +755,6 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    // random story events come from single-player story rewards only; the galaxy has none to offer here
     dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
@@ -1216,7 +1214,6 @@ async function openStaging(args) {
         });
       } else if (m.k === 'kicked') leave('The host removed you from the game.');
       else if (m.k === 'start') {
-        // only a game this player said it was ready for
         if (!slots.find(s => s.kind === 'human' && s.peer === net.id)?.ready) return;
         if (!m.save) begin(m.setup);
         else {
@@ -1731,7 +1728,6 @@ async function openStaging(args) {
         note.textContent = 'Pick a campaign.';
         return;
       }
-      // a computer slot on a side someone else already has would be dropped from the galaxy
       const sideOf = s => String((s.kind === 'human' && entry.menu) || s.faction).toUpperCase(),
         held = new Set(players.filter(s => s.kind === 'human').map(sideOf));
       let clash = null;

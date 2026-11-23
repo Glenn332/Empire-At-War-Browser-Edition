@@ -55,7 +55,6 @@ const battle = (mode, attackerUnits) => ({
   }
 });
 
-// Fields that do not belong to the battle are dropped or clamped.
 {
   const b = battle('space', [{ gid: '0:0', type: ship.name }]);
   const r = checkedResult(galaxy, b, {
@@ -89,7 +88,6 @@ const battle = (mode, attackerUnits) => ({
     5000
   );
 }
-// A superweapon in the attacker's fleet can destroy the planet, but only for its own side.
 {
   const b = battle('space', [{ gid: '0:0', type: tsw.name }]);
   const r = checkedResult(galaxy, b, { winner: 'attacker', alive: ['0:0'], planetDestroyed: true, planetDestroyedBy: 'Empire' });
@@ -100,9 +98,7 @@ const battle = (mode, attackerUnits) => ({
     undefined
   );
 }
-// Land results only keep units that were in the battle.
 {
-  // the tactical battle shares the setup object and swaps type names for type objects in place
   const b = battle('space', [{ gid: '0:0', type: ship }]);
   b.setup.campaign.defender.orbital = [{ gid: 'o:0', type: ship }];
   const v = checkedResult(galaxy, b, {
@@ -136,7 +132,6 @@ const battle = (mode, attackerUnits) => ({
   assert.equal(r.tacticalStructures.length, 1);
 }
 
-// PvP: both sides must report the same result; disagreement falls back to the tactical host.
 const fakeGame = () => {
   const applied = [];
   return {

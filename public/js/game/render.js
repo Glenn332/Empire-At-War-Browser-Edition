@@ -1894,7 +1894,6 @@ export class Renderer {
         if (_frustum.intersectsSphere(_sphere)) hulls.push(u.x, u.y, u.z || 0, u.visualRadius);
       }
       if (hulls.length) {
-        // Hulls are bucketed by x/y in cells wide enough that a bolt only needs its own and the neighbouring cells.
         let big = 0;
         for (let i = 3; i < hulls.length; i += 4) if (hulls[i] > big) big = hulls[i];
         const G = (hullGrid.size = big + Math.max(SPACE_BOLT.missile, SPACE_BOLT.radius) * zk);

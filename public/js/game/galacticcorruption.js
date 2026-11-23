@@ -311,7 +311,6 @@ export function executeCorruption(game, actor, planet, choice) {
     player = playerOf(g, actor.owner);
   if (!player || actor.dead || corruptionOf(planet) !== -1 || planet.corruptionKind || planet.destroyed) return false;
   if (player.credits < choice.cost) return false;
-  // Multiplayer has no networked tactical mission, so the mission counts as won straight away.
   const mission =
     choice.map && choice.mode && panelSide(game, player.faction, player) !== 'ai' && !game.setup?.noCorruptionMission && !game.setup?.net;
   if (mission && (game.pendingLinkedTactical || game.linkedMission || game.battle)) return false;

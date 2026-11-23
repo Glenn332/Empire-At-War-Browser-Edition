@@ -1,5 +1,3 @@
-// Save/load round trips of state the scripts set once and never set again: tactical unit flags,
-// who attacks a planet, story speech still playing, story handles and per-unit galaxy flags.
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { openGame } from './megfs.mjs';
@@ -26,14 +24,33 @@ const { GalacticBattles } = await import('../public/js/game/galacticbattles.js')
 const { scriptFlags, applyScriptFlags } = await import('../public/js/game/tacticalsave.js');
 const json = v => JSON.parse(JSON.stringify(v));
 
-// tactical: flags set by Set_Cannot_Be_Killed, Make_Invulnerable, Hide... survive JSON, Infinity included
 {
-  const u = { cannotDie: true, invulnerable: true, holdFire: true, suspended: true, scriptHidden: true, scriptNoAI: true, scriptSelectable: false, invulnUntil: Infinity };
+  const u = {
+    cannotDie: true,
+    invulnerable: true,
+    holdFire: true,
+    suspended: true,
+    scriptHidden: true,
+    scriptNoAI: true,
+    scriptSelectable: false,
+    invulnUntil: Infinity
+  };
   const back = {};
   applyScriptFlags(back, json(scriptFlags(u, 10)));
   assert.deepEqual(
     back,
-    { cannotDie: true, invulnerable: true, holdFire: true, suspended: true, scriptHidden: true, scriptNoAI: true, noAI: true, selectable: false, scriptSelectable: false, invulnUntil: Infinity },
+    {
+      cannotDie: true,
+      invulnerable: true,
+      holdFire: true,
+      suspended: true,
+      scriptHidden: true,
+      scriptNoAI: true,
+      noAI: true,
+      selectable: false,
+      scriptSelectable: false,
+      invulnUntil: Infinity
+    },
     'every scripted flag comes back'
   );
   const timed = {};
@@ -48,7 +65,6 @@ const data = await loadCampaignData();
 const campaign = data.campaigns.get('SANDBOX_EQUAL_FOOTING_EMPIRE');
 assert(campaign);
 
-// galactic: the arriving fleet stays the attacker after a load, with or without the battle prompt up
 {
   const g = startingGalaxy(data, campaign);
   const tgt = g.fleets.find(f => f.owner.toUpperCase() === 'REBEL' && !f.leg),
@@ -99,7 +115,6 @@ assert(campaign);
   assert(prompt);
 }
 
-// galactic story: a line still playing, Prevent_AI_Usage, created and company-member handles, speed overrides
 {
   const makeGame = restore => {
     const galaxy = startingGalaxy(data, campaign);
@@ -167,7 +182,6 @@ assert(campaign);
   hostA.dispose();
   hostB.dispose();
 }
-// browser storage: overlapping saves to one slot, and a write that runs out of room
 {
   const files = new Map(),
     tick = () => new Promise(r => setTimeout(r, 1));

@@ -14,7 +14,6 @@ const POP_MAX = 10000,
 const KINDS = ['you', 'closed', 'easy', 'medium', 'hard'];
 const MAX_TEAMS = 10;
 export const SPECTATOR_TEAM = -1;
-// the lobby service tells the host when its game could not go on the public list (or is back on it)
 export const listingNote = (ok, why) =>
   ok
     ? 'The game is on the game list again.'

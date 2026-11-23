@@ -1,4 +1,3 @@
-// A gated host session: a peer that has not passed hello/password hears nothing and is heard only for 'hello'.
 import assert from 'node:assert/strict';
 
 globalThis.RTCPeerConnection = class {
@@ -44,7 +43,6 @@ assert.deepEqual(heard, ['1:hello', '1:chat'], 'an admitted peer is heard');
 s.send(2, { k: 'password', wrong: false });
 assert.deepEqual(got[2], ['password'], 'the host can still answer a peer directly');
 
-// wrong passwords: a few tries, then the peer is sent away
 got[2].length = 0;
 for (let i = 0; i < 5; i++) s.askPassword(2, true);
 assert.deepEqual(got[2], ['password', 'password', 'password', 'password', 'refuse']);
@@ -52,14 +50,12 @@ await new Promise(r => setTimeout(r, 600));
 assert.equal(s.links.has(2), false, 'and its link is closed');
 assert.deepEqual(sent.at(-1), { t: 'kick', id: 2 }, 'and the lobby is told to drop its socket');
 
-// a peer that leaves is forgotten
 s.lost(1);
 assert.equal(s.admitted.has(1), false);
 s.lock(true);
 assert.deepEqual(sent.at(-1), { t: 'lock', on: true });
 s.close();
 
-// an ungated host (drop-in shooter rooms) hears everyone, as before
 const open = host(false),
   any = [];
 open.on('message', (from, m) => any.push(m.k));
@@ -70,7 +66,6 @@ open.broadcast({ k: 'x' });
 assert.deepEqual(any, ['sh-hello', 'to3:x']);
 open.close();
 
-// a ?lobby= link: kept on a local page, asked about anywhere else
 const { LOBBY } = await import('../public/js/deploy.js');
 let asked = 0;
 const lobbyWith = async (search, hostname, answer, n) => {

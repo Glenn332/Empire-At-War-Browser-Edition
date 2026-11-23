@@ -23,7 +23,6 @@ export async function loadFengari() {
   return (F = globalThis.fengari);
 }
 
-// constructor, __proto__, __defineGetter__ and the like lead from an engine object to Function: never hand them to Lua
 const jsInternal = (u, key) => key === 'constructor' || key === '__proto__' || (key in Object.prototype && u[key] === Object.prototype[key]);
 
 export class LuaRef {
@@ -138,15 +137,11 @@ export class LuaVM {
     lualib.luaL_openlibs(L);
     this.str = s => fengari.to_luastring(String(s));
     this.exec(COMPAT, 'compat');
-    // the message handler for calls: a traceback built in JS runs no Lua, so the run limit can't stop it half way
     this.where = L2 => {
       const msg = lauxlib.luaL_tolstring(L2, 1);
       lauxlib.luaL_traceback(L2, L2, msg, 1);
       return 1;
     };
-    // scripts come from mods, saves and other players: no way out of the Lua sandbox into page JavaScript
-    // (package.loadlib fetches a URL and runs it as JS; debug.debug blocks on prompt())
-    // (loadfile/dofile fetch any URL; debug.sethook would lift the run limit; os and io reach the host)
     this.exec(
       'package.loadlib = nil; package.cpath = ""; package.searchpath = nil; package.searchers = { package.searchers[1] }; ' +
         'loadfile = nil; dofile = nil; io = nil; os = { clock = os.clock, date = os.date, difftime = os.difftime, time = os.time }; ' +
@@ -705,13 +700,11 @@ export class LuaVM {
   }
   limitRun(Lx) {
     const { lua } = this;
-    // only the outermost call from JS starts the count: a script calling back in through the game can't reset it
     if (!this.depth) {
       this.steps = 0;
       this.tripped = false;
     }
     this.hook ||= Ls => {
-      // once over the limit every instruction fails, so a pcall that catches the error can't loop on
       if (this.tripped) {
         if (lua.lua_gethookcount(Ls) !== 1) lua.lua_sethook(Ls, this.hook, lua.LUA_MASKCOUNT, 1);
         this.limitHit(Ls);
@@ -726,10 +719,7 @@ export class LuaVM {
     lua.lua_sethook(Lx, this.hook, lua.LUA_MASKCOUNT, RUN_EVERY);
   }
   limitHit(Ls) {
-    // fengari's yieldable pcall doesn't remember that hooks were on (lua_pcallk sets no CIST_OAH), so a
-    // coroutine that caught this error would run on with no hook at all: mark its pcalls as hooked
     for (let ci = Ls.ci; ci; ci = ci.previous) if (ci.callstatus & CIST_YPCALL) ci.callstatus |= CIST_OAH;
-    // and an xpcall message handler runs before the error leaves this hook: let the limit reach it too
     Ls.allowhook = 1;
     this.aux.luaL_error(Ls, this.str(TOO_LONG));
   }

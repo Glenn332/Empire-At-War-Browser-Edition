@@ -24,8 +24,6 @@ use vfs::{Game, View};
 const TAURI_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
 const UNCAPPED: &str = "--disable-frame-rate-limit --disable-gpu-vsync";
-// the page needs inline and eval'd script (its own pages, Lua glue) but talks to nothing but the app, the
-// lobby and GitHub's release feed, and can't be framed or post forms elsewhere
 const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://storage.ko-fi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: blob: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https://lobby.playeaw.com wss://lobby.playeaw.com https://api.github.com http://localhost:8787 ws://localhost:8787; frame-src 'self' blob: https://ko-fi.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'";
 
 struct Opened {
@@ -39,7 +37,6 @@ struct Server {
     env_game: Option<PathBuf>,
     fallback: Option<PathBuf>,
     state: RwLock<State>,
-    // folders the player chose in the native folder dialog: the only ones the page may add as sources
     picked: Mutex<Vec<PathBuf>>,
 }
 
@@ -426,8 +423,6 @@ impl Server {
             return text(400, "bad path");
         };
         let p = p.into_owned();
-        // anything that changes settings, installs, writes a file or opens a dialog: a POST the app's own
-        // code makes with its header, never a plain GET that a link, an image or a script's loadfile can make
         let changes = (p.starts_with("/api/setup/") && p != "/api/setup/")
             || p == "/api/update/install"
             || p == "/api/pick-folder"

@@ -3,9 +3,6 @@ import { fetchText } from '../vfs.js';
 import { finishLinkedTactical, linkedMapLoaded } from './linktactical.js';
 import { missionResult } from './galacticcorruption.js';
 
-// Multiplayer has no networked linked mission. Every peer resolves it inside the lockstep step
-// instead, as won by the faction whose plot asked for it, and applies the flags its tactical plot
-// sets on STORY_VICTORY so the campaign plots waiting on them carry on.
 const key = s => String(s || '').toUpperCase();
 const xmlPath = s => (/^DATA\//i.test(key(s)) ? String(s).replace(/\\/g, '/') : 'Data/XML/' + String(s).replace(/\\/g, '/'));
 

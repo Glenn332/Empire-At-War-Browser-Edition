@@ -22,7 +22,6 @@ const host = game => {
   return { h, calls };
 };
 
-// a peer whose battle frame is open (or already closed) must service the same ticks as every other peer
 for (const [label, game, expect] of [
   ['net, frame open, lockstep idle', { setup: { net: {} }, net: {}, busy: false, modeSuspended: true }, ['delayed', 'objects']],
   ['net, frame closed, lockstep battle', { setup: { net: {} }, net: {}, busy: true, modeSuspended: false }, []],
@@ -34,7 +33,6 @@ for (const [label, game, expect] of [
   assert.deepEqual(calls, expect, label);
 }
 
-// warm-up in a net game waits for slow loads instead of giving up on a wall-clock timeout
 {
   const realNow = performance.now;
   let clock = 0;

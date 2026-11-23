@@ -3849,7 +3849,6 @@ export class World {
       if (!l) grid.set(k, (l = []));
       l.push(u);
     }
-    // A squadron's fighters scan their shared cells once; each target still tests every fighter's own circle and cell box.
     const groups = (this.visGroups ||= new Map()),
       box = (this.visBox ||= []);
     for (const g of groups.values()) g.length = 0;
@@ -4039,7 +4038,6 @@ export class World {
     return out;
   }
 
-  // Nearest enemy within a homing projectile's scan range; ties go to the earlier unit, as a scan of this.units in order would.
   seekTarget(p) {
     const ug = this.unitGrid,
       units = this.units,

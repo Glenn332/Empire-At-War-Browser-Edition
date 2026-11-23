@@ -13,10 +13,16 @@ export const battleHostile = (owner, other) => enemy(owner, other);
 const raiding = f => f.units.length > 0 && f.units.every(u => u.raiding);
 const defenderOf = (g, planet, attacker, skip = () => false) => {
   const other = g.fleets.find(
-    b => b.planet === planet.index && !b.leg && b.units.some(u => !u.dead) && !hidden(b) && !skip(b) && key(b.owner) !== key(attacker) && enemy(attacker, b.owner)
+    b =>
+      b.planet === planet.index &&
+      !b.leg &&
+      b.units.some(u => !u.dead) &&
+      !hidden(b) &&
+      !skip(b) &&
+      key(b.owner) !== key(attacker) &&
+      enemy(attacker, b.owner)
   );
   if (other) return other.owner;
-  // with three or more factions in orbit, an ally of the attacker is never its opponent
   const owner = planet.station && (planet.spaceLevel || 0) > 0 ? planet.stationOwner || planet.owner : null;
   return owner && key(owner) !== key(attacker) && enemy(owner, attacker) ? owner : null;
 };
@@ -27,8 +33,6 @@ export class GalacticBattles {
     this.attackers = new Map();
     this.history = [];
   }
-  // who arrived where, and the battle waiting for the player's answer: without them a load
-  // picks the long-standing defender as the attacker
   snapshot() {
     const game = this.game,
       g = game.galaxy,

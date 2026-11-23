@@ -4,12 +4,10 @@ const MAX_LOBBIES = 500;
 const LISTING_TTL = 90 * 1000;
 const NAME_LEN = 32;
 const AWAY_GRACE = 45 * 1000;
-// one address can't take the whole service: listed games, hall seats and seats in one game
 const LOBBIES_PER_IP = 4;
 const HALL_PER_IP = 6;
 const ROOM_PER_IP = 16;
 const META_GAP = 3000;
-// relayed messages a socket may send: a burst (a saved game in pieces) and a steady rate after it
 const RELAY_BURST = { host: 8000, join: 2000 };
 const RELAY_RATE = { host: 800, join: 200 };
 const HALL_BURST = 20,
@@ -17,7 +15,6 @@ const HALL_BURST = 20,
 
 const ipOf = req => req.headers.get('CF-Connecting-IP') || '';
 
-// a token bucket per socket, kept in memory: it starts full again if the object is evicted, which is fine
 const buckets = new WeakMap();
 function spend(ws, burst, rate) {
   const now = Date.now();
@@ -38,7 +35,6 @@ const allows = (entry, origin) => {
 
 const cors = (req, env) => {
   const origin = req.headers.get('Origin') || '';
-  // no list configured lets no other site in: '*' has to be set on purpose
   const allowed = (env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(s => s.trim())
@@ -352,7 +348,6 @@ export class Lobby {
       return;
     }
     if (msg.t === 'meta' && me.role === 'host') {
-      // at most one listing write every few seconds; the latest one is kept and sent when the gap is over
       this.meta = cleanMeta(msg.meta);
       const wait = (this.metaAt || 0) + META_GAP - Date.now();
       if (wait > 0) {
@@ -371,7 +366,6 @@ export class Lobby {
       return;
     }
     if (msg.t === 'kick' && Number.isInteger(msg.id) && msg.id !== 0) {
-      // the host sent this peer away: close its socket and don't let it resume
       const target = this.find(msg.id);
       await this.ctx.storage.delete('tok:' + msg.id);
       if (!target) return;

@@ -16,7 +16,6 @@ const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const { LandWorld } = await import('../public/js/game/land.js');
 
-// Land fog buckets eyes into a grid; the result must match testing every enemy against every eye.
 let seed = 7;
 const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32;
 const size = 257,
@@ -99,7 +98,6 @@ for (let round = 0; round < 4; round++) {
 if (process.env.BENCH) {
   for (const n of [150, 300, 600]) {
     const w = world(n);
-    // Two armies that mostly cannot see each other, as in a battle's opening.
     for (const u of w.units) {
       u.x = (w.team[u.side] ? 3000 : 1000) + rnd() * 800;
       u.sight = 150 + rnd() * 250;

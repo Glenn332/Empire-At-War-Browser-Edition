@@ -53,13 +53,11 @@ const game = {
 Object.setPrototypeOf(game, GalacticGame.prototype);
 const apply = r => GalacticGame.prototype.applyResult.call(game, { mode: 'space', planet: pl.index, alive: [], winner: 'attacker', ...r });
 
-// A fights B over C's station: C's station stays out of the battle and must survive it.
 reset(C);
 apply({ sides: [A, B], station: false, stationFought: null, orbitalFought: [] });
 assert.equal(pl.station, top, "a battle between two other factions leaves a third faction's starbase alone");
 assert.equal(pl.orbitalStructures.length, 2);
 
-// The defender's starbase destroyed: owner cleared, orbital structures go with it, and the story hears of both.
 reset(B);
 const told = [];
 game.story = {
@@ -83,7 +81,6 @@ assert.equal(pl.spaceLevel, 0);
 assert.equal(pl.stationOwner, null, 'a destroyed starbase no longer has an owner');
 assert.equal(pl.orbitalStructures.length, 0, 'orbital structures do not outlive the starbase');
 
-// Damaged starbase steps down along Prev_Level_Base; a destroyed orbital structure stays destroyed.
 reset(B);
 const level = top.num('Base_Level', 0) - 1;
 apply({ sides: [A, B], station: true, stationLevel: level, stationFought: top.name, orbitalFought: ['o:0', 'o:1'], alive: ['o:1'] });
@@ -92,7 +89,6 @@ assert.equal(pl.spaceLevel, level);
 assert.equal(pl.stationOwner, B);
 assert.equal(pl.orbitalStructures.length, 1, 'the orbital structure destroyed in battle is removed from the planet');
 
-// Tactical bookkeeping: orbital structures carry record ids and report their survival.
 reset(B);
 g.fleets = [fleet(A), fleet(B)];
 game.battle = { p: pl.index, attacker: A, defender: B, mode: 'space' };

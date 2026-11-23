@@ -15,7 +15,6 @@ const { preloadLinkedPlots, resolveNetLinked } = await import('../public/js/game
 const { StoryFlags } = await import('../public/js/game/storyflags.js');
 const noop = () => {};
 
-// Corruption: a mission choice in a network game corrupts at once instead of opening a local battle.
 const factions = [...db.factions.values()],
   uw = factions.find(f => f.bool('Benefits_From_Corruption')),
   plain = factions.find(f => f.bool('Is_Playable') && !f.bool('Benefits_From_Corruption')),
@@ -82,7 +81,6 @@ if (uw && plain && planetType && saboteur) {
   }
 } else console.log('no corruption mission in this data: corruption part skipped');
 
-// Linked story missions: every peer resolves them the same way, as won by the plot owner.
 const plotName = 'Story_Plots_Empire_ActI_M03_SPACE.xml';
 const story = {
   plots: new Map([

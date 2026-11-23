@@ -4,7 +4,6 @@ import { dropOverviewUnits } from '../public/js/game/fleetmanagement.js';
 import { NeutralizeShell } from '../public/js/game/neutralizeshell.js';
 import { GalacticStoryHost } from '../public/js/game/galacticstory.js';
 
-// orders from another machine are checked before they touch the galaxy
 const planet = { index: 0, owner: 'Empire', garrison: [{ type: {}, owner: 'Empire' }], groundStructures: [], orbitalStructures: [] };
 planet.production = { space: [], ground: [] };
 const fleet = { owner: 'Empire', planet: 0, units: [{ type: {} }], path: [], dest: -1, leg: null };
@@ -41,7 +40,6 @@ assert.equal(fromRecordRef(game.galaxy, ['g', 0, 0]), planet.garrison[0]);
 runCommand(game, 'Empire', { c: 'embark', p: 0, fresh: true, slot: 0, to: -1, path: null });
 assert.equal(calls.length, 1, 'a well-formed order still runs');
 
-// a neutralize answer passes on only the popup's own button names
 assert(NeutralizeShell.control('H_0201', true) && NeutralizeShell.control('H_CLOSE', false));
 assert(!NeutralizeShell.control('H_CLOSE', true) && !NeutralizeShell.control('B_TACTICAL_OVERRIDE', false));
 const clicked = [];
