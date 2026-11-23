@@ -1130,7 +1130,73 @@ export class ModelInstance {
   }
 }
 
-const NO_EULER = () => {};
+// The rest pose of a bone is the same in every copy of a model and nothing writes to it, so each
+// model keeps one set and every copy points at it. Bones never use lookAt or carry animations, so
+// they share one up vector and one empty list as well. Big fleets build hundreds of bones per ship.
+const restPoses = new WeakMap();
+const BONE_UP = new THREE.Vector3(0, 1, 0);
+const NO_ANIMATIONS = Object.freeze([]);
+const BONE_LAYERS = new THREE.Layers();
+const BONE_ROTATION = new THREE.Euler();
+const BONE_VIEW_MATRIX = new THREE.Matrix4();
+const BONE_NORMAL_MATRIX = new THREE.Matrix3();
+let nextBoneId = -1;
+
+// A bone is a plain scene node that is never drawn, never raycast on its own and only turned
+// through its quaternion. The full Object3D constructor gives every node its own rotation with
+// two change closures, a view and a normal matrix, layers, an up vector and a uuid; a ship with
+// its turrets carries hundreds of bones, so bones share those parts. Only the pose (position,
+// quaternion, scale, matrix, matrixWorld), the children and the user data are their own.
+function makeBoneNode(name) {
+  const bone = Object.create(THREE.Object3D.prototype);
+  Object.defineProperty(bone, 'id', { value: nextBoneId-- });
+  bone.isObject3D = true;
+  bone.uuid = '';
+  bone.name = name;
+  bone.type = 'Object3D';
+  bone.parent = null;
+  bone.children = [];
+  bone.up = BONE_UP;
+  Object.defineProperties(bone, {
+    position: { configurable: true, enumerable: true, value: new THREE.Vector3() },
+    rotation: { configurable: true, enumerable: true, value: BONE_ROTATION },
+    quaternion: { configurable: true, enumerable: true, value: new THREE.Quaternion() },
+    scale: { configurable: true, enumerable: true, value: new THREE.Vector3(1, 1, 1) },
+    modelViewMatrix: { value: BONE_VIEW_MATRIX },
+    normalMatrix: { value: BONE_NORMAL_MATRIX }
+  });
+  bone.matrix = new THREE.Matrix4();
+  bone.matrixWorld = new THREE.Matrix4();
+  bone.matrixAutoUpdate = THREE.Object3D.DEFAULT_MATRIX_AUTO_UPDATE;
+  bone.matrixWorldAutoUpdate = THREE.Object3D.DEFAULT_MATRIX_WORLD_AUTO_UPDATE;
+  bone.matrixWorldNeedsUpdate = false;
+  bone.layers = BONE_LAYERS;
+  bone.visible = true;
+  bone.castShadow = false;
+  bone.receiveShadow = false;
+  bone.frustumCulled = true;
+  bone.renderOrder = 0;
+  bone.animations = NO_ANIMATIONS;
+  bone.userData = {};
+  return bone;
+}
+function shareRestPose(model, bones, sharedRest) {
+  if (sharedRest) {
+    bones.forEach((bone, i) => {
+      bone.userData.restInv = sharedRest[i].restInv;
+      bone.userData.restAt = sharedRest[i].restAt;
+    });
+    return;
+  }
+  restPoses.set(
+    model,
+    bones.map(bone => ({
+      rest: bone.userData.rest,
+      restInv: (bone.userData.restInv = new THREE.Matrix4().copy(bone.matrixWorld).invert()),
+      restAt: (bone.userData.restAt = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld))
+    }))
+  );
+}
 const prebuilt = new Map();
 export function prebuildModel(model, teamColor, n) {
   let list = prebuilt.get(model);
@@ -1154,14 +1220,13 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
   const inst = new ModelInstance();
   inst.model = model;
   const m4 = new THREE.Matrix4();
+  const sharedRest = restPoses.get(model);
   model.bones.forEach((b, i) => {
-    const o = new THREE.Object3D();
-    o.name = b.name;
+    const o = makeBoneNode(b.name);
     const m = b.matrix;
     m4.set(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], 0, 0, 0, 1);
     m4.decompose(o.position, o.quaternion, o.scale);
-    o.quaternion._onChange(NO_EULER);
-    o.userData.rest = { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() };
+    o.userData.rest = sharedRest ? sharedRest[i].rest : { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() };
     o.visible = b.visible;
     inst.bones.push(o);
     inst.boneByName.set(b.name.toUpperCase(), o);
@@ -1169,10 +1234,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
   });
   model.bones.forEach((b, i) => (b.parent >= 0 ? inst.bones[b.parent] : inst.root).add(inst.bones[i]));
   inst.root.updateMatrixWorld(true);
-  for (const b of inst.bones) {
-    b.userData.restInv = new THREE.Matrix4().copy(b.matrixWorld).invert();
-    b.userData.restAt = new THREE.Vector3().setFromMatrixPosition(b.matrixWorld);
-  }
+  shareRestPose(model, inst.bones, sharedRest);
 
   const chainOf = name => (/_LOD\d$/i.test(name) ? name.replace(/_LOD\d?/gi, '').toUpperCase() : null);
   const tris = mesh => mesh.subs.reduce((n, sub) => n + (sub.geometry.indices ? sub.geometry.indices.length : 0), 0);

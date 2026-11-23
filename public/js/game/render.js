@@ -465,6 +465,10 @@ const _sun = new THREE.Vector3(),
   _sunDir = new THREE.Vector3();
 const NO_TINT = new THREE.Vector4(1, 1, 1, 0);
 const ABILITY_FX_GRACE_MS = 500;
+const shadowHalfExtent = cameraDistance => Math.max(500, Math.min(4500, cameraDistance * 0.85)) * shadowReach();
+// The shadow camera looks down on a square of twice the half extent around the camera target; its
+// corners reach about 1.42 half extents away, and a ship a little outside can still throw its shadow in.
+const SHADOW_CASTER_REACH = 1.5;
 const flashTint = (flash, now) => {
   if (now >= flash.until) {
     flash.tint.w = 0;
@@ -876,6 +880,15 @@ export class Renderer {
     light.updateProjectionMatrix();
   }
 
+  // A ship off screen still has to be posed and drawn into the shadow map when its shadow can land
+  // inside the shadow camera's square; ships farther away cast nothing that can be seen.
+  castsShadowInView(unit) {
+    if (!unit.casters || !this.shadowsOn) return false;
+    const rig = this.rig,
+      reach = shadowHalfExtent(rig.dist) * SHADOW_CASTER_REACH + (unit.visualRadius || 0);
+    return (unit.x - rig.x) ** 2 + (unit.y - rig.y) ** 2 <= reach * reach;
+  }
+
   updateShadows(world, r = this.renderer) {
     if (!this.shadowsOn) {
       lighting.shadowOn.value = 0;
@@ -916,7 +929,7 @@ export class Renderer {
     lighting.shadowOn.value = 1;
     const rig = this.rig,
       cam = sh.camera,
-      half = Math.max(500, Math.min(4500, rig.dist * 0.85)) * shadowReach(),
+      half = shadowHalfExtent(rig.dist),
       far = half * 4;
     const dir = lighting.sunDir.value;
     cam.left = cam.bottom = -half;
@@ -1986,7 +1999,7 @@ export class Renderer {
         if (u.pendingProxies.length) u.pendingProxies = u.pendingProxies.filter(px => !this.attachProxy(u, px));
         _sphere.center.set(u.x, u.y, u.z || 0);
         _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
-        const inView = !!u.casters || _frustum.intersectsSphere(_sphere);
+        const inView = _frustum.intersectsSphere(_sphere) || this.castsShadowInView(u);
         if (u.buildAnim && u.construction) {
           if (inView) u.buildAnim.seek(1 - u.construction.left / u.construction.total);
         } else if (u.anim) {
@@ -2149,7 +2162,7 @@ export class Renderer {
       this.instances.gpu = r === this.gpu ? r : null;
       this.instances.renderer = r;
       this.instances.camera = cam;
-      this.instances.collect(world.units, cam);
+      this.instances.collect(world.units, cam, unit => this.castsShadowInView(unit));
       this.instances.hidden = this.instances.put.length;
       this.scene.matrixWorldAutoUpdate = false;
       r.render(this.scene, cam);

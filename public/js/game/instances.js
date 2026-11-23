@@ -217,7 +217,7 @@ export class Instances {
     u.obj.userData.ship = false;
   }
 
-  collect(units, cam) {
+  collect(units, cam, castsShadowInView = () => false) {
     const stamp = ++this.stamp,
       scene = this.scene,
       put = this.put;
@@ -252,7 +252,8 @@ export class Instances {
       _sphere.center.set(u.x, u.y, u.z || 0);
       _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
       const inView = _frustum.intersectsSphere(_sphere);
-      if (!inView && !u.casters) {
+      const castsShadow = !!u.casters && castsShadowInView(u);
+      if (!inView && !castsShadow) {
         obj.visible = false;
         put.push(obj);
         continue;
@@ -284,7 +285,7 @@ export class Instances {
       }
       let rest = 0,
         uk = -1;
-      const defer0 = !!J && !whole && !u.casters;
+      const defer0 = !!J && !whole && !castsShadow;
       for (let i = 0; i < list.length; i++) {
         const e = list[i],
           m = e.mesh;
