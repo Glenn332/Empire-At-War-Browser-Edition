@@ -3,6 +3,8 @@ import { isTacticalSuperweapon } from './tacticalsuperweapon.js';
 
 const key = x => String(x || '').toUpperCase();
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// the tactical battle runs on the very same setup object and swaps unit type names for the types themselves
+const typeOf = t => (typeof t === 'string' ? db.type(t) : t && typeof t.list === 'function' ? t : null);
 // Lockstep ticks a PvP battle waits for every side's report before taking the tactical host's.
 export const REPORT_TIMEOUT = 1800;
 
@@ -23,7 +25,7 @@ export function checkedResult(galaxy, b, r) {
     [cb.defender?.units, 1],
     [land ? cb.defender?.structures : cb.defender?.orbital, 1]
   ])
-    for (const u of list || []) roster.set(String(u.gid), { side, type: db.type(u.type) });
+    for (const u of list || []) roster.set(String(u.gid), { side, type: typeOf(u.type) });
   const sideOf = owner => sides.find(f => key(f) === key(owner)),
     list = v => (Array.isArray(v) ? v : []);
   const out = {
@@ -67,7 +69,7 @@ export function checkedResult(galaxy, b, r) {
       pl &&
       !pl.destroyed &&
       pl.type.bool('Planet_Is_Destroyable_By_TSW', true) &&
-      [...roster.values()].some(u => sides[u.side] === by && isTacticalSuperweapon(u.type))
+      [...roster.values()].some(u => sides[u.side] === by && u.type && isTacticalSuperweapon(u.type))
     ) {
       out.planetDestroyed = true;
       out.planetDestroyedBy = by;
@@ -88,6 +90,11 @@ export function checkedResult(galaxy, b, r) {
         : { credits, ai: false };
     }
   }
+  // story events the battle held back (a lost mission); nothing else is ever replayed from these
+  if (Array.isArray(r.storyDelayed))
+    out.storyDelayed = r.storyDelayed
+      .flatMap(d => (d?.type === 'STORY_MISSION_LOST' && typeof d.name === 'string' ? [{ type: d.type, name: d.name.slice(0, 128) }] : []))
+      .slice(0, 16);
   if (Array.isArray(r.upgradesBuilt))
     out.upgradesBuilt = r.upgradesBuilt
       .flatMap(u => {
@@ -266,7 +273,12 @@ export class MpBattles {
     if (!b || b.id !== id || b.done) return;
     const peer = game.setup.players?.[pid]?.peer;
     if (b.setup?.shooter ? peer !== 0 : !b.humans.some(f => key(f) === key(faction))) return;
-    const v = checkedResult(game.galaxy, b, r);
+    let v = null;
+    try {
+      v = checkedResult(game.galaxy, b, r);
+    } catch (error) {
+      console.error(error);
+    }
     if (!v) {
       console.warn(`Battle ${id}: ignored a result from ${game.playerName?.(faction) || faction} that does not match the battle`);
       // still start the clock, so a battle whose every report is refused can't hold the galaxy forever

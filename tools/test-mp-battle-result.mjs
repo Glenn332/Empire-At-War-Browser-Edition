@@ -75,7 +75,7 @@ const battle = (mode, attackerUnits) => ({
   assert.equal(r.credits.PIRATES, undefined, 'factions outside the battle ignored');
   assert.equal(r.planetDestroyed, undefined, 'no superweapon took part, so the planet survives');
   assert.equal(r.superweaponDestroyed, undefined);
-  assert.equal(r.storyDelayed, undefined);
+  assert.deepEqual(r.storyDelayed, [{ type: 'STORY_MISSION_LOST', name: 'x' }], 'a lost-mission story event is kept');
   assert.deepEqual(r.upgradesBuilt, []);
   assert.equal(r.station, false);
   assert.equal(checkedResult(galaxy, b, { planet: 3, winner: 'attacker' }), null, 'wrong planet');
@@ -101,6 +101,20 @@ const battle = (mode, attackerUnits) => ({
   );
 }
 // Land results only keep units that were in the battle.
+{
+  // the tactical battle shares the setup object and swaps type names for type objects in place
+  const b = battle('space', [{ gid: '0:0', type: ship }]);
+  b.setup.campaign.defender.orbital = [{ gid: 'o:0', type: ship }];
+  const v = checkedResult(galaxy, b, {
+    winner: 'defender',
+    alive: ['0:0', 'o:0'],
+    storyDelayed: [{ type: 'STORY_MISSION_LOST', name: 'M1' }, { type: 'EVIL' }]
+  });
+  assert(v, 'a setup holding type objects still checks');
+  assert.deepEqual(v.alive, ['0:0', 'o:0'], 'surviving orbital structures stay in the report');
+  assert.deepEqual(v.orbitalFought, ['o:0']);
+  assert.deepEqual(v.storyDelayed, [{ type: 'STORY_MISSION_LOST', name: 'M1' }]);
+}
 {
   const b = battle('land', [{ gid: '0:0', type: ship.name }]);
   b.setup.campaign.defender.structures = [{ gid: 's:0', type: ship.name }];
