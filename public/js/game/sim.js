@@ -802,6 +802,7 @@ export class Unit {
     this.pathExt = undefined;
     this.construction = undefined;
     this.heal = undefined;
+    this.heals = undefined;
     this.padOwner = undefined;
     this.capAff = undefined;
     this.influences = undefined;
@@ -1125,27 +1126,31 @@ export class Unit {
       this.modsIncome = true;
       (this.world.incomeModUnits ??= []).push(this);
     }
-    const heal = t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))[0];
-    if (heal) {
-      this.heal = {
+    for (const heal of t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))) {
+      const names = tag =>
+        heal
+          .val(tag)
+          .split(/[,|\s]+/)
+          .filter(Boolean)
+          .map(c => c.toUpperCase());
+      (this.heals ||= []).push({
         range: heal.num('Heal_Range', 0),
         percent: heal.num('Heal_Percent', 0),
         amount: heal.num('Heal_Amount', 0),
         interval: Math.max(0.1, heal.num('Heal_Interval_In_Secs', 1)),
         single: !/^(no|false)$/i.test(heal.val('Single_Target_Heal', 'Yes')),
-        cats: heal
-          .val('Applicable_Unit_Categories')
-          .split(/[,|\s]+/)
-          .filter(Boolean)
-          .map(c => c.toUpperCase()),
+        cats: names('Applicable_Unit_Categories'),
+        types: names('Applicable_Unit_Types'),
+        excluded: names('Excluded_Unit_Types'),
         sfx: heal.val('SFXEvent_Target_Affected'),
         // The area overlay shown while the healer is selected (ShadowBlobMaterials.xml), sized to Heal_Range.
         blob: heal.val('Heal_Range_Blob_Material').trim().toUpperCase(),
         targetLook: healFeedbackLook(heal, 'Target'),
         ownerLook: healFeedbackLook(heal, 'Owner'),
         timer: 1
-      };
+      });
     }
+    if (this.heals) this.heal = this.heals[0];
     if (this.player && this.player.id >= 0) {
       this.buildList = buildListFor(t, this.player.factionName);
       for (const e of spawnList(t, this.player.techLevel))
@@ -1886,7 +1891,7 @@ export class Squad {
         if (i < 0) defs.push(d);
         else if (says(d) > says(defs[i])) defs[i] = d;
       }
-      for (const f of this.fighters) attachAbilities(f, defs);
+      for (const f of this.fighters) attachAbilities(f, defs, f.passives.map(s => s.def));
     }
     this.speed = f0 ? Math.min(...this.fighters.map(f => f.maxSpeed)) : 100;
     this.sizeClass = f0 ? f0.sizeClass : 'FIGHTER';
@@ -3348,7 +3353,7 @@ export class World {
       for (const u of units) if (u.pendingAbility && !u.dead) this.checkPending(u);
       for (const sq of this.squads) if (sq.pendingAbility && !sq.dead) this.checkPending(sq);
       for (const u of units) {
-        if (u.dead || !u.player.human || u.hyper || !u.abilities.length || !u.abilities.some(a => a.auto)) continue;
+        if (u.dead || u.player.id < 0 || u.hyper || !u.abilities.length || !u.abilities.some(a => a.auto)) continue;
         if (!u.squad) aiUseAbilities(this, u, true);
         else if (u.squad.fighters[0] === u) aiUseAbilities(this, u.squad, true);
       }
@@ -3507,7 +3512,7 @@ export class World {
   }
 
   updateUnit(u, dt) {
-    if (u.abilities.length || u.statuses.length) {
+    if (u.abilities.length || u.statuses.length || (u.passives && u.passives.length)) {
       tickAbilities(this, u, dt);
       if (u.dead) return;
     }
@@ -3563,7 +3568,7 @@ export class World {
         }
       }
     }
-    if (u.heal && u.player.id >= 0 && !u.construction) this.updateHeal(u, dt);
+    if (u.heals && u.player.id >= 0 && !u.construction) for (const h of u.heals) this.updateHeal(u, dt, h);
     if (u.income && u.player.id >= 0 && !(u.income.skirmish && this.campaign)) {
       const inc = u.income;
       let v = inc.value,
@@ -5013,8 +5018,7 @@ export class World {
     }
   }
 
-  updateHeal(u, dt) {
-    const h = u.heal;
+  updateHeal(u, dt, h = u.heal) {
     if ((h.timer -= dt) > 0) return;
     h.timer = h.interval;
     const mend = t => {
@@ -5045,8 +5049,15 @@ export class World {
       if (t.dead || t === u || t.hyper || t.player.team !== u.player.team || t.isStructure) continue;
       const f = t.healShare();
       if (f >= 1 || (t.x - u.x) ** 2 + (t.y - u.y) ** 2 > h.range * h.range) continue;
-      const cats = t.type.categories();
-      if (h.cats.length && !h.cats.some(c => cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))) continue;
+      const cats = t.type.categories(),
+        name = h.types.length || h.excluded.length ? t.type.name.toUpperCase() : '';
+      if (h.excluded.includes(name)) continue;
+      if (
+        !h.types.includes(name) &&
+        (h.cats.length || h.types.length) &&
+        !h.cats.some(c => c === 'ALL' || cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))
+      )
+        continue;
       if (!h.single) {
         mend(t);
         this.showHealFeedback(t, h.targetLook);
@@ -5743,7 +5754,8 @@ export class World {
     if (healing && owner) this.instantHeal(proj, owner, x, y);
   }
 
-  instantHeal(proj, owner, x, y) {
+  // dry: only tell whether anything in reach would be healed.
+  instantHeal(proj, owner, x, y, dry = false) {
     const R = proj.num('Projectile_Instant_Heal_Radius', 100),
       add = proj.num('Projectile_Instant_Heal_Health_Increase', 0),
       cats = proj
@@ -5761,10 +5773,37 @@ export class World {
         const has = u.type.categories();
         if (!cats.some(c => has.has(c))) continue;
       }
-      if (u.health >= u.maxHealth) continue;
-      u.health = Math.min(u.maxHealth, u.health + add);
+      if (!this.mend(u, add, dry)) continue;
+      if (dry) return true;
       if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, shown);
     }
+    return false;
+  }
+
+  // Raises the hull and every surviving hardpoint by the same share, so the two health pools stay in step.
+  mend(u, amount, dry = false) {
+    let parts = false,
+      left = 0,
+      all = 0;
+    if (u.hpDriven)
+      for (const p of u.hardpoints) {
+        if (!p.destroyable) continue;
+        all += p.maxHealth;
+        if (!p.alive || !(p.health > 0)) continue;
+        left += p.health;
+        if (p.health < p.maxHealth) parts = true;
+      }
+    // Lost hardpoints hold the hull below full for good (pullPools); that is not damage a repair can undo.
+    const gap = (this.hullGap ??= db.constants.num('Hull_Vs_Hard_Points_Health_Constraint', 0.2)),
+      cap = u.hpDies && all > 0 ? Math.min(1, left / all + gap) : 1;
+    if (!(amount > 0) || !(u.maxHealth > 0) || (!parts && !(u.health < u.maxHealth * cap - 1e-6))) return false;
+    if (dry) return true;
+    const share = amount / u.maxHealth;
+    u.health = Math.min(u.maxHealth, u.health + amount);
+    if (parts)
+      for (const p of u.hardpoints)
+        if (p.destroyable && p.alive && p.health > 0) p.health = Math.min(p.maxHealth, p.health + p.maxHealth * share);
+    return true;
   }
 
   delayed(seconds, x, y, z, fn) {

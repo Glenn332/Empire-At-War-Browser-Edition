@@ -151,11 +151,20 @@ function showOwnerParticle(world, unit, abilityState) {
 }
 
 function namedSpec(type, name) {
+  name = name.trim().toUpperCase();
   if (!name) return null;
   for (let t = type; t; t = t.parent) {
-    for (const blk of t.subs.get('abilities') || []) for (const a of blk.children) if (a.attrs.Name === name) return a;
+    for (const blk of t.subs.get('abilities') || [])
+      for (const a of blk.children) if ((a.attrs.Name || '').trim().toUpperCase() === name) return a;
   }
   return null;
+}
+
+// An ability with no handler of its own that names a projectile sets it off on its owner (area heal, stun, bomb).
+function blastOf(ab, kind, target) {
+  if (target !== 'none' || (SELF.has(kind) && kind !== 'HARMONIC_BOMB')) return null;
+  const obj = db.type(ab.val('Spawned_Object_Type').trim());
+  return obj && /^projectile$/i.test(obj.tag) ? obj : null;
 }
 
 export function parseAbilities(type) {
@@ -170,8 +179,9 @@ export function parseAbilities(type) {
         const f = parseFloat(v);
         if (k && Number.isFinite(f)) mods.set(k.toUpperCase(), f);
       }
-      const target = TARGET[kind] || 'none';
-      if (!mods.size && target === 'none' && !SELF.has(kind)) continue;
+      const target = TARGET[kind] || 'none',
+        blast = blastOf(ab, kind, target);
+      if (!mods.size && target === 'none' && !SELF.has(kind) && !blast) continue;
       const spec = namedSpec(type, ab.val('GUI_Activated_Ability_Name'));
       const sn = (k, d = 0) => (spec ? spec.num(k, d) : d);
       let duration = ab.num('Expiration_Seconds', 0);
@@ -195,6 +205,7 @@ export function parseAbilities(type) {
         }),
         node: ab,
         spec,
+        blast,
         target,
         duration,
         mustBuy:
@@ -203,7 +214,7 @@ export function parseAbilities(type) {
         gui: ab.val('GUI_Activated_Ability_Name').trim(),
         recharge: ab.num('Recharge_Seconds', 0),
         byDefault: /^(yes|true|1)$/i.test(ab.val('Active_By_Default').trim()),
-        toggle: TOGGLE.has(kind) || (mods.size > 0 && duration === 0 && target === 'none' && !SELF.has(kind)),
+        toggle: TOGGLE.has(kind) || (mods.size > 0 && duration === 0 && target === 'none' && !SELF.has(kind) && !blast),
         range:
           sn('Activation_Max_Range', 0) ||
           ab.num('Effective_Radius', 0) ||
@@ -241,12 +252,14 @@ export function autoSpecials(type) {
   for (const block of type.sub('Abilities'))
     for (const spec of block.all('Laser_Defense_Ability')) {
       if (!AUTO_STYLE.test(spec.val('Activation_Style').trim()) || named.has((spec.attrs.Name || '').trim())) continue;
+      if (/^(no|false|0)$/i.test(spec.val('Initially_Enabled').trim())) continue;
       out.push({
         kind: 'LASER_DEFENSE',
         mods: new Map(),
         noDiminish: false,
         node: spec,
         spec,
+        blast: null,
         target: 'none',
         duration: spec.num('Defense_Duration_In_Secs', 30),
         mustBuy: false,
@@ -266,13 +279,13 @@ export function autoSpecials(type) {
         passive: true,
         ...abilityText(null, 'LASER_DEFENSE', 'Laser defense')
       });
-      break;
     }
   return out;
 }
 
 export function attachAbilities(unit, defs, passive = []) {
-  const auto = !!(unit.player && unit.player.human && (unit.player.autofire ?? (unit.world && unit.world.autofire)));
+  const p = unit.player,
+    auto = !!(p && (p.human ? (p.autofire ?? (unit.world && unit.world.autofire)) : p.id >= 0));
   unit.passives = passive.map(def => ({ def, active: false, timer: 0, cooldown: 0, data: null, acc: 0, auto: false, pend: true }));
   unit.abilities = defs.map(def => ({
     def,
@@ -463,13 +476,6 @@ function start(world, u, st, target) {
       }
       break;
     }
-    case 'HARMONIC_BOMB': {
-      const proj = db.type(def.node.val('Spawned_Object_Type'));
-      if (proj)
-        world.delayed(def.node.num('Bomb_Countdown_Seconds', 1.5), u.x, u.y, u.z, () => world.detonate(proj, u.player, u.x, u.y, u.z, 1));
-      world.fx.flash(u.x, u.y, u.z, 30, 0xffcc66);
-      break;
-    }
     case 'FOW_REVEAL_PING': {
       const obj = db.type(def.node.val('Spawned_Object_Type'));
       const r = obj ? obj.num('Space_FOW_Reveal_Range', 1000) : 1000;
@@ -562,6 +568,18 @@ function start(world, u, st, target) {
     case 'LEECH_SHIELDS':
       if (!u.squad) u.target = target;
       break;
+    default: {
+      const proj = def.blast;
+      if (!proj || (u.squad && u.squad.fighters[0] !== u)) break;
+      const bomb = kind === 'HARMONIC_BOMB',
+        secs = def.node.num('Bomb_Countdown_Seconds', bomb ? 1.5 : 0),
+        { x, y, z } = u,
+        go = () => world.detonate(proj, u.player, x, y, z, 1);
+      if (secs > 0) world.delayed(secs, x, y, z, go);
+      else go();
+      if (bomb) world.fx.flash(x, y, z, 30, 0xffcc66);
+      else if (def.sfxTarget) sound(world, u, def.sfxTarget);
+    }
   }
   refreshMods(u);
   if (kind === 'SPOILER_LOCK') u.playAnim('UNDEPLOY');
@@ -820,7 +838,7 @@ export function tickAbilities(world, u, dt) {
         break;
     }
     if (!st.active) continue;
-    if (def.duration > 0 && (st.timer -= dt) <= 0) {
+    if (def.duration > 0 && !def.passive && (st.timer -= dt) <= 0) {
       if (def.kind === 'SELF_DESTRUCT') {
         const proj = db.type(def.node.val('Spawned_Object_Type'));
         const { x, y, z } = u;
@@ -866,38 +884,37 @@ export function healPulseOf(def) {
   return (def._heal = { radius: proj.num('Projectile_Instant_Heal_Radius', 100), cats });
 }
 
-// Whether a heal pulse from lead would mend someone: an ally of a healed category inside its radius below full health.
-function pulseMends(world, lead, heal) {
-  const r2 = heal.radius * heal.radius;
-  for (const o of world.units) {
-    if (o.dead || o.hyper || o.player.team !== lead.player.team || o.player.id < 0 || !(o.health < o.maxHealth)) continue;
-    if ((o.x - lead.x) ** 2 + (o.y - lead.y) ** 2 > r2) continue;
-    if (heal.cats.length) {
-      const has = o.type.categories();
-      if (!heal.cats.some(c => has.has(c))) continue;
-    }
-    return true;
-  }
+function blastUseful(world, lead, proj) {
+  if (proj.bool('Projectile_Instant_Heal_On_Detonation')) return world.instantHeal(proj, lead.player, lead.x, lead.y, true);
+  const r = proj.num('Projectile_Blast_Area_Range', 150) * 0.8;
+  for (const o of world.units)
+    if (
+      !o.dead &&
+      !o.hyper &&
+      o.targetableUnit &&
+      hostile(lead, o) &&
+      (!world.canSee || world.canSee(lead.player, o)) &&
+      inRange(lead, o, r)
+    )
+      return true;
   return false;
 }
 
 export function aiUseAbilities(world, e, onlyAuto = false) {
   const lead = posOf(e);
   if (!lead || !lead.abilities || !lead.abilities.length) return;
-  // A heal pulse has no named ability and no enemy to aim at: it goes off when it would mend a friend.
+  // Area abilities go off around their owner and need no attack target.
   for (const st of lead.abilities) {
-    const heal = (!onlyAuto || st.auto) && !st.active && !(st.cooldown > 0) ? healPulseOf(st.def) : null;
-    if (heal && pulseMends(world, lead, heal)) {
-      useAbility(world, e, st.def.kind, true, null);
-      return;
-    }
+    const def = st.def;
+    if (!def.blast || (onlyAuto && !st.auto) || st.active || st.cooldown > 0 || (lead.abilityLock || 0) > world.time) continue;
+    if (blastUseful(world, lead, def.blast) && !useAbility(world, e, def.kind, true)) return;
   }
   const victim = e.isSquad ? (e.target && !e.target.dead ? posOf(e.target) : null) : lead.target && !lead.target.dead ? lead.target : null;
   if (!victim || victim.x === undefined || !victim.type) return;
   const ready = [];
   for (const st of lead.abilities) {
     const def = st.def;
-    if ((onlyAuto && !st.auto) || st.active || st.cooldown > 0 || !def.spec) continue;
+    if ((onlyAuto && !st.auto) || st.active || st.cooldown > 0 || !def.spec || def.blast) continue;
     if (def.target === 'unit' && (!hostile(lead, victim) || !validTarget(def, victim))) continue;
     if (def.target !== 'none' && def.range && !inRange(lead, victim, def.range)) continue;
     const chance = def.spec.val('Activation_Chance').trim() === '' ? 1 : def.spec.num('Activation_Chance', 1);
