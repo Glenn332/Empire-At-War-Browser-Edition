@@ -7,6 +7,8 @@ const AWAY_GRACE = 45 * 1000;
 const LOBBIES_PER_IP = 4;
 const HALL_PER_IP = 6;
 const ROOM_PER_IP = 16;
+const JOIN_BURST = 20,
+  JOIN_RATE = 0.1;
 const META_GAP = 3000;
 const RELAY_BURST = { host: 8000, join: 2000 };
 const RELAY_RATE = { host: 800, join: 200 };
@@ -248,6 +250,7 @@ export class Lobby {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    this.joins = new Map();
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
   }
 
@@ -261,6 +264,17 @@ export class Lobby {
     try {
       ws.send(JSON.stringify(msg));
     } catch {}
+  }
+  joinAllowed(ip) {
+    const now = Date.now();
+    let b = this.joins.get(ip);
+    if (!b) this.joins.set(ip, (b = { left: JOIN_BURST, at: now }));
+    b.left = Math.min(JOIN_BURST, b.left + ((now - b.at) / 1000) * JOIN_RATE);
+    b.at = now;
+    if (this.joins.size > 4096) for (const [k, v] of this.joins) if (v.left >= JOIN_BURST - 1) this.joins.delete(k);
+    if (b.left < 1) return false;
+    b.left--;
+    return true;
   }
   registry() {
     return this.env.REGISTRY.get(this.env.REGISTRY.idFromName('main'));
@@ -298,6 +312,7 @@ export class Lobby {
       if (role === 'join' && (await this.ctx.storage.get('locked'))) return refuse(4011, 'the game has already started');
       if (present.length >= MAX_PEERS) return refuse(4010, 'game is full');
       if (ip && present.filter(s => s.a.ip === ip).length >= ROOM_PER_IP) return refuse(4010, 'too many connections from this address');
+      if (role === 'join' && ip && !this.joinAllowed(ip)) return refuse(4010, 'too many tries from this address: wait a minute');
       if (role === 'join') {
         id = (await this.ctx.storage.get('next')) || 1;
         await this.ctx.storage.put('next', id + 1);

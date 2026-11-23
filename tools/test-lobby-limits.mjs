@@ -180,4 +180,24 @@ const socketOf = async p => {
   assert.deepEqual(fws.closed, { code: 4003, why: 'removed by the host' }, 'the host can drop a peer');
   assert.equal(await room.ctx.storage.get('tok:' + fid), undefined, 'and it cannot resume');
 }
+{
+  const reg = new Registry(ctxFor());
+  const env = { REGISTRY: { idFromName: () => 0, get: () => ({ fetch: (u, init) => reg.fetch(new Request(u, init)) }) } };
+  const room = new Lobby(ctxFor(), env);
+  await room.fetch(req('https://lobby/lobby/abcdefg?role=host&lobby=abcdefg&name=H', '1.1.1.1'));
+  let refused = null;
+  for (let i = 0; i < 30; i++) {
+    const before = room.ctx.sockets.length;
+    const r = await room.fetch(req('https://lobby/lobby/abcdefg?role=join&name=G', '6.6.6.6'));
+    if (room.ctx.sockets.length === before) {
+      refused = { at: i, closed: r.socket && r.socket.closed };
+      break;
+    }
+    room.ctx.sockets.at(-1).close(1000, 'bye');
+  }
+  assert.equal(refused?.at, 20, 'one address can try to join a game 20 times in a row, then has to wait');
+  const other = room.ctx.sockets.length;
+  await room.fetch(req('https://lobby/lobby/abcdefg?role=join&name=O', '7.7.7.7'));
+  assert.equal(room.ctx.sockets.length, other + 1, 'another address still gets in');
+}
 console.log('lobby limits ok');
