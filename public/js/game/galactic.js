@@ -122,6 +122,27 @@ const SILENT = new Proxy(function () {}, {
   apply: () => undefined
 });
 const DEG = Math.PI / 180;
+const _pickRay = new THREE.Raycaster(),
+  _pickAt = new THREE.Vector2(),
+  _pickC = new THREE.Vector3(),
+  _pickHit = new THREE.Vector3(),
+  _pickBall = new THREE.Sphere(),
+  _overlayAt = new THREE.Vector3();
+let typeRanks = null,
+  typeRankSize = -1;
+// Position of a type in the game object list, the order fleet tooltips sort their rows by.
+const typeRank = t => {
+  if (!typeRanks || typeRankSize !== db.types.size) {
+    typeRanks = new Map();
+    typeRankSize = db.types.size;
+    let i = 0;
+    for (const x of db.types.values()) {
+      if (!typeRanks.has(x)) typeRanks.set(x, i);
+      i++;
+    }
+  }
+  return typeRanks.get(t) ?? -1;
+};
 const smooth = t => t * t * (3 - 2 * t);
 
 const rgb = s => {
@@ -1162,7 +1183,7 @@ export class GalacticGame {
   }
 
   overlayPoint(pos, dx = 0, dy = 0, scale = this.overlayScale()) {
-    const v = new THREE.Vector3(...pos).project(this.camera);
+    const v = _overlayAt.set(pos[0] ?? 0, pos[1] ?? 0, pos[2] ?? 0).project(this.camera);
     if (v.z < -1 || v.z > 1 || Math.abs(v.x) > 1.3 || Math.abs(v.y) > 1.3) return null;
     return { x: Math.trunc((v.x * 0.5 + 0.5) * innerWidth) + dx * scale, y: Math.trunc((-v.y * 0.5 + 0.5) * innerHeight) - dy * scale };
   }
@@ -1840,17 +1861,17 @@ export class GalacticGame {
   pick(sx, sy) {
     const label = this.view.zoom === 0 && (this.nameHits || []).find(n => sx >= n.x && sx <= n.x + n.w && sy >= n.y && sy <= n.y + n.h);
     if (label && this.galaxy.planets[label.i]?.selectable && !this.galaxy.planets[label.i].background) return label.i;
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
+    const ray = _pickRay;
+    ray.setFromCamera(_pickAt.set((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
     let best = -1,
       bestD = Infinity;
-    const c = new THREE.Vector3(),
-      hit = new THREE.Vector3();
+    const c = _pickC,
+      hit = _pickHit;
     this.galaxy.planets.forEach((p, i) => {
       if (p.background || !p.selectable) return;
       const r = p.type.num('Mouse_Collide_Override_Sphere_Radius', 0) || p.type.num('Scale_Factor', 1) * PLANET_RADIUS;
       c.set(...p.pos);
-      if (ray.ray.intersectSphere(new THREE.Sphere(c, r), hit)) {
+      if (ray.ray.intersectSphere(_pickBall.set(c, r), hit)) {
         const d = hit.distanceTo(ray.ray.origin);
         if (d < bestD) {
           bestD = d;
@@ -2161,7 +2182,6 @@ export class GalacticGame {
       nodes = new Map();
     let reveal = !hostile,
       countOnly = false;
-    const order = [...db.types.values()];
     for (const f of listed) {
       if (hostile) {
         if (stealthy(f)) continue;
@@ -2177,7 +2197,7 @@ export class GalacticGame {
       }
     }
     if (!nodes.size) return null;
-    const list = [...nodes.values()].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+    const list = [...nodes.values()].sort((a, b) => typeRank(a.type) - typeRank(b.type));
     const first = list[0],
       faction = key => String(key || '').toUpperCase(),
       owner = faction(first.fleet.owner),
