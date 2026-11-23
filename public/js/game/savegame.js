@@ -769,6 +769,26 @@ const canPack = () => typeof CompressionStream !== 'undefined' && typeof Decompr
 const pack = async text =>
   new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
 const unpack = async blob => new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+// a save from another player: a few hundred KB of gzip can stand for gigabytes, so stop reading past a limit
+const PEER_SAVE_MAX = 128 * 1024 * 1024;
+const TOO_LARGE = 'The saved game is too large.';
+async function unpackCapped(blob, limit) {
+  const reader = blob.stream().pipeThrough(new DecompressionStream('gzip')).getReader(),
+    text = new TextDecoder(),
+    parts = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if ((size += value.length) > limit) {
+      reader.cancel().catch(() => {});
+      throw new Error(TOO_LARGE);
+    }
+    parts.push(text.decode(value, { stream: true }));
+  }
+  parts.push(text.decode());
+  return parts.join('');
+}
 
 // One write at a time per slot (across tabs where the browser has Web Locks): two overlapping
 // saves could otherwise each delete the payload the other one just wrote.
@@ -934,12 +954,18 @@ export async function packSave(snap) {
   return { gz: btoa(bin) };
 }
 
-export async function unpackSave(p) {
-  if (p.json) return upgrade(JSON.parse(p.json));
+export async function unpackSave(p, limit = PEER_SAVE_MAX) {
+  if (!p || typeof p !== 'object') throw new Error('The saved game could not be read.');
+  if (typeof p.json === 'string' && p.json) {
+    if (p.json.length > limit) throw new Error(TOO_LARGE);
+    return upgrade(JSON.parse(p.json));
+  }
+  if (typeof p.gz !== 'string') throw new Error('The saved game could not be read.');
+  if (p.gz.length > Math.ceil(limit / 3) * 4) throw new Error(TOO_LARGE);
   const bin = atob(p.gz),
     bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return upgrade(JSON.parse(await unpack(new Blob([bytes]))));
+  return upgrade(JSON.parse(await unpackCapped(new Blob([bytes]), limit)));
 }
 
 export async function importSaveFile(file) {
