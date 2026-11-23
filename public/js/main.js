@@ -76,7 +76,7 @@ import {
   importSaveFile
 } from './game/savegame.js';
 import { watchForResume, pendingResume, forgetResume } from './game/resume.js';
-import { restoreBattleScripts } from './game/tacticalsave.js';
+import { restoreBattleScripts, SCRIPTS_LOST_WARNING } from './game/tacticalsave.js';
 import { orderMove } from './game/orders.js';
 import { placeSpecialWeapons, placeCampaignSpecialWeapons, specialWeaponSource } from './game/superweapon.js';
 import { placeCampaignBattle, sideBeaten, battleResult, campaignIntro } from './game/campaignbattle.js';
@@ -397,7 +397,7 @@ class Game {
     if (cb)
       for (const n of [
         cb.defender.station,
-        ...(cb.defender.orbital || []),
+        ...(cb.defender.orbital || []).map(o => o.type ?? o),
         ...(cb.planetWeapons || []),
         ...cb.attacker.units.map(u => u.type),
         ...cb.defender.units.map(u => u.type)
@@ -1793,14 +1793,14 @@ class Game {
       linkedParent(this).returnLinkedTactical(result);
       return;
     }
-    if (mpBattleParent()) {
-      mpBattleParent().mpBattles.returned(this.campaignOutcome);
-      return;
-    }
     if (this.campaignOutcome && this.world.tacticalSessions) this.campaignOutcome.credits = this.tacticalCredits();
     const { galaxy, ...result } = this.campaignOutcome || {};
     result.storyDelayed = this.storyDelayed || [];
     if (this.builtUpgrades?.length) result.upgradesBuilt = this.builtUpgrades.slice();
+    if (mpBattleParent()) {
+      mpBattleParent().mpBattles.returned(result);
+      return;
+    }
     stageStart({ mode: 'galactic', players: [], teamFactions: [], campaign: cb.campaignName, restore: galaxy || cb.galaxy, result });
   }
 
@@ -2908,8 +2908,10 @@ async function boot() {
       return;
     }
     try {
-      await putSave(await snapshotNow(g));
-      saveStatus('Game saved.', 'good');
+      const snap = await snapshotNow(g);
+      await putSave(snap);
+      if (snap.scriptsLost) saveStatus(SCRIPTS_LOST_WARNING, 'bad');
+      else saveStatus('Game saved.', 'good');
       renderSaves();
     } catch (e) {
       console.error(e);

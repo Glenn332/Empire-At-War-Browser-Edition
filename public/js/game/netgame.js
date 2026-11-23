@@ -16,6 +16,9 @@ const MAX_AHEAD = 8;
 const HASH_EVERY = 10;
 const MAX_RESYNCS = 5;
 const MAX_TURN_CMDS = 64;
+const MAX_CMD_CHARS = 32768,
+  // a battle report lists every surviving unit and structure, so it may be much larger than an order
+  MAX_RESULT_CHARS = 1 << 21;
 const REPORT_WAIT = 15000;
 const TAGGED = new Set(['cmd', 'loaded', 'go', 'turn', 'ack', 'desync', 'resume']);
 
@@ -202,6 +205,8 @@ export class Lockstep {
   }
 
   receive(from, m) {
+    // the host hears only the players and spectators of this game
+    if (this.host && !this.peers.includes(from)) return;
     if (m.k === 'ping') {
       this.session.send(from, { k: 'pong', t: m.t });
       return;
@@ -235,8 +240,9 @@ export class Lockstep {
     if (this.host) {
       const pid = this.playerOf.get(from);
       if (m.k === 'cmd' && pid !== undefined && !this.gone.has(from) && m.cmd && typeof m.cmd.c === 'string') {
-        // a peer flooding orders could stall every machine: keep a turn's worth that a person could give
-        if (this.collected.filter(([p]) => p === pid).length < MAX_TURN_CMDS) this.collected.push([pid, m.cmd]);
+        // a peer flooding orders could stall every machine: keep a turn's worth that a person could give, of a sane size
+        if (this.collected.filter(([p]) => p === pid).length < MAX_TURN_CMDS && JSON.stringify(m.cmd).length <= (m.cmd.c === 'result' ? MAX_RESULT_CHARS : MAX_CMD_CHARS))
+          this.collected.push([pid, m.cmd]);
       }
       else if (m.k === 'loaded') {
         this.loaded.add(from);
@@ -244,8 +250,10 @@ export class Lockstep {
         else this.checkLoaded();
       } else if (m.k === 'chat' && this.chatId(from) !== undefined) this.chat(this.chatId(from), m.text, !!m.team);
       else if (m.k === 'ack') {
+        // only a turn the host has issued, never backwards; only players' hashes can call a desync
+        if (!Number.isInteger(m.n) || m.n > this.issued || m.n < (this.ackOf.get(from) ?? -1)) return;
         this.ackOf.set(from, m.n);
-        if (m.h !== undefined) {
+        if (m.h !== undefined && pid !== undefined) {
           const ours = this.hashes.get(m.n);
           if (ours !== undefined && ours !== m.h && !this.desynced) {
             this.desynced = true;
@@ -397,7 +405,8 @@ export class Lockstep {
 
   async gotReport(from, packed, rec = null) {
     const R = this.reportFor;
-    if (!R) return;
+    // only the peers this report asked, once each, before anything is unpacked
+    if (!R || (from !== 0 && (!R.peers.has(from) || R.got.has(from)))) return;
     try {
       if (!rec) rec = await (this.saveMod || (await import('./savegame.js'))).unpackSave(packed);
     } catch (e) {

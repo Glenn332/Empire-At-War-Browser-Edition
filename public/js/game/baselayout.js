@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { recordRef } from './galacticnet.js';
+import { recordRef, fleetRef } from './galacticnet.js';
 import { cycleNumber } from './galacticeconomy.js';
 import { loadTextureCanvas } from '../dds.js';
 import { loadMapLayoutHeader } from '../ted.js';
@@ -401,7 +401,7 @@ export class BaseLayout extends NativePanel {
         this.game.order({
           c: 'layoutLand',
           p: p.index,
-          f: g.fleets.indexOf(from.entry.fleet),
+          f: fleetRef(g, from.entry.fleet),
           unit: ref(from.entry.unit),
           id: target.slot.marker.id,
           marker: target.slot.marker.type.name

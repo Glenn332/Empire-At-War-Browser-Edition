@@ -518,7 +518,11 @@ export async function createBugReport({ game = window.game, hideDuringCapture = 
 }
 
 async function saveInApp(name, blob) {
-  const response = await fetch('api/save-report?name=' + encodeURIComponent(name), { method: 'POST', body: blob });
+  const response = await fetch('api/save-report?name=' + encodeURIComponent(name), {
+    method: 'POST',
+    headers: { 'X-SWR': '1' },
+    body: blob
+  });
   if (!response.ok) throw new Error(await response.text());
   const { path } = await response.json();
   return path ? { saved: true, where: path } : { saved: false };

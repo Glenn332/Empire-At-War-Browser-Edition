@@ -23,6 +23,9 @@ export async function loadFengari() {
   return (F = globalThis.fengari);
 }
 
+// constructor, __proto__, __defineGetter__ and the like lead from an engine object to Function: never hand them to Lua
+const jsInternal = (u, key) => key === 'constructor' || key === '__proto__' || (key in Object.prototype && u[key] === Object.prototype[key]);
+
 export class LuaRef {
   constructor(vm, ref) {
     this.vm = vm;
@@ -101,11 +104,13 @@ do
   end
 end
 function getfenv() return _G end
-function __where(msg) return debug.traceback(tostring(msg), 2) end
 `;
 
 const RUN_LIMIT = 1e9,
-  RUN_EVERY = 100e3;
+  RUN_EVERY = 100e3,
+  CIST_OAH = 1,
+  CIST_YPCALL = 16,
+  TOO_LONG = 'script ran too long without yielding (a loop that never ends?)';
 
 export class LuaVM {
   constructor(fengari, { source, log = () => {} }) {
@@ -133,6 +138,21 @@ export class LuaVM {
     lualib.luaL_openlibs(L);
     this.str = s => fengari.to_luastring(String(s));
     this.exec(COMPAT, 'compat');
+    // the message handler for calls: a traceback built in JS runs no Lua, so the run limit can't stop it half way
+    this.where = L2 => {
+      const msg = lauxlib.luaL_tolstring(L2, 1);
+      lauxlib.luaL_traceback(L2, L2, msg, 1);
+      return 1;
+    };
+    // scripts come from mods, saves and other players: no way out of the Lua sandbox into page JavaScript
+    // (package.loadlib fetches a URL and runs it as JS; debug.debug blocks on prompt())
+    // (loadfile/dofile fetch any URL; debug.sethook would lift the run limit; os and io reach the host)
+    this.exec(
+      'package.loadlib = nil; package.cpath = ""; package.searchpath = nil; package.searchers = { package.searchers[1] }; ' +
+        'loadfile = nil; dofile = nil; io = nil; os = { clock = os.clock, date = os.date, difftime = os.difftime, time = os.time }; ' +
+        'debug = { traceback = debug.traceback }; package.loaded.io = nil; package.loaded.os = os; package.loaded.debug = debug',
+      'sandbox'
+    );
     lua.lua_getglobal(L, this.str('math'));
     lua.lua_pushjsfunction(L, L2 => {
       const n = lua.lua_gettop(L2),
@@ -172,7 +192,7 @@ export class LuaVM {
     set('__index', L2 => {
       const u = lua.lua_touserdata(L2, 1),
         key = lua.lua_type(L2, 2) === lua.LUA_TSTRING ? lua.lua_tojsstring(L2, 2) : null;
-      let v = u && key !== null ? u[key] : undefined;
+      let v = u && key !== null && !jsInternal(u, key) ? u[key] : undefined;
       if (v === undefined && u && key !== null && typeof u.__missing === 'function') v = u.__missing(key);
       if (typeof v === 'function') {
         const g = v.__raw ? this.raw(v, key, u) : this.fn(v, key, u);
@@ -202,7 +222,7 @@ export class LuaVM {
   }
 
   member(u, key) {
-    let v = u[key];
+    let v = jsInternal(u, key) ? undefined : u[key];
     if (v === undefined && typeof u.__missing === 'function') v = u.__missing(key);
     if (typeof v !== 'function') throw new Error('an engine object has no function ' + key);
     const g = v.__raw ? this.raw(v, key, u) : this.fn(v, key, u);
@@ -356,7 +376,10 @@ export class LuaVM {
 
   exec(src, name) {
     const { lua, aux, L } = this;
-    if (aux.luaL_loadbuffer(L, this.str(src), null, this.str('=' + name)) !== lua.LUA_OK || lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) {
+    if (
+      aux.luaL_loadbuffer(L, this.str(src), null, this.str('=' + name)) !== lua.LUA_OK ||
+      this.guarded(L, () => lua.lua_pcall(L, 0, 0, 0)) !== lua.LUA_OK
+    ) {
       const msg = lua.lua_tojsstring(L, -1);
       lua.lua_pop(L, 1);
       throw new Error(msg);
@@ -596,7 +619,7 @@ export class LuaVM {
       if (luaTrace.on) luaTrace.error(this, name, e.message);
       return e.message;
     }
-    if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) {
+    if (this.guarded(L, () => lua.lua_pcall(L, 0, 0, 0)) !== lua.LUA_OK) {
       const msg = lua.lua_tojsstring(L, -1);
       lua.lua_pop(L, 1);
       if (luaTrace.on) luaTrace.error(this, name, msg);
@@ -613,12 +636,11 @@ export class LuaVM {
       lua.lua_pop(L, 1);
       return { ok: false, missing: true };
     }
-    lua.lua_getglobal(L, this.str('__where'));
+    lua.lua_pushjsfunction(L, this.where);
     lua.lua_insert(L, -2);
     if (luaTrace.on) luaTrace.event(this, 'call', name, args);
     for (const a of args) this.push(a);
-    this.limitRun(L);
-    if (lua.lua_pcall(L, args.length, 1, -2 - args.length) !== lua.LUA_OK) {
+    if (this.guarded(L, () => lua.lua_pcall(L, args.length, 1, -2 - args.length)) !== lua.LUA_OK) {
       const error = lua.lua_tojsstring(L, -1);
       lua.lua_pop(L, 2);
       if (luaTrace.on) luaTrace.error(this, name, error);
@@ -633,7 +655,7 @@ export class LuaVM {
     lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, ref.ref);
     if (luaTrace.on) luaTrace.event(this, 'callback', '', args);
     for (const a of args) this.push(a);
-    if (lua.lua_pcall(L, args.length, 1, 0) !== lua.LUA_OK) {
+    if (this.guarded(L, () => lua.lua_pcall(L, args.length, 1, 0)) !== lua.LUA_OK) {
       const error = lua.lua_tojsstring(L, -1);
       lua.lua_pop(L, 1);
       if (luaTrace.on) luaTrace.error(this, 'a callback', error);
@@ -683,14 +705,42 @@ export class LuaVM {
   }
   limitRun(Lx) {
     const { lua } = this;
-    this.steps = 0;
+    // only the outermost call from JS starts the count: a script calling back in through the game can't reset it
+    if (!this.depth) {
+      this.steps = 0;
+      this.tripped = false;
+    }
     this.hook ||= Ls => {
-      if (++this.steps * RUN_EVERY > RUN_LIMIT) {
-        this.steps = 0;
-        this.aux.luaL_error(Ls, this.str('script ran too long without yielding (a loop that never ends?)'));
+      // once over the limit every instruction fails, so a pcall that catches the error can't loop on
+      if (this.tripped) {
+        if (lua.lua_gethookcount(Ls) !== 1) lua.lua_sethook(Ls, this.hook, lua.LUA_MASKCOUNT, 1);
+        this.limitHit(Ls);
+      }
+      if (lua.lua_gethookcount(Ls) !== RUN_EVERY) lua.lua_sethook(Ls, this.hook, lua.LUA_MASKCOUNT, RUN_EVERY);
+      else if (++this.steps * RUN_EVERY > (this.runLimit || RUN_LIMIT)) {
+        this.tripped = true;
+        lua.lua_sethook(Ls, this.hook, lua.LUA_MASKCOUNT, 1);
+        this.limitHit(Ls);
       }
     };
     lua.lua_sethook(Lx, this.hook, lua.LUA_MASKCOUNT, RUN_EVERY);
+  }
+  limitHit(Ls) {
+    // fengari's yieldable pcall doesn't remember that hooks were on (lua_pcallk sets no CIST_OAH), so a
+    // coroutine that caught this error would run on with no hook at all: mark its pcalls as hooked
+    for (let ci = Ls.ci; ci; ci = ci.previous) if (ci.callstatus & CIST_YPCALL) ci.callstatus |= CIST_OAH;
+    // and an xpcall message handler runs before the error leaves this hook: let the limit reach it too
+    Ls.allowhook = 1;
+    this.aux.luaL_error(Ls, this.str(TOO_LONG));
+  }
+  guarded(Lx, fn) {
+    this.limitRun(Lx);
+    this.depth = (this.depth || 0) + 1;
+    try {
+      return fn();
+    } finally {
+      this.depth--;
+    }
   }
   resume(t, ...args) {
     const { lua, L } = this;
@@ -700,8 +750,7 @@ export class LuaVM {
         this.push(a, t.co);
         n++;
       }
-    this.limitRun(t.co);
-    const status = lua.lua_resume(t.co, L, n);
+    const status = this.guarded(t.co, () => lua.lua_resume(t.co, L, n));
     t.started = true;
     if (status === lua.LUA_YIELD) {
       const value = lua.lua_gettop(t.co) ? this.get(-1, t.co) : undefined;

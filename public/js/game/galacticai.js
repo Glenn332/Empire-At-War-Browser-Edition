@@ -136,7 +136,8 @@ export function galacticControllerName(game, player) {
 }
 
 export function galacticTargetMatches(game, player, planet, bits) {
-  if (planet.background || planet.destroyed || planet.restricted || (game.galaxy.autoReveal === false && !planet.revealed)) return false;
+  if (planet.background || planet.destroyed || planet.restricted || (game.galaxy.autoReveal === false && !planet.revealed && !game.galaxy.humans)) return false;
+  // (in multiplayer the story's reveal state is the humans' map: AI opponents still see the whole galaxy)
   if (key(planet.owner) === key(player.faction)) return !!(bits & 1);
   const faction = db.faction(planet.owner);
   if (faction?.bool('Is_Neutral')) return !!(bits & 4);
@@ -934,7 +935,7 @@ export class GalacticAI {
         }
         if (key(galacticControllerName(this.game, player)) !== key(name)) continue;
         this.errors.delete(id);
-        const difficulty = level(this.game.setup?.difficulty),
+        const difficulty = level(player.difficulty || this.game.setup?.difficulty),
           adjustment = await difficultyAdjustment(player.faction, difficulty, profile.type);
         if (this.disposed) return;
         if (key(galacticControllerName(this.game, player)) !== key(name)) continue;
@@ -1323,7 +1324,7 @@ export class GalacticAI {
     if (!c) {
       const player = this.game.galaxy.players.find(p => key(p.faction) === id);
       if (!player) return null;
-      c = { player, brain: this.shared, budget: new GalacticBudget(), difficulty: level(this.game.setup?.difficulty) };
+      c = { player, brain: this.shared, budget: new GalacticBudget(), difficulty: level(player.difficulty || this.game.setup?.difficulty) };
       this.perceptionPlayers.set(id, c);
     }
     if (!c.mind || this.game.galaxy.time - c.mindAt > 0.5 || this.game.galaxy.time < c.mindAt) {

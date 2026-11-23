@@ -29,7 +29,7 @@ const ally = (mover, planet) => {
   return !!c && relation(mover, c) === 0 && strength(planet) > 0;
 };
 const known = (galaxy, planet) =>
-  galaxy.autoReveal !== false || !!planet.revealed || !!galaxy.visibility?.planets?.[planet.index]?.discovered;
+  galaxy.autoReveal !== false || !!planet.revealed || !!galaxy.humans || !!galaxy.visibility?.planets?.[planet.index]?.discovered;
 
 export function hostilePlace(galaxy, planet, mover, orbit = null) {
   if ((planet.spaceLevel || 0) > 0) return !ally(mover, planet);

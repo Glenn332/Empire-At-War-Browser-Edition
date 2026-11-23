@@ -84,8 +84,9 @@ export function localFolder(
 }
 
 const asJson = async r => (r.ok && /json/.test(r.headers.get('content-type') || '') ? r.json() : null);
-const call = async (url, params = {}) => {
-  const r = await fetch(url + '?' + new URLSearchParams(params));
+// a change goes as a POST with the app's header: the app refuses it as a plain GET
+const call = async (url, params = {}, change = false) => {
+  const r = await fetch(url + '?' + new URLSearchParams(params), change ? { method: 'POST', headers: { 'X-SWR': '1' } } : undefined);
   if (r.status === 400) throw new Error(await r.text());
   return asJson(r);
 };
@@ -100,10 +101,10 @@ export async function localMods() {
 }
 
 export function appSetup(change, params) {
-  return inApp() ? call('api/setup' + (change ? '/' + change : ''), params) : Promise.resolve(null);
+  return inApp() ? call('api/setup' + (change ? '/' + change : ''), params, !!change) : Promise.resolve(null);
 }
 
 export async function appPickFolder(title, from) {
-  const r = await call('api/pick-folder', { title, ...(from ? { from } : {}) });
+  const r = await call('api/pick-folder', { title, ...(from ? { from } : {}) }, true);
   return r && r.path;
 }

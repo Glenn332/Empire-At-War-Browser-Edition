@@ -100,8 +100,7 @@ function gameFor(url) {
   }
   return games.eaw;
 }
-http
-  .createServer(async (req, res) => {
+const handle = async (req, res) => {
     // only answer pages on this machine: a site that rebinds its name to 127.0.0.1 can't read the game files or tie up the server
     if (!LOCAL_HOST.test(req.headers.host || '')) return send(res, 403, 'forbidden host');
     if (!STATIC) {
@@ -117,13 +116,16 @@ http
     } catch {
       return send(res, 400, 'bad path');
     }
+    // a NUL byte makes fs throw synchronously, which would take the whole server down
+    if (p.includes('\0')) return send(res, 400, 'bad path');
 
     if (p.startsWith('/asset/')) {
       const which = gameFor(url),
         nativeFonts = which && which.fonts;
       const assets = which && (url.searchParams.has('language') ? which.game.forLanguage(url.searchParams.get('language')) : which.game);
       let key = assets && assets.resolve(p.slice(7));
-      if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7))) {
+      // rasterising runs a GDI worker: only for the game's own pages, not a request another site makes
+      if (!key && nativeFonts && /^Data\/Fonts\/Raster\//i.test(p.slice(7)) && req.headers['sec-fetch-site'] !== 'cross-site') {
         try {
           const bytes = await nativeFonts.asset(p.slice(7));
           if (bytes)
@@ -147,6 +149,8 @@ http
       }
       return send(res, 200, assets.read(key), mime(key), { 'Accept-Ranges': 'bytes', 'Cache-Control': 'max-age=86400' });
     }
+    // the search API runs a caller's regex: only the game's own pages may use it, not another site's
+    if (p.startsWith('/api/') && req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, 'forbidden');
     if (p === '/api/find') {
       if (!game) return send(res, 404, 'no game mounted');
       let rx;
@@ -175,5 +179,14 @@ http
       return send(res, 200, JSON.stringify(root ? readModInfo(root) : null), MIME['.json']);
     }
     serveStatic(req, res, p === '/' ? 'index.html' : p.slice(1));
-  })
+};
+// one bad request answers 500 instead of ending the server for the whole session
+http
+  .createServer((req, res) =>
+    handle(req, res).catch(error => {
+      console.warn('request failed:', req.url, error?.message || error);
+      if (!res.headersSent) send(res, 500, 'error');
+      else res.destroy();
+    })
+  )
   .listen(PORT, '127.0.0.1', () => console.log(`http://localhost:${PORT}/`));

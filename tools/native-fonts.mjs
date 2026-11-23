@@ -8,6 +8,13 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { fontInfo, fontFileFace } from '../public/js/fontname.js';
 
+// a page asks for a handful of faces and sizes; these bound what any caller can make the GDI worker do
+const KEEP = 256,
+  QUEUE_MAX = 256,
+  DISK_MAX = 4000,
+  OTHER_FACES = 16,
+  STRETCH_MAX = 8;
+
 export class NativeFonts {
   constructor(game) {
     this.game = game;
@@ -16,6 +23,8 @@ export class NativeFonts {
     this.worker = null;
     this.directory = null;
     this.alias = new Map();
+    this.otherFaces = new Set();
+    this.writes = 0;
   }
   async start() {
     if (this.started) return this.started;
@@ -70,6 +79,7 @@ export class NativeFonts {
     return this.started;
   }
   request(value) {
+    if (this.queue.length >= QUEUE_MAX) return Promise.reject(new Error('too many font requests at once'));
     return new Promise((resolve, reject) => {
       this.queue.push({ resolve, reject });
       this.worker.stdin.write(JSON.stringify(value) + '\n');
@@ -87,36 +97,65 @@ export class NativeFonts {
       bold = !!m[5],
       charset = +(m[6] || 0);
     if (
-      face.length > 100 ||
+      !face ||
+      face.length > 64 ||
+      /[\u0000-\u001f\\/]/.test(face) ||
       height < 1 ||
       height > 256 ||
       !Number.isFinite(stretch) ||
       stretch <= 0 ||
-      stretch > 16 ||
+      stretch > STRETCH_MAX ||
       page > 255 ||
       ![0, 128].includes(charset)
     )
       return null;
     const key = JSON.stringify([face.toUpperCase(), height, stretch, page, bold, charset]);
-    if (!this.pending.has(key))
-      this.pending.set(
-        key,
-        (async () => {
-          await this.start();
-          const file = path.join(this.directory, crypto.createHash('sha256').update(key).digest('hex') + '.json');
-          if (fs.existsSync(file)) return fs.readFileSync(file);
-          const value = await this.request({ face: this.alias.get(face.toUpperCase()) || face, height, stretch, page, bold, charset });
-          value.mask = zlib.gzipSync(Buffer.from(value.mask, 'base64')).toString('base64');
-          value.compression = 'gzip';
-          const bytes = Buffer.from(JSON.stringify(value));
-          fs.writeFileSync(file, bytes);
-          return bytes;
-        })().catch(error => {
-          this.pending.delete(key);
-          throw error;
-        })
-      );
-    return this.pending.get(key);
+    let job = this.pending.get(key);
+    if (job) {
+      // most recently used last, so the oldest is the first to go
+      this.pending.delete(key);
+      this.pending.set(key, job);
+      return job;
+    }
+    await this.start();
+    // the game's own faces always; a few others (system fonts a mod names), not any name a caller makes up
+    const upper = face.toUpperCase();
+    if (!this.alias.has(upper) && !this.otherFaces.has(upper)) {
+      if (this.otherFaces.size >= OTHER_FACES) return null;
+      this.otherFaces.add(upper);
+    }
+    job = (async () => {
+      const file = path.join(this.directory, crypto.createHash('sha256').update(key).digest('hex') + '.json');
+      if (fs.existsSync(file)) return fs.readFileSync(file);
+      const value = await this.request({ face: this.alias.get(upper) || face, height, stretch, page, bold, charset });
+      value.mask = zlib.gzipSync(Buffer.from(value.mask, 'base64')).toString('base64');
+      value.compression = 'gzip';
+      const bytes = Buffer.from(JSON.stringify(value));
+      fs.writeFileSync(file, bytes);
+      if (++this.writes % 100 === 0) this.prune();
+      return bytes;
+    })().catch(error => {
+      this.pending.delete(key);
+      throw error;
+    });
+    this.pending.set(key, job);
+    while (this.pending.size > KEEP) this.pending.delete(this.pending.keys().next().value);
+    return job;
+  }
+  // the disk cache keeps the most recently written pages
+  prune() {
+    try {
+      const files = fs
+        .readdirSync(this.directory)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          const at = path.join(this.directory, f);
+          return { at, t: fs.statSync(at).mtimeMs };
+        });
+      if (files.length <= DISK_MAX) return;
+      files.sort((a, b) => a.t - b.t);
+      for (const f of files.slice(0, files.length - DISK_MAX)) fs.rmSync(f.at, { force: true });
+    } catch {}
   }
   close() {
     this.worker?.stdin.end();

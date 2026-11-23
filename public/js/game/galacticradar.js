@@ -204,10 +204,48 @@ export class GalacticRadar {
     this.refresh();
   }
 
+  // Called every frame: blips are rebuilt every 0.1 s or when the selection changes, flashes animate every frame.
+  tick(dt) {
+    if ((this.refreshIn = (this.refreshIn || 0) - dt) <= 0 || this.game.selected !== this.shownSelected) {
+      this.refreshIn = 0.1;
+      this.refresh();
+    } else if (this.flashStates.size || this.flashLive) this.refreshFlashes();
+  }
+
+  refreshFlashes() {
+    if (!this.host) return;
+    const scale = this.comps.get('G_RADAR_BLIP')?.num('Scale', 1) ?? 1;
+    this.flashLive = 0;
+    for (const row of this.blips) this.paintFlash(row, scale);
+  }
+
+  paintFlash(row, scale) {
+    const flash = this.flashStates.get(row.p.index),
+      flashHidden = !flash || flash.timer === 0;
+    if (row.flash.hidden !== flashHidden) row.flash.hidden = flashHidden;
+    if (!flash) return;
+    this.flashLive++;
+    const name = token(this.comps.get('G_RADAR_BLIP'), 'Flash_Texture_Name');
+    if (row.flashName !== name || row.flashScale !== scale) {
+      const rect = iconCanvasRect(name);
+      row.flashName = name;
+      row.flashScale = scale;
+      row.flash.style.backgroundImage = `url("${iconUrl(name)}")`;
+      row.flash.style.width = (rect?.w || 0) * scale + 'px';
+      row.flash.style.height = (rect?.h || 0) * scale + 'px';
+    }
+    const filter = `brightness(${flash.color / 255})`;
+    if (row.flashFilter !== filter) row.flash.style.filter = row.flashFilter = filter;
+  }
+
   refresh() {
     if (!this.host) return;
     const c = this.comps.get('G_RADAR_BLIP'),
-      scale = c?.num('Scale', 1) ?? 1;
+      scale = c?.num('Scale', 1) ?? 1,
+      marks = new Set();
+    for (const m of this.game.tutorialFx?.markers.values() || []) marks.add(m.planet);
+    this.shownSelected = this.game.selected;
+    this.flashLive = 0;
     for (const row of this.blips) {
       const { p, el } = row,
         appearance = radarAppearance(this.game.galaxy, p, this.game),
@@ -244,7 +282,7 @@ export class GalacticRadar {
         el.setAttribute('aria-disabled', String(!appearance.known));
         el.setAttribute('aria-pressed', String(selected));
       }
-      const marked = [...(this.game.tutorialFx?.markers.values() || [])].some(m => m.planet === p);
+      const marked = marks.has(p);
       if (marked && !row.marker) {
         const m = this.comps.get('RADAR_BLIP'),
           name = token(m, 'Icon_Texture_Name') || 'i_radar_focus.tga',
@@ -254,17 +292,7 @@ export class GalacticRadar {
         el.appendChild(row.marker);
       }
       if (row.marker) row.marker.hidden = !marked;
-      const flash = this.flashStates.get(p.index),
-        flashHidden = !flash || flash.timer === 0;
-      if (row.flash.hidden !== flashHidden) row.flash.hidden = flashHidden;
-      if (flash) {
-        const name = token(c, 'Flash_Texture_Name'),
-          rect = iconCanvasRect(name);
-        row.flash.style.backgroundImage = `url("${iconUrl(name)}")`;
-        row.flash.style.width = (rect?.w || 0) * scale + 'px';
-        row.flash.style.height = (rect?.h || 0) * scale + 'px';
-        row.flash.style.filter = `brightness(${flash.color / 255})`;
-      }
+      this.paintFlash(row, scale);
     }
   }
 
