@@ -21,7 +21,7 @@ export function checkedResult(galaxy, b, r) {
   for (const [list, side] of [
     [cb.attacker?.units, 0],
     [cb.defender?.units, 1],
-    [land ? cb.defender?.structures : null, 1]
+    [land ? cb.defender?.structures : cb.defender?.orbital, 1]
   ])
     for (const u of list || []) roster.set(String(u.gid), { side, type: db.type(u.type) });
   const sideOf = owner => sides.find(f => key(f) === key(owner)),
@@ -50,6 +50,9 @@ export function checkedResult(galaxy, b, r) {
   } else {
     const fought = !!cb.defender?.station;
     out.station = fought ? !!r.station : !!pl?.station;
+    // which starbase and orbital structures were in the battle comes from the setup, never from the report
+    out.stationFought = cb.defender?.station || null;
+    out.orbitalFought = list(cb.defender?.orbital).map(o => String(o.gid));
     if (fought && r.station && Number.isInteger(r.stationLevel) && r.stationLevel >= 0) out.stationLevel = r.stationLevel;
     out.superweapons = list(r.superweapons).flatMap(w => {
       const at = typeof w?.gid === 'string' && roster.get(w.gid);
@@ -179,6 +182,12 @@ export class MpBattles {
     if (!b || b.done || !gone) return;
     b.humans = b.humans.filter(f => key(f) !== key(faction));
     if (b.humans.length) return this.settle(b);
+    this.autoresolve(b);
+  }
+
+  // nobody is left to fight it, or no usable report came in: resolve it the same way on every machine
+  autoresolve(b) {
+    const game = this.game;
     b.done = true;
     this.closeFrame(b);
     b.setup.net?.session?.close?.();
@@ -260,19 +269,23 @@ export class MpBattles {
     const v = checkedResult(game.galaxy, b, r);
     if (!v) {
       console.warn(`Battle ${id}: ignored a result from ${game.playerName?.(faction) || faction} that does not match the battle`);
-      return;
+      // still start the clock, so a battle whose every report is refused can't hold the galaxy forever
+      b.reports ||= new Map();
+      b.refused = (b.refused || 0) + 1;
+      return this.settle(b);
     }
     if (b.setup?.shooter) return this.finish(b, v);
     const reports = (b.reports ||= new Map()),
       report = { faction: key(faction), peer, r: v, digest: JSON.stringify(v) };
     if (!reports.has(report.faction)) reports.set(report.faction, report);
+    b.first ||= report;
     if (peer === this.hostPeer(b)) b.hostReport = report;
     this.settle(b);
   }
 
   // Every human side has to report the same result; otherwise the tactical host's report stands.
   settle(b) {
-    if (!b || b.done || !b.reports?.size) return;
+    if (!b || b.done || !b.reports) return;
     const got = b.humans.map(f => b.reports.get(key(f))).filter(Boolean),
       split = new Set(got.map(x => x.digest)).size > 1;
     if (!split && got.length && got.length === b.humans.length) return this.finish(b, got[0].r);
@@ -280,16 +293,25 @@ export class MpBattles {
     const host = this.hostPeer(b),
       hostFaction = key(this.game.setup.players?.find(p => p.human && p.peer === host)?.faction),
       fallback = b.hostReport || b.reports.get(hostFaction);
-    if (!fallback) return;
-    console.warn(
-      `Battle ${b.id}: ${split ? 'the sides reported different results' : 'not every side reported a result'}; using the tactical host's report`
-    );
-    this.finish(b, fallback.r);
+    if (fallback) {
+      console.warn(
+        `Battle ${b.id}: ${split ? 'the sides reported different results' : 'not every side reported a result'}; using the tactical host's report`
+      );
+      return this.finish(b, fallback.r);
+    }
+    // the host's report never came: after the wait take the first usable one, or resolve the battle if there is none
+    if ((b.waited || 0) < REPORT_TIMEOUT) return;
+    if (b.first) {
+      console.warn(`Battle ${b.id}: the tactical host sent no result; using the first report that came in`);
+      return this.finish(b, b.first.r);
+    }
+    console.warn(`Battle ${b.id}: no usable battle result came in; resolving the battle automatically`);
+    this.autoresolve(b);
   }
 
   tick() {
     const b = this.current;
-    if (!b || b.done || !b.reports?.size) return;
+    if (!b || b.done || !b.reports) return;
     if ((b.waited = (b.waited || 0) + 1) >= REPORT_TIMEOUT) this.settle(b);
   }
 

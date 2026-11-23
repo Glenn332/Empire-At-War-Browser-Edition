@@ -169,10 +169,24 @@ try {
       m = new MpBattles(game);
     m.current = battle('space', [{ gid: '0:0', type: ship.name }]);
     m.result('REBEL', 1, lose, 1);
-    for (let i = 0; i < REPORT_TIMEOUT + 5; i++) m.tick();
-    assert.equal(game.applied.length, 0, 'a timeout without the host report keeps waiting');
-    m.result('EMPIRE', 1, win, 0);
-    assert.equal(game.applied[0].winner, 'attacker');
+    for (let i = 0; i < REPORT_TIMEOUT - 1; i++) m.tick();
+    assert.equal(game.applied.length, 0, 'before the timeout a missing host report is waited for');
+    m.tick();
+    assert.equal(game.applied.length, 1, 'a timeout without the host report takes the first report instead of hanging');
+    assert.equal(game.applied[0].winner, 'defender');
+  }
+  {
+    const game = fakeGame(),
+      m = new MpBattles(game);
+    let resolved = 0;
+    game.battles = { resolveFor: () => resolved++ };
+    m.current = battle('space', [{ gid: '0:0', type: ship.name }]);
+    m.result('REBEL', 1, { ...lose, winner: 'nobody' }, 1);
+    m.result('EMPIRE', 1, { ...win, planet: 99 }, 0);
+    for (let i = 0; i < REPORT_TIMEOUT; i++) m.tick();
+    assert.equal(game.applied.length, 0);
+    assert.equal(resolved, 1, 'when every report is refused the battle is auto-resolved instead of holding the galaxy');
+    assert.equal(m.current, null);
   }
   {
     const game = fakeGame(),
