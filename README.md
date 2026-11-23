@@ -51,6 +51,10 @@ lets you play offline afterwards. The start page walks you through both options.
 
 [progression.md](progression.md) shows exactly what is finished, what is partial and what is still missing.
 
+**For mod authors and fork maintainers:** the [proposed fork mod compatibility standard](docs/upstream-gameplay-mode.md)
+explains how a fork can support mods made for a named Browser Edition release without asking authors to repackage them.
+It includes [checks for load order and faction-specific HUD art](docs/submod-compatibility.md).
+
 ## Built for big battles
 
 The point is to play battles the original engine struggles with:
