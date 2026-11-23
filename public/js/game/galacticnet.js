@@ -262,7 +262,9 @@ export function runCommand(game, faction, cmd) {
       const mine = game.actingPid === game.localPid,
         name = String(cmd.name || '').slice(0, 64);
       try {
-        putSave(snapshot(game, name), mine && cmd.slot != null ? cmd.slot : null)
+        // another player's save lands in one slot per player here, so a flood of saves can't fill this disk
+        const slot = mine ? (cmd.slot != null ? String(cmd.slot) : null) : 'net-' + key(faction).replace(/[^A-Z0-9_]/g, '');
+        putSave(snapshot(game, name), slot)
           .then(() => game.message?.(`${db.t('TEXT_SAVE_GAME_TITLE') || 'Save Game'}: ${name}`, 'good'))
           .catch(error => console.error(error));
       } catch (error) {

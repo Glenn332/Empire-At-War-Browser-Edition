@@ -4,6 +4,8 @@ const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com
 const DIRECT_TIMEOUT = 8000;
 const PING_EVERY = 25000;
 const PART = 20000,
+  MAX_PARTS = 4000,
+  MAX_OPEN_PARTS = 4,
   FAST_MAX = 15000;
 
 export function lobbyUrl() {
@@ -48,6 +50,14 @@ export function ticker(ms, fn) {
     };
   }
 }
+
+const parse = text => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
 
 class Emitter {
   constructor() {
@@ -125,7 +135,10 @@ class Link {
     dc.onopen = () => {
       if (this.mode !== 'relay') this.ready('direct');
     };
-    dc.onmessage = e => this.session.receive(this.peer, JSON.parse(e.data));
+    dc.onmessage = e => {
+      const m = parse(e.data);
+      if (m !== undefined) this.session.receive(this.peer, m);
+    };
     dc.onclose = () => {
       if (this.mode === 'direct') this.session.lost(this.peer);
     };
@@ -133,7 +146,10 @@ class Link {
 
   attachFast(dc) {
     this.fast = dc;
-    dc.onmessage = e => this.session.receive(this.peer, JSON.parse(e.data));
+    dc.onmessage = e => {
+      const m = parse(e.data);
+      if (m !== undefined) this.session.receive(this.peer, m);
+    };
   }
 
   sendFast(msg) {
@@ -296,21 +312,30 @@ export class NetSession extends Emitter {
       if (!link) return;
       if (d.rtc) link.onSignal(d.rtc);
       else if (d.relay) link.forceRelay();
-      else if (d.m !== undefined) this.receive(msg.from, JSON.parse(d.m));
+      else if (typeof d.m === 'string') {
+        const m = parse(d.m);
+        if (m !== undefined) this.receive(msg.from, m);
+      }
     }
   }
 
   receive(from, msg) {
     if (msg && msg._part !== undefined) {
-      const key = from + ':' + msg._part,
-        got = this.pieces.get(key) || [];
-      got.push(msg.s);
-      if (got.length < msg.n) {
-        this.pieces.set(key, got);
-        return;
+      // a peer's split message: bound its size and how many are open at once, so a bad peer can't eat memory
+      const n = msg.n,
+        key = from + ':' + msg._part;
+      if (!Number.isInteger(n) || n < 2 || n > MAX_PARTS || typeof msg.s !== 'string' || msg.s.length > PART) return;
+      let got = this.pieces.get(key);
+      if (!got) {
+        const open = [...this.pieces.keys()].filter(k => k.startsWith(from + ':'));
+        if (open.length >= MAX_OPEN_PARTS) this.pieces.delete(open[0]);
+        this.pieces.set(key, (got = []));
       }
+      got.push(msg.s);
+      if (got.length < n) return;
       this.pieces.delete(key);
-      msg = JSON.parse(got.join(''));
+      msg = parse(got.join(''));
+      if (msg === undefined) return;
     }
     this.emit('message', from, msg);
   }
