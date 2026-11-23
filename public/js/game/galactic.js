@@ -2671,6 +2671,7 @@ export class GalacticGame {
     this.planetInfo.close();
     this.galacticLog?.close();
     this.radar?.flash(p);
+    this.battleFlash = p;
     if (!this.noSave && !this.net) {
       try {
         putSave(snapshot(this, db.t('TEXT_GUI_AUTO_SAVE')), 'autosave').catch(e => console.warn('autosave', e));
@@ -3560,8 +3561,17 @@ export class GalacticGame {
         if (this.over) return;
       }
     }
+    if (this.battleFlash !== undefined && !this.battle) this.endBattleFlash();
     this.stepPlanetFlashes(real);
     this.present(real, elapsed, zoom);
+  }
+
+  // The radar ping a battle starts has no timeout, so turn it off once the battle is over, however it ended
+  // (tactical, multiplayer or linked). A new battle choice at the same planet keeps its own ping.
+  endBattleFlash() {
+    const p = this.battleFlash;
+    delete this.battleFlash;
+    if (this.pendingBattle?.request?.p !== p) this.radar?.flash(p, false);
   }
 
   cullPlanets() {
