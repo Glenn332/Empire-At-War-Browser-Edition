@@ -24,7 +24,7 @@ use vfs::{Game, View};
 const TAURI_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
 const UNCAPPED: &str = "--disable-frame-rate-limit --disable-gpu-vsync";
-const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://storage.ko-fi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: blob: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https://lobby.playeaw.com wss://lobby.playeaw.com https://api.github.com http://localhost:8787 ws://localhost:8787; frame-src 'self' blob: https://ko-fi.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'";
+const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://storage.ko-fi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: blob: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self' blob: https://ko-fi.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'";
 
 struct Opened {
     game: Arc<View>,
