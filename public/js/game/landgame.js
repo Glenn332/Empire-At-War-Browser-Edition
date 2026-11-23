@@ -1161,6 +1161,7 @@ export class LandGame {
     this.noBatch = q.has('nobatch');
     this.noCull = q.has('nocull');
     this.noLoose = q.has('noloose');
+    this.noMerge = q.has('nomerge');
     this.noDepthTwin = q.has('nodepthtwin');
     this.world.interp = !setup.net && (q.has('fixedstep') || ((!!this.gpuOn || !!this.renderer.webgpu) && !q.has('nofixedstep')));
     if (!this.noBatch)
@@ -3367,6 +3368,7 @@ export class LandGame {
     if (B) {
       B.poseNow ||= u => w.pose(u, 0);
       B.noGL = R === this.gpu;
+      B.noMerge = this.noMerge;
     }
     if (w.look && w.look.see) {
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();

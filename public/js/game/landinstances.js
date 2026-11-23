@@ -39,7 +39,124 @@ export function viewTest(camera) {
 }
 
 const _box = new THREE.Box3(),
-  _sph = new THREE.Sphere();
+  _sph = new THREE.Sphere(),
+  _relative = new THREE.Matrix4(),
+  _inverse = new THREE.Matrix4(),
+  _normalMatrix = new THREE.Matrix3(),
+  _vector = new THREE.Vector3();
+
+const MERGE_MIN = 2;
+const DIRECTIONS = new Set(['normal', 'tangent', 'binormal']);
+const mergedByMaterial = new WeakMap();
+
+function mergeableMaterial(material) {
+  if (instanceable.has(material)) return true;
+  return alphaInstanceable.has(material) && material.depthWrite !== false && (material.uniforms?.alphaRef?.value ?? -1) >= 0;
+}
+
+function mergeableGeometry(geometry, names) {
+  if (!geometry.index || geometry.groups.length > 1 || Object.keys(geometry.morphAttributes).length) return false;
+  const own = Object.keys(geometry.attributes);
+  if (own.length !== names.length) return false;
+  for (const name of own) {
+    const attribute = geometry.attributes[name];
+    if (attribute.isInterleavedBufferAttribute || !(attribute.array instanceof Float32Array) || !names.includes(name)) return false;
+  }
+  return true;
+}
+
+function relativeMatrices(meshes, holder) {
+  _inverse.copy(holder.matrixWorld).invert();
+  return meshes.map(mesh => new THREE.Matrix4().multiplyMatrices(_inverse, mesh.matrixWorld));
+}
+
+function mergeKey(meshes, relatives) {
+  const parts = [];
+  for (let i = 0; i < meshes.length; i++) parts.push(meshes[i].geometry.id + '@' + relatives[i].elements.map(value => value.toFixed(3)).join(','));
+  return parts.join(';');
+}
+
+function bakeAttribute(target, source, offset, name, matrix, normalMatrix) {
+  const size = source.itemSize,
+    from = source.array,
+    to = target.array,
+    count = source.count;
+  if (name === 'position' && size >= 3) {
+    for (let i = 0; i < count; i++) {
+      _vector.set(from[i * size], from[i * size + 1], from[i * size + 2]).applyMatrix4(matrix);
+      to[(offset + i) * size] = _vector.x;
+      to[(offset + i) * size + 1] = _vector.y;
+      to[(offset + i) * size + 2] = _vector.z;
+      for (let k = 3; k < size; k++) to[(offset + i) * size + k] = from[i * size + k];
+    }
+    return;
+  }
+  if (DIRECTIONS.has(name) && size >= 3) {
+    for (let i = 0; i < count; i++) {
+      _vector.set(from[i * size], from[i * size + 1], from[i * size + 2]);
+      if (name === 'normal') _vector.applyMatrix3(normalMatrix);
+      else _vector.transformDirection(matrix);
+      _vector.normalize();
+      to[(offset + i) * size] = _vector.x;
+      to[(offset + i) * size + 1] = _vector.y;
+      to[(offset + i) * size + 2] = _vector.z;
+      for (let k = 3; k < size; k++) to[(offset + i) * size + k] = from[i * size + k];
+    }
+    return;
+  }
+  to.set(from.subarray(0, count * size), offset * size);
+}
+
+function mergeGeometries(meshes, relatives) {
+  const first = meshes[0].geometry,
+    names = Object.keys(first.attributes);
+  let vertexCount = 0,
+    indexCount = 0;
+  for (const mesh of meshes) {
+    vertexCount += mesh.geometry.attributes.position.count;
+    indexCount += mesh.geometry.index.count;
+  }
+  const merged = new THREE.BufferGeometry();
+  for (const name of names)
+    merged.setAttribute(name, new THREE.BufferAttribute(new Float32Array(vertexCount * first.attributes[name].itemSize), first.attributes[name].itemSize));
+  const indices = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
+  let vertexOffset = 0,
+    indexOffset = 0;
+  meshes.forEach((mesh, meshIndex) => {
+    const geometry = mesh.geometry,
+      matrix = relatives[meshIndex];
+    _normalMatrix.getNormalMatrix(matrix);
+    for (const name of names) bakeAttribute(merged.attributes[name], geometry.attributes[name], vertexOffset, name, matrix, _normalMatrix);
+    const source = geometry.index.array,
+      flip = matrix.determinant() < 0;
+    for (let i = 0; i < geometry.index.count; i += 3) {
+      indices[indexOffset + i] = source[i] + vertexOffset;
+      indices[indexOffset + i + 1] = source[flip ? i + 2 : i + 1] + vertexOffset;
+      indices[indexOffset + i + 2] = source[flip ? i + 1 : i + 2] + vertexOffset;
+    }
+    vertexOffset += geometry.attributes.position.count;
+    indexOffset += geometry.index.count;
+  });
+  merged.setIndex(new THREE.BufferAttribute(indices, 1));
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+function mergedGeometry(material, meshes, holder) {
+  const relatives = relativeMatrices(meshes, holder),
+    key = mergeKey(meshes, relatives);
+  let byKey = mergedByMaterial.get(material);
+  if (!byKey) mergedByMaterial.set(material, (byKey = new Map()));
+  let geometry = byKey.get(key);
+  if (!geometry) byKey.set(key, (geometry = mergeGeometries(meshes, relatives)));
+  return geometry;
+}
+
+function shownUnder(mesh, holder) {
+  for (let node = mesh; node && node !== holder; node = node.parent) if (!node.visible) return false;
+  return true;
+}
 
 export class LandInstances {
   constructor(scene, renderer = null, camera = null) {
@@ -61,7 +178,7 @@ export class LandInstances {
     this.drawn = 0;
     this.reach = new WeakMap();
     this.unmeasured = new WeakMap();
-    this.parts = new WeakMap();
+    this.plans = new WeakMap();
     this.box = new THREE.Group();
     this.box.matrixAutoUpdate = false;
     this.box.userData.casts = true;
@@ -174,15 +291,75 @@ export class LandInstances {
     return L.rigid;
   }
 
-  meshesOf(h) {
-    let L = this.parts.get(h);
-    if (L && (++L.age & 63) !== 0) return L.list;
-    if (!L) this.parts.set(h, (L = { age: 1, list: [] }));
-    L.list.length = 0;
-    h.traverse(o => {
-      if (o.isMesh && !o.isInstancedMesh) L.list.push(o);
+  planOf(holder) {
+    let plan = this.plans.get(holder);
+    if (plan && (++plan.age & 63) !== 0) return plan;
+    if (!plan) this.plans.set(holder, (plan = { age: 1, singles: [], groups: [] }));
+    plan.singles.length = 0;
+    plan.groups.length = 0;
+    const meshes = [];
+    let still = true;
+    holder.traverse(node => {
+      if (node !== holder && node.matrixAutoUpdate) still = false;
+      if (node.isMesh && !node.isInstancedMesh) meshes.push(node);
     });
-    return L.list;
+    if (!still || this.noMerge) {
+      plan.singles.push(...meshes);
+      return plan;
+    }
+    const byMaterial = new Map();
+    for (const mesh of meshes) {
+      if (!mergeableMaterial(mesh.material) || !shownUnder(mesh, holder)) {
+        plan.singles.push(mesh);
+        continue;
+      }
+      const list = byMaterial.get(mesh.material);
+      if (list) list.push(mesh);
+      else byMaterial.set(mesh.material, [mesh]);
+    }
+    for (const [material, list] of byMaterial) {
+      const first = list[0],
+        names = Object.keys(first.geometry.attributes),
+        merging = [];
+      for (const mesh of list)
+        if (mesh.renderOrder === first.renderOrder && mergeableGeometry(mesh.geometry, names)) merging.push(mesh);
+        else plan.singles.push(mesh);
+      if (merging.length < MERGE_MIN) {
+        plan.singles.push(...merging);
+        continue;
+      }
+      plan.groups.push({ material, geometry: mergedGeometry(material, merging, holder), renderOrder: first.renderOrder, meshes: merging, probe: merging[0] });
+    }
+    return plan;
+  }
+
+  putLoose(holder) {
+    const plan = this.planOf(holder);
+    let rest = false;
+    for (const mesh of plan.singles) if (this.put(mesh, holder, false, null)) rest = true;
+    for (const group of plan.groups) {
+      const merged = !group.probe.matrixAutoUpdate && group.meshes.every(mesh => shownUnder(mesh, holder)) && this.putMerged(group, holder);
+      if (!merged) for (const mesh of group.meshes) if (this.put(mesh, holder, false, null)) rest = true;
+    }
+    return rest;
+  }
+
+  putMerged(group, holder) {
+    const pool = (group.pool ||= this.poolFor(group, false));
+    if (!pool.ready) return false;
+    for (const mesh of group.meshes)
+      if (!mesh._taken) {
+        mesh.layers.set(HIDDEN);
+        mesh._taken = true;
+      }
+    if (pool.n === pool.cap) this.size(pool, pool.cap * 4);
+    const at = pool.n * 16,
+      matrices = pool.im.instanceMatrix.array,
+      world = holder.matrixWorld.elements;
+    for (let k = 0; k < 16; k++) matrices[at + k] = world[k];
+    pool.n++;
+    this.drawn++;
+    return true;
   }
 
   reachOf(h) {
@@ -383,9 +560,7 @@ export class LandInstances {
         hid.push(h);
         continue;
       }
-      let rest = false;
-      for (const m of this.meshesOf(h)) if (this.put(m, h, false, null)) rest = true;
-      if (!rest) {
+      if (!this.putLoose(h)) {
         h.visible = false;
         hid.push(h);
       }
