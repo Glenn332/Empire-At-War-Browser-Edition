@@ -20,6 +20,7 @@ import { pressed, held, keysOf, keyName } from './keybinds.js';
 import { canGarrison, putInside, ungarrison } from './landbase.js';
 import { Overlord } from './overlord.js';
 import { ShuttleWaves } from './shuttle.js';
+import { vehicleRig, vehicleEye, chaseVehicle } from './vehicle-camera.js';
 import { isSpawner, sideTech } from './landgarrison.js';
 import { eawSkin } from './eawskin.js';
 import { TERRAIN } from './landtables.js';
@@ -154,7 +155,7 @@ function usePalette(safe) {
   r.setProperty('--sh-enemy-soft', PAL.enemySoft);
 }
 const CFG_KEY = 'swr-shooter-settings',
-  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, view: 'third', crosshair: 'ring', bob: true, colorblind: false, assist: true, shuttle: true };
+  CFG_DEFAULT = { fov: 70, sens: 1, ads: 1, invert: false, view: 'third', vehicleView: 'chase', crosshair: 'ring', bob: true, colorblind: false, assist: true, shuttle: true };
 function loadCfg() {
   let got = {};
   try {
@@ -176,8 +177,7 @@ const PAD = { dead: 0.16, look: 2.8, adsLook: 0.5, assist: 0.45, cone: 0.07, tri
 
 const LOWER_BONES = /ROOT|PELVIS|HIP|THIGH|CALF|SHIN|FOOT|TOE|LEG/i;
 
-const RIDE_CAM = { tall: 1.6, back: 1.9, side: 0.32, lift: 1.12, eye: 1.04, ahead: 0.62, settle: 7 },
-  SHOT_GAIN = { foot: 1.7, ride: 1.35 };
+const SHOT_GAIN = { foot: 1.7, ride: 1.35 };
 
 const SHOOTER_CSS = `
 .sh-hit { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; opacity: 0; transition: opacity .18s ease-out; filter: drop-shadow(0 0 1px #000); }
@@ -375,7 +375,6 @@ export class Shooter {
     this.readyAt = 0;
     this.cfg = loadCfg();
     usePalette(this.cfg.colorblind);
-    this.third = this.cfg.view !== 'first';
     this.yaw = 0;
     this.pitch = -0.05;
     this.keys = new Set();
@@ -477,8 +476,7 @@ export class Shooter {
     this.melee = false;
     this.swing = null;
     this.landingIn = false;
-    this.cockpit = false;
-    this.seatBox = { u: null, len: 0, top: 0 };
+    this.rideCamera = null;
     this.stomps = new Map();
     this.warnAt = 0;
     this.warning = '';
@@ -2733,6 +2731,22 @@ export class Shooter {
     this.cross.className = `sh-ret sh-ret-${this.role} sh-ch-${this.cfg.crosshair}`;
   }
 
+  get third() { return this.cfg.view !== 'first'; }
+  get cockpit() { return this.cfg.vehicleView === 'seat'; }
+
+  toggleView() {
+    if (this.post) return this.flash('Garrison view');
+    if (this.seatOf() || this.big) {
+      this.setCfg('vehicleView', this.cockpit ? 'chase' : 'seat');
+      const arty = this.rideQ && !this.netClient && this.artyOf(this.rideQ)?.deployed;
+      this.flash(!this.cockpit ? 'Vehicle chase view' : arty ? 'Artillery view' : this.gunQ ? 'Gunner view' : 'Driver view');
+    } else if (this.melee) this.flash('Melee heroes use third person');
+    else {
+      this.setCfg('view', this.third ? 'first' : 'third');
+      this.flash(this.third ? 'Third person' : 'First person');
+    }
+  }
+
   saveCfg() {
     try {
       localStorage.setItem(CFG_KEY, JSON.stringify(this.cfg));
@@ -2742,7 +2756,8 @@ export class Shooter {
   setCfg(key, value) {
     const C = this.cfg;
     C[key] = value;
-    if (key === 'view') this.third = value !== 'first';
+    const select = this.setEl?.querySelector(`select[name="${key}"]`);
+    if (select) select.value = value;
     if (key === 'crosshair') this.reticle();
     if (key === 'colorblind') {
       usePalette(value);
@@ -2810,6 +2825,7 @@ export class Shooter {
     const pick = (label, key, opts) => {
       const i = document.createElement('select');
       i.className = 'eaw-select';
+      i.name = key;
       for (const [v, t] of opts) {
         const o = document.createElement('option');
         o.value = v;
@@ -2824,7 +2840,11 @@ export class Shooter {
     range('Mouse sensitivity', 'sens', 0.3, 2.5, 0.05, v => `${v.toFixed(2)}x`);
     range('Aiming sensitivity', 'ads', 0.3, 2, 0.05, v => `${v.toFixed(2)}x`);
     check('Invert look', () => C.invert, v => this.setCfg('invert', v));
-    pick('Default view', 'view', [
+    pick('Vehicle view', 'vehicleView', [
+      ['chase', 'Chase camera'],
+      ['seat', 'Driver / gunner view']
+    ]);
+    pick('Infantry view', 'view', [
       ['third', 'Third person'],
       ['first', 'First person']
     ]);
@@ -2934,10 +2954,7 @@ export class Shooter {
       if (down(0)) this.P.jump = true;
       if (down(1) && !this.seatOf()) this.crouched = !this.crouched;
       if (down(2)) this.seated() ? this.leave() : this.enter();
-      if (down(3)) {
-        if (this.seatOf() && !this.post) this.cockpit = !this.cockpit;
-        else this.third = !this.third;
-      }
+      if (down(3)) this.toggleView();
       if (down(5)) this.P.dodge = true;
       if (down(4)) this.nadeHeld = true;
       if (up(4) && this.nadeHeld) {
@@ -3012,7 +3029,8 @@ export class Shooter {
       ['Reload', K('SHOOTER_RELOAD'), 'automatic when empty'],
       ['Enter or leave', K('SHOOTER_ENTER'), 'X'],
       ['Abilities', `${K('SHOOTER_ABILITY_1')} ${K('SHOOTER_ABILITY_2')} ${K('SHOOTER_ABILITY_3')}`, 'D-pad'],
-      ['View, map, scores', `${K('DIRECT_VIEW')}, ${K('SHOOTER_MAP')}, ${K('SHOOTER_SCORES')}`, 'Y, D-pad down, View'],
+      ['First / third person · vehicle seat / chase', K('DIRECT_VIEW'), 'Y / Triangle'],
+      ['Map, scores', `${K('SHOOTER_MAP')}, ${K('SHOOTER_SCORES')}`, 'D-pad down, View'],
       ['Settings', K('SHOOTER_SETTINGS'), 'Menu'],
       ['Show controls', K('SHOOTER_CONTROLS'), '-'],
       ...(this.ov?.on ? [['Tactical view', `${K('SHOOTER_OVERLORD')}, scroll out`, '-']] : [])
@@ -3314,41 +3332,26 @@ export class Shooter {
     return name;
   }
 
-  heightOfSeat(v) {
-    const B = this.seatBox;
-    const now = this.world.time;
-    if (B.u !== v || now - B.at < 2 || now >= B.next) {
-      if (B.u !== v) {
-        B.u = v;
-        B.at = now;
-        B.z = null;
-      }
-      B.next = now + 1;
-      _box.setFromObject(v.holder);
-      B.top = Math.max(4, _box.max.z - v.z);
-      B.len = Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5);
-    }
-    return B.top;
+  rigOf(v) {
+    if (this.rideCamera?.unit !== v) this.rideCamera = vehicleRig(v);
+    return this.rideCamera;
   }
 
-  seatView(v, d, real = 0.016) {
-    const B = this.seatBox;
-    this.heightOfSeat(v);
+  seatView(v, d) {
+    const rig = this.rigOf(v);
+    rig.fresh = true; // snap the chase pivot when coming back out of the seat
+
     if (this.gunQ && v === this.gunQ.members[0]) {
       const bone = v.turret?.barrel || v.guns?.find(g => g.muzzles && g.muzzles.length)?.muzzles[0]?.bone || v.weapon?.muzzles?.[0]?.bone;
       if (bone) {
         bone.updateWorldMatrix(true, false);
-        _sv.setFromMatrixPosition(bone.matrixWorld);
-        return _sv.set(_sv.x + d.x * 5, _sv.y + d.y * 5, Math.max(_sv.z + 2, v.z + B.top + 3) + d.z * 5);
+        const roof = vehicleEye(_sv, rig).z;
+        _sv.setFromMatrixPosition(bone.matrixWorld).addScaledVector(d, 5);
+        _sv.z = Math.max(_sv.z + 2, roof);
+        return _sv;
       }
     }
-    const c = Math.cos(v.heading),
-      s = Math.sin(v.heading),
-      tall = !v.flies && B.top > v.hitRadius * RIDE_CAM.tall,
-      want = v.z + B.top * (tall ? RIDE_CAM.eye : 0.95) + 1.5;
-    B.z = B.z === null || Math.abs(want - B.z) > B.top * 0.5 ? want : B.z + (want - B.z) * Math.min(1, real * RIDE_CAM.settle);
-    const ahead = B.len * (tall ? RIDE_CAM.ahead : 0.35);
-    return _sv.set(v.x + c * ahead, v.y + s * ahead, B.z);
+    return vehicleEye(_sv, rig);
   }
 
   damageFx() {
@@ -4205,12 +4208,12 @@ export class Shooter {
       lead.pilot = A;
       this.pitch = 0.15;
       this.note(
-        `${this.nameOf(lead.type)}: mouse to steer and climb, W S speed, ${this.keyText('SHOOTER_SPRINT')} boost, ${this.keyText('SHOOTER_DODGE')} barrel roll, ${this.keyText('SHOOTER_JUMP')} ${this.keyText('SHOOTER_CROUCH')} up and down, ${this.keyText('SHOOTER_ENTER')} to get out`
+        `${this.nameOf(lead.type)}: mouse to steer and climb, W S speed, ${this.keyText('SHOOTER_SPRINT')} boost, ${this.keyText('SHOOTER_DODGE')} barrel roll, ${this.keyText('SHOOTER_JUMP')} ${this.keyText('SHOOTER_CROUCH')} up and down, ${this.keyText('DIRECT_VIEW')} change view, ${this.keyText('SHOOTER_ENTER')} to get out`
       );
     } else {
       this.pitch = -0.05;
       this.kickDebt = 0;
-      this.note(`${this.nameOf(lead.type)}: W S to drive, A D to turn, mouse to aim, ${this.keyText('DIRECT_VIEW')} cockpit view, ${this.keyText('SHOOTER_ENTER')} to get out`);
+      this.note(`${this.nameOf(lead.type)}: W S to drive, A D to turn, mouse to aim, ${this.keyText('DIRECT_VIEW')} chase / driver view, ${this.keyText('SHOOTER_ENTER')} to get out`);
     }
   }
 
@@ -4229,7 +4232,7 @@ export class Shooter {
     }
     if (q.crew) q.crew.gunner = b;
     this.gunD = { turn: 0, throttle: 0, firing: false, target: null, lead: v, slots: new Map(), spot: this.spot, far: true };
-    this.note(`${this.nameOf(v.type)} gunner: mouse to aim, ${this.keyText('DIRECT_VIEW')} barrel view, ${this.keyText('SHOOTER_ENTER')} to get out`);
+    this.note(`${this.nameOf(v.type)} gunner: mouse to aim, ${this.keyText('DIRECT_VIEW')} chase / gunner view, ${this.keyText('SHOOTER_ENTER')} to get out`);
   }
 
   leave(lost = false) {
@@ -4295,6 +4298,7 @@ export class Shooter {
         b.holder.visible = true;
       }
     }
+    this.rideCamera = null;
     this.note('');
   }
 
@@ -5782,7 +5786,7 @@ export class Shooter {
     const h = Math.max(6, Math.min(40, _box.max.z - _box.min.z || u.aimZ * 1.6 || 10));
     this.eye = h * 0.9;
     this.camBack = h * 2.6;
-    this.big = u.kind !== 'INFANTRY' && !u.foot ? { top: Math.max(4, _box.max.z - u.z), len: Math.max(4, Math.hypot(_box.max.x - _box.min.x, _box.max.y - _box.min.y) * 0.5), z: null } : null;
+    this.big = u.kind !== 'INFANTRY' && !u.foot;
     const T = this.twist;
     T.bone = u.inst?.bone('B_CHEST') || u.inst?.bone('B_SPINE') || u.inst?.bone('B_TORSO') || null;
     T.head = u.inst?.bone('B_HEAD') || null;
@@ -6794,10 +6798,7 @@ export class Shooter {
       if (pressed(e, 'SHOOTER_SETTINGS')) this.openSettings();
       if (pressed(e, 'SHOOTER_MAP')) this.bigMap.style.display = this.bigMap.style.display === 'none' ? 'flex' : 'none';
       if (pressed(e, 'SHOOTER_ENTER')) this.seated() ? this.leave() : this.enter();
-      if (pressed(e, 'DIRECT_VIEW')) {
-        if (this.seatOf() && !this.post) this.cockpit = !this.cockpit;
-        else this.third = !this.third;
-      }
+      if (pressed(e, 'DIRECT_VIEW')) this.toggleView();
       if (pressed(e, 'SHOOTER_SCORES')) this.scoreEl.style.display = 'block';
       if (pressed(e, 'SHOOTER_CONTROLS')) this.toggleControls();
       for (let n = 1; n <= 3; n++) if (pressed(e, 'SHOOTER_ABILITY_' + n) || (!rl && pressed(e, 'ABILITY_' + n))) this.ability(n - 1);
@@ -7010,9 +7011,9 @@ export class Shooter {
       cp = Math.cos(this.pitch),
       sp = Math.sin(this.pitch);
     const d = _v.set(cy * cp, sy * cp, sp);
-    const scoped = !seat && this.zoom && this.role === 'scout',
+    const scoped = !seat && !this.big && this.zoom && this.role === 'scout',
       pk = this.ov ? this.ov.pull * this.ov.pull : 0,
-      fp = !seat && (!this.third || scoped) && pk < 0.02 && !this.melee;
+      fp = !seat && !this.big && (!this.third || scoped) && pk < 0.02 && !this.melee;
     {
       const r = Math.min(this.kickDebt, this.kickDebt * KICK.recover * real);
       this.pitch -= r;
@@ -7051,24 +7052,16 @@ export class Shooter {
         c = Math.cos(p);
       d.set(cy * c, sy * c, Math.sin(p));
     }
-    const inner = !artyOn && !!seat && !this.post && this.cockpit && pk < 0.02;
-    if (inner) cam.position.copy(this.seatView(seat, d, real));
-    else if (seat) {
-      const top = this.heightOfSeat(seat),
-        tall = !seat.structure && !seat.flies && !this.post && top > seat.hitRadius * RIDE_CAM.tall,
-        big = seat.structure ? seat.hitRadius * 1.6 : seat.hitRadius * 4.5,
-        back = Math.max(this.post ? 40 : 60, big, tall ? top * RIDE_CAM.back : 0) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8),
-        side = tall ? top * RIDE_CAM.side : 0,
-        pz = (tall ? seat.z + top * RIDE_CAM.lift : seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * 0.12) + back * ARTY_CAM.lift * AB.raise;
-      cam.position.set(seat.x - d.x * back + sy * side, seat.y - d.y * back - cy * side, pz - d.z * back);
-    } else if (fp && this.big) {
-      const G = this.big,
-        want = bz + G.top * RIDE_CAM.eye + 1.5,
-        ahead = G.len * RIDE_CAM.ahead,
-        hc = Math.cos(b.heading),
-        hs = Math.sin(b.heading);
-      G.z = G.z === null || Math.abs(want - G.z) > G.top * 0.5 ? want : G.z + (want - G.z) * Math.min(1, real * RIDE_CAM.settle);
-      cam.position.set(b.x + hc * ahead, b.y + hs * ahead, G.z);
+    const vehicle = !this.post && (seat || (this.big ? b : null));
+    const inner = !!vehicle && !artyOn && this.cockpit && pk < 0.02;
+    if (inner) cam.position.copy(this.seatView(vehicle, d));
+    else if (vehicle) {
+      chaseVehicle(cam.position, this.rigOf(vehicle), d, real, cam.aspect, this.fovNow, this.zoom, pk, ARTY_CAM.lift * AB.raise);
+    } else if (seat) {
+      // Fixed garrison post: keep the existing external firing view.
+      const back = Math.max(40, seat.hitRadius * (seat.structure ? 1.6 : 4.5)) * (this.zoom ? 0.6 : 1) * (1 + pk * 1.8);
+      cam.position.set(seat.x - d.x * back, seat.y - d.y * back,
+        seat.z + Math.max(seat.aimZ || 0, seat.hitRadius * 0.8) + back * (0.12 - d.z));
     } else if (fp) {
       const h = this.eye / 0.9,
         back = h * FP_EYE.back,
@@ -7080,12 +7073,6 @@ export class Shooter {
       this.fpZ = this.fpZ === undefined ? off : this.fpZ + (off - this.fpZ) * Math.min(1, real * 10);
       const ez = bz + this.fpZ;
       cam.position.set(b.x - cy * back + sy * (side + bobX), b.y - sy * back - cy * (side + bobX), ez + bobZ);
-    } else if (this.big) {
-      const G = this.big,
-        back = Math.max(this.camBack, G.top * RIDE_CAM.back) * (this.zoom ? 0.6 : 1) * (1 + pk * 2.6),
-        side = G.top * RIDE_CAM.side,
-        pz = bz + G.top * RIDE_CAM.lift + pk * back * 0.5;
-      cam.position.set(b.x - d.x * back + sy * side, b.y - d.y * back - cy * side, pz - d.z * back);
     } else {
       const back = this.camBack * (this.melee ? MELEE.cam : this.zoom ? 0.55 : 1) * (1 + pk * 2.6),
         side = this.eye * 0.35,
@@ -7117,7 +7104,7 @@ export class Shooter {
     }
     b.holder.visible = !b.inside;
     this.eyeAt.copy(cam.position);
-    this.pose(b, fp && !this.big);
+    this.pose(b, fp);
     if (scoped) b.holder.visible = false;
     this.scopeEl.style.display = scoped ? 'block' : 'none';
     this.feedGround();

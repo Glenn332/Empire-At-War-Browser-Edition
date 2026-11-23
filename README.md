@@ -86,6 +86,8 @@ The controls are the same as the original:
 | P, + / - | pause, game speed |
 | Esc | cancel, deselect, menu |
 
+**Battlefront mode (land battles):** press **B** (controller **Y / Triangle**) to switch between first and third person as a trooper. In a vehicle, the same button switches between a centered chase camera and the driver or gunner's view. Press **E** to get out; your infantry view is unchanged. **O → Infantry view / Vehicle view** lets you set each preference. Both are remembered on this browser. Melee heroes keep their third-person camera, and deployed artillery keeps its overhead sight.
+
 ## For developers
 
 It is plain JavaScript modules on three.js, with no build step needed to run it.
