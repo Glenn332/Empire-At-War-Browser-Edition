@@ -1,9 +1,16 @@
 export const stacks = [
-  [[], 'base', 'base', null],
-  [['Parent'], 'parent', 'parent', 'inherited'],
-  [['Parent', 'Patch'], 'patch', null, 'inherited'],
-  [['Patch', 'Parent'], 'parent', 'parent', 'inherited']
+  { mods: [], reads: { Winner: 'base', Mask: 'base', ParentOnly: null } },
+  { mods: ['Parent'], reads: { Winner: 'parent', Mask: 'parent', ParentOnly: 'inherited' } },
+  { mods: ['Parent', 'Patch'], reads: { Winner: 'patch', Mask: null, ParentOnly: 'inherited' } },
+  { mods: ['Patch', 'Parent'], reads: { Winner: 'parent', Mask: 'parent', ParentOnly: 'inherited' } }
 ];
+
+export function* stackReads(row, edition) {
+  for (const [name, expected] of Object.entries({ ...row.reads, Edition: edition })) {
+    yield [`data/probe/${name}.txt`, expected];
+    yield [`DATA\\PROBE\\${name.toUpperCase()}.TXT`, expected];
+  }
+}
 
 export function fixtureFiles() {
   const png = encoded => Uint8Array.from(atob(encoded), char => char.charCodeAt(0));

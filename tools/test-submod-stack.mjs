@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fixtureFiles, stacks } from './submod-fixture.js';
+import { fixtureFiles, stackReads, stacks } from './submod-fixture.js';
 
 const { openGame } = await import(pathToFileURL(path.resolve('tools/megfs.mjs')).href);
 const temporary = path.resolve(os.tmpdir());
@@ -22,7 +22,8 @@ try {
 
   for (const expansion of [false, true]) {
     const edition = expansion ? 'foc' : 'eaw';
-    for (const [mods, winner, mask, parentOnly] of stacks) {
+    for (const row of stacks) {
+      const { mods } = row;
       const game = openGame(
         install,
         mods.map(name => path.join(root, name)),
@@ -30,16 +31,9 @@ try {
       );
       const stack = mods.join(' + ') || 'base';
       try {
-        for (const [file, expected] of [
-          ['Winner', winner],
-          ['Mask', mask],
-          ['ParentOnly', parentOnly],
-          ['Edition', edition]
-        ]) {
-          for (const key of [`data/probe/${file}.txt`, `DATA\\PROBE\\${file.toUpperCase()}.TXT`]) {
-            const resolved = game.resolve(key);
-            assert.equal(resolved ? game.read(resolved).toString('utf8') : null, expected, `${edition}, ${stack}: ${key}`);
-          }
+        for (const [key, expected] of stackReads(row, edition)) {
+          const resolved = game.resolve(key);
+          assert.equal(resolved ? game.read(resolved).toString('utf8') : null, expected, `${edition}, ${stack}: ${key}`);
         }
       } finally {
         game.close();

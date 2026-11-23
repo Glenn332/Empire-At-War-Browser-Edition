@@ -1,7 +1,0 @@
-<Difficulty_Adjustments>
-  <Difficulty_Adjustment Name="Easy_Default">
-    <Land_Build_Time_Multiplier>1</Land_Build_Time_Multiplier>
-    <Space_Build_Time_Multiplier>1</Space_Build_Time_Multiplier>
-    <Galactic_Build_Time_Multiplier>2</Galactic_Build_Time_Multiplier>
-  </Difficulty_Adjustment>
-</Difficulty_Adjustments>
