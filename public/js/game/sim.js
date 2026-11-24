@@ -3854,7 +3854,10 @@ export class World {
     }
     const C = VIS_CELL,
       grid = this.visGrid || (this.visGrid = new Map());
-    for (const l of grid.values()) l.length = 0;
+    for (const cell of grid.values()) {
+      cell.units.length = 0;
+      cell.unseen.fill(0);
+    }
     let maxHit = 0,
       gx0 = Infinity,
       gx1 = -Infinity,
@@ -3883,13 +3886,20 @@ export class World {
       if (cx > gx1) gx1 = cx;
       if (cy < gy0) gy0 = cy;
       if (cy > gy1) gy1 = cy;
-      let l = grid.get(k);
-      if (!l) grid.set(k, (l = []));
-      l.push(u);
+      let cell = grid.get(k);
+      if (!cell) grid.set(k, (cell = { units: [], unseen: new Int32Array(32) }));
+      cell.units.push(u);
     }
+    // Each cell counts, per team, the units that team does not see yet. An observer skips a cell its team
+    // already sees all of; visibility only ever gains bits here, so the result is the same as a full walk.
+    const teamBits = this.teams.map(t => t.bit).filter(bit => bit);
+    for (const cell of grid.values())
+      for (const u of cell.units)
+        for (const bit of teamBits) if (!(u.visMask & bit)) cell.unseen[31 - Math.clz32(bit)]++;
     for (const o of units) {
       if (o.dead || o.player.id < 0) continue;
       const bit = o.player.bit,
+        slot = 31 - Math.clz32(bit),
         reach = Math.max(o.revealRange + maxHit, 160);
       if (!(reach >= 0)) continue;
       const x0 = Math.max(gx0, Math.floor((o.x - reach) / C)),
@@ -3898,13 +3908,16 @@ export class World {
         y1 = Math.min(gy1, Math.floor((o.y + reach) / C));
       for (let ix = x0; ix <= x1; ix++)
         for (let iy = y0; iy <= y1; iy++) {
-          const l = grid.get(ix * 65536 + iy);
-          if (l)
-            for (const u of l) {
-              if (u.visMask & bit) continue;
-              const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
-              if (dist2(u, o) <= r * r) u.visMask |= bit;
+          const cell = grid.get(ix * 65536 + iy);
+          if (!cell || !cell.unseen[slot]) continue;
+          for (const u of cell.units) {
+            if (u.visMask & bit) continue;
+            const r = u.cloaked ? 160 : o.revealRange + u.hitRadius;
+            if (dist2(u, o) <= r * r) {
+              u.visMask |= bit;
+              if (--cell.unseen[slot] === 0) break;
             }
+          }
         }
     }
     const FC = (this.fowCell ||= db.constants.num('DesiredSpaceFOWCellSize', 100)),
