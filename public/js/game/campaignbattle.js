@@ -431,7 +431,8 @@ export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech, 
   };
 }
 
-export function placeCampaignBattle(w, map, teams, cb) {
+// `random` picks the station position; multiplayer passes the battle's seeded random so every peer agrees.
+export function placeCampaignBattle(w, map, teams, cb, random = Math.random) {
   w.holdHyperspace = cb.linked?.cinematic === 2;
   const stations = markers(map, 'Space Station Position'),
     defend = markers(map, 'Defending Forces Position')[0] || { x: 0, y: 0 };
@@ -532,7 +533,7 @@ export function placeCampaignBattle(w, map, teams, cb) {
         );
   const d = cb.defender;
   if (d.station) {
-    const st = stations[Math.floor(Math.random() * stations.length)] || defend;
+    const st = stations[Math.floor(random() * stations.length)] || defend;
     const team = teams[d.team];
     book.station = team.station = team.firstStation = w.spawn(db.type(d.station), owner(team), st.x, st.y, st.heading);
   }

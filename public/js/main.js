@@ -23,7 +23,7 @@ import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
-import { seedSim } from './game/simrandom.js';
+import { seedSim, simRandom } from './game/simrandom.js';
 import { Lockstep, TURN, CHAT_MAX, chatText } from './game/netgame.js';
 import { ticker, NetSession } from './net.js';
 import { execute } from './game/commands.js';
@@ -602,7 +602,7 @@ class Game {
       await loadBlackMarket();
       cbk.attacker.units = cbk.attacker.units.map(u => ({ ...u, type: db.type(u.type) })).filter(u => u.type);
       cbk.defender.units = cbk.defender.units.map(u => ({ ...u, type: db.type(u.type) })).filter(u => u.type);
-      this.campaignBook = placeCampaignBattle(world, map, teams, cbk);
+      this.campaignBook = placeCampaignBattle(world, map, teams, cbk, this.setup.net ? simRandom : Math.random);
       world.overrunSides = [teams[cbk.attacker.team], teams[cbk.defender.team]];
       this.retreat = this.spaceRetreat(cbk);
       placeCampaignSpecialWeapons(world, map.objects, cbk, faction => {
@@ -1596,8 +1596,8 @@ class Game {
   autoResolveNow() {
     if (!this.canRetreat()) return;
     if (this.mirror) {
-      if (this.paused) this.togglePause();
-      this.mirror.command({ c: 'autoresolve' });
+      if (this.paused && !this.lock) this.togglePause();
+      this.command({ c: 'autoresolve' });
       return;
     }
     const code = this.retreat.canRetreat(this.human);
@@ -1621,7 +1621,9 @@ class Game {
     this.tacticalVictoryNotice(team, suppressNotice);
   }
   campaignFinished(outcome) {
-    this.campaignOutcome = outcome;
+    const { credits, storyFlags, ...rest } = outcome;
+    this.campaignCredits = credits;
+    this.campaignOutcome = rest;
   }
   retreatActive(on) {
     this.retreatingHere = !!on;
@@ -1659,7 +1661,8 @@ class Game {
       mpBattleParent().mpBattles.returned(this.campaignOutcome);
       return;
     }
-    if (this.campaignOutcome && this.world.tacticalSessions && !this.mirrorCampaign) this.campaignOutcome.credits = this.tacticalCredits();
+    if (this.campaignOutcome && this.world.tacticalSessions)
+      this.campaignOutcome.credits = this.mirrorCampaign ? this.campaignCredits : this.tacticalCredits();
     const { galaxy, ...result } = this.campaignOutcome || {};
     result.storyDelayed = this.storyDelayed || [];
     if (this.builtUpgrades?.length) result.upgradesBuilt = this.builtUpgrades.slice();
@@ -1981,12 +1984,12 @@ class Game {
     );
   }
 
-  // Galactic conquest space battles run on the battle thread; battles with their own story plots, tutorials, linked
-  // missions, multiplayer campaign battles and battles with tactical superweapons stay on the page for now.
+  // Galactic conquest space battles run on the battle thread, alone or in multiplayer; battles with their own story
+  // plots, tutorials, linked missions and battles with tactical superweapons stay on the page for now.
   conquestOnBattleThread() {
     const setup = this.setup,
       cb = setup.campaign;
-    if (!cb || setup.net || setup.linkedTactical || setup.tacticalStoryPlot || cb.linked || cb.storyPlots?.length || cb.galaxy?.players?.some(p => p.tutorial))
+    if (!cb || setup.linkedTactical || setup.tacticalStoryPlot || cb.linked || cb.storyPlots?.length || cb.galaxy?.players?.some(p => p.tutorial))
       return false;
     if (new URLSearchParams(location.search).has('nocampaignworker')) return false;
     const typeOf = t => (typeof t === 'string' ? db.type(t) : t);

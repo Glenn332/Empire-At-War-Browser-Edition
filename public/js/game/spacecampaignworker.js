@@ -70,6 +70,8 @@ export async function campaignBattle(game, m, refs, thing, events) {
   if (cs.tacticalSessions) w.tacticalSessions = cs.tacticalSessions;
   if (cs.reinforcementsOff) w.reinforcementsOff = new Set(cs.reinforcementsOff);
   game.over = false;
+  // The player on this page: in multiplayer each peer's story, retreat button and sounds are its own player's.
+  if (m.viewer !== null && m.viewer !== undefined) game.human = w.players.find(p => p.id === m.viewer) || game.human;
   presentation(game, events);
   game.campaignBook = { entity: new Map(), waiting: [], absent: [], station: null, anchors: {}, called: new Map() };
   restoreSpaceCampaign(game, save, refs);
