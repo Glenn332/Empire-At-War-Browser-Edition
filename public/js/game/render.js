@@ -882,8 +882,9 @@ export class Renderer {
 
   // A ship off screen still has to be posed and drawn into the shadow map when its shadow can land
   // inside the shadow camera's square; ships farther away cast nothing that can be seen.
+  // Squadron fighters cast no shadow: they are small, many and move every step.
   castsShadowInView(unit) {
-    if (!unit.casters || !this.shadowsOn) return false;
+    if (!unit.casters || !this.shadowsOn || unit.squad) return false;
     const rig = this.rig,
       reach = shadowHalfExtent(rig.dist) * SHADOW_CASTER_REACH + (unit.visualRadius || 0);
     return (unit.x - rig.x) ** 2 + (unit.y - rig.y) ** 2 <= reach * reach;
