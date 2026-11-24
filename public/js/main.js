@@ -9,6 +9,7 @@ import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/lin
 import { mpBattleParent } from './game/galacticmpbattle.js';
 import { startGalaxyFrame, galaxyFrameSetup } from './game/mpgalaxyframe.js';
 import { restoreFullscreen } from './pointertrap.js';
+import { warnSlowGpu } from './gpucheck.js';
 import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
@@ -3465,6 +3466,7 @@ async function boot() {
     return;
   }
   if (window.parent === window) watchForResume(() => window.game);
+  if (window.parent === window && !params.has('benchmark')) warnSlowGpu();
   let pending = null;
   try {
     pending = sessionStorage.getItem('swr-load');
