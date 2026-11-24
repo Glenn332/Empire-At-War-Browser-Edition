@@ -132,9 +132,15 @@ function tex(dlgId, ctlId, key) {
 }
 
 const designAspect = new Map();
-const textHeight = dialogId => Math.min(innerHeight, Math.floor(innerWidth / (designAspect.get(dialogId) || 4 / 3)));
+// Full-screen dialogs are stretched to the screen. Text sizes follow the screen height as in the engine, so on a
+// wide screen every line fills less of its stretched box. Wrapped text lists have the height to spare and follow
+// the stretched width instead, so they fill their boxes as they do at 4:3 (ours). Labels keep the engine size: they
+// often sit close together and their text is taller than their boxes.
+const stretchedDialogs = new Set();
+const widthTextHeight = dialogId => Math.floor(innerWidth / (designAspect.get(dialogId) || 4 / 3));
+const textHeight = (dialogId, grow = false) => (grow ? widthTextHeight(dialogId) : Math.min(innerHeight, widthTextHeight(dialogId)));
 
-function font(ctlId, kind, nativeSize = false, dialogId = null) {
+function font(ctlId, kind, nativeSize = false, dialogId = null, grow = false) {
   const F = nativeSize ? data.fonts : data.legacyFonts,
     own = ctlId && F.get(ctlId.toUpperCase()),
     def = F.get('DEFAULT');
@@ -153,7 +159,7 @@ function font(ctlId, kind, nativeSize = false, dialogId = null) {
   const family = fontFamily(f.Name || 'Arial');
   const scale = nativeSize ? innerHeight / 768 : Math.min(innerHeight / 768, innerWidth / 1024),
     widthScale = nativeSize ? innerWidth / 1024 : scale;
-  const basePixels = dialogFontPixels(textHeight(dialogId), parseInt(f.Size, 10) || 7),
+  const basePixels = dialogFontPixels(textHeight(dialogId, grow), parseInt(f.Size, 10) || 7),
     stretch = parseFloat(f.Stretch_Factor) || 1;
   const physical = stretchedFontHeight(basePixels, stretch);
   const face = f.Name || 'Arial',
@@ -163,6 +169,7 @@ function font(ctlId, kind, nativeSize = false, dialogId = null) {
     controlId: ctlId,
     kind,
     dialogId,
+    grow,
     face,
     basePixels,
     bitmap,
@@ -222,7 +229,7 @@ function nativeLabel(el, text, f, options = {}) {
     bottom: f.bottom,
     outline: f.outline,
     emboss: f.emboss,
-    screenHeight: textHeight(f.dialogId),
+    screenHeight: textHeight(f.dialogId, f.grow),
     ...options
   });
 }
@@ -361,7 +368,7 @@ async function gadgetInsets(id, cid) {
 
 async function nativeList(parent, id, c) {
   const inset = await gadgetInsets(id, c.id),
-    f = font(c.id, 'List_Box', true, id);
+    f = font(c.id, 'List_Box', true, id, stretchedDialogs.has(id));
   f.bitmap ||= await loadNativeFont(f.face, f.basePixels, f.wide);
   const ctx = document.createElement('canvas').getContext('2d');
   ctx.font = `${f.bold ? 'bold ' : ''}${f.px * f.metricScale}px ${f.family || 'Arial'}`;
@@ -848,10 +855,12 @@ export async function openDialog(
   anchor ??= at ? 0 : (ENGINE_ANCHOR[id] ?? 0);
   if (anchor === 9 && !stretch) anchor = 0;
   if (anchor >= 1 && anchor <= 8) at = await anchorAt(id, anchor, resource.w, resource.h);
+  if (anchor !== 9) stretchedDialogs.delete(id);
   if (anchor === 9) {
     const back = await image(tex(id, null, 'Frame_Background'));
     if (back?.w && back?.h && back.w / back.h > 4 / 3) designAspect.set(id, back.w / back.h);
     else designAspect.delete(id);
+    stretchedDialogs.add(id);
   }
   const centered = (size, reference) => Math.trunc(Math.fround(Math.fround(1 - Math.fround(size / reference)) * (reference / 2)));
   const dx = anchor === 9 ? centered(resource.w, 1024) : 0,
@@ -859,11 +868,12 @@ export async function openDialog(
   const dlg =
     anchor === 9 ? { ...resource, w: 1024, h: 768, controls: resource.controls.map(c => ({ ...c, x: c.x + dx, y: c.y + dy })) } : resource;
   if (nativeFonts) {
-    const descriptors = dlg.controls.flatMap(c =>
-      ['Push_Button', 'Radio_Button', 'Check_Box', 'L_Text', 'C_Text', 'R_Text', 'List_Box', 'Overlay_Caption_Text'].map(kind =>
+    const descriptors = dlg.controls.flatMap(c => [
+      ...['Push_Button', 'Radio_Button', 'Check_Box', 'L_Text', 'C_Text', 'R_Text', 'List_Box', 'Overlay_Caption_Text'].map(kind =>
         font(c.id, kind, true, id)
-      )
-    );
+      ),
+      ...(stretchedDialogs.has(id) ? [font(c.id, 'List_Box', true, id, true)] : [])
+    ]);
     await Promise.all(
       [...new Map(descriptors.map(f => [rasterKey(f), f])).values()].map(async f =>
         rasterFonts.set(rasterKey(f), await loadNativeFont(f.face, f.basePixels, f.wide))
@@ -920,7 +930,7 @@ export async function openDialog(
   const ctls = new Map(),
     sources = new Map(),
     refreshers = new Set(),
-    controlFont = (cid, kind) => font(resource.controls.find(c => c.id === cid)?.fontOf || cid, kind, nativeFonts, id);
+    controlFont = (cid, kind, grow = false) => font(resource.controls.find(c => c.id === cid)?.fontOf || cid, kind, nativeFonts, id, grow);
   const firstControl = el.children.length;
   for (const c0 of dlg.controls) {
     const c = (adjust && adjust(c0)) || c0;
@@ -1022,7 +1032,7 @@ export async function openDialog(
               return;
             }
             d._staticTextRequest = null;
-            const effect = Math.trunc(Math.fround(textHeight(f.dialogId) / 600) + 0.5),
+            const effect = Math.trunc(Math.fround(textHeight(f.dialogId, f.grow) / 600) + 0.5),
               lines = wrapStaticText(value, c.w * f.widthScale, t => f.bitmap.measure(t, f.padding) + (f.outline ? effect : 0)),
               pitch = ((f.bitmap.height + (f.outline || f.emboss ? effect : 0)) * 1.05) / f.metricScale;
             d.replaceChildren();
@@ -1176,7 +1186,7 @@ export async function openDialog(
       );
       if (c.kind === 'LISTBOX') {
         d._rows = box(d, 'dlg-rows', 3, 3, c.w - 6, c.h - 6);
-        styleText(d._rows, controlFont(c.id, 'List_Box'));
+        styleText(d._rows, controlFont(c.id, 'List_Box', stretchedDialogs.has(id)));
       }
       if (c.kind === 'EDITTEXT') {
         const inp = document.createElement('input');

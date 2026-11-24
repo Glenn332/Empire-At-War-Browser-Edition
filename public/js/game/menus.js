@@ -513,16 +513,15 @@ export class Menus {
   }
 
   extra(dlg, like, label, x, y, w, fn) {
-    const src = dlg.ctl(like);
-    const b = src.cloneNode(true);
-    b.style.left = x + 'px';
-    b.style.top = y + 'px';
-    b.style.width = w + 'px';
-    b.firstChild.textContent = label;
-    b.classList.remove('off');
-    b.onclick = fn;
-    dlg.el.appendChild(b);
-    return b;
+    const id = `${like}_EXTRA_${String(label).replace(/\W+/g, '_').toUpperCase()}`;
+    const button = dlg.clone(like, id, x, y);
+    if (!button) return null;
+    button.style.width = w + 'px';
+    button.classList.remove('off');
+    button.hidden = false;
+    dlg.setText(id, label);
+    button.onclick = fn;
+    return button;
   }
 
   async saveRows() {
