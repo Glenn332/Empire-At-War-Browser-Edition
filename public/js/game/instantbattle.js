@@ -222,42 +222,110 @@ export function entryPoints(min, max, count, turn = 0, inset = EDGE_MARGIN) {
 const FORMATION_DEPTH = 900;
 const GAP_MIN = 40,
   GAP = 0.15,
-  SQUEEZE_MIN = 0.4;
+  GAP_SIDE = 0.35,
+  SQUEEZE_MIN = 0.15,
+  CORNER_CLEAR = 1500;
 
-// Distance from (x, y) along (dx, dy) to the edge of the box.
-function runTo(x, y, dx, dy, lo, hi) {
-  let t = Infinity;
-  if (dx > 1e-6) t = Math.min(t, (hi.x - x) / dx);
-  else if (dx < -1e-6) t = Math.min(t, (lo.x - x) / dx);
-  if (dy > 1e-6) t = Math.min(t, (hi.y - y) / dy);
-  else if (dy < -1e-6) t = Math.min(t, (lo.y - y) / dy);
-  return Math.max(0, t);
+// The map border as one loop, counter-clockwise: bottom, right, top, left.
+// t runs along a side from its first corner; (nx, ny) points into the map.
+function borderOf(min, max) {
+  const W = max.x - min.x,
+    H = max.y - min.y;
+  const sides = [
+    { len: W, nx: 0, ny: 1, tx: 1, ty: 0, x0: min.x, y0: min.y, t: p => p.x - min.x },
+    { len: H, nx: -1, ny: 0, tx: 0, ty: 1, x0: max.x, y0: min.y, t: p => p.y - min.y },
+    { len: W, nx: 0, ny: -1, tx: -1, ty: 0, x0: max.x, y0: max.y, t: p => max.x - p.x },
+    { len: H, nx: 1, ny: 0, tx: 0, ty: -1, x0: min.x, y0: max.y, t: p => max.y - p.y }
+  ];
+  let from = 0;
+  for (const s of sides) {
+    s.from = from;
+    from += s.len;
+  }
+  const L = from,
+    cx = (min.x + max.x) / 2,
+    cy = (min.y + max.y) / 2,
+    // Loop position of a point, pushed out to the border from the map centre so
+    // a point on a diagonal lands on the corner rather than either side of it.
+    loop = q => {
+      const dx = q.x - cx,
+        dy = q.y - cy,
+        r = Math.min(Math.abs(dx) > 1e-6 ? W / 2 / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-6 ? H / 2 / Math.abs(dy) : Infinity),
+        p = Number.isFinite(r) ? { x: cx + dx * r, y: cy + dy * r } : { x: max.x, y: cy };
+      const d = [p.y - min.y, max.x - p.x, max.y - p.y, p.x - min.x];
+      const i = d.indexOf(Math.min(...d)),
+        s = sides[i];
+      return s.from + Math.max(0, Math.min(s.len, s.t(p)));
+    };
+  return { sides, L, loop };
 }
 
-// Rows across the spawn edge, biggest ships at the back, each ship spaced by its
-// own size rather than the largest in its group. Local coords: along points at
-// the map centre, left is lateral; the block is centred on along = 0.
-export function packFleet(list, room, maxDepth = Infinity) {
+const wrap = (v, L) => ((v % L) + L) % L;
+
+// Each fleet owns the border halfway to its neighbours and lines up along the
+// side holding most of that share; a corner tie goes to the later side, so
+// fleets at the corners turn the same way round and never share a side end.
+function borderShares(min, max, points) {
+  const B = borderOf(min, max),
+    { sides, L } = B,
+    pos = points.map(B.loop),
+    order = pos.map((_, i) => i).sort((a, b) => pos[a] - pos[b] || a - b),
+    n = points.length;
+  return points.map((_, i) => {
+    const r = order.indexOf(i),
+      prev = pos[order[(r + n - 1) % n]],
+      next = pos[order[(r + 1) % n]],
+      P = pos[i];
+    const a = P - (wrap(P - prev, L) || L) / 2,
+      b = P + (wrap(next - P, L) || L) / 2;
+    let best = null;
+    sides.forEach((s, k) => {
+      for (const shift of [-L, 0, L]) {
+        const u0 = Math.max(a, s.from + shift),
+          u1 = Math.min(b, s.from + shift + s.len);
+        if (u1 - u0 <= 0) continue;
+        if (!best || u1 - u0 > best.u1 - best.u0 + 1 || (u1 - u0 > best.u1 - best.u0 - 1 && u0 > best.u0))
+          best = { k, u0, u1, t0: u0 - s.from - shift, t1: u1 - s.from - shift };
+      }
+    });
+    return { ...best, a, b, side: sides[best.k], sides, L };
+  });
+}
+
+// Rows along the map side, biggest ships at the back, each ship spaced by its
+// own size rather than the largest in its group. Local coords: along is the
+// side's inward normal, left runs along the side; the block is centred on 0.
+// skew is the angle between the ships' facing and that normal.
+export function packFleet(list, room, maxDepth = Infinity, skew = 0) {
+  const sn = Math.abs(Math.sin(skew)),
+    cs = Math.abs(Math.cos(skew));
   const cells = list.map((u, i) => {
+    // Long ships get more room beside them, so they can turn out of the line.
     const [len, beam] = footprint(u.type),
-      gap = Math.max(GAP_MIN, Math.max(len, beam) * GAP);
-    return { u, i, c: shipClass(u.type), w: beam + gap, d: len + gap };
+      long = Math.max(len, beam),
+      side = Math.max(GAP_MIN, long * GAP_SIDE),
+      ahead = Math.max(GAP_MIN, long * GAP);
+    return { u, i, c: shipClass(u.type), w: len * sn + beam * cs + side, d: len * cs + beam * sn + ahead };
   });
   cells.sort((p, q) => q.c - p.c || q.w * q.d - p.w * p.d || p.i - q.i);
   const area = cells.reduce((s, c) => s + c.w * c.d, 0),
-    widest = cells.reduce((m, c) => Math.max(m, c.w), 0),
-    width = Math.max(widest, Math.min(room, Math.sqrt(area * 4)));
-  const rows = [];
-  let row = null;
-  for (const c of cells) {
-    if (!row || row.w + c.w > width) rows.push((row = { cells: [], w: 0, d: 0 }));
-    row.cells.push(c);
-    row.w += c.w;
-    row.d = Math.max(row.d, c.d);
-  }
+    widest = cells.reduce((m, c) => Math.max(m, c.w), 0);
+  const rowsOf = width => {
+    const rows = [];
+    let row = null;
+    for (const c of cells) {
+      if (!row || row.w + c.w > width) rows.push((row = { cells: [], w: 0, d: 0 }));
+      row.cells.push(c);
+      row.w += c.w;
+      row.d = Math.max(row.d, c.d);
+    }
+    return rows;
+  };
+  const deep = rows => rows.reduce((s, r) => s + r.d, 0);
+  const rows = rowsOf(Math.max(widest, Math.min(room, Math.sqrt(area * 4))));
   // Thousands of ships cannot fit at full spacing; squeeze the rows rather than
   // let the block run across the centre of the map.
-  const full = rows.reduce((s, r) => s + r.d, 0),
+  const full = deep(rows),
     k = full > maxDepth ? Math.max(SQUEEZE_MIN, maxDepth / full) : 1,
     depth = full * k,
     out = [];
@@ -270,7 +338,7 @@ export function packFleet(list, room, maxDepth = Infinity) {
     }
     along += r.d * k;
   }
-  return { slots: out, depth };
+  return { slots: out, depth, width: rows.reduce((m, r) => Math.max(m, r.w), 0) };
 }
 
 export function placeInstantBattle(w, teams, setup) {
@@ -281,8 +349,17 @@ export function placeInstantBattle(w, teams, setup) {
   const margin = 120,
     inX = x => Math.max(w.min.x + margin, Math.min(w.max.x - margin, x)),
     inY = y => Math.max(w.min.y + margin, Math.min(w.max.y - margin, y));
-  const fleets = new Map();
-  used.forEach((team, k) => {
+  const fleets = new Map(),
+    edges = used.map((_, k) => edgePoint(w.min, w.max, turn + (k * 2 * Math.PI) / Math.max(1, count))),
+    midX = (w.min.x + w.max.x) / 2,
+    midY = (w.min.y + w.max.y) / 2,
+    half = Math.min(w.max.x - w.min.x, w.max.y - w.min.y) / 2,
+    maxDepth = half * 0.5,
+    shares = borderShares(w.min, w.max, edges),
+    clampT = (t, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, t)));
+  // First pass: each fleet's ships, whether it keeps the campaign formation, and
+  // how far in it reaches when packed on its whole share of the border.
+  const plans = used.map((team, k) => {
     const list = [];
     for (const p of team.players) {
       if (p.id < 0) continue;
@@ -297,24 +374,68 @@ export function placeInstantBattle(w, teams, setup) {
       front = Math.max(front, x + r);
       side = Math.max(side, Math.abs(y) + r);
     }
-    const angle = turn + (k * 2 * Math.PI) / Math.max(1, count);
-    const edge = edgePoint(w.min, w.max, angle),
-      lo = { x: w.min.x + margin, y: w.min.y + margin },
-      hi = { x: w.max.x - margin, y: w.max.y - margin },
-      px = -Math.sin(edge.facing),
-      py = Math.cos(edge.facing),
-      room = 2 * Math.min(runTo(edge.x, edge.y, px, py, lo, hi), runTo(edge.x, edge.y, -px, -py, lo, hi));
-    const half = Math.min(w.max.x - w.min.x, w.max.y - w.min.y) / 2,
-      packed = front + back > FORMATION_DEPTH || 2 * side > room ? packFleet(list, Math.max(room, 1200), half * 0.5) : null;
-    const at = packed
-      ? edgePoint(w.min, w.max, angle, EDGE_MARGIN + packed.depth / 2)
-      : edgePoint(w.min, w.max, angle, EDGE_MARGIN + Math.max(back, Math.min(side, 600) * 0.5));
+    const sh = shares[k],
+      s = sh.side,
+      t0 = Math.max(sh.t0, margin),
+      t1 = Math.min(sh.t1, s.len - margin),
+      pack = front + back > FORMATION_DEPTH || 2 * side > t1 - t0,
+      mid = clampT(s.t(edges[k]), t0, t1),
+      px = s.x0 + s.tx * mid + s.nx * (EDGE_MARGIN + 1000),
+      py = s.y0 + s.ty * mid + s.ny * (EDGE_MARGIN + 1000),
+      skew = Math.atan2(midY - py, midX - px) - Math.atan2(s.ny, s.nx);
+    if (!pack) return { team, list, back, side, pack, skew, t0: mid - side, t1: mid + side, inward: EDGE_MARGIN + front + back };
+    const est = packFleet(list, t1 - t0, maxDepth, skew);
+    return { team, list, back, side, pack, skew, t0, t1, inward: EDGE_MARGIN + Math.min(est.depth, maxDepth) };
+  });
+  // Second pass: fleets sharing a side leave a gap between them, and where two
+  // fleets meet round a map corner the one with more side to spare steps back
+  // far enough to clear the other's depth (a tie goes against the fleet whose
+  // share wraps the corner).
+  const holds = (sh, c) => wrap(c - sh.a, sh.L) < sh.b - sh.a;
+  plans.forEach((p, k) => {
+    if (!p.pack) return;
+    const sh = shares[k];
+    if (shares.some((o, j) => j !== k && o.k === sh.k && Math.abs(o.t1 - sh.t0) < 1)) p.t0 += CORNER_CLEAR / 2;
+    if (shares.some((o, j) => j !== k && o.k === sh.k && Math.abs(o.t0 - sh.t1) < 1)) p.t1 -= CORNER_CLEAR / 2;
+  });
+  const sides = shares[0]?.sides || [];
+  sides.forEach((before, i) => {
+    const after = (i + 1) % 4,
+      corner = before.from + before.len;
+    // The fleet on each side nearest this corner, and how far it stays from it.
+    const nearest = (side, gapOf) =>
+      plans.reduce((m, p, j) => (shares[j].k !== side || gapOf(p) >= (m?.gap ?? Infinity) ? m : { j, p, gap: gapOf(p) }), null);
+    const A = nearest(i, p => before.len - p.t1),
+      B = nearest(after, p => p.t0);
+    if (!A || !B || A.gap >= B.p.inward + CORNER_CLEAR || B.gap >= A.p.inward + CORNER_CLEAR) return;
+    const lenA = A.p.t1 - A.p.t0,
+      lenB = B.p.t1 - B.p.t0,
+      aYields = !B.p.pack || (A.p.pack && (Math.abs(lenA - lenB) > 1 ? lenA > lenB : holds(shares[A.j], corner)));
+    // Never give up more than most of the stretch: a fleet squeezed into a
+    // sliver would run a single file across the map instead.
+    if (aYields) {
+      if (A.p.pack) A.p.t1 = Math.max(A.p.t0 + lenA * 0.4, Math.min(A.p.t1, before.len - B.p.inward - CORNER_CLEAR));
+    } else if (B.p.pack) B.p.t0 = Math.min(B.p.t1 - lenB * 0.4, Math.max(B.p.t0, A.p.inward + CORNER_CLEAR));
+  });
+  plans.forEach((plan, k) => {
+    const { team, list, back, side } = plan,
+      edge = edges[k],
+      s = shares[k].side;
+    let at, packed;
+    if (plan.pack) {
+      const room = Math.max(0, plan.t1 - plan.t0);
+      packed = packFleet(list, room, maxDepth, plan.skew);
+      const hw = Math.min(packed.width, room) / 2,
+        tc = clampT(s.t(edge), plan.t0 + hw, plan.t1 - hw),
+        inward = Math.min(EDGE_MARGIN + packed.depth / 2, half * 0.8),
+        x = s.x0 + s.tx * tc + s.nx * inward,
+        y = s.y0 + s.ty * tc + s.ny * inward;
+      at = { x, y, facing: Math.atan2(midY - y, midX - x) };
+    } else at = edgePoint(w.min, w.max, edge.angle, EDGE_MARGIN + Math.max(back, Math.min(side, 600) * 0.5));
     team.spawnPoints.push({ x: at.x, y: at.y, heading: at.facing });
     for (const p of team.players) if (p.id >= 0) p.spawn = team.spawnPoints[0];
-    const fx = Math.cos(at.facing),
-      fy = Math.sin(at.facing);
     const slots = packed
-      ? packed.slots.map(s => ({ u: s.u, x: at.x + fx * s.along - fy * s.left, y: at.y + fy * s.along + fx * s.left }))
+      ? packed.slots.map(q => ({ u: q.u, x: at.x + s.nx * q.along + s.tx * q.left, y: at.y + s.ny * q.along + s.ty * q.left }))
       : arrange(list, at, at.facing);
     const placed = [],
       spots = [];
