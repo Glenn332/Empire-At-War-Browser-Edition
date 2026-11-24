@@ -2111,6 +2111,12 @@
         const own = foldersSupported() ? await getGame().catch(() => null) : null;
         const live = !own && !info && (await assetsAvailable());
         const ok = !!(own || info || live);
+        let appGame = null;
+        if (app)
+          try {
+            if (!setup) setup = await appSetup().catch(() => null);
+            appGame = setup?.game || null;
+          } catch {}
         $('link').classList.toggle('ok', ok);
         $('current').textContent = own
           ? `Reading your installed game, “${own.name}” (${own.count.toLocaleString()} files)${own.compat ? ', in compatibility mode' : ''}.`
@@ -2118,7 +2124,11 @@
             ? `Using the game archive stored in this browser (${info.files.toLocaleString()} files).`
             : live
               ? 'This server reads the game straight from an install.'
-              : 'None yet. Choose your game folder or import an archive of it below.';
+              : appGame?.path
+                ? 'The game folder is missing files the game needs to run. See Your game below.'
+                : appGame
+                  ? 'No game folder found. Choose it under Your game below.'
+                  : 'None yet. Choose your game folder or import an archive of it below.';
         $('storeNote').textContent =
           own && info
             ? 'A stored archive is kept but not used while the folder is set.'
@@ -2864,10 +2874,27 @@
           busy = false;
         }
       }
+      function gameFolderProblem(g) {
+        if (!g.path || (g.ready && !g.incomplete)) return null;
+        const some = g.missing.slice(0, 3).join(', ') + (g.missingCount > 3 ? ` and ${g.missingCount - 3} more` : '');
+        const missing = g.missingCount ? ` Missing: ${some}.` : '';
+        const fix =
+          g.how === 'steam'
+            ? ' Steam may have moved the game to another library or left this copy behind: verify the game files in Steam, or choose the folder the game is in now.'
+            : ' Choose the folder the game is installed in (the one with GameData and corruption, or GameData and EAWX for the GOG release), or repair the install.';
+        return g.ready
+          ? { text: `Some of the game's files are missing from this folder, so parts of the game may not work.${missing}${fix}`, cls: '' }
+          : {
+              text: `This folder does not have the files the game needs to run, so the game cannot start from it.${missing}${fix}`,
+              cls: 'bad'
+            };
+      }
       function showAppGame() {
         const el = $('appGame'),
           g = setup.game;
         el.replaceChildren();
+        const problem = gameFolderProblem(g);
+        gameStatus(problem ? problem.text : '', problem ? problem.cls : '');
         const h = document.createElement('p');
         h.className = 'note';
         h.style.marginTop = '0';

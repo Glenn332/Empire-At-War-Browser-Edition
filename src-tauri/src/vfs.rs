@@ -111,6 +111,58 @@ fn mega_files(xml: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The game's own archives a folder is missing: each part of the game (GameData, and the
+/// expansion when its folder is there) lists them in Data/MegaFiles.xml. An install only has
+/// the speech and text of the languages it was installed in, so archives named for a
+/// language are left out. A complete install can still miss one or two listed archives (the
+/// Steam release has no expansion Cinematics.meg, and the engine skips listed archives that
+/// are not there), so this is a measure of how complete a copy is, not a verdict.
+pub fn missing_game_files(game_dir: &Path) -> Vec<String> {
+    let mut roots = vec![("GameData".to_string(), game_dir.join("GameData"))];
+    for name in crate::setup::EXPANSION_DIRS {
+        if let Some(root) = find_case_insensitive(game_dir, name) {
+            let shown = root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| name.to_string());
+            roots.push((shown, root));
+        }
+    }
+    let mut missing = vec![];
+    for (shown, root) in roots {
+        let Some(list) = find_case_insensitive(&root, "Data/megafiles.xml") else {
+            missing.push(format!("{shown}/Data/MegaFiles.xml"));
+            continue;
+        };
+        for archive in mega_files(&list) {
+            if !names_a_language(&archive) && find_case_insensitive(&root, &archive).is_none() {
+                missing.push(format!("{shown}/{archive}"));
+            }
+        }
+    }
+    missing
+}
+
+/// More missing archives than a complete install ever misses: the copy has lost files.
+pub const MISSING_IN_A_BROKEN_COPY: usize = 3;
+
+/// Of several copies of the game, the one missing the fewest archives (the first on a tie).
+pub fn most_complete<T>(copies: Vec<T>, path: impl Fn(&T) -> &Path) -> Option<T> {
+    let mut best: Option<(usize, T)> = None;
+    for copy in copies {
+        let missing = missing_game_files(path(&copy)).len();
+        if best.as_ref().is_none_or(|(fewest, _)| missing < *fewest) {
+            best = Some((missing, copy));
+        }
+    }
+    best.map(|(_, copy)| copy)
+}
+
+fn names_a_language(archive: &str) -> bool {
+    let name = archive.rsplit('/').next().unwrap_or(archive).to_uppercase();
+    LANGUAGES.iter().any(|language| name.contains(language))
+}
+
 fn meg_list(root: &Path, language: usize) -> Vec<String> {
     let mut out = mega_files(&root.join("Data").join("megafiles.xml"));
     out.extend(["Data/Patch.meg", "Data/Patch2.meg", "Data/64Patch.meg"].map(String::from));

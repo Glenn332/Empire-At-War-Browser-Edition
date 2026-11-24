@@ -59,11 +59,15 @@ pub fn libraries() -> Vec<PathBuf> {
     out
 }
 
+/// The game's folder in a Steam library. A library can keep an old, emptied copy after the
+/// game moved to another one, so the most complete copy wins.
 pub fn game_folder() -> Option<PathBuf> {
-    libraries()
+    let found: Vec<PathBuf> = libraries()
         .into_iter()
         .map(|l| l.join("steamapps").join("common").join(FOLDER))
-        .find(|p| p.join("GameData").is_dir())
+        .filter(|p| p.join("GameData").is_dir())
+        .collect();
+    crate::vfs::most_complete(found, |path| path)
 }
 
 pub fn workshop_item(id: &str) -> Option<PathBuf> {

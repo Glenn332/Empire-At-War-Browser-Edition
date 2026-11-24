@@ -191,6 +191,20 @@ fn query(uri: &tauri::http::Uri) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The game folder the app finds by itself: Steam's, then GOG's, then the development copy,
+/// but a copy missing fewer of its files wins (an old, emptied Steam copy loses to GOG's).
+fn found_game(steam: Option<&Path>, fallback: Option<&Path>) -> Option<(PathBuf, &'static str)> {
+    let found: Vec<(PathBuf, &'static str)> = [
+        (steam.map(PathBuf::from), "steam"),
+        (gog::game_folder(), "gog"),
+        (fallback.map(PathBuf::from), "dev"),
+    ]
+    .into_iter()
+    .filter_map(|(path, how)| path.map(|path| (path, how)))
+    .collect();
+    vfs::most_complete(found, |(path, _)| path)
+}
+
 fn open(dir: &Path, mods: &[PathBuf], expansion: bool) -> Arc<Opened> {
     let t0 = std::time::Instant::now();
     let game = Game::open(dir, mods, 0, expansion);
@@ -219,12 +233,8 @@ impl Server {
             (Some(e.clone()), "env")
         } else if let Some(c) = chosen {
             (Some(c), "chosen")
-        } else if let Some(s) = &steam {
-            (Some(s.clone()), "steam")
-        } else if let Some(g) = gog::game_folder() {
-            (Some(g), "gog")
-        } else if let Some(f) = &self.fallback {
-            (Some(f.clone()), "dev")
+        } else if let Some((found, how)) = found_game(steam.as_deref(), self.fallback.as_deref()) {
+            (Some(found), how)
         } else {
             (None, "none")
         };
@@ -321,7 +331,26 @@ impl Server {
         let st = self.state.read().unwrap();
         let versions = steam::workshop_versions();
         let sources: Vec<serde_json::Value> = st.sources.iter().map(|s| serde_json::json!({ "path": s.path, "kind": s.kind, "mods": setup::mods_in(s, &versions).len() })).collect();
-        serde_json::json!({ "game": { "path": st.dir, "how": st.how, "steam": st.steam }, "sources": sources, "hidden": st.settings.hidden })
+        let missing = st
+            .dir
+            .as_deref()
+            .map(vfs::missing_game_files)
+            .unwrap_or_default();
+        let ready = st.foc.as_ref().is_some_and(|opened| {
+            opened
+                .game
+                .resolve("Data/XML/GameObjectFiles.xml")
+                .is_some()
+        });
+        serde_json::json!({
+            "game": {
+                "path": st.dir, "how": st.how, "steam": st.steam, "ready": ready,
+                "missing": missing.iter().take(8).collect::<Vec<_>>(), "missingCount": missing.len(),
+                "incomplete": missing.len() >= vfs::MISSING_IN_A_BROKEN_COPY
+            },
+            "sources": sources,
+            "hidden": st.settings.hidden
+        })
     }
 
     fn local_mods(&self) -> Vec<serde_json::Value> {
@@ -830,9 +859,9 @@ fn main() {
                 .map(PathBuf::from)
                 .filter(|p| setup::is_game(p))
         })
-        .or_else(steam::game_folder)
-        .or_else(gog::game_folder)
-        .or_else(|| fallback.clone());
+        .or_else(|| {
+            found_game(steam::game_folder().as_deref(), fallback.as_deref()).map(|(found, _)| found)
+        });
     let mods = first
         .as_ref()
         .map(|d| steam::mods(&args, d))
