@@ -930,7 +930,7 @@ export async function openDialog(
       d = box(el, 'dlg-btn', c.x, c.y, c.w, c.h);
       const caps = {};
       for (const st of ['', '_Mouse_Over', '_Pressed', '_Disabled'])
-        for (const part of ['Left', 'Middle', 'Right']) caps[part + st] = await image(tex(id, c.id, 'Button_' + part + st));
+        for (const part of ['Left', 'Middle', 'Right']) caps[part + st] = await image(tex(id, c.skin || c.id, 'Button_' + part + st));
       await Promise.all(
         Object.values(caps)
           .filter(Boolean)
@@ -967,7 +967,7 @@ export async function openDialog(
       const t = document.createElement('span');
       t.textContent = text;
       d.appendChild(t);
-      const f = controlFont(c.id, 'Push_Button');
+      const f = controlFont(c.skin || c.id, 'Push_Button');
       styleText(t, f);
       if (nativeFonts) {
         t.style.position = 'relative';
@@ -1116,7 +1116,7 @@ export async function openDialog(
       d.style.setProperty('--on', await u('Radio_On'));
       d.style.setProperty('--off', await u('Radio_Off'));
       d.style.setProperty('--over', await u('Radio_Mouse_Over'));
-      const off = nativeFonts ? await image(tex(id, c.id, 'Radio_Off')) : null;
+      const off = nativeFonts ? await image(tex(id, c.skin || c.id, 'Radio_Off')) : null;
       if (off) {
         d._nativeReflow = () => {
           d.style.width = off.w + 'px';
@@ -1127,7 +1127,7 @@ export async function openDialog(
       const t = document.createElement('span');
       t.textContent = text;
       d.appendChild(t);
-      const f = controlFont(c.id, nativeFonts ? 'Radio_Button' : 'Push_Button');
+      const f = controlFont(c.skin || c.id, nativeFonts ? 'Radio_Button' : 'Push_Button');
       styleText(t, f);
       if (nativeFonts && !/BS_PUSHLIKE/.test(c.style)) {
         t.style.position = 'absolute';

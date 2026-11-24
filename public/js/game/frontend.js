@@ -8,6 +8,26 @@ import { loadDialogs } from './dialogs.js';
 
 const PANEL = { cls: 'front', stretch: true };
 
+// The options column gains a Tweaks button. Empire at War draws the button pads into its panel art
+// (MenuBack_overlay_panel_6button) with no spare pad, so there Tweaks takes the pad of Mods Options, which this
+// edition never enables. Forces of Corruption buttons draw their own pads on a plain panel, so there everything above
+// Back moves up one step and Tweaks sits above Back.
+function optionsColumn(def, frameBackground) {
+  const controls = def?.controls || [];
+  const buttons = controls.filter(c => /^IDC_MAIN_OPTIONS_|^IDC_OK_MAIN$/.test(c.id) && /PUSHBUTTON/.test(c.kind)).sort((a, b) => a.y - b.y);
+  const back = buttons.find(c => c.id === 'IDC_OK_MAIN') || { id: 'IDC_OK_MAIN', x: 265, y: 706, w: 236, h: 21 };
+  const above = buttons.filter(c => c.y < back.y).at(-1);
+  const step = above ? back.y - above.y : 36;
+  const mods = buttons.find(c => c.id === 'IDC_MAIN_OPTIONS_MODS');
+  if (mods && /_\d+button\./i.test(frameBackground || '')) {
+    const tweaks = { x: mods.x, y: mods.y, w: mods.w, h: mods.h, skin: mods.id };
+    return { tweaks, placed: new Map(), replaces: mods.id };
+  }
+  const tweaks = { x: back.x, y: back.y - step, w: back.w, h: back.h, skin: back.id };
+  const moved = controls.filter(c => c.id !== back.id && c.id !== 'IDC_MENU_PETRO_LOGO' && c.y < back.y);
+  return { tweaks, placed: new Map(moved.map(c => [c.id, { ...c, y: c.y - step }])), replaces: null };
+}
+
 export class FrontEnd {
   constructor(game, { skirmish, instant, leave, start, multiplayer }) {
     this.game = game;
@@ -202,16 +222,14 @@ export class FrontEnd {
   }
 
   async options() {
-    const def = (await loadDialogs())?.dialogs.get('IDD_MAIN_OPTIONS_DIALOG'),
-      okC = def && def.controls.find(c => c.id === 'IDC_OK_MAIN'),
-      above = okC && def.controls.filter(c => /^IDC_MAIN_OPTIONS_/.test(c.id) && c.y < okC.y).sort((a, b) => b.y - a.y)[0],
-      ok = okC || { x: 265, y: 706, w: 236, h: 21 },
-      step = above ? ok.y - above.y : 36;
+    const dialogs = await loadDialogs();
+    const column = optionsColumn(dialogs?.dialogs.get('IDD_MAIN_OPTIONS_DIALOG'), dialogs?.textures.get('IDD_MAIN_OPTIONS_DIALOG')?.get('Frame_Background'));
     const dlg = await this.screen('IDD_MAIN_OPTIONS_DIALOG', [], {
-      extra: [{ kind: 'PUSHBUTTON', text: '', id: 'IDC_MAIN_OPTIONS_TWEAKS', x: ok.x, y: ok.y - step, w: ok.w, h: ok.h, style: '' }],
-      adjust: c => (c.id !== 'IDC_OK_MAIN' && c.id !== 'IDC_MAIN_OPTIONS_TWEAKS' && c.id !== 'IDC_MENU_PETRO_LOGO' && c.y < ok.y ? { ...c, y: c.y - step } : null)
+      extra: [{ kind: 'PUSHBUTTON', text: '', ...column.tweaks, id: 'IDC_MAIN_OPTIONS_TWEAKS', style: '' }],
+      adjust: c => column.placed.get(c.id) || null
     });
     if (!dlg) return;
+    if (column.replaces) dlg.ctl(column.replaces).hidden = true;
     dlg.setText('IDC_MAIN_OPTIONS_TWEAKS', 'Tweaks');
     dlg.on('IDC_MAIN_OPTIONS_TWEAKS', () => this.menus.tweaks());
     dlg.on('IDC_MAIN_OPTIONS_KEYBOARD', () => this.menus.keyboard());

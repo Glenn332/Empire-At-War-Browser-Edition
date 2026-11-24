@@ -83,6 +83,25 @@ const FULLSCREEN_MOUSE_TIP =
   'Keeps the mouse inside the game so it cannot slip onto another monitor: in fullscreen, and in the desktop app in a window too. Esc or Alt+Tab frees it.';
 const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space battles and on the galaxy map.';
 
+// Where the added keyboard rows go on a keyboard options page: the two columns of the page's own key boxes, the
+// labels inside the frame and left of the divider, and rows that stay inside the frame. The Forces of Corruption and
+// Empire at War pages differ in width, so everything is read from the page.
+function keyboardGrid(def) {
+  const controls = def?.controls || [];
+  const groups = controls.filter(c => c.kind === 'GROUPBOX').sort((a, b) => b.w - a.w);
+  const frame = groups[0] || { x: 15, y: 45, w: 851, h: 378 },
+    divider = groups[1] || { x: 435 };
+  const edits = controls.filter(c => c.kind === 'EDITTEXT').map(c => c.x);
+  const leftEditX = edits.length ? Math.min(...edits) : 303,
+    rightEditX = edits.length ? Math.max(...edits) : 729;
+  return {
+    labelX: [frame.x + 15, divider.x + 24],
+    editX: [leftEditX, rightEditX],
+    firstRowY: frame.y + 20,
+    lastRowY: frame.y + frame.h - 33
+  };
+}
+
 export class Menus {
   constructor(game) {
     this.game = game;
@@ -366,6 +385,11 @@ export class Menus {
     const own = page === 5,
       rows = ACTIONS.filter(a => a.page === page);
     const editOf = a => a.edit || 'IDC_EDIT_SWR_' + a.id;
+    const placed = rows.filter(a => a.extra);
+    const grid = keyboardGrid((await loadDialogs())?.dialogs.get(PAGES[page]));
+    const rowCount = Math.max(1, ...placed.map(a => a.extra.row + 1)),
+      rowStep = Math.min(23.4375, (grid.lastRowY - grid.firstRowY) / Math.max(1, rowCount - 1)),
+      rowY = a => Math.round(grid.firstRowY + rowStep * a.extra.row);
     const extra = [
       {
         kind: 'CONTROL',
@@ -379,16 +403,14 @@ export class Menus {
         w: 93,
         h: 18
       },
-      ...rows
-        .filter(a => a.extra)
-        .flatMap(a => [
-          { kind: 'LTEXT', text: a.label, id: 'IDC_STATIC_SWR_' + a.id, x: a.extra.col ? 459 : 30, y: a.extra.y, w: 235, h: 23, style: '' },
+      ...placed.flatMap(a => [
+          { kind: 'LTEXT', text: a.label, id: 'IDC_STATIC_SWR_' + a.id, x: grid.labelX[a.extra.col], y: rowY(a), w: 235, h: 23, style: '' },
           {
             kind: 'EDITTEXT',
             text: '',
             id: editOf(a),
-            x: a.extra.col ? 729 : 303,
-            y: a.extra.y - 5,
+            x: grid.editX[a.extra.col],
+            y: rowY(a) - 5,
             w: 108,
             h: 15,
             style: 'ES_CENTER | ES_AUTOHSCROLL'
@@ -421,7 +443,7 @@ export class Menus {
     };
     const mine = new Set(rows.map(editOf));
     if (own) {
-      dlg.setText('IDC_STATIC_MEDIUM', 'Other Commands');
+      dlg.setText('IDC_STATIC_MEDIUM', 'Game Controls');
       for (const e of dlg.el.querySelectorAll('.dlg-txt[data-id="IDC_STATIC"], .dlg-edit')) if (!mine.has(e.dataset.id)) e.hidden = true;
     }
     for (const c of dlg.def.controls) {
