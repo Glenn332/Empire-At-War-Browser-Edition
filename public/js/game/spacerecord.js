@@ -58,6 +58,42 @@ export class SpaceRecorder {
     this.props.push([id, v]);
   }
 
+  // True when a unit's slow state is what was last sent, checked field by field without building the list
+  // writeProps would compare. Most units change none of these in a step.
+  unitPropsUnchanged(u) {
+    const prev = this.sent.get(u.id);
+    if (!prev) return false;
+    const c = u.capture,
+      th = u.targetHp,
+      o = u.order,
+      q = u.queue,
+      sentOrder = prev[9];
+    if (
+      prev[0] !== (u.player ? u.player.id : -1) ||
+      prev[1] !== (c ? c.progress : 0) ||
+      prev[2] !== (c && c.by ? c.by.id : -1) ||
+      prev[3] !== (u.lastHitTime ?? -100) ||
+      prev[4] !== (u.inNebula ? 1 : 0) ||
+      prev[5] !== (u.ionUntil || 0) ||
+      prev[6] !== (u.scriptHidden ? 1 : 0) ||
+      prev[7] !== (u.maxHealth || 0) ||
+      prev[8] !== (u.maxShield || 0) ||
+      (q && q.length) ||
+      prev[10].length ||
+      (th && th.unit && th.unit.hardpoints && th.alive) ||
+      prev[11] !== null
+    )
+      return false;
+    if (!(o && o.kind && o.kind !== 'idle')) return sentOrder === null;
+    return (
+      !!sentOrder &&
+      sentOrder[0] === o.kind &&
+      sentOrder[1] === (o.x ?? null) &&
+      sentOrder[2] === (o.y ?? null) &&
+      sentOrder[3] === (o.target && !o.target.dead ? o.target.id : -1)
+    );
+  }
+
   writeProps() {
     const w = this.world,
       seen = new Set();
@@ -67,6 +103,7 @@ export class SpaceRecorder {
     for (const u of w.units) {
       if (u.dead) continue;
       seen.add(u.id);
+      if (this.unitPropsUnchanged(u)) continue;
       const c = u.capture,
         th = u.targetHp,
         hs = th && th.unit && th.unit.hardpoints;

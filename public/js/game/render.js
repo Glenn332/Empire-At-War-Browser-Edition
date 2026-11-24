@@ -948,7 +948,7 @@ export class Renderer {
     for (const b of batches.values()) b.n = 0;
     if (world)
       for (const u of world.units) {
-        if (u.dead || !u.casters || !u.obj.visible) continue;
+        if (u.dead || !u.casters || !u.obj.visible || !this.castsShadowInView(u)) continue;
         for (const m of u.casters) {
           let b = batches.get(m.geometry);
           if (!b) batches.set(m.geometry, (b = { n: 0, im: null }));

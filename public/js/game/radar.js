@@ -435,40 +435,21 @@ export class Radar {
     return on;
   }
 
-  draw(cv, ui, dt) {
-    const w = ui.world,
-      player = ui.player,
-      r = ui.r,
-      S = this.settings;
-    const box = cv.getBoundingClientRect(),
-      dpr = window.devicePixelRatio || 1;
-    const cw = Math.round(box.width * dpr),
-      ch = Math.round(box.height * dpr);
-    if (cw > 0 && ch > 0 && (cv.width !== cw || cv.height !== ch)) {
-      cv.width = cw;
-      cv.height = ch;
+  iconLayer(W, H) {
+    let layer = this.iconCanvas;
+    if (!layer) {
+      layer = this.iconCanvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(W, H) : document.createElement('canvas');
+      this.iconKey = {};
     }
-    const g = cv.getContext('2d'),
-      W = cv.width,
-      H = cv.height;
-    const sx = W / (w.max.x - w.min.x),
-      sy = H / (w.max.y - w.min.y);
-    const X = x => (x - w.min.x) * sx,
-      Y = y => (w.max.y - y) * sy;
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
-    g.clearRect(0, 0, W, H);
-    if (!S) return;
-    g.fillStyle = css(S.base);
-    g.fillRect(0, 0, W, H);
-    const fog = r.fog;
-    if (w.fog && fog && fog.mesh.visible) g.drawImage(this.fogCanvas(fog, S.fow), 0, 0, W, H);
-    if (w.radarFields?.length) g.drawImage(this.fieldLayer(w, W, H, X, Y, sx, sy, S), 0, 0, W, H);
-    if (this.backdrop) g.drawImage(this.grid(W, H), 0, 0);
-    const bit = player.bit,
-      radar = this.seeAll || this.radarOn(w, player),
-      sel = this.selColor && this.tone(this.selColor);
+    if (layer.width !== W || layer.height !== H) {
+      layer.width = W;
+      layer.height = H;
+      this.iconKey = {};
+    }
+    return layer;
+  }
+
+  drawIcons(g, w, player, X, Y, W, H, dpr, radar, sel, bit) {
     let fill = null;
     for (let pass = 0; pass < 2; pass++)
       for (const u of w.units) {
@@ -556,6 +537,57 @@ export class Radar {
           g.setTransform(1, 0, 0, 1, 0, 0);
         } else g.drawImage(img, x - hw, y - hh, hw * 2, hh * 2);
       }
+    g.globalAlpha = 1;
+  }
+
+  draw(cv, ui, dt) {
+    const w = ui.world,
+      player = ui.player,
+      r = ui.r,
+      S = this.settings;
+    const box = cv.getBoundingClientRect(),
+      dpr = window.devicePixelRatio || 1;
+    const cw = Math.round(box.width * dpr),
+      ch = Math.round(box.height * dpr);
+    if (cw > 0 && ch > 0 && (cv.width !== cw || cv.height !== ch)) {
+      cv.width = cw;
+      cv.height = ch;
+    }
+    const g = cv.getContext('2d'),
+      W = cv.width,
+      H = cv.height;
+    const sx = W / (w.max.x - w.min.x),
+      sy = H / (w.max.y - w.min.y);
+    const X = x => (x - w.min.x) * sx,
+      Y = y => (w.max.y - y) * sy;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, W, H);
+    if (!S) return;
+    g.fillStyle = css(S.base);
+    g.fillRect(0, 0, W, H);
+    const fog = r.fog;
+    if (w.fog && fog && fog.mesh.visible) g.drawImage(this.fogCanvas(fog, S.fow), 0, 0, W, H);
+    if (w.radarFields?.length) g.drawImage(this.fieldLayer(w, W, H, X, Y, sx, sy, S), 0, 0, W, H);
+    if (this.backdrop) g.drawImage(this.grid(W, H), 0, 0);
+    const bit = player.bit,
+      radar = this.seeAll || this.radarOn(w, player),
+      sel = this.selColor && this.tone(this.selColor);
+    // Unit and squadron icons only move when a battle step lands, so they are drawn into a layer once per
+    // step (or when the view, the radar or the selection changes) and copied onto every frame in between.
+    const layer = this.iconLayer(W, H),
+      key = this.iconKey;
+    const selection = sel ? ui.selection : null;
+    if (key.time !== w.time || key.w !== W || key.h !== H || key.player !== player || key.radar !== radar || key.selection !== selection || key.selected !== (selection ? selection.length : 0) || key.fog !== (w.fog && !this.seeAll)) {
+      Object.assign(key, { time: w.time, w: W, h: H, player, radar, selection, selected: selection ? selection.length : 0, fog: w.fog && !this.seeAll });
+      const lg = layer.getContext('2d');
+      lg.setTransform(1, 0, 0, 1, 0, 0);
+      lg.globalAlpha = 1;
+      lg.clearRect(0, 0, W, H);
+      this.drawIcons(lg, w, player, X, Y, W, H, dpr, radar, sel, bit);
+    }
+    g.drawImage(layer, 0, 0);
     g.globalAlpha = 1;
     if (w.beacons)
       this.drawBeacons(
