@@ -1,4 +1,5 @@
 import { F, O, MoveScene, moveFighter } from './fighterflight.js';
+import { DF, DS, DecideScene, decideSquad } from './fighterdecide.js';
 
 export const UNIT_CELL = 1024;
 export const UNIT_PAD = 200;
@@ -6,7 +7,37 @@ export const CAP_UNITS = 1 << 15;
 export const CAP_REQS = 1 << 15;
 export const OUT_CAP = 1 << 20;
 export const CTL = { GEN: 0, COUNT: 1, NEXT: 2, DONE: 3, UNITS: 4, CHUNK: 5, ACTIVE: 6, READY: 7, KIND: 8 };
-export const JOB = { SCAN: 0, MOVE: 1 };
+export const JOB = { SCAN: 0, MOVE: 1, DECIDE: 2 };
+
+// Fighter decisions shared with the job threads, one squadron per job.
+export const DECIDE_CAP = { FIGHTERS: 1 << 15, SQUADS: 1 << 13 };
+export const DECIDE_HEAD = { SQUADS: 0, SIDE_MIN: 1, SIDE_MAX: 2 };
+
+function makeDecideShared(S) {
+  return {
+    head: new Float64Array(new S(64)),
+    fighters: new Float64Array(new S(DECIDE_CAP.FIGHTERS * DF.STRIDE * 8)),
+    squads: new Float64Array(new S(DECIDE_CAP.SQUADS * DS.STRIDE * 8))
+  };
+}
+
+export function decideWork(sh, scene) {
+  const ctl = sh.ctl,
+    count = Atomics.load(ctl, CTL.COUNT),
+    chunk = Atomics.load(ctl, CTL.CHUNK) || 8,
+    head = sh.decide.head;
+  scene.sideMin = head[DECIDE_HEAD.SIDE_MIN];
+  scene.sideMax = head[DECIDE_HEAD.SIDE_MAX];
+  for (;;) {
+    const from = Atomics.add(ctl, CTL.NEXT, chunk);
+    if (from >= count) break;
+    const to = Math.min(count, from + chunk);
+    for (let i = from; i < to; i++) decideSquad(scene, i);
+    if (Atomics.add(ctl, CTL.DONE, to - from) + (to - from) >= count) Atomics.notify(ctl, CTL.DONE);
+  }
+}
+
+export const sharedDecideScene = decide => new DecideScene(decide.fighters, decide.squads);
 
 // Fighter moves shared with the job threads. Battles past these sizes move the rest on the battle thread.
 export const MOVE_CAP = {
@@ -93,6 +124,7 @@ export function makeShared(workers) {
   const S = typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer;
   return {
     move: workers ? makeMoveShared(S) : null,
+    decide: workers ? makeDecideShared(S) : null,
     ctl: new Int32Array(new S(64)),
     x: new Float64Array(new S(CAP_UNITS * 8)),
     y: new Float64Array(new S(CAP_UNITS * 8)),
@@ -211,6 +243,28 @@ export class ScanAhead {
     this.meshList = [];
     this.meshFloatsUsed = 0;
     this.meshIntsUsed = 0;
+  }
+
+  // The shared columns fighter decisions are packed into, or null when this battle decides on its own thread.
+  decideShared() {
+    return this.helpers && this.on ? this.sh.decide : null;
+  }
+
+  // Decides `count` packed squadrons on the job threads and this one.
+  runDecisions(count) {
+    const sh = this.sh,
+      ctl = sh.ctl;
+    Atomics.add(ctl, CTL.GEN, 1);
+    for (let a; (a = Atomics.load(ctl, CTL.ACTIVE)) !== 0; ) Atomics.wait(ctl, CTL.ACTIVE, a, 5);
+    Atomics.store(ctl, CTL.KIND, JOB.DECIDE);
+    Atomics.store(ctl, CTL.COUNT, count);
+    Atomics.store(ctl, CTL.NEXT, 0);
+    Atomics.store(ctl, CTL.DONE, 0);
+    Atomics.store(ctl, CTL.CHUNK, Math.max(2, Math.min(32, Math.ceil(count / ((this.helpers + 1) * 4)))));
+    Atomics.add(ctl, CTL.GEN, 1);
+    Atomics.notify(ctl, CTL.GEN);
+    decideWork(sh, (this.decideScene ||= sharedDecideScene(sh.decide)));
+    for (let d; (d = Atomics.load(ctl, CTL.DONE)) < count; ) Atomics.wait(ctl, CTL.DONE, d, 5);
   }
 
   // The shared columns fighter moves are packed into, or null when this battle moves fighters on its own thread.

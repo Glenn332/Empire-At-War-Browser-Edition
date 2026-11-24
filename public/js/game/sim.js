@@ -1,5 +1,6 @@
 import { ScanAhead } from './scanjobs.js';
 import { FighterMoves } from './fightermoves.js';
+import { FighterDecisions } from './fighterdecisions.js';
 import { wrapAngle as wrapAngleShared } from './fighterflight.js';
 import { hardpointModes, hardpointDelays, modeAllows, modeDelay, rechargeDelay } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
@@ -1877,7 +1878,8 @@ export class World {
     this.fogTimer = 0;
     this.solid = [];
     this.fighterMoves = new FighterMoves(this);
-    this.stepTimes = { move: 0, fire: 0 };
+    this.fighterDecisions = new FighterDecisions(this);
+    this.stepTimes = { decide: 0, move: 0, fire: 0 };
     this.unitGridHitReach = 0;
     this.unitGridCells = { minX: 0, maxX: -1, minY: 0, maxY: -1 };
     this.squadPickCandidates = [];
@@ -3409,7 +3411,7 @@ export class World {
       }
     }
     if (u.isFighter) {
-      if (!u.suspended) this.updateFighter(u, dt);
+      if (!u.suspended) this.fighterDecisions.add(u);
     } else {
       if (u.isMobile && !u.suspended) this.updateShip(u, dt);
       this.updateWeapons(u, dt);
@@ -6702,10 +6704,13 @@ export class World {
   // then fires in unit order from where it ended up.
   moveFighters(dt) {
     const from = performance.now();
+    this.fighterDecisions.run(dt);
+    const moveFrom = performance.now();
+    this.stepTimes.decide += moveFrom - from;
     const moved = this.fighterMoves.run(dt);
     const fireFrom = performance.now();
     for (const u of moved) if (!u.dead && !u.suspended) this.fireFighterWeapons(u, dt);
-    this.stepTimes.move += fireFrom - from;
+    this.stepTimes.move += fireFrom - moveFrom;
     this.stepTimes.fire += performance.now() - fireFrom;
   }
 
