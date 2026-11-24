@@ -22,7 +22,7 @@ const data = await loadCampaignData();
 const campaign = data.campaigns.get(mod < 0 ? 'SANDBOX_EQUAL_FOOTING_REBEL' : 'FULLLARGE_ERA_3_EMPIRE');
 assert(campaign);
 const G = () => startingGalaxy(data, campaign);
-const { stepVisibility, intelligence, VIS, displayIncome } = await import('../public/js/game/galacticfog.js');
+const { stepVisibility, stepOtherVisibility, intelligence, VIS, displayIncome } = await import('../public/js/game/galacticfog.js');
 const g = G(),
   viewer = g.active;
 stepVisibility(g, viewer);
@@ -85,6 +85,50 @@ assert.equal(intelligence(returned, returned.planets[p.index]).fleetOverlay, fal
   const other = early.players.find(q => q.faction !== viewer).faction;
   stepVisibility(early, other);
   assert(intelligence(early, hidden).discovered, 'discovery belongs to the planet, not to the viewer');
+}
+{
+  // multiplayer: every human faction keeps its own discoveries across a save, whichever faction loads it
+  const mp = G(),
+    other = mp.players.find(q => q.faction !== viewer).faction;
+  mp.humans = [viewer, other].map(f => String(f).toUpperCase());
+  mp.autoReveal = false;
+  mp.fleets = [];
+  stepVisibility(mp, viewer);
+  stepOtherVisibility(mp);
+  const unknown = side =>
+    mp.planets.filter(q => !q.background && !intelligence(mp, q).discovered && !mp.visibilityByFaction[side]?.planets[q.index]?.discovered);
+  const [mine, theirs] = unknown(String(other).toUpperCase());
+  assert(mine && theirs, 'two planets neither side knows');
+  const visit = (owner, q) =>
+    mp.fleets.push({ owner, planet: q.index, units: [{ type }], path: [], dest: -1, leg: null, pos: q.pos.slice() });
+  visit(viewer, mine);
+  visit(other, theirs);
+  stepVisibility(mp, viewer, delay + 1);
+  stepOtherVisibility(mp, delay + 1);
+  assert(intelligence(mp, mine).discovered && !intelligence(mp, theirs).discovered, 'viewer sees only its own scouting');
+  const snap = JSON.parse(JSON.stringify(snapshotGalaxy(mp)));
+  assert(snap.visibility.byFaction?.[String(other).toUpperCase()], 'the other faction is saved');
+  const load = as => {
+    const r = G();
+    applyGalaxy(r, snap);
+    stepVisibility(r, as);
+    return r;
+  };
+  const them = load(other);
+  assert(!intelligence(them, them.planets[mine.index]).discovered, "the saver's discovery does not reach the other faction");
+  assert(intelligence(them, them.planets[theirs.index]).discovered, "the loader's own discovery survives the save");
+  const back = JSON.parse(JSON.stringify(snapshotGalaxy(them)));
+  const again = G();
+  applyGalaxy(again, back);
+  stepVisibility(again, viewer);
+  assert(intelligence(again, again.planets[mine.index]).discovered, 'a resave by the other faction keeps the first one');
+  assert(!intelligence(again, again.planets[theirs.index]).discovered, 'and still keeps them apart');
+  const old = JSON.parse(JSON.stringify(snap));
+  delete old.visibility.byFaction;
+  const legacy = G();
+  applyGalaxy(legacy, old);
+  stepVisibility(legacy, other);
+  assert(!intelligence(legacy, legacy.planets[mine.index]).discovered, 'an old multiplayer save starts other factions fresh');
 }
 console.log(
   JSON.stringify({

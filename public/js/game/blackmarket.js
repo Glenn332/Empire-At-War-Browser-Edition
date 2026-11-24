@@ -1,4 +1,4 @@
-import { panelSide } from './panelside.js';
+import { panelSide, offerPanel } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
@@ -172,6 +172,7 @@ export function activateBlackMarket(game, actor, planet, ability) {
     rows = offers(g, player, planet, ability);
   const side = panelSide(game, player.faction, player);
   if (side !== 'ai') {
+    offerPanel(game, 'market', actor, planet, { rows, respawn });
     if (side === 'local' && rows.length) game.openBlackMarket?.({ actor, planet, rows, respawn });
     return false;
   }

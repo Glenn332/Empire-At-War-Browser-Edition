@@ -2,9 +2,9 @@ import { db, factionColor, autoColors } from '../gamedata.js';
 import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
 import { openDialog } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
-import { NetSession, Hall, listGames, newGameId, lobbyUrl } from '../net.js';
+import { NetSession, Hall, listGames, newGameId, lobbyUrl, lobbyFromLink } from '../net.js';
 import { LOBBY, SITE } from '../deploy.js';
-import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
+import { advancedOptions, SPECTATOR_TEAM, listingNote } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { startMarks } from './mapstarts.js';
@@ -53,7 +53,7 @@ export function dataFingerprint() {
 export function inviteLink(gameId, kind = 'internet') {
   const u = inApp() ? new URL('play.html', SITE + '/') : new URL(location.pathname, location.origin);
   u.search = (kind === 'lan' ? 'multiplayer=lan' : 'multiplayer') + '&join=' + gameId;
-  const lobby = inApp() ? (lobbyUrl() !== LOBBY ? lobbyUrl() : null) : new URLSearchParams(location.search).get('lobby');
+  const lobby = inApp() ? (lobbyUrl() !== LOBBY ? lobbyUrl() : null) : lobbyFromLink();
   if (lobby) u.search += '&lobby=' + encodeURIComponent(lobby);
   return u.href;
 }
@@ -560,7 +560,7 @@ export async function openMultiplayer({
     storeName(myName());
     const net = new NetSession();
     try {
-      await net.connect(gameId, { host, name: myName() });
+      await net.connect(gameId, { host, name: myName(), gated: true });
     } catch (e) {
       busy = false;
       say((host ? 'Could not open the game: ' : 'Could not join: ') + e.message);
@@ -646,8 +646,15 @@ export async function openMultiplayer({
       u.searchParams.delete('join');
       history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString().replace(/=(&|$)/g, '$1'));
     } catch {}
-    say('Joining the game you were invited to…');
-    enter(invited, false);
+    // an invite link only opens the lobby: joining (and with it the host's game and saved game) waits for a yes
+    (async () => {
+      const listed = await listGames().catch(() => []);
+      const g = Array.isArray(listed) ? listed.find(x => x && x.id === invited) : null;
+      const what = g ? `Join "${String(g.name).slice(0, 48)}", hosted by ${String(g.host).slice(0, 32)}?` : 'Join the game you were invited to?';
+      if (!(await confirmBox(what))) return;
+      say('Joining the game you were invited to…');
+      enter(invited, false);
+    })();
   }
   dlg.on(K.join, join);
   {
@@ -752,12 +759,12 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', !!st.randomEvents, v => {
-      st.randomEvents = v;
-    });
+    // random story events come from single-player story rewards only; the galaxy has none to offer here
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
+  dlg.show('IDC_ALLOW_RANDOM_EVENTS', false);
   dlg.enable('IDC_ALLOW_RANDOM_EVENTS', false);
   show();
   return new Promise(done => {
@@ -775,8 +782,7 @@ async function campaignOptions(st, campaign) {
         credits: C.num('MP_Default_Credits', 6000),
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-        randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
+        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
       });
       show();
     });
@@ -1004,8 +1010,7 @@ async function openStaging(args) {
     preBuilt: true,
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-    randomEvents: C.bool('MP_Default_Allow_Random_Events', false)
+    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1131,7 +1136,7 @@ async function openStaging(args) {
           return;
         }
         if (password && m.password !== password) {
-          net.send(from, { k: 'password', wrong: m.password !== undefined });
+          net.askPassword(from, m.password !== undefined);
           return;
         }
         if (slots.some(s => s.kind === 'human' && s.peer === from)) return;
@@ -1143,6 +1148,7 @@ async function openStaging(args) {
           return;
         }
         Object.assign(free, { kind: 'human', peer: from, name: who, ready: false, auto: !free.saved });
+        net.admit(from);
         if (single() && lead() && !free.saved) free.faction = lead();
         unready();
         publish();
@@ -1179,6 +1185,7 @@ async function openStaging(args) {
         }
       }
     });
+    track('listing', (ok, why) => addChat('', listingNote(ok, why)));
     track('leave', peer => {
       const s = slots.find(x => x.kind === 'human' && x.peer === peer);
       if (!s) return;
@@ -1212,6 +1219,8 @@ async function openStaging(args) {
         });
       } else if (m.k === 'kicked') leave('The host removed you from the game.');
       else if (m.k === 'start') {
+        // only a game this player said it was ready for
+        if (!slots.find(s => s.kind === 'human' && s.peer === net.id)?.ready) return;
         if (!m.save) begin(m.setup);
         else {
           note.textContent = 'Opening the saved game...';
@@ -1728,6 +1737,21 @@ async function openStaging(args) {
         note.textContent = 'Pick a campaign.';
         return;
       }
+      // a computer slot on a side someone else already has would be dropped from the galaxy
+      const sideOf = s => String((s.kind === 'human' && entry.menu) || s.faction).toUpperCase(),
+        held = new Set(players.filter(s => s.kind === 'human').map(sideOf));
+      let clash = null;
+      for (const s of players.filter(s => s.kind !== 'human')) {
+        if (held.has(sideOf(s))) {
+          clash = s;
+          break;
+        }
+        held.add(sideOf(s));
+      }
+      if (clash) {
+        note.textContent = `${fLabel(clash.faction)} already has a player. Give the computer player a side of its own.`;
+        return;
+      }
       note.textContent = '';
       const variant = campaignVariant(entry, players.find(s => s.peer === 0)?.faction || players[0].faction);
       const humanTypes = entry.variants
@@ -1752,7 +1776,7 @@ async function openStaging(args) {
         humanTypes,
         ...(globalThis.shooterMode ? { shooter: true } : {}),
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
-        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve, randomEvents: !!st.randomEvents },
+        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve },
         players: players.map(s =>
           s.kind === 'human'
             ? { human: true, peer: s.peer, name: s.name, faction: entry.menu || s.faction, color: s.color }
@@ -1805,6 +1829,7 @@ async function openStaging(args) {
   const begin = setup => {
     if (started) return;
     started = true;
+    if (host) net.lock(true);
     clearInterval(beat);
     for (const off of offs) off();
     dlg.close();
@@ -1819,8 +1844,10 @@ async function openStaging(args) {
     launch({ ...setup, net: link });
   };
 
-  if (host) publish();
-  else render();
+  if (host) {
+    net.lock(false);
+    publish();
+  } else render();
   const beat = host && kind !== 'lan' ? setInterval(listing, 30000) : 0;
   if (host && st.type === 'campaign' && !campaigns.some(c => !c.variants))
     addChat(

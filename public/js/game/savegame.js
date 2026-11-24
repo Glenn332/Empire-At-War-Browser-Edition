@@ -5,7 +5,7 @@ import { BUILD } from '../build.js';
 import { expansion } from '../edition.js';
 import { contentNow } from '../content.js';
 import { snapshotGalaxy } from './galaxy.js';
-import { saveBattleScripts } from './tacticalsave.js';
+import { trySaveBattleScripts, scriptFlags, applyScriptFlags } from './tacticalsave.js';
 import { SpecialWeapon } from './superweapon.js';
 import { isPlainObject } from './plainobject.js';
 
@@ -92,6 +92,7 @@ function spaceCampaign(game, ref) {
       })),
       absent: book.absent.slice(),
       station: book.station ? (!book.station.dead && ref(book.station)) || gone(book.station) : null,
+      orbital: [...(book.orbital || [])].map(([gid, e]) => [gid, e && ((!e.dead && ref(e)) || gone(e))]),
       called: [...(book.called || new Map())].map(([team, list]) => [team, list.map(e => (!e.dead && ref(e)) || gone(e))])
     }
   };
@@ -108,6 +109,7 @@ export function restoreSpaceCampaign(game, save, refs) {
     .filter(u => u.type);
   book.absent = c.book.absent.slice();
   book.station = c.book.station ? get(c.book.station) : null;
+  book.orbital = new Map((c.book.orbital || []).map(([gid, r]) => [gid, r && get(r)]));
   book.called = new Map(c.book.called.map(([team, list]) => [+team, list.map(get)]));
   if (game.tacticalCampaign && c.destroyedBy) game.tacticalCampaign.destroyedBy = c.destroyedBy;
 }
@@ -156,6 +158,8 @@ function spaceSnapshot(game, name) {
     const o = { x: r1(x), y: r1(y), z: r1(u.z), h: +u.heading.toFixed(3), hu: r1(u.health), sh: r1(u.shield) };
     if (u.hardpoints.length) o.hps = u.hardpoints.map(h => (h.alive ? r1(h.health) : -1));
     if (u.energy) o.en = [r1(u.energy.value), +u.energy.tick.toFixed(3)];
+    const fl = scriptFlags(u);
+    if (fl) o.fl = fl;
     return o;
   };
   const unit = u => {
@@ -206,6 +210,8 @@ function spaceSnapshot(game, name) {
       f: s.fighters.map(body)
     };
     if (s.alone) o.alone = 1;
+    const fl = scriptFlags(s);
+    if (fl) o.fl = fl;
     if (s.queue && s.queue.length) o.way = s.queue.map(order);
     if (s.target) {
       const t = ref(s.target);
@@ -239,6 +245,8 @@ function spaceSnapshot(game, name) {
       const q = queues(u);
       if (q.length) o.q = q;
       if (u.everSeenBy) o.seen = u.everSeenBy;
+      const fl = scriptFlags(u);
+      if (fl) o.fl = fl;
     }
     if (Object.keys(o).length) map[u.mapIndex] = o;
   }
@@ -246,18 +254,14 @@ function spaceSnapshot(game, name) {
   const setup = game.setup;
   const campaign = setup.campaign && game.campaignBook ? spaceCampaign(game, ref) : undefined;
   const thingRef = u => (u.squad ? (r => (r ? r + '.' + u.squad.fighters.indexOf(u) : null))(ref(u.squad)) : ref(u));
-  let scripts = null;
-  try {
-    scripts = saveBattleScripts(game, thingRef);
-  } catch (error) {
-    console.warn('the battle is saved without its scripts (they start over when it is loaded):', error.message || error);
-  }
+  const { scripts, lost } = trySaveBattleScripts(game, thingRef);
   return {
     format: 'sw-revival-save',
     version: SAVE_VERSION,
     build: BUILD,
     saved: new Date().toISOString(),
     ...(campaign ? { campaign } : {}),
+    ...(lost ? { scriptsLost: lost } : {}),
     name:
       name ||
       `${game.map.planet || db.t(game.map.textId) || 'Skirmish'} — ${Math.floor(w.time / 60)}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`,
@@ -499,6 +503,7 @@ export function restore(game, save) {
     if (o.seen) u.everSeenBy = o.seen;
     if (o.limbo) u.limbo = true;
     if (o.nof) u.noOpportunity = true;
+    applyScriptFlags(u, o.fl);
   }
   w.units = w.units.filter(u => !u.dead);
   w.unitGridN = Infinity;
@@ -532,7 +537,12 @@ export function restore(game, save) {
       e.fighters.forEach((f, k) => {
         place(f, o.f[k]);
         damage(f, o.f[k]);
+        if (o.f[k].limbo) f.limbo = true;
+        if (o.f[k].nof) f.noOpportunity = true;
+        applyScriptFlags(f, o.f[k].fl);
       });
+      applyScriptFlags(e, o.fl);
+      if (e.scriptSelectable === false) for (const f of e.fighters) f.selectable = false;
       e.x = o.x;
       e.y = o.y;
       e.heading = o.h;
@@ -554,6 +564,10 @@ export function restore(game, save) {
       if (o.inc !== undefined && e.income) e.income.timer = o.inc;
       if (o.sw) e.swarm = { ...o.sw };
       if (o.seen) e.everSeenBy = o.seen;
+      // a script's Hide_Object / Prevent_Opportunity_Fire survives the reload
+      if (o.limbo) e.limbo = true;
+      if (o.nof) e.noOpportunity = true;
+      applyScriptFlags(e, o.fl);
     }
     made.push(e);
     refs.set('e' + i, e);
@@ -744,23 +758,72 @@ const canPack = () => typeof CompressionStream !== 'undefined' && typeof Decompr
 const pack = async text =>
   new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
 const unpack = async blob => new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+// a save from another player: a few hundred KB of gzip can stand for gigabytes, so stop reading past a limit
+const PEER_SAVE_MAX = 128 * 1024 * 1024;
+const TOO_LARGE = 'The saved game is too large.';
+async function unpackCapped(blob, limit) {
+  const reader = blob.stream().pipeThrough(new DecompressionStream('gzip')).getReader(),
+    text = new TextDecoder(),
+    parts = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if ((size += value.length) > limit) {
+      reader.cancel().catch(() => {});
+      throw new Error(TOO_LARGE);
+    }
+    parts.push(text.decode(value, { stream: true }));
+  }
+  parts.push(text.decode());
+  return parts.join('');
+}
+
+// One write at a time per slot (across tabs where the browser has Web Locks): two overlapping
+// saves could otherwise each delete the payload the other one just wrote.
+const slotQueue = new Map();
+function inSlot(id, fn) {
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) return navigator.locks.request('swr-save' + OWN + ':' + id, fn);
+  const run = (slotQueue.get(id) || Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  slotQueue.set(id, tail);
+  tail.then(() => slotQueue.get(id) === tail && slotQueue.delete(id));
+  return run;
+}
+
+// the newer of id.swz / id.json: a write cut off before the old one was removed leaves both
+async function payload(d, id) {
+  const files = [];
+  for (const ext of ['.swz', '.json']) {
+    const h = await d.getFileHandle(id + ext).catch(() => null);
+    if (h) files.push({ packed: ext === '.swz', file: await h.getFile() });
+  }
+  files.sort((a, b) => b.file.lastModified - a.file.lastModified);
+  return files[0] || null;
+}
+const readPayload = async p => (p.packed ? unpack(p.file) : p.file.text());
 
 export async function listSaves() {
   const out = [];
   const d = await dir();
   if (d) {
-    const listed = new Set();
+    const listed = new Set(),
+      ids = new Set();
     for await (const [fname, h] of d.entries()) {
-      if (h.kind !== 'file' || !fname.endsWith('.meta')) continue;
+      if (h.kind !== 'file') continue;
+      if (fname.endsWith('.json') || fname.endsWith('.swz')) ids.add(fname.replace(/\.(json|swz)$/, ''));
+      if (!fname.endsWith('.meta')) continue;
       try {
         out.push(JSON.parse(await (await h.getFile()).text()));
         listed.add(fname.slice(0, -5));
       } catch {}
     }
-    for await (const [fname, h] of d.entries()) {
-      if (h.kind !== 'file' || !fname.endsWith('.json') || listed.has(fname.slice(0, -5))) continue;
+    // a save whose .meta was never written is listed from its data
+    for (const id of ids) {
+      if (listed.has(id)) continue;
       try {
-        out.push(meta(fname.slice(0, -5), JSON.parse(await (await h.getFile()).text())));
+        const p = await payload(d, id);
+        if (p && p.file.size && (!p.packed || canPack())) out.push(meta(id, JSON.parse(await readPayload(p))));
       } catch {}
     }
   } else {
@@ -778,19 +841,43 @@ export async function listSaves() {
   return out.sort((a, b) => (a.saved < b.saved ? 1 : -1));
 }
 
+async function writeFile(d, name, data) {
+  const existed = !!(await d.getFileHandle(name).catch(() => null));
+  let w = null;
+  try {
+    w = await (await d.getFileHandle(name, { create: true })).createWritable();
+    await w.write(data);
+    await w.close();
+  } catch (error) {
+    // the old contents stay until close(); a file made for this write goes again
+    await w?.abort().catch(() => {});
+    if (!existed) await d.removeEntry(name).catch(() => {});
+    throw error;
+  }
+}
+
 export async function putSave(snap, id = null) {
   id ||= 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const text = JSON.stringify(snap);
   const d = await dir();
   if (d) {
     const packed = text.length > 262144 && canPack();
-    const w = await (await d.getFileHandle(id + (packed ? '.swz' : '.json'), { create: true })).createWritable();
-    await w.write(packed ? await pack(text) : text);
-    await w.close();
-    await d.removeEntry(id + (packed ? '.json' : '.swz')).catch(() => {});
-    const m = await (await d.getFileHandle(id + '.meta', { create: true })).createWritable();
-    await m.write(JSON.stringify(meta(id, snap)));
-    await m.close();
+    try {
+      await inSlot(id, async () => {
+        const data = packed ? await pack(text) : text;
+        // without a .meta the list reads the data itself, so a cut-off write never shows the old name
+        await d.removeEntry(id + '.meta').catch(() => {});
+        await writeFile(d, id + (packed ? '.swz' : '.json'), data);
+        await d.removeEntry(id + (packed ? '.json' : '.swz')).catch(() => {});
+        await writeFile(d, id + '.meta', JSON.stringify(meta(id, snap))).catch(() => {});
+      });
+    } catch (error) {
+      if (error?.name === 'QuotaExceededError')
+        throw new Error(
+          'This browser has no room to keep a game of this size (' + Math.round(text.length / 1048576) + ' MB): download it instead.'
+        );
+      throw error;
+    }
   } else {
     try {
       localStorage.setItem(LS + id, text);
@@ -808,8 +895,8 @@ export async function getSave(id) {
     const d = await dir();
     let text;
     if (d) {
-      const packed = await d.getFileHandle(id + '.swz').catch(() => null);
-      text = packed ? await unpack(await packed.getFile()) : await (await (await d.getFileHandle(id + '.json')).getFile()).text();
+      const p = await inSlot(id, () => payload(d, id));
+      text = p ? await readPayload(p) : null;
     } else text = localStorage.getItem(LS + id);
     return text ? upgrade(JSON.parse(text)) : null;
   } catch {
@@ -819,7 +906,10 @@ export async function getSave(id) {
 
 export async function deleteSave(id) {
   const d = await dir();
-  if (d) for (const ext of ['.json', '.swz', '.meta']) await d.removeEntry(id + ext).catch(() => {});
+  if (d)
+    await inSlot(id, async () => {
+      for (const ext of ['.json', '.swz', '.meta']) await d.removeEntry(id + ext).catch(() => {});
+    });
   else {
     try {
       localStorage.removeItem(LS + id);
@@ -853,12 +943,18 @@ export async function packSave(snap) {
   return { gz: btoa(bin) };
 }
 
-export async function unpackSave(p) {
-  if (p.json) return upgrade(JSON.parse(p.json));
+export async function unpackSave(p, limit = PEER_SAVE_MAX) {
+  if (!p || typeof p !== 'object') throw new Error('The saved game could not be read.');
+  if (typeof p.json === 'string' && p.json) {
+    if (p.json.length > limit) throw new Error(TOO_LARGE);
+    return upgrade(JSON.parse(p.json));
+  }
+  if (typeof p.gz !== 'string') throw new Error('The saved game could not be read.');
+  if (p.gz.length > Math.ceil(limit / 3) * 4) throw new Error(TOO_LARGE);
   const bin = atob(p.gz),
     bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return upgrade(JSON.parse(await unpack(new Blob([bytes]))));
+  return upgrade(JSON.parse(await unpackCapped(new Blob([bytes]), limit)));
 }
 
 export async function importSaveFile(file) {

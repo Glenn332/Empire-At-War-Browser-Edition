@@ -47,7 +47,7 @@ export function dropOverviewUnits(game, source, target) {
     else if (fleet) for (const u of source.records || []) delete u.pathfinder;
     return !!fleet;
   }
-  if (source.kind !== 'fleet' || source.fleet.owner !== owner) return false;
+  if (source.kind !== 'fleet' || !source.fleet || source.fleet.owner !== owner) return false;
   if (p.owner === owner) return landFriendly(g, source.fleet, p.index, { records: source.records });
   return !!game.land(source.fleet, p.index, { records: source.records });
 }

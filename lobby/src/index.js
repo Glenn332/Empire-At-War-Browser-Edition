@@ -6,13 +6,41 @@ const NAME_LEN = 32;
 const AWAY_GRACE = 45 * 1000;
 const STALE = 150 * 1000;
 
-const lastHeard = (ctx, ws, a) => Math.max(ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() || 0, a.at || 0);
+const lastHeard = (ctx, ws, a) => Math.max(ctx.getWebSocketAutoResponseTimestamp?.(ws)?.getTime() || 0, a.at || 0);
 const fresh = (ctx, ws, a, now) => now - lastHeard(ctx, ws, a) <= STALE;
 const drop = ws => {
   try {
     ws.close(4001, 'timed out');
   } catch {}
 };
+
+// one address can't take the whole service: listed games, hall seats and seats in one game
+const LOBBIES_PER_IP = 4;
+const HALL_PER_IP = 6;
+const ROOM_PER_IP = 16;
+const JOIN_BURST = 20,
+  JOIN_RATE = 0.1;
+const META_GAP = 3000;
+// relayed messages a socket may send: a burst (a saved game in pieces) and a steady rate after it
+const RELAY_BURST = { host: 8000, join: 2000 };
+const RELAY_RATE = { host: 800, join: 200 };
+const HALL_BURST = 20,
+  HALL_RATE = 2;
+
+const ipOf = req => req.headers.get('CF-Connecting-IP') || '';
+
+// a token bucket per socket, kept in memory: it starts full again if the object is evicted, which is fine
+const buckets = new WeakMap();
+function spend(ws, burst, rate) {
+  const now = Date.now();
+  let b = buckets.get(ws);
+  if (!b) buckets.set(ws, (b = { left: burst, at: now }));
+  b.left = Math.min(burst, b.left + ((now - b.at) / 1000) * rate);
+  b.at = now;
+  if (b.left < 1) return false;
+  b.left--;
+  return true;
+}
 
 const allows = (entry, origin) => {
   if (entry === '*' || entry === origin) return true;
@@ -22,7 +50,11 @@ const allows = (entry, origin) => {
 
 const cors = (req, env) => {
   const origin = req.headers.get('Origin') || '';
-  const allowed = (env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim());
+  // no list configured lets no other site in: '*' has to be set on purpose
+  const allowed = (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
   const ok = !origin || allowed.some(a => allows(a, origin)) || /^https?:\/\/(localhost|127\.0\.0\.1|swr\.localhost)(:\d+)?$/.test(origin);
   return { ok, headers: ok && origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {} };
 };
@@ -86,9 +118,12 @@ export class Registry {
     const body = await req.json();
     if (url.pathname === '/put') {
       const key = 'l:' + body.id,
-        old = all.get(key);
-      if (!old && all.size >= MAX_LOBBIES) return json({ ok: false });
-      await this.ctx.storage.put(key, { meta: body.meta, at: now, created: old ? old.created : now });
+        old = all.get(key),
+        ip = String(body.ip || '');
+      if (!old && all.size >= MAX_LOBBIES) return json({ ok: false, why: 'The game list is full.' });
+      if (!old && ip && [...all].filter(([k, e]) => k !== key && e.ip === ip && now - e.at <= LISTING_TTL).length >= LOBBIES_PER_IP)
+        return json({ ok: false, why: 'Too many games are listed from this address.' });
+      await this.ctx.storage.put(key, { meta: body.meta, at: now, created: old ? old.created : now, ip });
       return json({ ok: true });
     }
     if (url.pathname === '/del') {
@@ -139,15 +174,23 @@ export class Hall {
   }
 
   async fetch(req) {
-    const name = cleanName(new URL(req.url).searchParams.get('name'));
+    const name = cleanName(new URL(req.url).searchParams.get('name')),
+      ip = ipOf(req);
     const [client, server] = Object.values(new WebSocketPair());
-    if (this.live().length >= HALL_MAX) {
+    const present = this.live();
+    const full =
+      present.length >= HALL_MAX
+        ? 'the lobby is full'
+        : ip && present.filter(ws => (ws.deserializeAttachment() || {}).ip === ip).length >= HALL_PER_IP
+          ? 'too many connections from this address'
+          : null;
+    if (full) {
       server.accept();
-      server.close(4010, 'the lobby is full');
+      server.close(4010, full);
       return new Response(null, { status: 101, webSocket: client });
     }
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ name, last: 0, at: Date.now() });
+    server.serializeAttachment({ name, last: 0, ip, at: Date.now() });
     if (!this.forgot) {
       this.forgot = true;
       await this.ctx.storage.delete('history');
@@ -164,6 +207,7 @@ export class Hall {
     } catch {
       return;
     }
+    if (!spend(ws, HALL_BURST, HALL_RATE)) return;
     const me = ws.deserializeAttachment() || {};
     me.at = Date.now();
     if (msg.t === 'name') {
@@ -228,6 +272,7 @@ export class Lobby {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    this.joins = new Map();
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
   }
 
@@ -255,14 +300,26 @@ export class Lobby {
       ws.send(JSON.stringify(msg));
     } catch {}
   }
+  joinAllowed(ip) {
+    const now = Date.now();
+    let b = this.joins.get(ip);
+    if (!b) this.joins.set(ip, (b = { left: JOIN_BURST, at: now }));
+    b.left = Math.min(JOIN_BURST, b.left + ((now - b.at) / 1000) * JOIN_RATE);
+    b.at = now;
+    if (this.joins.size > 4096) for (const [k, v] of this.joins) if (v.left >= JOIN_BURST - 1) this.joins.delete(k);
+    if (b.left < 1) return false;
+    b.left--;
+    return true;
+  }
   registry() {
     return this.env.REGISTRY.get(this.env.REGISTRY.idFromName('main'));
   }
 
   async fetch(req) {
     const url = new URL(req.url);
-    const name = (url.searchParams.get('name') || 'Player').slice(0, NAME_LEN);
-    const lobby = url.searchParams.get('lobby');
+    const name = cleanName(url.searchParams.get('name'));
+    const lobby = url.searchParams.get('lobby'),
+      ip = ipOf(req);
     await this.prune();
     const present = this.sockets();
     const host = present.find(s => s.a.role === 'host');
@@ -288,19 +345,23 @@ export class Lobby {
       const open = !!(await this.ctx.storage.get('lobby'));
       if (role === 'host' && open) return refuse(4009, 'game already has a host');
       if (role === 'join' && (!open || !host)) return refuse(4004, 'no such game');
+      if (role === 'join' && (await this.ctx.storage.get('locked'))) return refuse(4011, 'the game has already started');
       if (present.length >= MAX_PEERS) return refuse(4010, 'game is full');
+      if (ip && present.filter(s => s.a.ip === ip).length >= ROOM_PER_IP) return refuse(4010, 'too many connections from this address');
+      if (role === 'join' && ip && !this.joinAllowed(ip)) return refuse(4010, 'too many tries from this address: wait a minute');
       if (role === 'join') {
         id = (await this.ctx.storage.get('next')) || 1;
         await this.ctx.storage.put('next', id + 1);
       } else {
         id = 0;
         await this.ctx.storage.put('lobby', lobby);
+        await this.ctx.storage.put('ip', ip);
       }
     }
     const tok = resume !== null ? token : crypto.randomUUID();
     await this.ctx.storage.put('tok:' + id, tok);
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id, role, name, at: Date.now() });
+    server.serializeAttachment({ id, role, name, ip, at: Date.now() });
     this.send(server, { t: 'welcome', id, token: tok, resumed: resume !== null });
     if (host && resume === null) this.send(host.ws, { t: 'join', id, name });
     return new Response(null, { status: 101, webSocket: client });
@@ -326,6 +387,7 @@ export class Lobby {
       return;
     }
     if (msg.t === 'to') {
+      if (!spend(ws, RELAY_BURST[me.role] || RELAY_BURST.join, RELAY_RATE[me.role] || RELAY_RATE.join)) return;
       if (msg.to === '*') {
         if (me.role !== 'host') return;
         for (const s of this.sockets()) if (s.ws !== ws) this.send(s.ws, { t: 'from', from: me.id, d: msg.d });
@@ -337,14 +399,54 @@ export class Lobby {
       return;
     }
     if (msg.t === 'meta' && me.role === 'host' && !me.counted) {
-      const lobby = await this.ctx.storage.get('lobby');
-      if (!lobby) return;
-      const meta = cleanMeta(msg.meta);
-      const path = meta ? '/put' : '/del';
-      await this.registry().fetch('https://registry' + path, { method: 'POST', body: JSON.stringify({ id: lobby, meta }) });
-      if (meta && !(await this.ctx.storage.get('lobby')))
-        await this.registry().fetch('https://registry/del', { method: 'POST', body: JSON.stringify({ id: lobby }) });
+      // at most one listing write every few seconds; the latest one is kept and sent when the gap is over
+      this.meta = cleanMeta(msg.meta);
+      const wait = (this.metaAt || 0) + META_GAP - Date.now();
+      if (wait > 0) {
+        this.metaTimer ||= setTimeout(() => {
+          this.metaTimer = null;
+          this.list(ws).catch(() => {});
+        }, wait);
+        return;
+      }
+      await this.list(ws);
+      return;
     }
+    if (me.role !== 'host') return;
+    if (msg.t === 'lock') {
+      await this.ctx.storage.put('locked', !!msg.on);
+      return;
+    }
+    if (msg.t === 'kick' && Number.isInteger(msg.id) && msg.id !== 0) {
+      // the host sent this peer away: close its socket and don't let it resume
+      const target = this.find(msg.id);
+      await this.ctx.storage.delete('tok:' + msg.id);
+      if (!target) return;
+      target.a.counted = true;
+      try {
+        target.ws.serializeAttachment(target.a);
+        target.ws.close(4003, 'removed by the host');
+      } catch {}
+    }
+  }
+
+  async list(ws) {
+    this.metaAt = Date.now();
+    const meta = this.meta,
+      lobby = await this.ctx.storage.get('lobby');
+    if (!lobby) return;
+    const ip = (await this.ctx.storage.get('ip')) || '';
+    const r = await this.registry().fetch('https://registry' + (meta ? '/put' : '/del'), {
+      method: 'POST',
+      body: JSON.stringify({ id: lobby, meta, ip })
+    });
+    // The game may have ended while the listing was written: take it down again.
+    if (meta && !(await this.ctx.storage.get('lobby')))
+      await this.registry().fetch('https://registry/del', { method: 'POST', body: JSON.stringify({ id: lobby }) });
+    const res = await r.json().catch(() => ({}));
+    const refused = meta && res.ok === false;
+    if (refused !== !!this.refused) this.send(ws, { t: 'listing', ok: !refused, why: res.why || '' });
+    this.refused = refused;
   }
 
   async webSocketClose(ws, code) {

@@ -8,6 +8,33 @@ const key = s =>
     .replace(/\\/g, '/')
     .toUpperCase();
 
+// unit flags the mission scripts set once and never set again after a load
+const FLAGS = [
+  ['cannotDie', 'cd'],
+  ['invulnerable', 'inv'],
+  ['holdFire', 'hf'],
+  ['suspended', 'sus'],
+  ['scriptHidden', 'hid'],
+  ['scriptNoAI', 'nai']
+];
+
+export function scriptFlags(u, time = 0, keepHidden = true) {
+  const o = {};
+  for (const [k, s] of FLAGS) if (u[k] && (keepHidden || s !== 'hid')) o[s] = 1;
+  if (u.scriptSelectable === false) o.sel = 0;
+  // JSON writes Infinity as null
+  if (u.invulnUntil > time) o.invU = u.invulnUntil === Infinity ? 'inf' : Math.round(u.invulnUntil * 100) / 100;
+  return Object.keys(o).length ? o : null;
+}
+
+export function applyScriptFlags(u, o) {
+  if (!u || !o) return;
+  for (const [k, s] of FLAGS) if (o[s]) u[k] = true;
+  if (o.nai) u.noAI = true;
+  if (o.sel === 0) u.selectable = u.scriptSelectable = false;
+  if (o.invU !== undefined) u.invulnUntil = o.invU === 'inf' ? Infinity : +o.invU || 0;
+}
+
 export function installBattlePersistence(host) {
   let persist;
   try {
@@ -234,6 +261,23 @@ function recipeIn(B, host, o) {
   if (o.curI >= 0 && r.x && r.x.hardpoints) r.cur = r.x.hardpoints[o.curI] || null;
   return r;
 }
+
+// A story mission whose scripts restart on load would replay its intro and spawns on top of the
+// restored units, so such a save is refused; any other battle is saved and flagged.
+export function trySaveBattleScripts(game, ref) {
+  try {
+    return { scripts: saveBattleScripts(game, ref) };
+  } catch (error) {
+    const why = error.message || String(error),
+      host = battle(game, ref, null).host;
+    if (!game.setup.net && host?.instances?.some(i => i.story))
+      throw new Error(`The mission scripts cannot be saved just now (${why}). Try again in a moment.`);
+    console.warn('the battle is saved without its scripts (they start over when it is loaded):', why);
+    return { scripts: null, lost: why };
+  }
+}
+
+export const SCRIPTS_LOST_WARNING = 'Saved, but without the battle scripts: they start over when this save is loaded.';
 
 export function saveBattleScripts(game, ref) {
   const B = battle(game, ref, null),

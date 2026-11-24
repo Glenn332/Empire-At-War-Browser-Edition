@@ -38,6 +38,40 @@ function edges(g) {
   edgeCache.set(g, e);
   return e;
 }
+// Cheapest routes from one planet, computed on first use (Dijkstra over usable planets; ties go to the lower planet index).
+function routeRow(m, from) {
+  let row = m.rows.get(from);
+  if (row) return row;
+  const { n, use, weight, dist } = m,
+    cost = new Uint32Array(n).fill(INF),
+    prev = new Int32Array(n).fill(-1);
+  row = { cost, prev };
+  m.rows.set(from, row);
+  cost[from] = 0;
+  if (!use[from]) return row;
+  const best = new Float64Array(n).fill(Infinity),
+    done = new Uint8Array(n);
+  best[from] = 0;
+  for (;;) {
+    let i = -1;
+    for (let k = 0; k < n; k++) if (!done[k] && use[k] && best[k] < Infinity && (i < 0 || best[k] < best[i])) i = k;
+    if (i < 0) break;
+    done[i] = 1;
+    const base = i * n;
+    for (let j = 0; j < n; j++) {
+      if (done[j] || !use[j]) continue;
+      const d = dist[base + j];
+      if (d < 0) continue;
+      const value = best[i] + ((weight[j] + d) >>> 0);
+      if (value < best[j]) {
+        best[j] = value;
+        prev[j] = i;
+      }
+    }
+  }
+  for (let j = 0; j < n; j++) if (j !== from && best[j] < Infinity) cost[j] = best[j] >= INF ? INF - 1 : best[j];
+  return row;
+}
 export class GalacticNetwork {
   constructor(ai) {
     this.ai = ai;
@@ -51,7 +85,7 @@ export class GalacticNetwork {
     const n = g.planets.length,
       { dist } = edges(g),
       view = this.ai.forces();
-    const usable = p => !p.background && !p.destroyed && !p.restricted && (g.autoReveal !== false || p.revealed),
+    const usable = p => !p.background && !p.destroyed && !p.restricted && (g.autoReveal !== false || p.revealed || !!g.humans),
       power = g.planets.map(
         p =>
           view.total(id, false, true, null, p) +
@@ -76,48 +110,11 @@ export class GalacticNetwork {
       old.weight.every((v, i) => v === weight[i])
     ) {
       const result = { ...old, time: g.time };
+      result.row = from => routeRow(result, from);
       this.cache.set(id, result);
       return result;
     }
-    const cost = new Uint32Array(n * n).fill(INF),
-      prev = new Int32Array(n * n).fill(-1);
-    for (let i = 0; i < n; i++)
-      for (let j = 0; j < n; j++) {
-        const at = i * n + j;
-        if (i === j) {
-          cost[at] = 0;
-          continue;
-        }
-        if (!use[i] || !use[j]) continue;
-        const d = dist[at];
-        if (d < 0) continue;
-        cost[at] = (weight[j] + d) >>> 0;
-        prev[at] = i;
-      }
-    const m = U.length,
-      u = Int32Array.from(U);
-    for (let kk = 0; kk < m; kk++) {
-      const k = u[kk],
-        kn = k * n;
-      for (let ii = 0; ii < m; ii++) {
-        const i = u[ii],
-          row = i * n,
-          ik = cost[row + k];
-        if (ik === INF) continue;
-        for (let jj = 0; jj < m; jj++) {
-          const j = u[jj],
-            kj = cost[kn + j];
-          if (kj === INF) continue;
-          const at = row + j,
-            value = (ik + kj) >>> 0;
-          if (value < cost[at]) {
-            cost[at] = value;
-            prev[at] = prev[kn + j];
-          }
-        }
-      }
-    }
-    const result = { time: g.time, n, cost, prev, use, weight, dist };
+    const result = { time: g.time, n, use, weight, dist, rows: new Map(), row: from => routeRow(result, from) };
     this.cache.set(id, result);
     return result;
   }
@@ -125,11 +122,13 @@ export class GalacticNetwork {
     const controller = this.ai.controllers.get(key(owner));
     if (!controller || !from || !to) return [];
     if (from === to) return [from, to];
-    const { n, prev } = this.matrix(controller),
+    const m = this.matrix(controller),
+      { prev } = m.row(from.index),
+      n = m.n,
       out = [to];
     let at = to.index;
     while (at !== from.index) {
-      at = prev[from.index * n + at];
+      at = prev[at];
       if (at < 0 || out.length > n) return [];
       out.unshift(this.ai.game.galaxy.planets[at]);
     }

@@ -11,7 +11,7 @@ globalThis.fetch = async input => {
 };
 const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
-const { panelSide } = await import('../public/js/game/panelside.js');
+const { panelSide, offerPanel } = await import('../public/js/game/panelside.js');
 const { runCommand, recordRef } = await import('../public/js/game/galacticnet.js');
 const bm = await import('../public/js/game/blackmarket.js');
 const humans = new Set(['UNDERWORLD', 'EMPIRE']);
@@ -34,11 +34,25 @@ const g = {
   players: [{ faction: 'Underworld', credits: 1000, blackMarket: [] }]
 };
 const host = { galaxy: g, story: null, me: 'Underworld' };
-const r = runCommand(host, 'Underworld', { c: 'panel', kind: 'market', rec: recordRef(g, record), p: 0, item: item.name, price: 10, respawn: 0 });
+const buy = price => ({ c: 'panel', kind: 'market', rec: recordRef(g, record), p: 0, item: item.name, price, respawn: 0 });
+assert.deepEqual(runCommand(host, 'Underworld', buy(10)), {}, 'no purchase unless the game opened the market for this hero here');
+offerPanel(host, 'market', record, g.planets[0], { rows: [{ item, price: 10 }], respawn: 0 });
+const r = runCommand(host, 'Underworld', buy(-5000));
 assert.equal(r.ok, true, 'a market purchase runs as a command');
 assert.deepEqual(g.players[0].blackMarket, [item.name]);
-assert.equal(g.players[0].credits, 1000 - 10);
+assert.equal(g.players[0].credits, 1000 - 10, 'the price is the one the game offered, not the one in the command');
+assert.deepEqual(runCommand(host, 'Underworld', buy(10)), {}, 'an offer is used once');
 assert.deepEqual(runCommand(host, 'Empire', { c: 'panel', kind: 'market', rec: recordRef(g, record), p: 0, item: item.name, price: 10, respawn: 0 }), {}, 'never for another player unit');
+{
+  // a fleet unit has no owner of its own: another faction can't pick from its panel
+  const enemy = { type: hero };
+  g.fleets.push({ owner: 'Empire', planet: 0, units: [enemy] });
+  g.players.push({ faction: 'Empire', credits: 1000, blackMarket: [] });
+  offerPanel(host, 'market', { owner: 'Empire', record: enemy }, g.planets[0], { rows: [{ item, price: 10 }], respawn: 0 });
+  const steal = { c: 'panel', kind: 'market', rec: recordRef(g, enemy), p: 0, item: item.name, price: 10, respawn: 0 };
+  assert.deepEqual(runCommand(host, 'Underworld', steal), {}, "never another faction's fleet hero");
+  g.fleets.pop();
+}
 {
   const { startingGalaxy, loadCampaignData } = await import('../public/js/game/galaxy.js');
   const data = await loadCampaignData();

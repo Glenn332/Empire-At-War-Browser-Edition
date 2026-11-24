@@ -644,6 +644,14 @@ export class LandUI {
 
   radarOn(side) {
     const w = this.world;
+    if (this.radarFor === side && w.time - this.radarAt < 0.25 && w.time >= this.radarAt) return this.radarHas;
+    this.radarFor = side;
+    this.radarAt = w.time;
+    return (this.radarHas = this.radarScan(side));
+  }
+
+  radarScan(side) {
+    const w = this.world;
     for (const u of w.units) {
       if (u.dead || u.side < 0 || !w.ally(u.side, side)) continue;
       const abs = (u.type.radarAbs ??= u.type.sub('Abilities').flatMap(a => a.all('Enable_Radar_Ability')));

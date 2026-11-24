@@ -15,7 +15,7 @@ import {
   randomArmy,
   entryPoints
 } from './instantbattle.js';
-import { SPECTATOR_TEAM } from './lobby.js';
+import { SPECTATOR_TEAM, listingNote } from './lobby.js';
 import { paintCrest } from './spectator.js';
 
 const KEY = 'swr-instant-setup';
@@ -963,6 +963,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       setup.seed = crypto.getRandomValues(new Uint32Array(1))[0];
       setup.spaceWorker = !new URLSearchParams(location.search).has('nospaceworker');
       net.setListing(null);
+      net.lock(true);
       net.broadcast({ k: 'start', setup });
       mp.started?.({ st: { ...st }, players: JSON.parse(JSON.stringify(players)) });
     }
@@ -983,7 +984,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
             return;
           }
           if (mp.password && m.password !== mp.password) {
-            net.send(from, { k: 'password', wrong: m.password !== undefined });
+            net.askPassword(from, m.password !== undefined);
             return;
           }
           if (s) return;
@@ -996,6 +997,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           }
           const back = slot.was === who && slot.army.length;
           Object.assign(slot, { kind: 'human', peer: from, name: who, ready: false });
+          net.admit(from);
           if (!back) slot.army = randomArmy(rosterOf(slot), slot.budget);
           const text = `${slot.name} joined the game.`;
           say('', text);
@@ -1027,6 +1029,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           }
         }
       }),
+      net.on('listing', (ok, why) => say('', listingNote(ok, why))),
       net.on('leave', peer => {
         const s = players.find(p => p.kind === 'human' && p.peer === peer);
         if (!s) return;
@@ -1049,7 +1052,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
           draw();
         } else if (m.k === 'chat') say(m.name, m.text);
         else if (m.k === 'refuse') close(false, m.why);
-        else if (m.k === 'start' && m.setup) {
+        else if (m.k === 'start' && m.setup && players.find(mine)?.ready) {
           close(true);
           audio?.unlock?.();
           start(m.setup);
@@ -1065,6 +1068,7 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
   document.body.appendChild(root);
   draw();
   if (net && host) {
+    net.lock(false);
     publish();
     for (const line of mp.invites || []) say('', line.text, line.copy);
   }

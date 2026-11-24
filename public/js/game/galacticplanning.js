@@ -810,7 +810,7 @@ export class GalacticPlanning {
           cache.contexts.set(p, context);
         }
         const kind = strategicProductionKind(type),
-          time = productionTime(g, p, owner, type, context) * (controller.adjustment?.build[kind] ?? 1),
+          time = productionTime(g, p, owner, type, context) * (controller.adjustment?.build?.galactic ?? 1),
           cost = productionCost(g, p, owner, type, context),
           base = productionCost(g, p, owner, type, []);
         const required = type.num('Required_Ground_Base_Level', 0) || type.num('Required_Star_Base_Level', 0),

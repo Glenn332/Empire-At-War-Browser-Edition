@@ -7,6 +7,7 @@ import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX, SUPERSAMPLE_STEP
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
+import { SCRIPTS_LOST_WARNING } from './tacticalsave.js';
 import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
 import { inApp } from '../platform.js';
 import '../bugreportui.js';
@@ -565,14 +566,16 @@ export class Menus {
         this.pop();
         return;
       }
+      let snap;
       try {
-        await putSave(await snapshotNow(g, name.value.trim()), id);
+        await putSave((snap = await snapshotNow(g, name.value.trim())), id);
       } catch (error) {
         console.error(error);
         g.message(error.message || String(error), 'bad');
         return;
       }
-      g.message(`${T('TEXT_SAVE_GAME_TITLE', 'Save Game')}: ${name.value.trim()}`, 'good');
+      if (snap.scriptsLost) g.message(SCRIPTS_LOST_WARNING, 'bad');
+      else g.message(`${T('TEXT_SAVE_GAME_TITLE', 'Save Game')}: ${name.value.trim()}`, 'good');
       this.pop();
     };
     dlg.on('IDC_SAVE_CANCEL_BUTTON', () => this.pop());

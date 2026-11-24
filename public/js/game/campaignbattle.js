@@ -5,6 +5,7 @@ import { tacticalTransportType } from './invasion.js';
 import { getModelData, buildModel } from '../model.js';
 import { HYPER, LOGIC_FPS, spaceHullHealth } from './sim.js';
 import { MOD } from './combatmods.js';
+import { simRandom } from './simrandom.js';
 import { giveFreeUpgrades } from './planetabilities.js';
 
 const CLASS = s => {
@@ -431,8 +432,8 @@ export function hyperspaceOpening(g, { entry, own = entry, local, lead, speech, 
   };
 }
 
-// `random` picks the station position; multiplayer passes the battle's seeded random so every peer agrees.
-export function placeCampaignBattle(w, map, teams, cb, random = Math.random) {
+// `random` picks the station position: the battle's seeded random, so every peer agrees.
+export function placeCampaignBattle(w, map, teams, cb, random = simRandom) {
   w.holdHyperspace = cb.linked?.cinematic === 2;
   const stations = markers(map, 'Space Station Position'),
     defend = markers(map, 'Defending Forces Position')[0] || { x: 0, y: 0 };
@@ -453,6 +454,7 @@ export function placeCampaignBattle(w, map, teams, cb, random = Math.random) {
     waiting: [],
     absent: [],
     station: null,
+    orbital: new Map(),
     anchors: { [cb.attacker.team]: { ...entry, toward: defend }, [cb.defender.team]: { ...defend, toward: entry } }
   };
   const owner = team => team.players.find(p => p.human) || team.players[0];
@@ -533,15 +535,16 @@ export function placeCampaignBattle(w, map, teams, cb, random = Math.random) {
         );
   const d = cb.defender;
   if (d.station) {
-    const st = stations[Math.floor(random() * stations.length)] || defend;
+    const st = stations[Math.floor(random() * stations.length)] || defend; // seeded: every peer puts the station in the same place
     const team = teams[d.team];
     book.station = team.station = team.firstStation = w.spawn(db.type(d.station), owner(team), st.x, st.y, st.heading);
   }
   const orbital = markers(map, 'Orbital Special Structure Position');
   (d.orbital || []).forEach((n, i) => {
-    const t = db.type(n),
-      at = orbital[i];
-    if (t && at) w.spawn(t, owner(teams[d.team]), at.x, at.y, at.heading);
+    const t = db.type(n.type ?? n),
+      at = orbital[i],
+      e = t && at && w.spawn(t, owner(teams[d.team]), at.x, at.y, at.heading);
+    if (n.gid) book.orbital.set(n.gid, e || null);
   });
   side(d, defend, Math.atan2(entry.y - defend.y, entry.x - defend.x), false);
   side(cb.attacker, entry, Math.atan2(defend.y - entry.y, defend.x - entry.x), true);
@@ -623,11 +626,15 @@ export function battleResult(w, book, cb, winnerTeam) {
   }
   const stationLevel =
     book.station && !book.station.dead ? (book.station.stationLevel ?? book.station.type.num('Base_Level', 0)) : undefined;
+  // orbital structures that never spawned (no marker) count as surviving
+  for (const [gid, e] of book.orbital || []) if (!e || !e.dead) alive.push(gid);
   return {
     planet: cb.planet,
     alive,
     station: !!(book.station && !book.station.dead),
     stationLevel,
+    stationFought: cb.defender.station || null,
+    orbitalFought: [...(book.orbital || new Map()).keys()],
     winner: winnerTeam === cb.attacker.team ? 'attacker' : 'defender',
     ...linked
   };

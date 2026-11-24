@@ -1015,7 +1015,7 @@ export class ScriptHost {
         for (const u of members()) u.holdFire = on !== false;
       },
       Prevent_AI_Usage: on => {
-        e.noAI = on !== false;
+        e.noAI = e.scriptNoAI = on !== false;
       },
       Suspend_Locomotor: on => {
         for (const u of members()) u.suspended = on !== false;
@@ -1125,6 +1125,7 @@ export class ScriptHost {
       Get_Parent_Mode_Object_ID: () => (typeof e.id === 'number' ? e.id : 0),
       Set_Importance: () => {},
       Set_Selectable: on => {
+        e.scriptSelectable = on !== false;
         if (self.cmd.selectable) return self.cmd.selectable(e, on !== false);
         for (const u of e.isSquad ? e.fighters : [e]) u.selectable = on !== false;
         e.selectable = on !== false;

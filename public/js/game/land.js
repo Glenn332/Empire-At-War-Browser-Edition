@@ -91,6 +91,34 @@ async function animOf(type, kind) {
 }
 
 const SETS = new Map();
+
+// Sight eyes are bucketed into every cell their reveal circle overlaps, so a target only tests the eyes of its own cell.
+const EYE_CELL = 256;
+const eyeKey = (cx, cy) => (cx + 32768) * 65536 + cy + 32768;
+function gridEyes(g, eyes) {
+  g ||= { cells: new Map(), big: [] };
+  for (const l of g.cells.values()) l.length = 0;
+  g.big.length = 0;
+  for (const e of eyes) {
+    const r = Math.sqrt(e[2]) + 1;
+    if (!(r <= EYE_CELL * 4)) {
+      g.big.push(e);
+      continue;
+    }
+    const x0 = Math.floor((e[0] - r) / EYE_CELL),
+      x1 = Math.floor((e[0] + r) / EYE_CELL),
+      y0 = Math.floor((e[1] - r) / EYE_CELL),
+      y1 = Math.floor((e[1] + r) / EYE_CELL);
+    for (let cx = x0; cx <= x1; cx++)
+      for (let cy = y0; cy <= y1; cy++) {
+        const k = eyeKey(cx, cy);
+        let l = g.cells.get(k);
+        if (!l) g.cells.set(k, (l = []));
+        l.push(e);
+      }
+  }
+  return g;
+}
 let LISTING = null;
 function animSet(type) {
   const base = (animOverride(type) || type.str('Land_Model_Name')).replace(/\.alo$/i, '').toUpperCase();
@@ -688,6 +716,8 @@ export class LandSquad {
     this.crew = undefined;
     this.craft = undefined;
     this.noAI = undefined;
+    this.scriptNoAI = undefined;
+    this.scriptSelectable = undefined;
     this.selectable = undefined;
     this.advance = undefined;
     this.spot = undefined;
@@ -1334,6 +1364,7 @@ export class LandWorld {
         if (p.side >= 0 && this.team[p.side] === T) eyes.push([p.x, p.y, (p.sight ??= p.type.num('Land_FOW_Reveal_Range', 250)) ** 2, p.z + 30]);
       for (const p of this.pings) if (this.team[p.side] === T) eyes.push([p.x, p.y, p.r ** 2, 1e6]);
       for (const r of this.reveals) if (r.until > this.time && r.team.id === T) eyes.push([r.x, r.y, r.r * r.r, 1e6]);
+      const g = (this.eyeGrid = gridEyes(this.eyeGrid, eyes));
       for (const u of this.units) {
         if (u.dead || this.team[u.side] === T || u.cloaked) continue;
         let seen = false;
@@ -1346,15 +1377,25 @@ export class LandWorld {
               break;
             }
         }
-        if (!seen)
-          for (const e of eyes)
-            if ((u.x - e[0]) ** 2 + (u.y - e[1]) ** 2 <= e[2] && (u.flies || this.sightLine(e[0], e[1], e[3], u))) {
-              seen = true;
-              break;
-            }
-        if (seen) (u.vis ||= new Map()).set(T, { at: this.time, cell: Math.floor(u.x / C) * 65536 + Math.floor(u.y / C) });
+        if (!seen) seen = this.eyesSee(g, u);
+        if (seen) {
+          const cell = Math.floor(u.x / C) * 65536 + Math.floor(u.y / C),
+            v = (u.vis ||= new Map()).get(T);
+          if (v) {
+            v.at = this.time;
+            v.cell = cell;
+          } else u.vis.set(T, { at: this.time, cell });
+        }
       }
     }
+  }
+
+  eyesSee(g, u) {
+    const l = g.cells.get(eyeKey(Math.floor(u.x / EYE_CELL), Math.floor(u.y / EYE_CELL)));
+    if (l)
+      for (const e of l) if ((u.x - e[0]) ** 2 + (u.y - e[1]) ** 2 <= e[2] && (u.flies || this.sightLine(e[0], e[1], e[3], u))) return true;
+    for (const e of g.big) if ((u.x - e[0]) ** 2 + (u.y - e[1]) ** 2 <= e[2] && (u.flies || this.sightLine(e[0], e[1], e[3], u))) return true;
+    return false;
   }
 
   teamSides(side) {
@@ -2259,6 +2300,7 @@ export class LandWorld {
         }
     }
     this.eyes = all ? null : eyes.map(e => [e[0], e[1], Math.sqrt(e[2])]);
+    const g = all ? null : (this.viewEyeGrid = gridEyes(this.viewEyeGrid, eyes));
     for (const u of this.units) {
       if (this.ally(u.side, side)) {
         u.seen = true;
@@ -2275,12 +2317,7 @@ export class LandWorld {
             break;
           }
       }
-      if (!seen && !u.cloaked)
-        for (const e of eyes)
-          if ((u.x - e[0]) ** 2 + (u.y - e[1]) ** 2 <= e[2] && (u.flies || this.sightLine(e[0], e[1], e[3], u))) {
-            seen = true;
-            break;
-          }
+      if (!seen && !u.cloaked) seen = this.eyesSee(g, u);
       if (!u.cloaked) {
         const C = (this.fowCell ||= db.constants.num('DesiredLandFOWCellSize', 15)),
           cell = Math.floor(u.x / C) * 65536 + Math.floor(u.y / C);

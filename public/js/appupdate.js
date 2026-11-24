@@ -168,7 +168,7 @@ function button(text, onclick, cls = '', title = '') {
 }
 
 async function install() {
-  const r = await fetch('api/update/install');
+  const r = await fetch('api/update/install', { method: 'POST', headers: { 'X-SWR': '1' } });
   if (!r.ok) {
     strip({ badge: 'Update', what: 'The update could not start', state: await r.text(), acts: [button('OK', hide)] });
     return;

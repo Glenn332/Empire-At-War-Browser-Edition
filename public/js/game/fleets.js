@@ -1,4 +1,5 @@
 import { db } from '../gamedata.js';
+import { isHumanFaction } from './galaxy.js';
 import { bribeRun, payBribes, hudQuote, passByBribe, canBribe } from './galacticbribe.js';
 import { humanRoute } from './humanroute.js';
 import { conflictAt } from './galacticrelation.js';
@@ -199,7 +200,8 @@ function barred(galaxy, fleet, to) {
   const planet = galaxy.planets[to];
   if (!planet?.restricted) return false;
   const owner = galaxy.players.find(p => p.faction === fleet.owner);
-  return !!owner && !owner.ai && !galaxy.storyEntry?.(fleet, planet);
+  // multiplayer humans carry an AI type name ("Human"), so ask who is human instead of reading owner.ai
+  return !!owner && (galaxy.humans ? isHumanFaction(galaxy, fleet.owner) : !owner.ai) && !galaxy.storyEntry?.(fleet, planet);
 }
 
 function validPath(galaxy, from, to, path) {
