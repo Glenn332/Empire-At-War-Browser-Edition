@@ -1,7 +1,8 @@
-import { CTL, Grid, work } from './scanjobs.js';
+import { CTL, JOB, Grid, work, moveWork, sharedMoveScene } from './scanjobs.js';
 
 let sh = null,
-  slot = 0;
+  slot = 0,
+  moveScene = null;
 const grid = new Grid(),
   scratch = [];
 
@@ -15,8 +16,12 @@ function loop() {
     if (g & 1) continue;
     Atomics.add(ctl, CTL.ACTIVE, 1);
     if (Atomics.load(ctl, CTL.GEN) === g) {
-      grid.build(sh, Atomics.load(ctl, CTL.UNITS), g);
-      work(sh, grid, slot, scratch);
+      if (Atomics.load(ctl, CTL.KIND) === JOB.MOVE) {
+        if (sh.move) moveWork(sh, (moveScene ||= sharedMoveScene(sh.move)));
+      } else {
+        grid.build(sh, Atomics.load(ctl, CTL.UNITS), g);
+        work(sh, grid, slot, scratch);
+      }
     }
     if (Atomics.sub(ctl, CTL.ACTIVE, 1) === 1) Atomics.notify(ctl, CTL.ACTIVE);
   }

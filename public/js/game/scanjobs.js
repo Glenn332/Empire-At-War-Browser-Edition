@@ -1,13 +1,98 @@
+import { F, O, MoveScene, moveFighter } from './fighterflight.js';
+
 export const UNIT_CELL = 1024;
 export const UNIT_PAD = 200;
 export const CAP_UNITS = 1 << 15;
 export const CAP_REQS = 1 << 15;
 export const OUT_CAP = 1 << 20;
-export const CTL = { GEN: 0, COUNT: 1, NEXT: 2, DONE: 3, UNITS: 4, CHUNK: 5, ACTIVE: 6, READY: 7 };
+export const CTL = { GEN: 0, COUNT: 1, NEXT: 2, DONE: 3, UNITS: 4, CHUNK: 5, ACTIVE: 6, READY: 7, KIND: 8 };
+export const JOB = { SCAN: 0, MOVE: 1 };
+
+// Fighter moves shared with the job threads. Battles past these sizes move the rest on the battle thread.
+export const MOVE_CAP = {
+  FIGHTERS: 1 << 15,
+  OBSTACLES: 1 << 13,
+  CELLS: 1 << 16,
+  ITEMS: 1 << 18,
+  MESHES: 1024,
+  MESH_FLOATS: 1 << 21,
+  MESH_INTS: 1 << 21
+};
+export const MOVE_HEAD = { CELLS: 0, MIN_X: 1, MIN_Y: 2, MAX_X: 3, MAX_Y: 4, DT: 5, MESHES: 6 };
+const MESH_ROW = 16;
+
+function makeMoveShared(S) {
+  return {
+    head: new Float64Array(new S(64)),
+    fighters: new Float64Array(new S(MOVE_CAP.FIGHTERS * F.STRIDE * 8)),
+    obstacles: new Float64Array(new S(MOVE_CAP.OBSTACLES * O.STRIDE * 8)),
+    keys: new Float64Array(new S(MOVE_CAP.CELLS * 8)),
+    starts: new Int32Array(new S((MOVE_CAP.CELLS + 1) * 4)),
+    items: new Int32Array(new S(MOVE_CAP.ITEMS * 4)),
+    status: new Int32Array(new S(MOVE_CAP.FIGHTERS * 4)),
+    meshRows: new Int32Array(new S(MOVE_CAP.MESHES * MESH_ROW * 4)),
+    meshFloats: new Float32Array(new S(MOVE_CAP.MESH_FLOATS * 4)),
+    meshInts: new Int32Array(new S(MOVE_CAP.MESH_INTS * 4))
+  };
+}
+
+// A move scene over the shared columns. On a job thread the collision meshes come from the shared pool; a
+// mesh that did not fit there is only on the battle thread, which then moves that fighter itself.
+export function sharedMoveScene(move, localMeshes = null) {
+  const views = new Map();
+  const meshes = ref => {
+    if (localMeshes) return localMeshes[ref] || null;
+    let view = views.get(ref);
+    if (view !== undefined) return view;
+    const r = move.meshRows,
+      at = ref * MESH_ROW;
+    if (ref >= move.head[MOVE_HEAD.MESHES] || r[at] !== 1) return null;
+    const floats = (off, len) => move.meshFloats.subarray(off, off + len),
+      ints = (off, len) => move.meshInts.subarray(off, off + len);
+    view = {
+      T: floats(r[at + 1], r[at + 2]),
+      box: floats(r[at + 3], r[at + 4]),
+      order: ints(r[at + 5], r[at + 6]),
+      left: ints(r[at + 7], r[at + 8]),
+      right: ints(r[at + 9], r[at + 8]),
+      first: ints(r[at + 10], r[at + 8]),
+      count: ints(r[at + 11], r[at + 8])
+    };
+    views.set(ref, view);
+    return view;
+  };
+  return new MoveScene(move.fighters, move.obstacles, move.keys, move.starts, move.items, meshes);
+}
+
+export function readMoveHead(scene, move) {
+  const h = move.head;
+  scene.cellCount = h[MOVE_HEAD.CELLS];
+  scene.minX = h[MOVE_HEAD.MIN_X];
+  scene.minY = h[MOVE_HEAD.MIN_Y];
+  scene.maxX = h[MOVE_HEAD.MAX_X];
+  scene.maxY = h[MOVE_HEAD.MAX_Y];
+  scene.dt = h[MOVE_HEAD.DT];
+}
+
+export function moveWork(sh, scene) {
+  const ctl = sh.ctl,
+    count = Atomics.load(ctl, CTL.COUNT),
+    chunk = Atomics.load(ctl, CTL.CHUNK) || 32,
+    status = sh.move.status;
+  readMoveHead(scene, sh.move);
+  for (;;) {
+    const from = Atomics.add(ctl, CTL.NEXT, chunk);
+    if (from >= count) break;
+    const to = Math.min(count, from + chunk);
+    for (let i = from; i < to; i++) status[i] = moveFighter(scene, i) ? 1 : 0;
+    if (Atomics.add(ctl, CTL.DONE, to - from) + (to - from) >= count) Atomics.notify(ctl, CTL.DONE);
+  }
+}
 
 export function makeShared(workers) {
   const S = typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer;
   return {
+    move: workers ? makeMoveShared(S) : null,
     ctl: new Int32Array(new S(64)),
     x: new Float64Array(new S(CAP_UNITS * 8)),
     y: new Float64Array(new S(CAP_UNITS * 8)),
@@ -121,6 +206,81 @@ export class ScanAhead {
     this.ms = 0;
     this.n = 0;
     this.reqs = 0;
+    this.moveScene = this.sh.move ? sharedMoveScene(this.sh.move) : null;
+    this.meshRefs = new Map();
+    this.meshList = [];
+    this.meshFloatsUsed = 0;
+    this.meshIntsUsed = 0;
+  }
+
+  // The shared columns fighter moves are packed into, or null when this battle moves fighters on its own thread.
+  moveShared() {
+    return this.helpers && this.on ? this.sh.move : null;
+  }
+
+  // A stable number for a collision mesh. With job threads the mesh is copied into the shared pool once; one
+  // that does not fit keeps its number and is only used on the battle thread.
+  meshRef(mesh) {
+    let ref = this.meshRefs.get(mesh);
+    if (ref !== undefined) return ref;
+    ref = this.meshList.length;
+    this.meshList.push(mesh);
+    this.meshRefs.set(mesh, ref);
+    const move = this.sh.move;
+    if (!move || ref >= MOVE_CAP.MESHES) return ref;
+    const floats = mesh.T.length + mesh.box.length,
+      ints = mesh.order.length + mesh.left.length * 4;
+    const r = move.meshRows,
+      at = ref * MESH_ROW;
+    if (this.meshFloatsUsed + floats <= MOVE_CAP.MESH_FLOATS && this.meshIntsUsed + ints <= MOVE_CAP.MESH_INTS) {
+      const putFloats = list => {
+        const off = this.meshFloatsUsed;
+        move.meshFloats.set(list, off);
+        this.meshFloatsUsed += list.length;
+        return off;
+      };
+      const putInts = list => {
+        const off = this.meshIntsUsed;
+        move.meshInts.set(list, off);
+        this.meshIntsUsed += list.length;
+        return off;
+      };
+      r[at + 1] = putFloats(mesh.T);
+      r[at + 2] = mesh.T.length;
+      r[at + 3] = putFloats(mesh.box);
+      r[at + 4] = mesh.box.length;
+      r[at + 5] = putInts(mesh.order);
+      r[at + 6] = mesh.order.length;
+      r[at + 7] = putInts(mesh.left);
+      r[at + 8] = mesh.left.length;
+      r[at + 9] = putInts(mesh.right);
+      r[at + 10] = putInts(mesh.first);
+      r[at + 11] = putInts(mesh.count);
+      r[at] = 1;
+    } else r[at] = 0;
+    move.head[MOVE_HEAD.MESHES] = ref + 1;
+    return ref;
+  }
+
+  // Moves `count` packed fighters on the job threads and this one. Rows a job thread could not finish (a mesh
+  // that is not in the shared pool) are moved here afterwards, so the result never depends on the threads.
+  runMoves(count, localScene) {
+    const sh = this.sh,
+      ctl = sh.ctl,
+      status = sh.move.status;
+    Atomics.add(ctl, CTL.GEN, 1);
+    for (let a; (a = Atomics.load(ctl, CTL.ACTIVE)) !== 0; ) Atomics.wait(ctl, CTL.ACTIVE, a, 5);
+    Atomics.store(ctl, CTL.KIND, JOB.MOVE);
+    Atomics.store(ctl, CTL.COUNT, count);
+    Atomics.store(ctl, CTL.NEXT, 0);
+    Atomics.store(ctl, CTL.DONE, 0);
+    Atomics.store(ctl, CTL.CHUNK, Math.max(8, Math.min(64, Math.ceil(count / ((this.helpers + 1) * 4)))));
+    Atomics.add(ctl, CTL.GEN, 1);
+    Atomics.notify(ctl, CTL.GEN);
+    moveWork(sh, this.moveScene);
+    for (let d; (d = Atomics.load(ctl, CTL.DONE)) < count; ) Atomics.wait(ctl, CTL.DONE, d, 5);
+    readMoveHead(localScene, sh.move);
+    for (let i = 0; i < count; i++) if (status[i] !== 1) moveFighter(localScene, i);
   }
 
   report() {
@@ -159,6 +319,7 @@ export class ScanAhead {
     const ctl = sh.ctl;
     Atomics.add(ctl, CTL.GEN, 1);
     for (let a; (a = Atomics.load(ctl, CTL.ACTIVE)) !== 0; ) Atomics.wait(ctl, CTL.ACTIVE, a, 5);
+    Atomics.store(ctl, CTL.KIND, JOB.SCAN);
     for (let i = 0; i < n; i++) {
       const o = units[i];
       sh.x[i] = o.x;

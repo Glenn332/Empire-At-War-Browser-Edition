@@ -240,7 +240,7 @@ if (station) {
   u.heading = 0;
   u.roll = 0;
   u.pitch = Math.PI / 2 - F.lift * DT * 0.5;
-  w.fly(u, -1000, 0, u.z, u.speed, DT);
+  w.fighterMoves.flyOne(u, -1000, 0, u.z, u.speed, DT);
   const p = Math.PI / 2 + F.lift * DT * 0.5;
   near(u.pitch, Math.PI - p - F.lift / 30, F.lift / 30 + 1e-9, 'the loop ends one frame of lift past the top, then steers level');
   assert(u.pitch < Math.PI - p, 'below the plain mirror of the top');

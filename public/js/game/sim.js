@@ -1,4 +1,6 @@
 import { ScanAhead } from './scanjobs.js';
+import { FighterMoves } from './fightermoves.js';
+import { wrapAngle as wrapAngleShared } from './fighterflight.js';
 import { hardpointModes, hardpointDelays, modeAllows, modeDelay, rechargeDelay } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
 import { survivorPicks } from './survivors.js';
@@ -70,9 +72,7 @@ const UNIT_CELL = 1024,
 const HIT_CELL = 256;
 const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
-const LOOP_OVER = (170 * Math.PI) / 180,
-  LOOP_KEEP = Math.PI / 2,
-  DOG_CELL = 400,
+const DOG_CELL = 400,
   DOG_NEAR = 80000,
   PAIR_TIME = 10,
   PAIR_CONE = Math.PI / 2,
@@ -86,12 +86,7 @@ const TAU = Math.PI * 2;
 export const SHIELD_FLASH = 0.1,
   SHIELD_FADE = 0.28;
 
-export const wrapAngle = a => {
-  a %= TAU;
-  if (a > Math.PI) a -= TAU;
-  else if (a < -Math.PI) a += TAU;
-  return a;
-};
+export const wrapAngle = wrapAngleShared;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const rand = (a, b) => a + simRandom() * (b - a);
 const dist2 = (a, b) => {
@@ -1764,7 +1759,9 @@ export class Squad {
         avoid: undefined,
         partner: undefined,
         lock: undefined,
-        dog: undefined
+        dog: undefined,
+        move: undefined,
+        fireAt: null
       };
       this.fighters.push(u);
       world.units.push(u);
@@ -1877,6 +1874,8 @@ export class World {
     this.reveal = false;
     this.fogTimer = 0;
     this.solid = [];
+    this.fighterMoves = new FighterMoves(this);
+    this.stepTimes = { move: 0, fire: 0 };
     this.unitGridHitReach = 0;
     this.unitGridCells = { minX: 0, maxX: -1, minY: 0, maxY: -1 };
     this.squadPickCandidates = [];
@@ -3170,6 +3169,7 @@ export class World {
   updateEnd() {
     const units = this.units,
       dt = this.stepDt;
+    this.moveFighters(dt);
     this.ahead?.clear();
     if (this.wings.length) mergeWings(this);
     if (this.forces.length) recheckForces(this);
@@ -5661,76 +5661,6 @@ export class World {
     return c;
   }
 
-  lookStep(o, x0, y0, z0, x1, y1, z1) {
-    const B = o.lookBox;
-    if (!B) return o.coll ? this.meshStep(o, x0, y0, z0, x1, y1, z1, true) : -1;
-    this.toModel(o, x0, y0, z0, _ms0);
-    this.toModel(o, x1, y1, z1, _ms1);
-    const ox = _ms0.x,
-      oy = _ms0.y,
-      oz = _ms0.z;
-    if (ox >= B[0] && ox <= B[3] && oy >= B[1] && oy <= B[4] && oz >= B[2] && oz <= B[5]) return -2;
-    const dx = _ms1.x - ox,
-      dy = _ms1.y - oy,
-      dz = _ms1.z - oz;
-    let t0 = 0,
-      t1 = 1;
-    for (let k = 0; k < 3; k++) {
-      const p = k === 0 ? ox : k === 1 ? oy : oz,
-        d = k === 0 ? dx : k === 1 ? dy : dz;
-      if (Math.abs(d) < 1e-12) {
-        if (p < B[k] || p > B[k + 3]) return -1;
-        continue;
-      }
-      let a = (B[k] - p) / d,
-        c = (B[k + 3] - p) / d;
-      if (a > c) {
-        const w = a;
-        a = c;
-        c = w;
-      }
-      if (a > t0) t0 = a;
-      if (c < t1) t1 = c;
-      if (t0 > t1) return -1;
-    }
-    return t0 < 1 ? t0 : -1;
-  }
-
-  toModel(o, x, y, z, out) {
-    const k = 1 / (o.scale || 1),
-      a = -((o.heading || 0) + Math.PI / 2),
-      c = Math.cos(a),
-      s = Math.sin(a),
-      P = o.pitch || 0,
-      R = o.roll || 0;
-    x -= o.x;
-    y -= o.y;
-    z -= o.z;
-    let X = x * c - y * s,
-      Y = x * s + y * c,
-      Z = z;
-    if (P) {
-      const cp = Math.cos(P),
-        sp = Math.sin(P),
-        y2 = Y * cp - Z * sp,
-        z2 = Y * sp + Z * cp;
-      Y = y2;
-      Z = z2;
-    }
-    if (R) {
-      const cr = Math.cos(-R),
-        sr = Math.sin(-R),
-        x2 = X * cr + Z * sr,
-        z2 = -X * sr + Z * cr;
-      X = x2;
-      Z = z2;
-    }
-    out.x = X * k;
-    out.y = Y * k;
-    out.z = Z * k;
-    return out;
-  }
-
   meshStep(o, x0, y0, z0, x1, y1, z1, bare = false) {
     const k = 1 / (o.scale || 1),
       a = -((o.heading || 0) + Math.PI / 2),
@@ -6510,50 +6440,6 @@ export class World {
     );
   }
 
-  fly(u, tx, ty, tz, want, dt, k = 1, over = true) {
-    const F = this.flight(u),
-      st = u.fstate;
-    u.roll ||= 0;
-    tx = clamp(tx, this.min.x, this.max.x);
-    ty = clamp(ty, this.min.y, this.max.y);
-    let err = wrapAngle(Math.atan2(ty - u.y, tx - u.x) - u.heading);
-    if (st.loop && Math.abs(err) < LOOP_KEEP) st.loop = undefined;
-    if (!st.loop && over && F.lift > 0 && Math.abs(err) > LOOP_OVER) {
-      st.loop = Math.atan2(tz - u.z, Math.hypot(tx - u.x, ty - u.y)) - (u.pitch || 0) > 0 ? 1 : -1;
-    }
-    if (st.loop) {
-      u.pitch = (u.pitch || 0) + st.loop * F.lift * dt * k;
-      u.roll += clamp(-u.roll, -F.roll * dt, F.roll * dt);
-      if (Math.abs(u.pitch) >= Math.PI / 2) {
-        u.pitch = (Math.PI - Math.abs(u.pitch) - F.lift / LOGIC_FPS) * Math.sign(u.pitch);
-        u.heading = wrapAngle(u.heading + Math.PI);
-        u.roll = wrapAngle(u.roll + Math.PI);
-        st.loop = undefined;
-        u.flip = true;
-      }
-    } else {
-      if (Math.abs(err - (u.turnRate * wrapAngle(u.roll)) / F.roll) > Math.PI) err -= Math.sign(err) * 2 * Math.PI;
-      const bank = clamp(err, -F.bank, F.bank);
-      u.roll += clamp(bank - u.roll, -F.roll * dt, F.roll * dt);
-      if (!(u.roll * bank < 0) || Math.abs(u.roll) < 0.02)
-        u.heading = wrapAngle(u.heading + clamp(err, -u.turnRate * dt * k, u.turnRate * dt * k));
-    }
-    const a = (F.thrust || u.accel) * dt * k;
-    u.speed += clamp(want - u.speed, -a, a);
-    if (!st.loop && F.lift > 0) {
-      const h = Math.max(Math.hypot(tx - u.x, ty - u.y), u.speed / Math.max(0.1, u.turnRate)),
-        p = u.pitch || 0;
-      const level = (Math.abs(p) / F.lift) * u.speed;
-      const dz = (tz - u.z) * (h < level ? h / level : 1);
-      u.pitch = p + clamp(Math.atan2(dz, h) - p, -F.lift * dt * k, F.lift * dt * k);
-    }
-    const flat = Math.cos(u.pitch || 0);
-    u.x = clamp(u.x + Math.cos(u.heading) * u.speed * flat * dt, this.min.x, this.max.x);
-    u.y = clamp(u.y + Math.sin(u.heading) * u.speed * flat * dt, this.min.y, this.max.y);
-    if (st.loop || F.lift > 0) u.z += Math.sin(u.pitch || 0) * u.speed * dt;
-    else u.z += (tz - u.z) * Math.min(1, dt * 0.8);
-  }
-
   dogfight(u, s, t, lead, top, low, st) {
     const out = (st.dog ||= { x: 0, y: 0, z: 0, v: 0 }),
       key = t.dogKey;
@@ -6762,20 +6648,31 @@ export class World {
       if (s.mode !== 'idle' || s.order.kind !== 'idle' || (u.fireIdle ??= u.type.bool('Can_Fighter_Fire_When_Idle'))) fireAt = s.fireTarget;
     }
     st.mode = tgt ? 'attack' : 'form';
-    const away = this.probe(u, st, lead === u, dt);
-    if (gz !== gz) gz = u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50);
-    if (away) {
-      gx = away.x;
-      gy = away.y;
-      gz = away.z;
-      if (away.hit && low > 0) {
-        const o = s && s.order;
-        want = o && o.kind === 'guard' && o.target ? Math.min(low, top * 0.5) : low;
-      }
+    const gzDefault = gz !== gz ? u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50) : gz;
+    let wantIfHit = NaN;
+    if (low > 0) {
+      const o = s && s.order;
+      wantIfHit = o && o.kind === 'guard' && o.target ? Math.min(low, top * 0.5) : low;
     }
-    this.fly(u, gx, gy, gz, want, dt, k, !(mode === 'idle' && !tgt));
-    u.syncObj();
+    st.fireAt = fireAt;
+    this.fighterMoves.request(u, gx, gy, gz, gzDefault, want, wantIfHit, k, !(mode === 'idle' && !tgt), lead === u);
+  }
 
+  // Every fighter that decided where to go this step moves together (on the job threads when there are any),
+  // then fires in unit order from where it ended up.
+  moveFighters(dt) {
+    const from = performance.now();
+    const moved = this.fighterMoves.run(dt);
+    const fireFrom = performance.now();
+    for (const u of moved) if (!u.dead && !u.suspended) this.fireFighterWeapons(u, dt);
+    this.stepTimes.move += fireFrom - from;
+    this.stepTimes.fire += performance.now() - fireFrom;
+  }
+
+  fireFighterWeapons(u, dt) {
+    const st = u.fstate,
+      fireAt = st.fireAt;
+    st.fireAt = null;
     const w = u.weapon;
     if (u.cloaked) return;
     if (!w) {
@@ -6912,47 +6809,4 @@ export class World {
     return true;
   }
 
-  probe(u, st, leader, dt) {
-    const p = u.pitch || 0,
-      flat = Math.cos(p),
-      ex = Math.cos(u.heading) * flat,
-      ey = Math.sin(u.heading) * flat,
-      ez = Math.sin(p);
-    const v = u.speed * (2 / Math.max(0.05, u.turnRate)) * (leader ? 2 : 1),
-      G = this.obstacleGrid;
-    let hit = null;
-    if (v >= 1 && G) {
-      const near = G.get(Math.floor(u.x / PROBE_CELL) * 65536 + Math.floor(u.y / PROBE_CELL));
-      if (near) {
-        const d = u.speed / LOGIC_FPS,
-          x1 = u.x + ex * v,
-          y1 = u.y + ey * v,
-          z1 = u.z + ez * v;
-        for (const o of near) {
-          if (o === u) continue;
-          const c = o.cull;
-          if (!c || Math.abs(u.x - c[0]) > c[3] + d || Math.abs(u.y - c[1]) > c[4] + d || Math.abs(u.z - c[2]) > c[5] + d) continue;
-          const t = this.lookStep(o, u.x, u.y, u.z, x1, y1, z1);
-          if (t === -2) break;
-          if (t >= 0) {
-            hit = o;
-            break;
-          }
-        }
-      }
-    }
-    if (hit) {
-      st.avoid = 15 / LOGIC_FPS;
-      const ax = u.x - hit.x,
-        ay = u.y - hit.y,
-        az = u.z - hit.z;
-      return ax || ay || az ? { x: u.x + ax, y: u.y + ay, z: u.z + az, hit: true } : { x: u.x + 1, y: u.y, z: u.z, hit: true };
-    }
-    if (st.avoid > 0) {
-      st.avoid -= dt;
-      const k = (u.speed * 10) / LOGIC_FPS;
-      return { x: u.x + ex * k, y: u.y + ey * k, z: u.z + ez * k, hit: false };
-    }
-    return null;
-  }
 }

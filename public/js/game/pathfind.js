@@ -542,15 +542,15 @@ export class Pathfinder extends PathCore {
     const q = this.ext(u),
       v = Math.max(1, u.maxSpeed || 40);
     this.fieldsAvoidedOn(u, goal.x, goal.y);
-    const here = this.sweep(u, q, u.x, u.y, u.x, u.y, 0, 0) & ~MOVING;
-    if (!r.pts) return here || !(this.sweep(u, q, u.x, u.y, goal.x, goal.y, 0, Math.hypot(goal.x - u.x, goal.y - u.y) / v) & ~MOVING);
+    const here = this.sweep(u, q, u.x, u.y, u.x, u.y, 0, 0, true) & ~MOVING;
+    if (!r.pts) return here || !(this.sweep(u, q, u.x, u.y, goal.x, goal.y, 0, Math.hypot(goal.x - u.x, goal.y - u.y) / v, true) & ~MOVING);
     let ax = u.x,
       ay = u.y,
       t0 = 0;
     for (let i = r.i; i < r.pts.length; i++) {
       const p = r.pts[i],
         dt = Math.hypot(p.x - ax, p.y - ay) / Math.max(1, p.speed || v);
-      if (this.sweep(u, q, ax, ay, p.x, p.y, t0, t0 + dt) & STILL && !(i === r.i && here & STILL)) return false;
+      if (this.sweep(u, q, ax, ay, p.x, p.y, t0, t0 + dt, true) & STILL && !(i === r.i && here & STILL)) return false;
       ax = p.x;
       ay = p.y;
       t0 += dt;

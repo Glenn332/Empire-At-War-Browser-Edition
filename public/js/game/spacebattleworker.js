@@ -452,6 +452,10 @@ async function run(m) {
           message.stepPhases[phase] = phaseMs[phase] / 30;
           phaseMs[phase] = 0;
         }
+        for (const part in w.stepTimes) {
+          message.stepPhases['sim.' + part] = w.stepTimes[part] / 30;
+          w.stepTimes[part] = 0;
+        }
       }
       message.jobs = steps % 30 === 0 && w.ahead ? w.ahead.report() : undefined;
       send(postMessage, message, transfer, said);

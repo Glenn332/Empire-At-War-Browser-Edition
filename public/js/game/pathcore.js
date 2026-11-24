@@ -373,7 +373,9 @@ export class PathCore {
     return B > 0 ? q.st || (q.st = { ax: q.ax, sd: q.sd + B, r: Math.max(q.ax, q.sd + B) }) : q;
   }
 
-  sweep(u, q, ax, ay, bx, by, t0, t1) {
+  // Which of STILL, FIELD and MOVING the step from a to b runs into. With stillOnly the moving ships are not
+  // checked: callers that only ask about stations, structures and fields skip a test against every track.
+  sweep(u, q, ax, ay, bx, by, t0, t1, stillOnly = false) {
     let bits = 0;
     let qdx = bx - ax,
       qdy = by - ay;
@@ -415,7 +417,7 @@ export class PathCore {
           bits |= e.field ? FIELD : STILL;
         if (bits & STILL) break;
       }
-      return bits | this.sweepIndexed(q, qdx, qdy, ax, ay, bx, by, t0, t1, minx, miny, maxx, maxy);
+      return stillOnly ? bits : bits | this.sweepIndexed(q, qdx, qdy, ax, ay, bx, by, t0, t1, minx, miny, maxx, maxy);
     }
     const seen = (this.seenRun = (this.seenRun || 0) + 1);
     for (let ix = Math.floor(minx / SCELL), x1 = Math.floor(maxx / SCELL); ix <= x1 && !(bits & STILL); ix++)
@@ -442,6 +444,7 @@ export class PathCore {
         break;
       }
     }
+    if (stillOnly) return bits;
     const now = this.world.time,
       p0 = this._p0 || (this._p0 = {}),
       p1 = this._p1 || (this._p1 = {});
@@ -549,7 +552,7 @@ export class PathCore {
     const w = this.world,
       avoid = this.fieldsAvoidedOn(u, x, y);
     const free = (px, py) =>
-      !(this.sweep(u, q, px, py, px, py, 0, 0) & STILL) && !avoid.some(f => (f.x - px) ** 2 + (f.y - py) ** 2 < (f.r + q.r) ** 2);
+      !(this.sweep(u, q, px, py, px, py, 0, 0, true) & STILL) && !avoid.some(f => (f.x - px) ** 2 + (f.y - py) ** 2 < (f.r + q.r) ** 2);
     if (free(x, y)) return null;
     const
       back = Math.atan2(u.y - y, u.x - x);
@@ -1151,7 +1154,7 @@ export class PathCore {
         const h = u.heading + (side * k * 10 * Math.PI) / 180,
           bx = u.x + Math.cos(h) * run,
           by = u.y + Math.sin(h) * run;
-        if (!(this.sweep(u, q, u.x, u.y, bx, by, 0, run / v) & (STILL | FIELD))) {
+        if (!(this.sweep(u, q, u.x, u.y, bx, by, 0, run / v, true) & (STILL | FIELD))) {
           turns.push(h);
           break;
         }
@@ -1396,7 +1399,7 @@ export class PathCore {
         const h = u.heading + (side * k * 10 * Math.PI) / 180,
           bx = ux + Math.cos(h) * run,
           by = uy + Math.sin(h) * run;
-        if (!(this.sweep(u, q, ux, uy, bx, by, 0, run / v) & (STILL | FIELD))) {
+        if (!(this.sweep(u, q, ux, uy, bx, by, 0, run / v, true) & (STILL | FIELD))) {
           turns.push(h);
           break;
         }
