@@ -13,6 +13,7 @@ const wrap = a => {
   return a > Math.PI ? a - TAU : a < -Math.PI ? a + TAU : a;
 };
 
+const _fieldExtent = { ax: 0, sd: 0 };
 const reachToward = (e, dx, dy, ux, uy) => {
   const c = ux * dx + uy * dy,
     c2 = c * c;
@@ -435,10 +436,25 @@ export class PathCore {
         }
         if (bits & STILL) break;
       }
-    const avoided = this.avoidedFor === u ? this.avoidedFields : null;
+    const avoided = this.avoidedFor === u ? this.avoidedFields : null,
+      fe = _fieldExtent,
+      qReach = Math.max(q.ax, q.sd),
+      vx = bx - ax,
+      vy = by - ay,
+      vv = vx * vx + vy * vy;
     for (const f of avoided || this.world.fields) {
       if (!avoided && !this.world.hazardous(f, u)) continue;
-      const fe = { ax: f.r, sd: f.r };
+      // touch cannot reach a field whose centre stays farther from the step than its radius plus the ship's
+      // widest reach, so those are skipped without changing the answer.
+      const px = f.x - ax,
+        py = f.y - ay;
+      let along = vv > 1e-9 ? (px * vx + py * vy) / vv : 0;
+      along = along < 0 ? 0 : along > 1 ? 1 : along;
+      const cx = px - vx * along,
+        cy = py - vy * along,
+        clear = f.r + qReach + 1e-6;
+      if (cx * cx + cy * cy > clear * clear) continue;
+      fe.ax = fe.sd = f.r;
       if (touch(q, qdx, qdy, ax, ay, bx, by, fe, 1, 0, f.x, f.y, f.x, f.y)) {
         bits |= FIELD;
         break;
@@ -540,11 +556,28 @@ export class PathCore {
     const reach = this.ext(u).r,
       touches = (x, y, field) => (x - field.x) ** 2 + (y - field.y) ** 2 < (field.r + reach) ** 2,
       kindOf = field => (field.asteroid ? 1 : 0) | (field.ion ? 2 : 0) | (field.nebula ? 4 : 0),
-      hazards = this.world.fields.filter(field => this.world.hazardous(field, u));
+      hazards = this.hazardsFor(u);
     let touchedKinds = 0;
     for (const field of hazards) if (touches(u.x, u.y, field) || touches(gx, gy, field)) touchedKinds |= kindOf(field);
     this.avoidedFor = u;
     return (this.avoidedFields = touchedKinds ? hazards.filter(field => !(kindOf(field) & touchedKinds)) : hazards);
+  }
+
+  // The fields that are hazards to the unit, in field order. Without a fly-through order they depend only on
+  // whether it takes asteroid damage and has shields, so those lists are kept until a field is added.
+  hazardsFor(u) {
+    const w = this.world,
+      lead = u.isSquad ? u.fighters[0] : u,
+      o = (u.squad || u).order;
+    if (!lead || (o && o.through)) return w.fields.filter(field => w.hazardous(field, u));
+    const key = (lead.asteroidDamage ? 1 : 0) | (lead.maxShield > 0 ? 2 : 0),
+      kept = (this.hazardLists ||= { fields: null, count: -1, lists: [] });
+    if (kept.fields !== w.fields || kept.count !== w.fields.length) {
+      kept.fields = w.fields;
+      kept.count = w.fields.length;
+      kept.lists = [];
+    }
+    return (kept.lists[key] ||= w.fields.filter(field => (field.asteroid && key & 1) || (field.ion && key & 2)));
   }
 
   slot(u, x, y) {
@@ -615,7 +648,7 @@ export class PathCore {
       obstacles.push({ x: e.x, y: e.y, hard: (e.ext?.r || 0) + shipStill.r, padded: 0 });
     }
     const fieldKind = field => (field.asteroid ? 1 : 0) | (field.ion ? 2 : 0),
-      hazards = this.world.fields.filter(field => this.world.hazardous(field, u));
+      hazards = this.hazardsFor(u);
     let droppedKinds = 0;
     for (const field of hazards)
       if (holds(u.x, u.y, field.x, field.y, field.r) || holds(gx, gy, field.x, field.y, field.r)) droppedKinds |= fieldKind(field);

@@ -94,15 +94,48 @@ export class SpaceRecorder {
     );
   }
 
+  // The same check for a squadron: true only when every field matches what was last sent.
+  squadPropsUnchanged(q) {
+    const prev = this.sent.get(q.id);
+    if (!prev) return false;
+    const ids = prev[1],
+      fs = q.fighters,
+      about = q.about,
+      sentAbout = prev[5],
+      o = q.order,
+      sentOrder = prev[2];
+    if (
+      prev[0] !== (q.player ? q.player.id : -1) ||
+      ids.length !== fs.length ||
+      (q.queue && q.queue.length) ||
+      prev[3].length ||
+      prev[4] !== (q.mode || null) ||
+      prev[6] !== (q.target && !q.target.dead ? q.target.id : -1) ||
+      prev[7] !== q.dogKey
+    )
+      return false;
+    for (let i = 0; i < fs.length; i++) if (ids[i] !== fs[i].id) return false;
+    if (about ? !sentAbout || sentAbout[0] !== about.x || sentAbout[1] !== about.y || sentAbout[2] !== (about.cell ? 1 : 0) : sentAbout !== null)
+      return false;
+    if (!(o && o.kind && o.kind !== 'idle')) return sentOrder === null;
+    return (
+      !!sentOrder &&
+      sentOrder[0] === o.kind &&
+      sentOrder[1] === (o.x ?? null) &&
+      sentOrder[2] === (o.y ?? null) &&
+      sentOrder[3] === (o.target && !o.target.dead ? o.target.id : -1)
+    );
+  }
+
   writeProps() {
-    const w = this.world,
-      seen = new Set();
+    const w = this.world;
+    let live = 0;
     this.props = [];
     const order = o =>
       o && o.kind && o.kind !== 'idle' ? [o.kind, o.x ?? null, o.y ?? null, o.target && !o.target.dead ? o.target.id : -1] : null;
     for (const u of w.units) {
       if (u.dead) continue;
-      seen.add(u.id);
+      live++;
       if (this.unitPropsUnchanged(u)) continue;
       const c = u.capture,
         th = u.targetHp,
@@ -124,7 +157,8 @@ export class SpaceRecorder {
     }
     for (const q of w.squads) {
       if (q.dead) continue;
-      seen.add(q.id);
+      live++;
+      if (this.squadPropsUnchanged(q)) continue;
       this.changed(q.id, [
         q.player ? q.player.id : -1,
         q.fighters.map(f => f.id),
@@ -136,7 +170,12 @@ export class SpaceRecorder {
         q.dogKey
       ]);
     }
-    if (this.sent.size > seen.size * 2 + 256) for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
+    if (this.sent.size > live * 2 + 256) {
+      const seen = new Set();
+      for (const u of w.units) if (!u.dead) seen.add(u.id);
+      for (const q of w.squads) if (!q.dead) seen.add(q.id);
+      for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
+    }
     this.teams = w.teams.map(t => (t.station && !t.station.dead ? t.station.id : -1));
     this.world_ = [
       w.lastViewerCombat ?? null,

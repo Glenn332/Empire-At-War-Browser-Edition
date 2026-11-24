@@ -1,12 +1,17 @@
 import { db } from '../gamedata.js';
 
+// The two occupation constants, read again only when another game's constants are loaded.
+const _occupationOf = { constants: null, radius: 1.2, turning: 0.2 };
 const occupation = e => {
-  const c = db.constants;
+  const c = db.constants,
+    k = _occupationOf;
+  if (k.constants !== c) {
+    k.constants = c;
+    k.radius = c.num('OccupationRadiusCoefficientSpace', 1.2);
+    k.turning = c.num('WaitOperatorSpeedCoefficient', 0.2);
+  }
   const turning = e.isSquad || !(e.turnRate > 0) ? 0 : e.maxSpeed / e.turnRate;
-  return Math.max(
-    e.halfLen || 0,
-    (e.radius || 40) * c.num('OccupationRadiusCoefficientSpace', 1.2) + turning * c.num('WaitOperatorSpeedCoefficient', 0.2)
-  );
+  return Math.max(e.halfLen || 0, (e.radius || 40) * k.radius + turning * k.turning);
 };
 
 export function formationSlots(entities, x, y) {
@@ -569,27 +574,114 @@ function meetTime(ships, target) {
   return best ?? 0;
 }
 
-function obstacleAt(world, e, p, r, group, T) {
-  const bonus = db.constants.num('SpaceStaticObstacleAvoidanceBonusDistance', 0);
+const BLOCKER_CELL = 1024;
+let spotPass = 0;
+
+// The units that can block an attack spot (no fighters or pads), filed by the box each one can block from: a
+// structure's radius plus the avoidance bonus, a moving ship's planned path widened by its reach, or another ship's
+// occupation radius. Kept through one attackSlots call, which moves nothing. Only built while the planned paths
+// are current, so building it never refreshes them earlier than the checks themselves would.
+function spotBlockers(world, bonus) {
+  const paths = world.paths,
+    tracked = !!(paths && typeof paths.trackOf === 'function');
+  if (tracked && !(world.time - paths.tracksAt <= 0.33 && world.time >= paths.tracksAt)) return null;
+  const kept = (world._spotBlockers ||= { pass: -1, count: -1, tracksAt: NaN, bonus: NaN, cells: new Map(), stamp: 0 });
+  if (
+    kept.pass === spotPass &&
+    kept.count === world.units.length &&
+    kept.bonus === bonus &&
+    (!tracked || kept.tracksAt === paths.tracksAt)
+  )
+    return kept;
+  kept.pass = -1;
+  kept.count = world.units.length;
+  kept.bonus = bonus;
+  kept.tracksAt = tracked ? paths.tracksAt : NaN;
+  const cells = kept.cells;
+  for (const l of cells.values()) l.length = 0;
   for (const o of world.units) {
-    if (o.dead || group.has(o) || o.isFighter || o.isPad || o === e) continue;
-    const dx = p.x - o.x,
-      dy = p.y - o.y,
-      d = Math.hypot(dx, dy),
-      ro = o.radius || o.hitRadius || 0;
-    if (o.isStructure) {
-      if (d < r + ro + (d > 0 ? bonus * (dy / d) ** 2 : bonus)) return true;
-      continue;
+    if (o.isFighter || o.isPad) continue;
+    const k = !o.isStructure && tracked ? paths.trackBy.get(o) : null;
+    let x0, x1, y0, y1;
+    if (k) {
+      x0 = k.minx;
+      x1 = k.maxx;
+      y0 = k.miny;
+      y1 = k.maxy;
+    } else {
+      const R = o.isStructure ? (o.radius || o.hitRadius || 0) + Math.max(0, bonus) : occupation(o);
+      x0 = o.x - R;
+      x1 = o.x + R;
+      y0 = o.y - R;
+      y1 = o.y + R;
     }
-    if (o.layer !== e.layer) continue;
-    const k = trackOf(o);
-    if (k ? nearPath(k, p) < r + k.ext.r : d < r + occupation(o)) return true;
+    const cx0 = Math.floor(x0 / BLOCKER_CELL),
+      cx1 = Math.floor(x1 / BLOCKER_CELL),
+      cy0 = Math.floor(y0 / BLOCKER_CELL),
+      cy1 = Math.floor(y1 / BLOCKER_CELL);
+    if (!(cx1 - cx0 < 4096 && cy1 - cy0 < 4096)) {
+      for (const l of cells.values()) l.length = 0;
+      return null;
+    }
+    for (let ix = cx0; ix <= cx1; ix++)
+      for (let iy = cy0; iy <= cy1; iy++) {
+        const key = ix * 65536 + iy;
+        let l = cells.get(key);
+        if (!l) cells.set(key, (l = []));
+        l.push(o);
+      }
   }
-  const inside = (q, kind) => world.fields.some(f => f[kind] && (q.x - f.x) ** 2 + (q.y - f.y) ** 2 < f.r * f.r);
+  kept.pass = spotPass;
+  return kept;
+}
+
+// Whether `o` blocks the spot: the same test for every candidate, whichever way they were found.
+function blocks(world, e, p, r, group, bonus, o) {
+  if (o.dead || group.has(o) || o.isFighter || o.isPad || o === e) return false;
+  const dx = p.x - o.x,
+    dy = p.y - o.y,
+    d = Math.hypot(dx, dy),
+    ro = o.radius || o.hitRadius || 0;
+  if (o.isStructure) return d < r + ro + (d > 0 ? bonus * (dy / d) ** 2 : bonus);
+  if (o.layer !== e.layer) return false;
+  const k = trackOf(o);
+  if (k) {
+    // The track's box already holds its path widened by the ship's reach, so a spot clear of the box is clear
+    // of the path.
+    if (p.x + r + 1e-6 < k.minx || p.x - r - 1e-6 > k.maxx || p.y + r + 1e-6 < k.miny || p.y - r - 1e-6 > k.maxy) return false;
+    return nearPath(k, p) < r + k.ext.r;
+  }
+  return d < r + occupation(o);
+}
+
+function obstacleAt(world, e, p, r, group, T) {
+  const bonus = db.constants.num('SpaceStaticObstacleAvoidanceBonusDistance', 0),
+    grid = spotBlockers(world, bonus);
+  if (grid) {
+    const stamp = ++grid.stamp,
+      reach = r + 1e-6,
+      cx0 = Math.floor((p.x - reach) / BLOCKER_CELL),
+      cx1 = Math.floor((p.x + reach) / BLOCKER_CELL),
+      cy0 = Math.floor((p.y - reach) / BLOCKER_CELL),
+      cy1 = Math.floor((p.y + reach) / BLOCKER_CELL);
+    for (let ix = cx0; ix <= cx1; ix++)
+      for (let iy = cy0; iy <= cy1; iy++) {
+        const l = grid.cells.get(ix * 65536 + iy);
+        if (l)
+          for (const o of l) {
+            if (o._spotStamp === stamp) continue;
+            o._spotStamp = stamp;
+            if (blocks(world, e, p, r, group, bonus, o)) return true;
+          }
+      }
+  } else for (const o of world.units) if (blocks(world, e, p, r, group, bonus, o)) return true;
+  if (!world.fields.length) return false;
+  const insideOf = {},
+    inside = (q, kind) => world.fields.some(f => f[kind] && (q.x - f.x) ** 2 + (q.y - f.y) ** 2 < f.r * f.r),
+    eitherInside = kind => (insideOf[kind] ??= inside(e, kind) || inside(T, kind));
   for (const f of world.fields) {
     const kind = f.asteroid ? 'asteroid' : f.ion ? 'ion' : f.nebula ? 'nebula' : null;
-    if (!kind || fieldPassed(f, group.through) || (kind === 'asteroid' && !world.hazardous(f, e)) || inside(e, kind) || inside(T, kind))
-      continue;
+    if (!kind || fieldPassed(f, group.through) || (kind === 'asteroid' && !world.hazardous(f, e)) || eitherInside(kind)) continue;
     if ((p.x - f.x) ** 2 + (p.y - f.y) ** 2 < (f.r + r) ** 2) return true;
   }
   return false;
@@ -622,6 +714,7 @@ function spotsHeldAgainst(world, target, leadPoint, layer, group) {
 }
 
 export function attackSlots(ships, target, through = 0, maxEta) {
+  spotPass++;
   const out = new Map();
   if (!ships.length || !target) return out;
   const world = ships[0].world,

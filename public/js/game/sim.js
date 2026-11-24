@@ -71,6 +71,9 @@ const NO_CATS = new Set();
 const UNIT_CELL = 1024,
   UNIT_PAD = 200;
 const HIT_CELL = 256;
+// Teams the projectile grid keeps separate lists for; the list after them holds every unit.
+const HIT_TEAMS = 7,
+  HIT_LISTS = HIT_TEAMS + 1;
 const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
 const FIELD_CELL = 1024;
@@ -1879,7 +1882,7 @@ export class World {
     this.solid = [];
     this.fighterMoves = new FighterMoves(this);
     this.fighterDecisions = new FighterDecisions(this);
-    this.stepTimes = { decide: 0, move: 0, fire: 0 };
+    this.stepTimes = { begin: 0, units: 0, decide: 0, move: 0, fire: 0, squads: 0, shots: 0, fog: 0, end: 0 };
     this.unitGridHitReach = 0;
     this.unitGridCells = { minX: 0, maxX: -1, minY: 0, maxY: -1 };
     this.squadPickCandidates = [];
@@ -2102,7 +2105,7 @@ export class World {
     for (const u of this.units) {
       if (u.dead || !u.player || u.player.id < 0) continue;
       if (!u.squad) u.player.pop += u.pop;
-      const cap = u.type.num('Additional_Population_Capacity', 0);
+      const cap = (u.type._popCapacity ??= u.type.num('Additional_Population_Capacity', 0));
       if (cap) for (const p of u.isStation ? u.player.team.players : [u.player]) p.popExtra += cap;
     }
     for (const p of this.players) if (!(p.popCap > 0)) p.popCap = p.popExtra;
@@ -3061,6 +3064,7 @@ export class World {
   }
 
   updateBegin(dt) {
+    const beginFrom = performance.now();
     this.stepDt = dt;
     this.stepAt = 0;
     this.time += dt;
@@ -3139,11 +3143,13 @@ export class World {
         else if (u.squad.fighters[0] === u) aiUseAbilities(this, u.squad, true);
       }
     }
+    this.stepTimes.begin += performance.now() - beginFrom;
   }
 
   updateSome(upTo) {
     const units = this.units,
-      dt = this.stepDt;
+      dt = this.stepDt,
+      from = performance.now();
     let i = this.stepAt;
     for (; i < units.length && i < upTo; i++) {
       const u = units[i];
@@ -3168,17 +3174,22 @@ export class World {
       this.updateUnit(u, dt);
     }
     this.stepAt = i;
+    this.stepTimes.units += performance.now() - from;
     return i >= units.length;
   }
 
   updateEnd() {
     const units = this.units,
-      dt = this.stepDt;
+      dt = this.stepDt,
+      times = this.stepTimes;
     this.moveFighters(dt);
+    let at = performance.now();
     this.ahead?.clear();
     if (this.wings.length) mergeWings(this);
     if (this.forces.length) recheckForces(this);
     for (const s of this.squads) if (!s.dead) this.updateSquad(s, dt);
+    times.squads += performance.now() - at;
+    at = performance.now();
     if (this.bonusHolders.length) this.tickBonuses();
     this.projectileMods.tick(this.time, (u, pm) => {
       if (u.cmods && u.cmods.drop(pm)) u.applyBonuses();
@@ -3190,10 +3201,14 @@ export class World {
       this.losingTeamBonus(0.5);
     }
     this.updateProjectiles(dt);
+    times.shots += performance.now() - at;
+    at = performance.now();
     if ((this.fogTimer -= dt) <= 0) {
       this.fogTimer = 0.25;
       this.updateVisibility();
     }
+    times.fog += performance.now() - at;
+    at = performance.now();
     if ((this.overrunFrame = (this.overrunFrame || 0) + 1) % 15 === 0) this.checkOverrun();
     if (units.length > 64 && (this._gc = (this._gc || 0) + dt) > 3) {
       this._gc = 0;
@@ -3208,6 +3223,7 @@ export class World {
       this.unitGridN = Infinity;
     }
     this.paths.flush();
+    times.end += performance.now() - at;
   }
 
   checkOverrun() {
@@ -5417,8 +5433,19 @@ export class World {
       for (const u of this.units) {
         if (u.dead) continue;
         let r = (u.type._missileShield ??= u.type.num('Passive_Missile_Shield_Radius', 0));
-        if (u.abilities.length && u.isActive('MISSILE_SHIELD')) r = u.abilityState('MISSILE_SHIELD').def.node.num('Effective_Radius', r);
-        if (u.abilities.length && u.isActive('SENSOR_JAMMING')) r = u.abilityState('SENSOR_JAMMING').def.node.num('Effective_Radius', r);
+        const abilities = u.abilities;
+        if (abilities.length) {
+          // The first ability of each kind decides, as abilityState would pick it.
+          let shield = null,
+            jamming = null;
+          for (const a of abilities) {
+            const kind = a.def.kind;
+            if (kind === 'MISSILE_SHIELD') shield ||= a;
+            else if (kind === 'SENSOR_JAMMING') jamming ||= a;
+          }
+          if (shield && shield.active) r = shield.def.node.num('Effective_Radius', r);
+          if (jamming && jamming.active) r = jamming.def.node.num('Effective_Radius', r);
+        }
         if (r > 0) deflect.push(u, r);
       }
     let n = 0;
@@ -5550,14 +5577,17 @@ export class World {
           hitPart = null,
           ht = 2;
         const hg = this.hitGrid,
-          C = HIT_CELL;
+          C = HIT_CELL,
+          shotTeam = this.hitTeams.get(p.team),
+          list = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS ? HIT_TEAMS : shotTeam;
+        if (list === HIT_TEAMS && !this.hitWhole) this.fillHitGrid(false, true);
         const cx0 = Math.floor(Math.min(x0, p.x) / C),
           cx1 = Math.floor(Math.max(x0, p.x) / C),
           cy0 = Math.floor(Math.min(y0, p.y) / C),
           cy1 = Math.floor(Math.max(y0, p.y) / C);
         for (let ix = cx0; ix <= cx1; ix++)
           for (let iy = cy0; iy <= cy1; iy++) {
-            const l = hg.get(ix * 65536 + iy);
+            const l = hg.get((ix * 65536 + iy) * HIT_LISTS + list);
             if (l)
               for (const o of l) {
                 if (o.dead || o.player.team === p.team) continue;
@@ -5655,13 +5685,39 @@ export class World {
     ps.length = n;
   }
 
+  // Each cell keeps its units in unit order, once for every team as the units that team's shots can hit (the
+  // other teams' units) and once whole for shots of a team that has none in the grid. A shot then walks only
+  // possible targets, in the order the whole list would give them.
   makeHitGrid() {
     const hg = this.hitGrid || (this.hitGrid = new Map()),
-      C = HIT_CELL;
-    for (const l of hg.values()) l.length = 0;
+      teams = (this.hitTeams ||= new Map()),
+      hitters = (this._hitters ||= []);
+    if (hg.size > 1 << 16) hg.clear();
+    else for (const l of hg.values()) l.length = 0;
+    teams.clear();
+    hitters.length = 0;
+    this.hitWhole = false;
     for (const o of this.units) {
       if (o.dead || o.hyper || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
+      hitters.push(o);
+      if (!teams.has(o.player.team)) teams.set(o.player.team, teams.size);
+    }
+    const split = teams.size <= HIT_TEAMS;
+    let whole = !split;
+    if (!whole) for (const p of this.projectiles) if (!teams.has(p.team)) whole = true;
+    this.fillHitGrid(split, whole);
+  }
+
+  // Files the grid's units into the per-team lists (split) and the whole lists (whole).
+  fillHitGrid(split, whole) {
+    const hg = this.hitGrid,
+      C = HIT_CELL,
+      teams = this.hitTeams;
+    this.hitWhole = whole || this.hitWhole;
+    const teamLists = split ? teams.size : 0;
+    for (const o of this._hitters) {
+      const own = split ? teams.get(o.player.team) : -1;
       const r = Math.max(
         o.hitA ? (o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL)) : o.hitRadius,
         o.collR || 0,
@@ -5673,10 +5729,18 @@ export class World {
         y1 = Math.floor((o.y + r) / C);
       for (let ix = x0; ix <= x1; ix++)
         for (let iy = y0; iy <= y1; iy++) {
-          const k = ix * 65536 + iy;
-          let l = hg.get(k);
-          if (!l) hg.set(k, (l = []));
-          l.push(o);
+          const cell = (ix * 65536 + iy) * HIT_LISTS;
+          for (let t = 0; t < teamLists; t++) {
+            if (t === own) continue;
+            let l = hg.get(cell + t);
+            if (!l) hg.set(cell + t, (l = []));
+            l.push(o);
+          }
+          if (whole) {
+            let l = hg.get(cell + HIT_TEAMS);
+            if (!l) hg.set(cell + HIT_TEAMS, (l = []));
+            l.push(o);
+          }
         }
     }
   }
