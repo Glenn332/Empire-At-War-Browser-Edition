@@ -19,7 +19,7 @@ cpSync(pub, dist, { recursive: true, filter: src => !skip.has(path.relative(pub,
 writeFileSync(path.join(dist, 'js', 'build.js'), `export const BUILD = '${build}';\n`);
 writeFileSync(
   path.join(dist, 'js', 'deploy.js'),
-  `export const LOBBY = ${JSON.stringify(LOBBY)};\nexport const FFMPEG = new URL('../vendor/ffmpeg/ffmpeg-core.js', import.meta.url).href;\n`
+  `export const LOBBY = ${JSON.stringify(LOBBY)};\nexport const SITE = 'https://playeaw.com';\nexport const FFMPEG = new URL('../vendor/ffmpeg/ffmpeg-core.js', import.meta.url).href;\n`
 );
 console.log(`staged dist-app/ (${build})`);
 

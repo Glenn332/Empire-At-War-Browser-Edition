@@ -32,6 +32,7 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           echo "export const BUILD = '$SHORT_SHA';" > public/js/build.js
           echo "{\"build\":\"$SHORT_SHA\"}" > public/build.json
+          sed -i "s#^export const SITE = .*#export const SITE = 'https://$(tr -d '[:space:]' < CNAME)';#" public/js/deploy.js
           if [ -n "$LOBBY_URL" ]; then sed -i "s#^export const LOBBY = .*#export const LOBBY = '$LOBBY_URL';#" public/js/deploy.js; fi
           npx --yes esbuild@0.25.10 $(find public/js -name '*.js') --minify --format=esm --outdir=public/js --outbase=public/js --allow-overwrite --log-level=error
           npx --yes esbuild@0.25.10 public/sw.js --minify --format=iife --outfile=public/sw.js --allow-overwrite --log-level=error

@@ -2,7 +2,8 @@ import { db, factionColor, autoColors } from '../gamedata.js';
 import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
 import { openDialog } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
-import { NetSession, Hall, listGames, newGameId } from '../net.js';
+import { NetSession, Hall, listGames, newGameId, lobbyUrl } from '../net.js';
+import { LOBBY, SITE } from '../deploy.js';
 import { advancedOptions, SPECTATOR_TEAM } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
@@ -50,17 +51,19 @@ export function dataFingerprint() {
 }
 
 export function inviteLink(gameId, kind = 'internet') {
-  const u = new URL(location.pathname, location.origin);
+  const u = inApp() ? new URL('play.html', SITE + '/') : new URL(location.pathname, location.origin);
   u.search = (kind === 'lan' ? 'multiplayer=lan' : 'multiplayer') + '&join=' + gameId;
-  const lobby = new URLSearchParams(location.search).get('lobby');
+  const lobby = inApp() ? (lobbyUrl() !== LOBBY ? lobbyUrl() : null) : new URLSearchParams(location.search).get('lobby');
   if (lobby) u.search += '&lobby=' + encodeURIComponent(lobby);
   return u.href;
 }
 
 export function inviteLines(gameId, kind = 'internet') {
   const lines = [];
-  if (!inApp())
-    lines.push({ text: 'Invite link (click to copy, send it to whoever you want to play): ' + inviteLink(gameId, kind), copy: inviteLink(gameId, kind) });
+  lines.push({
+    text: 'Invite link (click to copy, send it to whoever you want to play): ' + inviteLink(gameId, kind),
+    copy: inviteLink(gameId, kind)
+  });
   lines.push({
     text: `Join code (click to copy, players enter it at Join by Code in the ${kind === 'lan' ? 'LAN' : 'internet'} lobby): ${gameId}`,
     copy: gameId

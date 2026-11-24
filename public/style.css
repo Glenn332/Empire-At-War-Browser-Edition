@@ -206,6 +206,31 @@ body {
   color: var(--bone) !important;
   background: var(--imp);
 }
+.invite-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.invite-choice {
+  padding: 13px 18px 13px 20px;
+  color: var(--bone);
+  background: none;
+  font: 600 13px/1 var(--disp);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.invite-choice.main {
+  color: var(--imp);
+  border-color: rgba(232, 51, 58, 0.55);
+}
+.invite-choice:hover {
+  color: var(--bone);
+  background: var(--imp);
+  border-color: var(--imp);
+}
 
 .screen {
   position: fixed;

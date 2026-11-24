@@ -25,7 +25,7 @@ writeFileSync(path.join(dist, 'js', 'build.js'), `export const BUILD = '${build}
 writeFileSync(path.join(dist, 'build.json'), JSON.stringify({ build }) + '\n');
 writeFileSync(
   path.join(dist, 'js', 'deploy.js'),
-  `export const LOBBY = ${JSON.stringify(LOBBY)};\nexport const FFMPEG = ${JSON.stringify(FFMPEG)};\n`
+  `export const LOBBY = ${JSON.stringify(LOBBY)};\nexport const SITE = 'https://playeaw.com';\nexport const FFMPEG = ${JSON.stringify(FFMPEG)};\n`
 );
 writeFileSync(path.join(dist, '_headers'), '/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp\n');
 writeFileSync(path.join(dist, '404.html'), '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found.</p>\n');

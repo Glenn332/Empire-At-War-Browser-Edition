@@ -14,3 +14,7 @@ VIAddVersionKey "CompanyName" "Glenn332"
   DeleteRegKey SHCTX "Software\RIRA\${PRODUCTNAME}"
   DeleteRegKey /ifempty SHCTX "Software\RIRA"
 !macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  DeleteRegKey HKCU "Software\Classes\playeaw"
+!macroend

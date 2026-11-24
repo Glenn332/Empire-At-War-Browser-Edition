@@ -4,6 +4,7 @@ mod audio;
 mod discord;
 mod fonts;
 mod gog;
+mod invite;
 mod nightly;
 mod report;
 mod setup;
@@ -861,7 +862,12 @@ fn main() {
     server.state = RwLock::new(settled);
     let server = Arc::new(server);
 
-    let page = std::env::var("SWR_PAGE").unwrap_or_else(|_| "index.html".into());
+    invite::register();
+    let invited = invite::find_link(&args).and_then(|link| invite::page_query(&link));
+    let page = match invited {
+        Some(query) => format!("play.html?{query}"),
+        None => std::env::var("SWR_PAGE").unwrap_or_else(|_| "index.html".into()),
+    };
     let url = std::env::var("SWR_URL").unwrap_or_else(|_| {
         if cfg!(windows) {
             format!("http://swr.localhost/{page}")
@@ -871,6 +877,9 @@ fn main() {
     });
     let flags = format!("{flags} {}", std::env::var("SWR_ARGS").unwrap_or_default());
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            open_invite(app, &args)
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol("swr", move |ctx, req, responder| {
             let (server, app) = (server.clone(), ctx.app_handle().clone());
@@ -911,6 +920,21 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running the app");
+}
+
+/// A second start of the app (an invite link clicked while it runs) brings this window
+/// forward and joins the game. Leaving a running battle still asks first.
+fn open_invite(app: &AppHandle, args: &[String]) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+    if let Some(query) = invite::find_link(args).and_then(|link| invite::page_query(&link)) {
+        let page = serde_json::to_string(&format!("play.html?{query}")).unwrap();
+        let _ = window.eval(format!("location.href = {page};"));
+    }
 }
 
 #[cfg(windows)]

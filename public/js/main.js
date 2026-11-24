@@ -60,6 +60,7 @@ import { loadDialogs, openDialog } from './game/dialogs.js';
 import { Menus } from './game/menus.js';
 import { openLobby } from './game/lobby.js';
 import { openMultiplayer } from './game/multiplayer.js';
+import { offerDesktopApp } from './appinvite.js';
 import { BUILD } from './build.js';
 import {
   snapshot,
@@ -2582,6 +2583,7 @@ async function boot() {
     sessionStorage.removeItem('swr-relinked');
     sessionStorage.removeItem('swr-module-retry');
   } catch {}
+  await offerDesktopApp(new URLSearchParams(location.search));
   const tag = document.createElement('div');
   tag.id = 'buildTag';
   tag.textContent = 'build ' + build;
