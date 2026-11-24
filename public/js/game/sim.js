@@ -72,6 +72,8 @@ const UNIT_CELL = 1024,
 const HIT_CELL = 256;
 const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
+const FIELD_CELL = 1024;
+const NO_FIELDS = Object.freeze([]);
 const DOG_CELL = 400,
   DOG_NEAR = 80000,
   PAIR_TIME = 10,
@@ -1888,6 +1890,7 @@ export class World {
     this.respawns = [];
     this.mapGone = new Set();
     this.fields = [];
+    this.fieldGrid = { count: -1, cells: new Map() };
     this.onEvent = () => {};
     this.hitPart = null;
     this.bonusHolders = [];
@@ -3690,8 +3693,32 @@ export class World {
     return u.jammedAt >= 0 && this.time - u.jammedAt < (this.jamTime ??= db.constants.num('Sensor_Jamming_Time', 0.5));
   }
 
+  // The fields whose circle reaches the cell a point is in. Fields are only ever added, never moved, so the
+  // grid is rebuilt when one is added; the checks that use it only count and flag, so order does not matter.
+  fieldsNear(x, y) {
+    const grid = this.fieldGrid;
+    if (grid.count !== this.fields.length) {
+      grid.cells.clear();
+      for (const f of this.fields) {
+        const x0 = Math.floor((f.x - f.r) / FIELD_CELL),
+          x1 = Math.floor((f.x + f.r) / FIELD_CELL),
+          y0 = Math.floor((f.y - f.r) / FIELD_CELL),
+          y1 = Math.floor((f.y + f.r) / FIELD_CELL);
+        for (let cellX = x0; cellX <= x1; cellX++)
+          for (let cellY = y0; cellY <= y1; cellY++) {
+            const key = cellX * 65536 + cellY;
+            let list = grid.cells.get(key);
+            if (!list) grid.cells.set(key, (list = []));
+            list.push(f);
+          }
+      }
+      grid.count = this.fields.length;
+    }
+    return grid.cells.get(Math.floor(x / FIELD_CELL) * 65536 + Math.floor(y / FIELD_CELL)) || NO_FIELDS;
+  }
+
   ionFieldAt(u) {
-    for (const f of this.fields) if (f.ion && (u.x - f.x) ** 2 + (u.y - f.y) ** 2 <= f.r * f.r) return true;
+    for (const f of this.fieldsNear(u.x, u.y)) if (f.ion && (u.x - f.x) ** 2 + (u.y - f.y) ** 2 <= f.r * f.r) return true;
     return false;
   }
 
@@ -3703,7 +3730,7 @@ export class World {
     let ast = 0,
       neb = false,
       ion = false;
-    for (const f of this.fields) {
+    for (const f of this.fieldsNear(u.x, u.y)) {
       const dx = u.x - f.x,
         dy = u.y - f.y;
       if (dx * dx + dy * dy > f.r * f.r) continue;
