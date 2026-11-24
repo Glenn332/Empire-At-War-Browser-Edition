@@ -672,38 +672,7 @@ export function restore(game, save) {
       else if (!r) w.storyBlips.set(n, { x, y });
     }
   }
-  if (snap.superweapons && w.tacticalSuperweapons) {
-    const t = w.tacticalSuperweapons,
-      o = snap.superweapons;
-    t.disableDepth = o.depth || 0;
-    t.destroyed = !!o.destroyed;
-    t.frame = o.frame || 0;
-    for (const saved of o.records || []) {
-      const unit = get(saved.unit);
-      if (!unit) continue;
-      t.add(unit);
-      const r = t.record(unit);
-      if (!r) continue;
-      const type = saved.targetType ? db.type(saved.targetType) : null;
-      let target = saved.target ? get(saved.target) : null;
-      if (!target && saved.at && type)
-        target =
-          t.targets
-            .filter(x => x.type === type || x.type?.name === type.name)
-            .sort((a, b) => Math.hypot(a.x - saved.at[0], a.y - saved.at[1]) - Math.hypot(b.x - saved.at[0], b.y - saved.at[1]))[0] || null;
-      Object.assign(r, {
-        state: saved.state,
-        initialized: !!saved.initialized,
-        target,
-        targetType: type,
-        speed: saved.speed || 0,
-        acceleration: saved.acceleration || 0,
-        left: saved.left || 0,
-        previousDistance: saved.previousDistance || 0,
-        transform: saved.transform || null
-      });
-    }
-  }
+  restoreTacticalSuperweapons(w, snap.superweapons, get);
   if (Array.isArray(snap.specialWeapons))
     w.specialWeapons = snap.specialWeapons.flatMap(o => {
       const t = db.type(o.type),
@@ -903,4 +872,39 @@ export async function importSaveFile(file) {
   const why = validate(snap);
   if (why) throw new Error(why);
   return { id: await putSave(snap), snap };
+}
+
+// Puts a battle's tactical superweapons back: depth, frame and each weapon's record. `get` maps a save reference to
+// its entity.
+export function restoreTacticalSuperweapons(w, o, get) {
+  if (!o || !w.tacticalSuperweapons) return;
+  const t = w.tacticalSuperweapons;
+  t.disableDepth = o.depth || 0;
+  t.destroyed = !!o.destroyed;
+  t.frame = o.frame || 0;
+  for (const saved of o.records || []) {
+    const unit = get(saved.unit);
+    if (!unit) continue;
+    t.add(unit);
+    const r = t.record(unit);
+    if (!r) continue;
+    const type = saved.targetType ? db.type(saved.targetType) : null;
+    let target = saved.target ? get(saved.target) : null;
+    if (!target && saved.at && type)
+      target =
+        t.targets
+          .filter(x => x.type === type || x.type?.name === type.name)
+          .sort((a, b) => Math.hypot(a.x - saved.at[0], a.y - saved.at[1]) - Math.hypot(b.x - saved.at[0], b.y - saved.at[1]))[0] || null;
+    Object.assign(r, {
+      state: saved.state,
+      initialized: !!saved.initialized,
+      target,
+      targetType: type,
+      speed: saved.speed || 0,
+      acceleration: saved.acceleration || 0,
+      left: saved.left || 0,
+      previousDistance: saved.previousDistance || 0,
+      transform: saved.transform || null
+    });
+  }
 }

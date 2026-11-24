@@ -184,7 +184,10 @@ export class SpaceRecorder {
       w.fogLifted || 0,
       (w.specialWeapons || []).map(sw => [sw.firedAt, sw.readyAt, sw.left]),
       w.dogs ? [...w.dogs.cells].filter(c => c[1].length).map(([k, l]) => [k, l.map(q => q.id)]) : [],
-      w.players.map(p => [p.id, p.manualStart, p.manualSpan])
+      w.players.map(p => [p.id, p.manualStart, p.manualSpan]),
+      w.storyBlips?.size
+        ? [...w.storyBlips].map(([name, b]) => [name, b.obj && !b.obj.dead ? b.obj.id : -1, b.x ?? null, b.y ?? null, b.until ?? null])
+        : null
     ];
   }
 

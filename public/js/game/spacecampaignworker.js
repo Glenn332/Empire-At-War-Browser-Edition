@@ -2,12 +2,15 @@
 // (the book of who fought, the treasury, retreat, victory, tactical superweapons, the story plots) and steps it with
 // the battle. What the player sees or hears is passed to the page as game events.
 import { db } from '../gamedata.js';
-import { restoreSpaceCampaign } from './savegame.js';
+import { restoreSpaceCampaign, restoreTacticalSuperweapons } from './savegame.js';
 import { installTacticalBattle } from './tacticalbattle.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { spaceRetreat, startCinematicRetreat, stepCinematicJumps, autoResolveBattle, campaignVictoryStep, tacticalCredits } from './spacecampaign.js';
 import { plain } from './spacebattlehooks.js';
+import { StoryFlags } from './storyflags.js';
 import { storyTypes } from './storyart.js';
+import { isSuperweaponTarget } from './tacticalsuperweapon.js';
+import { promoteToCinematicLayer } from './cinematiclayer.js';
 import { modelsForType } from './sim.js';
 import { preloadModels } from '../model.js';
 
@@ -65,6 +68,53 @@ function presentation(game, events) {
     return true;
   };
   game.ui = { refresh: tell('ui', 'refresh') };
+  // Linked mission scripts: the camera, screen effects, controls lock, music and movies are the page's; suspending
+  // the AI and lifting units onto the cinematic layer change the battle and stay here.
+  const cinematic = (op, ...a) => events.push(['game', 'cinematicCall', [op, ...a.map(x => plain(x))]]);
+  game.tacticalCinematics = { stop: () => cinematic('stop') };
+  game.forwardPresentation = (name, args) => tell('game', 'linkedPresentationCall')(name, args);
+  game.installMissionScripts = scripts => {
+    if (!scripts) return;
+    const vm = scripts.vm,
+      at = v => {
+        const p = scripts.at(v);
+        return p ? { x: p.x, y: p.y, z: p.z || 0 } : null;
+      },
+      key = (channel, transition) => (...args) => {
+        const i = transition ? 2 : 1,
+          out = args.slice();
+        out[0] = at(args[0]);
+        out[i + 4] = scripts.of(args[i + 4]) || null;
+        cinematic('key', channel, transition, out);
+      };
+    vm.global('Point_Camera_At', v => {
+      const p = at(v);
+      if (p) cinematic('point', p);
+    });
+    vm.global('Start_Cinematic_Camera', (...args) => cinematic('start', args));
+    vm.global('End_Cinematic_Camera', () => cinematic('stop'));
+    vm.global('Set_Cinematic_Camera_Key', key('position', false));
+    vm.global('Set_Cinematic_Target_Key', key('target', false));
+    vm.global('Transition_Cinematic_Camera_Key', key('position', true));
+    vm.global('Transition_Cinematic_Target_Key', key('target', true));
+    vm.global('Transition_To_Tactical_Camera', seconds => cinematic('tactical', seconds));
+    vm.global('Promote_To_Space_Cinematic_Layer', v => {
+      const e = scripts.of(v);
+      if (e) promoteToCinematicLayer(e);
+    });
+    vm.global('Set_Cinematic_Environment', on => tell('game', 'setCinematicEnvironment')(on));
+    vm.global('Lock_Controls', (...args) => {
+      if (args.length) tell('game', 'lockControls')(typeof args[0] === 'number' && args[0] > 0);
+    });
+    vm.global('Suspend_AI', on => {
+      game.world.aiSuspended = typeof on === 'number' && on > 0;
+    });
+    vm.global('Weather_Audio_Pause', on => tell('game', 'pauseWeatherAudio')(on === true));
+    vm.global('Play_Bink_Movie', name => tell('game', 'playScriptMovie')(name));
+    vm.global('Stop_Bink_Movie', () => tell('game', 'stopScriptMovie')());
+    for (const name of ['Stop_All_Music', 'Play_Music', 'Resume_Mode_Based_Music', 'Stop_All_Speech'])
+      vm.global(name, (...args) => tell('game', 'missionAudioCall')(name, args));
+  };
   // Story goals are kept here; the page shows them and keeps track of which were read.
   game.showStoryDialog = request => tell('game', 'storyGoalOpened')(request, true);
   game.notifyStoryGoal = (request, sound = true) => tell('game', 'storyGoalOpened')(request, false, sound);
@@ -95,14 +145,40 @@ export async function campaignBattle(game, m, refs, thing, events) {
   restoreSpaceCampaign(game, save, refs);
   game.campaignBook.called ||= new Map();
   await installTacticalBattle(game);
+  // Tactical superweapons: the targets are map objects (scenery on the page), in map order on both sides.
+  const manager = w.tacticalSuperweapons;
+  manager.replace = (type, transform) => events.push(['game', 'tacticalReplacement', [plain(type), plain(transform)]]);
+  manager.resetHUD = () => events.push(['game', 'superweaponHUDReset', []]);
+  manager.music = name => events.push(['game', 'superweaponMusic', [name]]);
+  for (const o of game.map?.objects || []) {
+    if (!isSuperweaponTarget(o.type)) continue;
+    const index = manager.targets.length;
+    manager.addTarget({
+      type: o.type,
+      owner: 'Neutral',
+      x: o.pos[0],
+      y: o.pos[1],
+      z: o.pos[2],
+      rotation: o.rot.slice(),
+      scale: o.scale || 1,
+      dead: false,
+      remove: () => events.push(['game', 'superweaponTargetGone', [index]])
+    });
+  }
+  // The battle's units were put back before the manager existed; on the page it saw them arrive.
+  for (const u of w.units) if (!u.dead) manager.add(u);
+  restoreTacticalSuperweapons(w, save.battle?.superweapons, thing);
+  let weaponsShown = '';
   game.tacticalVictory.notify = result => {
     if (result.retry) {
-      events.push(['game', 'campaignWinner', [plain(result.team), !!result.suppressNotice]]);
+      events.push(['game', 'campaignWinner', [plain(result.team), !!result.suppressNotice, null, false]]);
       return;
     }
     w.onEvent('storyVictory', result);
     game.tacticalStory?.signal('STORY_VICTORY', result.team.factionName);
-    events.push(['game', 'campaignWinner', [plain(result.team), !!result.suppressNotice]]);
+    // The page reports the victory to a linked mission's galaxy, which may hand back story flags.
+    const flags = game.tacticalStory?.flags?.snapshot?.() || [];
+    events.push(['game', 'campaignWinner', [plain(result.team), !!result.suppressNotice, flags, true]]);
   };
   game.retreat = spaceRetreat(game, cb);
   if (save.battle?.retreat) game.retreat.restore(save.battle.retreat, thing);
@@ -121,6 +197,12 @@ export async function campaignBattle(game, m, refs, thing, events) {
       await TacticalStoryHost.create(game, scripts, { restoring });
     },
     command(player, cmd) {
+      if (cmd.c === 'superweapon') {
+        const id = Array.isArray(cmd.u) ? cmd.u[0] : 0,
+          unit = id ? w.units.find(u => u.id === id) : null;
+        if (unit) manager.command(unit, player, false);
+        return true;
+      }
       if (cmd.c === 'autoresolve') {
         if (!game.over && !game.tacticalVictory.winner) autoResolveBattle(game, player);
         return true;
@@ -134,6 +216,8 @@ export async function campaignBattle(game, m, refs, thing, events) {
       if (c.generic) story.generic(c.generic);
       if (c.select) for (const name of c.select) story.signal('STORY_SELECT_UNIT', name);
       if (c.speechDone) story.signal('STORY_SPEECH_DONE', c.speechDone);
+      if (c.flags) story.flags = new StoryFlags(c.flags);
+      if (c.escape) game.scripts?.storyEscape?.();
     },
     step() {
       const outcome = campaignVictoryStep(game);
@@ -158,6 +242,20 @@ export async function campaignBattle(game, m, refs, thing, events) {
       if (state !== shown) {
         shown = state;
         events.push(['game', 'storyState', [JSON.parse(state)]]);
+      }
+      // What the superweapon button and countdown on the page show.
+      if (manager.units.length) {
+        const list = manager.units
+          .filter(u => !u.dead)
+          .map(u => {
+            const r = manager.record(u);
+            return [plain(u), r.state, r.target ? manager.targets.indexOf(r.target) : -1, r.speed, r.previousDistance];
+          });
+        const shownNow = JSON.stringify([list, manager.eligible(), manager.disableDepth]);
+        if (shownNow !== weaponsShown) {
+          weaponsShown = shownNow;
+          events.push(['game', 'superweaponState', JSON.parse(shownNow)]);
+        }
       }
       const now = !!game.retreat?.active && game.retreat.active.player === game.human;
       if (now !== retreating) {

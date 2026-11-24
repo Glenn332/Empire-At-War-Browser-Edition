@@ -338,7 +338,20 @@ async function minds(w, m, map, events, thing, refs) {
     ais.push(ai);
     freeStore(ai, pre.fs);
   };
-  return { think, game, takeOver, scriptsFrom, campaign };
+  // A tutorial's switch of sides: the human plays `to`, the side it leaves goes to the computer.
+  const switchSides = to => {
+    const old = w.players.find(p => p.human && p === (game.human || w.viewer)) || w.viewer,
+      next = w.players.find(p => p.id === to);
+    if (!old || !next || old === next) return;
+    old.human = false;
+    old.difficulty ||= 'medium';
+    next.human = true;
+    for (let i = ais.length - 1; i >= 0; i--) if (ais[i].player === next) ais.splice(i, 1);
+    if (!old.team.mapSide) ais.push(new SkirmishAI(w, old, old.difficulty));
+    game.human = next;
+    w.viewer = next;
+  };
+  return { think, game, takeOver, scriptsFrom, campaign, switchSides };
 }
 
 async function run(m) {
@@ -349,7 +362,7 @@ async function run(m) {
   w.onEvent = (kind, data) => {
     events.push(['world', 'onEvent', [kind, plain(data)]]);
   };
-  const { think, game, takeOver, scriptsFrom, campaign } = await minds(w, m, map, events, thing, refs);
+  const { think, game, takeOver, scriptsFrom, campaign, switchSides } = await minds(w, m, map, events, thing, refs);
   events.length = 0;
   const told = w.onEvent;
   hookBattle(w, events, spawns);
@@ -420,6 +433,10 @@ async function run(m) {
       const player = w.players.find(p => p.id === pid);
       if (!player) continue;
       if (cmd.c === 'left' && !player.left) takeOver(player);
+      if (cmd.c === 'switchSides') {
+        switchSides(cmd.to);
+        continue;
+      }
       if (campaign && campaign.command(player, cmd)) continue;
       let r;
       try {

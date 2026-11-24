@@ -5,7 +5,9 @@ import { discordSetting, setDiscord, initDiscord } from './discordpresence.js';
 import { inApp } from './platform.js';
 import { colorizes } from './game/teamcolor.js';
 import { setTacticalRules, setSkirmishRules } from './game/tacticalrules.js';
-import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
+import { linkedParent, authoredMapOwner, ensureMissionPlayers, reportLinkedVictory } from './game/linktactical.js';
+import { StoryFlags } from './game/storyflags.js';
+import { missionAudio } from './game/tacticalmission.js';
 import { mpBattleParent } from './game/galacticmpbattle.js';
 import { startGalaxyFrame, galaxyFrameSetup } from './game/mpgalaxyframe.js';
 import { restoreFullscreen } from './pointertrap.js';
@@ -87,7 +89,7 @@ import { openRetreatDialog } from './game/tacticalautoresolve.js';
 import { tacticalSpeed } from './game/galacticspeed.js';
 import { showRetreatLine } from './game/retreat.js';
 import { spaceRetreat, startCinematicRetreat, stepCinematicJumps, autoResolveBattle, campaignCheck, campaignVictoryStep, tacticalCredits } from './game/spacecampaign.js';
-import { installTacticalBattle } from './game/tacticalbattle.js';
+import { installTacticalBattle, superweaponMusic } from './game/tacticalbattle.js';
 import { superweaponShot } from './game/tacticalsuperweaponcamera.js';
 import { TacticalStoryHost } from './game/tacticalstory.js';
 import { installCampaignStoryView, addStoryGoal, mergeStoryGoals } from './game/spacecampaignview.js';
@@ -589,6 +591,16 @@ class Game {
     world.campaign = !!this.setup.campaign;
     world.tacticalRules = setTacticalRules({ campaign: !!this.setup.campaign, skirmish: !!this.setup.campaign?.skirmishRules, corrupted: (this.setup.campaign?.corruption ?? -1) !== -1 });
     await installTacticalBattle(this);
+    if (this.mirrorCampaign) {
+      // The battle thread runs the superweapons; a press of the page's button goes to it as a command.
+      const manager = world.tacticalSuperweapons;
+      manager.command = (unit, player, sound = true) => {
+        if (unit.dead || unit.player !== player) return false;
+        if (sound) audio.play(unit.type.str('TSW_SFXEvent_GUI_Bttton_Press'));
+        this.command({ c: 'superweapon', u: [unit.id] });
+        return true;
+      };
+    }
     if (this.setup.campaign)
       for (const p of world.players)
         if (p.id >= 0 && this.setup.campaign.tech?.[p.factionName] !== undefined) p.campaignTech = this.setup.campaign.tech[p.factionName];
@@ -1616,15 +1628,57 @@ class Game {
   }
 
   // Campaign battle news from the battle thread.
-  campaignWinner(team, suppressNotice) {
+  campaignWinner(team, suppressNotice, flags = null, final = false) {
     if (!team) return;
     this.tacticalVictory.winner ||= { team, type: 0, frames: 0, suppressNotice };
+    const view = this.tacticalStory;
+    if (final && view) {
+      view.flags = new StoryFlags(flags || []);
+      reportLinkedVictory(this, team.factionName);
+      if (linkedParent(this)) this.mirror?.worker?.postMessage({ k: 'story', flags: view.flags.snapshot() });
+    }
     this.tacticalVictoryNotice(team, suppressNotice);
   }
   campaignFinished(outcome) {
     const { credits, storyFlags, ...rest } = outcome;
     this.campaignCredits = credits;
     this.campaignOutcome = rest;
+    if (storyFlags && this.tacticalStory) this.tacticalStory.flags = new StoryFlags(storyFlags);
+  }
+  // Linked mission scripts on the battle thread: the camera, screen effects and sound play here.
+  cinematicCall(op, ...args) {
+    const c = (this.tacticalCinematics ||= new TacticalCinematics(this, { at: v => v, of: v => v }));
+    if (op === 'point') {
+      const rig = this.renderer?.rig;
+      if (rig && args[0]) {
+        rig.x = args[0].x;
+        rig.y = args[0].y;
+      }
+    } else if (op === 'start') {
+      const a = args[0] || [];
+      c.start(a.length ? a[0] : true);
+    }
+    else if (op === 'stop') c.stop();
+    else if (op === 'key') c.key(args[0], args[2] || [], args[1]);
+    else if (op === 'tactical' && args[0] !== undefined) c.transitionToTactical(Number.isFinite(args[0]) ? args[0] : 1);
+  }
+  linkedPresentationCall(name, args) {
+    this.presentationOps?.[name]?.(...(args || []));
+  }
+  missionAudioCall(name, args) {
+    (this.missionAudioOps ||= missionAudio(this))[name]?.(...(args || []));
+  }
+  // Escape during a cutscene: the story scripts on the battle thread decide whether it skips.
+  storyEscape() {
+    if (!this.mirrorCampaign || !this.mirror?.worker) return false;
+    this.mirror.worker.postMessage({ k: 'story', escape: true });
+    return true;
+  }
+  lockControls(on) {
+    this.controlsLocked = !!on;
+  }
+  pauseWeatherAudio(on) {
+    this.weatherAudioPaused = !!on;
   }
   retreatActive(on) {
     this.retreatingHere = !!on;
@@ -1636,6 +1690,32 @@ class Game {
     if (popup) this.showStoryDialog?.(request);
     else this.notifyStoryGoal?.(request, sound);
     this.storyDialog?.refreshSummary();
+  }
+  // Tactical superweapons on the battle thread: the page's button and countdown follow its state.
+  superweaponState(list, eligible, disableDepth) {
+    const manager = this.world.tacticalSuperweapons;
+    if (!manager) return;
+    for (const [unit, state, target, speed, previousDistance] of list) {
+      if (!unit) continue;
+      if (!manager.record(unit)) manager.add(unit);
+      const r = manager.record(unit);
+      if (!r) continue;
+      Object.assign(r, { state, speed, previousDistance, initialized: true, target: target >= 0 ? manager.targets[target] || null : null });
+    }
+    manager.eligible = () => eligible;
+    manager.disableDepth = disableDepth;
+  }
+  superweaponTargetGone(index) {
+    const t = this.world.tacticalSuperweapons?.targets[index];
+    if (!t || t.dead) return;
+    t.dead = true;
+    t.remove?.();
+  }
+  superweaponHUDReset() {
+    this.superweaponHUD?.reset();
+  }
+  superweaponMusic(name) {
+    superweaponMusic(this, name);
   }
   openRetryDialog() {
     openRetryDialog(this);
@@ -1956,8 +2036,12 @@ class Game {
     old.human = false;
     old.difficulty ||= 'medium';
     next.human = true;
-    this.ais = (this.ais || []).filter(a => a.player !== next);
-    if (!old.team.mapSide) this.ais.push(new SkirmishAI(this.world, old, old.difficulty));
+    // With the battle on its own thread the computer players live there; it switches its sides too.
+    if (this.mirror) this.mirror.command({ c: 'switchSides', to: next.id });
+    else {
+      this.ais = (this.ais || []).filter(a => a.player !== next);
+      if (!old.team.mapSide) this.ais.push(new SkirmishAI(this.world, old, old.difficulty));
+    }
     this.human = next;
     this.audio.human = next;
     this.world.viewer = next;
@@ -2006,24 +2090,22 @@ class Game {
     return (
       (this.setup.spaceWorker !== undefined ? !!this.setup.spaceWorker : !new URLSearchParams(location.search).has('nospaceworker')) &&
       (!this.setup.campaign || this.conquestOnBattleThread()) &&
-      !this.setup.linkedTactical &&
       !this.setup.attract
     );
   }
 
-  // Galactic conquest space battles run on the battle thread, alone or in multiplayer, with the story plots the
-  // galaxy hands them; tutorials, linked missions and battles with tactical superweapons stay on the page for now.
+  // Campaign space battles run on the battle thread: conquest, story plots, linked missions, tutorials and tactical
+  // superweapons, alone or in multiplayer. ?nocampaignworker (here or on the page holding this frame) keeps them on the page.
   conquestOnBattleThread() {
-    const setup = this.setup,
-      cb = setup.campaign;
-    if (!cb || setup.linkedTactical || setup.tacticalStoryPlot || cb.linked || cb.galaxy?.players?.some(p => p.tutorial)) return false;
-    if (new URLSearchParams(location.search).has('nocampaignworker')) return false;
-    const typeOf = t => (typeof t === 'string' ? db.type(t) : t);
-    for (const u of [...(cb.attacker?.units || []), ...(cb.defender?.units || [])]) {
-      const t = typeOf(u.type);
-      if (t && isTacticalSuperweapon(t)) return false;
-    }
-    return true;
+    const off = w => {
+      try {
+        return new URLSearchParams(w.location.search).has('nocampaignworker');
+      } catch {
+        return false;
+      }
+    };
+    // Battles in a galaxy's frame follow the switch on the page that holds them.
+    return !!this.setup.campaign && !off(window) && !(window.top !== window && off(window.top));
   }
 
   shouldRecord() {

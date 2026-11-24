@@ -4,8 +4,7 @@ import { CinematicTransports } from './cinematictransport.js';
 import { TacticalMovies } from './tacticalmovies.js';
 export function installTacticalMission(game, scripts) {
   if (!scripts) return;
-  const vm = scripts.vm,
-    audio = game.audio;
+  const vm = scripts.vm;
   installTacticalCinematics(game, scripts);
   if (game.landBattle) {
     game.cinematicTransports = new CinematicTransports(game);
@@ -28,20 +27,28 @@ export function installTacticalMission(game, scripts) {
   });
   vm.global('Play_Bink_Movie', name => game.tacticalMovies.play(name));
   vm.global('Stop_Bink_Movie', () => game.tacticalMovies.stop());
+  for (const [name, f] of Object.entries((game.missionAudioOps ||= missionAudio(game)))) vm.global(name, f);
+}
+
+// The music and speech calls of mission scripts.
+export function missionAudio(game) {
+  const audio = game.audio;
   let playlist = [];
-  vm.global('Stop_All_Music', () => {
-    if (audio?.playlist?.length) playlist = audio.playlist.slice();
-    audio?.stopMusic();
-  });
-  vm.global('Play_Music', name => {
-    const event = db.music.get(String(name || '').toUpperCase());
-    if (!event) return;
-    if (audio?.playMusicEvent) audio.playMusicEvent(event, 12);
-    else audio?.setPlaylist(event.list('Files'), false, true);
-  });
-  vm.global('Resume_Mode_Based_Music', () => {
-    if (game.resumeModeMusic) game.resumeModeMusic();
-    else if (playlist.length) audio?.setPlaylist(playlist);
-  });
-  vm.global('Stop_All_Speech', () => audio?.speech?.stopActive());
+  return {
+    Stop_All_Music: () => {
+      if (audio?.playlist?.length) playlist = audio.playlist.slice();
+      audio?.stopMusic();
+    },
+    Play_Music: name => {
+      const event = db.music.get(String(name || '').toUpperCase());
+      if (!event) return;
+      if (audio?.playMusicEvent) audio.playMusicEvent(event, 12);
+      else audio?.setPlaylist(event.list('Files'), false, true);
+    },
+    Resume_Mode_Based_Music: () => {
+      if (game.resumeModeMusic) game.resumeModeMusic();
+      else if (playlist.length) audio?.setPlaylist(playlist);
+    },
+    Stop_All_Speech: () => audio?.speech?.stopActive()
+  };
 }

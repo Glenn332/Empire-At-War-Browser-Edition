@@ -2,7 +2,8 @@ import { cameraEase } from './tacticalsuperweaponcamera.js';
 import { TACTICAL_CAMERA_DEFAULTS } from './tacticalcameradata.js';
 
 const RATE = 30;
-export const SPACE_LAYER = 20000;
+import { SPACE_LAYER, promoteToCinematicLayer } from './cinematiclayer.js';
+export { SPACE_LAYER };
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 const lead = e => e?.members?.[0] || e?.fighters?.[0] || e;
 const copy = p => ({ x: p.x, y: p.y, z: p.z || 0 });
@@ -176,17 +177,7 @@ export class TacticalCinematics {
       this.scripts.cmd.teleport(e, e.x, e.y, (e.z || 0) + SPACE_LAYER);
       return;
     }
-    const units = e.members?.length ? e.members : e.fighters?.length ? e.fighters : [e];
-    for (const u of units) {
-      if (u.point) u.point.z = (u.point.z || 0) + SPACE_LAYER;
-      else u.z = (u.z || 0) + SPACE_LAYER;
-      const object = u.obj || u.holder || u.grp;
-      if (object) {
-        object.position.z += SPACE_LAYER;
-        object.updateMatrixWorld(true);
-      }
-      u.syncObj?.();
-    }
+    promoteToCinematicLayer(e);
   }
 }
 

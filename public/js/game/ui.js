@@ -495,7 +495,7 @@ export class UI {
     if (
       e.code === 'Escape' &&
       (game.controlsLocked || game.tacticalCinematics?.on || game.tacticalMovies?.active) &&
-      game.scripts?.storyEscape()
+      (game.scripts ? game.scripts.storyEscape() : !!game.storyEscape?.())
     ) {
       e.preventDefault();
       return;

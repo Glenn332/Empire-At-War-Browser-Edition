@@ -3,6 +3,8 @@
 import { installTacticalNotices } from './tacticalnotice.js';
 import { installTacticalSpeech } from './tacticalspeech.js';
 import { GalacticMovies } from './galacticmovies.js';
+import { installLinkedPresentation } from './linkedpresentation.js';
+import { loadTacticalCameraData } from './tacticalcameradata.js';
 
 export async function installCampaignStoryView(game) {
   const send = c => game.mirror?.worker?.postMessage({ k: 'story', ...c });
@@ -23,6 +25,9 @@ export async function installCampaignStoryView(game) {
   });
   installTacticalNotices(game);
   await installTacticalSpeech(game, view);
+  // Linked missions: the fade and letterbox layer the mission scripts drive, and the cinematic lens.
+  installLinkedPresentation(game, null);
+  if (game.setup.linkedTactical) game.tacticalCameraData = await loadTacticalCameraData();
   const at = game.ui?.bar?.movieAt;
   if (!game.movies && at) game.movies = new GalacticMovies(game, null, { anchor: [at.x, at.y], root: game.ui.bar.root });
   return view;

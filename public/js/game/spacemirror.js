@@ -412,6 +412,15 @@ export class SpaceMirror {
         sw.readyAt = readyAt;
         sw.left = left;
       });
+      // Radar blips the battle's scripts placed.
+      if (st[7] || w.storyBlips?.size) {
+        w.storyBlips = new Map();
+        for (const [name, id, x, y, until] of st[7] || []) {
+          const obj = id >= 0 ? this.byW.get(id) : null;
+          if (id >= 0 && !obj) continue;
+          w.storyBlips.set(name, obj ? { obj } : { x, y, ...(until !== null ? { until } : {}) });
+        }
+      }
       for (const [id, start, span] of st[6] || []) {
         const p = w.players.find(x => x.id === id);
         if (!p) continue;

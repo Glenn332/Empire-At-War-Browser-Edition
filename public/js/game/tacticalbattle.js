@@ -31,23 +31,27 @@ export async function installTacticalBattle(game) {
     requestVictory: (team, type, frames) => game.tacticalVictory.request(team, type, frames, game.world.tacticalSuperweapons.disableDepth),
     resetHUD: () => game.superweaponHUD?.reset(),
     camera: (unit, target) => game.superweaponCamera?.(unit, target),
-    music: name => {
-      const event = db.music.get(name.toUpperCase());
-      if (event) game.audio.setPlaylist(event.list('Files'), true, true);
-      else if (!name) {
-        game.audio.stopMusic();
-        if (game.music) {
-          game.music.mode = '';
-          game.setMusic('ambient', true);
-        }
-      }
-    },
-    voice: (unit, threshold) => {
-      const enemy = game.human.faction.list('Enemies').some(n => n.toUpperCase() === unit.player.factionName.toUpperCase());
-      const suffix = threshold ? `Moving_Range_${String(threshold).padStart(2, '0')}_Seconds` : 'Moved_Into_Range';
-      const name = game.human.faction.str(`SpeechEvent_Super_Weapon_${enemy ? 'Enemy_' : ''}${suffix}`);
-      if (name) game.audio.speech.enqueue(name);
-    }
+    music: name => superweaponMusic(game, name),
+    voice: (unit, threshold) => superweaponVoice(game, unit, threshold)
   }));
   return manager;
+}
+
+export function superweaponMusic(game, name) {
+  const event = db.music.get(name.toUpperCase());
+  if (event) game.audio.setPlaylist(event.list('Files'), true, true);
+  else if (!name) {
+    game.audio.stopMusic();
+    if (game.music) {
+      game.music.mode = '';
+      game.setMusic('ambient', true);
+    }
+  }
+}
+
+export function superweaponVoice(game, unit, threshold) {
+  const enemy = game.human.faction.list('Enemies').some(n => n.toUpperCase() === unit.player.factionName.toUpperCase());
+  const suffix = threshold ? `Moving_Range_${String(threshold).padStart(2, '0')}_Seconds` : 'Moved_Into_Range';
+  const name = game.human.faction.str(`SpeechEvent_Super_Weapon_${enemy ? 'Enemy_' : ''}${suffix}`);
+  if (name) game.audio.speech.enqueue(name);
 }

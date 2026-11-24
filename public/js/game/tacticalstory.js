@@ -33,7 +33,8 @@ export class TacticalStoryHost extends StoryPlots {
       game.movies = new GalacticMovies(game, null, { anchor: [at.x, at.y], root: game.ui.bar.root });
     if (game.setup.linkedTactical) {
       game.tacticalCameraData = await loadTacticalCameraData();
-      page?.installTacticalMission(game, scripts);
+      if (page) page.installTacticalMission(game, scripts);
+      else game.installMissionScripts?.(scripts);
     }
     if (scripts) {
       scripts.story = host;
