@@ -1,5 +1,3 @@
-import { installTacticalMission } from './tacticalmission.js';
-import { installTacticalNotices } from './tacticalnotice.js';
 import { installLinkedPresentation } from './linkedpresentation.js';
 import { GalacticMovies } from './galacticmovies.js';
 import { linkedParent } from './linktactical.js';
@@ -11,7 +9,6 @@ import { setRetreatDisabled } from './retreat.js';
 import { loadTacticalCameraData } from './tacticalcameradata.js';
 import { sandboxGate, sandboxPlot, setSandboxObjectives } from './tacticalsandbox.js';
 import { openRetryDialog } from './retrydialog.js';
-import { tutorialReward } from './tutorialrewards.js';
 import { installTacticalSpeech } from './tacticalspeech.js';
 const key = s =>
   String(s || '')
@@ -20,8 +17,10 @@ const key = s =>
 export class TacticalStoryHost extends StoryPlots {
   static async create(game, scripts, { restoring = false } = {}) {
     if (!game.tacticalCampaign && game.setup.campaign?.galaxy) game.tacticalCampaign = await TacticalCampaign.create(game);
+    const page = typeof document !== 'undefined' ? await import('./tacticalstorypage.js') : null;
     const host = (game.tacticalStory = new TacticalStoryHost(game, scripts));
-    installTacticalNotices(game);
+    host.page = page;
+    page?.installTacticalNotices(game);
     for (const request of game.setup.campaign?.storyPlots || []) await host.readPlot(request.name, '', request.owner);
     if (sandboxGate(game)) await host.readPlot(sandboxPlot(game), '', game.human?.factionName || game.factions?.[game.me]);
     if (game.setup.tacticalStoryPlot)
@@ -33,7 +32,7 @@ export class TacticalStoryHost extends StoryPlots {
       game.movies = new GalacticMovies(game, null, { anchor: [at.x, at.y], root: game.ui.bar.root });
     if (game.setup.linkedTactical) {
       game.tacticalCameraData = await loadTacticalCameraData();
-      installTacticalMission(game, scripts);
+      page?.installTacticalMission(game, scripts);
     }
     if (scripts) {
       scripts.story = host;
@@ -242,7 +241,7 @@ export class TacticalStoryHost extends StoryPlots {
         });
         break;
       default:
-        if (!tutorialReward(this, e)) this.unsupported('Reward.' + e.reward);
+        if (!this.page?.tutorialReward(this, e)) this.unsupported('Reward.' + e.reward);
     }
   }
   update() {

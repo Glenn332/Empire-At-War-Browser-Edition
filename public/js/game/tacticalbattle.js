@@ -4,7 +4,6 @@ import { db } from '../gamedata.js';
 import { TacticalCampaign } from './tacticalcampaign.js';
 import { TacticalSuperweapons } from './tacticalsuperweapon.js';
 import { TacticalVictory } from './tacticalvictory.js';
-import { superweaponShot } from './tacticalsuperweaponcamera.js';
 
 export async function installTacticalBattle(game) {
   const campaign = (game.tacticalCampaign = await TacticalCampaign.create(game));
@@ -19,7 +18,10 @@ export async function installTacticalBattle(game) {
       reportLinkedVictory(game, result.team.factionName);
       game.tacticalVictoryNotice(result.team, result.suppressNotice);
     },
-    { retry: team => !!game.useRetry && team !== game.human?.team, onRetry: () => openRetryDialog(game) }
+    {
+      retry: team => !!game.useRetry && team !== game.human?.team,
+      onRetry: () => (game.openRetryDialog ? game.openRetryDialog() : openRetryDialog(game))
+    }
   );
   const manager = (game.world.tacticalSuperweapons = new TacticalSuperweapons(game.world, {
     planet: campaign?.planet,
@@ -28,13 +30,7 @@ export async function installTacticalBattle(game) {
     replace: (type, transform) => game.tacticalReplacement(type, transform),
     requestVictory: (team, type, frames) => game.tacticalVictory.request(team, type, frames, game.world.tacticalSuperweapons.disableDepth),
     resetHUD: () => game.superweaponHUD?.reset(),
-    camera: (unit, target) => {
-      if (game.cine) {
-        game.cine.stop();
-        game.cine.start();
-        game.cine.sequence = superweaponShot(game, unit, target);
-      }
-    },
+    camera: (unit, target) => game.superweaponCamera?.(unit, target),
     music: name => {
       const event = db.music.get(name.toUpperCase());
       if (event) game.audio.setPlaylist(event.list('Files'), true, true);

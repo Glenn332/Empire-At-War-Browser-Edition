@@ -25,6 +25,7 @@ import { stateHash } from './netgame.js';
 import { loadSpaceBrain } from './spacebrain.js';
 import { placeSpecialWeapons, specialWeaponSource } from './superweapon.js';
 import { InstantRules } from './instantrules.js';
+import { campaignBattle } from './spacecampaignworker.js';
 
 const TICK = 1 / 30;
 const AI_STEP_MS = 4,
@@ -163,7 +164,7 @@ async function setUp(m, events) {
   }
   w.recountPop();
   lap('spawn');
-  return { w, ms, ids, map, thing };
+  return { w, ms, ids, map, thing, refs };
 }
 
 onmessage = async e => {
@@ -219,7 +220,7 @@ onmessage = async e => {
   }
 };
 
-async function minds(w, m, map, events, thing) {
+async function minds(w, m, map, events, thing, refs) {
   const fixed = fixedSeed(m) !== null;
   const has = k => (m.switches || []).includes(k);
   const tell =
@@ -238,6 +239,7 @@ async function minds(w, m, map, events, thing) {
     setEnvironmentIndex: tell('setEnvironmentIndex'),
     startCinematicRetreat: tell('startCinematicRetreat')
   };
+  const campaign = m.campaignWorld ? await campaignBattle(game, m, refs, thing, events) : null;
   const scripts = has('noscripts')
     ? null
     : await ScriptHost.create(game).catch(e => {
@@ -288,6 +290,7 @@ async function minds(w, m, map, events, thing) {
   let scriptsFrom = scripts ? (saved ? 'the save' : 'the start') : 'none';
   if (scripts && !saved) await scripts.prime().catch(e => console.warn('space worker: scripts', e));
   if (scripts) await scripts.compileAll(3000).catch(() => null);
+  if (campaign) await campaign.story(scripts, !!saved);
   if (saved) {
     try {
       restoreBattleScripts(game, saved, null, thing);
@@ -323,6 +326,7 @@ async function minds(w, m, map, events, thing) {
     const scriptsFrom = performance.now();
     phaseMs.ai += scriptsFrom - aiFrom;
     if (scripts) scripts.update(TICK);
+    if (campaign) campaign.step();
     phaseMs.scripts += performance.now() - scriptsFrom;
   };
   const takeOver = p => {
@@ -334,18 +338,18 @@ async function minds(w, m, map, events, thing) {
     ais.push(ai);
     freeStore(ai, pre.fs);
   };
-  return { think, game, takeOver, scriptsFrom };
+  return { think, game, takeOver, scriptsFrom, campaign };
 }
 
 async function run(m) {
   const fixed = fixedSeed(m) !== null;
   const events = [],
     spawns = [];
-  const { w, ms, ids, map, thing } = await setUp(m, events);
+  const { w, ms, ids, map, thing, refs } = await setUp(m, events);
   w.onEvent = (kind, data) => {
     events.push(['world', 'onEvent', [kind, plain(data)]]);
   };
-  const { think, game, takeOver, scriptsFrom } = await minds(w, m, map, events, thing);
+  const { think, game, takeOver, scriptsFrom, campaign } = await minds(w, m, map, events, thing, refs);
   events.length = 0;
   const told = w.onEvent;
   hookBattle(w, events, spawns);
@@ -416,6 +420,7 @@ async function run(m) {
       const player = w.players.find(p => p.id === pid);
       if (!player) continue;
       if (cmd.c === 'left' && !player.left) takeOver(player);
+      if (campaign && campaign.command(player, cmd)) continue;
       let r;
       try {
         r = execute(w, player, cmd) || {};
@@ -526,7 +531,8 @@ async function run(m) {
       stepInput({ k: 'rules', rules: c.rules }, () => (w.tacticalRules = setTacticalRules(c.rules)));
     } else if (c.k === 'viewer') {
       stepInput({ k: 'viewer', id: c.id }, () => (w.viewer = w.players.find(p => p.id === c.id) || null));
-    } else if (c.k === 'direct') stepInput({ k: 'direct', id: c.id, m: c.m }, () => applyDirect(w, c.id, c.m));
+    } else if (c.k === 'story') campaign?.input(c);
+    else if (c.k === 'direct') stepInput({ k: 'direct', id: c.id, m: c.m }, () => applyDirect(w, c.id, c.m));
     else if (c.k === 'replaylog') {
       postMessage({ k: 'replaylog', id: c.id, step: steps, inputs: recording ? recording.inputs : null, checks: recording ? recording.checks : null });
     }
@@ -544,8 +550,8 @@ async function run(m) {
           speed: v.speed,
           renderer: { rig: v.camera },
           ui: { groups: new Map(v.groups.map(([n, l]) => [n, list(l)])), selection: list(v.selection) },
-          retreat: null,
-          campaignBook: null
+          retreat: game.retreat || null,
+          campaignBook: game.campaignBook || null
         };
         postMessage({ k: 'saved', id: c.id, save: snapshot(g, c.name) });
       } catch (err) {

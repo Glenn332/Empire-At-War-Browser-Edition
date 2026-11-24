@@ -445,7 +445,22 @@ export class SpaceMirror {
       audio = w.audio;
     for (const [to, name, args] of m.events) {
       const a = args.map(x => this.back(x)),
-        target = to === 'fx' ? fx : to === 'audio' ? audio : to === 'game' ? this.game : to === 'world' ? w : a.shift(),
+        target =
+          to === 'fx'
+            ? fx
+            : to === 'audio'
+              ? audio
+              : to === 'game'
+                ? this.game
+                : to === 'world'
+                  ? w
+                  : to === 'speech'
+                    ? this.game.audio?.speech
+                    : to === 'movies'
+                      ? this.game.movies
+                      : to === 'ui'
+                        ? this.game.ui
+                        : a.shift(),
         f = target && target[name];
       if (typeof f !== 'function') continue;
       try {

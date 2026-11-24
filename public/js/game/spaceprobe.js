@@ -1,6 +1,7 @@
 import { activeLanguage } from '../language.js';
 import { snapshot, saveRefs } from './savegame.js';
 import { isPlainObject } from './plainobject.js';
+import { campaignWorldState } from './spacecampaign.js';
 
 export function battleSnapshot(game, save = null, refs = null) {
   const w = game.world;
@@ -62,6 +63,7 @@ export function battleSnapshot(game, save = null, refs = null) {
     setup,
     net: net ? { seed: game.setup.seed >>> 0 } : null,
     record: game.recording ? { seed: game.setup.seed >>> 0, replay: replay || null } : null,
+    campaignWorld: game.campaignBook && game.mirrorCampaign ? campaignWorldState(game) : null,
     teams: w.teams.map(t => ({
       faction: t.factionName,
       mapSide: t.mapSide,
