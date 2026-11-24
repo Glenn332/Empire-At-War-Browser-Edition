@@ -117,6 +117,7 @@
       }
 
       main {
+        position: relative;
         width: min(1080px, 100%);
         margin: 0 auto;
         padding: 64px 32px 80px;
@@ -125,6 +126,45 @@
         box-shadow: 0 0 60px 30px rgba(1, 3, 7, 0.74);
       }
 
+      .channel {
+        position: absolute;
+        top: 24px;
+        right: 32px;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font: 500 11px/1 var(--mono);
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--bone-3);
+      }
+      .channel-options {
+        display: flex;
+        border: 1px solid var(--line-hi);
+      }
+      .channel-options button {
+        padding: 9px 16px;
+        border: 0;
+        background: none;
+        color: var(--bone-2);
+        font: 600 12px/1 var(--disp);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .channel-options button + button {
+        border-left: 1px solid var(--line-hi);
+      }
+      .channel-options button:hover {
+        color: var(--bone);
+        background: var(--imp-3);
+      }
+      .channel-options button.on {
+        color: var(--bone);
+        background: var(--imp);
+        cursor: default;
+      }
       header {
         display: grid;
         grid-template-columns: var(--rail) 1fr;
@@ -969,6 +1009,10 @@
         main {
           padding: 36px 16px 56px;
         }
+        .channel {
+          position: static;
+          margin-bottom: 24px;
+        }
         header {
           grid-template-columns: 1fr;
           margin-bottom: 32px;
@@ -1086,6 +1130,10 @@
     <div class="scan" aria-hidden="true"></div>
 
     <main>
+      <div id="channel" class="channel hidden">
+        <span class="channel-label">Game build</span>
+        <div id="channelOptions" class="channel-options" role="radiogroup" aria-label="Game build"></div>
+      </div>
       <header>
         <div class="kicker">Star Wars</div>
         <h1>Empire at War</h1>

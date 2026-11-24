@@ -74,15 +74,26 @@ async function inTheApp() {
       .then(r => (r.ok ? r.json() : null))
       .catch(() => null);
     const nightly = channel?.channel === 'nightly';
-    const parts = [`Desktop app ${info.version} · ${nightly ? 'nightly' : 'stable'} build ${BUILD} `, check];
-    if (channel) {
-      const swap = el('button', 'ask', nightly ? 'Use stable' : 'Use nightly');
-      swap.onclick = () => (nightly ? switchChannel('stable') : offerNightly(channel.site));
-      parts.push(' ', swap);
-    }
-    line.replaceChildren(...parts);
+    line.replaceChildren(`Desktop app ${info.version} · ${nightly ? 'nightly' : 'stable'} build ${BUILD} `, check);
+    if (channel) channelSwitch(nightly, channel.site);
   }
   await look(false);
+}
+
+function channelSwitch(nightly, site) {
+  const box = $('channel');
+  if (!box) return;
+  const option = (name, on, title, onclick) => {
+    const b = button(name, on ? () => {} : onclick, on ? 'on' : '', title);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(on));
+    return b;
+  };
+  $('channelOptions').replaceChildren(
+    option('Stable', !nightly, 'The files this version of the app shipped with', () => switchChannel('stable')),
+    option('Nightly', nightly, 'The newest test build from ' + site.replace(/^https?:\/\//, ''), () => offerNightly(site))
+  );
+  box.classList.remove('hidden');
 }
 
 function offerNightly(site) {
