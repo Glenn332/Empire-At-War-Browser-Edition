@@ -434,7 +434,8 @@ async function run(m) {
       if (!player) continue;
       if (cmd.c === 'left' && !player.left) takeOver(player);
       if (cmd.c === 'switchSides') {
-        switchSides(cmd.to);
+        // a tutorial's own switch, sent by the page for its local player: never a multiplayer peer's order
+        if (!m.net && player === (game.human || w.viewer)) switchSides(cmd.to);
         continue;
       }
       if (campaign && campaign.command(player, cmd)) continue;

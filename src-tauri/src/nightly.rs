@@ -117,7 +117,7 @@ impl Nightly {
 
     /// The nightly copy of a page file, or None to fall back to the bundled one.
     pub fn file(&self, relative: &str) -> Option<Vec<u8>> {
-        if !for_the_app(relative) {
+        if !for_the_app(relative) || !plain_relative(relative) {
             return None;
         }
         let build = self.build().or_else(|| self.refresh())?;
@@ -142,6 +142,16 @@ impl Nightly {
             Err("The nightly build has no switch back to stable yet, so it is not offered.".into())
         }
     }
+}
+
+/// A path inside a folder: only plain names, never a root, a drive, `..` or a `:` stream,
+/// since joining an absolute path would replace the folder it is joined to.
+pub fn plain_relative(relative: &str) -> bool {
+    !relative.is_empty()
+        && !relative.contains([':', '\\', '\0'])
+        && std::path::Path::new(relative)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
 fn is_build_name(name: &str) -> bool {
