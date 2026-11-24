@@ -6,6 +6,8 @@ import { battleSnapshot } from './spaceprobe.js';
 import { TURN } from './netgame.js';
 import { pageOverlay } from '../vfs.js';
 
+const MAX_IN_FLIGHT = 4,
+  STALL_TICKS = 3;
 const TICK = 1 / 30,
   LAG = 1.5 * TICK,
   LAG_MAX = 6 * TICK;
@@ -31,7 +33,8 @@ export class SpaceMirror {
     this.jobWorkers = [];
     this.held = new Set();
     this.pending = [];
-    this.inFlight = false;
+    this.flights = [];
+    this.answeredAt = 0;
     this.warned = new Set();
   }
 
@@ -293,8 +296,11 @@ export class SpaceMirror {
     g.owed = Math.min((g.owed || 0) + (g.paused ? 0 : real * g.speed), (4 + behind * TURN) * TICK);
     if (behind > 1) g.owed = Math.max(g.owed, Math.min(behind, 3) * TICK);
     this.pump();
-    lock.frame(g.owed / TICK, 1, this.inFlight ? this.heldFor || 'the battle thread' : null, 0);
-    if (lock.started && !g.paused && g.owed >= 2 * TICK) {
+    // With steps on the battle thread, the battle is stalled when that thread has not answered for a while;
+    // a steady lag of a few steps while it keeps pace is not a stall. Without, the unsent backlog counts.
+    const waiting = this.flights.length ? (performance.now() - this.answeredAt) / 1000 / TICK : g.owed / TICK;
+    lock.frame(waiting, STALL_TICKS, this.flights.length ? this.heldFor || 'the battle thread' : null, 0);
+    if (lock.started && !g.paused && waiting >= STALL_TICKS + 1) {
       if ((g.stalled = (g.stalled || 0) + real) > 2 && !g.stallSaid) {
         g.stallSaid = true;
         const who = lock.waitingFor();
@@ -306,26 +312,33 @@ export class SpaceMirror {
     }
   }
 
+  // Sends the battle thread up to MAX_IN_FLIGHT steps ahead of its answers, so it keeps stepping while this
+  // page is busy drawing a frame. Each step still carries exactly its own commands, in order.
   pump() {
     const g = this.game,
       lock = g.lock;
-    if (this.inFlight || g.owed < TICK || g.paused) return;
-    if (!lock.step() || g.paused) return;
-    this.inFlight = true;
-    g.owed -= TICK;
-    this.worker.postMessage({ k: 'lockstep', cmds: this.pending.splice(0), hash: this.wantHash });
-    this.wantHash = false;
+    while (this.flights.length < MAX_IN_FLIGHT && g.owed >= TICK && !g.paused) {
+      const turn = Math.floor(lock.tick / TURN);
+      if (!lock.step() || g.paused) return;
+      const hash = this.wantHash;
+      this.wantHash = false;
+      g.owed -= TICK;
+      if (!this.flights.length) this.answeredAt = performance.now();
+      this.flights.push({ hashTurn: hash ? turn : -1, logAt: hash ? lock.log.length - 1 : -1, ended: lock.advance() });
+      this.worker.postMessage({ k: 'lockstep', cmds: this.pending.splice(0), hash });
+    }
   }
 
   lockStepped(m) {
-    const lock = this.game.lock;
-    if (m.hash !== undefined) {
-      const n = Math.floor(lock.tick / TURN);
-      lock.hashes.set(n, m.hash);
-      if (lock.log.length && lock.log[lock.log.length - 1] === undefined) lock.log[lock.log.length - 1] = m.hash;
+    const lock = this.game.lock,
+      flight = this.flights.shift();
+    if (!flight) return;
+    this.answeredAt = performance.now();
+    if (m.hash !== undefined && flight.hashTurn >= 0) {
+      lock.hashes.set(flight.hashTurn, m.hash);
+      if (flight.logAt >= 0 && lock.log[flight.logAt] === undefined) lock.log[flight.logAt] = m.hash;
     }
-    this.inFlight = false;
-    lock.stepped();
+    if (flight.ended >= 0) lock.ackTurn(flight.ended);
     this.pump();
   }
 

@@ -604,12 +604,21 @@ export class Lockstep {
   }
 
   stepped() {
+    const ended = this.advance();
+    if (ended >= 0) this.ackTurn(ended);
+  }
+
+  // Moves on to the next tick; returns the turn that just ended, or -1. A battle stepping on another thread
+  // advances as it sends each step and acknowledges the turn once that thread has answered with its hash.
+  advance() {
     this.tick++;
-    if (this.tick % TURN === 0) {
-      this.turnBegun = false;
-      const n = this.tick / TURN - 1;
-      if (!this.host) this.tx(0, n % HASH_EVERY === 0 ? { k: 'ack', n, h: this.hashes.get(n) } : { k: 'ack', n });
-    }
+    if (this.tick % TURN !== 0) return -1;
+    this.turnBegun = false;
+    return this.tick / TURN - 1;
+  }
+
+  ackTurn(n) {
+    if (!this.host) this.tx(0, n % HASH_EVERY === 0 ? { k: 'ack', n, h: this.hashes.get(n) } : { k: 'ack', n });
   }
 }
 
