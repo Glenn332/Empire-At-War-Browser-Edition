@@ -8,6 +8,7 @@ pub struct Settings {
     pub sources: Vec<String>,
     pub hidden: Vec<String>,
     pub uncapped: bool,
+    pub nightly: bool,
 }
 
 pub fn data_dir() -> PathBuf {

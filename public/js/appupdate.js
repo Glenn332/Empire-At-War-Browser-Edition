@@ -69,10 +69,44 @@ async function inTheApp() {
   if (info) {
     line.classList.remove('hidden');
     const check = el('button', 'ask', 'Check for updates');
-    line.replaceChildren(`Desktop app ${info.version} · build ${BUILD} `, check);
     check.onclick = () => look(true);
+    const channel = await fetch('api/channel')
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => null);
+    const nightly = channel?.channel === 'nightly';
+    const parts = [`Desktop app ${info.version} · ${nightly ? 'nightly' : 'stable'} build ${BUILD} `, check];
+    if (channel) {
+      const swap = el('button', 'ask', nightly ? 'Use stable' : 'Use nightly');
+      swap.onclick = () => (nightly ? switchChannel('stable') : offerNightly(channel.site));
+      parts.push(' ', swap);
+    }
+    line.replaceChildren(...parts);
   }
   await look(false);
+}
+
+function offerNightly(site) {
+  strip({
+    badge: 'Nightly',
+    what: 'Run the nightly build',
+    state: `The app loads the newest test build from ${site.replace(/^https?:\/\//, '')} instead of the files it shipped with. It has the latest changes and can be broken; multiplayer finds nightly players only.`,
+    note: 'Files are downloaded as they are used and kept for offline play. Switch back here at any time.',
+    acts: [button('Use nightly', () => switchChannel('nightly')), button('Cancel', hide)]
+  });
+}
+
+async function switchChannel(channel) {
+  strip({
+    badge: channel === 'nightly' ? 'Nightly' : 'Stable',
+    what: 'Switching',
+    state: channel === 'nightly' ? 'Checking the nightly build…' : 'Going back to the shipped files…'
+  });
+  const r = await fetch('api/channel?set=' + channel).catch(e => ({ ok: false, text: async () => e.message }));
+  if (!r.ok) {
+    strip({ badge: 'Nightly', what: 'Could not switch', state: await r.text(), acts: [button('OK', hide)] });
+    return;
+  }
+  location.reload();
 }
 
 async function look(asked) {

@@ -4,6 +4,7 @@ mod audio;
 mod discord;
 mod fonts;
 mod gog;
+mod nightly;
 mod report;
 mod setup;
 mod steam;
@@ -37,6 +38,7 @@ struct Server {
     public: Option<PathBuf>,
     env_game: Option<PathBuf>,
     fallback: Option<PathBuf>,
+    nightly: nightly::Nightly,
     state: RwLock<State>,
 }
 
@@ -401,6 +403,25 @@ impl Server {
         Ok(())
     }
 
+    fn channel(&self, set: Option<&str>) -> Result<serde_json::Value, String> {
+        match set {
+            Some("nightly") => {
+                self.nightly.can_switch_back()?;
+                self.nightly.refresh();
+                self.change(|settings| settings.nightly = true);
+            }
+            Some("stable") => self.change(|settings| settings.nightly = false),
+            Some(other) => return Err(format!("No such channel: {other}")),
+            None => {}
+        }
+        let nightly = self.state.read().unwrap().settings.nightly;
+        Ok(serde_json::json!({
+            "channel": if nightly { "nightly" } else { "stable" },
+            "site": self.nightly.site(),
+            "build": if nightly { self.nightly.build() } else { None },
+        }))
+    }
+
     fn handle(&self, app: &AppHandle, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         let uri = req.uri();
         let q = query(uri);
@@ -541,6 +562,12 @@ impl Server {
                 })
                 .unwrap_or_default();
             return json(&workshop_names(&ids));
+        }
+        if p == "/api/channel" {
+            return match self.channel(arg("set").as_deref()) {
+                Ok(info) => json(&info),
+                Err(error) => text(400, &error),
+            };
         }
         if p == "/api/app" {
             let i = app.package_info();
@@ -743,14 +770,23 @@ impl Server {
         if rel.split(['/', '\\']).any(|s| s == "..") {
             return text(403, "forbidden");
         }
-        let bytes = match &self.public {
-            Some(dir) => std::fs::read(dir.join(&rel)).ok(),
-            None => app
-                .asset_resolver()
-                .get(rel.clone())
-                .filter(|a| !a.mime_type.contains("html") || rel.to_lowercase().ends_with(".html"))
-                .map(|a| a.bytes.to_vec()),
-        };
+        let nightly = self.state.read().unwrap().settings.nightly;
+        if nightly && rel.to_lowercase().ends_with(".html") {
+            self.nightly.refresh();
+        }
+        let bytes = nightly
+            .then(|| self.nightly.file(&rel))
+            .flatten()
+            .or_else(|| match &self.public {
+                Some(dir) => std::fs::read(dir.join(&rel)).ok(),
+                None => app
+                    .asset_resolver()
+                    .get(rel.clone())
+                    .filter(|a| {
+                        !a.mime_type.contains("html") || rel.to_lowercase().ends_with(".html")
+                    })
+                    .map(|a| a.bytes.to_vec()),
+            });
         let Some(bytes) = bytes else {
             return text(404, &format!("not found: {rel}"));
         };
@@ -818,6 +854,7 @@ fn main() {
         public,
         env_game,
         fallback,
+        nightly: nightly::Nightly::new(setup::data_dir().join("nightly")),
         state: RwLock::new(blank),
     };
     let settled = server.settle(settings, None);
