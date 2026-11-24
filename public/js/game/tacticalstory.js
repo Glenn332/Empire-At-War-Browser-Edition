@@ -9,6 +9,7 @@ import { setRetreatDisabled } from './retreat.js';
 import { loadTacticalCameraData } from './tacticalcameradata.js';
 import { sandboxGate, sandboxPlot, setSandboxObjectives } from './tacticalsandbox.js';
 import { openRetryDialog } from './retrydialog.js';
+import { storyWorldReward } from './storyworldrewards.js';
 import { installTacticalSpeech } from './tacticalspeech.js';
 const key = s =>
   String(s || '')
@@ -135,7 +136,8 @@ export class TacticalStoryHost extends StoryPlots {
         game.useRetry = true;
         break;
       case 'ACTIVATE_RETRY_DIALOG':
-        openRetryDialog(game);
+        if (game.openRetryDialog) game.openRetryDialog();
+        else openRetryDialog(game);
         break;
       case 'DISABLE_REINFORCEMENTS': {
         const on = (parseInt(p[0], 10) || 0) === 0,
@@ -241,7 +243,9 @@ export class TacticalStoryHost extends StoryPlots {
         });
         break;
       default:
-        if (!this.page?.tutorialReward(this, e)) this.unsupported('Reward.' + e.reward);
+        // On the battle thread the page's share goes to the page (forwardStoryReward).
+        if (!(storyWorldReward(this, e) || this.page?.tutorialReward(this, e) || this.game.forwardStoryReward?.(e)))
+          this.unsupported('Reward.' + e.reward);
     }
   }
   update() {

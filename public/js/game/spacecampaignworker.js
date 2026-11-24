@@ -7,6 +7,9 @@ import { installTacticalBattle } from './tacticalbattle.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { spaceRetreat, startCinematicRetreat, stepCinematicJumps, autoResolveBattle, campaignVictoryStep, tacticalCredits } from './spacecampaign.js';
 import { plain } from './spacebattlehooks.js';
+import { storyTypes } from './storyart.js';
+import { modelsForType } from './sim.js';
+import { preloadModels } from '../model.js';
 
 const TICK = 1 / 30;
 
@@ -46,6 +49,21 @@ function presentation(game, events) {
     }
   };
   game.movies = { play: tell('movies', 'play'), stop: tell('movies', 'stop') };
+  // Story camera moves set renderer.x / renderer.y; the page's camera follows.
+  const camera = tell('game', 'storyCameraAxis');
+  game.renderer = {
+    set x(v) {
+      camera('x', v);
+    },
+    set y(v) {
+      camera('y', v);
+    }
+  };
+  // Tutorial style rewards that only change what is shown (flashes, highlights, dialogs) play on the page.
+  game.forwardStoryReward = e => {
+    tell('game', 'storyReward')(e.reward, e.rewards || [], e.name || '', e.plot?.owner || null);
+    return true;
+  };
   game.ui = { refresh: tell('ui', 'refresh') };
   // Story goals are kept here; the page shows them and keeps track of which were read.
   game.showStoryDialog = request => tell('game', 'storyGoalOpened')(request, true);
@@ -89,10 +107,17 @@ export async function campaignBattle(game, m, refs, thing, events) {
   game.retreat = spaceRetreat(game, cb);
   if (save.battle?.retreat) game.retreat.restore(save.battle.retreat, thing);
   game.startCinematicRetreat = (id, seconds) => startCinematicRetreat(game, id, seconds);
-  let retreating = false;
+  let retreating = false,
+    shown = '';
   return {
     // Story plots need the battle scripts compiled first, and come before saved scripts are put back.
     story: async (scripts, restoring) => {
+      // Types the story plots name are loaded up front, as the page does, so story spawns never wait for art.
+      const plots = [...(cb.storyPlots || []).map(p => p.name), game.setup.tacticalStoryPlot, 'SANDBOX_STANDARD.XML'].filter(Boolean),
+        names = new Set(),
+        seen = new Set();
+      for (const t of await storyTypes(plots).catch(() => [])) modelsForType(t, null, names, seen);
+      await preloadModels([...names].filter(Boolean)).catch(() => null);
       await TacticalStoryHost.create(game, scripts, { restoring });
     },
     command(player, cmd) {
@@ -123,6 +148,17 @@ export async function campaignBattle(game, m, refs, thing, events) {
       stepCinematicJumps(game, TICK);
       game.scripts?.updateStory?.(TICK);
       game.tacticalStory?.update();
+      // Story switches the page reads: reinforcements and advisor per faction, fog, skirmish rules.
+      const state = JSON.stringify({
+        reinforcements: game.reinforcementsEnabled || null,
+        advisor: game.advisorEnabled || null,
+        fog: !!w.fog,
+        skirmishRules: !!game.skirmishRules
+      });
+      if (state !== shown) {
+        shown = state;
+        events.push(['game', 'storyState', [JSON.parse(state)]]);
+      }
       const now = !!game.retreat?.active && game.retreat.active.player === game.human;
       if (now !== retreating) {
         retreating = now;

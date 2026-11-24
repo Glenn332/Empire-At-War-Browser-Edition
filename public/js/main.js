@@ -4,7 +4,7 @@ import { initCursorLock } from './cursorlock.js';
 import { discordSetting, setDiscord, initDiscord } from './discordpresence.js';
 import { inApp } from './platform.js';
 import { colorizes } from './game/teamcolor.js';
-import { setTacticalRules } from './game/tacticalrules.js';
+import { setTacticalRules, setSkirmishRules } from './game/tacticalrules.js';
 import { linkedParent, authoredMapOwner, ensureMissionPlayers } from './game/linktactical.js';
 import { mpBattleParent } from './game/galacticmpbattle.js';
 import { startGalaxyFrame, galaxyFrameSetup } from './game/mpgalaxyframe.js';
@@ -99,7 +99,8 @@ import { loadBlackMarket } from './game/blackmarket.js';
 import { giveFreeUpgrades } from './game/planetabilities.js';
 import { stageStart, unstash, setInPlace, toMainMenu } from './game/transit.js';
 import { TacticalCinematics } from './game/tacticalcinematics.js';
-import { stepDualFlash, tutorialFx } from './game/tutorialrewards.js';
+import { stepDualFlash, tutorialFx, tutorialReward } from './game/tutorialrewards.js';
+import { openRetryDialog } from './game/retrydialog.js';
 import { PALETTE as SLOT_COLORS, MAX_SLOTS } from './game/slotrows.js';
 import { leaveTo, guardLeaving } from './leaveguard.js';
 import { Beacons, beaconType } from './game/beacons.js';
@@ -1636,6 +1637,32 @@ class Game {
     else this.notifyStoryGoal?.(request, sound);
     this.storyDialog?.refreshSummary();
   }
+  openRetryDialog() {
+    openRetryDialog(this);
+  }
+  storyCameraAxis(axis, v) {
+    if (this.renderer && (axis === 'x' || axis === 'y')) this.renderer[axis] = v;
+  }
+  // A story reward from the battle thread that only changes what is shown here.
+  storyReward(reward, rewards, name, owner) {
+    const host = { game: this, errors: new Map(), plot: owner ? { owner } : null };
+    try {
+      tutorialReward(host, { reward, rewards, name, plot: host.plot });
+    } catch (error) {
+      console.warn('story reward', reward, error);
+    }
+  }
+  storyState(s) {
+    this.reinforcementsEnabled = s.reinforcements || undefined;
+    this.advisorEnabled = s.advisor || undefined;
+    this.world.fog = s.fog;
+    this.setup.fog = s.fog;
+    if (!!this.skirmishRules !== s.skirmishRules) {
+      this.skirmishRules = s.skirmishRules;
+      this.world.tacticalRules = setSkirmishRules(s.skirmishRules);
+    }
+    this.ui?.refresh?.();
+  }
   storyGoalsChanged(goals) {
     const view = this.tacticalStory;
     if (!view) return;
@@ -1984,13 +2011,12 @@ class Game {
     );
   }
 
-  // Galactic conquest space battles run on the battle thread, alone or in multiplayer; battles with their own story
-  // plots, tutorials, linked missions and battles with tactical superweapons stay on the page for now.
+  // Galactic conquest space battles run on the battle thread, alone or in multiplayer, with the story plots the
+  // galaxy hands them; tutorials, linked missions and battles with tactical superweapons stay on the page for now.
   conquestOnBattleThread() {
     const setup = this.setup,
       cb = setup.campaign;
-    if (!cb || setup.linkedTactical || setup.tacticalStoryPlot || cb.linked || cb.storyPlots?.length || cb.galaxy?.players?.some(p => p.tutorial))
-      return false;
+    if (!cb || setup.linkedTactical || setup.tacticalStoryPlot || cb.linked || cb.galaxy?.players?.some(p => p.tutorial)) return false;
     if (new URLSearchParams(location.search).has('nocampaignworker')) return false;
     const typeOf = t => (typeof t === 'string' ? db.type(t) : t);
     for (const u of [...(cb.attacker?.units || []), ...(cb.defender?.units || [])]) {

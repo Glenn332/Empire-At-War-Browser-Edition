@@ -1,5 +1,5 @@
 import { db } from '../gamedata.js';
-import { setSkirmishRules } from './tacticalrules.js';
+import { storyWorldReward } from './storyworldrewards.js';
 import { openDialog } from './dialogs.js';
 import { toMainMenu } from './transit.js';
 import { TutorialFx } from './tutorialfx.js';
@@ -44,6 +44,7 @@ const SPECIAL_SLOTS = ['', 'raid', 'smuggle', 'steal', 'blackmarket', 'sabotage'
 export const tutorialFx = game => (game.tutorialFx ||= new TutorialFx(game));
 
 export function tutorialReward(host, e) {
+  if (storyWorldReward(host, e)) return true;
   const game = host.game,
     p = e.rewards,
     fx = () => tutorialFx(game);
@@ -168,23 +169,9 @@ export function tutorialReward(host, e) {
     case 'HIDE_STEAL_SLOT':
       if (game.forcedSlots) delete game.forcedSlots[SLOT_KINDS[e.reward]];
       return true;
-    case 'SKIRMISH_RULES':
-      if (!present(p[0])) host.errors?.set(e.name, 'SKIRMISH_RULES takes one parameter, and param = 0 or 1');
-      else {
-        game.skirmishRules = atoi(p[0]) !== 0;
-        if (game.world?.tacticalRules) {
-          game.world.tacticalRules = setSkirmishRules(game.skirmishRules);
-          game.mirror?.setRules?.(game.world.tacticalRules);
-        }
-      }
-      return true;
     case 'FINISHED_TUTORIAL':
       if (!present(p[0])) host.errors?.set(e.name, 'FINISHED_TUTORIAL takes one parameter, name of the tutorial');
       else finishTutorial(p[0]);
-      return true;
-    case 'BOMBARD_DELAY':
-      if (!present(p[0])) host.errors?.set(e.name, 'BOMBARD_DELAY takes one parameter');
-      else if (game.world) game.world.bombardDelay = parseFloat(p[0]) || 0;
       return true;
     case 'SET_SPAWN':
       if (!present(p[0]) || !present(p[1])) host.errors?.set(e.name, 'Set spawn failed due to incomplete parameters');
@@ -232,19 +219,6 @@ export function tutorialReward(host, e) {
     case 'PAUSE_GAME':
       if (!game.paused) game.togglePause?.();
       return true;
-    case 'SET_HEALTH': {
-      if (!present(p[0]) || !present(p[1])) return true;
-      const pct = atoi(p[1]),
-        list = (game.world?.units || []).filter(u => !u.dead && key((u.type || u.def)?.name) === key(p[0]));
-      if (!list.length) {
-        host.errors?.set(e.name, "Can't find type " + key(p[0]));
-        return true;
-      }
-      let n = present(p[2]) ? atoi(p[2]) : 1;
-      if (n === 0) n = list.length;
-      for (const u of list.slice(0, Math.max(0, n))) if (u.maxHealth > 0) u.health = (u.maxHealth * pct) / 100;
-      return true;
-    }
     case 'DISABLE_SPECIAL_STRUCTURE': {
       if (!present(p[0]) || !present(p[1])) return true;
       const u = (game.world?.units || []).find(x => !x.dead && key((x.type || x.def)?.name) === key(p[0]));
