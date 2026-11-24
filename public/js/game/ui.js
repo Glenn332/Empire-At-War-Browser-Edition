@@ -1963,12 +1963,13 @@ export class UI {
     const tracked = new Set();
     for (const s of this.selection)
       if (!s.isSquad && s.player === me && s.targetHp && s.targetHp.alive && !s.targetHp.unit.dead) tracked.add(s.targetHp);
-    const drawHp = (h, focus, hostile, isTracked) => {
+    const drawHp = (h, focus, isTracked) => {
       const w = {};
       h.worldPos(w);
       this.r.project(w.x, w.y, w.z, p);
       if (p.behind) return;
-      const color = hostile ? '#ff5a4d' : '#6be675';
+      const f = h.health / h.maxHealth;
+      const color = f > 0.5 ? '#6be675' : f > 0.25 ? '#f2c744' : '#ff5a4d';
       const img = reticle(h.kind, isTracked || focus, color);
       const s = focus ? 38 : isTracked ? 34 : 26;
       if (img) {
@@ -1980,8 +1981,7 @@ export class UI {
         g.lineWidth = 1.5;
         g.strokeRect(p.x - s / 3, p.y - s / 3, s / 1.5, s / 1.5);
       }
-      const f = h.health / h.maxHealth,
-        bw = s * 0.8;
+      const bw = s * 0.8;
       g.fillStyle = 'rgba(0,0,0,0.65)';
       g.fillRect(p.x - bw / 2 - 1, p.y + s / 2, bw + 2, 4);
       g.fillStyle = f > 0.5 ? '#5fe067' : f > 0.25 ? '#f2c744' : '#ff5a4d';
@@ -1997,13 +1997,12 @@ export class UI {
       }
     };
     if (hv && !hv.isSquad && hv.hpDriven && this.sees(hv)) {
-      const hostile = hv.player.team !== me.team && hv.player.id >= 0;
       const focus = this.hardpointAt(hv, this.mouse.x, this.mouse.y);
-      for (const h of hv.hardpoints) if (h.alive && h.targetable && h.destroyable && h !== focus) drawHp(h, false, hostile, tracked.has(h));
-      if (focus) drawHp(focus, true, hostile, tracked.has(focus));
+      for (const h of hv.hardpoints) if (h.alive && h.targetable && h.destroyable && h !== focus) drawHp(h, false, tracked.has(h));
+      if (focus) drawHp(focus, true, tracked.has(focus));
       for (const h of hv.hardpoints) tracked.delete(h);
     }
-    for (const h of tracked) drawHp(h, false, true, true);
+    for (const h of tracked) drawHp(h, false, true);
     if (this.armed?.startsWith('ability:') && this.mouse.inside) {
       g.font = '12px "Segoe UI", sans-serif';
       g.textAlign = 'left';
