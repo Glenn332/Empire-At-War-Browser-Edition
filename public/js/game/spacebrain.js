@@ -62,9 +62,18 @@ export class SpaceMind extends Reason {
   weigh(u, att) {
     return power(u) * (att ? 1 - (1 - Math.max(0, Math.min(1, u.healthFrac ?? 1))) * att : 1);
   }
+  // Force totals over the mind's own lists are kept for the mind's life, as its equation results already are:
+  // goal scoring asks for the same totals for every goal and target it weighs.
   sum(list, c, types = [], att = 0) {
+    const tag = list === this.friends ? 'f' : list === this.foes ? 'e' : list === this.friendsAll ? 'F' : list === this.foesAll ? 'E' : null;
+    const key = tag && tag + '|' + (c ? c.join('|') : '') + '|' + types.join('|') + '|' + att;
+    if (key) {
+      const kept = (this.sums ||= new Map()).get(key);
+      if (kept !== undefined) return kept;
+    }
     let n = 0;
     for (const u of list) if (fits(u, c, types)) n += this.weigh(u, att);
+    if (key) this.sums.set(key, n);
     return n;
   }
   norm(v, by = this.total) {
@@ -129,7 +138,19 @@ export class SpaceMind extends Reason {
     return kind === 'force' ? n * this.areaScale : n;
   }
 
+  // Perceptions that do not depend on the target are kept for the mind's life, keyed by name and parameters.
   see(name, params, t) {
+    if (params && typeof params === 'object' && /^(Game|Variable_Self|Variable_Enemy)\./.test(name)) {
+      let byName = (this.seenGlobal ||= new WeakMap()).get(params);
+      if (!byName) this.seenGlobal.set(params, (byName = new Map()));
+      let v = byName.get(name);
+      if (v === undefined) byName.set(name, (v = this.perceive(name, params, t)));
+      return v;
+    }
+    return this.perceive(name, params, t);
+  }
+
+  perceive(name, params, t) {
     const w = this.w,
       p = this.p,
       c = catParam(params),

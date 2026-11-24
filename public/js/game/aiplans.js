@@ -19,6 +19,9 @@ const unset = e => {
     }
 };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Staffing a plan walks every unit the AI owns. The goal system's per-step work budget is charged one unit of
+// work for this many of them, so a big army spreads its staffing over more steps instead of stalling one.
+const UNITS_PER_STAFFING_WORK = 40;
 const idle = e => !e.order || e.order.kind === 'idle' || !!e.order.fs || (!!e.fsKind && e.fsKind === e.order.kind);
 const SERVICE = 0.5;
 const HP_KINDS = [
@@ -230,6 +233,7 @@ export class Plans {
     this.needs = new Map();
     this.builds = new Map();
     this.goalName = new Map();
+    this.staffingWork = 0;
     if (!host.land && this.world && typeof this.world.applyDamage === 'function') {
       this.world.onUnitHit = (t, from, loss) => this.hit(t, from, loss);
       this.world.onUnitSignal = (e, name, extra) => this.signal(e, name, extra);
@@ -359,6 +363,13 @@ export class Plans {
     return list[list.length - 1];
   }
 
+  // Work spent staffing since the goal system last asked, then cleared.
+  takeStaffingWork() {
+    const work = this.staffingWork;
+    this.staffingWork = 0;
+    return work;
+  }
+
   can(goal) {
     return this.ready && this.byGoal.has(String(goal).toUpperCase()) && (this.failed.get(String(goal).toUpperCase()) || 0) < 3;
   }
@@ -455,6 +466,7 @@ export class Plans {
     const at = t && t.x !== undefined ? t : null;
     const mine = new Map();
     const pool = ai.mine();
+    this.staffingWork += Math.ceil(pool.length / UNITS_PER_STAFFING_WORK);
     if (lines.some(l => l.s.types && l.s.types.some(t => t.bool('Is_Special_Weapon_In_Space'))))
       for (const sw of w0.specialWeapons || []) if (sw.player === ai.player && sw.charge >= 0.99 && sw.enabled()) pool.push(sw);
     const floor = db.constants.num('Health_Low_Percent_Threshold', 0.33);

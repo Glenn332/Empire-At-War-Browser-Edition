@@ -142,6 +142,7 @@ export class GoalSystem {
       S = this.state(side);
     this.now = w.time;
     this.plans = P;
+    if (P.takeStaffingWork) P.takeStaffingWork();
     if (!P.onEnd) P.onEnd = inst => this.ended(inst);
     const late = () =>
       (this.deadline !== undefined && performance.now() > this.deadline) || (this.budget !== undefined && this.budget <= 0);
@@ -203,7 +204,9 @@ export class GoalSystem {
         if (!this.reachable(def, t, mind)) continue;
         const plan = P.draw ? P.draw(name, S) : undefined;
         if (P.draw && !plan) continue;
-        if (!P.staffable(cmdr, name, this.thingOf(t), { mind, t, fails: this.failures(S, 'plan', name, t), key: plan })) continue;
+        const staffable = P.staffable(cmdr, name, this.thingOf(t), { mind, t, fails: this.failures(S, 'plan', name, t), key: plan });
+        if (this.budget !== undefined && P.takeStaffingWork) this.budget -= P.takeStaffingWork();
+        if (!staffable) continue;
         const key = name + '|' + (t ? t.key : ''),
           had = S.proposed.get(key);
         if (!had || d > had.d) S.proposed.set(key, { name, t, d, def, plan });
@@ -224,7 +227,9 @@ export class GoalSystem {
       if (!S.selecting) S.selecting = this.selectSteps(side, S, cmdr, P);
       while (!late()) {
         if (this.budget !== undefined) this.budget--;
-        if (S.selecting.next().done) {
+        const done = S.selecting.next().done;
+        if (this.budget !== undefined && P.takeStaffingWork) this.budget -= P.takeStaffingWork();
+        if (done) {
           S.selecting = null;
           S.phase = 'idle';
           S.wake = w.time + this.rest(cmdr, brain, P);
