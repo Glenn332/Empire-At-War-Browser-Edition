@@ -81,14 +81,14 @@ function noticeText(gpu) {
     lines.push(`The game is being drawn without your graphics card (${gpu.name}), so it will run very slowly.`);
     lines.push(
       app
-        ? 'Update your graphics driver and restart the game. If it still happens, send a bug report from the menu.'
+        ? 'Update your graphics driver and restart the game. If it still happens, press Ctrl+Shift+B to save a bug report and send it to us.'
         : 'Turn on "Use graphics acceleration when available" (or "hardware acceleration") in your browser\'s settings, restart the browser, and update your graphics driver.'
     );
   } else {
     lines.push(`The game is running on a power-saving graphics chip (${gpu.name}).`);
     lines.push(
       app
-        ? 'If this computer also has a dedicated graphics card, open Windows Settings → System → Display → Graphics and make sure this app is not set to Power saving.'
+        ? 'The app already asks Windows for the fastest graphics card. If this computer also has a dedicated one, update its driver and set the preferred graphics processor to High performance in NVIDIA Control Panel or AMD Software, then restart the game.'
         : 'If this computer also has a dedicated graphics card, open Windows Settings → System → Display → Graphics, add your browser, choose High performance, then restart the browser.'
     );
     lines.push('Picking a lower Resolution in the graphics options also helps.');
