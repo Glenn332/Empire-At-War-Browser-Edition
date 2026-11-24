@@ -141,8 +141,8 @@ function extentOf(t) {
     const box = buildModel(m, { headless: true }).box,
       k = t.num('Scale_Factor', 1);
     e = { along: box.max.x * k, across: box.max.y * k };
+    extents.set(t, e);
   }
-  extents.set(t, e);
   return e;
 }
 function groupSize(list) {
@@ -177,6 +177,10 @@ function groupSize(list) {
   }
   return [a * 2, b * 2, 0];
 }
+
+// Full size of one ship or squadron from its model box: [length, beam, 0].
+// Space models run nose to tail along their Y axis, so `across` above is the length.
+export const footprint = t => groupSize([{ type: t }]);
 
 export function smallCraftOrder(list) {
   const f = list.filter(u => shipClass(u.type) === 0),

@@ -1,6 +1,6 @@
 import { db, skirmishStation } from '../gamedata.js';
 import { buildListFor, isUpgradeType, buildCost, isCompanyType, companySpaceUnits } from './sim.js';
-import { arrange, shipClass, spacePop } from './campaignbattle.js';
+import { arrange, footprint, shipClass, spacePop } from './campaignbattle.js';
 import { InstantRules } from './instantrules.js';
 
 export { InstantRules };
@@ -217,6 +217,62 @@ export function entryPoints(min, max, count, turn = 0, inset = EDGE_MARGIN) {
   return out;
 }
 
+// Small fleets keep the campaign formation. Past this depth its forward rings
+// reach toward the map centre, so bigger fleets are packed in rows instead.
+const FORMATION_DEPTH = 900;
+const GAP_MIN = 40,
+  GAP = 0.15,
+  SQUEEZE_MIN = 0.4;
+
+// Distance from (x, y) along (dx, dy) to the edge of the box.
+function runTo(x, y, dx, dy, lo, hi) {
+  let t = Infinity;
+  if (dx > 1e-6) t = Math.min(t, (hi.x - x) / dx);
+  else if (dx < -1e-6) t = Math.min(t, (lo.x - x) / dx);
+  if (dy > 1e-6) t = Math.min(t, (hi.y - y) / dy);
+  else if (dy < -1e-6) t = Math.min(t, (lo.y - y) / dy);
+  return Math.max(0, t);
+}
+
+// Rows across the spawn edge, biggest ships at the back, each ship spaced by its
+// own size rather than the largest in its group. Local coords: along points at
+// the map centre, left is lateral; the block is centred on along = 0.
+export function packFleet(list, room, maxDepth = Infinity) {
+  const cells = list.map((u, i) => {
+    const [len, beam] = footprint(u.type),
+      gap = Math.max(GAP_MIN, Math.max(len, beam) * GAP);
+    return { u, i, c: shipClass(u.type), w: beam + gap, d: len + gap };
+  });
+  cells.sort((p, q) => q.c - p.c || q.w * q.d - p.w * p.d || p.i - q.i);
+  const area = cells.reduce((s, c) => s + c.w * c.d, 0),
+    widest = cells.reduce((m, c) => Math.max(m, c.w), 0),
+    width = Math.max(widest, Math.min(room, Math.sqrt(area * 4)));
+  const rows = [];
+  let row = null;
+  for (const c of cells) {
+    if (!row || row.w + c.w > width) rows.push((row = { cells: [], w: 0, d: 0 }));
+    row.cells.push(c);
+    row.w += c.w;
+    row.d = Math.max(row.d, c.d);
+  }
+  // Thousands of ships cannot fit at full spacing; squeeze the rows rather than
+  // let the block run across the centre of the map.
+  const full = rows.reduce((s, r) => s + r.d, 0),
+    k = full > maxDepth ? Math.max(SQUEEZE_MIN, maxDepth / full) : 1,
+    depth = full * k,
+    out = [];
+  let along = -depth / 2;
+  for (const r of rows) {
+    let left = r.w / 2;
+    for (const c of r.cells) {
+      out.push({ u: c.u, along: along + (r.d * k) / 2, left: left - c.w / 2 });
+      left -= c.w;
+    }
+    along += r.d * k;
+  }
+  return { slots: out, depth };
+}
+
 export function placeInstantBattle(w, teams, setup) {
   const armies = setup.instant.armies || [];
   const used = teams.filter(t => t.players.some(p => p.id >= 0));
@@ -233,19 +289,36 @@ export function placeInstantBattle(w, teams, setup) {
       for (const name of armies[p.id] || []) for (const type of shipsOf(db.type(name))) list.push({ type, player: p });
     }
     let back = 0,
+      front = 0,
       side = 0;
     for (const { u, x, y } of arrange(list, { x: 0, y: 0 }, 0)) {
       const r = u.type.has('Squadron_Units') ? 60 : 100;
       back = Math.max(back, r - x);
+      front = Math.max(front, x + r);
       side = Math.max(side, Math.abs(y) + r);
     }
     const angle = turn + (k * 2 * Math.PI) / Math.max(1, count);
-    const at = edgePoint(w.min, w.max, angle, EDGE_MARGIN + Math.max(back, Math.min(side, 600) * 0.5));
+    const edge = edgePoint(w.min, w.max, angle),
+      lo = { x: w.min.x + margin, y: w.min.y + margin },
+      hi = { x: w.max.x - margin, y: w.max.y - margin },
+      px = -Math.sin(edge.facing),
+      py = Math.cos(edge.facing),
+      room = 2 * Math.min(runTo(edge.x, edge.y, px, py, lo, hi), runTo(edge.x, edge.y, -px, -py, lo, hi));
+    const half = Math.min(w.max.x - w.min.x, w.max.y - w.min.y) / 2,
+      packed = front + back > FORMATION_DEPTH || 2 * side > room ? packFleet(list, Math.max(room, 1200), half * 0.5) : null;
+    const at = packed
+      ? edgePoint(w.min, w.max, angle, EDGE_MARGIN + packed.depth / 2)
+      : edgePoint(w.min, w.max, angle, EDGE_MARGIN + Math.max(back, Math.min(side, 600) * 0.5));
     team.spawnPoints.push({ x: at.x, y: at.y, heading: at.facing });
     for (const p of team.players) if (p.id >= 0) p.spawn = team.spawnPoints[0];
+    const fx = Math.cos(at.facing),
+      fy = Math.sin(at.facing);
+    const slots = packed
+      ? packed.slots.map(s => ({ u: s.u, x: at.x + fx * s.along - fy * s.left, y: at.y + fy * s.along + fx * s.left }))
+      : arrange(list, at, at.facing);
     const placed = [],
       spots = [];
-    for (const { u, x, y } of arrange(list, at, at.facing)) {
+    for (const { u, x, y } of slots) {
       const e = w.spawn(u.type, u.player, inX(x), inY(y), at.facing);
       if (!e) continue;
       if (!w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);
