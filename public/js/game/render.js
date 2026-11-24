@@ -1171,7 +1171,9 @@ export class Renderer {
           .catch(() => {});
       });
     }
-    f.mesh.visible = !this.cameraOverride;
+    // The grid is a HUD visual: cinematic camera and H (hide HUD) hide it while fog keeps updating.
+    const cl = document.body.classList;
+    f.mesh.visible = !this.cameraOverride && !cl.contains('cinematic') && !cl.contains('hud-hidden');
     const placing = !!this.fogPlacing;
     f.material.uniforms.placing.value = placing ? 1 : 0;
     if (placing !== f.placing) (f.placing = placing), (f.timer = 0);
