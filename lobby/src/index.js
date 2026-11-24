@@ -4,6 +4,15 @@ const MAX_LOBBIES = 500;
 const LISTING_TTL = 90 * 1000;
 const NAME_LEN = 32;
 const AWAY_GRACE = 45 * 1000;
+const STALE = 150 * 1000;
+
+const lastHeard = (ctx, ws, a) => Math.max(ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() || 0, a.at || 0);
+const fresh = (ctx, ws, a, now) => now - lastHeard(ctx, ws, a) <= STALE;
+const drop = ws => {
+  try {
+    ws.close(4001, 'timed out');
+  } catch {}
+};
 
 const allows = (entry, origin) => {
   if (entry === '*' || entry === origin) return true;
@@ -104,18 +113,25 @@ export class Hall {
       ws.send(JSON.stringify(msg));
     } catch {}
   }
+  live(except = null) {
+    const now = Date.now();
+    return this.ctx.getWebSockets().filter(ws => {
+      if (ws === except) return false;
+      if (fresh(this.ctx, ws, ws.deserializeAttachment() || {}, now)) return true;
+      drop(ws);
+      return false;
+    });
+  }
   all(msg, except = null) {
     const s = JSON.stringify(msg);
-    for (const ws of this.ctx.getWebSockets())
+    for (const ws of this.live())
       if (ws !== except)
         try {
           ws.send(s);
         } catch {}
   }
   players(except = null) {
-    const names = this.ctx
-      .getWebSockets()
-      .filter(ws => ws !== except)
+    const names = this.live(except)
       .map(ws => (ws.deserializeAttachment() || {}).name)
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
@@ -125,13 +141,13 @@ export class Hall {
   async fetch(req) {
     const name = cleanName(new URL(req.url).searchParams.get('name'));
     const [client, server] = Object.values(new WebSocketPair());
-    if (this.ctx.getWebSockets().length >= HALL_MAX) {
+    if (this.live().length >= HALL_MAX) {
       server.accept();
       server.close(4010, 'the lobby is full');
       return new Response(null, { status: 101, webSocket: client });
     }
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ name, last: 0 });
+    server.serializeAttachment({ name, last: 0, at: Date.now() });
     if (!this.forgot) {
       this.forgot = true;
       await this.ctx.storage.delete('history');
@@ -149,6 +165,7 @@ export class Hall {
       return;
     }
     const me = ws.deserializeAttachment() || {};
+    me.at = Date.now();
     if (msg.t === 'name') {
       me.name = cleanName(msg.name);
       ws.serializeAttachment(me);
@@ -215,7 +232,20 @@ export class Lobby {
   }
 
   sockets() {
-    return this.ctx.getWebSockets().map(ws => ({ ws, a: ws.deserializeAttachment() || {} }));
+    const now = Date.now();
+    return this.ctx
+      .getWebSockets()
+      .map(ws => ({ ws, a: ws.deserializeAttachment() || {} }))
+      .filter(s => !s.a.counted && fresh(this.ctx, s.ws, s.a, now));
+  }
+  async prune() {
+    const now = Date.now();
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() || {};
+      if (a.counted || fresh(this.ctx, ws, a, now)) continue;
+      await this.gone(ws);
+      drop(ws);
+    }
   }
   find(id) {
     return this.sockets().find(s => s.a.id === id);
@@ -233,6 +263,7 @@ export class Lobby {
     const url = new URL(req.url);
     const name = (url.searchParams.get('name') || 'Player').slice(0, NAME_LEN);
     const lobby = url.searchParams.get('lobby');
+    await this.prune();
     const present = this.sockets();
     const host = present.find(s => s.a.role === 'host');
     const [client, server] = Object.values(new WebSocketPair());
@@ -269,7 +300,7 @@ export class Lobby {
     const tok = resume !== null ? token : crypto.randomUUID();
     await this.ctx.storage.put('tok:' + id, tok);
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id, role, name });
+    server.serializeAttachment({ id, role, name, at: Date.now() });
     this.send(server, { t: 'welcome', id, token: tok, resumed: resume !== null });
     if (host && resume === null) this.send(host.ws, { t: 'join', id, name });
     return new Response(null, { status: 101, webSocket: client });
@@ -305,11 +336,14 @@ export class Lobby {
       if (target) this.send(target.ws, { t: 'from', from: me.id, d: msg.d });
       return;
     }
-    if (msg.t === 'meta' && me.role === 'host') {
+    if (msg.t === 'meta' && me.role === 'host' && !me.counted) {
       const lobby = await this.ctx.storage.get('lobby');
+      if (!lobby) return;
       const meta = cleanMeta(msg.meta);
       const path = meta ? '/put' : '/del';
       await this.registry().fetch('https://registry' + path, { method: 'POST', body: JSON.stringify({ id: lobby, meta }) });
+      if (meta && !(await this.ctx.storage.get('lobby')))
+        await this.registry().fetch('https://registry/del', { method: 'POST', body: JSON.stringify({ id: lobby }) });
     }
   }
 
