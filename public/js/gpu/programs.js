@@ -1167,21 +1167,58 @@ const laserOut = `
   let t = textureSample(mapT, mapS, v.vUv);
   return vec4f(t.rgb * v.vTint * t.a, 1.0);
 }`;
-const laserBeam = simple({
-  name: 'laserBeam',
+const laserBatch = {
   textures: ['map'],
   params: [
     ['zScale', 'f'],
     ['depthSpan', 'v2']
   ],
-  match: m => m.isShaderMaterial && onlyLaser(m) && m.name === 'laserBeam' && m.vertexShader.startsWith(LASER_HEAD),
   vertex: () => [['position', 3, 0]],
   perInstance: [
     ['center', 4, 1],
     ['dir', 4, 2],
     ['cell', 4, 3],
     ['tint', 3, 4]
-  ],
+  ]
+};
+const laserMatch = name => m => m.isShaderMaterial && onlyLaser(m) && m.name === name && m.vertexShader.startsWith(LASER_HEAD);
+const blasterCapsule = simple({
+  ...laserBatch,
+  name: 'blasterCapsule',
+  match: laserMatch('blasterCapsule'),
+  code: () => `
+struct VIn { @location(0) position: vec3f, @location(1) center: vec4f, @location(2) dir: vec4f, @location(3) cell: vec4f, @location(4) tint: vec3f }
+struct VOut { @builtin(position) pos: vec4f, @location(0) eye: vec3f, @location(1) tail: vec3f, @location(2) span: vec3f, @location(3) cell: vec3f, @location(4) tint: vec3f }
+@vertex fn vs(i: VIn) -> VOut {
+  var o: VOut;
+  let h = (P.view * vec4f(i.center.xyz, 1.0)).xyz;
+  let f = normalize((P.view * vec4f(i.dir.xyz, 0.0)).xyz);
+  let refAxis = select(vec3f(0,1,0), vec3f(0,0,1), abs(f.z) < 0.9);
+  let side = normalize(cross(f, refAxis)); let end = sign(i.position.y);
+  let radial = side * i.position.x + cross(side, f) * i.position.z;
+  let cap = f * (i.position.y - end);
+  let s = i.dir.w * max(0.0, 1.0 + (max(0.0, -h.z) * D.depthSpan.x - D.depthSpan.y) * D.zScale);
+  let offset = f * (end * i.center.w * 0.5) + radial * s + cap * i.dir.w;
+  let p = h + offset;
+  o.span = f * i.center.w / max(s, 1e-5);
+  o.tail = -0.5 * o.span - offset / max(s, 1e-5);
+  o.eye = -p; o.cell = i.cell.xyz; o.tint = i.tint;
+  o.pos = glDepth(P.proj * vec4f(p, 1.0)); return o;
+}
+@fragment fn fs(v: VOut) -> @location(0) vec4f {
+  let eye = normalize(v.eye);
+  let tail = v.tail - eye * dot(v.tail, eye); let span = v.span - eye * dot(v.span, eye);
+  let along = clamp(-dot(tail, span) / max(dot(span, span), 1e-8), 0.0, 1.0);
+  let radius = min(1.0, length(tail + along * span));
+  let profile = select(vec2f(0.5 + 0.17 * radius), vec2f(0.5 + 0.45 * radius, 0.5), v.cell.z < 0.2);
+  let t = textureSample(mapT, mapS, v.cell.xy + profile * v.cell.z);
+  return vec4f(t.rgb * v.tint * t.a * (1.0 - smoothstep(0.82, 1.0, radius)), 1.0);
+}`
+});
+const laserBeam = simple({
+  ...laserBatch,
+  name: 'laserBeam',
+  match: laserMatch('laserBeam'),
   code: () =>
     laserIn +
     `
@@ -1203,20 +1240,9 @@ const laserBeam = simple({
     laserOut
 });
 const laserKite = simple({
+  ...laserBatch,
   name: 'laserKite',
-  textures: ['map'],
-  params: [
-    ['zScale', 'f'],
-    ['depthSpan', 'v2']
-  ],
-  match: m => m.isShaderMaterial && onlyLaser(m) && m.name === 'laserKite' && m.vertexShader.startsWith(LASER_HEAD),
-  vertex: () => [['position', 3, 0]],
-  perInstance: [
-    ['center', 4, 1],
-    ['dir', 4, 2],
-    ['cell', 4, 3],
-    ['tint', 3, 4]
-  ],
+  match: laserMatch('laserKite'),
   code: () =>
     laserIn +
     `
@@ -1312,6 +1338,7 @@ export const families = [
   waterOver,
   lava,
   ice,
+  blasterCapsule,
   laserBeam,
   laserKite
 ];

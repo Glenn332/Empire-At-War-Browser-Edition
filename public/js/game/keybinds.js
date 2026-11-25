@@ -279,9 +279,9 @@ let edgeScroll = null;
 export function edgePan() {
   if (edgeScroll === null) {
     try {
-      edgeScroll = localStorage.getItem('swr-edge-pan') === '1';
+      edgeScroll = localStorage.getItem('swr-edge-pan') !== '0';
     } catch {
-      edgeScroll = false;
+      edgeScroll = true;
     }
   }
   return edgeScroll;

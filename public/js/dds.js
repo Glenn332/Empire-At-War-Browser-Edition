@@ -402,6 +402,23 @@ function picture(name, repeat) {
   });
 }
 
+// The battlefield releases CPU mip data after uploading it. A portrait in a
+// separate GL context needs uploadable pixels of its own.
+// Returns an owned texture, or null for shared built-in/missing textures.
+export async function standaloneFileTexture(t) {
+  await t.userData?.ready;
+  const file = files.get(t.source);
+  if (!file) return null;
+  if (hasPictures(t)) {
+    const copy = t.clone();
+    copy.onUpdate = null;
+    copy.needsUpdate = true;
+    return copy;
+  }
+  const real = await picture(file.name, file.repeat);
+  return real === fallback || real.userData.missing ? null : real;
+}
+
 const files = new WeakMap();
 const keepData = new WeakSet(),
   restoring = new WeakSet();

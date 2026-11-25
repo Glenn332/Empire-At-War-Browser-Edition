@@ -1,18 +1,67 @@
 import * as THREE from 'three';
 import { loadTexture } from '../dds.js';
 
+// The retail strip degenerates when the camera looks along its axis. Give the
+// Battlefront pill batch a closed surface, then sample the authored glow profile
+// by apparent radius. Both caps and the body share one continuous highlight.
+const roundVaryings = 'varying vec3 vEye, vTail, vSpan, vCell, vTint;';
+const roundVertex =
+  roundVaryings +
+  `
+void main() {
+  vec3 h = (viewMatrix * vec4(center.xyz, 1.0)).xyz;
+  vec3 f = normalize((viewMatrix * vec4(dir.xyz, 0.0)).xyz);
+  vec3 ref = abs(f.z) < .9 ? vec3(0.,0.,1.) : vec3(0.,1.,0.);
+  vec3 side = normalize(cross(f, ref));
+  float end = sign(position.y);
+  vec3 radial = side * position.x + cross(side, f) * position.z;
+  vec3 cap = f * (position.y - end);
+  float s = dir.w * max(0., 1. + (max(0., -h.z) * depthSpan.x - depthSpan.y) * zScale);
+  vec3 offset = f * (end * center.w * .5) + radial * s + cap * dir.w;
+  vec3 p = h + offset;
+  vSpan = f * center.w / max(s, 1e-5);
+  vTail = -.5 * vSpan - offset / max(s, 1e-5);
+  vEye = -p; vCell = cell.xyz; vTint = tint;
+  gl_Position = projectionMatrix * vec4(p, 1.);
+}`;
+const roundFragment =
+  roundVaryings +
+  `uniform sampler2D map;
+void main() {
+  // Distance from the viewing ray to the finite spine, in bolt radii. The
+  // end-on case becomes a disc; at grazing angles the shaft stays luminous.
+  vec3 eye = normalize(vEye);
+  vec3 tail = vTail - eye * dot(vTail, eye), span = vSpan - eye * dot(vSpan, eye);
+  float along = clamp(-dot(tail, span) / max(dot(span, span), 1e-8), 0., 1.);
+  float radius = min(1., length(tail + along * span));
+  // Each pill lies diagonally across its atlas cell. Read from its hot spine
+  // toward its colored fringe, not across the boundary into the next slot.
+  // The smaller cells on the particle atlas instead have a radial glow.
+  vec2 profile = vCell.z < .2 ? vec2(.5 + .45 * radius, .5) : vec2(.5 + .17 * radius);
+  vec4 t = texture2D(map, vCell.xy + profile * vCell.z);
+  gl_FragColor = vec4(t.rgb * vTint * t.a * (1. - smoothstep(.82, 1., radius)), 1.);
+}`;
+
 export class LaserBatch {
-  constructor(max, kite) {
+  constructor(max, kite, round = false) {
     this.max = max;
     this.count = 0;
     this.kite = kite;
     const geo = new THREE.InstancedBufferGeometry();
-    const corners = kite ? 4 : 6;
-    geo.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(Array.from({ length: corners }, (_, i) => [i, 0, 0]).flat()), 3)
-    );
-    geo.setIndex(kite ? [0, 1, 2, 0, 2, 3] : [0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]);
+    if (round) {
+      // Unit cap radius, two units between equators. Only position and the
+      // index are needed; every shot reuses this single instanced mesh.
+      const shell = new THREE.CapsuleGeometry(1, 2, 2, 16);
+      geo.setAttribute('position', shell.getAttribute('position'));
+      geo.setIndex(shell.index);
+    } else {
+      const corners = kite ? 4 : 6;
+      geo.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(Array.from({ length: corners }, (_, i) => [i, 0, 0]).flat()), 3)
+      );
+      geo.setIndex(kite ? [0, 1, 2, 0, 2, 3] : [0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]);
+    }
     this.a = new Float32Array(max * 4);
     this.b = new Float32Array(max * 4);
     this.c = new Float32Array(max * 4);
@@ -25,9 +74,11 @@ export class LaserBatch {
     this.attrs = [attr('center', this.a, 4), attr('dir', this.b, 4), attr('cell', this.c, 4), attr('tint', this.d, 3)];
     const head =
       'attribute vec4 center; attribute vec4 dir; attribute vec4 cell; attribute vec3 tint; uniform float zScale; uniform vec2 depthSpan;';
-    const vertex = kite
-      ? head +
-        `        varying vec2 vUv; varying vec3 vTint;
+    const vertex = round
+      ? head + roundVertex
+      : kite
+        ? head +
+          `        varying vec2 vUv; varying vec3 vTint;
         void main() { vTint = tint;
           vec4 h = viewMatrix * vec4(center.xyz, 1.0); vec3 f = (viewMatrix * vec4(dir.xyz, 0.0)).xyz;
           float s = dir.w * max(0.0, 1.0 + (max(0.0, -h.z) * depthSpan.x - depthSpan.y) * zScale);
@@ -38,8 +89,8 @@ export class LaserBatch {
           vec2 uv = c == 0 ? vec2(0.0, 1.0) : c == 1 ? vec2(0.0, 0.0) : c == 2 ? vec2(1.0, 0.0) : vec2(1.0, 1.0);
           vUv = cell.xy + uv * cell.z;
           gl_Position = projectionMatrix * vec4(h.xy + o, h.z, 1.0); }`
-      : head +
-        `        varying vec2 vUv; varying vec3 vTint;
+        : head +
+          `        varying vec2 vUv; varying vec3 vTint;
         void main() { vTint = tint;
           vec4 h = viewMatrix * vec4(center.xyz, 1.0); vec3 f = normalize((viewMatrix * vec4(dir.xyz, 0.0)).xyz);
           float s = dir.w * max(0.0, 1.0 + (max(0.0, -h.z) * depthSpan.x - depthSpan.y) * zScale);
@@ -51,17 +102,19 @@ export class LaserBatch {
           vUv = cell.xy + uv * cell.z;
           gl_Position = projectionMatrix * vec4(P, 1.0); }`;
     const mat = new THREE.ShaderMaterial({
-      name: kite ? 'laserKite' : 'laserBeam',
+      name: round ? 'blasterCapsule' : kite ? 'laserKite' : 'laserBeam',
       uniforms: {
         map: { value: loadTexture(kite ? 'p_particle_master.tga' : 'W_LASER_PILL.tga', { repeat: false }) },
         zScale: { value: kite ? 1.2 : 8 },
         depthSpan: { value: new THREE.Vector2(1 / 90000, 20 / 90000) }
       },
       vertexShader: vertex,
-      fragmentShader: `uniform sampler2D map; varying vec2 vUv; varying vec3 vTint;
+      fragmentShader: round
+        ? roundFragment
+        : `uniform sampler2D map; varying vec2 vUv; varying vec3 vTint;
         void main() { vec4 t = texture2D(map, vUv); gl_FragColor = vec4(t.rgb * vTint * t.a, 1.0); }`,
       transparent: true,
-      side: THREE.DoubleSide,
+      side: round ? THREE.FrontSide : THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.CustomBlending,
       blendSrc: THREE.OneFactor,

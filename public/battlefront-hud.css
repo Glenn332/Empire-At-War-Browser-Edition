@@ -1,0 +1,105 @@
+/* Live land shooter only. Keep the world and reticle clear; don't skin the RTS,
+   deployment or full tactical map. Vector equipment, EaW type and brass trim. */
+.bf-combat {
+  --gutter: clamp(10px, 1.6vmin, 22px);
+  --disc: clamp(94px, 19vmin, 192px);
+  --kit: clamp(166px, 22vw, 325px);
+  --blue: var(--sh-ally-soft, #77bfff);
+  --red: var(--sh-enemy-soft, #ff7968);
+  --metal: rgba(187, 171, 126, .8);
+  --glass: linear-gradient(110deg, rgba(10,16,20,.76), rgba(19,24,26,.51) 72%, transparent);
+  color: #eee8d8;
+  font: 600 clamp(10px,1.4vmin,14px)/1.15 var(--eaw-font, sans-serif);
+  text-shadow: 0 1px 2px #000, 0 0 3px #14181b;
+}
+.bf-combat [hidden] { display: none !important; }
+/* The center square is exactly on the aim ray in both perspectives. Dark
+   keylines keep grey blades and individual heat blocks legible on snow. */
+.bf-combat :is(.bf-reticle, .sh-hit, .sh-pop) { top: var(--bf-aim-y,50%); left: var(--bf-aim-x,50%); }
+.bf-reticle { position: absolute; transform: translate(-50%,-50%); aspect-ratio: 1; pointer-events: none; opacity: .2; color: #c4c4c4; }
+.bf-reticle[data-target=ally] { color: var(--sh-ret-ally,#55afff); }
+.bf-reticle[data-target=enemy] { color: var(--sh-ret-enemy,#ff5144); }
+.bf-reticle svg { display: block; fill: currentColor; stroke: #151515; stroke-width: .65; stroke-linejoin: round; }
+.bf-pip { stroke-width: .55; }
+.bf-reticle[data-shape=focus] .bf-pip { rx: 50%; transform: scale(1.35); }
+.bf-cross-lines, .bf-heat, .bf-reticle:not([data-shape=ring]) .bf-blades { display: none; }
+.bf-reticle[data-shape=cross] .bf-cross-lines { display: inline; fill: none; stroke: currentColor; stroke-width: 1.5; filter: drop-shadow(0 0 .8px #111); }
+.bf-reticle.has-heat .bf-heat { display: inline; fill: #303338; stroke: #101215; stroke-width: .65; }
+.bf-reticle.has-heat[data-shape=focus] .bf-heat { display: none; }
+.bf-heat rect { opacity: 0; }
+.bf-heat rect:nth-child(5), .warm .bf-heat rect { opacity: .36; }
+.bf-reticle .bf-heat rect.lit { opacity: 1; fill: #f9b54e; }
+.bf-reticle:is([data-target=enemy],[data-target=ally]) .bf-heat rect.lit { fill: currentColor; }
+.bf-reticle.venting .bf-heat rect.lit { fill: #ff4639; stroke: #fff; }
+.bf-readout {
+  position: absolute; z-index: 2; left: 50%; top: var(--gutter); transform: translateX(-50%);
+  width: min(63vw, 690px); display: grid; grid-template-columns: 1fr minmax(0, 3.3fr) 1fr;
+  align-items: end; gap: clamp(3px,.7vw,12px); text-transform: uppercase;
+}
+.bf-tally { display: flex; flex-wrap: wrap; gap: .45em; color: var(--red); justify-content: flex-start; }
+.bf-tally.ours { color: var(--blue); justify-content: flex-end; }
+.bf-ticket { display: inline-flex; align-items: center; gap: .3em; white-space: nowrap; font-size: .85em; }
+.bf-crest { display: inline-grid; place-items: center; width: 1.8em; height: 1.8em; flex: none; }
+.bf-crest::before { content: attr(data-glyph); font-weight: bold; }
+/* Use the texture's luminance as well as its alpha: masking alone turns the
+   Empire's blue-and-silver cog into a solid disc. */
+.bf-crest.has-art::before { content: ''; width: 100%; height: 100%; background: currentColor var(--crest-art) center / contain no-repeat; background-blend-mode: luminosity; mask: var(--crest-art) center / contain no-repeat; }
+.bf-tally b { font: 700 1.6em/1 var(--eaw-bold,sans-serif); font-variant-numeric: tabular-nums; }
+.bf-readout-center { text-align: center; min-width: 0; }
+.bf-readout-center > span { display: block; min-height: 1.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .84em; letter-spacing: .16em; padding: 0 0 3px; }
+.bf-meter { border: 1px solid var(--metal); background: rgba(6,12,17,.8); padding: 2px; box-shadow: 0 1px 3px #000a; height: clamp(9px,1.35vmin,15px); box-sizing: border-box; }
+.bf-meter > i { display: block; height: 100%; width: 100%; background: linear-gradient(#58bbec,#1375ba); transition: width .1s linear; }
+.bf-target-track { position: relative; height: 100%; overflow: hidden; }
+.bf-target-track > i { display: block; height: 100%; background: var(--blue); }
+.bf-readout[data-mode=enemy] .bf-target-track > i { background: var(--red); }
+.bf-readout[data-mode=neutral] .bf-target-track > i { background: #cec6b1; }
+.bf-lost-hp { position: absolute; top: 0; bottom: 0; background: white; }
+.bf-kit {
+  position: absolute; left: var(--gutter); bottom: var(--gutter); right: auto; transform: none; width: var(--kit); box-sizing: border-box;
+  background: var(--glass); padding: 5px 7px 6px;
+}
+.bf-kit { display: flex; flex-direction: column; gap: 2px; }
+.bf-kit:not(.mounted) .bf-vehicle, .bf-kit.mounted :is(.sh-wpn,.sh-hudtext,.sh-credit) { display: none; }
+.bf-vehicle strong { font-family: var(--eaw-bold,sans-serif); }
+.bf-vehicle-warning { color: #ff9986; order: -1; }
+.bf-kit .sh-wpn { position: static; width: auto; padding: 0; }
+/* Deliberately not .bf-loadout: the deployment cards put chrome corners on that row. */
+.bf-kit-row { display: flex; align-items: center; gap: 8px; }
+.bf-kit-icon { width: min(9vw,104px); height: clamp(20px,3vmin,32px); filter: drop-shadow(0 1px 1px #101417); }
+.bf-kit-icon g { display: none; }
+[data-weapon=blaster] [data-weapon=blaster], [data-weapon=launcher] [data-weapon=launcher], [data-weapon=blade] [data-weapon=blade], [data-weapon=cannon] [data-weapon=cannon], [data-weapon=missile] [data-weapon=missile] { display: inline; }
+.bf-grenade { display: inline-flex; align-items: center; gap: 2px; }
+.bf-grenade svg { width: 1.2em; height: 1.4em; }
+.bf-grenade b { font-variant-numeric: tabular-nums; }
+.bf-kit .sh-wpn-s { margin: 0 0 0 auto; text-align: right; font-size: .88em; }
+.bf-kit .bf-meter { border: 0; box-shadow: none; background: linear-gradient(90deg,#0e1821ad,transparent); }
+.bf-kit .bf-hp { order: 2; position: relative; }
+.bf-shield-outline { position: absolute; inset: 0 auto 0 0; box-sizing: border-box; border: 2px solid #a5f2ff; background: #81efff30; }
+.bf-kit .sh-wpn { display: contents; }
+.bf-kit .bf-meter.sh-wpn-bar { order: 4; height: clamp(5px,.85vmin,9px); padding: 1px; }
+.bf-kit .sh-wpn-bar i { background: linear-gradient(#eac778,#b38337); }
+.bf-kit :is(.sh-credit,.sh-wpn-x,.sh-hudtext):empty { display: none; }
+.bf-kit .sh-hudtext { order: -1; font-size: .9em; }
+.bf-combat .sh-radar { position: absolute; z-index: 2; top: var(--gutter); right: var(--gutter); width: var(--disc); height: var(--disc); border-radius: 50%; background: rgba(12,19,25,.70); box-shadow: 0 0 0 1px #171d21, 0 0 0 2px var(--metal), 0 2px 5px #0008; }
+.bf-combat .sh-compass { top: auto; bottom: var(--gutter); width: min(35vw,460px); height: auto; border-bottom: 1px solid var(--metal); background: linear-gradient(90deg,transparent,#0a1017a8 16%,#0a1017a8 84%,transparent); }
+.bf-combat .sh-feed { right: auto; top: var(--gutter); left: var(--gutter); align-items: flex-start; }
+.bf-combat .sh-ctl-tip { right: var(--gutter); top: calc(var(--gutter) + var(--disc) + 10px); opacity: .8; }
+.bf-combat .bf-prompt { position: absolute; bottom: calc(var(--gutter) + 35px); left: 50%; transform: translateX(-50%); text-align: center; max-width: 45vw; }
+.bf-capture { position: absolute; top: max(8%,48px); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 3px; --team: #f1f3f5; }
+.bf-capture[data-side=ally] { --team: var(--sh-ret-ally,#5fb3ff); }
+.bf-capture[data-side=enemy] { --team: var(--sh-ret-enemy,#ff5040); }
+.bf-dial { position: relative; display: grid; place-items: center; width: clamp(48px,8vmin,76px); aspect-ratio: 1; color: color-mix(in srgb, var(--team) var(--strength), #f1f3f5); filter: drop-shadow(0 1px 2px #15191eee); }
+.bf-dial > svg, .bf-dial .emblem { position: absolute; width: 100%; height: 100%; }
+.bf-dial .track { stroke: #dde4eaa8; }
+.bf-dial .arc { stroke: currentColor; }
+.bf-dial .emblem { display: grid; place-items: center; }
+.bf-dial .bf-crest { width: 62%; height: 62%; font-size: 1.8em; }
+.bf-capture small { letter-spacing: .09em; text-transform: uppercase; font-weight: 700; }
+@media (max-width: 760px) {
+  .bf-combat { --kit: min(44vw,230px); --disc: clamp(84px,17vmin,116px); }
+  .bf-readout { left: var(--gutter); transform: none; width: calc(100% - var(--disc) - 3 * var(--gutter)); }
+  .bf-combat .sh-feed { top: 9%; max-width: 35vw; }
+  .bf-combat .sh-compass { left: auto; right: var(--gutter); transform: none; width: 44vw; }
+  .bf-combat .bf-prompt { bottom: 18%; max-width: 85vw; width: max-content; }
+}
+@media (prefers-reduced-motion: reduce) { .bf-meter > i { transition: none; } }
