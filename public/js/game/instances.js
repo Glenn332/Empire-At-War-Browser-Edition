@@ -29,7 +29,7 @@ const HIDDEN = 1;
 
 // Writes a * b (column-major 4x4) straight into an instance row: a batched part's own matrixWorld is never read (with
 // collect jobs it is not even written), so the multiply and the copy into the batch are one step.
-function mulInto(out, o, a, b) {
+export function mulInto(out, o, a, b) {
   const a11 = a[0], a12 = a[4], a13 = a[8], a14 = a[12];
   const a21 = a[1], a22 = a[5], a23 = a[9], a24 = a[13];
   const a31 = a[2], a32 = a[6], a33 = a[10], a34 = a[14];
@@ -208,6 +208,7 @@ export class Instances {
       if (!o.isMesh || o.isInstancedMesh || this.known.has(o)) return;
       this.known.add(o);
       const e = { mesh: o, mat: o.material, pool: null, skin: null, local: new THREE.Matrix4().multiplyMatrices(_inv, o.matrixWorld) };
+      o.userData.instEntry = e;
       if (instanceable.has(o.material)) {
         e.pool = this.poolFor(o);
         this.taken.add(o);
@@ -361,6 +362,8 @@ export class Instances {
         !!u.construction ||
         u.pendingProxies.length > 0;
       if (u.instWarm > 0) u.instWarm--;
+      // the shadow pass places a static unit's parts from its current matrix and their offsets (see updateShadows)
+      u.instStatic = !whole;
       _sphere.center.set(u.x, u.y, u.z || 0);
       _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
       const inView = _frustum.intersectsSphere(_sphere);
@@ -444,6 +447,7 @@ export class Instances {
               at = p.n * 16;
             for (let k = 0; k < 16; k++) a[at + k] = we[k];
           }
+          if (castsShadow && !whole) for (const q of e.parts) q.mesh.matrixWorld.multiplyMatrices(world, q.local);
           const t = p.tint.array,
             tt = p.n * 4;
           t[tt] = tr;
@@ -510,6 +514,12 @@ export class Instances {
         } else if (whole) {
           const a = p.im.instanceMatrix.array,
             me = m.matrixWorld.elements,
+            at = p.n * 16;
+          for (let k = 0; k < 16; k++) a[at + k] = me[k];
+        } else if (castsShadow) {
+          // shadow casters keep their own world matrix current, as other readers of a caster expect
+          const a = p.im.instanceMatrix.array,
+            me = m.matrixWorld.multiplyMatrices(world, e.local).elements,
             at = p.n * 16;
           for (let k = 0; k < 16; k++) a[at + k] = me[k];
         } else mulInto(p.im.instanceMatrix.array, p.n * 16, world.elements, e.local.elements);

@@ -11,7 +11,7 @@ import { loadTexture, whiteTexture, loadTextureCanvas } from '../dds.js';
 import { fetchText, fetchBinary } from '../vfs.js';
 import { parseXML } from '../xml.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
-import { Instances } from './instances.js';
+import { Instances, mulInto } from './instances.js';
 import { fitShadowToView } from './shadowfit.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
@@ -967,7 +967,11 @@ export class Renderer {
             sh.scene.add(im);
             b.im = im;
           }
-          m.matrixWorld.toArray(b.im.instanceMatrix.array, b.n++ * 16);
+          // A static unit's parts are placed from its matrix for this frame: the parts' own world matrices are only
+          // brought up to date by the camera pass, which runs after this one, so shadows trailed a frame behind.
+          const e = m.userData.instEntry;
+          if (e && u.instStatic && u.obj.parent === this.scene) mulInto(b.im.instanceMatrix.array, b.n++ * 16, u.obj.matrix.elements, e.local.elements);
+          else m.matrixWorld.toArray(b.im.instanceMatrix.array, b.n++ * 16);
         }
       }
     for (const [g, b] of batches) {
