@@ -2587,9 +2587,24 @@ export class LandGame {
     });
     const send = (x, y, mode = '') => {
       if (this.controlsLocked) return;
-      const foe = this.unitAt(x, y),
-        g = this.groundAt(x, y),
-        attack = foe && !w.ally(foe.side, me) && !foe.dead;
+      issue(this.unitAt(x, y), this.groundAt(x, y), mode);
+    };
+    // A right click on the minimap (or a click there with a move order armed) sends the selection to that spot of the map,
+    // the way a right click on the ground does.
+    this.mapOrder = (x, y, mode = '') => {
+      if (this.controlsLocked || this.setup.attract || this.cine.on || this.direct) return false;
+      const lo = this.map.playMin || [0, 0],
+        hi = this.map.playMax || lo;
+      x = Math.min(hi[0], Math.max(lo[0], x));
+      y = Math.min(hi[1], Math.max(lo[1], y));
+      const armed = ARMED_ORDERS.has(ui.armed) && !ui.placing && !ui.aiming ? ui.armed : null;
+      issue(null, { x, y }, armed || mode);
+      if (armed && armed !== 'attackmove') ui.armed = null;
+      this.hudTimer = 0;
+      return true;
+    };
+    const issue = (foe, g, mode = '') => {
+      const attack = foe && !w.ally(foe.side, me) && !foe.dead;
       let spoke = false;
       const sel = ui.movers();
       if (!sel.length || (!attack && !g)) return;

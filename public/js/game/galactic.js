@@ -899,8 +899,47 @@ export class GalacticGame {
     this.screenText?.removeAll();
   }
   showStoryDialog(request) {
-    if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
+    // A popup that arrives while the story window is already up joins it: in multiplayer the galaxy waits until each
+    // reader closes the window holding it, so it must not be dropped for the one already showing.
+    if (this.storyDialog?.opened) return this.storyDialog.addPopup(request);
     this.storyDialog?.show(request);
+  }
+  // In multiplayer a story popup holds the galaxy until its readers close it (holdForDialog). Each frame this checks the
+  // holds still have a reason to be on: a popup this player has to read is kept on screen, a popup nobody can show any
+  // more is closed here, and the other players are told who the galaxy is waiting for.
+  watchHolds(now = performance.now()) {
+    if (!this.setup.net || !this.storyDialog) return;
+    const me = this.localPid;
+    if ((this.holdCheckAt ?? -Infinity) > now) return;
+    this.holdCheckAt = now + 1000;
+    const sent = (this.dialogSent ||= new Set()),
+      dialog = this.storyDialog;
+    let waitingOn = null;
+    for (const [id, waiting] of this.holds || []) {
+      if (!waiting.has(me)) {
+        waitingOn ||= waiting;
+        continue;
+      }
+      if (sent.has(id) || dialog.holding?.(id)) continue;
+      const request = this.story?.storyGoals?.find(g => g.id === id);
+      if (!request) {
+        // the goal is gone (a script removed it): there is nothing left to read
+        sent.add(id);
+        this.order?.({ c: 'dialog', id });
+      } else if (dialog.opened) dialog.addPopup(request);
+      else dialog.show(request);
+    }
+    for (const id of sent) if (!this.holds?.has(id)) sent.delete(id);
+    if (waitingOn && !this.holds?.size) waitingOn = null;
+    const who = waitingOn && [...waitingOn].map(i => this.setup.players?.[i]?.name || 'Player').join(', ');
+    if (who && (this.holdToldAt ?? -Infinity) <= now) {
+      this.holdToldAt = now + 15000;
+      this.message(`Waiting for ${who} to read the briefing...`);
+    } else if (!who) this.holdToldAt = -Infinity;
+    if (this.scriptPauses > 0 && !this.holds?.size && (this.scriptPauseToldAt ?? -Infinity) <= now) {
+      this.scriptPauseToldAt = now + 15000;
+      this.message('The campaign script has paused the galaxy.');
+    } else if (!(this.scriptPauses > 0)) this.scriptPauseToldAt = -Infinity;
   }
   notifyStoryGoal(request, sound = true) {
     if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
@@ -3265,7 +3304,12 @@ export class GalacticGame {
       })
     )
       return false;
-    if (f.owner === this.me) this.story?.generic('start_hyperspace');
+    // In lockstep every machine runs this for the ordering player, so the story hears it on all of them alike.
+    const acting = this.actingPid !== undefined ? this.setup.players?.[this.actingPid] : null;
+    if (acting) {
+      if (String(acting.faction).toUpperCase() === String(f.owner).toUpperCase())
+        this.asStorySide(this.actingPid, () => this.story?.generic('start_hyperspace'));
+    } else if (!this.setup.net && f.owner === this.me) this.story?.generic('start_hyperspace');
     return true;
   }
 
@@ -3575,6 +3619,7 @@ export class GalacticGame {
     this.audio?.speech?.update();
     this.movies?.update(elapsed);
     this.updateStoryButton();
+    if (this.net && !this.battle) this.watchHolds(now);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);

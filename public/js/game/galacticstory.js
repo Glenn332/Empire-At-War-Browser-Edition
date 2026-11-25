@@ -679,23 +679,32 @@ export class GalacticStoryHost extends StoryPlots {
     });
     vm.global('Get_Story_Plot', name => this.plotWrapper(name));
     vm.global('Story_Event', name => this.signal('STORY_AI_NOTIFICATION', name));
-    vm.global('GUI_Component_Visibility', (name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0));
+    // What a script shows in answer to one player's click (a menu opening, a label, a highlight) is drawn on that
+    // player's screen only. Enabling a button stays shared: it decides whether a click is carried out at all.
+    const view = f => (...args) => (game.scriptUI?.elsewhere?.() ? undefined : f(...args));
+    vm.global('GUI_Component_Visibility', view((name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0)));
     vm.global('GUI_Component_Enable', (name, on) => game.scriptUI?.enable(String(name), on !== false && on !== 0));
-    vm.global('GUI_Component_Text', (name, text) => game.scriptUI?.text(String(name), String(text ?? '')));
-    vm.global('GUI_Component_Color', (name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a));
-    vm.global('GUI_Text_Color', (name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a));
-    vm.global('GUI_Component_Blink', (name, on) => game.scriptUI?.blink(String(name), !!on));
-    vm.global('GUI_Component_Flash', (name, perpetual, duration, count) => {
-      if (/^b_story_arc/i.test(String(name)) && !game.scriptUI?.elements?.(String(name)).length) game.storyButtonFlash?.(true);
-      else game.scriptUI?.flash(String(name), !!perpetual, +duration || 0, +count || 0);
-    });
-    vm.global('GUI_Component_Stop_Flash', name => {
-      if (/^b_story_arc/i.test(String(name))) game.storyButtonFlash?.(false);
-      game.scriptUI?.stopFlash(String(name));
-    });
-    vm.global('GUI_Component_Play_Anim', (name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop));
-    vm.global('GUI_Component_Stop_Anim', name => game.scriptUI?.stopAnim(String(name)));
-    vm.global('GUI_Button_Icon', (name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args));
+    vm.global('GUI_Component_Text', view((name, text) => game.scriptUI?.text(String(name), String(text ?? ''))));
+    vm.global('GUI_Component_Color', view((name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a)));
+    vm.global('GUI_Text_Color', view((name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a)));
+    vm.global('GUI_Component_Blink', view((name, on) => game.scriptUI?.blink(String(name), !!on)));
+    vm.global(
+      'GUI_Component_Flash',
+      view((name, perpetual, duration, count) => {
+        if (/^b_story_arc/i.test(String(name)) && !game.scriptUI?.elements?.(String(name)).length) game.storyButtonFlash?.(true);
+        else game.scriptUI?.flash(String(name), !!perpetual, +duration || 0, +count || 0);
+      })
+    );
+    vm.global(
+      'GUI_Component_Stop_Flash',
+      view(name => {
+        if (/^b_story_arc/i.test(String(name))) game.storyButtonFlash?.(false);
+        game.scriptUI?.stopFlash(String(name));
+      })
+    );
+    vm.global('GUI_Component_Play_Anim', view((name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop)));
+    vm.global('GUI_Component_Stop_Anim', view(name => game.scriptUI?.stopAnim(String(name))));
+    vm.global('GUI_Button_Icon', view((name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args)));
     vm.global('Check_Story_Flag', (player, name, target, clear) => {
       const flags = this.aiFlags.get(key(player?.__faction)),
         id = key(name) + '|' + key(target?.__planet?.name || target?.__object?.type.name);

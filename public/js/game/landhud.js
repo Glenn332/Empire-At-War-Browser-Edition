@@ -21,6 +21,15 @@ import { PICKS_UNIT, SILENT, bribeCost } from './landabilities.js';
 
 const $ = id => document.getElementById(id);
 const up = n => String(n).toUpperCase();
+// orders a click on the minimap carries out when armed from the command bar (the ground's own ARMED_ORDERS)
+const MINIMAP_ORDERS = new Set(['guard', 'attack', 'move', 'attackmove']);
+
+// The battlefield spot under a point of the minimap: the minimap shows the playable area, north up.
+export function minimapPoint(rect, clientX, clientY, lo, hi) {
+  const fx = Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1))),
+    fy = Math.min(1, Math.max(0, (clientY - rect.top) / (rect.height || 1)));
+  return { x: lo[0] + fx * (hi[0] - lo[0]), y: lo[1] + (1 - fy) * (hi[1] - lo[1]) };
+}
 
 function playerOf(world, side, factionName, game = null) {
   return {
@@ -309,19 +318,25 @@ export class LandUI {
     this.pb.hidden = this.pbCharge.hidden = true;
     this.bar.covers = [{ node: this.pb, build: true }];
     const mm = $('minimap');
+    const at = e => minimapPoint(mm.getBoundingClientRect(), e.clientX, e.clientY, game.map.playMin, game.map.playMax);
     const look = e => {
+      if (game.controlsLocked) return;
       game.following = null;
-      const r = mm.getBoundingClientRect(),
-        lo = game.map.playMin,
-        hi = game.map.playMax;
-      game.view.x = lo[0] + ((e.clientX - r.left) / r.width) * (hi[0] - lo[0]);
-      game.view.y = lo[1] + (1 - (e.clientY - r.top) / r.height) * (hi[1] - lo[1]);
+      const p = at(e);
+      game.view.x = p.x;
+      game.view.y = p.y;
     };
     mm.addEventListener('mousedown', e => {
-      if (e.button === 0) look(e);
+      const armed = e.button === 0 && MINIMAP_ORDERS.has(this.armed) && !this.placing && !this.aiming;
+      if (e.button === 2 || armed) {
+        e.preventDefault();
+        e.stopPropagation();
+        const p = at(e);
+        game.mapOrder?.(p.x, p.y, e.ctrlKey ? 'attackmove' : '');
+      } else if (e.button === 0) look(e);
     });
     mm.addEventListener('mousemove', e => {
-      if (e.buttons & 1) look(e);
+      if (e.buttons & 1 && !MINIMAP_ORDERS.has(this.armed)) look(e);
     });
     mm.addEventListener('contextmenu', e => e.preventDefault());
   }

@@ -204,6 +204,24 @@ export class GalacticStoryDialog {
     return this.open;
   }
 
+  // A story popup raised while this window is open: the summary takes it in (and closing it answers it), a choice
+  // dialog keeps it for when it closes.
+  addPopup(request) {
+    if (!request?.id || this.holding(request.id)) return this.refreshSummary();
+    if (this.open && this.summary) {
+      (this.popupRequests ||= []).push(request);
+      return this.refreshSummary(request);
+    }
+    if (this.open) {
+      (this.queuedPopups ||= []).push(request);
+      return Promise.resolve();
+    }
+    return this.show(request);
+  }
+  holding(id) {
+    return !!(this.popupRequests?.some(r => r.id === id) || this.queuedPopups?.some(r => r.id === id));
+  }
+
   async show(options = {}) {
     if (!options.choice) return this.showSummary(options);
     if (this.open) return false;
@@ -588,7 +606,11 @@ export class GalacticStoryDialog {
     const popups = this.popupRequests || [];
     this.popupRequests = [];
     if (this.game.setup?.net) {
-      for (const popup of popups) this.game.order?.({ c: 'dialog', id: popup.id });
+      const sent = (this.game.dialogSent ||= new Set());
+      for (const popup of popups) {
+        sent.add(popup.id);
+        this.game.order?.({ c: 'dialog', id: popup.id });
+      }
     } else this.game.story?.generic?.('close_story_dialog');
     const summary = this.summary,
       killSpeech = !summary || !this.speechFinished;
@@ -617,8 +639,12 @@ export class GalacticStoryDialog {
     if (result === 'accept') options?.onAccept?.();
     else if (result === 'cancel') options?.onCancel?.();
     options?.onClose?.(result);
+    const next = this.queuedPopups?.shift();
+    if (next && !this.disposed) this.show(next).catch(error => console.error(error));
   }
   dispose() {
+    this.disposed = true;
+    this.queuedPopups = [];
     this.unsubscribeSpeech?.();
     this.close();
   }
