@@ -6463,24 +6463,23 @@ export class World {
         dropEscort(w);
         return null;
       }
-      let L = null;
+      let leader = null;
       for (const q of w.squads)
         if (!q.dead && q.fighters[0] && q.order.wing === w) {
-          L = q.fighters[0];
+          leader = q;
           break;
         }
-      if (!L) L = s.fighters[0];
-      const R = Math.min(
-        (L.type.num('Targeting_Max_Attack_Distance', 0) || L.maxRange || 0) / 2,
-        db.constants.num('Space_Guard_Range', 750)
-      );
-      w.follow = (L.x - sh.x) ** 2 + (L.y - sh.y) ** 2 + ((L.z || 0) - (sh.z || 0)) ** 2 < R * R;
+      leader ||= s;
+      const L = leader.fighters[0],
+        place = this.escortOffset(leader, w, sh),
+        R = Math.min((L.type.num('Targeting_Max_Attack_Distance', 0) || L.maxRange || 0) / 2, db.constants.num('Space_Guard_Range', 750));
+      w.follow = (L.x - sh.x - place.x) ** 2 + (L.y - sh.y - place.y) ** 2 + ((L.z || 0) - (sh.z || 0)) ** 2 < R * R;
       if (!w.follow) {
         const at = (w.at ||= { x: sh.x, y: sh.y });
         if (w.reached) {
           const reach = (L.type.num('Targeting_Max_Attack_Distance', 0) || L.maxRange || 0) + (sh.hitRadius || 0),
-            px = sh.x + Math.cos(sh.heading) * sh.speed,
-            py = sh.y + Math.sin(sh.heading) * sh.speed;
+            px = sh.x + place.x + Math.cos(sh.heading) * sh.speed,
+            py = sh.y + place.y + Math.sin(sh.heading) * sh.speed;
           if ((L.x - px) ** 2 + (L.y - py) ** 2 > reach * reach) {
             at.x = sh.x;
             at.y = sh.y;
@@ -6489,29 +6488,86 @@ export class World {
         }
       }
     }
-    if (!w.follow) return w.at;
     const o = sh.order,
-      base = o.kind === 'attack' && sh.slotAt && o.offset ? sh.slotAt : (o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined ? o : sh;
-    const mates = w.squads.filter(q => !q.dead && q.order.wing === w);
-    if (!mates.length) return base;
-    const k = mates.indexOf(s),
-      side = (Math.max(0, k) - (mates.length - 1) / 2) * ESCORT_SPACING,
-      back = -(sh.radius || 0) * 0.5,
-      c = Math.cos(sh.heading),
-      n = Math.sin(sh.heading),
+      base = !w.follow
+        ? w.at
+        : o.kind === 'attack' && sh.slotAt && o.offset
+          ? sh.slotAt
+          : (o.kind === 'move' || o.kind === 'attackmove') && o.x !== undefined
+            ? o
+            : sh,
+      place = this.escortOffset(s, w, sh),
       at = (s.escortAt ||= { x: 0, y: 0, z: 0 });
-    at.x = base.x + c * back - n * side;
-    at.y = base.y + n * back + c * side;
+    at.x = base.x + place.x;
+    at.y = base.y + place.y;
     at.z = base.z ?? sh.z;
     return at;
+  }
+
+  // Where a squadron keeps itself beside the ship its wing escorts. A squadron moved together with the ship keeps
+  // the place it had next to the ship when the order was given and closes in on its own group-move spot only as
+  // the ship nears its spot, the way the ships of the fleet close up, so a fleet's squadrons hold their place in
+  // the fleet instead of gathering on one ship. Squadrons without a spot of their own line up beside and behind the ship.
+  escortOffset(s, w, sh) {
+    const place = (s.escortPlace ||= {
+      wing: null,
+      ship: null,
+      fixed: false,
+      x: 0,
+      y: 0,
+      startX: 0,
+      startY: 0,
+      endX: 0,
+      endY: 0,
+      goal: null,
+      span: 0
+    });
+    if (place.wing !== w || place.ship !== sh) {
+      const own = s.order,
+        theirs = sh.order,
+        lead = s.fighters[0];
+      place.wing = w;
+      place.ship = sh;
+      place.fixed = !!lead && own.x !== undefined && (theirs.kind === 'move' || theirs.kind === 'attackmove') && theirs.x !== undefined;
+      if (place.fixed) {
+        place.startX = lead.x - sh.x;
+        place.startY = lead.y - sh.y;
+        place.endX = own.x - theirs.x;
+        place.endY = own.y - theirs.y;
+        place.goal = theirs;
+        place.span = Math.hypot(theirs.x - sh.x, theirs.y - sh.y);
+      }
+    }
+    if (place.fixed) {
+      const left = place.span > 1 ? Math.hypot(place.goal.x - sh.x, place.goal.y - sh.y) / place.span : 0,
+        done = clamp(1 - left, 0, 1);
+      place.x = place.startX + (place.endX - place.startX) * done;
+      place.y = place.startY + (place.endY - place.startY) * done;
+      return place;
+    }
+    let index = 0,
+      count = 0;
+    for (const q of w.squads)
+      if (!q.dead && q.order.wing === w) {
+        if (q === s) index = count;
+        count++;
+      }
+    const side = (index - (count - 1) / 2) * ESCORT_SPACING,
+      back = -(sh.radius || 0) * 0.5,
+      cos = Math.cos(sh.heading),
+      sin = Math.sin(sh.heading);
+    place.x = cos * back - sin * side;
+    place.y = sin * back + cos * side;
+    return place;
   }
 
   escortSpeed(s, w, lead) {
     const group = wingSpeed(w, this.time);
     if (!w.follow) return group;
     const sh = w.escort,
+      place = this.escortOffset(s, w, sh),
       v = sh.cruise || sh.maxSpeed || 0,
-      ahead = (lead.x - sh.x) * Math.cos(sh.heading) + (lead.y - sh.y) * Math.sin(sh.heading) + (sh.radius || 0) * 0.5;
+      ahead = (lead.x - sh.x - place.x) * Math.cos(sh.heading) + (lead.y - sh.y - place.y) * Math.sin(sh.heading);
     return Math.min(group, v * clamp(1 - ahead / ESCORT_EASE, 0.5, 2));
   }
 
