@@ -277,6 +277,8 @@ export function attachAbilities(unit, defs, passive = []) {
     auto: auto && def.autofire,
     pend: !!def.byDefault
   }));
+  // what tickAbilities walks every step: the abilities, then the passives. Joined once here, not for every step.
+  unit.tickedAbilities = unit.passives.length ? unit.abilities.concat(unit.passives) : unit.abilities;
 }
 
 export function refreshMods(u) {
@@ -601,7 +603,13 @@ export function tickAbilities(world, u, dt) {
     }
     if (changed) refreshMods(u);
   }
-  for (const st of u.passives?.length ? u.abilities.concat(u.passives) : u.abilities) {
+  const ticked =
+    u.tickedAbilities && (u.passives?.length ? u.tickedAbilities.length === u.abilities.length + u.passives.length : u.tickedAbilities === u.abilities)
+      ? u.tickedAbilities
+      : u.passives?.length
+        ? u.abilities.concat(u.passives)
+        : u.abilities;
+  for (const st of ticked) {
     if (st.pend && !u.hyper) {
       st.pend = false;
       if (st.def.passive) {
@@ -743,11 +751,20 @@ export function tickAbilities(world, u, dt) {
           gone = def.spec ? def.spec.num('Projectile_Dist_Travelled', 0) : 0;
         if ((st.acc += dt) < every) break;
         st.acc = 0;
+        // The first shot in the list that passes every test is taken, so the tests may run in any order: distance
+        // first, which rules out nearly every shot of a big battle, and the shot type's category is read once per type.
+        const team = u.player.team,
+          unitX = u.x,
+          unitY = u.y,
+          unitZ = u.z || 0,
+          reach = r * r;
         for (const p of world.projectiles) {
-          if (p.dead || !p.owner || p.owner.team === u.player.team) continue;
-          if (kinds.length ? !(p.def && kinds.includes(p.def.str('Projectile_Category').trim().toUpperCase())) : !p.missile) continue;
+          if (p.dead) continue;
+          if ((p.x - unitX) ** 2 + (p.y - unitY) ** 2 + ((p.z || 0) - unitZ) ** 2 > reach) continue;
+          if (!p.owner || p.owner.team === team) continue;
+          if (kinds.length ? !(p.def && kinds.includes((p.def.upperCategory ??= p.def.str('Projectile_Category').trim().toUpperCase()))) : !p.missile)
+            continue;
           if ((p.flown || 0) <= gone) continue;
-          if ((p.x - u.x) ** 2 + (p.y - u.y) ** 2 + ((p.z || 0) - (u.z || 0)) ** 2 > r * r) continue;
           p.dead = true;
           world.fx.hit(p.x, p.y, p.z, 10);
           laserDefenseZap(world, u, def, p);

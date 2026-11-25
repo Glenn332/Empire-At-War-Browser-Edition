@@ -822,6 +822,7 @@ export class Unit {
     this.prioSet = undefined;
     this.modsIncome = undefined;
     this.passives = undefined;
+    this.tickedAbilities = undefined;
     this.instTurretsOnly = undefined;
     this.instPosed = undefined;
     this.aim = undefined;
@@ -1503,6 +1504,7 @@ const _m1 = new THREE.Matrix4(),
   _m2 = new THREE.Matrix4(),
   _m3 = new THREE.Matrix4();
 const _fl = { x: 0, y: 0, z: 0 };
+const _arc = { cos: 1, sin: 0, x: 0, y: 0, z: 0, frame: null, cosFacing: 1, sinFacing: 0, turret: false, turretLimit: 0, coneHalf: 0, coneUp: 0 };
 const _p = { x: 0, y: 0, z: 0 },
   _p2 = { x: 0, y: 0, z: 0 },
   _p3 = { x: 0, y: 0, z: 0 },
@@ -4373,8 +4375,10 @@ export class World {
     }
     u.pickAt = this.time + 1 + simRandom() * 0.5;
     const low = db.constants.num('Health_Low_Percent_Threshold', 0.33);
+    // whether the best so far is low on health is asked once for each best, not again for every enemy weighed against it
     let best = cur,
-      br = cur ? rate(cur) : 0;
+      br = cur ? rate(cur) : 0,
+      bestIsLow;
     for (const o of list) {
       if (o === cur || !inReach(o)) continue;
       const r = rate(o);
@@ -4385,10 +4389,11 @@ export class World {
         continue;
       }
       const lo = o.healthFrac <= low,
-        lb = best.healthFrac <= low;
+        lb = (bestIsLow ??= best.healthFrac <= low);
       if (lo !== lb ? lo : r < br || dist2(u, o) < dist2(u, best)) {
         best = o;
         br = r;
+        bestIsLow = lo;
       }
     }
     u.target = best;
@@ -5037,19 +5042,25 @@ export class World {
   }
 
   canBear(u, hp, t) {
-    if (this.restricted(hp, t)) return false;
     hp.worldPos(_ph);
-    const dx = t.x - _ph.x,
-      dy = t.y - _ph.y;
+    return this.bearsFrom(hp, t, _ph.x, _ph.y, this.arcOf(u, hp));
+  }
+
+  // canBear with the hardpoint's place and firing arc already worked out: a hardpoint looking for a target asks this
+  // of every enemy in reach, thousands of times a step in a big battle, and neither changes from one enemy to the next.
+  bearsFrom(hp, t, hardpointX, hardpointY, arc) {
+    if (this.restricted(hp, t)) return false;
+    const dx = t.x - hardpointX,
+      dy = t.y - hardpointY;
     const reach = hp.range + t.hitRadius;
     if (!t.free && dx * dx + dy * dy > reach * reach) return false;
     if (hp.minRange > 0 && dx * dx + dy * dy < hp.minRange * hp.minRange) return false;
-    if (this.hpInCone(u, hp, t.x, t.y, t.z || 0)) return true;
+    if (this.inArc(arc, t.x, t.y, t.z || 0)) return true;
     if (!t.hardpoints) return false;
     for (const h of t.hardpoints) {
       if (!h.alive) continue;
       h.worldPos(_ph);
-      if (this.hpInCone(u, hp, _ph.x, _ph.y, _ph.z)) return true;
+      if (this.inArc(arc, _ph.x, _ph.y, _ph.z)) return true;
     }
     return false;
   }
@@ -5068,7 +5079,14 @@ export class World {
   }
 
   hpInCone(u, hp, x, y, z) {
-    const h = hp.onTurret && u.turretAim ? u.heading + u.turretAim.yaw : u.heading,
+    return this.inArc(this.arcOf(u, hp), x, y, z);
+  }
+
+  // A hardpoint's firing arc as it stands now: where it fires from and which way, from the unit's pose. The one arc
+  // is reused, so it is only good until the next call.
+  arcOf(u, hp) {
+    const arc = _arc,
+      h = hp.onTurret && u.turretAim ? u.heading + u.turretAim.yaw : u.heading,
       c = Math.cos(h),
       s = Math.sin(h),
       turret = hp.turret >= 0,
@@ -5077,9 +5095,28 @@ export class World {
     const ox = F ? F.ox : o.x,
       oy = F ? F.oy : o.y,
       oz = F ? F.oz : o.z || 0;
-    const dx = x - (u.x + c * ox - s * oy),
-      dy = y - (u.y + s * ox + c * oy),
-      dz = z - ((u.z || 0) + oz);
+    arc.cos = c;
+    arc.sin = s;
+    arc.x = u.x + c * ox - s * oy;
+    arc.y = u.y + s * ox + c * oy;
+    arc.z = (u.z || 0) + oz;
+    arc.frame = F;
+    arc.cosFacing = F ? 1 : Math.cos(hp.facing);
+    arc.sinFacing = F ? 0 : Math.sin(hp.facing);
+    arc.turret = turret;
+    arc.turretLimit = hp.turret;
+    arc.coneHalf = hp.coneHalf;
+    arc.coneUp = hp.coneUp;
+    return arc;
+  }
+
+  inArc(arc, x, y, z) {
+    const c = arc.cos,
+      s = arc.sin,
+      F = arc.frame;
+    const dx = x - arc.x,
+      dy = y - arc.y,
+      dz = z - arc.z;
     const ax = c * dx + s * dy,
       ay = c * dy - s * dx;
     let lx, ly, lz;
@@ -5088,16 +5125,16 @@ export class World {
       ly = ax * F.yx + ay * F.yy + dz * F.yz;
       lz = ax * F.zx + ay * F.zy + dz * F.zz;
     } else {
-      const cf = Math.cos(hp.facing),
-        sf = Math.sin(hp.facing);
+      const cf = arc.cosFacing,
+        sf = arc.sinFacing;
       lx = ax * cf + ay * sf;
       ly = ay * cf - ax * sf;
       lz = dz;
     }
     const yaw = lx || ly ? Math.atan2(ly, lx) : 0;
-    if (turret) return Math.abs(F ? wrapAngle(yaw + Math.PI / 2) : yaw) <= hp.turret;
-    if (Math.abs(yaw) > hp.coneHalf) return false;
-    return Math.abs(Math.atan2(lz, Math.hypot(lx, ly))) <= hp.coneUp;
+    if (arc.turret) return Math.abs(F ? wrapAngle(yaw + Math.PI / 2) : yaw) <= arc.turretLimit;
+    if (Math.abs(yaw) > arc.coneHalf) return false;
+    return Math.abs(Math.atan2(lz, Math.hypot(lx, ly))) <= arc.coneUp;
   }
 
   nearestHp(t, from) {
@@ -5155,15 +5192,19 @@ export class World {
     hp.worldPos(_p);
     const px = _p.x,
       py = _p.y,
-      range = hp.range;
+      range = hp.range,
+      arc = this.arcOf(u, hp);
     for (const o of u.enemies) {
       if (o.dead) continue;
       const dx = o.x - px,
         dy = o.y - py,
         reach = range + o.hitRadius;
-      if (dx * dx + dy * dy > reach * reach || !this.canBear(u, hp, o)) continue;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      // An enemy that would not be preferred over the one already found is passed over before the costly question
+      // of whether the hardpoint can bear on it: with priority lists nearly every enemy in reach is such a one.
       const r = set ? priorityOf(set, o.type) : 1;
       if (r < 0 || (best && !(r < br))) continue;
+      if (!this.bearsFrom(hp, o, px, py, arc)) continue;
       best = o;
       br = r;
       if (r === 1) break;
@@ -5719,6 +5760,10 @@ export class World {
           hitPart = null,
           ht = 2;
         const hg = this.hitGrid,
+          hitters = this._hitters,
+          hitX = this.hitX,
+          hitY = this.hitY,
+          hitR = this.hitR,
           C = HIT_CELL,
           shotTeam = this.hitTeams.get(p.team),
           list = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS ? HIT_TEAMS : shotTeam;
@@ -5731,36 +5776,38 @@ export class World {
           for (let iy = cy0; iy <= cy1; iy++) {
             const l = hg.get((ix * 65536 + iy) * HIT_LISTS + list);
             if (l)
-              for (const o of l) {
+              for (let k = 0; k < l.length; k++) {
+                // far units are passed over from the grid's own numbers, without touching the unit
+                const index = l[k],
+                  r = hitR[index] + step,
+                  awayX = hitX[index] - p.x,
+                  awayY = hitY[index] - p.y;
+                if (awayX * awayX + awayY * awayY > r * r) continue;
+                const o = hitters[index];
                 if (o.dead || o.player.team === p.team) continue;
-                const r = Math.max(o.hitReach || o.hitRadius, o.collR || 0, o.collBall || 0) + step;
-                if ((o.x - p.x) ** 2 + (o.y - p.y) ** 2 > r * r) continue;
-                const h = o.heading || 0,
-                  ch = Math.cos(h),
-                  sh = Math.sin(h);
                 this.hitPart = null;
-                let tt =
-                  o.coll || o.hpColl
-                    ? segNear(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, o.collR)
-                      ? this.meshStep(o, x0, y0, z0, p.x, p.y, p.z)
-                      : -1
-                    : o.hitA
-                      ? sweepBox(
-                          x0,
-                          y0,
-                          z0,
-                          p.x,
-                          p.y,
-                          p.z,
-                          o.x + ch * o.hitF - sh * o.hitL,
-                          o.y + sh * o.hitF + ch * o.hitL,
-                          o.z + o.hitZ,
-                          h,
-                          o.hitA,
-                          o.hitB,
-                          o.hitC
-                        )
-                      : sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.hitRadius, o.hitRadius, o.hitRadius);
+                let tt;
+                if (o.coll || o.hpColl) tt = segNear(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, o.collR) ? this.meshStep(o, x0, y0, z0, p.x, p.y, p.z) : -1;
+                else if (o.hitA) {
+                  const h = o.heading || 0,
+                    ch = Math.cos(h),
+                    sh = Math.sin(h);
+                  tt = sweepBox(
+                    x0,
+                    y0,
+                    z0,
+                    p.x,
+                    p.y,
+                    p.z,
+                    o.x + ch * o.hitF - sh * o.hitL,
+                    o.y + sh * o.hitF + ch * o.hitL,
+                    o.z + o.hitZ,
+                    h,
+                    o.hitA,
+                    o.hitB,
+                    o.hitC
+                  );
+                } else tt = sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.hitRadius, o.hitRadius, o.hitRadius);
                 if (tt < 0 && o.collBall > 0) tt = sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.collBall, o.collBall, o.collBall);
                 if (tt >= 0 && tt < ht) {
                   ht = tt;
@@ -5829,7 +5876,9 @@ export class World {
 
   // Each cell keeps its units in unit order, once for every team as the units that team's shots can hit (the
   // other teams' units) and once whole for shots of a team that has none in the grid. A shot then walks only
-  // possible targets, in the order the whole list would give them.
+  // possible targets, in the order the whole list would give them. The lists hold places in the step's list of
+  // hittable units, whose position and reach sit in plain number arrays beside it: a shot in a crowd of fighters
+  // rules nearly all of them out by distance, and reading that from each unit was most of the cost of moving shots.
   makeHitGrid() {
     const hg = this.hitGrid || (this.hitGrid = new Map()),
       teams = (this.hitTeams ||= new Map()),
@@ -5845,6 +5894,19 @@ export class World {
       hitters.push(o);
       if (!teams.has(o.player.team)) teams.set(o.player.team, teams.size);
     }
+    if (!this.hitX || this.hitX.length < hitters.length) {
+      const room = Math.max(1024, hitters.length * 2);
+      this.hitX = new Float64Array(room);
+      this.hitY = new Float64Array(room);
+      this.hitR = new Float64Array(room);
+    }
+    for (let i = 0; i < hitters.length; i++) {
+      const o = hitters[i];
+      if (o.hitA) o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL);
+      this.hitX[i] = o.x;
+      this.hitY[i] = o.y;
+      this.hitR[i] = Math.max(o.hitReach || o.hitRadius, o.collR || 0, o.collBall || 0);
+    }
     const split = teams.size <= HIT_TEAMS;
     let whole = !split;
     if (!whole) for (const p of this.projectiles) if (!teams.has(p.team)) whole = true;
@@ -5857,9 +5919,11 @@ export class World {
       C = HIT_CELL,
       teams = this.hitTeams;
     this.hitWhole = whole || this.hitWhole;
-    const teamLists = split ? teams.size : 0;
-    for (const o of this._hitters) {
-      const own = split ? teams.get(o.player.team) : -1;
+    const teamLists = split ? teams.size : 0,
+      hitters = this._hitters;
+    for (let index = 0; index < hitters.length; index++) {
+      const o = hitters[index],
+        own = split ? teams.get(o.player.team) : -1;
       const r = Math.max(
         o.hitA ? (o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL)) : o.hitRadius,
         o.collR || 0,
@@ -5876,12 +5940,12 @@ export class World {
             if (t === own) continue;
             let l = hg.get(cell + t);
             if (!l) hg.set(cell + t, (l = []));
-            l.push(o);
+            l.push(index);
           }
           if (whole) {
             let l = hg.get(cell + HIT_TEAMS);
             if (!l) hg.set(cell + HIT_TEAMS, (l = []));
-            l.push(o);
+            l.push(index);
           }
         }
     }
@@ -6152,7 +6216,8 @@ export class World {
     const wp = !!lead.weapon;
     let best = null,
       br = 0,
-      bp;
+      bp,
+      bestIsLow;
     if (was && (inWeapon(was) || respond(was)) && rate(was) >= 0) {
       const left = (was.toKill + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
@@ -6179,7 +6244,7 @@ export class World {
           continue;
         }
         const lo = o.healthFrac <= low,
-          lb = best.healthFrac <= low;
+          lb = (bestIsLow ??= best.healthFrac <= low);
         let take,
           po;
         if (lo !== lb) take = lo;
@@ -6190,6 +6255,7 @@ export class World {
           best = o;
           br = r;
           bp = po;
+          bestIsLow = lo;
         }
       }
     }
