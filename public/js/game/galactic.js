@@ -2500,6 +2500,12 @@ export class GalacticGame {
     }
   }
 
+  // Whether player `pid` plays the same faction as this machine's player (co-op on one side).
+  sameSide(pid) {
+    const side = i => String(db.faction(this.setup.players?.[i]?.faction)?.name || this.setup.players?.[i]?.faction || '').toUpperCase();
+    return pid === this.localPid || (!!side(pid) && side(pid) === side(this.localPid));
+  }
+
   get held() {
     return (this.scriptPauses || 0) > 0 || !!this.holds?.size;
   }

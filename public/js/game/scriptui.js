@@ -331,6 +331,13 @@ export class ScriptUI {
       }
       return true;
     }
+    // A player on another side clicked (or a script pressed a button for them): the story hears it on every machine,
+    // but this screen's buttons stay as its own player left them.
+    // (A forced press of one of the screen's own buttons never reaches the story, here or anywhere.)
+    if ((net || forced) && this.game.uiPid !== undefined && this.game.sameSide?.(this.game.uiPid) === false) {
+      if (!(forced && this.nativeControls.get(key))) this.game.story?.clickGUI(key);
+      return true;
+    }
     const group = c.val('Group'),
       tab = yes(c.val('Tab'));
     if (tab) s.selected = !(s.selected && yes(c.val('Toggle')));
