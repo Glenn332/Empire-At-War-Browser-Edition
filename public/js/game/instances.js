@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { instanceable, skinBatchable } from '../model.js';
+import { instanceable, alphaInstanceable, skinBatchable } from '../model.js';
 import { CollectJobs } from './collectjobs.js';
 
 const ROW = 24 * 4;
@@ -26,6 +26,28 @@ function placeBranch(root, node) {
 }
 const HIDDEN = 1;
 
+// Writes a * b (column-major 4x4) straight into an instance row: a batched part's own matrixWorld is never read (with
+// collect jobs it is not even written), so the multiply and the copy into the batch are one step.
+function mulInto(out, o, a, b) {
+  const a11 = a[0], a12 = a[4], a13 = a[8], a14 = a[12];
+  const a21 = a[1], a22 = a[5], a23 = a[9], a24 = a[13];
+  const a31 = a[2], a32 = a[6], a33 = a[10], a34 = a[14];
+  const a41 = a[3], a42 = a[7], a43 = a[11], a44 = a[15];
+  for (let c = 0; c < 4; c++) {
+    const b1 = b[c * 4], b2 = b[c * 4 + 1], b3 = b[c * 4 + 2], b4 = b[c * 4 + 3];
+    out[o + c * 4] = a11 * b1 + a12 * b2 + a13 * b3 + a14 * b4;
+    out[o + c * 4 + 1] = a21 * b1 + a22 * b2 + a23 * b3 + a24 * b4;
+    out[o + c * 4 + 2] = a31 * b1 + a32 * b2 + a33 * b3 + a34 * b4;
+    out[o + c * 4 + 3] = a41 * b1 + a42 * b2 + a43 * b3 + a44 * b4;
+  }
+}
+// Hull decals (alpha-blended hardpoint blast marks, girders) are batched like the opaque parts (ours) and drawn first
+// among transparent things: they sit on the hull and write no depth, so whatever is behind them is already hidden by
+// the hull and whatever is in front (shots, effects, shields) draws over them, as it did when each decal was sorted
+// on its own. Before, every decal was a draw call of its own and kept its ship in the renderer's scene walk.
+const DECAL_ORDER = -1000;
+const SPACE_DECALS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodecalbatch'));
+
 export class Instances {
   static check = false;
   static mismatches = 0;
@@ -47,7 +69,7 @@ export class Instances {
     this.jobs = CollectJobs.create();
   }
 
-  poolFor(mesh, skinned = false) {
+  poolFor(mesh, skinned = false, decal = false) {
     let byGeo = this.pools.get(mesh.material);
     if (!byGeo) this.pools.set(mesh.material, (byGeo = new Map()));
     let p = byGeo.get(mesh.geometry);
@@ -65,7 +87,7 @@ export class Instances {
         skinned,
         rows: skinned ? [] : null,
         ready: !skinned,
-        order: mesh.renderOrder,
+        order: decal ? DECAL_ORDER + mesh.renderOrder : mesh.renderOrder,
         n: 0,
         cap: 0,
         im: null,
@@ -179,6 +201,10 @@ export class Instances {
       const e = { mesh: o, mat: o.material, pool: null, skin: null, local: new THREE.Matrix4().multiplyMatrices(_inv, o.matrixWorld) };
       if (instanceable.has(o.material)) {
         e.pool = this.poolFor(o);
+        this.taken.add(o);
+        o.layers.set(HIDDEN);
+      } else if (SPACE_DECALS && alphaInstanceable.has(o.material) && !o.isSkinnedMesh) {
+        e.pool = this.poolFor(o, false, true);
         this.taken.add(o);
         o.layers.set(HIDDEN);
       } else if (this.gpu && skinBatchable.has(o.material)) {
@@ -334,8 +360,8 @@ export class Instances {
         }
         const pooled = !!p && !away && !(e.skin && !this.taken.has(m)),
           defer = defer0 && pooled;
-        if (!whole && !defer) m.matrixWorld.multiplyMatrices(world, e.local);
         if (!pooled) {
+          if (!whole) m.matrixWorld.multiplyMatrices(world, e.local);
           rest++;
           continue;
         }
@@ -348,12 +374,12 @@ export class Instances {
             e.dirty = false;
           }
           J.add(uk, e.slot, p.pid, p.n);
-        } else {
+        } else if (whole) {
           const a = p.im.instanceMatrix.array,
             me = m.matrixWorld.elements,
             at = p.n * 16;
           for (let k = 0; k < 16; k++) a[at + k] = me[k];
-        }
+        } else mulInto(p.im.instanceMatrix.array, p.n * 16, world.elements, e.local.elements);
         if (e.skin) p.rows[p.n] = e.skin.mats;
         const t = p.tint.array,
           tt = p.n * 4;
