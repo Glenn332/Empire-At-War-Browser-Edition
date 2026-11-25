@@ -32,6 +32,7 @@ const scriptMarkers = w => {
   if (w.scriptMarkers) return w.scriptMarkers();
   const out = [];
   for (const list of w.mapObjects?.values() || []) for (const o of list) if (o?.mapMarker && !o.dead) out.push(o);
+  for (const o of w.upgradeObjects || []) if (!o.dead) out.push(o);
   return out;
 };
 const body = e => (e && !e.isSquad && e.members ? e.members[0] : lead(e));

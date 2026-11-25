@@ -1,4 +1,5 @@
 import { ScanAhead } from './scanjobs.js';
+import { TacticalMarker } from './tacticalobjects.js';
 import { FighterMoves } from './fightermoves.js';
 import { FighterDecisions } from './fighterdecisions.js';
 import { wrapAngle as wrapAngleShared } from './fighterflight.js';
@@ -2328,6 +2329,7 @@ export class World {
     p.stats.built++;
     if (isUpgradeType(type)) {
       this.applyUpgrade(p, type, builder);
+      this.upgradeObject(p, type, builder);
       this.onEvent('upgrade', { player: p, type });
       return;
     }
@@ -2563,6 +2565,20 @@ export class World {
         }
       }
     }
+  }
+
+  // A finished upgrade is a game object owned by the buyer. Mods hang a Lua_Script on it
+  // (Get_Type, Get_Owner, Despawn) to spawn units or grant effects, so it has to exist for scripts.
+  upgradeObject(p, type, at = null) {
+    if (!type.str('Lua_Script').trim()) return null;
+    const host = (at && !at.dead && at) || p.station,
+      o = new TacticalMarker(
+        { type, id: nextId++, pos: host ? [host.x, host.y, host.z || 0] : [0, 0, 0], rot: [0, 0, host ? (host.heading * 180) / Math.PI : 0] },
+        () => p
+      );
+    this.upgradeObjects = (this.upgradeObjects || []).filter(u => !u.dead);
+    this.upgradeObjects.push(o);
+    return o;
   }
 
   upgradeStation(p, at = null) {
