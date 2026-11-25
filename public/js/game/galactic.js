@@ -23,9 +23,9 @@ import { showSplash, hideSplash } from '../splash.js';
 import * as THREE from 'three';
 import { BenchOverlay } from '../benchoverlay.js';
 import { db, switchLanguage, categoryMask } from '../gamedata.js';
-import { loadModel, planetLighting, lighting, updateBillboards, planetClock, programSources } from '../model.js';
+import { loadModel, planetLighting, lighting, updateBillboards, planetClock, programSources, setPlanetTextureCap } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
-import { loadTexture } from '../dds.js';
+import { loadTexture, capTexture } from '../dds.js';
 import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
@@ -123,6 +123,7 @@ const SILENT = new Proxy(function () {}, {
   apply: () => undefined
 });
 const DEG = Math.PI / 180;
+const PLANET_TEXTURE_CAP = 1024;
 const _pickRay = new THREE.Raycaster(),
   _pickAt = new THREE.Vector2(),
   _pickC = new THREE.Vector3(),
@@ -366,6 +367,7 @@ export class GalacticGame {
     P('Placing the planets', 0.1);
     await loadGameFonts().catch(() => null);
     let done = 0;
+    setPlanetTextureCap(PLANET_TEXTURE_CAP);
     await Promise.all(
       g.planets.map(async (p, i) => {
         const file = destroyedPlanetModel(p);
@@ -390,7 +392,7 @@ export class GalacticGame {
         this.planetViews[i] = { inst, name: db.t(p.type.str('Text_ID')) || p.name, show: !p.background };
         P(`Placing the planets (${++done}/${g.planets.length})`, 0.1 + (0.8 * done) / g.planets.length);
       })
-    );
+    ).finally(() => setPlanetTextureCap(0));
     this.bounds = this.planetBounds();
     this.clampPan();
     this.marker = await loadModel('w_planet_select_neutral.alo').catch(() => null);
@@ -3681,6 +3683,25 @@ export class GalacticGame {
     return false;
   }
 
+  // The galaxy map loads planet textures at most PLANET_TEXTURE_CAP texels: zoomed out, a planet is a few hundred
+  // pixels across. The planet zoomed into gets its whole textures, and keeps them until another planet is zoomed into.
+  planetDetail(i) {
+    if (this.fullPlanet === i) return;
+    const textures = n => {
+      const out = new Set();
+      this.planetViews[n]?.inst?.root.traverse(o => {
+        if (!o.isMesh) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material])
+          for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture && 'cap' in u.value.userData) out.add(u.value);
+      });
+      return out;
+    };
+    const now = textures(i);
+    if (this.fullPlanet !== undefined) for (const t of textures(this.fullPlanet)) if (!now.has(t)) capTexture(t, PLANET_TEXTURE_CAP);
+    for (const t of now) capTexture(t, 0);
+    this.fullPlanet = i;
+  }
+
   // The radar ping a battle starts has no timeout, so turn it off once the battle is over, however it ended
   // (tactical, multiplayer or linked). A new battle choice at the same planet keeps its own ping.
   endBattleFlash() {
@@ -3953,6 +3974,7 @@ export class GalacticGame {
           if (meshes) for (const m of meshes) m.visible = n === state && !m.userData.hiddenByDefault;
       }
       this.zoomStation(pv, i, real);
+      if (this.view.planet === i && (this.view.zoom > 0 || this.view.dir > 0)) this.planetDetail(i);
       if (pv.inst.billboards.length && !pv.inst.root.userData.culled) updateBillboards(pv.inst, this.camera);
     }
     if (this.marker) this.marker.root.visible = this.selected >= 0 && this.view.zoom === 0 && this.view.dir <= 0;
