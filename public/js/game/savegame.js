@@ -127,6 +127,10 @@ function spaceSnapshot(game, name) {
       out.y = r1(o.y);
     }
     if (o.pace !== undefined && o.pace < 1) out.pace = +o.pace.toFixed(3);
+    if (o.guard) {
+      const g = ref(o.guard);
+      if (g) out.guard = g;
+    }
     if (o.target) {
       const t = ref(o.target);
       if (t) out.target = t;
@@ -593,6 +597,7 @@ export function restore(game, save) {
       out.y = o.y;
     }
     if (o.pace !== undefined) out.pace = o.pace;
+    if (o.guard) out.guard = get(o.guard) || undefined;
     if (o.target) {
       out.target = get(o.target);
       if (!out.target && (o.kind === 'attack' || o.kind === 'guard')) return { kind: 'idle' };

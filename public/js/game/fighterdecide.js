@@ -233,20 +233,22 @@ function decideFighter(scene, row, lead, sq) {
       gx = lx + ch * ahead + 0.75 * (ch * ox - sh * oy);
       gy = ly + sh * ahead + 0.75 * (sh * ox + ch * oy);
     }
-    if (m < 90) {
+    // Same orbit as World.updateFighter: minimum speed on the tightest circle the fighter can turn.
+    const orbit = low > 0 ? Math.max(60, (1.2 * low) / Math.max(0.1, turnRate)) : 60;
+    if (m < orbit + 30) {
       form = false;
       let dx = x - cx,
         dy = y - cy;
       if (!dx && !dy) dx = 1;
       const nd = Math.hypot(dx, dy);
       if (isLead) {
-        const a = 10 / nd,
+        const a = Math.max(10 / nd, 0.5),
           ux = dx / nd,
           uy = dy / nd;
-        gx = cx + 60 * (Math.cos(a) * ux - Math.sin(a) * uy);
-        gy = cy + 60 * (Math.sin(a) * ux + Math.cos(a) * uy);
+        gx = cx + orbit * (Math.cos(a) * ux - Math.sin(a) * uy);
+        gy = cy + orbit * (Math.sin(a) * ux + Math.cos(a) * uy);
       }
-      want = (nd / m) * 0.5 * LOGIC_FPS;
+      want = low > 0 ? low : (nd / m) * 0.5 * LOGIC_FPS;
     } else if (!isLead) want = low > 0 ? low : top;
     else {
       gx = cx;
@@ -296,6 +298,7 @@ function decideFighter(scene, row, lead, sq) {
   } else if (!fire && s[sq + DS.FIRE_TARGET_ALIVE]) {
     if (mode !== MODE.IDLE || !s[sq + DS.ORDER_IDLE] || f[row + DF.FIRE_IDLE]) fire = FIRE.SQUAD_TARGET;
   }
+  if (low > 0 && want < low) want = low;
   let wantIfHit = NaN;
   if (low > 0) wantIfHit = s[sq + DS.GUARDING_TARGET] ? Math.min(low, top * 0.5) : low;
   f[row + DF.GOAL_X] = gx;

@@ -198,6 +198,7 @@ const simOnly = {
   ],
   squad: [
     'aim',
+    'aimHp',
     'chase',
     'fireTarget',
     'pickHp',
@@ -215,6 +216,7 @@ const simOnly = {
     'order.group',
     'order.pace',
     'order.wing',
+    'order.guard',
     'order.force',
     'cruise',
     'scanTimer',
@@ -270,9 +272,17 @@ const show = v =>
     : v instanceof S.Player
       ? 'player ' + v.id
       : v && typeof v === 'object'
-        ? JSON.stringify(v, (k, x) =>
-            isEntity(x) ? x.type.name + '#' + x.id : x instanceof S.Player ? 'P' + x.id : x && x.isColor ? '#' : x
-          )?.slice(0, 120)
+        ? (seen =>
+            JSON.stringify(v, (k, x) => {
+              if (isEntity(x)) return x.type.name + '#' + x.id;
+              if (x instanceof S.Player) return 'P' + x.id;
+              if (x && x.isColor) return '#';
+              if (x && typeof x === 'object') {
+                if (seen.has(x)) return '(seen)';
+                seen.add(x);
+              }
+              return x;
+            }))(new WeakSet())?.slice(0, 120)
         : String(v);
 const plainObject = v => v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
 function where(a, b, key) {

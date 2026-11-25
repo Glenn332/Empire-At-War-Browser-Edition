@@ -4698,8 +4698,8 @@ export class World {
   arrived(e) {
     const next = e.queue && e.queue.shift();
     if (next) e.setOrder(next, true);
-    else if (e.isSquad && this.keepEscorting(e)) {
-      e.setOrder({ kind: 'guard', target: e.order.wing.escort || e.order.wing.escorted });
+    else if (e.isSquad && this.guardAfter(e)) {
+      e.setOrder({ kind: 'guard', target: this.guardAfter(e) });
       e.alone = false;
     } else {
       e.setOrder(e.order.face !== undefined ? { kind: 'idle', face: e.order.face } : { kind: 'idle' });
@@ -4707,13 +4707,14 @@ export class World {
     }
   }
 
-  keepEscorting(s) {
+  // The ship a squadron guards once a move ends (ours): the one it was guarding when the move was given, else the
+  // ship its wing escorted on the way. The guard holds until the player gives the squadron another order.
+  guardAfter(s) {
+    const ok = t => !!t && !t.dead && !t.isSquad && t.player.team === s.player.team;
+    if (ok(s.order.guard)) return s.order.guard;
     const w = s.order.wing,
-      ship = w && (w.escort || w.escorted),
-      lead = s.fighters[0];
-    if (!ship || ship.dead || ship.isSquad || !lead || ship.player.team !== s.player.team || ship.order.kind !== 'idle') return false;
-    const reach = (ship.radius || 0) + s.type.num('Guard_Chase_Range', 0);
-    return (lead.x - ship.x) ** 2 + (lead.y - ship.y) ** 2 <= reach * reach;
+      ship = w && (w.escort || w.escorted);
+    return ok(ship) ? ship : null;
   }
 
   repairHardpoint(player, u, index) {
@@ -6064,7 +6065,8 @@ export class World {
     const inWeapon = o => dist2(lead, o) <= (reach + o.hitRadius) ** 2;
     const respond = (o, start = true) => {
       if (range < 0) return false;
-      if (kind === 'idle' && !parked && inWeapon(o)) return true;
+      // Idle squadrons take on what comes into weapon reach, parked ones too (ours: they used to shoot only from where they sat).
+      if (kind === 'idle' && inWeapon(o)) return true;
       const hurt = (ext || parked) && this.hurtBy(s, o);
       if (parked && !hurt) return false;
       const f = hull + range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
@@ -6828,20 +6830,23 @@ export class World {
         gx = lead.x + ch * ahead + 0.75 * (ch * ox - sh * oy);
         gy = lead.y + sh * ahead + 0.75 * (sh * ox + ch * oy);
       }
-      if (m < 90) {
+      // Idle squadrons circle their spot at their minimum speed on the tightest circle they can turn (ours: they
+      // used to drift at half a unit a frame and looked parked in space).
+      const orbit = low > 0 ? Math.max(60, (1.2 * low) / Math.max(0.1, u.turnRate)) : 60;
+      if (m < orbit + 30) {
         form = false;
         let dx = u.x - c.x,
           dy = u.y - c.y;
         if (!dx && !dy) dx = 1;
         const nd = Math.hypot(dx, dy);
         if (lead === u) {
-          const a = 10 / nd,
+          const a = Math.max(10 / nd, 0.5),
             ux = dx / nd,
             uy = dy / nd;
-          gx = c.x + 60 * (Math.cos(a) * ux - Math.sin(a) * uy);
-          gy = c.y + 60 * (Math.sin(a) * ux + Math.cos(a) * uy);
+          gx = c.x + orbit * (Math.cos(a) * ux - Math.sin(a) * uy);
+          gy = c.y + orbit * (Math.sin(a) * ux + Math.cos(a) * uy);
         }
-        want = (nd / m) * 0.5 * LOGIC_FPS;
+        want = low > 0 ? low : (nd / m) * 0.5 * LOGIC_FPS;
       } else if (lead !== u) want = low > 0 ? low : top;
       else {
         gx = c.x;
@@ -6888,6 +6893,9 @@ export class World {
     } else if (!fireAt && s && s.fireTarget && !s.fireTarget.dead) {
       if (s.mode !== 'idle' || s.order.kind !== 'idle' || (u.fireIdle ??= u.type.bool('Can_Fighter_Fire_When_Idle'))) fireAt = s.fireTarget;
     }
+    // Fighters never fly slower than their minimum speed (ours): escorting a slow ship or closing on a target they
+    // weave and make passes instead of hanging still.
+    if (low > 0 && want < low) want = low;
     st.mode = tgt ? 'attack' : 'form';
     const gzDefault = gz !== gz ? u.type.num('Layer_Z_Adjust', 0) + 35 + (u.squad && u.squad.stacked && u.slot ? u.slot.z : (u.id * 37) % 50) : gz;
     let wantIfHit = NaN;

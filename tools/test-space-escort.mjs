@@ -93,7 +93,8 @@ function battle(seed) {
   squadrons.forEach((squadron, i) => {
     const now = placeOf(squadron),
       drift = Math.hypot(now.x - before[i].x, now.y - before[i].y);
-    assert(drift < 400, 'a squadron keeps its place in the fleet while it moves: drifted ' + drift.toFixed(0));
+    // fighters keep at least their minimum speed, so beside a slow ship they weave around their place
+    assert(drift < 600, 'a squadron keeps its place in the fleet while it moves: drifted ' + drift.toFixed(0));
   });
   assert(escort.x > -4000, 'the fleet has moved on');
   run(200);
@@ -152,6 +153,31 @@ for (const withShip of [false, true]) {
   }
   assert(stopped, 'the fleet stops to fight on its attack-move');
   assert(worst < 2000, 'squadrons stay with a fleet that stops to fight: one got ' + worst.toFixed(0) + ' from the nearest ship');
+}
+
+{
+  // Squadrons moved with a fleet guard a ship when they arrive: the one they guarded before the move, else the
+  // ship their wing escorted. Idle and guarding fighters keep at least their minimum speed.
+  const { world, empire, run } = battle(7);
+  const a = world.spawn(T('Star_Destroyer'), empire, -3000, -600),
+    b = world.spawn(T('Tartan_Patrol_Cruiser'), empire, -3000, 600);
+  const guarding = world.spawn(T('TIE_Fighter_Squadron'), empire, -2800, -700),
+    plain = world.spawn(T('TIE_Bomber_Squadron'), empire, -2800, 700);
+  run(1);
+  guarding.setOrder({ kind: 'guard', target: a });
+  run(2);
+  orderMove([a, b, guarding, plain], 1500, 0, false);
+  run(150);
+  assert.equal(guarding.order.kind, 'guard', 'a guarding squadron guards again after the move');
+  assert.equal(guarding.order.target, a, 'and guards the ship it guarded before');
+  assert.equal(plain.order.kind, 'guard', 'a squadron moved with the fleet guards a ship on arrival');
+  assert(plain.order.target === a || plain.order.target === b, 'one of the fleet ships');
+  let slowest = Infinity;
+  for (let i = 0; i < 20 * 30; i++) {
+    run(DT);
+    for (const q of [guarding, plain]) for (const f of q.fighters) slowest = Math.min(slowest, f.speed / f.minSpeed);
+  }
+  assert(slowest > 0.9, 'fighters never hover below their minimum speed: ' + slowest.toFixed(2));
 }
 
 console.log('space escort: ok');

@@ -394,6 +394,13 @@ const centreOf = list => {
 export const fieldPassed = (f, through) =>
   !!through && ((f.asteroid && (through & 4) !== 0) || (f.ion && (through & 8) !== 0) || (f.nebula && (through & 16) !== 0));
 
+// A squadron guarding a ship that is moved with the fleet goes back to guarding that ship when it arrives (ours).
+function keepGuard(e, o) {
+  if (!e.isSquad) return;
+  const was = e.order.kind === 'guard' ? e.order.target : e.order.guard;
+  if (was && !was.dead && !was.isSquad) o.guard = was;
+}
+
 export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false, through = 0) {
   const movers = entities.filter(e => e.isSquad || e.isMobile);
   const kind = attackMove ? 'attackmove' : 'move';
@@ -411,6 +418,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     movers.forEach((e, i) => {
       const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
       if (through) leg.through = through;
+      keepGuard(e, leg);
       if (moving(e)) (e.queue ||= []).push(leg);
       else e.setOrder(leg);
     });
@@ -428,6 +436,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     const o = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
     if (through) o.through = through;
     if (wings.has(e)) o.wing = wings.get(e);
+    keepGuard(e, o);
     if (starts.has(e)) o.startAt = starts.get(e);
     e.setOrder(o);
   });
@@ -444,6 +453,7 @@ export function orderPlaced(placed, face, attackMove = false) {
   placed.forEach((o, i) => {
     const ord = { kind, x: o.x, y: o.y, pace: speeds[i], group: placed.length, ...(o.e.isSquad ? {} : { face }) };
     if (wings.has(o.e)) ord.wing = wings.get(o.e);
+    keepGuard(o.e, ord);
     if (starts.has(o.e)) ord.startAt = starts.get(o.e);
     o.e.setOrder(ord);
   });
