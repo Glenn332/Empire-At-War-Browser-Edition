@@ -364,6 +364,7 @@ export class ScanAhead {
         !u.construction &&
         u.player.id >= 0 &&
         (u.hasWeapons || u.squad) &&
+        !u.isFighter &&
         u.scanTimer - dt <= 0
       )
         this.req.set(u, count++);

@@ -3501,7 +3501,9 @@ export class World {
       u.scanTimer -= dt;
       if (u.scanTimer <= 0) {
         u.scanTimer = (u.isFighter ? 1.2 : 0.4) + simRandom() * 0.2;
-        this.scan(u);
+        // A fighter flies and fires at its squadron's target and never reads a list of enemies of its own; with
+        // thousands of fighters, each listing every enemy in reach, those lists were a large part of a step.
+        if (!u.isFighter) this.scan(u);
       }
     }
     if (u.isFighter) {
