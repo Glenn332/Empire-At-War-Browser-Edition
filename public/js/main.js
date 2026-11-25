@@ -2294,35 +2294,50 @@ class Game {
         ca = Math.cos(a) * s,
         sa = Math.sin(a) * s;
       o.position.set(x, y, z);
-      if (roll) {
-        const cro = Math.cos(roll),
-          sro = Math.sin(roll);
-        e[0] = ca * cro;
-        e[1] = sa * cro;
-        e[2] = -sro * s;
-        e[8] = ca * sro;
-        e[9] = sa * sro;
-        e[10] = cro * s;
+      if (u.cp || u.pp) {
+        // A climbing or diving fighter: heading, then pitch, then roll, written straight into the matrix. Thousands of
+        // fighters turn every frame, and building each one's quaternion first cost more than the rest of this loop.
+        u.tp = u.pitch;
+        const pitch = (u.pitch = u.pp + (u.cp - u.pp) * k);
+        u.pitched = true;
+        const cosPitch = Math.cos(pitch),
+          sinPitch = Math.sin(pitch),
+          cosRoll = Math.cos(roll),
+          sinRoll = Math.sin(roll);
+        e[0] = ca * cosRoll + sa * sinPitch * sinRoll;
+        e[1] = sa * cosRoll - ca * sinPitch * sinRoll;
+        e[2] = -cosPitch * sinRoll * s;
+        e[4] = -sa * cosPitch;
+        e[5] = ca * cosPitch;
+        e[6] = -sinPitch * s;
+        e[8] = ca * sinRoll - sa * sinPitch * cosRoll;
+        e[9] = sa * sinRoll + ca * sinPitch * cosRoll;
+        e[10] = cosPitch * cosRoll * s;
       } else {
-        e[0] = ca;
-        e[1] = sa;
-        e[2] = 0;
-        e[8] = 0;
-        e[9] = 0;
-        e[10] = s;
+        if (roll) {
+          const cro = Math.cos(roll),
+            sro = Math.sin(roll);
+          e[0] = ca * cro;
+          e[1] = sa * cro;
+          e[2] = -sro * s;
+          e[8] = ca * sro;
+          e[9] = sa * sro;
+          e[10] = cro * s;
+        } else {
+          e[0] = ca;
+          e[1] = sa;
+          e[2] = 0;
+          e[8] = 0;
+          e[9] = 0;
+          e[10] = s;
+        }
+        e[4] = -sa;
+        e[5] = ca;
+        e[6] = 0;
       }
-      e[4] = -sa;
-      e[5] = ca;
-      e[6] = 0;
       e[12] = x;
       e[13] = y;
       e[14] = z;
-      if (u.cp || u.pp) {
-        u.tp = u.pitch;
-        u.pitch = u.pp + (u.cp - u.pp) * k;
-        u.syncObj();
-        u.pitched = true;
-      }
       u.wasShown = true;
       su.push(u);
     }

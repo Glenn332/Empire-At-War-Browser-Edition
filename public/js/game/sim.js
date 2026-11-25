@@ -13,7 +13,7 @@ import { Pathfinder, layerMask, ASTEROID_LAYERS } from './pathfind.js';
 import { prioritySet, priorityOf, setOf } from './priorities.js';
 import { BountyBook, bountyValue } from './bounty.js';
 import { losingSideBonus } from './losingbonus.js';
-import { getModelData, buildModel, flattenModel } from '../model.js';
+import { getModelData, buildModel, flattenModel, PartGroup } from '../model.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import {
   parseAbilities,
@@ -777,6 +777,8 @@ export class Unit {
     this.ih = undefined;
     this.ir = undefined;
     this.wasShown = undefined;
+    this.smokingPoints = 0;
+    this.instPlan = null;
     this.pitch = undefined;
     this.pp = undefined;
     this.cp = undefined;
@@ -1323,7 +1325,7 @@ export class Unit {
       }
       let part = flattenModel(hp.model);
       if (!part) {
-        part = new THREE.Group();
+        part = new PartGroup();
         part.matrixAutoUpdate = false;
         part.add(hp.model.root);
       }
@@ -2965,6 +2967,7 @@ export class World {
       if (!(unit.shieldDownTimer > 0)) unit.shieldDownTimer = db.constants.num('Depleted_Shield_Disable_Time', 5);
     }
     hp.smoke = !unit.proxies.some(px => px.hp === hp);
+    if (hp.smoke) unit.smokingPoints++;
     if (unit.player && unit.player.human) {
       const ev = unit.type.tuples('SFXEvent_Hardpoint_Destroyed').find(t => t[0].toUpperCase() === hp.kind);
       if (ev && ev[1]) this.audio.playFor(unit.player, ev[1], unit);

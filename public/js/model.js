@@ -1022,9 +1022,54 @@ function rigIndex(bones) {
   return index;
 }
 
+// The nodes of a model report when they hide or show, and its meshes when they get another material or geometry, to
+// the unit that draws them in batches (ours). A unit none of whose parts changed is then drawn from the list it made
+// last time, instead of being checked part by part every frame: with thousands of fighters on screen those checks
+// were most of the cost of collecting the batches. See Instances.collect.
+function dropDrawPlan(part) {
+  if (part.drawnBy) part.drawnBy.instPlan = null;
+}
+function reportVisibility(prototype) {
+  Object.defineProperty(prototype, 'visible', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return this.partVisible;
+    },
+    set(visible) {
+      if (visible === this.partVisible) return;
+      this.partVisible = visible;
+      dropDrawPlan(this);
+    }
+  });
+  prototype.drawnBy = null;
+  prototype.reportsChanges = true;
+}
+export class PartNode extends THREE.Object3D {}
+export class PartGroup extends THREE.Group {}
+export class PartMesh extends THREE.Mesh {
+  get material() {
+    return this.partMaterial;
+  }
+  set material(material) {
+    if (material === this.partMaterial) return;
+    this.partMaterial = material;
+    dropDrawPlan(this);
+  }
+  get geometry() {
+    return this.partGeometry;
+  }
+  set geometry(geometry) {
+    if (geometry === this.partGeometry) return;
+    this.partGeometry = geometry;
+    dropDrawPlan(this);
+  }
+}
+for (const partClass of [PartNode, PartGroup, PartMesh]) reportVisibility(partClass.prototype);
+
 export class ModelInstance {
   constructor() {
-    this.root = new THREE.Group();
+    this.root = new PartGroup();
     this.bones = [];
     this.boneByName = new Map();
     this.meshByName = new Map();
@@ -1148,7 +1193,7 @@ let nextBoneId = -1;
 // its turrets carries hundreds of bones, so bones share those parts. Only the pose (position,
 // quaternion, scale, matrix, matrixWorld), the children and the user data are their own.
 function makeBoneNode(name) {
-  const bone = Object.create(THREE.Object3D.prototype);
+  const bone = Object.create(PartNode.prototype);
   Object.defineProperty(bone, 'id', { value: nextBoneId-- });
   bone.isObject3D = true;
   bone.uuid = '';
@@ -1265,7 +1310,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
     if (alt) {
       if (altOf ? +altOf[1] !== alt : hasAlt.has(mesh.name.replace(/_LOD\d/gi, '').toUpperCase())) continue;
     } else if (altOf && altOf[1] !== '0' && !showHidden && !alts) continue;
-    const group = new THREE.Group();
+    const group = new PartGroup();
     group.name = mesh.name;
     group.visible = !mesh.hidden || showHidden;
     if (alts && altOf && !alt) {
@@ -1281,7 +1326,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
       if (SKIP.test(sub.material.shader)) continue;
       const geo = makeGeometry(model, sub.geometry);
       if (headless) {
-        const obj = new THREE.Mesh(geo, HEADLESS);
+        const obj = new PartMesh(geo, HEADLESS);
         group.add(obj);
         any = true;
         if (!mesh.hidden && !seeThrough(sub.material.shader)) {
@@ -1290,7 +1335,7 @@ export function buildModel(model, { teamColor = null, showHidden = false, alt = 
         }
         continue;
       }
-      const obj = new THREE.Mesh(geo, makeMaterial(sub.material, sub.geometry.format, teamColor, selfShadow));
+      const obj = new PartMesh(geo, makeMaterial(sub.material, sub.geometry.format, teamColor, selfShadow));
       if (obj.material.defines.SKINNED && sub.geometry.boneMap) {
         const skin = { mesh: obj, boneMap: sub.geometry.boneMap, mats: null };
         inst.skins.push(skin);
@@ -1356,7 +1401,7 @@ export function flattenModel(inst) {
   if (inst.billboards.length) return null;
   inst.root.updateWorldMatrix(true, true);
   const inv = new THREE.Matrix4().copy(inst.root.matrixWorld).invert();
-  const container = new THREE.Group();
+  const container = new PartGroup();
   container.matrixAutoUpdate = false;
   for (const group of new Set(inst.meshByName.values())) {
     if (!group.parent) continue;

@@ -47,6 +47,7 @@ export class SpaceRecorder {
     this.known = new Set();
     this.fresh = [];
     this.sent = new Map();
+    this.sentPoints = new Map();
     this.props = [];
     this.teams = [];
     this.world_ = [];
@@ -238,18 +239,35 @@ export class SpaceRecorder {
     for (let i = 0; i < us.length; i++) {
       const u = us[i],
         hs = u.hardpoints;
-      if (!hs || u.dead) continue;
+      if (!hs || u.dead || !hs.length) continue;
+      // Only the hardpoints that changed since the page last heard of them are written: in a big battle nearly all
+      // of the thousands of hardpoints are the same from one step to the next.
+      let sent = this.sentPoints.get(u.id);
+      if (!sent || sent.length !== hs.length * 3) this.sentPoints.set(u.id, (sent = new Float64Array(hs.length * 3).fill(NaN)));
       for (let k = 0; k < hs.length; k++) {
-        const hp = hs[k];
+        const hp = hs[k],
+          alive = hp.alive ? 1 : 0,
+          target = hp.target && !hp.target.dead ? hp.target.id : -1,
+          health = hp.maxHealth ? hp.health / hp.maxHealth : 1,
+          at = k * 3;
+        if (sent[at] === alive && sent[at + 1] === target && sent[at + 2] === health) continue;
+        sent[at] = alive;
+        sent[at + 1] = target;
+        sent[at + 2] = health;
         H[h] = u.id;
         H[h + 1] = k;
-        H[h + 2] = hp.alive ? 1 : 0;
-        H[h + 3] = hp.target && !hp.target.dead ? hp.target.id : -1;
-        H[h + 4] = hp.maxHealth ? hp.health / hp.maxHealth : 1;
+        H[h + 2] = alive;
+        H[h + 3] = target;
+        H[h + 4] = health;
         h += POINT;
       }
     }
     this.nPoints = h / POINT;
+    if (this.sentPoints.size > us.length * 2 + 1024) {
+      const live = new Set();
+      for (let i = 0; i < us.length; i++) if (!us[i].dead) live.add(us[i].id);
+      for (const id of this.sentPoints.keys()) if (!live.has(id)) this.sentPoints.delete(id);
+    }
     let na = 0;
     for (let i = 0; i < us.length; i++) if (!us[i].dead) na += us[i].abilities ? us[i].abilities.length : 0;
     if (na * ABILITY > this.abilities.length) this.abilities = new Float32Array(Math.ceil(na * 1.5) * ABILITY);

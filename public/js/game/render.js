@@ -2034,13 +2034,14 @@ export class Renderer {
               u.pendingProxies.push(px);
             }
         if (u.pendingProxies.length) u.pendingProxies = u.pendingProxies.filter(px => !this.attachProxy(u, px));
-        _sphere.center.set(u.x, u.y, u.z || 0);
-        _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
-        const inView = _frustum.intersectsSphere(_sphere) || this.castsShadowInView(u);
-        if (u.buildAnim && u.construction) {
-          if (inView) u.buildAnim.seek(1 - u.construction.left / u.construction.total);
-        } else if (u.anim) {
-          if (!inView) u.animOwed = (u.animOwed || 0) + dt;
+        // Only an animated unit asks whether it is in view; most units in a big battle are fighters that never do.
+        if ((u.buildAnim && u.construction) || u.anim) {
+          _sphere.center.set(u.x, u.y, u.z || 0);
+          _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach);
+          const inView = _frustum.intersectsSphere(_sphere) || this.castsShadowInView(u);
+          if (u.buildAnim && u.construction) {
+            if (inView) u.buildAnim.seek(1 - u.construction.left / u.construction.total);
+          } else if (!inView) u.animOwed = (u.animOwed || 0) + dt;
           else {
             if (!u.anim.step(dt + (u.animOwed || 0))) u.anim = null;
             u.animOwed = 0;
@@ -2048,8 +2049,6 @@ export class Renderer {
         }
         if (u.turrets.length) this.aimTurrets(u, dt);
         if (u.model && u.model.billboards.length) updateBillboards(u.model, cam);
-        const c = Math.cos(u.heading),
-          s = Math.sin(u.heading);
         if (u.shieldMesh) {
           const on = !!u.abilities?.some(s => s.active && s.def.kind === 'DEFEND');
           if (u.shieldMesh.visible !== on) u.shieldMesh.visible = on;
@@ -2059,7 +2058,9 @@ export class Renderer {
           const on = !u.hyper && (u.retreatFlight || u.speed > u.maxSpeed * 0.08) && u.engineAlive();
           for (const m of u.engineMeshes) if (m.visible !== on) m.visible = on;
         }
-        if (u.isMobile && !u.hyper) {
+        if (u.isMobile && !u.hyper && u.engineGlows.length) {
+          const c = Math.cos(u.heading),
+            s = Math.sin(u.heading);
           const thrust = u.retreatFlight ? 1 : 0.55 + 0.45 * Math.min(1, u.speed / (u.maxSpeed || 1));
           const ro = u.roll || 0,
             cro = Math.cos(ro),
@@ -2073,6 +2074,7 @@ export class Renderer {
             sp.add(u.x + c * l.x - s * ly, u.y + s * l.x + c * ly, u.z + lz, size, 0.45, 0.65, 1, 0.9);
           }
         }
+        if (!u.smokingPoints) continue;
         for (const hp of u.hardpoints) {
           if (hp.alive || !hp.smoke) continue;
           if (Math.random() < dt * 5) {

@@ -55,12 +55,29 @@ const TOGGLED = /BLAST|DECAL|SHIELD|ENGINE|GIRDER|COLLISION|_ALT/i;
 const IDENTITY = new THREE.Matrix4();
 const mergedParts = new WeakMap();
 const SPACE_DECALS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodecalbatch'));
+// A unit standing in its plain pose, with every part in a batch, keeps the list of batches it went into (its draw
+// plan) and is drawn from that list until one of its parts reports a change (ours, see reportVisibility in model.js).
+const DRAW_PLANS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodrawplans'));
+const NOT_PLANNABLE = false;
+
+// Whether this part and everything between it and its unit is shown. Null when one of them cannot report a change:
+// such a unit is checked part by part every frame, as before. Every node on the way learns which unit it draws for.
+function shownUnder(unit, root, part) {
+  let shown = true;
+  for (let node = part; node !== root; node = node.parent) {
+    if (!node || node.reportsChanges !== true) return null;
+    node.drawnBy = unit;
+    if (!node.visible) shown = false;
+  }
+  return shown;
+}
 
 export class Instances {
   static check = false;
   static mismatches = 0;
   static checked = 0;
   static skins = true;
+  static drawPlans = DRAW_PLANS;
 
   constructor(scene) {
     this.scene = scene;
@@ -238,6 +255,7 @@ export class Instances {
       !u.hardpoints.some(h => h.model && (!h.model.flat || h.model.billboards.length > 0));
     u.instMoves = !u.instTurretsOnly || u.turrets.length > 0;
     u.instPosed = -1;
+    u.instPlan = null;
     this.units.add(u);
     return list;
   }
@@ -308,6 +326,61 @@ export class Instances {
     list.push(...back);
     u.instMerges = false;
     u.instMergeOff = true;
+    u.instPlan = null;
+  }
+
+  // The batches a still unit's parts go into, as [batch, where its offset is kept, ...] in drawing order: the offset is
+  // a collect job slot with job threads, the part's matrix without (null for joined parts, which sit at the unit's
+  // own place). Not plannable when a part is drawn outside the batches, is skinned, or cannot report a change.
+  planFor(unit, list, withJobs) {
+    const root = unit.obj,
+      plan = [];
+    for (const entry of list) {
+      if (entry.skin || entry.away) return NOT_PLANNABLE;
+      if (entry.members) {
+        for (const part of entry.parts) {
+          if (part.mesh.material !== part.mat || shownUnder(unit, root, part.mesh) !== true) return NOT_PLANNABLE;
+        }
+      } else {
+        const mesh = entry.mesh,
+          shown = shownUnder(unit, root, mesh);
+        if (shown === null) return NOT_PLANNABLE;
+        // a hidden part is left out; it reports when it shows again
+        if (!shown && (!entry.pool || mesh.geometry === entry.pool.src)) continue;
+        if (!entry.pool || mesh.geometry !== entry.pool.src || mesh.material !== entry.mat) return NOT_PLANNABLE;
+      }
+      if (withJobs && (entry.slot === undefined || entry.dirty !== false)) return NOT_PLANNABLE;
+      plan.push(entry.pool, withJobs ? entry.slot : entry.members ? null : entry.local.elements);
+    }
+    return plan;
+  }
+
+  drawPlanned(plan, world, fading, tintRed, tintGreen, tintBlue, tintAlpha) {
+    const jobs = this.jobs,
+      unitKey = jobs ? jobs.addUnit(world) : -1;
+    for (let i = 0; i < plan.length; i += 2) {
+      const offset = plan[i + 1];
+      let pool = plan[i];
+      if (fading && !pool.mat.transparent) {
+        const fadePool = (pool.fadeTwin ||= this.fadePool(pool));
+        if (fadePool.ready) pool = fadePool;
+      }
+      if (pool.n === pool.cap) this.size(pool, pool.cap * 2);
+      if (jobs) jobs.add(unitKey, offset, pool.pid, pool.n);
+      else if (offset === null) {
+        const rows = pool.im.instanceMatrix.array,
+          at = pool.n * 16;
+        for (let k = 0; k < 16; k++) rows[at + k] = world[k];
+      } else mulInto(pool.im.instanceMatrix.array, pool.n * 16, world, offset);
+      const tints = pool.tint.array,
+        at = pool.n * 4;
+      tints[at] = tintRed;
+      tints[at + 1] = tintGreen;
+      tints[at + 2] = tintBlue;
+      tints[at + 3] = tintAlpha;
+      pool.n++;
+    }
+    return plan.length / 2;
   }
 
   release(u) {
@@ -328,6 +401,7 @@ export class Instances {
     }
     for (const e of u.instList || []) if (e.skin) e.mesh.layers.set(0);
     u.instList = null;
+    u.instPlan = null;
     this.units.delete(u);
     u.obj.userData.ship = false;
   }
@@ -338,7 +412,10 @@ export class Instances {
       put = this.put;
     _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     for (const p of this.list) p.n = 0;
-    if (this.jobs?.broken) this.jobs = null;
+    if (this.jobs?.broken) {
+      this.jobs = null;
+      for (const unit of this.units) unit.instPlan = null;
+    }
     const J = this.jobs;
     if (J) J.begin();
     let drawn = 0;
@@ -398,6 +475,13 @@ export class Instances {
       }
       const fading = ta < -1.001;
       const world = obj.matrixWorld;
+      const plannable = Instances.drawPlans && !whole && !castsShadow && !u.shieldMesh;
+      if (plannable && u.instPlan) {
+        drawn += this.drawPlanned(u.instPlan, world.elements, fading, tr, tg, tb, ta);
+        obj.visible = false;
+        put.push(obj);
+        continue;
+      }
       if (u.instMerges && (u.anim || u.buildAnim)) this.unmerge(u);
       if (u.instMerges)
         for (let i = 0; i < list.length; i++) {
@@ -555,6 +639,7 @@ export class Instances {
       if (!rest) {
         obj.visible = false;
         put.push(obj);
+        if (plannable && u.instPlan === null) u.instPlan = this.planFor(u, list, !!J);
       }
     }
     if (J) J.run();

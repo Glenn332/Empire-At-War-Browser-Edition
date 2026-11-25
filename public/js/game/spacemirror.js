@@ -235,6 +235,7 @@ export class SpaceMirror {
     if (hp.part) hp.part.visible = false;
     if (hp.decal) hp.decal.visible = true;
     hp.smoke = !unit.proxies.some(px => px.hp === hp);
+    if (hp.smoke) unit.smokingPoints++;
   }
 
   frame(real = 0) {
@@ -596,9 +597,17 @@ export class SpaceMirror {
       if (e.isSquad) e.dead = true;
       else w.removeUnit(e);
     }
+    // The battle thread sends a hardpoint only when it changed (see SpaceRecorder), a unit's hardpoints and abilities
+    // one after the other: the unit is looked up once for each run.
     const H = m.points;
+    let lastId = -1,
+      lastUnit = null;
     for (let o = 0; o < H.length; o += POINT) {
-      const u = this.byW.get(H[o]),
+      if (H[o] !== lastId) {
+        lastId = H[o];
+        lastUnit = this.byW.get(lastId);
+      }
+      const u = lastUnit,
         hp = u && !u.dead && u.hardpoints && u.hardpoints[H[o + 1]];
       if (!hp) continue;
       if (!H[o + 2] && hp.alive) this.hardpointLost(u, hp);
@@ -626,8 +635,13 @@ export class SpaceMirror {
       if (e.obj) e.obj.visible = !c || !e.type.bool('Hides_When_Built_On', true);
     }
     const A = m.abilities;
+    lastId = -1;
     for (let o = 0; o < A.length; o += ABILITY) {
-      const u = this.byW.get(A[o]),
+      if (A[o] !== lastId) {
+        lastId = A[o];
+        lastUnit = this.byW.get(lastId);
+      }
+      const u = lastUnit,
         st = u && u.abilities && u.abilities[A[o + 1]];
       if (!st) continue;
       st.active = !!(A[o + 2] & 1);

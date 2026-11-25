@@ -371,6 +371,25 @@ function cover() {
   if (me.stats.killed || foe.stats.killed) covered.add('kills');
   if (me.everBought?.size) covered.add('lifetime build count');
 }
+// Hardpoints reach the page only when they change, so every one is checked against the worker's.
+let hardpointsCompared = 0,
+  hardpointsDamaged = 0,
+  hardpointsLost = 0;
+function compareHardpoints(unit, pageUnit) {
+  const label = unit.type.name + '#' + unit.id;
+  if (unit.hardpoints.length !== pageUnit.hardpoints.length) return note('hardpoints.count', label);
+  unit.hardpoints.forEach((hardpoint, index) => {
+    const pageHardpoint = pageUnit.hardpoints[index],
+      target = hardpoint.target && !hardpoint.target.dead ? hardpoint.target : null;
+    hardpointsCompared++;
+    if (!hardpoint.alive) hardpointsLost++;
+    else if (hardpoint.health < hardpoint.maxHealth) hardpointsDamaged++;
+    if (hardpoint.alive !== pageHardpoint.alive) note('hardpoint.alive', label + ' ' + index + ': worker ' + hardpoint.alive);
+    if (!same(hardpoint.health, pageHardpoint.health, 0, 'hardpoint.health'))
+      note('hardpoint.health', label + ' ' + index + ': worker ' + hardpoint.health + ' page ' + pageHardpoint.health);
+    if ((target ? twin(target) : null) !== (pageHardpoint.target || null)) note('hardpoint.target', label + ' ' + index);
+  });
+}
 function compare() {
   cover();
   for (const u of truth.units) {
@@ -381,6 +400,7 @@ function compare() {
       continue;
     }
     compareObject(u.isFighter ? 'Fighter' : 'Unit', u, p);
+    compareHardpoints(u, p);
   }
   for (const q of truth.squads) {
     if (q.dead) continue;
@@ -497,4 +517,5 @@ assert.equal(list.length, 0, `${list.length} fields differ between the battle wo
 const missed = want.filter(k => !covered.has(k));
 assert.deepEqual(missed, [], 'the battle never reached: ' + missed.join(', '));
 assert.equal(mirror.stats.failed, 0, 'every battle event plays on the page');
-console.log('space mirror parity ok');
+assert(hardpointsDamaged > 0 && hardpointsLost > 0, 'the battle damaged and destroyed hardpoints');
+console.log(`space mirror parity ok (${hardpointsCompared} hardpoint checks, ${hardpointsDamaged} damaged, ${hardpointsLost} lost)`);

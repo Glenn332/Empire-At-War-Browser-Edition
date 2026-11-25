@@ -464,6 +464,7 @@ export function restore(game, save) {
           h.alive = false;
           h.health = 0;
           h.smoke = true;
+          u.smokingPoints++;
           if (h.part) h.part.visible = false;
           if (h.decal) h.decal.visible = true;
         } else h.health = Math.min(h.maxHealth, o.hps[i] * k);
