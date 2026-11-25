@@ -144,7 +144,8 @@ function matchSpeed(scene, row, lead, sq, v, lo, hi) {
     const b = Math.max(h0, sp),
       dAcc = (b * b - v * v) / (2 * thr);
     if (dAcc <= 0) return h0;
-    const k = Math.max(-along / dAcc, 0);
+    // never past the upper speed: see World.matchSpeed
+    const k = clamp(-along / dAcc, 0, 1);
     return (1 - k) * f[lead + DF.SPEED] + k * h0;
   }
   return v;

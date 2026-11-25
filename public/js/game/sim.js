@@ -6266,7 +6266,10 @@ export class World {
       const b = Math.max(h0, sp),
         dAcc = (b * b - v * v) / (2 * thr);
       if (dAcc <= 0) return h0;
-      const k = Math.max(-along / dAcc, 0);
+      // A wingman behind its slot speeds up towards the upper speed, never past it. Without the limit one far
+      // behind (launched late from a hangar, or left behind by a turn) was given many times its top speed and shot
+      // across the map and along its edge until it found its slot again.
+      const k = clamp(-along / dAcc, 0, 1);
       return (1 - k) * lead.speed + k * h0;
     }
     return v;

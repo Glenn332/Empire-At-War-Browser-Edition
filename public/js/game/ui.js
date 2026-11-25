@@ -166,6 +166,9 @@ function typeName(type) {
 }
 
 const ICON_LIFT = 0.048;
+// How far from a dogfight cell's centre a squadron's fighters may be for its icon to take its place there: twice the
+// distance the battle holds dogfighting fighters within (DOG_NEAR in sim.js, a squared distance).
+const DOGFIGHT_PLACE_REACH = 2 * Math.sqrt(80000);
 
 const autoRetarget = st => !!st && st.auto && st.active && !st.def.toggle && st.def.duration > 0 && st.def.target !== 'none';
 
@@ -1166,6 +1169,17 @@ export class UI {
     return out;
   }
 
+  // How many logic frames of battle time went by since the overlay was last drawn (a fraction at a high frame rate,
+  // none while the battle is paused). The battle time is the one being shown: the mirror's display clock when the
+  // battle runs on its own thread.
+  logicFramesSince() {
+    const mirror = this.game.mirror,
+      shown = mirror && mirror.clock !== undefined ? mirror.clock : this.world.time,
+      before = this.overlayBattleTime;
+    this.overlayBattleTime = shown;
+    return before === undefined ? 0 : Math.max(0, Math.min(6, (shown - before) * 30));
+  }
+
   layoutDogfights() {
     const w = this.world,
       want = (this.dfWant ||= new Map());
@@ -1189,8 +1203,13 @@ export class UI {
         k = 0;
       for (const s of l) {
         if (s.dead || s.player !== me || !s.fighters.length) continue;
-        const z = this.boxCentre(s, (this._bc ||= {})).z,
-          q = this.r.pickGround(x, y + ICON_LIFT * this.r.height, {}, z);
+        // A squadron keeps its place in the cell's rows, but its icon only sits there while its fighters are at the
+        // dogfight (ours). One that is still flying in, or was called back to the ship it guards, keeps its icon over
+        // its fighters; before, the icon stayed at the dogfight far from the squadron until the fight was dropped.
+        const middle = this.boxCentre(s, (this._bc ||= {})),
+          z = middle.z,
+          atDogfight = (middle.x - m.x) ** 2 + (middle.y - m.y) ** 2 <= DOGFIGHT_PLACE_REACH ** 2,
+          q = atDogfight ? this.r.pickGround(x, y + ICON_LIFT * this.r.height, {}, z) : null;
         if (q) {
           q.z = z;
           want.set(s, q);
@@ -1259,7 +1278,9 @@ export class UI {
       p.v = 0;
       return p;
     }
-    if (!(s.mode === 'combat' && s.target && s.target.isSquad)) p.docked = false;
+    // An icon is docked at its place in one dogfight cell: when the squadron takes another cell it glides there
+    // with its fighters instead of jumping to the new place.
+    if (!(s.mode === 'combat' && s.target && s.target.isSquad) || p.dockedCell !== s.dogKey) p.docked = false;
     const slot = this.dfWant && this.dfWant.get(s);
     if (slot) {
       p.tx = slot.x;
@@ -1286,18 +1307,26 @@ export class UI {
       dy = p.ty - p.y,
       dz = p.tz - p.z,
       d = Math.hypot(dx, dy, dz);
-    if ((slot || parked) && a > 0 && (p.v * p.v) / (2 * a) >= d) p.v -= a;
-    else p.v += a;
+    // The glide is the engine's, in logic frames: it runs for as much battle time as passed since the last drawn
+    // frame. Run once per drawn frame it went several times too fast at a high frame rate, and the icon flew to a far
+    // dogfight place long before its fighters, and back again when they turned to another target.
+    const frames = this.logicFramesShown || 0;
+    if ((slot || parked) && a > 0 && (p.v * p.v) / (2 * a) >= d) p.v -= a * frames;
+    else p.v += a * frames;
     p.v = Math.max(0, Math.min(p.v, top));
-    if (d < p.v || d < 1e-3) {
+    const glide = p.v * frames;
+    if (d < glide || d < 1e-3) {
       p.x = p.tx;
       p.y = p.ty;
       p.z = p.tz;
-      if (slot) p.docked = true;
+      if (slot) {
+        p.docked = true;
+        p.dockedCell = s.dogKey;
+      }
     } else {
-      p.x += (dx / d) * p.v;
-      p.y += (dy / d) * p.v;
-      p.z += (dz / d) * p.v;
+      p.x += (dx / d) * glide;
+      p.y += (dy / d) * glide;
+      p.z += (dz / d) * glide;
     }
     return p;
   }
@@ -1830,6 +1859,7 @@ export class UI {
       grab = gb && gb.blank ? Math.max(16, Math.round(gb.blank.w * gb.scale * unit)) : 0;
     const grabHealth = gb && gb.health ? Math.max(10, Math.round(gb.health.w * gb.healthScale * unit)) : 0;
     this.overlayFrame = (this.overlayFrame || 0) + 1;
+    this.logicFramesShown = this.logicFramesSince();
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
       const enemy = s.player.team !== me.team && s.player.id >= 0;
       if (enemy && !this.sees(s)) continue;
