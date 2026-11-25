@@ -444,6 +444,10 @@ function releasePictures(t) {
   // A material that copies the cached texture (planet.fx samplers, with their own filtering) uploads the copy, and the
   // cached one is never drawn, so it would hold the file's pictures for the whole session. Drop them too: a later copy
   // or upload reads the file again (see FileTexture.copy and waiting()).
+  releaseBase(t, file);
+}
+
+function releaseBase(t, file) {
   const base = textures.get(file.name.toUpperCase() + (file.repeat ? '' : '|C'));
   if (base && base !== t && !keepData.has(base) && hasPictures(base)) {
     base.mipmaps = base.mipmaps.map(m => ({ width: m.width, height: m.height }));
@@ -460,7 +464,8 @@ function capPictures(t) {
   if (!skip) return;
   const file = files.get(t.source),
     top = t.mipmaps[skip];
-  t.mipmaps = t.mipmaps.slice(skip);
+  // The kept levels are views into the whole file: copy them out, or the dropped top levels stay in memory with it.
+  t.mipmaps = t.mipmaps.slice(skip).map(m => (m.data ? { ...m, data: m.data.slice() } : m));
   t.source = new THREE.Source({ width: top.width, height: top.height, depth: t.image?.depth });
   if (file) files.set(t.source, file);
 }
@@ -488,9 +493,14 @@ export function capTexture(t, cap) {
 let capLoads = 0;
 
 // A copy of a cached texture, limited to `cap` texels when its pictures are in.
+// The cached texture it was copied from is never drawn by the copy's material, so its pictures go now rather than when
+// the copy reaches the GPU: a planet off screen is not drawn, and would hold the whole file until the camera passes it.
 export function capCopy(t, cap) {
   t.userData.cap = cap | 0;
-  if (hasPictures(t)) capPictures(t);
+  if (!hasPictures(t)) return;
+  capPictures(t);
+  const file = files.get(t.source);
+  if (file && t.userData.cap) releaseBase(t, file);
 }
 
 function restorePictures(t, keep = false) {
@@ -498,7 +508,7 @@ function restorePictures(t, keep = false) {
   const file = files.get(t.source);
   if (!file || restoring.has(t) || hasPictures(t)) return;
   restoring.add(t);
-  picture(file.name, file.repeat).then(real => {
+  t.userData.pictures = picture(file.name, file.repeat).then(real => {
     restoring.delete(t);
     t.mipmaps = real.mipmaps.slice();
     t.source = real.source;

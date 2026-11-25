@@ -393,6 +393,7 @@ export class GalacticGame {
         P(`Placing the planets (${++done}/${g.planets.length})`, 0.1 + (0.8 * done) / g.planets.length);
       })
     ).finally(() => setPlanetTextureCap(0));
+    this.uploadPlanetTextures().catch(e => console.warn('planet textures', e));
     this.bounds = this.planetBounds();
     this.clampPan();
     this.marker = await loadModel('w_planet_select_neutral.alo').catch(() => null);
@@ -3683,19 +3684,33 @@ export class GalacticGame {
     return false;
   }
 
+  planetTextures(n) {
+    const out = new Set();
+    this.planetViews[n]?.inst?.root.traverse(o => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material])
+        for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture && u.value.userData.ready) out.add(u.value);
+    });
+    return out;
+  }
+
+  // Send every planet's textures to the GPU once they are in, so their pictures leave the page's memory. A planet off
+  // screen (or a view of it not shown yet) is never drawn, and would otherwise hold its file data all game.
+  async uploadPlanetTextures() {
+    const all = new Set();
+    for (let i = 0; i < this.planetViews.length; i++) for (const t of this.planetTextures(i)) all.add(t);
+    await Promise.all([...all].map(t => Promise.resolve(t.userData.ready).catch(() => null)));
+    // A copy made after its cached texture let its pictures go reads the file again (see FileTexture.copy).
+    await Promise.all([...all].map(t => Promise.resolve(t.userData.pictures).catch(() => null)));
+    if (this.over || !this.renderer?.initTexture) return;
+    for (const t of all) if (!t.userData.missing && (t.mipmaps?.[0]?.data || t.image?.data)) this.renderer.initTexture(t);
+  }
+
   // The galaxy map loads planet textures at most PLANET_TEXTURE_CAP texels: zoomed out, a planet is a few hundred
   // pixels across. The planet zoomed into gets its whole textures, and keeps them until another planet is zoomed into.
   planetDetail(i) {
     if (this.fullPlanet === i) return;
-    const textures = n => {
-      const out = new Set();
-      this.planetViews[n]?.inst?.root.traverse(o => {
-        if (!o.isMesh) return;
-        for (const m of Array.isArray(o.material) ? o.material : [o.material])
-          for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture && 'cap' in u.value.userData) out.add(u.value);
-      });
-      return out;
-    };
+    const textures = n => new Set([...this.planetTextures(n)].filter(t => 'cap' in t.userData));
     const now = textures(i);
     if (this.fullPlanet !== undefined) for (const t of textures(this.fullPlanet)) if (!now.has(t)) capTexture(t, PLANET_TEXTURE_CAP);
     for (const t of now) capTexture(t, 0);

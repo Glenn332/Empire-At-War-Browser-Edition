@@ -142,8 +142,9 @@ export async function fetchPart(path, from, length) {
   return { bytes: bytes.slice(from, from + length), total: bytes.byteLength };
 }
 
+// XML is parsed once into a tree, so its bytes are not kept after the read (a large mod has hundreds of megabytes).
 export async function fetchText(path) {
-  const buf = await fetchBinary(path);
+  const buf = await fetchBinary(path, { keep: !/\.xml$/i.test(path) });
   if (!buf) return null;
   if (/\.lua$/i.test(path) && isLua50Chunk(buf)) return lua50ToSource(buf);
   return new TextDecoder('windows-1252').decode(buf);
