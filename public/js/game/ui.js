@@ -1836,9 +1836,11 @@ export class UI {
       if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
-      const r = Math.min(this.screenRadius(s), 260);
       const size = grab ? grab : s.isSquad || s.isFighter ? Math.round(iconSize * 0.9) : iconSize;
       const hasIcon = (unitIcon(s) || !!this.world.flagshipRiders?.has(s)) && this.drawUnitIcon(g, s, p.x, p.y, enemy, size);
+      // the size on screen only matters without an icon, or for the corners drawn around a selected or hovered unit
+      const cornered = !this.r.rings && (s.selected || s === this.hover);
+      const r = !hasIcon || cornered ? Math.min(this.screenRadius(s), 260) : 0;
       const col =
         s.player.id < 0
           ? '#b9c4cf'
@@ -1847,7 +1849,7 @@ export class UI {
             : s.player === me
               ? '#6be675'
               : (s.player._hex ||= '#' + s.player.color.getHexString());
-      if (!this.r.rings && (s.selected || s === this.hover)) {
+      if (cornered) {
         g.strokeStyle = col;
         g.lineWidth = s.selected ? 1.6 : 1;
         g.globalAlpha = s.selected ? 0.95 : 0.6;

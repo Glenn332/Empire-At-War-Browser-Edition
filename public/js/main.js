@@ -25,6 +25,7 @@ import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
+import { UnitPoses } from './game/unitposes.js';
 import { seedSim } from './game/simrandom.js';
 import { Lockstep, TURN, CHAT_MAX, chatText } from './game/netgame.js';
 import { ticker, NetSession } from './net.js';
@@ -2170,39 +2171,7 @@ class Game {
 
   remember() {
     const w = this.world;
-    for (const u of w.units) {
-      if (u.dead) continue;
-      const roll = u.roll || 0;
-      if (u.cx === undefined) {
-        u.px = u.x;
-        u.py = u.y;
-        u.pz = u.z;
-        u.ph = u.heading;
-        u.pr = roll;
-      } else {
-        u.px = u.cx;
-        u.py = u.cy;
-        u.pz = u.cz;
-        u.ph = u.ch;
-        u.pr = u.cr;
-      }
-      u.cx = u.x;
-      u.cy = u.y;
-      u.cz = u.z;
-      u.ch = u.heading;
-      u.cr = roll;
-      if (u.isFighter) {
-        const pitch = u.pitch || 0;
-        u.pp = u.cp ?? pitch;
-        u.cp = pitch;
-        if (u.flip) {
-          u.flip = false;
-          u.ph += u.ph > 0 ? -Math.PI : Math.PI;
-          u.pp = (u.pp < 0 ? -Math.PI : Math.PI) - u.pp;
-          u.pr += u.pr > 0 ? -Math.PI : Math.PI;
-        }
-      }
-    }
+    (this.poses ||= new UnitPoses()).remember(w.units);
     for (const q of w.squads) {
       if (q.dead) continue;
       if (q.cx === undefined) {
@@ -2242,105 +2211,7 @@ class Game {
     su.length = 0;
     sq.length = 0;
     sp.length = 0;
-    const units = w.units;
-    for (let i = 0; i < units.length; i++) {
-      const u = units[i];
-      if (u.dead || u.cx === undefined) continue;
-      const cx = u.cx,
-        cy = u.cy,
-        cz = u.cz,
-        ch = u.ch,
-        cr = u.cr,
-        px = u.px,
-        py = u.py,
-        pz = u.pz,
-        ph = u.ph,
-        pr = u.pr;
-      if (
-        px === cx &&
-        py === cy &&
-        pz === cz &&
-        ph === ch &&
-        pr === cr &&
-        cx === u.x &&
-        cy === u.y &&
-        cz === u.z &&
-        ch === u.heading &&
-        cr === (u.roll || 0)
-      ) {
-        if (u.wasShown) {
-          u.wasShown = false;
-          u.syncObj();
-        }
-        continue;
-      }
-      u.tx = u.x;
-      u.ty = u.y;
-      u.tz = u.z;
-      u.th = u.heading;
-      u.tr = u.roll;
-      let dh = ch - ph;
-      if (dh > Math.PI) dh -= 2 * Math.PI;
-      else if (dh < -Math.PI) dh += 2 * Math.PI;
-      const x = (u.x = u.ix = px + (cx - px) * k),
-        y = (u.y = u.iy = py + (cy - py) * k),
-        z = (u.z = u.iz = pz + (cz - pz) * k);
-      const h = (u.heading = u.ih = ph + dh * k),
-        roll = (u.roll = u.ir = pr + (cr - pr) * k);
-      const o = u.obj,
-        e = o.matrix.elements,
-        s = o.scale.x,
-        a = h + Math.PI / 2,
-        ca = Math.cos(a) * s,
-        sa = Math.sin(a) * s;
-      o.position.set(x, y, z);
-      if (u.cp || u.pp) {
-        // A climbing or diving fighter: heading, then pitch, then roll, written straight into the matrix. Thousands of
-        // fighters turn every frame, and building each one's quaternion first cost more than the rest of this loop.
-        u.tp = u.pitch;
-        const pitch = (u.pitch = u.pp + (u.cp - u.pp) * k);
-        u.pitched = true;
-        const cosPitch = Math.cos(pitch),
-          sinPitch = Math.sin(pitch),
-          cosRoll = Math.cos(roll),
-          sinRoll = Math.sin(roll);
-        e[0] = ca * cosRoll + sa * sinPitch * sinRoll;
-        e[1] = sa * cosRoll - ca * sinPitch * sinRoll;
-        e[2] = -cosPitch * sinRoll * s;
-        e[4] = -sa * cosPitch;
-        e[5] = ca * cosPitch;
-        e[6] = -sinPitch * s;
-        e[8] = ca * sinRoll - sa * sinPitch * cosRoll;
-        e[9] = sa * sinRoll + ca * sinPitch * cosRoll;
-        e[10] = cosPitch * cosRoll * s;
-      } else {
-        if (roll) {
-          const cro = Math.cos(roll),
-            sro = Math.sin(roll);
-          e[0] = ca * cro;
-          e[1] = sa * cro;
-          e[2] = -sro * s;
-          e[8] = ca * sro;
-          e[9] = sa * sro;
-          e[10] = cro * s;
-        } else {
-          e[0] = ca;
-          e[1] = sa;
-          e[2] = 0;
-          e[8] = 0;
-          e[9] = 0;
-          e[10] = s;
-        }
-        e[4] = -sa;
-        e[5] = ca;
-        e[6] = 0;
-      }
-      e[12] = x;
-      e[13] = y;
-      e[14] = z;
-      u.wasShown = true;
-      su.push(u);
-    }
+    if (this.poses) this.poses.present(w.units, k, su);
     for (const q of w.squads) {
       if (q.dead || q.cx === undefined || (q.px === q.cx && q.py === q.cy && q.cx === q.x && q.cy === q.y)) continue;
       q.tx = q.x;
@@ -2370,18 +2241,7 @@ class Game {
       sq = this.shownSquads,
       sp = this.shownShots;
     if (!su) return;
-    for (let i = 0; i < su.length; i++) {
-      const u = su[i];
-      if (u.x === u.ix) u.x = u.tx;
-      if (u.y === u.iy) u.y = u.ty;
-      if (u.z === u.iz) u.z = u.tz;
-      if (u.heading === u.ih) u.heading = u.th;
-      if (u.roll === u.ir) u.roll = u.tr;
-      if (u.pitched) {
-        u.pitch = u.tp;
-        u.pitched = false;
-      }
-    }
+    if (this.poses) this.poses.settle(su);
     for (const q of sq) {
       if (q.x === q.ix) q.x = q.tx;
       if (q.y === q.iy) q.y = q.ty;
