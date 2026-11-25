@@ -286,10 +286,14 @@ export class SpaceMirror {
       now = performance.now();
     if (!Q.length && this.shown === undefined) return;
     // real is capped for the simulation; drawing follows the wall clock so slow frames do not fall behind
-    const dt = this.playedAt === undefined ? real : Math.min(1, (now - this.playedAt) / 1000);
+    const gap = this.playedAt === undefined ? 0 : now - this.playedAt,
+      dt = this.playedAt === undefined ? real : Math.min(1, gap / 1000);
     this.playedAt = now;
     const newest = Q.length ? Q[Q.length - 1].time : this.shown,
       held = cap <= 0;
+    // the silence a stopped battle thread is judged by counts only while the battle should be running: a pause, a
+    // step arriving or a break in page frames (menus, another window) starts it again
+    if (held || gap > 1000 || (this.arrivedAt || 0) > (this.quietFrom || 0)) this.quietFrom = now;
     const r = (this.arrival ||= { at: now, time: newest, rate: cap < Infinity ? cap : g.speed || 1, cap });
     if (held || cap > r.cap) {
       // paused, or sped up: start the new pace from the chosen speed and let the arrivals correct it
@@ -328,10 +332,10 @@ export class SpaceMirror {
     }
     // Everything here is shown, the battle runs and nothing holds it, yet no step for ten seconds: the battle thread
     // has stopped. Say so instead of leaving a frozen battle.
-    if (single && !held && !Q.length && !this.heldFor && !g.over && now - (this.arrivedAt || now) > 10000) {
+    if (single && !held && !Q.length && !this.heldFor && !g.over && now - this.quietFrom > 10000) {
       if (!this.silent) {
         this.silent = true;
-        console.error('space worker: no battle step for ' + Math.round((now - this.arrivedAt) / 1000) + ' s at game time ' + this.shown);
+        console.error('space worker: no battle step for ' + Math.round((now - this.quietFrom) / 1000) + ' s at game time ' + this.shown);
         g.message?.('The battle stopped responding. Please save a battle report and send it to us.', 'bad');
       }
     } else this.silent = false;
