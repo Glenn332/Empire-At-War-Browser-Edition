@@ -189,6 +189,8 @@ export class GPURenderer {
     this.format = navigator.gpu.getPreferredCanvasFormat();
     if (this.domElement.style) this.domElement.style.transform = 'scaleY(-1)';
     this.autoClear = true;
+    // a pass drawn under a later one on the same canvas: keep it in the MSAA target and let the last pass resolve it all once
+    this.holdResolve = false;
     this.sortObjects = true;
     this.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.debug = { checkShaderErrors: false };
@@ -643,7 +645,7 @@ export class GPURenderer {
     this.softNow = soft;
     const color = {
       view: T.colorView,
-      resolveTarget: T.samples > 1 && !soft ? T.resolve : undefined,
+      resolveTarget: T.samples > 1 && !soft && !this.holdResolve ? T.resolve : undefined,
       loadOp: owed && owed.color ? 'clear' : 'load',
       storeOp: 'store',
       clearValue: (owed && owed.value) || [0, 0, 0, 1]
@@ -758,7 +760,7 @@ export class GPURenderer {
     rp.end();
     const pass = this.encoder.beginRenderPass({
       colorAttachments: [
-        { view: T.colorView, resolveTarget: T.samples > 1 ? T.resolve : undefined, loadOp: 'load', storeOp: 'store' }
+        { view: T.colorView, resolveTarget: T.samples > 1 && !this.holdResolve ? T.resolve : undefined, loadOp: 'load', storeOp: 'store' }
       ],
       depthStencilAttachment: {
         view: T.depthView,

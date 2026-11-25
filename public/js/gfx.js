@@ -19,7 +19,9 @@ const OWN = {
   shadow: 3,
   shadowRange: 8,
   gamma: 0.5,
-  level: -1
+  level: -1,
+  // frames per second the galaxy map draws at most; 0 draws at the screen's own refresh rate
+  fpsCap: 60
 };
 
 function read() {
@@ -52,6 +54,11 @@ export function shadowSize() {
 export const SHADOW_RANGE_MAX = 8;
 export function shadowReach() {
   return Math.max(1, Math.min(SHADOW_RANGE_MAX, +gfx.shadowRange || OWN.shadowRange));
+}
+
+export function frameCap() {
+  const cap = +gfx.fpsCap;
+  return Number.isFinite(cap) && cap > 0 ? Math.max(15, cap) : 0;
 }
 
 export const SUPERSAMPLE_STEPS = [1, 1.5, 2];
