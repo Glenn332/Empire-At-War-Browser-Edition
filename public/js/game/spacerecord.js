@@ -48,6 +48,7 @@ export class SpaceRecorder {
     this.fresh = [];
     this.sent = new Map();
     this.sentPoints = new Map();
+    this.sentAbilities = new Map();
     this.props = [];
     this.teams = [];
     this.world_ = [];
@@ -267,6 +268,7 @@ export class SpaceRecorder {
       const live = new Set();
       for (let i = 0; i < us.length; i++) if (!us[i].dead) live.add(us[i].id);
       for (const id of this.sentPoints.keys()) if (!live.has(id)) this.sentPoints.delete(id);
+      for (const id of this.sentAbilities.keys()) if (!live.has(id)) this.sentAbilities.delete(id);
     }
     let na = 0;
     for (let i = 0; i < us.length; i++) if (!us[i].dead) na += us[i].abilities ? us[i].abilities.length : 0;
@@ -277,16 +279,29 @@ export class SpaceRecorder {
     for (let i = 0; i < us.length; i++) {
       const u = us[i];
       if (u.dead) continue;
-      if (u.abilities)
+      if (u.abilities && u.abilities.length) {
+        // like hardpoints, an ability is written only when it changed: most of a big battle's abilities sit idle
+        let sent = this.sentAbilities.get(u.id);
+        if (!sent || sent.length !== u.abilities.length * 3)
+          this.sentAbilities.set(u.id, (sent = new Float64Array(u.abilities.length * 3).fill(NaN)));
         for (let k = 0; k < u.abilities.length; k++) {
-          const st = u.abilities[k];
+          const st = u.abilities[k],
+            flags = (st.active ? 1 : 0) | (st.auto ? 2 : 0),
+            timer = st.timer || 0,
+            cooldown = st.cooldown || 0,
+            at = k * 3;
+          if (sent[at] === flags && sent[at + 1] === timer && sent[at + 2] === cooldown) continue;
+          sent[at] = flags;
+          sent[at + 1] = timer;
+          sent[at + 2] = cooldown;
           A[a] = u.id;
           A[a + 1] = k;
-          A[a + 2] = (st.active ? 1 : 0) | (st.auto ? 2 : 0);
-          A[a + 3] = st.timer || 0;
-          A[a + 4] = st.cooldown || 0;
+          A[a + 2] = flags;
+          A[a + 3] = timer;
+          A[a + 4] = cooldown;
           a += ABILITY;
         }
+      }
       if (u.buildQueues && u.buildQueues.size) {
         const qs = [];
         for (const [k, q] of u.buildQueues)

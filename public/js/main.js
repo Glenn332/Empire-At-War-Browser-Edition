@@ -3062,6 +3062,8 @@ async function boot() {
       }
       w.autofire = box.checked;
       for (const u of w.units) if (u.player?.human) for (const a of u.abilities || []) if (a.def.autofire) a.auto = box.checked;
+      // the battle thread only sends an ability when it changes: have it send them all again over what was just set here
+      window.game.mirror?.worker.postMessage({ k: 'resendAbilities' });
     };
   }
   window.applyGraphics = renderer => {

@@ -179,6 +179,11 @@ const simOnly = {
     'pathExt',
     'pathOff',
     'pickAt',
+    'abilities.data',
+    'tickedAbilities',
+    'deflectFrom',
+    'deflectShield',
+    'deflectJamming',
     'scanTimer',
     'shieldAt',
     'shieldDownTimer',
@@ -197,6 +202,7 @@ const simOnly = {
     'hyper.h'
   ],
   squad: [
+    'huntTimer',
     'aim',
     'aimHp',
     'chase',
@@ -390,6 +396,23 @@ function compareHardpoints(unit, pageUnit) {
     if ((target ? twin(target) : null) !== (pageHardpoint.target || null)) note('hardpoint.target', label + ' ' + index);
   });
 }
+// Abilities reach the page only when they change, too.
+let abilitiesCompared = 0,
+  abilitiesBusy = 0;
+function compareAbilities(unit, pageUnit) {
+  const label = unit.type.name + '#' + unit.id;
+  if (unit.abilities.length !== pageUnit.abilities.length) return note('abilities.count', label);
+  unit.abilities.forEach((ability, index) => {
+    const pageAbility = pageUnit.abilities[index];
+    abilitiesCompared++;
+    if (ability.timer > 0 || ability.cooldown > 0) abilitiesBusy++;
+    for (const field of ['active', 'auto'])
+      if (!!ability[field] !== !!pageAbility[field]) note('ability.' + field, label + ' ' + ability.def.kind + ': worker ' + ability[field]);
+    for (const field of ['timer', 'cooldown'])
+      if (!same(ability[field] || 0, pageAbility[field] || 0, 0, 'ability.' + field))
+        note('ability.' + field, label + ' ' + ability.def.kind + ': worker ' + ability[field] + ' page ' + pageAbility[field]);
+  });
+}
 function compare() {
   cover();
   for (const u of truth.units) {
@@ -401,6 +424,7 @@ function compare() {
     }
     compareObject(u.isFighter ? 'Fighter' : 'Unit', u, p);
     compareHardpoints(u, p);
+    compareAbilities(u, p);
   }
   for (const q of truth.squads) {
     if (q.dead) continue;
@@ -486,6 +510,12 @@ const at = {
   },
   300: () => {
     for (const f of truth.squads.find(s => !s.dead && s.player === foe)?.fighters || []) [f.x, f.y] = [me.station.x + 300, me.station.y];
+  },
+  // abilities are given a cooldown to run down, so that a changing ability reaches the page step by step
+  380: () => {
+    const cooling = truth.units.filter(u => !u.dead && u.abilities.length).slice(0, 6);
+    assert(cooling.length, 'units with abilities');
+    for (const unit of cooling) unit.abilities[0].cooldown = 8;
   }
 };
 for (let i = 1; i <= steps; i++) {
@@ -518,4 +548,7 @@ const missed = want.filter(k => !covered.has(k));
 assert.deepEqual(missed, [], 'the battle never reached: ' + missed.join(', '));
 assert.equal(mirror.stats.failed, 0, 'every battle event plays on the page');
 assert(hardpointsDamaged > 0 && hardpointsLost > 0, 'the battle damaged and destroyed hardpoints');
-console.log(`space mirror parity ok (${hardpointsCompared} hardpoint checks, ${hardpointsDamaged} damaged, ${hardpointsLost} lost)`);
+assert(abilitiesBusy > 0, 'an ability was running or cooling down while the worlds were compared');
+console.log(
+  `space mirror parity ok (${hardpointsCompared} hardpoint checks, ${hardpointsDamaged} damaged, ${hardpointsLost} lost; ${abilitiesCompared} ability checks, ${abilitiesBusy} running or cooling down)`
+);

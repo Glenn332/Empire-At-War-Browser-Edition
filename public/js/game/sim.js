@@ -14,6 +14,7 @@ import { prioritySet, priorityOf, setOf } from './priorities.js';
 import { BountyBook, bountyValue } from './bounty.js';
 import { losingSideBonus } from './losingbonus.js';
 import { getModelData, buildModel, flattenModel, PartGroup } from '../model.js';
+import { HitGrid } from './hitgrid.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import {
   parseAbilities,
@@ -75,8 +76,7 @@ const UNIT_CELL = 1024,
   UNIT_PAD = 200;
 const HIT_CELL = 256;
 // Teams the projectile grid keeps separate lists for; the list after them holds every unit.
-const HIT_TEAMS = 7,
-  HIT_LISTS = HIT_TEAMS + 1;
+const HIT_TEAMS = 7;
 const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
 const FIELD_CELL = 1024;
@@ -823,6 +823,9 @@ export class Unit {
     this.modsIncome = undefined;
     this.passives = undefined;
     this.tickedAbilities = undefined;
+    this.deflectFrom = undefined;
+    this.deflectShield = undefined;
+    this.deflectJamming = undefined;
     this.instTurretsOnly = undefined;
     this.instPosed = undefined;
     this.aim = undefined;
@@ -5630,14 +5633,19 @@ export class World {
         let r = (u.type._missileShield ??= u.type.num('Passive_Missile_Shield_Radius', 0));
         const abilities = u.abilities;
         if (abilities.length) {
-          // The first ability of each kind decides, as abilityState would pick it.
-          let shield = null,
-            jamming = null;
-          for (const a of abilities) {
-            const kind = a.def.kind;
-            if (kind === 'MISSILE_SHIELD') shield ||= a;
-            else if (kind === 'SENSOR_JAMMING') jamming ||= a;
+          // The first ability of each kind decides, as abilityState would pick it. A unit's abilities are looked
+          // through once, not for every step: with thousands of units that was a millisecond of each step.
+          if (u.deflectFrom !== abilities) {
+            u.deflectFrom = abilities;
+            u.deflectShield = u.deflectJamming = null;
+            for (const a of abilities) {
+              const kind = a.def.kind;
+              if (kind === 'MISSILE_SHIELD') u.deflectShield ||= a;
+              else if (kind === 'SENSOR_JAMMING') u.deflectJamming ||= a;
+            }
           }
+          const shield = u.deflectShield,
+            jamming = u.deflectJamming;
           if (shield && shield.active) r = shield.def.node.num('Effective_Radius', r);
           if (jamming && jamming.active) r = jamming.def.node.num('Effective_Radius', r);
         }
@@ -5761,26 +5769,26 @@ export class World {
         let hit = null,
           hitPart = null,
           ht = 2;
-        const hg = this.hitGrid,
-          hitters = this._hitters,
+        const hitters = this._hitters,
           hitX = this.hitX,
           hitY = this.hitY,
           hitR = this.hitR,
           C = HIT_CELL,
           shotTeam = this.hitTeams.get(p.team),
-          list = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS ? HIT_TEAMS : shotTeam;
-        if (list === HIT_TEAMS && !this.hitWhole) this.fillHitGrid(false, true);
+          everyone = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS;
+        if (everyone && !this.hitWhole) this.fileEveryHitter();
+        const grid = everyone ? this.hitEveryone : this.hitByTeam,
+          list = everyone ? 0 : shotTeam;
         const cx0 = Math.floor(Math.min(x0, p.x) / C),
           cx1 = Math.floor(Math.max(x0, p.x) / C),
           cy0 = Math.floor(Math.min(y0, p.y) / C),
           cy1 = Math.floor(Math.max(y0, p.y) / C);
         for (let ix = cx0; ix <= cx1; ix++)
           for (let iy = cy0; iy <= cy1; iy++) {
-            const l = hg.get((ix * 65536 + iy) * HIT_LISTS + list);
-            if (l)
-              for (let k = 0; k < l.length; k++) {
+            if (grid.find(ix, iy, list))
+              for (let k = grid.from, to = grid.to, source = grid.source; k < to; k++) {
                 // far units are passed over from the grid's own numbers, without touching the unit
-                const index = l[k],
+                const index = source[k],
                   r = hitR[index] + step,
                   awayX = hitX[index] - p.x,
                   awayY = hitY[index] - p.y;
@@ -5882,11 +5890,8 @@ export class World {
   // hittable units, whose position and reach sit in plain number arrays beside it: a shot in a crowd of fighters
   // rules nearly all of them out by distance, and reading that from each unit was most of the cost of moving shots.
   makeHitGrid() {
-    const hg = this.hitGrid || (this.hitGrid = new Map()),
-      teams = (this.hitTeams ||= new Map()),
+    const teams = (this.hitTeams ||= new Map()),
       hitters = (this._hitters ||= []);
-    if (hg.size > 1 << 16) hg.clear();
-    else for (const l of hg.values()) l.length = 0;
     teams.clear();
     hitters.length = 0;
     this.hitWhole = false;
@@ -5901,6 +5906,7 @@ export class World {
       this.hitX = new Float64Array(room);
       this.hitY = new Float64Array(room);
       this.hitR = new Float64Array(room);
+      this.hitOwnList = new Int32Array(room);
     }
     for (let i = 0; i < hitters.length; i++) {
       const o = hitters[i];
@@ -5908,49 +5914,24 @@ export class World {
       this.hitX[i] = o.x;
       this.hitY[i] = o.y;
       this.hitR[i] = Math.max(o.hitReach || o.hitRadius, o.collR || 0, o.collBall || 0);
+      this.hitOwnList[i] = teams.get(o.player.team);
     }
-    const split = teams.size <= HIT_TEAMS;
+    const split = teams.size > 0 && teams.size <= HIT_TEAMS;
+    if (split) this.fileHitters((this.hitByTeam ||= new HitGrid(HIT_CELL)), this.hitOwnList, teams.size);
     let whole = !split;
     if (!whole) for (const p of this.projectiles) if (!teams.has(p.team)) whole = true;
-    this.fillHitGrid(split, whole);
+    if (whole) this.fileEveryHitter();
   }
 
-  // Files the grid's units into the per-team lists (split) and the whole lists (whole).
-  fillHitGrid(split, whole) {
-    const hg = this.hitGrid,
-      C = HIT_CELL,
-      teams = this.hitTeams;
-    this.hitWhole = whole || this.hitWhole;
-    const teamLists = split ? teams.size : 0,
-      hitters = this._hitters;
-    for (let index = 0; index < hitters.length; index++) {
-      const o = hitters[index],
-        own = split ? teams.get(o.player.team) : -1;
-      const r = Math.max(
-        o.hitA ? (o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL)) : o.hitRadius,
-        o.collR || 0,
-        o.collBall || 0
-      );
-      const x0 = Math.floor((o.x - r) / C),
-        x1 = Math.floor((o.x + r) / C),
-        y0 = Math.floor((o.y - r) / C),
-        y1 = Math.floor((o.y + r) / C);
-      for (let ix = x0; ix <= x1; ix++)
-        for (let iy = y0; iy <= y1; iy++) {
-          const cell = (ix * 65536 + iy) * HIT_LISTS;
-          for (let t = 0; t < teamLists; t++) {
-            if (t === own) continue;
-            let l = hg.get(cell + t);
-            if (!l) hg.set(cell + t, (l = []));
-            l.push(index);
-          }
-          if (whole) {
-            let l = hg.get(cell + HIT_TEAMS);
-            if (!l) hg.set(cell + HIT_TEAMS, (l = []));
-            l.push(index);
-          }
-        }
-    }
+  // The one list of every hittable unit, for shots of a team that has no unit in the grid (or with too many teams).
+  fileEveryHitter() {
+    this.hitWhole = true;
+    this.fileHitters((this.hitEveryone ||= new HitGrid(HIT_CELL)), null, 1);
+  }
+
+  fileHitters(grid, ownList, lists) {
+    const edge = HIT_CELL * 4;
+    grid.build(this._hitters.length, this.hitX, this.hitY, this.hitR, ownList, lists, this.min.x - edge, this.min.y - edge, this.max.x + edge, this.max.y + edge);
   }
 
   cullOf(o) {

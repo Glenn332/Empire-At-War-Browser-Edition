@@ -556,7 +556,8 @@ async function run(m) {
     }
     else if (c.k === 'jobs') {
       if (w.ahead) w.ahead.on = !!c.on;
-    } else if (c.k === 'pace') {
+    } else if (c.k === 'resendAbilities') rec.sentAbilities.clear();
+    else if (c.k === 'pace') {
       speed = c.speed || 1;
       paused = !!c.paused && !replaying;
     } else if (c.k === 'save') {
