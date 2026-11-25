@@ -682,6 +682,18 @@ class LandUnit {
   }
 }
 export const landUnit = fields => Object.assign(new LandUnit(), fields);
+// the sharing tags of an Income_Stream_Ability; a stream that carries none of them leaves split undefined
+export const incomeSplit = inc => {
+  const yes = k => /^(yes|true)$/i.test(inc.val(k).trim());
+  if (!inc.val('Split_Income_With_Allies').trim()) return {};
+  const share = inc.val('Owner_Income_Percentage').trim();
+  return {
+    split: yes('Split_Income_With_Allies'),
+    full: yes('Full_Amount_To_Everyone'),
+    favors: yes('Split_Favors_Owner'),
+    ownerShare: share ? inc.num('Owner_Income_Percentage', 0) : undefined
+  };
+};
 export const landHealth = (type, none) => type.num('Tactical_Health', none) * db.constants.num('Object_Max_Health_Multiplier_Land', 1);
 
 export class LandSquad {
@@ -2842,7 +2854,8 @@ export class LandWorld {
             value: inc.num('Base_Income_Value', 0),
             every: inc.num('Base_Interval_In_Secs', 5),
             timer: 0,
-            skirmish: /^skirmish_automatic$/i.test(inc.val('Activation_Style').trim())
+            skirmish: /^skirmish_automatic$/i.test(inc.val('Activation_Style').trim()),
+            ...incomeSplit(inc)
           }
         : null,
       isBase: /COMMAND.?CENTER|PALACE/i.test(type.name),
@@ -3673,6 +3686,22 @@ export class LandWorld {
     }
   }
 
+  // Who an income stream pays and what part of it, as its Income_Stream_Ability says: Split_Income_With_Allies
+  // shares it with the owner's team, Full_Amount_To_Everyone gives each of them the whole amount (every stock FoC
+  // stream), else it is divided - Split_Favors_Owner keeps Owner_Income_Percentage for the owner and the allies
+  // divide the rest. A stream with no split tag at all keeps the earlier rule (base buildings pay the team).
+  incomeShares(u) {
+    const inc = u.income,
+      team = this.teamSides(u.side);
+    if (inc.split === undefined) return (u.site && u.site.base ? team : [u.side]).map(s => [s, 1]);
+    const allies = team.filter(s => s !== u.side);
+    if (!inc.split || !allies.length) return [[u.side, 1]];
+    if (inc.full) return team.map(s => [s, 1]);
+    if (!inc.favors || inc.ownerShare === undefined) return team.map(s => [s, 1 / team.length]);
+    const mine = Math.max(0, Math.min(1, inc.ownerShare));
+    return team.map(s => [s, s === u.side ? mine : (1 - mine) / allies.length]);
+  }
+
   losingTeamBonus(span) {
     const k = db.constants.num('Multiplayer_Losing_Team_Bonus_Credit_Percentage', 0);
     if (!(k > 0)) return;
@@ -3687,8 +3716,8 @@ export class LandWorld {
     const rate = new Array(n).fill(0);
     for (const u of this.units) {
       if (!u.structure || u.dead || u.side < 0 || !u.income || (u.income.skirmish && this.campaign)) continue;
-      for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side])
-        if (s < n) rate[s] += (u.income.value * this.incomeMod(u, s)) / Math.max(1e-3, u.income.every);
+      for (const [s, part] of this.incomeShares(u))
+        if (s < n) rate[s] += (u.income.value * part * this.incomeMod(u, s)) / Math.max(1e-3, u.income.every);
     }
     losingSideBonus(
       [...byTeam.values()].map(g => ({ players: g, earn: g.reduce((a, s) => a + rate[s], 0), paid: true })),
@@ -3713,8 +3742,8 @@ export class LandWorld {
       if (!u.structure || u.dead || u.side < 0) continue;
       if (u.income && !this.shooter && !(u.income.skirmish && this.campaign) && (u.income.timer += dt) >= u.income.every) {
         u.income.timer -= u.income.every;
-        for (const s of u.site && u.site.base ? this.teamSides(u.side) : [u.side]) {
-          const g = u.income.value * this.incomeMod(u, s) * this.mods[s].credit;
+        for (const [s, part] of this.incomeShares(u)) {
+          const g = u.income.value * part * this.incomeMod(u, s) * this.mods[s].credit;
           this.credits[s] += g;
           if (this.earned) this.earned[s] += g;
         }
@@ -5398,6 +5427,7 @@ export class LandWorld {
     u.health -= amount - soak;
     u.lastHit = this.time;
     this.trackDamage(u, amount, from);
+    if (this.onHurt && amount > 0) this.onHurt(u, from, amount);
     if (from && from.side !== undefined) u.hitBy = from.side;
     if (from && from !== u && from.type && !from.dead) {
       const m = (u.hurtBy ||= new Map()),
