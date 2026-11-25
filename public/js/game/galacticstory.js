@@ -12,6 +12,7 @@ import { LuaVM, LuaRef, Multi, loadFengari, engineLacksMethod } from '../lua.js'
 import { GalacticNeutralizePopup } from './galacticpopup.js';
 import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
+import { level } from './galacticai.js';
 import { placeStartingForce, forceKind, replaceFirstFleet } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { planetIncome, playerIncome, adjustCredits } from './galacticeconomy.js';
@@ -668,7 +669,7 @@ export class GalacticStoryHost extends StoryPlots {
       __call: (owner, equation, flags, probability, range) =>
         game.ai?.findTarget(owner?.__faction, equation, flags, probability, null, null, range),
       Reachable_Target: (owner, equation, flags, reach, probability, target, range) =>
-        game.ai?.findTarget(owner?.__faction, equation, flags, probability, target?.__planet, reach, range)
+        game.ai?.findTarget(owner?.__faction, equation, flags, probability, target?.__planet || target?.__object?.planet, reach, range)
     });
     vm.global('FindPlanet', {
       __wrap: true,
@@ -902,7 +903,7 @@ export class GalacticStoryHost extends StoryPlots {
         if (!p || typeof level !== 'number') return;
         raiseTech(this.game, p.faction, level);
       },
-      Get_Difficulty: () => ({ easy: 'Easy', medium: 'Normal', hard: 'Hard' })[this.game.setup?.difficulty] || 'Normal',
+      Get_Difficulty: () => ({ easy: 'Easy', normal: 'Normal', hard: 'Hard' })[level(data()?.difficulty || this.game.setup?.difficulty)],
       Lock_Tech: type => this.tech(faction.name, type?.__type, false),
       Unlock_Tech: type => this.tech(faction.name, type?.__type, true),
       Is_Enemy: other => {
@@ -1118,7 +1119,7 @@ export class GalacticStoryHost extends StoryPlots {
         },
         Is_Valid: () => true,
         Get_Type: () => this.type(p.type),
-        Get_Owner: () => this.player(p.owner),
+        Get_Owner: () => this.ownerPlayer(p.owner),
         Get_Position: () => this.position(...p.pos),
         Get_Planet_Location: () => wrapper,
         Get_Next_Starbase_Type: () => this.nextBase(p, true),
@@ -1375,7 +1376,7 @@ export class GalacticStoryHost extends StoryPlots {
       __object: object,
       Is_Valid: () => !object.dead && !record.dead,
       Get_Type: () => this.type(object.type),
-      Get_Owner: () => this.player(object.owner),
+      Get_Owner: () => this.ownerPlayer(object.owner),
       Get_Planet_Location: () => this.planet(object.planet),
       Get_Game_Scoring_Type: () => this.type(record.carries || object.type),
       Get_Final_Blow_Player: () => this.player(object.finalBlowOwner || this.neutralOwner()),
@@ -1885,6 +1886,9 @@ export class GalacticStoryHost extends StoryPlots {
     if (fn) inst.events.push({ fn, params });
   }
 
+  ownerPlayer(owner) {
+    return this.player(owner || this.neutralOwner());
+  }
   neutralOwner() {
     return [...db.factions.values()].find(t => t.bool('Is_Neutral'))?.name;
   }
