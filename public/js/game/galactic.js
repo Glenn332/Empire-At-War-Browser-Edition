@@ -2054,6 +2054,11 @@ export class GalacticGame {
     if (!encyclopedia) return;
     const tips = (this.tips ||= new TooltipGate(this, encyclopedia));
     tips.update();
+    const hero = this.heroTip;
+    if (hero) {
+      tips.hover({ id: 'hero:' + hero.id, key: 'hero:' + hero.type.name, show: () => encyclopedia.showType(hero.type, false) });
+      return;
+    }
     const build = this.buildTip,
       b = build?.b;
     if (b && b._type && b.style.display !== 'none') {

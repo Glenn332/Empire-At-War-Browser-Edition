@@ -36,6 +36,7 @@ import { RetreatCoordinator, showRetreatLine, hasRetreatPrevention } from './ret
 import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
+import { DoubleClick } from './doubleclick.js';
 import { Decals, scorch } from './landdecals.js';
 import {
   activateSpawners,
@@ -2619,31 +2620,34 @@ export class LandGame {
       if (!this.controlsLocked && this.turnDrag === 'tilt' && e.buttons & 2)
         v.pitch = Math.min(far[1] * DEG, Math.max(k[0][1] * DEG, v.pitch + e.movementY * 0.005));
     });
-    const send = (x, y, mode = '') => {
+    const send = (x, y, mode = '', twice = false) => {
       if (this.controlsLocked) return;
-      issue(this.unitAt(x, y), this.groundAt(x, y), mode);
+      issue(this.unitAt(x, y), this.groundAt(x, y), mode, twice);
     };
+    const rightTwice = new DoubleClick();
     // A right click on the minimap (or a click there with a move order armed) sends the selection to that spot of the map,
     // the way a right click on the ground does.
-    this.mapOrder = (x, y, mode = '') => {
+    this.mapOrder = (x, y, mode = '', twice = false) => {
       if (this.controlsLocked || this.setup.attract || this.cine.on || this.direct) return false;
       const lo = this.map.playMin || [0, 0],
         hi = this.map.playMax || lo;
       x = Math.min(hi[0], Math.max(lo[0], x));
       y = Math.min(hi[1], Math.max(lo[1], y));
       const armed = ARMED_ORDERS.has(ui.armed) && !ui.placing && !ui.aiming ? ui.armed : null;
-      issue(null, { x, y }, armed || mode);
+      issue(null, { x, y }, armed || mode, twice && !armed);
       if (armed && armed !== 'attackmove') ui.armed = null;
       this.hudTimer = 0;
       return true;
     };
-    const issue = (foe, g, mode = '') => {
+    const issue = (foe, g, mode = '', twice = false) => {
       const attack = foe && !w.ally(foe.side, me) && !foe.dead;
+      // A double right-click on the ground sends every squad at its own top speed, not the group's shared pace.
+      twice = twice && !attack && !mode && !!g;
       let spoke = false;
       const sel = ui.movers();
       if (!sel.length || (!attack && !g)) return;
-      const r = this.command({ c: 'move', u: sel.map(q => q.id), mode, t: attack ? foe.squad.id : 0, ...(g ? { x: g.x, y: g.y } : {}) });
-      if (!attack && g) ui.radar?.click(g.x, g.y, mode === 'attack');
+      const r = this.command({ c: 'move', u: sel.map(q => q.id), mode, t: attack ? foe.squad.id : 0, ...(g ? { x: g.x, y: g.y } : {}), ...(twice ? { max: true } : {}) });
+      if (!attack && g) ui.radar?.click(g.x, g.y, mode === 'attack', twice);
       const at = r?.at || new Map();
       for (const q of sel) {
         if (!attack && g && mode === 'attack' && q.members.some(u => u.needsDeploy && u.weapon)) {
@@ -2663,7 +2667,9 @@ export class LandGame {
                   ? '#7fd4ff'
                   : mode === 'guard'
                     ? '#4fb3ff'
-                    : '#6be675'
+                    : twice
+                      ? '#d8ffd8'
+                      : '#6be675'
           });
         if (!spoke) spoke = !!this.audio.playVoice(q.members[0], q.members[0].type.str(attack ? 'SFXEvent_Attack' : 'SFXEvent_Move'));
       }
@@ -2826,7 +2832,7 @@ export class LandGame {
             if (w.canExit(on)) ui.leave(on);
             else this.audio.play('GUI_Bad_Sound');
           } else if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
-          else send(cx, cy);
+          else send(cx, cy, '', rightTwice.hit(e.clientX, e.clientY));
         }
       }
     });

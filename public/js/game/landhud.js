@@ -17,6 +17,7 @@ import {
 import { CELL } from './terrain.js';
 import { Radar } from './radar.js';
 import { BeaconView } from './beacons.js';
+import { DoubleClick } from './doubleclick.js';
 import { PICKS_UNIT, SILENT, bribeCost } from './landabilities.js';
 
 const $ = id => document.getElementById(id);
@@ -318,6 +319,7 @@ export class LandUI {
     this.pb.hidden = this.pbCharge.hidden = true;
     this.bar.covers = [{ node: this.pb, build: true }];
     const mm = $('minimap');
+    const mapTwice = new DoubleClick();
     const at = e => minimapPoint(mm.getBoundingClientRect(), e.clientX, e.clientY, game.map.playMin, game.map.playMax);
     const look = e => {
       if (game.controlsLocked) return;
@@ -332,7 +334,7 @@ export class LandUI {
         e.preventDefault();
         e.stopPropagation();
         const p = at(e);
-        game.mapOrder?.(p.x, p.y, e.ctrlKey ? 'attackmove' : '');
+        game.mapOrder?.(p.x, p.y, e.ctrlKey ? 'attackmove' : '', e.button === 2 && !e.ctrlKey && mapTwice.hit(e.clientX, e.clientY));
       } else if (e.button === 0) look(e);
     });
     mm.addEventListener('mousemove', e => {

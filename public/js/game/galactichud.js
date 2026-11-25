@@ -477,6 +477,11 @@ export class GalacticBar extends CommandBar {
     this.heroFocus(h);
   }
 
+  heroHover(h, on) {
+    if (on) this.game.heroTip = { id: h.e.id, type: h.type };
+    else if (this.game.heroTip?.id === h.e.id) this.game.heroTip = null;
+  }
+
   heroFocus(h) {
     const game = this.game,
       v = game.view;

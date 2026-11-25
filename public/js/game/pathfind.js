@@ -539,8 +539,7 @@ export class Pathfinder extends PathCore {
     }
     const p = r.pts[r.i];
     if (p.turn || p.arc) {
-      r.wp.x = u.x + Math.cos(p.h) * 1000;
-      r.wp.y = u.y + Math.sin(p.h) * 1000;
+      this.ahead(u, p.h, r.wp);
       r.wp.speed = p.turn ? 0 : p.speed;
     } else {
       r.wp.x = p.x;
@@ -551,10 +550,27 @@ export class Pathfinder extends PathCore {
   }
 
   stopAhead(u, r) {
-    r.wp.x = u.x + Math.cos(u.heading) * 1000;
-    r.wp.y = u.y + Math.sin(u.heading) * 1000;
+    this.ahead(u, u.heading, r.wp);
     r.wp.speed = 0;
     return r.wp;
+  }
+
+  // A point straight ahead along heading h that only gives the direction to steer: 1000 out, but never past the
+  // map edge, where the ship steering takes no waypoint (it would steer for the order goal instead, so a turn on
+  // the spot near the edge never came round and a held ship kept flying).
+  ahead(u, h, wp) {
+    const w = this.world,
+      c = Math.cos(h),
+      s = Math.sin(h);
+    let L = 1000;
+    if (c > 1e-9) L = Math.min(L, (w.max.x - u.x) / c);
+    else if (c < -1e-9) L = Math.min(L, (w.min.x - u.x) / c);
+    if (s > 1e-9) L = Math.min(L, (w.max.y - u.y) / s);
+    else if (s < -1e-9) L = Math.min(L, (w.min.y - u.y) / s);
+    L = Math.max(1, L * 0.999);
+    wp.x = Math.min(w.max.x, Math.max(w.min.x, u.x + c * L));
+    wp.y = Math.min(w.max.y, Math.max(w.min.y, u.y + s * L));
+    return wp;
   }
 
   holdOld(u, t) {

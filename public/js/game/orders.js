@@ -175,6 +175,7 @@ function newWing(world, first, kind, gx, gy, target) {
     escort: null,
     check: world.time + 1 + ((id % 30) + 1) / 30,
     follow: false,
+    still: 0,
     at: null,
     reached: false,
     key: '',
@@ -612,7 +613,7 @@ function spotBlockers(world, bonus) {
   const cells = kept.cells;
   for (const l of cells.values()) l.length = 0;
   for (const o of world.units) {
-    if (o.isFighter || o.isPad) continue;
+    if (o.isFighter || o.isPad || fieldProp(o)) continue;
     const k = !o.isStructure && tracked ? paths.trackBy.get(o) : null;
     let x0, x1, y0, y1;
     if (k) {
@@ -647,9 +648,14 @@ function spotBlockers(world, bonus) {
   return kept;
 }
 
+// A nebula, ion storm or asteroid field prop the map puts down as an object: the world leaves it out of what stands
+// still (flownThrough in sim.js), and obstacleAt tests its field as a field, by the same rules as the route search.
+const fieldProp = o =>
+  (o._fieldProp ??= !!o.isStructure && (o.type.bool('Is_Asteroid_Field') || o.type.bool('Is_Nebula') || o.type.bool('Is_Ion_Storm')));
+
 // Whether `o` blocks the spot: the same test for every candidate, whichever way they were found.
 function blocks(world, e, p, r, group, bonus, o) {
-  if (o.dead || group.has(o) || o.isFighter || o.isPad || o === e) return false;
+  if (o.dead || group.has(o) || o.isFighter || o.isPad || o === e || fieldProp(o)) return false;
   const dx = p.x - o.x,
     dy = p.y - o.y,
     d = Math.hypot(dx, dy),

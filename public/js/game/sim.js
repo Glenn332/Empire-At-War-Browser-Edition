@@ -403,17 +403,18 @@ const castsShadow = m => {
   if (v === undefined) shadowModels.set(m, (v = !!m.meshes?.some(x => x.subs?.some(s => /shadowvolume/i.test(s.material?.shader || '')))));
   return v;
 };
-function bankIntoTurn(unit, turn, turnRate, dt) {
+export function bankIntoTurn(unit, turn, turnRate, dt) {
   const bank = unit.bankAngle;
   if (!(dt > 0)) return;
   if (!(bank > 0) || !(unit.rollRate > 0)) {
     if (!(bank > 0)) unit.roll = 0;
     return;
   }
-  const turnShare = Math.min(1, Math.abs(turn) / (turnRate * dt || 1));
-  let want = turn >= 0 ? bank : -bank;
-  if (turnShare < 0.5) want *= turnShare * 2;
-  const step = clamp(Math.abs(want - unit.roll) / bank, 0.1, 1) * unit.rollRate * dt;
+  // Bank_Turn_Angle is the lean at Max_Rate_Of_Turn; the lean follows how much of that rate the ship is turning at,
+  // and moves at no more than Max_Rate_Of_Roll.
+  const share = turnRate > 0 ? Math.min(1, Math.abs(turn) / (turnRate * dt)) : 0;
+  const want = (turn >= 0 ? bank : -bank) * share;
+  const step = unit.rollRate * dt;
   unit.roll = unit.roll < want ? Math.min(want, unit.roll + step) : Math.max(want, unit.roll - step);
 }
 const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
@@ -6467,8 +6468,10 @@ export class World {
     return false;
   }
 
-  squadPick(s, lead, cur) {
-    const ord = s.order,
+  // `escorted`: the ship a squadron escorts on an attack order (see escortGoal). The squadron then answers what
+  // comes at that ship or at itself as if it guarded the ship, and goes back to the escort once that is dealt with.
+  squadPick(s, lead, cur, escorted = null) {
+    const ord = escorted ? { kind: 'guard', target: escorted } : s.order,
       kind = ord.kind,
       lt = s.type;
     const range =
@@ -6489,7 +6492,7 @@ export class World {
     const respond = (o, start = true) => {
       if (range < 0) return false;
       // Idle squadrons take on what comes into weapon reach, parked ones too (ours: they used to shoot only from where they sat).
-      if (kind === 'idle' && inWeapon(o)) return true;
+      if ((kind === 'idle' || kind === 'guard') && inWeapon(o)) return true;
       const hurt = (ext || parked) && this.hurtBy(s, o);
       if (parked && !hurt) return false;
       const f = hull + range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
@@ -6501,55 +6504,62 @@ export class World {
       low = db.constants.num('Health_Low_Percent_Threshold', 0.33);
     let keep = cur && !cur.dead ? (cur.isSquad ? cur.fighters[0] : cur) : null;
     if (keep && !respond(keep, false)) keep = null;
-    const was = s.fireTarget && !s.fireTarget.dead ? (s.fireTarget.isSquad ? s.fireTarget.fighters[0] : s.fireTarget) : null;
+    const team = s.player.team,
+      sight = s.player.bit,
+      valid = o => !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || inJump(o) || !(o.seenBy & sight));
+    const was0 = s.fireTarget && !s.fireTarget.dead ? (s.fireTarget.isSquad ? s.fireTarget.fighters[0] : s.fireTarget) : null,
+      was = was0 && valid(was0) ? was0 : null;
     const wp = !!lead.weapon;
+    // Two picks from the same scan: what the guns fire at (in weapon reach or answered) and what the squadron goes
+    // after (answered only), so an enemy that only passes in front of the guns never hides one that is answered.
     let best = null,
-      br = 0,
-      bp,
-      bestIsLow;
+      chase = null;
     if (was && (inWeapon(was) || respond(was)) && rate(was) >= 0) {
       const left = (was.toKill + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
     }
-    if (!best) {
-      const team = s.player.team,
-        sight = s.player.bit;
+    const sticky = !!best;
+    if (best && kind !== 'move' && respond(best)) chase = best;
+    if (!best || (!chase && kind !== 'move' && range >= 0)) {
       const candidates = this.unitsAround(
         lead,
         reach,
         range < 0 ? null : anchor,
         hull + range + ext + reach,
-        o =>
-          !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || inJump(o) || !(o.seenBy & sight)) &&
-          (inWeapon(o) || respond(o)),
+        o => valid(o) && (inWeapon(o) || respond(o)),
         this.squadPickCandidates
       );
+      const fires = new Map(),
+        fire = o => {
+          let v = fires.get(o);
+          if (v === undefined) fires.set(o, (v = this.canFire(lead, o)));
+          return v;
+        };
+      const better = (o, r, b, brate) => {
+        const lo = o.healthFrac <= low,
+          lb = b.healthFrac <= low;
+        if (lo !== lb) return lo;
+        if (r !== brate) return r < brate;
+        if (wp && fire(b) !== fire(o)) return fire(o);
+        return dist2(lead, o) < dist2(lead, b);
+      };
+      let br = 0,
+        cr = 0;
       for (const o of candidates) {
         const r = rate(o);
         if (r < 0) continue;
-        if (!best) {
+        if (!sticky && (!best || better(o, r, best, br))) {
           best = o;
           br = r;
-          continue;
         }
-        const lo = o.healthFrac <= low,
-          lb = (bestIsLow ??= best.healthFrac <= low);
-        let take,
-          po;
-        if (lo !== lb) take = lo;
-        else if (r !== br) take = r < br;
-        else if (wp && (bp ??= this.canFire(lead, best)) !== (po = this.canFire(lead, o))) take = po;
-        else take = dist2(lead, o) < dist2(lead, best);
-        if (take) {
-          best = o;
-          br = r;
-          bp = po;
-          bestIsLow = lo;
+        if (kind !== 'move' && respond(o) && (!chase || better(o, r, chase, cr))) {
+          chase = o;
+          cr = r;
         }
       }
     }
     s.fireTarget = best ? best.squad || best : null;
-    if (best && kind !== 'move' && respond(best)) return best.squad || best;
+    if (chase && kind !== 'move') return chase.squad || chase;
     return keep ? cur : null;
   }
 
@@ -6631,7 +6641,7 @@ export class World {
   }
 
   dogAnswer(t, by) {
-    if (!t.fighters[0] || t.mode === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
+    if (!t.fighters[0] || t.order.kind === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
     const tt = t.target || t.fireTarget;
     if (tt && !tt.dead && tt.isSquad) return;
     this.autoAttack(t, by);
@@ -6728,7 +6738,9 @@ export class World {
     s.cruise = undefined;
     const wing = ord.wing && (ord.kind === 'move' || ord.kind === 'attackmove' || ord.kind === 'attack') ? ord.wing : null,
       esc = wing && wing.escort && s.fighters[0] ? this.escortGoal(s, wing) : null;
-    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
+    const atkTarget = ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
+    // An escort keeps what it took on in defence of its ship (squadPick with the ship) until that is gone.
+    if (ord.kind === 'attack') tgt = esc ? (tgt && tgt !== ord.target && !this.befriended(s, tgt) ? tgt : null) : atkTarget;
     if (!esc && !tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
@@ -6744,12 +6756,17 @@ export class World {
     }
     const lead = s.fighters[0];
     if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
-    else if (ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target)) s.fireTarget = ord.target;
-    else if (s.scanTimer <= 0 && lead) {
+    else if (ord.kind === 'attack' && esc) {
+      if (s.scanTimer <= 0 && lead) {
+        s.scanTimer = 1 + simRandom() * 0.5;
+        tgt = this.squadPick(s, lead, tgt, wing.escort);
+      }
+      if (!tgt && (!s.fireTarget || s.fireTarget.dead)) s.fireTarget = atkTarget;
+    } else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
         s.homeOf = ord;
-        s.home = { x: s.x, y: s.y };
+        s.home = { x: lead.x, y: lead.y };
       }
       tgt = this.squadPick(s, lead, tgt);
     }
@@ -6839,8 +6856,10 @@ export class World {
         }
       } else if (ord.kind === 'guard') {
         if (ord.target && ord.target.dead) {
-          const t = this.posOf(ord.target);
-          s.setOrder({ kind: 'move', x: t.x, y: t.y });
+          // As a ship whose guarded unit dies (updateShip): idle where it is, answering what comes within
+          // Idle_Chase_Range, not a move to the wreck that answers nothing on the way.
+          s.setOrder({ kind: 'idle' });
+          s.alone = true;
         } else {
           const p = this.guardSpot(s, ord),
             keep = 150 + (ord.target ? ord.target.radius || 0 : 0);
@@ -6895,7 +6914,10 @@ export class World {
           (o.kind === 'move' || o.kind === 'attackmove') &&
           o.x !== undefined &&
           (sh.x - o.x) ** 2 + (sh.y - o.y) ** 2 > (ESCORT_KEEP + (sh.radius || 0)) ** 2;
-      if ((!sh.going && !underway) || (o.kind === 'attack' && o.reached)) {
+      // A ship held still for three checks in a row (a route that failed, turning on the spot, a jam) is no
+      // longer taking its escort anywhere: the squadrons go on to the target themselves.
+      w.still = sh.going && sh.speed < 1 ? (w.still || 0) + 1 : 0;
+      if ((!underway && (!sh.going || w.still >= 3)) || (o.kind === 'attack' && o.reached)) {
         dropEscort(w);
         return null;
       }

@@ -314,7 +314,7 @@ export class Radar {
     this.events.push({ def, x, y, age: 0, obj: def.persistent ? obj : null });
   }
 
-  click(x, y, attack) {
+  click(x, y, attack, twice = false) {
     const C = db.constants,
       name = (key, def) => (C ? C.str(key).trim() : '') || def,
       click = name('GUI_Movement_Click_Radar_Event_Name', 'Default_Click'),
@@ -322,7 +322,7 @@ export class Radar {
       last = this.lastClick;
     this.lastClick = { t: now, x, y };
     if (attack) this.event(name('GUI_Attack_Movement_Click_Radar_Event_Name', 'Default_Attack_Click'), x, y);
-    else if (last && now - last.t < 350 && Math.hypot(x - last.x, y - last.y) < 250) {
+    else if (twice || (last && now - last.t < 350 && Math.hypot(x - last.x, y - last.y) < 250)) {
       this.removeLatest(click);
       this.event(name('GUI_Movement_Double_Click_Radar_Event_Name', 'Default_Double_Click'), x, y);
       this.lastClick = null;

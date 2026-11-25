@@ -1950,6 +1950,11 @@ export class CommandBar {
     this.ui.select([h.e], ev.shiftKey);
   }
 
+  heroHover(h, on) {
+    if (on) this.tipOn('hero' + h.e.id, h.type);
+    else this.hideInfo();
+  }
+
   heroFocus(h) {
     this.ui.r.rig.x = h.e.x;
     this.ui.r.rig.y = h.e.y;
@@ -2011,10 +2016,17 @@ export class CommandBar {
         ring.style.backgroundImage = css(this.tex(id, 'Blank_Texture_Name'));
         over.style.backgroundImage = css(this.tex(id, 'Mouse_Over_Texture_Name'));
         hp.style.backgroundImage = css(this.tex('hero_hb_' + side + '00', 'Bar_Texture_Name'));
-        d.title = db.t(h.type.str('Text_ID')) || h.type.name.replace(/_/g, ' ');
+        // The encyclopedia popup the unit buttons show, not a native title, for every hero icon, own or not.
+        d.setAttribute('aria-label', db.t(h.type.str('Text_ID')) || h.type.name.replace(/_/g, ' '));
+        d.onmouseenter = () => this.heroHover(d._h, true);
+        d.onmouseleave = () => this.heroHover(d._h, false);
+        d.onmousedown = ev => ev.stopPropagation();
         if (good && h.e.player === this.player) {
           const c = this.comp(id);
-          d.onmouseenter = () => this.game.audio.play(c.val('Mouse_Over_SFX'));
+          d.onmouseenter = () => {
+            this.game.audio.play(c.val('Mouse_Over_SFX'));
+            this.heroHover(d._h, true);
+          };
           d.onclick = ev => {
             ev.stopPropagation();
             this.game.audio.play(c.val('Click_SFX'));

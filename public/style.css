@@ -1265,6 +1265,7 @@ body:not(.original-hud) .heroframe {
 }
 .heroslot {
   position: absolute;
+  pointer-events: auto;
 }
 .heroslot.mine {
   cursor: pointer;

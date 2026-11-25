@@ -20,6 +20,7 @@ const ORDER_KEYS = [
 ];
 import { Pointers, tacticalPointer } from './pointers.js';
 import { Radar } from './radar.js';
+import { DoubleClick } from './doubleclick.js';
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
@@ -191,6 +192,8 @@ export class UI {
     this.buildSig = '';
     this.selSig = '';
     this.pings = [];
+    this.rightTwice = new DoubleClick();
+    this.mapTwice = new DoubleClick();
     this.lastAlert = -100;
     this.placing = null;
     this.reinSig = null;
@@ -360,7 +363,7 @@ export class UI {
         this.arm(null);
         return;
       }
-      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: e.detail >= 2 };
+      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: this.rightTwice.hit(m.x, m.y) };
       this.ctrlTurn = e.ctrlKey && !e.shiftKey && !e.altKey ? { x: m.x, y: m.y } : null;
       const movers = this.mine().filter(s => !s.dead && (s.isSquad || s.isMobile)),
         g = this.r.pickGround(m.x, m.y),
@@ -1581,8 +1584,8 @@ export class UI {
     this.sayMove(mine, g.x, g.y, attackMove);
   }
 
-  radarClick(x, y, attack) {
-    this.radar.click(x, y, attack);
+  radarClick(x, y, attack, twice = false) {
+    this.radar.click(x, y, attack, twice);
   }
 
   minimapClick(e) {
@@ -1983,6 +1986,11 @@ export class UI {
       g.beginPath();
       g.ellipse(p.x, p.y, 8 + pg.t * 40, (8 + pg.t * 40) * 0.6, 0, 0, 6.283);
       g.stroke();
+      if (pg.twice) {
+        g.beginPath();
+        g.ellipse(p.x, p.y, 4 + pg.t * 70, (4 + pg.t * 70) * 0.6, 0, 0, 6.283);
+        g.stroke();
+      }
       this.pings[n++] = pg;
     }
     this.pings.length = n;
