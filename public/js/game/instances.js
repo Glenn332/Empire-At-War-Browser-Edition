@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { instanceable, alphaInstanceable, skinBatchable } from '../model.js';
 import { CollectJobs } from './collectjobs.js';
+import { mergeableGeometry, mergeGeometries, mergeKey } from './landinstances.js';
 
 const ROW = 24 * 4;
 
@@ -46,6 +47,13 @@ function mulInto(out, o, a, b) {
 // the hull and whatever is in front (shots, effects, shields) draws over them, as it did when each decal was sorted
 // on its own. Before, every decal was a draw call of its own and kept its ship in the renderer's scene walk.
 const DECAL_ORDER = -1000;
+// Opaque hull parts that never change (not decals, shields, engines, girders or collision meshes, which the game
+// shows and hides) are joined per material into one mesh per ship type (ours), so a ship type costs a draw call per
+// material instead of one per part. A unit whose joined part ever hides or changes material goes back to its parts.
+const MERGE_PARTS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('nomerge'));
+const TOGGLED = /BLAST|DECAL|SHIELD|ENGINE|GIRDER|COLLISION|_ALT/i;
+const IDENTITY = new THREE.Matrix4();
+const mergedParts = new WeakMap();
 const SPACE_DECALS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodecalbatch'));
 
 export class Instances {
@@ -191,6 +199,7 @@ export class Instances {
     obj.updateWorldMatrix(true, true);
     _inv.copy(obj.matrixWorld).invert();
     for (const e of list) {
+      if (e.members) continue;
       e.local.multiplyMatrices(_inv, e.mesh.matrixWorld);
       e.dirty = true;
     }
@@ -217,7 +226,10 @@ export class Instances {
       }
       list.push(e);
     });
-    if (list.length !== before) u.instWarm = 4;
+    if (list.length !== before) {
+      u.instWarm = 4;
+      if (MERGE_PARTS && !u.instMergeOff) this.mergeParts(u, list);
+    }
     u.instTurretsOnly =
       !!u.model &&
       !!u.model.flat &&
@@ -229,8 +241,82 @@ export class Instances {
     return list;
   }
 
+  mergeParts(u, list) {
+    const obj = u.obj,
+      decals = new Set(u.hardpoints.map(h => h.decal).filter(Boolean)),
+      groups = new Map();
+    const steady = m => {
+      if (u.engineMeshes && u.engineMeshes.includes(m)) return false;
+      for (let o = m; o && o !== obj; o = o.parent) if (!o.visible || decals.has(o) || TOGGLED.test(o.name || '')) return false;
+      return true;
+    };
+    for (const e of list) {
+      const p = e.pool;
+      if (!p || e.members || e.merged || e.skin || p.skinned || p.order <= DECAL_ORDER / 2 || e.mesh.isSkinnedMesh || !steady(e.mesh)) continue;
+      let g = groups.get(p.mat);
+      if (!g) groups.set(p.mat, (g = []));
+      g.push(e);
+    }
+    for (const [mat, g] of groups) {
+      if (g.length < 2) continue;
+      const names = Object.keys(g[0].mesh.geometry.attributes);
+      const parts = g.filter(e => e.mesh.renderOrder === g[0].mesh.renderOrder && mergeableGeometry(e.mesh.geometry, names));
+      if (parts.length < 2) continue;
+      const meshes = parts.map(e => e.mesh),
+        locals = parts.map(e => e.local),
+        key = mergeKey(meshes, locals);
+      let byKey = mergedParts.get(mat);
+      if (!byKey) mergedParts.set(mat, (byKey = new Map()));
+      let geometry = byKey.get(key);
+      if (!geometry) byKey.set(key, (geometry = mergeGeometries(meshes, locals)));
+      const entry = {
+        mesh: meshes[0],
+        mat,
+        pool: this.poolFor({ material: mat, geometry, renderOrder: meshes[0].renderOrder }),
+        skin: null,
+        local: IDENTITY.clone(),
+        members: meshes,
+        parts
+      };
+      for (const e of parts) e.merged = entry;
+      list.push(entry);
+    }
+    let n = 0;
+    for (const e of list) if (!e.merged) list[n++] = e;
+    list.length = n;
+    u.instMerges = list.some(e => e.members);
+  }
+
+  // A joined part hid or changed material: this unit draws its parts one by one from now on.
+  unmerge(u) {
+    const list = u.instList,
+      back = [];
+    let n = 0;
+    for (const e of list) {
+      if (e.members) {
+        for (const p of e.parts) {
+          p.merged = null;
+          p.dirty = true;
+          back.push(p);
+        }
+      } else list[n++] = e;
+    }
+    list.length = n;
+    list.push(...back);
+    u.instMerges = false;
+    u.instMergeOff = true;
+  }
+
   release(u) {
     for (const e of u.instList || []) {
+      if (e.members) {
+        for (const p of e.parts) {
+          p.mesh.layers.set(0);
+          this.taken.delete(p.mesh);
+          this.known.delete(p.mesh);
+        }
+        continue;
+      }
       if (e.pool) {
         e.mesh.layers.set(0);
         this.taken.delete(e.mesh);
@@ -307,9 +393,25 @@ export class Instances {
       }
       const fading = ta < -1.001;
       const world = obj.matrixWorld;
+      if (u.instMerges)
+        for (let i = 0; i < list.length; i++) {
+          const e = list[i];
+          if (!e.members) continue;
+          let ok = true;
+          for (const p of e.parts) {
+            if (p.mesh.material !== p.mat) ok = false;
+            for (let o = p.mesh; ok && o && o !== obj; o = o.parent) if (!o.visible) ok = false;
+            if (!ok) break;
+          }
+          if (!ok) {
+            this.unmerge(u);
+            break;
+          }
+        }
       if (whole && pose >= 0) {
         _inv.copy(world).invert();
         for (let i = 0; i < list.length; i++) {
+          if (list[i].members) continue;
           list[i].local.multiplyMatrices(_inv, list[i].mesh.matrixWorld);
           list[i].dirty = true;
         }
@@ -321,6 +423,37 @@ export class Instances {
       for (let i = 0; i < list.length; i++) {
         const e = list[i],
           m = e.mesh;
+        if (e.members) {
+          let p = e.pool;
+          if (fading && !p.mat.transparent) {
+            const fp = (e.fpool ||= this.fadePool(p));
+            if (fp.ready) p = fp;
+          }
+          if (p.n === p.cap) this.size(p, p.cap * 2);
+          if (defer0) {
+            if (uk < 0) uk = J.addUnit(world.elements);
+            if (e.slot === undefined) e.slot = J.slot();
+            if (e.dirty !== false) {
+              J.setLocal(e.slot, e.local.elements);
+              e.dirty = false;
+            }
+            J.add(uk, e.slot, p.pid, p.n);
+          } else {
+            const a = p.im.instanceMatrix.array,
+              we = world.elements,
+              at = p.n * 16;
+            for (let k = 0; k < 16; k++) a[at + k] = we[k];
+          }
+          const t = p.tint.array,
+            tt = p.n * 4;
+          t[tt] = tr;
+          t[tt + 1] = tg;
+          t[tt + 2] = tb;
+          t[tt + 3] = ta;
+          p.n++;
+          drawn++;
+          continue;
+        }
         if (e.pool && m.geometry !== e.pool.src) {
           m.layers.set(0);
           this.taken.delete(m);

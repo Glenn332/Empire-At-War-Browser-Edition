@@ -54,7 +54,7 @@ function mergeableMaterial(material) {
   return alphaInstanceable.has(material) && material.depthWrite !== false && (material.uniforms?.alphaRef?.value ?? -1) >= 0;
 }
 
-function mergeableGeometry(geometry, names) {
+export function mergeableGeometry(geometry, names) {
   if (!geometry.index || geometry.groups.length > 1 || Object.keys(geometry.morphAttributes).length) return false;
   const own = Object.keys(geometry.attributes);
   if (own.length !== names.length) return false;
@@ -70,7 +70,7 @@ function relativeMatrices(meshes, holder) {
   return meshes.map(mesh => new THREE.Matrix4().multiplyMatrices(_inverse, mesh.matrixWorld));
 }
 
-function mergeKey(meshes, relatives) {
+export function mergeKey(meshes, relatives) {
   const parts = [];
   for (let i = 0; i < meshes.length; i++) parts.push(meshes[i].geometry.id + '@' + relatives[i].elements.map(value => value.toFixed(3)).join(','));
   return parts.join(';');
@@ -107,7 +107,7 @@ function bakeAttribute(target, source, offset, name, matrix, normalMatrix) {
   to.set(from.subarray(0, count * size), offset * size);
 }
 
-function mergeGeometries(meshes, relatives) {
+export function mergeGeometries(meshes, relatives) {
   const first = meshes[0].geometry,
     names = Object.keys(first.attributes);
   let vertexCount = 0,
