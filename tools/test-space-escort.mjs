@@ -180,4 +180,27 @@ for (const withShip of [false, true]) {
   assert(slowest > 0.9, 'fighters never hover below their minimum speed: ' + slowest.toFixed(2));
 }
 
+for (const attack of [false, true]) {
+  // A double-click move or attack-move sends every ship and squadron at full speed: no formation pace, no escort.
+  const { world, empire, run } = battle(8);
+  const slow = world.spawn(T('Star_Destroyer'), empire, -6000, -500),
+    quick = world.spawn(T('Tartan_Patrol_Cruiser'), empire, -6000, 500),
+    wing = world.spawn(T('TIE_Fighter_Squadron'), empire, -5800, 0);
+  run(1);
+  orderMove([slow, quick, wing], 4000, 0, attack, false, false, 0, true);
+  for (const e of [slow, quick, wing]) {
+    assert.equal(e.order.pace, 1, 'full pace for every unit');
+    assert(!e.order.wing, 'no escort for squadrons');
+  }
+  run(40);
+  assert(quick.x - slow.x > 1500, 'the faster ship pulls ahead of the slower one: ' + (quick.x - slow.x).toFixed(0));
+  const { world: w2, empire: e2, run: run2 } = battle(8);
+  const s2 = w2.spawn(T('Star_Destroyer'), e2, -6000, -500),
+    q2 = w2.spawn(T('Tartan_Patrol_Cruiser'), e2, -6000, 500);
+  run2(1);
+  orderMove([s2, q2], 4000, 0, attack);
+  run2(40);
+  assert(Math.abs(q2.x - s2.x) < 1000, 'a normal group move keeps them together: ' + (q2.x - s2.x).toFixed(0));
+}
+
 console.log('space escort: ok');

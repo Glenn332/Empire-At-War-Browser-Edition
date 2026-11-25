@@ -401,7 +401,9 @@ function keepGuard(e, o) {
   if (was && !was.dead && !was.isSquad) o.guard = was;
 }
 
-export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false, through = 0) {
+// rush (a double-click move or attack-move, ours): every ship and squadron heads for its own spot at full speed,
+// with no formation pace and no escorting.
+export function orderMove(entities, x, y, attackMove = false, waypoint = false, safe = false, through = 0, rush = false) {
   const movers = entities.filter(e => e.isSquad || e.isMobile);
   const kind = attackMove ? 'attackmove' : 'move';
   const moving = e => e.order.kind === 'move' || e.order.kind === 'attackmove';
@@ -414,7 +416,7 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
       return v;
     });
     const slots = formationSlots(from, x, y),
-      speeds = formationSpeeds(from, { x, y });
+      speeds = rush ? from.map(() => 1) : formationSpeeds(from, { x, y });
     movers.forEach((e, i) => {
       const leg = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };
       if (through) leg.through = through;
@@ -429,8 +431,8 @@ export function orderMove(entities, x, y, attackMove = false, waypoint = false, 
     movers.forEach((e, i) => {
       if (e.world) slots[i] = e.world.clearOf(e, slots[i].x, slots[i].y, through);
     });
-  const speeds = formationSpeeds(movers, { x, y }),
-    wings = composeWings(movers, kind, x, y, null),
+  const speeds = rush ? movers.map(() => 1) : formationSpeeds(movers, { x, y }),
+    wings = rush ? new Map() : composeWings(movers, kind, x, y, null),
     starts = staggerStarts(movers, x, y);
   movers.forEach((e, i) => {
     const o = { kind, x: slots[i].x, y: slots[i].y, pace: speeds[i], group: movers.length };

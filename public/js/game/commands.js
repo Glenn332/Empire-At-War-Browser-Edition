@@ -36,7 +36,7 @@ export function execute(world, player, cmd) {
     case 'move': {
       const mine = own().filter(s => s.isSquad || s.isMobile || s.hasWeapons);
       endHunt(world, mine);
-      if (mine.length) orderMove(mine, clampX(cmd.x), clampY(cmd.y), !!cmd.attack, !!cmd.waypoint, false, cmd.fast && !cmd.attack ? 28 : 0);
+      if (mine.length) orderMove(mine, clampX(cmd.x), clampY(cmd.y), !!cmd.attack, !!cmd.waypoint, false, cmd.fast && !cmd.attack ? 28 : 0, !!cmd.fast);
       return {};
     }
     case 'face': {

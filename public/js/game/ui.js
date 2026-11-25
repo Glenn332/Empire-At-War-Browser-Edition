@@ -338,7 +338,7 @@ export class UI {
         return;
       }
       if (this.armed) {
-        if (this.runArmed(m.x, m.y) && !e.shiftKey && this.armed !== 'waypoint') this.arm(null);
+        if (this.runArmed(m.x, m.y, e.detail >= 2) && !e.shiftKey && this.armed !== 'waypoint') this.arm(null);
         return;
       }
       const fix = this.repairTarget(m.x, m.y);
@@ -350,7 +350,7 @@ export class UI {
       this.drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y, box: false, shift: e.shiftKey };
     } else if (e.button === 2) {
       if (ARMED_ORDERS.has(this.armed)) {
-        if (this.runArmed(m.x, m.y) && !e.shiftKey && this.armed !== 'attackmove') this.arm(null);
+        if (this.runArmed(m.x, m.y, e.detail >= 2) && !e.shiftKey && this.armed !== 'attackmove') this.arm(null);
         return;
       }
       if (this.armed) {
@@ -1358,7 +1358,7 @@ export class UI {
     this.hudTimer = 0;
   }
 
-  runArmed(x, y) {
+  runArmed(x, y, fast = false) {
     if (this.armed.startsWith('ability:')) return this.runAbility(this.armed.slice(8), x, y);
     if (this.armed === 'beacon') {
       const g = this.r.pickGround(x, y);
@@ -1412,7 +1412,7 @@ export class UI {
     g.y = Math.max(w.min.y, Math.min(w.max.y, g.y));
     const am = this.armed === 'attackmove',
       way = this.armed === 'waypoint';
-    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: am, waypoint: way });
+    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: am, waypoint: way, fast: fast && !way });
     this.pings.push({ x: g.x, y: g.y, t: 0, color: am ? '#ffb347' : way ? '#7fd4ff' : '#6be675', r: 40 });
     this.sayMove(mine, g.x, g.y, am);
     return true;
@@ -1546,7 +1546,7 @@ export class UI {
     const w = this.world;
     g.x = Math.max(w.min.x, Math.min(w.max.x, g.x));
     g.y = Math.max(w.min.y, Math.min(w.max.y, g.y));
-    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: !!attackMove, waypoint: !!waypoint, fast: !!fast && !attackMove });
+    this.game.command({ c: 'move', u: ids(mine), x: g.x, y: g.y, attack: !!attackMove, waypoint: !!waypoint, fast: !!fast });
     this.pings.push({ x: g.x, y: g.y, t: 0, color: attackMove ? '#ffb347' : waypoint ? '#7fd4ff' : '#6be675', r: 40 });
     this.radarClick(g.x, g.y, attackMove);
     this.sayMove(mine, g.x, g.y, attackMove);
@@ -1576,7 +1576,7 @@ export class UI {
       if (mine.length) {
         const attack = armed ? armed === 'attackmove' : e.ctrlKey;
         if (armed === 'guard') this.game.command({ c: 'guard', u: ids(mine), t: 0, x, y });
-        else this.game.command({ c: 'move', u: ids(mine), x, y, attack: !!attack, waypoint: armed === 'waypoint' });
+        else this.game.command({ c: 'move', u: ids(mine), x, y, attack: !!attack, waypoint: armed === 'waypoint', fast: e.detail >= 2 && armed !== 'waypoint' });
         this.pings.push({ x, y, t: 0, color: attack ? '#ffb347' : '#6be675', r: 40 });
         this.radarClick(x, y, attack);
         if (armed === 'guard') this.say(this.voiceOf(mine), 'SFXEvent_Guard', 'SFXEvent_Move');
