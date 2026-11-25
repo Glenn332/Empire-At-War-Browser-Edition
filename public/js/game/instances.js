@@ -243,6 +243,8 @@ export class Instances {
   }
 
   mergeParts(u, list) {
+    // animated units (spinning asteroid fields and junk, idle animations) and turrets move parts on their own
+    if (u.anim || u.buildAnim || u.construction || (u.turrets && u.turrets.length)) return;
     const obj = u.obj,
       decals = new Set(u.hardpoints.map(h => h.decal).filter(Boolean)),
       groups = new Map();
@@ -396,6 +398,7 @@ export class Instances {
       }
       const fading = ta < -1.001;
       const world = obj.matrixWorld;
+      if (u.instMerges && (u.anim || u.buildAnim)) this.unmerge(u);
       if (u.instMerges)
         for (let i = 0; i < list.length; i++) {
           const e = list[i];
