@@ -67,6 +67,7 @@ const _seek = { p: null, best: null, bi: 0, bd: 0 },
   byGridAt = (a, b) => a.gridAt - b.gridAt;
 const LAUNCHES_PER_STEP = 2;
 const ESCORT_SPACING = 140;
+const ESCORT_KEEP = 400;
 const ESCORT_EASE = 200;
 const NO_CATS = new Set();
 const UNIT_CELL = 1024,
@@ -6459,7 +6460,15 @@ export class World {
     }
     if (this.time >= w.check) {
       w.check = this.time + 1;
-      if (!sh.going || (sh.order.kind === 'attack' && sh.order.reached)) {
+      // A ship still on its way to a distant move goal keeps its squadrons: it is only waiting for its staggered
+      // start or has stopped to fight on an attack-move. Letting go then sent the whole wing on to its own spot far
+      // ahead of the fleet.
+      const o = sh.order,
+        underway =
+          (o.kind === 'move' || o.kind === 'attackmove') &&
+          o.x !== undefined &&
+          (sh.x - o.x) ** 2 + (sh.y - o.y) ** 2 > (ESCORT_KEEP + (sh.radius || 0)) ** 2;
+      if ((!sh.going && !underway) || (o.kind === 'attack' && o.reached)) {
         dropEscort(w);
         return null;
       }

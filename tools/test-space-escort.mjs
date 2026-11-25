@@ -126,4 +126,32 @@ for (const withShip of [false, true]) {
   assert(fighters.dead || corvette.shield < corvette.maxShield, 'and their attacks land ' + label);
 }
 
+{
+  // A fleet on attack-move that stops to fight on the way keeps its squadrons beside it: they used to let go of
+  // the stopped ship and fly on to their own spot far ahead of the fleet.
+  const { world, empire, rebel, run } = battle(6);
+  const ships = [],
+    squadrons = [];
+  for (let i = 0; i < 4; i++) ships.push(world.spawn(T('Star_Destroyer'), empire, -6000, -1800 + i * 1200));
+  for (let i = 0; i < 6; i++) squadrons.push(world.spawn(T('TIE_Fighter_Squadron'), empire, -5600, -2000 + i * 800));
+  for (let i = 0; i < 3; i++) world.spawn(T('Corellian_Corvette'), rebel, -1500, -800 + i * 800).setOrder({ kind: 'idle' });
+  run(1);
+  orderMove([...ships, ...squadrons], 8000, 0, true);
+  let worst = 0,
+    stopped = false;
+  for (let t = 0; t < 120; t++) {
+    run(1);
+    const alive = ships.filter(e => !e.dead);
+    if (!alive.length) break;
+    if (alive.some(e => !e.going && e.order.kind === 'attackmove')) stopped = true;
+    for (const squadron of squadrons) {
+      if (squadron.dead || !squadron.fighters[0]) continue;
+      const lead = squadron.fighters[0];
+      worst = Math.max(worst, Math.min(...alive.map(e => Math.hypot(e.x - lead.x, e.y - lead.y))));
+    }
+  }
+  assert(stopped, 'the fleet stops to fight on its attack-move');
+  assert(worst < 2000, 'squadrons stay with a fleet that stops to fight: one got ' + worst.toFixed(0) + ' from the nearest ship');
+}
+
 console.log('space escort: ok');
