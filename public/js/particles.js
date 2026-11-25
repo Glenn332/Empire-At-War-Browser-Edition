@@ -392,10 +392,16 @@ const _frustum = new THREE.Frustum(),
   _nearAt = new THREE.Vector3(),
   _near = new THREE.Sphere();
 
-class Batch {
+const BATCH_MIN = 256,
+  // sets of a batch (two each worker step) over which its peak use is watched before it may shrink
+  BATCH_SHRINK_SETS = 1200;
+
+export class Batch {
   constructor(texture, additive, noDepth, heat, frames) {
-    this.cap = 256;
+    this.cap = BATCH_MIN;
     this.count = 0;
+    this.peak = 0;
+    this.sets = 0;
     this.additive = additive;
     this.noDepth = !!noDepth;
     this.heat = !!heat;
@@ -475,6 +481,19 @@ class Batch {
     old.dispose();
   }
   set(count, center, tint, cell, slot, dir) {
+    this.peak = Math.max(this.peak, count);
+    // a batch grown by a big fight shrinks back once a while has passed using a quarter of it or less, so its buffers
+    // do not hold that fight's size on the card (and in the page) for the rest of the game
+    if (++this.sets >= BATCH_SHRINK_SETS) {
+      if (this.cap > BATCH_MIN && this.peak * 4 <= this.cap) {
+        let c = BATCH_MIN;
+        while (c < this.peak * 2) c *= 2;
+        this.cap = c;
+        this.alloc();
+      }
+      this.sets = 0;
+      this.peak = count;
+    }
     if (count > this.cap) {
       while (this.cap < count) this.cap *= 2;
       this.alloc();
@@ -483,20 +502,20 @@ class Batch {
     this.mesh.geometry.instanceCount = count;
     this.mesh.visible = count > 0;
     if (!count) return;
-    for (const [a, src, per] of [
-      [this.center, center, 4],
-      [this.tint, tint, 4],
-      [this.cell, cell, 4],
-      [this.slot, slot, 1],
-      [this.dir, dir, 4]
-    ]) {
-      if (!src) continue;
-      a.array.set(src);
-      a.clearUpdateRanges();
-      a.addUpdateRange(0, count * per);
-      a.needsUpdate = true;
-    }
+    fill(this.center, center, count * 4);
+    fill(this.tint, tint, count * 4);
+    fill(this.cell, cell, count * 4);
+    fill(this.slot, slot, count);
+    fill(this.dir, dir, count * 4);
   }
+}
+
+function fill(a, src, n) {
+  if (!src) return;
+  a.array.set(src);
+  a.clearUpdateRanges();
+  a.addUpdateRange(0, n);
+  a.needsUpdate = true;
 }
 
 class Handle {

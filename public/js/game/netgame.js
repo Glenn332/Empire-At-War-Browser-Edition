@@ -21,6 +21,15 @@ const MAX_CMD_CHARS = 32768,
   MAX_RESULT_CHARS = 1 << 21;
 const REPORT_WAIT = 15000;
 const TAGGED = new Set(['cmd', 'loaded', 'go', 'turn', 'ack', 'desync', 'resume']);
+// an order as a peer receives it: plain data made in this window
+export function wireCopy(cmd) {
+  if (!cmd || typeof cmd !== 'object') return cmd;
+  try {
+    return JSON.parse(JSON.stringify(cmd));
+  } catch {
+    return cmd;
+  }
+}
 
 const F64 = new Float64Array(1),
   U32 = new Uint32Array(F64.buffer);
@@ -199,8 +208,10 @@ export class Lockstep {
     if (this.host && this.net.speed && this.net.speed !== 1 && this.net.sessionSpeed === undefined) this.setSpeed(this.net.speed);
   }
 
+  // The host runs its own order from a JSON copy, exactly as its peers get it over the wire. That also keeps the order
+  // log from holding objects made in a battle window that has closed: any one of them keeps that whole window alive.
   command(cmd) {
-    if (this.host) this.collected.push([this.hostPlayer, cmd]);
+    if (this.host) this.collected.push([this.hostPlayer, wireCopy(cmd)]);
     else this.tx(0, { k: 'cmd', cmd });
   }
 

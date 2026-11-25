@@ -67,7 +67,7 @@ import { LandScripts } from './landscripts.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
-import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
+import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn, frameCap, menuFrameCap, FrameGate } from '../gfx.js';
 import { fitShadowToView } from './shadowfit.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
 import { PostFX } from './post.js';
@@ -3171,6 +3171,9 @@ export class LandGame {
   frame(now) {
     if (this.modeSuspended) return;
     if (!this.warming) requestAnimationFrame(this.frame);
+    // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); warm-up and the benchmark are uncapped
+    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap));
+    if (!this.warming && gate.skip(now)) return;
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
     this.last = now;

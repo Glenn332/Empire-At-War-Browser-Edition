@@ -20,7 +20,7 @@ const OWN = {
   shadowRange: 8,
   gamma: 0.5,
   level: -1,
-  // frames per second the galaxy map draws at most; 0 draws at the screen's own refresh rate
+  // frames per second the galaxy map and battles draw at most; 0 draws at the screen's own refresh rate
   fpsCap: 60
 };
 
@@ -59,6 +59,35 @@ export function shadowReach() {
 export function frameCap() {
   const cap = +gfx.fpsCap;
   return Number.isFinite(cap) && cap > 0 ? Math.max(15, cap) : 0;
+}
+
+// The 3D battle behind the main menu is only a backdrop: it draws at most this many frames a second.
+export const MENU_FPS = 30;
+export function menuFrameCap() {
+  const cap = frameCap();
+  return cap ? Math.min(cap, MENU_FPS) : MENU_FPS;
+}
+
+// Decides which screen refreshes draw a frame under a frames-per-second cap (the galaxy map's rule, shared with the
+// battles and the menu backdrop). A refresh up to a quarter interval early still draws, so a 60 Hz screen keeps every
+// frame under a 60 cap while a 144 Hz one draws 60 of its 144. A skipped refresh does nothing at all, so the next drawn
+// one catches up the time it missed and game time is unchanged.
+export class FrameGate {
+  constructor(cap = frameCap) {
+    this.cap = cap;
+    this.next = undefined;
+  }
+  skip(now) {
+    const cap = typeof this.cap === 'function' ? this.cap() : this.cap;
+    if (!(cap > 0)) {
+      this.next = undefined;
+      return false;
+    }
+    const interval = 1000 / cap;
+    if (this.next !== undefined && now < this.next - interval / 4) return true;
+    this.next = this.next === undefined || now - this.next > interval ? now + interval : this.next + interval;
+    return false;
+  }
 }
 
 export const SUPERSAMPLE_STEPS = [1, 1.5, 2];

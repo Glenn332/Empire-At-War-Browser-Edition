@@ -30,7 +30,7 @@ import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { fontPixels } from '../fontpolicy.js';
-import { gfx, pixelRatio, gammaOn, frameCap } from '../gfx.js';
+import { gfx, pixelRatio, gammaOn, frameCap, FrameGate } from '../gfx.js';
 import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, stampIds, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
@@ -3739,13 +3739,7 @@ export class GalacticGame {
   // The galaxy map draws at most frameCap() times a second: a fast screen asks for a frame up to 144+ times a second,
   // and each one redraws every planet. A skipped frame does nothing, so the next one catches up the time it missed.
   capped(now) {
-    const cap = frameCap();
-    if (!cap) return false;
-    const interval = 1000 / cap;
-    // a frame up to a quarter interval early still draws, so a 60 Hz screen keeps every frame under a 60 cap
-    if (this.nextDraw !== undefined && now < this.nextDraw - interval / 4) return true;
-    this.nextDraw = this.nextDraw === undefined || now - this.nextDraw > interval ? now + interval : this.nextDraw + interval;
-    return false;
+    return (this.frameGate ||= new FrameGate(frameCap)).skip(now);
   }
 
   planetTextures(n) {

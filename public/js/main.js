@@ -16,7 +16,7 @@ import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
-import { gfx, storeGfx, pixelRatio } from './gfx.js';
+import { gfx, storeGfx, pixelRatio, frameCap, menuFrameCap, FrameGate } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
@@ -2230,6 +2230,8 @@ class Game {
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
+    // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); the benchmark measures uncapped
+    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap)).skip(now)) return;
     diag.begin(now);
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     if (this.bench) this.bench.tick(now - this.last, now);
