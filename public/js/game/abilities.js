@@ -215,8 +215,15 @@ export function parseAbilities(type) {
         sfxOff: ab.val('SFXEvent_GUI_Unit_Ability_Deactivated'),
         sfxTarget: ab.val('SFXEvent_Target_Ability').trim(),
         autofire: /^(yes|true)$/i.test(ab.val('Supports_Autofire')),
-        ownerParticle: target === 'none' ? particleFile(ab.val('Particle_Effect')) : '',
-        ownerParticleBones: specList(ab, 'Owner_Attachment_Bone'),
+        // The effect on the user: the unit ability's Particle_Effect, else the Owner_Particle_Effect of the ability it
+        // names (a Sensor_Jamming_Ability's jammer field), on that ability's Owner_Particle_Bone_Name.
+        ownerParticle: target === 'none' ? particleFile(ab.val('Particle_Effect')) || (spec ? particleFile(spec.val('Owner_Particle_Effect')) : '') : '',
+        ownerParticleBones:
+          target !== 'none' || particleFile(ab.val('Particle_Effect')) || !spec
+            ? specList(ab, 'Owner_Attachment_Bone')
+            : specList(spec, 'Owner_Particle_Bone_Name').length
+              ? specList(spec, 'Owner_Particle_Bone_Name')
+              : specList(ab, 'Owner_Attachment_Bone'),
         label,
         description
       });
@@ -641,7 +648,7 @@ export function tickAbilities(world, u, dt) {
           const a = simRandom() * TAU,
             r = Math.sqrt(simRandom()) * radius;
           world.launchPoint(proj || h.proj, u, p.x, p.y, p.z, d.target.x + Math.cos(a) * r, d.target.y + Math.sin(a) * r, 0, {});
-          if (h.fireSfx && simRandom() < 0.3) world.audio.play(h.fireSfx, p.x, p.y);
+          if (h.fireSfx && simRandom() < 0.3 && (!world.audible || world.audible(p.x, p.y, u.player))) world.audio.play(h.fireSfx, p.x, p.y);
         }
         break;
       }
@@ -702,7 +709,8 @@ export function tickAbilities(world, u, dt) {
         if (d.t < fireAt) break;
         if (!d.fired) {
           d.fired = true;
-          world.audio.playFrom(u.isSquad ? u.fighters[0] || u : u, def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
+          if (!world.audible || world.audible(u.x, u.y, u.player))
+            world.audio.playFrom(u.isSquad ? u.fighters[0] || u : u, def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
         }
         const c = sp
           ? sp
@@ -843,9 +851,47 @@ function hurtAlly(world, lead, range) {
   return best;
 }
 
+// A unit ability whose spawned object heals on detonation (a fleet tender's fighter repair pulse, a HARMONIC_BOMB
+// spawning Proj_Fleet_Tender_Fighter_Heal): what it heals, and how far.
+export function healPulseOf(def) {
+  if (def.kind !== 'HARMONIC_BOMB') return null;
+  if (def._heal !== undefined) return def._heal;
+  const proj = db.type(def.node.val('Spawned_Object_Type'));
+  if (!proj || !proj.bool('Projectile_Instant_Heal_On_Detonation')) return (def._heal = null);
+  const cats = proj
+    .str('Projectile_Instant_Heal_Targets_Category_Mask')
+    .split(/[|,\s]+/)
+    .filter(Boolean)
+    .map(c => c.toUpperCase());
+  return (def._heal = { radius: proj.num('Projectile_Instant_Heal_Radius', 100), cats });
+}
+
+// Whether a heal pulse from lead would mend someone: an ally of a healed category inside its radius below full health.
+function pulseMends(world, lead, heal) {
+  const r2 = heal.radius * heal.radius;
+  for (const o of world.units) {
+    if (o.dead || o.hyper || o.player.team !== lead.player.team || o.player.id < 0 || !(o.health < o.maxHealth)) continue;
+    if ((o.x - lead.x) ** 2 + (o.y - lead.y) ** 2 > r2) continue;
+    if (heal.cats.length) {
+      const has = o.type.categories();
+      if (!heal.cats.some(c => has.has(c))) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 export function aiUseAbilities(world, e, onlyAuto = false) {
   const lead = posOf(e);
   if (!lead || !lead.abilities || !lead.abilities.length) return;
+  // A heal pulse has no named ability and no enemy to aim at: it goes off when it would mend a friend.
+  for (const st of lead.abilities) {
+    const heal = (!onlyAuto || st.auto) && !st.active && !(st.cooldown > 0) ? healPulseOf(st.def) : null;
+    if (heal && pulseMends(world, lead, heal)) {
+      useAbility(world, e, st.def.kind, true, null);
+      return;
+    }
+  }
   const victim = e.isSquad ? (e.target && !e.target.dead ? posOf(e.target) : null) : lead.target && !lead.target.dead ? lead.target : null;
   if (!victim || victim.x === undefined || !victim.type) return;
   const ready = [];

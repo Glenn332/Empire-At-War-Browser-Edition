@@ -629,7 +629,7 @@ export function restore(game, save) {
     const e = made[i];
     if (!e) return;
     e.setOrder(order(o.order));
-    if (o.alone) e.alone = true;
+    e.alone = !!o.alone;
     if (o.way) e.queue = o.way.map(order);
     const t = get(o.target);
     if (t) e.target = e.isSquad ? t : t.isSquad ? t.fighters[0] || null : t;

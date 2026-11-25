@@ -563,6 +563,12 @@ export class SelectionRings {
     const b = this.batch(name, own, !!this.ground && size > RING_BIG);
     if (b) b.add(x, y, z, size, heading);
   }
+  // A named blob material (a heal radius overlay) drawn as a disc of the given diameter, untinted.
+  addBlob(name, x, y, z, size) {
+    if (!name || !blobMaterials || !blobMaterials.has(name) || !(size > 0)) return;
+    const b = this.batch(name, false, !!this.ground && size > RING_BIG);
+    if (b) b.add(x, y, z, size, 0);
+  }
   end() {
     for (const b of this.batches.values()) b.end();
   }
@@ -1012,6 +1018,9 @@ export class Renderer {
           if (!f.dead) r.add(f.x, f.y, f.z + f.ringZ, f.ringSize, f.heading, own, f.type);
         }
       else r.add(s.x, s.y, s.z + s.ringZ, s.ringSize, s.heading, own, s.type);
+      // A selected healer shows its Heal_Range_Blob_Material over the area it mends.
+      const h = !s.isSquad && own ? s.heal : null;
+      if (h && h.blob && h.range > 0) r.addBlob(h.blob, s.x, s.y, s.z + (s.ringZ || 0), h.range * 2);
     }
     r.end();
   }
@@ -2023,8 +2032,14 @@ export class Renderer {
       _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       for (const u of world.units) {
         if (u.dead) continue;
-        const seen = (!viewer || (u.seenBy & viewer) !== 0) && !u.scriptHidden;
-        if (u.obj.visible !== seen && !(u.isPad && u.padChild)) u.obj.visible = seen;
+        let seen = (!viewer || (u.seenBy & viewer) !== 0) && !u.scriptHidden;
+        // A pad built on hides under its building, but only where the viewer sees that building; elsewhere the
+        // asteroid stays in view as the viewer last saw it.
+        if (seen && u.isPad && u.padChild) {
+          const c = u.padChild;
+          seen = !(u._hidesBuilt ??= u.type.bool('Hides_When_Built_On', true)) || (!!viewer && c.player.team !== world.viewer.team && !(c.seenBy & viewer));
+        }
+        if (u.obj.visible !== seen) u.obj.visible = seen;
         if (!seen) continue;
         if (u.inNebula || u.haze) this.updateHaze(u, dt);
         if (u.modeProxies)

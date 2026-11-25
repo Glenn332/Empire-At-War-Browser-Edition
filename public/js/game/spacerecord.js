@@ -318,6 +318,8 @@ export class SpaceRecorder {
       if (u.isPad || u.padChild || u.padOwner !== undefined)
         pads.push([u.id, u.padChild && !u.padChild.dead ? u.padChild.id : -1, u.padOwner ? u.padOwner.id : u.padOwner === null ? -2 : -3]);
       if (u.construction) pads.push([u.id, -4, u.construction.left, u.construction.total]);
+      // What this page's viewer last saw of a capture point (see World.markViewCells).
+      if (u.capture && u.viewSees !== undefined) pads.push([u.id, -5, u.viewSees ? 1 : 0, u.viewOwner ? u.viewOwner.id : -1]);
     }
     this.players = w.players
       .filter(p => p.id >= 0)

@@ -363,6 +363,10 @@ async function run(m) {
     events.push(['world', 'onEvent', [kind, plain(data)]]);
   };
   const { think, game, takeOver, scriptsFrom, campaign, switchSides } = await minds(w, m, map, events, thing, refs);
+  // The viewer is this page's own player: what it is shown and hears (fog-gated sounds, income numbers, effects).
+  // In multiplayer the first human is another peer for all but one page, so the page names its player. Scripts keep
+  // game.human, which every peer agrees on.
+  if (!m.observer && m.viewer !== null && m.viewer !== undefined) w.viewer = w.players.find(p => p.id === m.viewer) || w.viewer;
   events.length = 0;
   const told = w.onEvent;
   hookBattle(w, events, spawns);

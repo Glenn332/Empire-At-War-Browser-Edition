@@ -161,6 +161,12 @@ export function sizeClass(type) {
   return SIZE_CLASSES.includes(sc) ? sc : 'FRIGATE';
 }
 
+// A unit still out in hyperspace: before its arrival streak shows it is not in the battle (it cannot be seen,
+// targeted or hit). Once it shows (HYPER.show) it fights while it finishes the jump.
+export const inJump = o => !!o.hyper && !o.hyper.shown;
+// Damage taken while the arrival is still finishing (Thrawn's Revenge: half again as much until the jump completes).
+export const ARRIVAL_DAMAGE_TAKEN = 1.5;
+
 export function hiddenInJump(e) {
   const h = (e.isSquad ? e.fighters[0] : e)?.hyper;
   return !!h && !h.shown;
@@ -409,6 +415,12 @@ function incomeModOn(u, m) {
       }
   return m.reverse ? !on : on;
 }
+// Who holds a capture point: a build pad's holder (or whoever stands on it), a captured object's player, else nobody.
+export function captureOwner(u) {
+  if (u.isPad) return u.padChild && !u.padChild.dead && u.padChild.player.id >= 0 ? u.padChild.player : u.padOwner || null;
+  return u.player && u.player.id >= 0 ? u.player : null;
+}
+
 const blastTier = (d, r, tiers) => Math.max(0, Math.min(1, 1 - Math.floor(d * (tiers / r)) / (tiers + 1)));
 
 export class Team {
@@ -1082,6 +1094,8 @@ export class Unit {
           .filter(Boolean)
           .map(c => c.toUpperCase()),
         sfx: heal.val('SFXEvent_Target_Affected'),
+        // The area overlay shown while the healer is selected (ShadowBlobMaterials.xml), sized to Heal_Range.
+        blob: heal.val('Heal_Range_Blob_Material').trim().toUpperCase(),
         targetLook: healFeedbackLook(heal, 'Target'),
         ownerLook: healFeedbackLook(heal, 'Owner'),
         timer: 1
@@ -1650,6 +1664,15 @@ const velocityOf = (u, out) => {
   out.z = u.isFighter ? Math.sin(p) * s : 0;
   return out;
 };
+// The last two positions a unit had before its moves, which lead prediction reads.
+function shiftHistory(u) {
+  u.l2x = u.l1x;
+  u.l2y = u.l1y;
+  u.l2z = u.l1z;
+  u.l1x = u.x;
+  u.l1y = u.y;
+  u.l1z = u.z;
+}
 const leadOf = (out, x, y, z, T, ax, ay, az, speed) => {
   if (T.l1x === undefined) {
     const v = velocityOf(T, _p5);
@@ -1704,7 +1727,9 @@ export class Squad {
     this.mode = undefined;
     this.tolerance = undefined;
     this.err = undefined;
-    this.alone = false;
+    // A squadron put down on the map (starting forces, map objects) stands as one that has arrived: it chases what
+    // comes within Idle_Chase_Range. Only a Stop order parks it (see squadPick).
+    this.alone = true;
     this.route = undefined;
     this.routed = false;
     this.goal = undefined;
@@ -1947,7 +1972,9 @@ export class World {
       this.takeBonuses(e);
     }
     this.tacticalSuperweapons?.add(e);
-    if (opts.hyperspace && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
+    // Only something with a locomotor jumps in. A reinforcement that cannot move (a defence platform built and
+    // deployed like a unit) is set down where it was placed at once, as the original does.
+    if (opts.hyperspace && (e.isSquad || e.isMobile) && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
     this.recountPop();
     return e;
   }
@@ -2127,7 +2154,7 @@ export class World {
       return;
     }
     if (!(s.dps > 0)) return;
-    const foe = o => !o.dead && !o.hyper && !o.limbo && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
+    const foe = o => !o.dead && !inJump(o) && !o.limbo && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
     let prey = null,
       best = s.chase * s.chase;
     for (const o of this.units) {
@@ -2368,7 +2395,7 @@ export class World {
     uc.construction = { left: secs, total: secs, result: db.type(type.str('Tactical_Buildable_Constructed')) };
     builder.obj.visible = !builder.type.bool('Hides_When_Built_On', true);
     this.audio.playFor(p, type.str('SFXEvent_Build_Started'));
-    this.audio.playAt(p, p.faction.str('SFXEvent_Tactical_Object_Building_Started'), builder.x, builder.y);
+    if (this.audible(builder.x, builder.y, p)) this.audio.playAt(p, p.faction.str('SFXEvent_Tactical_Object_Building_Started'), builder.x, builder.y);
     return uc;
   }
 
@@ -2693,7 +2720,7 @@ export class World {
   damage(target, amount, opts) {
     const hook = this.onUnitHit,
       from = opts && opts.from;
-    if (!hook || !from || target.dead || target.hyper || target.invulnerable || target.limbo) return this.applyDamage(target, amount, opts);
+    if (!hook || !from || target.dead || inJump(target) || target.invulnerable || target.limbo) return this.applyDamage(target, amount, opts);
     const before = target.health + (target.shield || 0);
     this.applyDamage(target, amount, opts);
     hook(target, from, before - target.health - (target.shield || 0));
@@ -2717,7 +2744,8 @@ export class World {
       proj = null
     } = {}
   ) {
-    if (target.dead || target.hyper || target.invulnerable || target.limbo) return;
+    if (target.dead || inJump(target) || target.invulnerable || target.limbo) return;
+    if (target.hyper) amount *= ARRIVAL_DAMAGE_TAKEN;
     if (target.noOpportunity) target.noOpportunity = false;
     if (attacker?.noOpportunity) attacker.noOpportunity = false;
     const retreating = this.retreatState?.list.has(target);
@@ -3098,7 +3126,9 @@ export class World {
       }
     }
     const seen = u.l1x !== undefined;
-    this.fx.deathClone(
+    // A wreck tumbling away in the fog stays hidden like the ship it was.
+    if (this.viewerSees(u))
+      this.fx.deathClone(
       u,
       ct.name,
       spin,
@@ -3257,14 +3287,11 @@ export class World {
         u.l1y = u.y;
         u.l1z = u.z;
       }
-      u.l2x = u.l1x;
-      u.l2y = u.l1y;
-      u.l2z = u.l1z;
-      u.l1x = u.x;
-      u.l1y = u.y;
-      u.l1z = u.z;
+      // A fighter moves later, in moveFighters, which shifts its history right before the move.
+      if (!u.isFighter || u.hyper) shiftHistory(u);
       if (u.hyper) {
         this.updateHyper(u, dt);
+        if (u.hyper && u.hyper.shown && !u.isFighter && !u.dead && u.player.id >= 0) this.arrivalFire(u, dt);
         continue;
       }
       if (u.retreatFlight) continue;
@@ -3349,6 +3376,18 @@ export class World {
     }
   }
 
+  // Weapons of a ship still finishing its hyperspace arrival: it picks targets and fires as it would on arrival.
+  arrivalFire(u, dt) {
+    if (!(u.hasWeapons || u.weapon)) return;
+    u.scanTimer -= dt;
+    if (u.scanTimer <= 0) {
+      u.scanTimer = 0.4 + simRandom() * 0.2;
+      this.scan(u);
+    }
+    this.updateWeapons(u, dt);
+    if (u.weapon) this.updateTurret(u, dt);
+  }
+
   updateHyper(u, dt) {
     const h = u.hyper;
     if (this.holdHyperspace) return;
@@ -3371,7 +3410,7 @@ export class World {
       h.shown = true;
       u.obj.scale.setScalar(u.scale);
       u.obj.updateMatrix();
-      if (!u.isFighter || u.squad.fighters[0] === u)
+      if ((!u.isFighter || u.squad.fighters[0] === u) && this.audible(h.tx, h.ty, u.player))
         this.audio.playAt(
           u.player,
           u.player.faction
@@ -3509,7 +3548,7 @@ export class World {
     }
     if (u.flyBy && (u.flyTimer -= dt) <= 0) {
       u.flyTimer = ambientDelay(u.type);
-      if (u.speed > 1 && (!u.squad || u.squad.fighters?.[0] === u)) this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
+      if (u.speed > 1 && (!u.squad || u.squad.fighters?.[0] === u) && this.audible(u.x, u.y, u.player)) this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
     }
     if (u.player.id < 0) {
       if (u.isMobile) u.syncObj();
@@ -3540,7 +3579,7 @@ export class World {
     const sel = u.selected;
     this.removeUnit(u);
     if (!result) return;
-    this.audio.playAt(u.player, u.player.faction.str('SFXEvent_Tactical_Object_Building_Complete'), u.x, u.y);
+    if (this.audible(u.x, u.y, u.player)) this.audio.playAt(u.player, u.player.faction.str('SFXEvent_Tactical_Object_Building_Complete'), u.x, u.y);
     const built = this.spawn(result, u.player, u.x, u.y, u.heading);
     built.padOf = pad;
     built.selected = sel;
@@ -3882,7 +3921,7 @@ export class World {
       const show = this.time >= (u.asteroidFx ?? 0);
       if (show) {
         u.asteroidFx = this.time + rand(0.6, 1.2);
-        this.audio.playAt(u.player, t.str('SFXEvent_Damaged_By_Asteroid'), x, y);
+        if (this.audible(x, y, u.player)) this.audio.playAt(u.player, t.str('SFXEvent_Damaged_By_Asteroid'), x, y);
       }
       const dmg = c.num('Asteroid_Field_Damage', 20),
         fx = { hit: particleFile(t.str('Asteroid_Damage_Hit_Particles')) };
@@ -4148,6 +4187,47 @@ export class World {
     for (const u of this.units)
       if (!u.dead && u.spotted)
         for (const s of u.spotted) if (s.team === v.team && s.until > now) mark((s.cx + 0.5) * C, (s.cy + 0.5) * C, s.n * C);
+    // Capture points (mining asteroids, build pads) stay on screen under fog, so what the viewer is shown of them is
+    // what the viewer last saw: grey until first seen, then the owner at the last look, never a capture it missed.
+    // Only a cell in sight this tick counts: the fog's regrow time keeps a cell open after the last look, and a
+    // capture made in that window was not seen.
+    for (const u of this.units) {
+      if (u.dead || !u.capture) continue;
+      const cx = Math.floor(u.x / C) - g.x0,
+        cy = Math.floor(u.y / C) - g.y0,
+        sees = this.fogLifted & v.bit ? true : cx >= 0 && cy >= 0 && cx < g.w && cy < g.h && at[cy * g.w + cx] === now;
+      u.viewSees = sees;
+      if (sees) u.viewOwner = captureOwner(u);
+    }
+  }
+
+  // The owner the viewer is shown for a capture point: the real one when its own side holds it, it is in sight,
+  // or there is no fog; otherwise the owner when the viewer last saw it (neutral if never).
+  shownOwner(u) {
+    const real = captureOwner(u),
+      v = this.viewer;
+    if (!this.fog || !v || this.reveal || (v.bit && this.fogLifted & v.bit) || (real && real.team === v.team)) return real;
+    if (u.viewSees) return real;
+    return u.viewOwner && u.viewOwner.team !== v.team ? u.viewOwner : null;
+  }
+
+  // Whether the viewer can watch a capture point right now (its capture bar, its build-on child).
+  viewWatches(u) {
+    const v = this.viewer;
+    if (!this.fog || !v || this.reveal || (v.bit && this.fogLifted & v.bit)) return true;
+    const real = captureOwner(u);
+    if (real && real.team === v.team) return true;
+    if (u.capture && u.capture.by && u.capture.by.team === v.team) return true;
+    return u.viewSees !== false;
+  }
+
+  // Whether a sound made at (x, y) by `player` reaches the viewer: its own side's sounds always do, others only out
+  // of the fog, as the original's fogged objects make no sound.
+  audible(x, y, player) {
+    const v = this.viewer;
+    if (!this.fog || !v || this.reveal) return true;
+    if (player && player.team === v.team) return true;
+    return !this.viewFogged(x, y);
   }
 
   viewFogged(x, y) {
@@ -4327,7 +4407,7 @@ export class World {
   seekTake(o, i) {
     const sk = _seek,
       p = sk.p;
-    if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
+    if (o.dead || inJump(o) || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
     const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
     if ((d2 < sk.bd || (d2 === sk.bd && sk.best && i < sk.bi)) && !this.jammed(o)) {
       sk.bd = d2;
@@ -4345,7 +4425,7 @@ export class World {
     const bit = me.bit;
     const take = o => {
       if (
-        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || o.hyper || o.limbo || o.noOpportunity || !(o.seenBy & bit)) &&
+        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || inJump(o) || o.limbo || o.noOpportunity || !(o.seenBy & bit)) &&
         dist2(u, o) <= r2
       )
         list.push(o);
@@ -4353,7 +4433,7 @@ export class World {
     const ug = this.unitGrid,
       pre = this.ahead && this.ahead.take(u);
     if (pre) {
-      for (const o of pre) if (!o.dead && !o.hyper) list.push(o);
+      for (const o of pre) if (!o.dead && !inJump(o)) list.push(o);
       for (let i = this.unitGridN; i < this.units.length; i++) take(this.units[i]);
     } else if (ug && this.unitGridN <= this.units.length) {
       const pad = range + UNIT_PAD,
@@ -4380,7 +4460,7 @@ export class World {
     const inReach = o => dist2(u, o) <= (reach + o.hitRadius) ** 2;
     const rate = o => (set ? priorityOf(set, o.type) : 1);
     let cur =
-      u.target && !u.target.dead && !u.target.hyper && u.target.targetableUnit && u.target.seenBy & bit && inReach(u.target)
+      u.target && !u.target.dead && !inJump(u.target) && u.target.targetableUnit && u.target.seenBy & bit && inReach(u.target)
         ? u.target
         : null;
     if (cur) {
@@ -4411,7 +4491,7 @@ export class World {
       }
       const lo = o.healthFrac <= low,
         lb = (bestIsLow ??= best.healthFrac <= low);
-      if (lo !== lb ? lo : r < br || dist2(u, o) < dist2(u, best)) {
+      if (lo !== lb ? lo : r !== br ? r < br : dist2(u, o) < dist2(u, best)) {
         best = o;
         br = r;
         bestIsLow = lo;
@@ -4901,7 +4981,7 @@ export class World {
       healedAny = true;
       if (h.sfx && this.time - (h.said ?? -9) > 1.5) {
         h.said = this.time;
-        this.audio.playAt(best.player, h.sfx, best.x, best.y);
+        if (this.audible(best.x, best.y, best.player)) this.audio.playAt(best.player, h.sfx, best.x, best.y);
       }
       this.onEvent('healed', { unit: best, by: u });
     }
@@ -5203,32 +5283,35 @@ export class World {
       !(!u.player.human && !(hp.rechargeMax > db.constants.num('Hardpoint_Recharge_Cutoff_For_Opportunity_Fire', 3)))
     )
       return null;
-    const had = hp.target;
-    if (had && !had.dead && had !== ord && this.canBear(u, hp, had)) return had;
+    const set = setOf(u),
+      rank = o => (set ? priorityOf(set, o.type) : 1);
+    const had = hp.target && !hp.target.dead && hp.target !== ord && this.canBear(u, hp, hp.target) ? hp.target : null;
+    if (had && (rank(had) === 1 || this.time < (hp.lookAt || 0))) return had;
     if (this.time < (hp.lookAt || 0)) return null;
     hp.lookAt = this.time + 0.5;
-    const set = setOf(u);
-    let best = null,
-      br = Infinity;
+    let best = had,
+      br = had ? rank(had) : Infinity,
+      bd = Infinity;
     hp.worldPos(_p);
     const px = _p.x,
       py = _p.y,
       range = hp.range,
       arc = this.arcOf(u, hp);
+    if (had) bd = (had.x - px) ** 2 + (had.y - py) ** 2;
     for (const o of u.enemies) {
-      if (o.dead) continue;
+      if (o.dead || o === had) continue;
       const dx = o.x - px,
         dy = o.y - py,
+        d = dx * dx + dy * dy,
         reach = range + o.hitRadius;
-      if (dx * dx + dy * dy > reach * reach) continue;
-      // An enemy that would not be preferred over the one already found is passed over before the costly question
-      // of whether the hardpoint can bear on it: with priority lists nearly every enemy in reach is such a one.
-      const r = set ? priorityOf(set, o.type) : 1;
-      if (r < 0 || (best && !(r < br))) continue;
+      if (d > reach * reach) continue;
+      const r = rank(o);
+      // The held target stays unless something ranks above it; among fresh picks the nearest of the best rank wins.
+      if (r < 0 || (best && (r > br || (r === br && (best === had || d >= bd))))) continue;
       if (!this.bearsFrom(hp, o, px, py, arc)) continue;
       best = o;
       br = r;
-      if (r === 1) break;
+      bd = d;
     }
     return best;
   }
@@ -5270,7 +5353,7 @@ export class World {
           : { range: hp.range, damage: hp.projDamage }
     );
     if (ok === false) return false;
-    this.audio.playFrom(u, weaponFireSound(u.type, hp), x, y);
+    if (this.audible(x, y, u.player)) this.audio.playFrom(u, weaponFireSound(u.type, hp), x, y);
     return true;
   }
 
@@ -5502,7 +5585,7 @@ export class World {
       late = proj ? (proj._aeDelay ??= proj.num('Max_Secs_For_AE_Delayed_Damage', 0)) : 0;
     let victims = 0;
     for (const o of this.units.slice()) {
-      if (o.dead || o.hyper || !o.targetableUnit) continue;
+      if (o.dead || inJump(o) || !o.targetableUnit) continue;
       if (immune) {
         if (String(o.player.factionName || '').toUpperCase() === immune) continue;
       } else if (o.player.id < 0 || (owner && o.player.team === owner.team)) continue;
@@ -5563,10 +5646,11 @@ export class World {
       healing = proj.bool('Projectile_Instant_Heal_On_Detonation'),
       detonationParticle =
         particleFile(proj.str('Projectile_Lifetime_Detonation_Particle')) || particleFile(proj.str('Projectile_Object_Detonation_Particle'));
-    if (healing) this.fx.made?.(detonationParticle, x, y, z);
-    else this.fx.explosion(x, y, z, Math.min(600, range * 0.8), big || range > 300, detonationParticle);
+    const shown = this.audible(x, y, owner);
+    if (shown && healing) this.fx.made?.(detonationParticle, x, y, z);
+    else if (shown) this.fx.explosion(x, y, z, Math.min(600, range * 0.8), big || range > 300, detonationParticle);
     const sfx = proj.str('Projectile_SFXEvent_Detonate') || (healing ? '' : 'Unit_Star_Destroyer_Death_SFX');
-    if (sfx) this.audio.play(sfx, x, y);
+    if (sfx && shown) this.audio.play(sfx, x, y);
     this.areaDamage(x, y, range, dmg, proj.str('Damage_Type'), owner, {
       shields: proj.bool('Projectile_Does_Shield_Damage', true),
       hull: proj.bool('Projectile_Does_Hitpoint_Damage', true),
@@ -5747,7 +5831,7 @@ export class World {
         } else store.release(row);
         continue;
       }
-      if (p.homing && (!t || t.dead || t.hyper)) {
+      if (p.homing && (!t || t.dead || inJump(t))) {
         p.target = p.targetHp = null;
         if (p.scan > 0) {
           p.target = this.seekTarget(p);
@@ -6024,7 +6108,7 @@ export class World {
     hitters.length = 0;
     this.hitWhole = false;
     for (const o of this.units) {
-      if (o.dead || o.hyper || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
+      if (o.dead || inJump(o) || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
       hitters.push(o);
       if (!teams.has(o.player.team)) teams.set(o.player.team, teams.size);
@@ -6166,7 +6250,7 @@ export class World {
     let best = null,
       bd = Infinity;
     for (const o of this.units) {
-      if (o.dead || o.player.id < 0 || o.player.team === e.player.team || !o.targetableUnit || o.hyper || !(o.seenBy & bit)) continue;
+      if (o.dead || o.player.id < 0 || o.player.team === e.player.team || !o.targetableUnit || inJump(o) || !(o.seenBy & bit)) continue;
       let dd = dist2(e, o);
       if (o.isStructure) dd *= 4;
       if (dd < bd) {
@@ -6361,7 +6445,7 @@ export class World {
         range < 0 ? null : anchor,
         hull + range + ext + reach,
         o =>
-          !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & sight)) &&
+          !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || inJump(o) || !(o.seenBy & sight)) &&
           (inWeapon(o) || respond(o)),
         this.squadPickCandidates
       );
@@ -6378,7 +6462,7 @@ export class World {
         let take,
           po;
         if (lo !== lb) take = lo;
-        else if (r < br) take = true;
+        else if (r !== br) take = r < br;
         else if (wp && (bp ??= this.canFire(lead, best)) !== (po = this.canFire(lead, o))) take = po;
         else take = dist2(lead, o) < dist2(lead, best);
         if (take) {
@@ -7180,6 +7264,7 @@ export class World {
     this.fighterDecisions.run(dt);
     const moveFrom = performance.now();
     this.stepTimes.decide += moveFrom - from;
+    for (const u of this.units) if (u.isFighter && !u.dead && !u.hyper && u.l1x !== undefined) shiftHistory(u);
     const moved = this.fighterMoves.run(dt);
     const fireFrom = performance.now();
     for (const u of moved) if (!u.dead && !u.suspended) this.fireFighterWeapons(u, dt);

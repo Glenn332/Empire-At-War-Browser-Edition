@@ -1861,8 +1861,10 @@ export class UI {
     this.overlayFrame = (this.overlayFrame || 0) + 1;
     this.logicFramesShown = this.logicFramesSince();
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
-      const enemy = s.player.team !== me.team && s.player.id >= 0;
-      if (enemy && !this.sees(s)) continue;
+      // A capture point shows the owner the viewer last saw, not one it changed to out of sight.
+      const owner = s.capture && this.world.shownOwner ? this.world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
+        enemy = !!owner && owner.team !== me.team;
+      if (s.player.team !== me.team && s.player.id >= 0 && !this.sees(s)) continue;
       if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
@@ -1871,14 +1873,7 @@ export class UI {
       // the size on screen only matters without an icon, or for the corners drawn around a selected or hovered unit
       const cornered = !this.r.rings && (s.selected || s === this.hover);
       const r = !hasIcon || cornered ? Math.min(this.screenRadius(s), 260) : 0;
-      const col =
-        s.player.id < 0
-          ? '#b9c4cf'
-          : enemy
-            ? '#ff5a4d'
-            : s.player === me
-              ? '#6be675'
-              : (s.player._hex ||= '#' + s.player.color.getHexString());
+      const col = !owner ? '#b9c4cf' : enemy ? '#ff5a4d' : owner === me ? '#6be675' : (owner._hex ||= '#' + owner.color.getHexString());
       if (cornered) {
         g.strokeStyle = col;
         g.lineWidth = s.selected ? 1.6 : 1;
@@ -1938,25 +1933,30 @@ export class UI {
           g.fillStyle = '#ffd76a';
           g.fillRect(x, y + 6, w * (1 - s.construction.left / s.construction.total), 2);
         }
-        if (s === this.hover && this.game.setup.net && s.player.id >= 0 && s.player !== me) {
+        if (s === this.hover && this.game.setup.net && owner && owner !== me) {
           const ty = hasIcon ? p.y - size / 2 - 5 : y - 10;
           g.font = 'bold 12px "Segoe UI", sans-serif';
           g.textAlign = 'center';
-          const tw = g.measureText(s.player.name).width;
+          const tw = g.measureText(owner.name).width;
           g.fillStyle = 'rgba(0,0,0,0.7)';
           g.fillRect(p.x - tw / 2 - 4, ty - 12, tw + 8, 16);
-          g.fillStyle = s.player._hex ||= '#' + s.player.color.getHexString();
-          g.fillText(s.player.name, p.x, ty);
+          g.fillStyle = owner._hex ||= '#' + owner.color.getHexString();
+          g.fillText(owner.name, p.x, ty);
         }
       }
     }
     if ((this.predictionPaths ??= db.constants.bool('ShouldDisplayPredictionPaths', false))) this.drawPredictionPaths(g);
     this.drawWaypointLines(g);
-    for (const u of this.world.units) {
-      if (u.dead || !u.capture || u.padChild) continue;
+    const W = this.world,
+      vbit = W.viewer && W.fog && !W.reveal ? W.viewer.bit : 0;
+    for (const u of W.units) {
+      if (u.dead || !u.capture) continue;
+      // A pad hides under what is built on it; while the viewer cannot see that, the pad still shows what it last saw.
+      const child = u.padChild;
+      if (child && (!vbit || child.player.team === W.viewer.team || child.seenBy & vbit)) continue;
       this.r.project(u.x, u.y, u.z, p);
       if (p.behind) continue;
-      const owner = u.isPad ? u.padOwner : u.player.id >= 0 ? u.player : null;
+      const owner = W.shownOwner ? W.shownOwner(u) : u.isPad ? u.padOwner : u.player.id >= 0 ? u.player : null;
       const c = u.capture;
       g.lineWidth = 2;
       if (owner) {
@@ -1965,7 +1965,7 @@ export class UI {
         g.arc(p.x, p.y, 15, 0, 6.283);
         g.stroke();
       }
-      if (globalThis.showCaptureBars && c.by && c.by !== owner && c.progress > 0 && c.progress < c.time) {
+      if (globalThis.showCaptureBars && c.by && c.by !== owner && c.progress > 0 && c.progress < c.time && (!W.viewWatches || W.viewWatches(u))) {
         g.strokeStyle = '#' + c.by.color.getHexString();
         g.beginPath();
         g.arc(p.x, p.y, 19, -1.57, -1.57 + (6.283 * c.progress) / c.time);
@@ -2113,7 +2113,8 @@ export class UI {
     s._iconFrame = this.overlayFrame;
     const selected = s.selected && !enemy;
     const alpha = (s.isSquad ? s.fighters[0]?.cloaked : s.cloaked) ? 0.4 : s === this.hover || selected ? 1 : 0.9;
-    const color = s.player.id < 0 ? '#9aa7b4' : (s.player._hex ||= '#' + s.player.color.getHexString());
+    const shown = s.capture && this.world.shownOwner ? this.world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
+      color = !shown ? '#9aa7b4' : (shown._hex ||= '#' + shown.color.getHexString());
     const mode = selected ? 2 : s === this.hover ? 1 : 0,
       pad = 12;
     const seen = (this.iconSeen ||= new WeakMap()).get(s);
@@ -2393,7 +2394,8 @@ export class UI {
     }
     if (one) {
       const who = pl => (pl === me ? pl.factionName : `${pl.name} · ${pl.factionName}`);
-      const owner = one.player.id < 0 ? (one.isPad && one.padOwner ? who(one.padOwner) : 'Neutral') : who(one.player);
+      const shown = one.capture && this.world.shownOwner ? this.world.shownOwner(one) : null,
+        owner = one.capture && this.world.shownOwner ? (shown ? who(shown) : 'Neutral') : one.player.id < 0 ? (one.isPad && one.padOwner ? who(one.padOwner) : 'Neutral') : who(one.player);
       const hasShield = !one.isSquad && one.maxShield > 0;
       this.selTitle.textContent = one.name;
       let sub = owner;

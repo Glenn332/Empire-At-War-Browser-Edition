@@ -460,8 +460,20 @@ export class Radar {
           isEnemy = !own && u.player.id >= 0;
         if (isEnemy && (!t.enemy || u.cloaked || (!radar && !u.capture))) continue;
         if (!own && w.fog && !this.seeAll && !(u.seenBy & bit) && !t.fogged) continue;
-        if (u.isPad && u.padChild) continue;
-        const owner = u.isPad || u.capture ? u.padOwner || (u.player.id >= 0 ? u.player : null) : u.player.id >= 0 ? u.player : null;
+        // A built-on pad gives way to what stands on it, unless the viewer cannot see that: then the pad stays, in the
+        // colour the viewer last saw.
+        if (u.isPad && u.padChild) {
+          const c = u.padChild;
+          if (c.player.team === player.team || !w.fog || this.seeAll || c.seenBy & bit) continue;
+        }
+        const owner =
+          u.isPad || u.capture
+            ? w.shownOwner
+              ? w.shownOwner(u)
+              : u.padOwner || (u.player.id >= 0 ? u.player : null)
+            : u.player.id >= 0
+              ? u.player
+              : null;
         const selected = sel && (u.selected || (u.squad && u.squad.selected));
         if ((pass === 0) !== !t.icon) continue;
         const c = selected ? sel : owner ? this.colorOf(owner) : this.tone(NEUTRAL);
