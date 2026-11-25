@@ -45,6 +45,7 @@ export class SpaceRecorder {
     this.players = [];
     this.queues = [];
     this.known = new Set();
+    this.newestShot = 0;
     this.fresh = [];
     this.sent = new Map();
     this.sentPoints = new Map();
@@ -351,21 +352,59 @@ export class SpaceRecorder {
     this.nUnits = n;
     o = 0;
     this.fresh.length = 0;
+    if (w.shots && w.shotRowsOf === ps && w.shotRowCount === ps.length) this.writeShotRows(w.shots, w.shotRows, ps, S);
+    else this.writeShotObjects(ps, S);
+    this.nShots = ps.length;
+    return (this.nUnits * UNIT + this.nShots * SHOT + this.nPoints * POINT) * 4;
+  }
+
+  freshShot(p, id) {
+    this.fresh.push({
+      id,
+      def: p.def.name,
+      speed: p.speed,
+      width: p.width,
+      length: p.length,
+      r: p.r,
+      g: p.g,
+      b: p.b,
+      missile: !!p.missile
+    });
+  }
+
+  // The battle's shots straight from their rows of numbers (see shots.js). Shots are numbered as they are made and
+  // listed in that order, so one numbered above the newest written so far is new to the page.
+  writeShotRows(store, rows, ps, S) {
+    const newestBefore = this.newestShot;
+    let o = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const row = rows[i],
+        id = store.id[row];
+      if (id > newestBefore) {
+        this.freshShot(ps[i], id);
+        if (id > this.newestShot) this.newestShot = id;
+      }
+      S[o] = id;
+      S[o + 1] = store.x[row];
+      S[o + 2] = store.y[row];
+      S[o + 3] = store.z[row] || 0;
+      S[o + 4] = store.vx[row];
+      S[o + 5] = store.vy[row];
+      S[o + 6] = store.vz[row];
+      S[o + 7] = store.age[row] || 0;
+      S[o + 8] = store.hidden[row];
+      o += SHOT;
+    }
+  }
+
+  // The same from a plain list of shots (a world whose shots are not kept in rows).
+  writeShotObjects(ps, S) {
+    let o = 0;
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (!this.known.has(p.id)) {
         this.known.add(p.id);
-        this.fresh.push({
-          id: p.id,
-          def: p.def.name,
-          speed: p.speed,
-          width: p.width,
-          length: p.length,
-          r: p.r,
-          g: p.g,
-          b: p.b,
-          missile: !!p.missile
-        });
+        this.freshShot(p, p.id);
       }
       S[o] = p.id;
       S[o + 1] = p.x;
@@ -378,11 +417,9 @@ export class SpaceRecorder {
       S[o + 8] = p.hidden ? 1 : 0;
       o += SHOT;
     }
-    this.nShots = ps.length;
     if (this.known.size > ps.length * 2 + 4096) {
       const live = new Set(ps.map(p => p.id));
       for (const id of this.known) if (!live.has(id)) this.known.delete(id);
     }
-    return (this.nUnits * UNIT + this.nShots * SHOT + this.nPoints * POINT) * 4;
   }
 }

@@ -758,9 +758,22 @@ export function tickAbilities(world, u, dt) {
           unitY = u.y,
           unitZ = u.z || 0,
           reach = r * r;
-        for (const p of world.projectiles) {
-          if (p.dead) continue;
-          if ((p.x - unitX) ** 2 + (p.y - unitY) ** 2 + ((p.z || 0) - unitZ) ** 2 > reach) continue;
+        // where the battle keeps its shots in rows of numbers (shots.js), far shots are passed over from those
+        const shots = world.projectiles,
+          store = world.shots,
+          rows = world.shotRows,
+          inRows = !!store && world.shotRowsOf === shots && world.shotRowCount === shots.length;
+        for (let i = 0; i < shots.length; i++) {
+          if (inRows) {
+            const row = rows[i];
+            if (store.dead[row]) continue;
+            if ((store.x[row] - unitX) ** 2 + (store.y[row] - unitY) ** 2 + ((store.z[row] || 0) - unitZ) ** 2 > reach) continue;
+          }
+          const p = shots[i];
+          if (!inRows) {
+            if (p.dead) continue;
+            if ((p.x - unitX) ** 2 + (p.y - unitY) ** 2 + ((p.z || 0) - unitZ) ** 2 > reach) continue;
+          }
           if (!p.owner || p.owner.team === team) continue;
           if (kinds.length ? !(p.def && kinds.includes((p.def.upperCategory ??= p.def.str('Projectile_Category').trim().toUpperCase()))) : !p.missile)
             continue;

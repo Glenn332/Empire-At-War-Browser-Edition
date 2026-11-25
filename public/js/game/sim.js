@@ -15,6 +15,7 @@ import { BountyBook, bountyValue } from './bounty.js';
 import { losingSideBonus } from './losingbonus.js';
 import { getModelData, buildModel, flattenModel, PartGroup } from '../model.js';
 import { HitGrid } from './hitgrid.js';
+import { Shot, ShotStore, SHOT_PLAIN, SHOT_GENERAL } from './shots.js';
 import { getALA, animName, AnimState } from '../ala.js';
 import {
   parseAbilities,
@@ -77,6 +78,19 @@ const UNIT_CELL = 1024,
 const HIT_CELL = 256;
 // Teams the projectile grid keeps separate lists for; the list after them holds every unit.
 const HIT_TEAMS = 7;
+// How a hittable unit is tested against a shot's step.
+const HIT_SPHERE = 0,
+  HIT_BOX = 1,
+  HIT_MESH = 2;
+// What the shot step keeps for each hittable unit of a step: where it is, how far it reaches, and its hit shape.
+function hitNumbersFor(room) {
+  const numbers = {};
+  for (const name of ['x', 'y', 'z', 'reach', 'radius', 'ball', 'meshReach', 'boxX', 'boxY', 'boxZ', 'boxHeading', 'boxA', 'boxB', 'boxC'])
+    numbers[name] = new Float64Array(room);
+  numbers.shape = new Uint8Array(room);
+  numbers.ownList = new Int32Array(room);
+  return numbers;
+}
 const ATTACKER_DECAY_FRAMES = 150;
 const VIS_CELL = 512;
 const FIELD_CELL = 1024;
@@ -1864,6 +1878,8 @@ export class World {
     this.wingSeq = 0;
     this.forceSeq = 0;
     this.projectiles = [];
+    this.shots = null;
+    this.shotStore();
     this.obstacles = [];
     this.specialWeapons = [];
     this.tacticalSuperweapons = null;
@@ -5328,7 +5344,7 @@ export class World {
     const homing = cat === CAT.MISSILE;
     const reach = ((opts && opts.range) || proj.num('Projectile_Max_Flight_Distance', 2000)) + (target.hitRadius || 0) + Math.abs(tp.z - z);
     const mult = shooter.bonus.damage * shooter.mods.damageDealt * (opts && opts.mult ? opts.mult : 1);
-    this.projectiles.push({
+    this.addShot({
       id: ++shotIds,
       def: proj,
       x,
@@ -5421,7 +5437,7 @@ export class World {
       dz = tz - z,
       len = Math.hypot(dx, dy, dz) || 1;
     const col = proj.vec('Projectile_Laser_Color', [255, 200, 120, 255]);
-    this.projectiles.push({
+    this.addShot({
       id: ++shotIds,
       def: proj,
       x,
@@ -5623,11 +5639,14 @@ export class World {
   }
 
   updateProjectiles(dt) {
-    const ps = this.projectiles;
+    const ps = this.projectiles,
+      store = this.shotStore();
+    store.nextStep();
+    this.alignShotRows();
     if (ps.length) this.makeHitGrid();
     const deflect = (this._deflect ||= []);
     deflect.length = 0;
-    if (ps.some(p => p.homing))
+    if (store.homing > 0)
       for (const u of this.units) {
         if (u.dead) continue;
         let r = (u.type._missileShield ??= u.type.num('Passive_Missile_Shield_Radius', 0));
@@ -5653,10 +5672,44 @@ export class World {
       }
     let n = 0;
     for (let i = 0; i < ps.length; i++) {
+      const row = this.shotRows[i];
+      if (store.dead[row]) {
+        store.release(row);
+        continue;
+      }
+      if (store.kind[row] === SHOT_PLAIN) {
+        // a plain bolt flies straight from its row of numbers; the shot itself is only needed when it may hit or ends
+        const step = store.speed[row] * dt,
+          age = (store.age[row] += dt),
+          x0 = store.x[row],
+          y0 = store.y[row],
+          z0 = store.z[row],
+          x1 = (store.x[row] = x0 + store.vx[row] * dt),
+          y1 = (store.y[row] = y0 + store.vy[row] * dt),
+          z1 = (store.z[row] = z0 + store.vz[row] * dt),
+          flown = (store.flown[row] += step),
+          reach = store.reach[row],
+          struck = this.shotStrike(store.team[row], x0, y0, z0, x1, y1, z1, step);
+        if (struck < 0 && !(reach > 0 ? flown >= reach : store.life[row] > 0 && age >= store.life[row])) {
+          this.shotRows[n] = row;
+          ps[n++] = ps[i];
+          continue;
+        }
+        const p = ps[i];
+        if (struck >= 0) this.shotStruck(p, struck, x0, y0, z0);
+        if (this.shotFliesOn(p, struck < 0)) {
+          this.shotRows[n] = row;
+          ps[n++] = p;
+        } else {
+          this.shotEnded(p);
+          store.release(row);
+        }
+        continue;
+      }
       const p = ps[i];
-      if (p.dead) continue;
       if (p.wait > 0) {
         p.wait -= dt;
+        this.shotRows[n] = row;
         ps[n++] = p;
         continue;
       }
@@ -5679,6 +5732,7 @@ export class World {
             z: p.point.z
           });
           this.shotEnded(p);
+          store.release(row);
           continue;
         }
       }
@@ -5687,7 +5741,10 @@ export class World {
         p.y += p.vy * dt;
         p.z += p.vz * dt;
         if ((p.flown += step) >= p.reach) keep = false;
-        if (keep) ps[n++] = p;
+        if (keep) {
+          this.shotRows[n] = row;
+          ps[n++] = p;
+        } else store.release(row);
         continue;
       }
       if (p.homing && (!t || t.dead || t.hyper)) {
@@ -5766,122 +5823,193 @@ export class World {
         p.flown += step;
       }
       if (keep) {
-        let hit = null,
-          hitPart = null,
-          ht = 2;
-        const hitters = this._hitters,
-          hitX = this.hitX,
-          hitY = this.hitY,
-          hitR = this.hitR,
-          C = HIT_CELL,
-          shotTeam = this.hitTeams.get(p.team),
-          everyone = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS;
-        if (everyone && !this.hitWhole) this.fileEveryHitter();
-        const grid = everyone ? this.hitEveryone : this.hitByTeam,
-          list = everyone ? 0 : shotTeam;
-        const cx0 = Math.floor(Math.min(x0, p.x) / C),
-          cx1 = Math.floor(Math.max(x0, p.x) / C),
-          cy0 = Math.floor(Math.min(y0, p.y) / C),
-          cy1 = Math.floor(Math.max(y0, p.y) / C);
-        for (let ix = cx0; ix <= cx1; ix++)
-          for (let iy = cy0; iy <= cy1; iy++) {
-            if (grid.find(ix, iy, list))
-              for (let k = grid.from, to = grid.to, source = grid.source; k < to; k++) {
-                // far units are passed over from the grid's own numbers, without touching the unit
-                const index = source[k],
-                  r = hitR[index] + step,
-                  awayX = hitX[index] - p.x,
-                  awayY = hitY[index] - p.y;
-                if (awayX * awayX + awayY * awayY > r * r) continue;
-                const o = hitters[index];
-                if (o.dead || o.player.team === p.team) continue;
-                this.hitPart = null;
-                let tt;
-                if (o.coll || o.hpColl) tt = segNear(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, o.collR) ? this.meshStep(o, x0, y0, z0, p.x, p.y, p.z) : -1;
-                else if (o.hitA) {
-                  const h = o.heading || 0,
-                    ch = Math.cos(h),
-                    sh = Math.sin(h);
-                  tt = sweepBox(
-                    x0,
-                    y0,
-                    z0,
-                    p.x,
-                    p.y,
-                    p.z,
-                    o.x + ch * o.hitF - sh * o.hitL,
-                    o.y + sh * o.hitF + ch * o.hitL,
-                    o.z + o.hitZ,
-                    h,
-                    o.hitA,
-                    o.hitB,
-                    o.hitC
-                  );
-                } else tt = sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.hitRadius, o.hitRadius, o.hitRadius);
-                if (tt < 0 && o.collBall > 0) tt = sweep(x0, y0, z0, p.x, p.y, p.z, o.x, o.y, o.z, 0, o.collBall, o.collBall, o.collBall);
-                if (tt >= 0 && tt < ht) {
-                  ht = tt;
-                  hit = o;
-                  hitPart = this.hitPart;
-                }
-              }
-          }
-        if (hit) {
-          const hx = x0 + (p.x - x0) * ht,
-            hy = y0 + (p.y - y0) * ht,
-            hz = z0 + (p.z - z0) * ht;
-          const hp = p.target === hit && p.targetHp ? p.targetHp : hitPart;
-          this.damage(hit, p.damage, {
-            damageType: p.damageType,
-            hp,
-            attacker: p.owner,
-            from: p.from,
-            shields: p.shields,
-            hull: p.hull,
-            x: hx,
-            y: hy,
-            z: hz,
-            fx: p.fx,
-            proj: p.def
-          });
-          if (p.def.bool('Projectile_Ion_Stun_On_Detonation')) this.ionHit(p, hit, hx, hy);
-          if (p.blastRange > 0 && p.blastDamage > 0)
-            this.areaDamage(hx, hy, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
-              shields: p.shields,
-              hull: p.hull,
-              proj: p.def,
-              z: hz,
-              from: p.from,
-              exclude: hit,
-              hitHp: hp || hitPart
-            });
+        const struck = this.shotStrike(p.team, x0, y0, z0, p.x, p.y, p.z, step);
+        if (struck >= 0) {
+          this.shotStruck(p, struck, x0, y0, z0);
           keep = false;
-          p.hitDone = true;
         }
       }
-      if (keep && (p.reach > 0 ? p.flown >= p.reach : p.life > 0 && p.age >= p.life)) keep = false;
-      if (
-        keep &&
-        p.cat === CAT.DEFAULT &&
-        p.def.bool('Explode_When_Reached_Target_Radius', false) &&
-        (p.x - p.sx) ** 2 + (p.y - p.sy) ** 2 + (p.z - p.sz) ** 2 >= (p.aim.x - p.sx) ** 2 + (p.aim.y - p.sy) ** 2 + (p.aim.z - p.sz) ** 2
-      )
-        keep = false;
-      if (!keep && p.reach !== undefined && !p.hitDone) {
-        if (p.end && !p.hidden) this.fx.hit(p.x, p.y, p.z, 8, p.end);
-        if (p.blastRange > 0 && p.blastDamage > 0)
-          this.areaDamage(p.x, p.y, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
-            shields: p.shields,
-            hull: p.hull,
-            proj: p.def,
-            z: p.z,
-            from: p.from
-          });
+      if (this.shotFliesOn(p, keep)) {
+        this.shotRows[n] = row;
+        ps[n++] = p;
+      } else {
+        this.shotEnded(p);
+        store.release(row);
       }
-      if (keep) ps[n++] = p;
-      else this.shotEnded(p);
     }
     ps.length = n;
+    this.shotRowCount = n;
+  }
+
+  // The first unit a shot of this team hits on its step from (x0, y0, z0) to (x1, y1, z1): the unit's place in the
+  // step's list of hittable units, or -1. How far along the step it hit (0 to 1) is left in strikeAlong and the
+  // hardpoint hit, when the unit's collision mesh tells, in strikePart. A unit with a hit sphere or box is tested
+  // from the numbers taken when the grid was made; only a hit, or a unit with a collision mesh, is looked at itself.
+  shotStrike(team, x0, y0, z0, x1, y1, z1, step) {
+    let hit = -1,
+      hitPart = null,
+      ht = 2;
+    const hitters = this._hitters,
+      H = this.hitNumbers,
+      hitX = H.x,
+      hitY = H.y,
+      hitR = H.reach,
+      C = HIT_CELL,
+      shotTeam = this.hitTeams.get(team),
+      everyone = shotTeam === undefined || this.hitTeams.size > HIT_TEAMS;
+    if (everyone && !this.hitWhole) this.fileEveryHitter();
+    const grid = everyone ? this.hitEveryone : this.hitByTeam,
+      list = everyone ? 0 : shotTeam;
+    const cx0 = Math.floor(Math.min(x0, x1) / C),
+      cx1 = Math.floor(Math.max(x0, x1) / C),
+      cy0 = Math.floor(Math.min(y0, y1) / C),
+      cy1 = Math.floor(Math.max(y0, y1) / C);
+    for (let ix = cx0; ix <= cx1; ix++)
+      for (let iy = cy0; iy <= cy1; iy++) {
+        if (!grid.find(ix, iy, list)) continue;
+        for (let k = grid.from, to = grid.to, source = grid.source; k < to; k++) {
+          const index = source[k],
+            r = hitR[index] + step,
+            awayX = hitX[index] - x1,
+            awayY = hitY[index] - y1;
+          if (awayX * awayX + awayY * awayY > r * r) continue;
+          const shape = H.shape[index];
+          this.hitPart = null;
+          let tt;
+          if (shape === HIT_MESH) {
+            const o = hitters[index];
+            if (o.dead || o.player.team === team) continue;
+            tt = segNear(x0, y0, z0, x1, y1, z1, hitX[index], hitY[index], H.z[index], H.meshReach[index]) ? this.meshStep(o, x0, y0, z0, x1, y1, z1) : -1;
+          } else if (shape === HIT_BOX)
+            tt = sweepBox(x0, y0, z0, x1, y1, z1, H.boxX[index], H.boxY[index], H.boxZ[index], H.boxHeading[index], H.boxA[index], H.boxB[index], H.boxC[index]);
+          else {
+            const radius = H.radius[index];
+            tt = sweep(x0, y0, z0, x1, y1, z1, hitX[index], hitY[index], H.z[index], 0, radius, radius, radius);
+          }
+          if (tt < 0 && H.ball[index] > 0) {
+            const ball = H.ball[index];
+            tt = sweep(x0, y0, z0, x1, y1, z1, hitX[index], hitY[index], H.z[index], 0, ball, ball, ball);
+          }
+          if (!(tt >= 0 && tt < ht)) continue;
+          if (shape !== HIT_MESH) {
+            const o = hitters[index];
+            if (o.dead || o.player.team === team) continue;
+          }
+          ht = tt;
+          hit = index;
+          hitPart = this.hitPart;
+        }
+      }
+    this.strikeAlong = ht;
+    this.strikePart = hitPart;
+    return hit;
+  }
+
+  // Deals the hit shotStrike found for this shot, flown from (x0, y0, z0) to where it is now.
+  shotStruck(p, struck, x0, y0, z0) {
+    const hit = this._hitters[struck],
+      ht = this.strikeAlong,
+      hitPart = this.strikePart;
+    const hx = x0 + (p.x - x0) * ht,
+      hy = y0 + (p.y - y0) * ht,
+      hz = z0 + (p.z - z0) * ht;
+    const hp = p.target === hit && p.targetHp ? p.targetHp : hitPart;
+    this.damage(hit, p.damage, {
+      damageType: p.damageType,
+      hp,
+      attacker: p.owner,
+      from: p.from,
+      shields: p.shields,
+      hull: p.hull,
+      x: hx,
+      y: hy,
+      z: hz,
+      fx: p.fx,
+      proj: p.def
+    });
+    if (p.def.bool('Projectile_Ion_Stun_On_Detonation')) this.ionHit(p, hit, hx, hy);
+    if (p.blastRange > 0 && p.blastDamage > 0)
+      this.areaDamage(hx, hy, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
+        shields: p.shields,
+        hull: p.hull,
+        proj: p.def,
+        z: hz,
+        from: p.from,
+        exclude: hit,
+        hitHp: hp || hitPart
+      });
+    p.hitDone = true;
+  }
+
+  // After a shot has flown its step: whether it flies on. One that has run out goes off here if it does that.
+  shotFliesOn(p, keep) {
+    if (keep && (p.reach > 0 ? p.flown >= p.reach : p.life > 0 && p.age >= p.life)) keep = false;
+    if (
+      keep &&
+      p.cat === CAT.DEFAULT &&
+      p.def.bool('Explode_When_Reached_Target_Radius', false) &&
+      (p.x - p.sx) ** 2 + (p.y - p.sy) ** 2 + (p.z - p.sz) ** 2 >= (p.aim.x - p.sx) ** 2 + (p.aim.y - p.sy) ** 2 + (p.aim.z - p.sz) ** 2
+    )
+      keep = false;
+    if (!keep && p.reach !== undefined && !p.hitDone) {
+      if (p.end && !p.hidden) this.fx.hit(p.x, p.y, p.z, 8, p.end);
+      if (p.blastRange > 0 && p.blastDamage > 0)
+        this.areaDamage(p.x, p.y, p.blastRange, p.blastDamage * p.mult, p.damageType, p.owner, {
+          shields: p.shields,
+          hull: p.hull,
+          proj: p.def,
+          z: p.z,
+          from: p.from
+        });
+    }
+    return keep;
+  }
+
+  // A new shot, as launch and launchPoint describe it.
+  addShot(made) {
+    const plain =
+      !made.wait &&
+      !made.point &&
+      made.cat >= 0 &&
+      !made.homing &&
+      !made.path &&
+      made.cat !== CAT.BOMB &&
+      made.cat !== CAT.CLUSTER_BOMB &&
+      !(made.cat === CAT.DEFAULT && made.def.bool('Explode_When_Reached_Target_Radius', false));
+    const shot = new Shot(this.shotStore(), made, plain ? SHOT_PLAIN : SHOT_GENERAL),
+      ps = this.projectiles,
+      listed = this.shotRowsOf === ps && this.shotRowCount === ps.length;
+    ps.push(shot);
+    if (listed) {
+      if (this.shotRowCount === this.shotRows.length) {
+        const grown = new Int32Array(this.shotRows.length * 2);
+        grown.set(this.shotRows);
+        this.shotRows = grown;
+      }
+      this.shotRows[this.shotRowCount++] = shot.row;
+    }
+    return shot;
+  }
+
+  // The rows of this battle's shots; a world put together without its constructor (tests do) gets them on first use.
+  shotStore() {
+    if (!this.shots) {
+      this.shots = new ShotStore();
+      this.shotRows = new Int32Array(4096);
+      this.shotRowsOf = null;
+      this.shotRowCount = 0;
+    }
+    return this.shots;
+  }
+
+  // shotRows[i] is the row of projectiles[i]. Made anew when the list was replaced or changed behind our back.
+  alignShotRows() {
+    const ps = this.projectiles;
+    if (this.shotRowsOf === ps && this.shotRowCount === ps.length) return;
+    if (this.shotRows.length < ps.length) this.shotRows = new Int32Array(Math.max(4096, ps.length * 2));
+    for (let i = 0; i < ps.length; i++) this.shotRows[i] = ps[i].row;
+    this.shotRowsOf = ps;
+    this.shotRowCount = ps.length;
   }
 
   // Each cell keeps its units in unit order, once for every team as the units that team's shots can hit (the
@@ -5901,25 +6029,41 @@ export class World {
       hitters.push(o);
       if (!teams.has(o.player.team)) teams.set(o.player.team, teams.size);
     }
-    if (!this.hitX || this.hitX.length < hitters.length) {
-      const room = Math.max(1024, hitters.length * 2);
-      this.hitX = new Float64Array(room);
-      this.hitY = new Float64Array(room);
-      this.hitR = new Float64Array(room);
-      this.hitOwnList = new Int32Array(room);
-    }
+    if (!this.hitNumbers || this.hitNumbers.x.length < hitters.length) this.hitNumbers = hitNumbersFor(Math.max(1024, hitters.length * 2));
+    const H = this.hitNumbers;
     for (let i = 0; i < hitters.length; i++) {
       const o = hitters[i];
       if (o.hitA) o.hitReach ??= Math.hypot(o.hitA, o.hitB) + Math.abs(o.hitF) + Math.abs(o.hitL);
-      this.hitX[i] = o.x;
-      this.hitY[i] = o.y;
-      this.hitR[i] = Math.max(o.hitReach || o.hitRadius, o.collR || 0, o.collBall || 0);
-      this.hitOwnList[i] = teams.get(o.player.team);
+      H.x[i] = o.x;
+      H.y[i] = o.y;
+      H.z[i] = o.z;
+      H.reach[i] = Math.max(o.hitReach || o.hitRadius, o.collR || 0, o.collBall || 0);
+      H.ownList[i] = teams.get(o.player.team);
+      H.ball[i] = o.collBall > 0 ? o.collBall : 0;
+      if (o.coll || o.hpColl) {
+        H.shape[i] = HIT_MESH;
+        H.meshReach[i] = o.collR;
+      } else if (o.hitA) {
+        const h = o.heading || 0,
+          ch = Math.cos(h),
+          sh = Math.sin(h);
+        H.shape[i] = HIT_BOX;
+        H.boxX[i] = o.x + ch * o.hitF - sh * o.hitL;
+        H.boxY[i] = o.y + sh * o.hitF + ch * o.hitL;
+        H.boxZ[i] = o.z + o.hitZ;
+        H.boxHeading[i] = h;
+        H.boxA[i] = o.hitA;
+        H.boxB[i] = o.hitB;
+        H.boxC[i] = o.hitC;
+      } else {
+        H.shape[i] = HIT_SPHERE;
+        H.radius[i] = o.hitRadius;
+      }
     }
     const split = teams.size > 0 && teams.size <= HIT_TEAMS;
-    if (split) this.fileHitters((this.hitByTeam ||= new HitGrid(HIT_CELL)), this.hitOwnList, teams.size);
+    if (split) this.fileHitters((this.hitByTeam ||= new HitGrid(HIT_CELL)), H.ownList, teams.size);
     let whole = !split;
-    if (!whole) for (const p of this.projectiles) if (!teams.has(p.team)) whole = true;
+    if (!whole) for (let i = 0; i < this.shotRowCount && !whole; i++) if (!teams.has(this.shots.team[this.shotRows[i]])) whole = true;
     if (whole) this.fileEveryHitter();
   }
 
@@ -5931,7 +6075,7 @@ export class World {
 
   fileHitters(grid, ownList, lists) {
     const edge = HIT_CELL * 4;
-    grid.build(this._hitters.length, this.hitX, this.hitY, this.hitR, ownList, lists, this.min.x - edge, this.min.y - edge, this.max.x + edge, this.max.y + edge);
+    grid.build(this._hitters.length, this.hitNumbers.x, this.hitNumbers.y, this.hitNumbers.reach, ownList, lists, this.min.x - edge, this.min.y - edge, this.max.x + edge, this.max.y + edge);
   }
 
   cullOf(o) {
