@@ -321,6 +321,10 @@ const inLookTree = t =>
       .split(/[|,\s]+/)
       .some(k => LOOK_LAYERS.has(k)));
 const MODE_PROXY = { pptw: ['POWER_TO_WEAPONS', 'FULL_SALVO'], prs: ['MISSILE_SHIELD'], pem: ['INVULNERABILITY'] };
+const modeAbility = (type, mode) => {
+  const kinds = (type._modeKinds ??= parseAbilities(type).map(d => d.kind));
+  return MODE_PROXY[mode].some(k => kinds.includes(k));
+};
 const ambientDelay = type => {
   const lo = Math.max(0, type.num('SFXEvent_Ambient_Moving_Min_Delay_Seconds', 0)),
     hi = Math.max(0, type.num('SFXEvent_Ambient_Moving_Max_Delay_Seconds', 0));
@@ -1006,7 +1010,10 @@ export class Unit {
           });
           continue;
         }
-        const mode = px.hidden ? /^(pptw|prs|pem)/i.exec(px.name)?.[1].toLowerCase() : null;
+        // PPTW, PRS and PEM effects belong to an ability. Some models ship them unhidden (Thrawn's Admonitor, Rogue
+        // Squadron, the Arc Hammer); they still show only while the ability is on when the unit has that ability.
+        const named = /^(pptw|prs|pem)/i.exec(px.name)?.[1].toLowerCase(),
+          mode = named && (px.hidden || modeAbility(this.type, named)) ? named : null;
         if (mode) {
           (this.modeProxies ||= []).push({
             name: px.name,
