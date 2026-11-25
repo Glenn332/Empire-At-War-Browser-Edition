@@ -8,7 +8,7 @@ import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
 import { SCRIPTS_LOST_WARNING } from './tacticalsave.js';
-import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex, tacticalSpeed, saveTacticalSpeed } from './galacticspeed.js';
+import { STRATEGIC_FRAMES, STRATEGIC_DEFAULT, strategicIndexOf, strategicMultiplier, saveStrategicIndex } from './galacticspeed.js';
 import { inApp } from '../platform.js';
 import '../bugreportui.js';
 import { loadContent, contentDifferences } from '../content.js';
@@ -1145,7 +1145,7 @@ export class Menus {
       } catch {}
     };
     const strategic = !!g.galactic,
-      was = { speed: g.speed, tactical: tacticalSpeed(), auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate(), edge: edgePan() };
+      was = { speed: g.speed, auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate(), edge: edgePan() };
     const setDelayed = on => {
       delayed = on;
       g.delayTooltips = on;
@@ -1160,8 +1160,6 @@ export class Menus {
         localStorage.setItem('swr-simplified-faction-colors', on ? '1' : '0');
       } catch {}
     };
-    const toV = s => (s - 0.5) / 1.5,
-      toS = v => Math.round((0.5 + 1.5 * v) * 20) / 20;
     const show = () => {
       if (strategic)
         dlg.slider(
@@ -1175,11 +1173,6 @@ export class Menus {
           STRATEGIC_FRAMES.length,
           !g.speedLocked?.()
         );
-      else
-        dlg.slider('IDC_GAME_SPEED_SLIDER', toV(tacticalSpeed()), v => {
-          saveTacticalSpeed(toS(v));
-          g.setSpeed?.(toS(v));
-        });
       dlg.check('IDC_ABILITIES_DEFAULT_TO_AUTOFIRE', $('optAutofire').checked, on => setInput('optAutofire', on));
       dlg.check('IDC_SIMPLIFIED_FACTION_COLORS', simplified, setSimplified);
       dlg.check('IDC_DELAY_TOOLTIPS', delayed, setDelayed);
@@ -1189,7 +1182,9 @@ export class Menus {
     };
     show();
     for (const id of [
-      ...(strategic ? ['IDC_GAME_SPEED_SLIDER'] : ['IDC_STRATEGIC_GAME_SPEED_SLIDER']),
+      // battles have no speed slider (ours): they start at normal speed and fast forward doubles it
+      'IDC_GAME_SPEED_SLIDER',
+      ...(strategic ? [] : ['IDC_STRATEGIC_GAME_SPEED_SLIDER']),
       'IDC_SCROLL_SPEED_SLIDER',
       'IDC_ALTERNATE_MOUSE_CONTROLS',
       'IDC_ABSOLUTE_SCROLLING',
@@ -1213,9 +1208,10 @@ export class Menus {
       this.pop();
     });
     dlg.on('IDC_CANCEL_BUTTON', () => {
-      g.setSpeed?.(was.speed);
-      if (strategic) saveStrategicIndex(strategicIndexOf(was.speed));
-      else saveTacticalSpeed(was.tactical);
+      if (strategic) {
+        g.setSpeed?.(was.speed);
+        saveStrategicIndex(strategicIndexOf(was.speed));
+      }
       setInput('optAutofire', was.auto);
       setSimplified(was.simplified);
       setDelayed(was.delayed);
@@ -1228,9 +1224,6 @@ export class Menus {
       if (strategic) {
         g.setSpeed(strategicMultiplier(STRATEGIC_DEFAULT));
         saveStrategicIndex(STRATEGIC_DEFAULT);
-      } else {
-        g.setSpeed?.(1);
-        saveTacticalSpeed(1);
       }
       setInput('optAutofire', true);
       difficulty = 'medium';

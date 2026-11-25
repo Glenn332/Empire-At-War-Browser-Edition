@@ -1,3 +1,4 @@
+import { FAST_FORWARD } from './galacticspeed.js';
 import * as THREE from 'three';
 import { db, selectionBoxColors } from '../gamedata.js';
 import { getModelData, buildModel } from '../model.js';
@@ -576,12 +577,13 @@ export class UI {
       game.togglePause();
       return;
     }
+    // Two battle speeds (ours): normal and fast forward, as the fast forward button.
     if (pressed(e, 'SPEED_UP')) {
-      game.setSpeed(Math.min(4, game.speed * 2));
+      game.setSpeed(FAST_FORWARD);
       return;
     }
     if (pressed(e, 'SPEED_DOWN')) {
-      game.setSpeed(Math.max(0.5, game.speed / 2));
+      game.setSpeed(1);
       return;
     }
     if (pressed(e, 'STOP')) {

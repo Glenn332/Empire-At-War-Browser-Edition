@@ -14,18 +14,14 @@ export function saveStrategicIndex(index) {
     localStorage.setItem(KEY, String(index));
   } catch {}
 }
-const TACTICAL_KEY = 'swr-tactical-game-speed';
+// Battles always start at normal speed (ours): the options slider for it is gone and fast forward is the one way to
+// change it. A speed saved by older builds is cleared.
+export const FAST_FORWARD = 2;
 export function tacticalSpeed() {
   try {
-    const s = parseFloat(localStorage.getItem(TACTICAL_KEY));
-    if (s >= 0.5 && s <= 2) return s;
+    localStorage.removeItem('swr-tactical-game-speed');
   } catch {}
   return 1;
-}
-export function saveTacticalSpeed(speed) {
-  try {
-    localStorage.setItem(TACTICAL_KEY, String(speed));
-  } catch {}
 }
 export const strategicMultiplier =index => STRATEGIC_FRAMES[index] / 30;
 export const strategicIndexOf = speed => {

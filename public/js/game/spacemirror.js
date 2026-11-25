@@ -268,37 +268,19 @@ export class SpaceMirror {
   }
 
   playback(real, rate) {
-    const g = this.game,
-      Q = this.queue;
-    if (!Q.length && this.shown === undefined) return;
-    const newest = Q.length ? Q[Q.length - 1].time : this.shown;
-    if (this.clock === undefined) this.clock = Q[0].time - TICK;
-    const lag = newest - this.clock;
-    if (lag > LAG_MAX) this.clock = newest - LAG;
-    else this.clock += real * rate * (1 + Math.max(-0.15, Math.min(0.15, (lag - LAG) / (8 * TICK))));
-    if (Q.length && Q[0].time - TICK <= this.clock) {
-      const t = performance.now();
-      let n = 0;
-      while (Q.length && Q[0].time - TICK <= this.clock) {
-        const m = Q.shift();
-        g.settle();
-        this.apply(m);
-        g.remember();
-        this.shown = m.time;
-        n++;
-      }
-      this.worker.postMessage({ k: 'seen', n });
-      this.lastAt = performance.now();
-      this.stats.applyMs += this.lastAt - t;
-    }
-    g.present(this.shown === undefined ? 0 : Math.max(0, Math.min(1, (this.clock - this.shown + TICK) / TICK)));
+    this.steady(real, rate, true);
   }
 
-  // Lockstep steps reach the page in bunches (several steps in flight on the battle thread, a busy host
-  // frame), so applying each arrival at once moves units in jumps and pauses. Show them on a steady clock
-  // that follows the measured arrival rate instead, about one and a half steps behind the newest. Only the
-  // drawing waits: the battle thread, the commands and the hashes are untouched.
   lockPlayback(real) {
+    this.steady(real, Infinity, false);
+  }
+
+  // Steps reach the page unevenly: in bunches in lockstep (several steps in flight on the battle thread), and slower
+  // than the chosen speed when the battle thread cannot keep up (fast forward in a big battle). Applying them as they
+  // come drew units in stops and jumps. They are shown on a steady clock that follows the measured arrival rate,
+  // never faster than the game speed, about one and a half steps behind the newest. Only the drawing waits: the
+  // battle thread, the commands and the hashes are untouched.
+  steady(real, cap, single) {
     const g = this.game,
       Q = this.queue,
       now = performance.now();
@@ -306,30 +288,41 @@ export class SpaceMirror {
     // real is capped for the simulation; drawing follows the wall clock so slow frames do not fall behind
     const dt = this.playedAt === undefined ? real : Math.min(1, (now - this.playedAt) / 1000);
     this.playedAt = now;
-    const newest = Q.length ? Q[Q.length - 1].time : this.shown;
-    const r = (this.arrival ||= { at: now, time: newest, rate: g.speed || 1 });
-    if (now - r.at >= 300) {
+    const newest = Q.length ? Q[Q.length - 1].time : this.shown,
+      held = cap <= 0;
+    const r = (this.arrival ||= { at: now, time: newest, rate: cap < Infinity ? cap : g.speed || 1, cap });
+    if (held || cap > r.cap) {
+      // paused, or sped up: start the new pace from the chosen speed and let the arrivals correct it
+      r.at = now;
+      r.time = newest;
+      if (!held) r.rate = cap;
+    } else if (now - r.at >= 300) {
       r.rate += ((newest - r.time) / ((now - r.at) / 1000) - r.rate) * 0.4;
       r.at = now;
       r.time = newest;
     }
+    r.cap = cap;
+    const pace = held ? 0 : Math.max(0, Math.min(cap, r.rate));
     if (this.clock === undefined) this.clock = Q[0].time - TICK;
     const lag = newest - this.clock,
       // nothing new for several step intervals: the battle ended or stalled, so show what is here
-      idle = Q.length && now - (this.arrivedAt || now) > Math.max(500, (4000 * TICK) / Math.max(r.rate, 0.01));
+      idle = !held && Q.length && now - (this.arrivedAt || now) > Math.max(500, (4000 * TICK) / Math.max(pace, 0.01));
     if (idle) this.clock = newest;
     else if (lag > LAG_MAX) this.clock = newest - LAG;
-    else this.clock += dt * Math.max(0, r.rate) * (1 + Math.max(-0.5, Math.min(0.5, (lag - LAG) / (4 * TICK))));
+    else this.clock += dt * pace * (1 + Math.max(-0.5, Math.min(0.5, (lag - LAG) / (4 * TICK))));
     if (this.clock > newest) this.clock = newest;
     if (Q.length && Q[0].time - TICK <= this.clock + 1e-6) {
       const t = performance.now();
+      let n = 0;
       while (Q.length && Q[0].time - TICK <= this.clock + 1e-6) {
         const m = Q.shift();
         g.settle();
         this.apply(m);
         g.remember();
         this.shown = m.time;
+        n++;
       }
+      if (single) this.worker.postMessage({ k: 'seen', n });
       this.lastAt = performance.now();
       this.stats.applyMs += this.lastAt - t;
     }

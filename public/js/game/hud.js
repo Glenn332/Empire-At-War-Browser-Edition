@@ -1,3 +1,4 @@
+import { FAST_FORWARD } from './galacticspeed.js';
 import { db, loadFileList } from '../gamedata.js';
 import { fetchText, fetchBinary } from '../vfs.js';
 import { BinkPlayer } from '../bink.js';
@@ -963,7 +964,7 @@ export class CommandBar {
       title: db.t('TEXT_TOOLTIP_STORY_BUTTON')
     });
     this.bPause = this.button('b_play_pause_t', { onClick: () => game.togglePause() });
-    this.bFast = this.button('b_fast_forward_t', { onClick: () => game.setSpeed(game.speed > 1 ? 1 : 2) });
+    this.bFast = this.button('b_fast_forward_t', { onClick: () => game.setSpeed(game.speed > 1 ? 1 : FAST_FORWARD) });
     this.bCamera = this.button('b_camera_t', { onClick: () => game.cine.toggle() });
     const sw = (game.world.specialWeapons || []).find(x => x.player === p);
     const swi = sw ? sw.index : 0;
