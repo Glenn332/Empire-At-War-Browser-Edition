@@ -1954,6 +1954,36 @@ export class World {
   bonusSource(type, owner, host = null, alias = false, carried = false) {
     const defs = bonusSourceDefs(type, SPACE);
     if (!defs.length || !owner) return null;
+    // Units of one type and owner offer the same bonus, and a unit keeps the largest of a category, so they share
+    // one source that lives while any of them does (ours): with hundreds of such squadrons every unit took and
+    // stored an entry from each, which froze big instant battles while they loaded.
+    if (host && !alias && !carried) {
+      const gk = type.name + '|' + owner.id,
+        groups = (this.bonusGroups ||= new Map());
+      const g = groups.get(gk);
+      if (g) {
+        g.hosts.add(host);
+        // the first host takes the bonus from the second one, as each host did from the others
+        if (g.hosts.size === 2) for (const o of g.hosts) if (o !== host) this.giveBonus(g, o);
+        return g;
+      }
+      const h = {
+        type,
+        defs,
+        owner,
+        host: null,
+        hosts: new Set([host]),
+        group: gk,
+        alias,
+        carried,
+        keys: defs.map((d, i) => 'bonusgrp:' + gk + ':' + d.index + ':' + i),
+        hit: new Set()
+      };
+      groups.set(gk, h);
+      this.bonusHolders.push(h);
+      for (const u of this.units) if (!u.dead) this.giveBonus(h, u);
+      return h;
+    }
     const h = { type, defs, owner, host, alias, carried, keys: defs.map((d, i) => type.name + ':' + d.index + ':' + i), hit: host ? [] : null };
     if (host) {
       const id = host.id;
@@ -1997,7 +2027,7 @@ export class World {
     const list = this.bonusHolders;
     for (let i = 0; i < list.length; i++) {
       const h = list[i];
-      if (!h.host || !h.host.dead) this.giveBonus(h, u);
+      if (h.hosts ? h.hosts.size > 0 : !h.host || !h.host.dead) this.giveBonus(h, u);
     }
   }
 
@@ -2007,13 +2037,17 @@ export class World {
     for (let i = 0; i < h.defs.length; i++) {
       const d = h.defs[i];
       if (u === h.host && !d.self && !h.carried) continue;
+      if (h.hosts && !d.self && h.hosts.has(u) && h.hosts.size < 2) continue;
       if (!bonusTypeFits(d, u.type, h.alias && u.type.parent ? u.type.parent.name.toUpperCase() : '')) continue;
       if (!bonusOwnerFits(d, u.player.factionName, h.owner.team === u.player.team)) continue;
       const m = (u.cmods ||= new CombatMods());
       for (const [t, v] of d.mods) if (m.set(t, d.key, h.keys[i], v)) hit = true;
     }
     if (!hit) return;
-    if (h.hit) {
+    if (h.hosts) {
+      if (h.hit.size > 4096) for (const x of h.hit) if (x.dead) h.hit.delete(x);
+      h.hit.add(u);
+    } else if (h.hit) {
       if (h.hit.length > 512) h.hit = h.hit.filter(x => !x.dead);
       h.hit.push(u);
     }
@@ -2025,6 +2059,38 @@ export class World {
     let k = 0;
     for (let i = 0; i < list.length; i++) {
       const h = list[i];
+      if (h.hosts) {
+        let lost = false;
+        for (const o of h.hosts)
+          if (o.dead) {
+            h.hosts.delete(o);
+            lost = true;
+          }
+        if (lost && h.hosts.size === 1) {
+          // a lone host no longer takes its own kind's bonus, unless the ability applies to itself
+          const [last] = h.hosts;
+          if (last.cmods) {
+            let gone = false;
+            h.defs.forEach((d, k) => {
+              if (!d.self && last.cmods.drop(h.keys[k])) gone = true;
+            });
+            if (gone) last.applyBonuses();
+          }
+        }
+        if (!h.hosts.size) {
+          for (const u of h.hit) {
+            if (u.dead || !u.cmods) continue;
+            let gone = false;
+            for (const key of h.keys) if (u.cmods.drop(key)) gone = true;
+            if (gone) u.applyBonuses();
+          }
+          h.hit.clear();
+          this.bonusGroups.delete(h.group);
+          continue;
+        }
+        list[k++] = h;
+        continue;
+      }
       if (h.host && h.host.dead) {
         for (const u of h.hit) {
           if (u.dead || !u.cmods) continue;
