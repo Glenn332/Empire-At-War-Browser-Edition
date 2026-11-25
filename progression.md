@@ -6,8 +6,8 @@ How much of *Star Wars: Empire at War — Forces of Corruption* the browser vers
 
 | | Coverage | Done | Partial | Missing | Features |
 |---|---|---|---|---|---|
-| **Space skirmish** | **93.9%** | 172 | 24 | 0 | 196 |
-| **Whole game** | **93.5%** | 322 | 42 | 3 | 367 |
+| **Space skirmish** | **93.9%** | 173 | 24 | 0 | 197 |
+| **Whole game** | **93.5%** | 323 | 42 | 3 | 368 |
 
 **How to read this.** Each cell is one feature or system from a hand-kept inventory (`tools/progress.mjs`), not a
 measurement of code. A feature is *done* when it works in play, *partial* when it works but is simplified or rests on
@@ -20,7 +20,7 @@ Regenerate with `node tools/progress.mjs`.
 | Group | Scope | Coverage | Done | Partial | Missing |
 |---|---|---|---|---|---|
 | Data formats | space skirmish | 86.8% | 14 | 5 | 0 |
-| Rendering | space skirmish | 87.0% | 20 | 7 | 0 |
+| Rendering | space skirmish | 87.5% | 21 | 7 | 0 |
 | Space simulation | space skirmish | 100.0% | 35 | 0 | 0 |
 | Abilities | space skirmish | 98.2% | 27 | 1 | 0 |
 | Skirmish AI | space skirmish | 95.0% | 18 | 2 | 0 |
@@ -58,7 +58,7 @@ Regenerate with `node tools/progress.mjs`.
 - 🟡 Save games — *own save format (store in the browser, download, import); the original .sav files are not read*
 - 🟡 Campaign and story XML — *CampaignFiles and TradeRouteFiles are read, including all faction Story_Name bindings, ordered Lua_Script groups, nested Active_Plot entries and story event parameters. Action points: the complete event and reward catalogue and original save serialization*
 
-### Rendering — 87.0%
+### Rendering — 87.5%
 
 - ✅ Mesh shaders: bump, gloss, team colour, additive, alpha
 - ✅ Vertex-shader skinning
@@ -66,6 +66,7 @@ Regenerate with `node tools/progress.mjs`.
 - ✅ Laser bolts and beams — *custom drawn bolts from the texture atlas; a shot type that names a model instead (Projectile_Custom_Render 0, as many mod lasers do) is drawn as that model, instanced*
 - ✅ Shots shown by their model: meshes, particle proxies, particle files — *muzzle flashes, missile exhaust and smoke trails are the model particle systems, started with the shot and left to run out when it ends; particle size is not scaled by Scale_Factor (read from the engine)*
 - ✅ Particle emitters: the inherit-velocity flag and factor — *as the engine: an emitter with its inherit flag set (mini 0x43) moves its world particles each frame by the emitter current velocity times its factor (mini 0x28, default 1); without the flag nothing of the emitter speed is passed on. Ships and shots, space and land, hand their velocity to the effects they carry; object-space particles move with the emitter as before*
+- ✅ Particle budget: short effects keep room when the budget is full — *the engine has no shared particle limit (every emitter always emits, read from the engine); ours keeps one for speed (30000 by default, a graphics setting). Emitters that keep running (engines, beams, ambient smoke) now stop at 85 percent of it, and short effects - bursts that end within 5 seconds, or systems started for at most 5 seconds such as explosions - may use the rest. Before, a big battle with many engine and beam emitters (Humanity Retaliation, 60 against 60) filled the budget in two seconds and almost every explosion, impact and muzzle flash near the camera was refused (about 10 spawned against 4000 to 15000 refused every 3 seconds); now none are refused and the budget sits near 25600. The 85 percent and 5 seconds are our own choice*
 - ✅ Particle systems on a removed object: remove or let run out by the system flag — *as the engine: the particle system byte in chunk 2 (default on) decides; off (most ship engine effects) the effect goes at once, on it stops emitting and runs out where it was, at the last velocity. Used when a ship or death clone is removed and when a shot ends, space and land*
 - ✅ Skydomes and backdrops
 - ✅ Planet shader: clouds, atmosphere, city lights — *all stock Planet techniques are ported from original FXO disassembly: DX9 sph_t3, DX8ATI sph_t2 with clamped vertex specular and its positive cloud-alpha city term, and fixed-function t0 with inverse-transpose normals, material lighting and unscrolled texture stages. Detail1 falls through to t0 because the effects contain no DX8 technique. Native FXO annotations select the first supported technique within the requested detail. Full material parameter keys prevent shared surface textures from aliasing cloud, atmosphere, specular and city values. Original base and mod HAL renders cover varied sampled normals, cloud scroll, nonuniform rotated world matrices, geometric specular and two fill lights; all transformed-fixture RGB pixels match exactly. GLSL does not execute arbitrary replacement shader bytecode; see Compiled shaders*

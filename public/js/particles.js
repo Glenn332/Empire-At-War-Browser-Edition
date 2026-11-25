@@ -7,6 +7,7 @@ import { FRAME, PARTICLE_CAP } from './particlesim.js';
 
 const TAU = Math.PI * 2;
 const SAMPLES = 32;
+const SHORT_EFFECT_SECONDS = 5;
 
 function parseGroup(r, c) {
   for (const k of r.chunks(c.start, c.end)) {
@@ -278,6 +279,7 @@ function parseEmitter(r, c) {
   e.maxSpeed = e.inherit ? 1000 : Math.hypot(...e.accel) + groupSpeed(e.vel) + e.gravity;
   e.grid = Math.max(1, Math.floor(Math.sqrt(e.nTextures)));
   e.interval = e.burst ? Math.max(0.001, e.burstDelay) : 1 / Math.max(1, e.perSecond);
+  e.shortEffect = e.burst && e.nBursts > 0 && e.delay + e.nBursts * e.burstDelay <= SHORT_EFFECT_SECONDS;
   return e;
 }
 

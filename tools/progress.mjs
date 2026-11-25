@@ -84,6 +84,11 @@ const GROUPS = [
         'as the engine: an emitter with its inherit flag set (mini 0x43) moves its world particles each frame by the emitter current velocity times its factor (mini 0x28, default 1); without the flag nothing of the emitter speed is passed on. Ships and shots, space and land, hand their velocity to the effects they carry; object-space particles move with the emitter as before'
       ],
       [
+        'Particle budget: short effects keep room when the budget is full',
+        D,
+        'the engine has no shared particle limit (every emitter always emits, read from the engine); ours keeps one for speed (30000 by default, a graphics setting). Emitters that keep running (engines, beams, ambient smoke) now stop at 85 percent of it, and short effects - bursts that end within 5 seconds, or systems started for at most 5 seconds such as explosions - may use the rest. Before, a big battle with many engine and beam emitters (Humanity Retaliation, 60 against 60) filled the budget in two seconds and almost every explosion, impact and muzzle flash near the camera was refused (about 10 spawned against 4000 to 15000 refused every 3 seconds); now none are refused and the budget sits near 25600. The 85 percent and 5 seconds are our own choice'
+      ],
+      [
         'Particle systems on a removed object: remove or let run out by the system flag',
         D,
         'as the engine: the particle system byte in chunk 2 (default on) decides; off (most ship engine effects) the effect goes at once, on it stops emitting and runs out where it was, at the last velocity. Used when a ship or death clone is removed and when a shot ends, space and land'

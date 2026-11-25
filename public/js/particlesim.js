@@ -301,11 +301,13 @@ class System {
     const total = this.sim.total,
       held = s.parts.length;
     const cap = this.sim.cap;
+    const shortEffect = e.shortEffect || this.maxEmit <= SHORT_SYSTEM_SECONDS;
+    const budget = shortEffect ? cap : cap * SUSTAINED_SHARE;
     if (
       held > 1500 ||
-      total > cap ||
+      total > budget ||
       (!this.near && total > cap * 0.5) ||
-      (held >= 24 && total > cap * 0.75 && Math.random() * cap * 0.25 < total - cap * 0.75)
+      (!shortEffect && held >= 24 && total > budget * 0.75 && Math.random() * budget * 0.25 < total - budget * 0.75)
     )
       return;
     const cr = Math.cos(f.rot),
@@ -650,6 +652,10 @@ export function emitterPoolSize(e) {
 export const energyCap = (e, energy) =>
   e.weather && energy < 1 ? Math.ceil(Math.max(0, Math.min(1, energy)) * emitterPoolSize(e)) : Infinity;
 export const PARTICLE_CAP = { def: 30000, min: 30000, max: 50000, step: 1000 };
+// Emitters that keep running (engines, beams, ambient smoke) stop at this share of the particle budget, so a full
+// budget still leaves room for short effects such as explosions, impacts and muzzle flashes.
+const SUSTAINED_SHARE = 0.85;
+const SHORT_SYSTEM_SECONDS = 5;
 
 export class ParticleSim {
   constructor() {
