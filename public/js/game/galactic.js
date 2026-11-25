@@ -2475,18 +2475,26 @@ export class GalacticGame {
     if (!cfg) return;
     // a native click must name one of the galaxy screen's own buttons
     if (native && this.scriptUI?.nativeControls && !this.scriptUI.nativeControls.has(name)) return;
-    if (cfg.peer === 0) {
-      if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
-      else this.scriptUI?.click(name, false, true);
-      return;
-    }
+    const run = () => {
+      this.uiPid = pid;
+      try {
+        if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
+        else this.asStorySide(pid, () => this.scriptUI?.click(name, false, true));
+      } finally {
+        this.uiPid = undefined;
+      }
+    };
+    if (cfg.peer === 0) return run();
     const faction = this.story?.clickFaction(name);
     if (faction) {
       (this.menuFactions ||= {})[pid] = faction;
       if (pid === this.localPid)
         this.message(`${db.t(db.faction(faction)?.str('Text_ID')) || faction}: your side when the host starts the game.`);
-    } else if (native && this.storyPartner(pid)) this.asStorySide(pid, () => this.story?.clickGUI(name));
-    else if (pid === this.localPid && !this.toldHostOnly) {
+    } else if (this.storyPartner(pid)) {
+      // A player sharing the story's side (co-op on one faction) uses its scripted buttons as the host does:
+      // build filters, planet displays and the like.
+      run();
+    } else if (pid === this.localPid && !this.toldHostOnly) {
       this.toldHostOnly = true;
       this.message('Only the host sets this up; the faction buttons choose your own side.');
     }

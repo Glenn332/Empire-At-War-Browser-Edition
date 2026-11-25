@@ -16,6 +16,7 @@ const pair = s =>
 const css = s => (s ? `url("${s}")` : 'none');
 
 const LOCAL_KEYS = new Set(['B_OPTION_G', 'B_DROID_HELP', 'B_STORY_ARC_G']);
+const VIEW_KEYS = /^B_FILTERS\d$/;
 function boneButton(matrix, bone, component) {
   const icon = iconCanvasRect(token(component, 'Icon_Texture_Name')),
     scale = component.num('Scale', 1),
@@ -318,6 +319,16 @@ export class ScriptUI {
     ) {
       this.game.audio?.play(c.val('Click_SFX') || 'GUI_Button_Press_2_SFX');
       this.game.order({ c: 'ui', name: key });
+      // The click takes effect a few turns later on every machine; light the button now so it reads as pressed.
+      if (!yes(c.val('Tab'))) {
+        s.selected = true;
+        clearTimeout(s.release);
+        s.release = setTimeout(() => {
+          s.selected = false;
+          this.apply(key);
+        }, 200);
+        this.apply(key);
+      }
       return true;
     }
     const group = c.val('Group'),
@@ -341,6 +352,10 @@ export class ScriptUI {
       }
     this.apply(key);
     const native = forced && this.nativeControls.get(key);
+    // A script pressing a view-only button (the galaxy map's display filters) for a player's click presses it on that
+    // player's screen only; the other players keep their own filters.
+    const clicker = this.game.uiPid;
+    if (native && VIEW_KEYS.test(key) && clicker !== undefined && clicker !== this.game.localPid) return true;
     if (native) {
       this.forcedNativeDepth++;
       try {
