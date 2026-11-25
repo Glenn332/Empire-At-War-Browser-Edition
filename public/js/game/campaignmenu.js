@@ -89,8 +89,8 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       custom = !!c && campaignLimits(c).custom;
     settings = c ? campaignDefaults(c, c.str('Starting_Active_Player')) : null;
     dlg.enable('IDC_PLAY_BUTTON', !!c);
-    dlg.show('IDC_SELECT_OPTIONS', !!selection && (!c || custom));
-    dlg.enable('IDC_SELECT_OPTIONS', custom);
+    dlg.show('IDC_SELECT_OPTIONS', !!selection);
+    dlg.enable('IDC_SELECT_OPTIONS', !!c);
   };
   const pick = row => {
     selection = row;
@@ -112,7 +112,8 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       difficulty,
       players: [],
       teamFactions: [],
-      ...(settings?.custom ? { campaignSettings: { ...settings } } : {})
+      ...(settings?.custom ? { campaignSettings: { ...settings } } : {}),
+      options: { groundAutoResolve: settings ? settings.groundAutoResolve !== false : true }
     });
   };
   dlg.show('IDC_DIALOG_CLOSE_BUTTON', false);
@@ -143,7 +144,7 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
   dlg.on('IDC_PLAY_BUTTON', play);
   dlg.on('IDC_SELECT_OPTIONS', async () => {
     const c = variant();
-    if (!c || !settings || !campaignLimits(c).custom) return;
+    if (!c || !settings) return;
     const scratch = { ...settings };
     if (await campaignOptionsDialog(scratch, c, c.str('Starting_Active_Player'))) settings = scratch;
   });
@@ -234,10 +235,15 @@ export async function campaignOptionsDialog(st, campaign, faction) {
         mark();
       }
     );
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
+    // the random-events box has nothing to offer in the galaxy; the slot carries the ground auto-resolve choice
+    dlg.setText('IDC_ALLOW_RANDOM_EVENTS', 'Auto-resolve all ground battles');
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve !== false, on => {
+      st.groundAutoResolve = on;
+    });
   };
-  dlg.show('IDC_ALLOW_RANDOM_EVENTS', false);
-  dlg.enable('IDC_ALLOW_RANDOM_EVENTS', false);
+  if (!limits.custom)
+    for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER', 'IDC_ALLOW_AUTORESOLVE_COMBO'])
+      dlg.enable(id, false);
   show();
   return new Promise(done => {
     dlg.on('IDC_BUTTON_ACCEPT', () => {

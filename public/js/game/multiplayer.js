@@ -759,13 +759,14 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    // random story events come from single-player story rewards only; the galaxy has none to offer here
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
+    // random story events come from single-player story rewards only, so that box carries the ground auto-resolve choice
+    dlg.setText('IDC_ALLOW_RANDOM_EVENTS', T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve !== false, on => {
+      st.groundAutoResolve = on;
+    });
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
-  dlg.show('IDC_ALLOW_RANDOM_EVENTS', false);
-  dlg.enable('IDC_ALLOW_RANDOM_EVENTS', false);
   show();
   return new Promise(done => {
     dlg.on('IDC_BUTTON_ACCEPT', () => {
@@ -782,7 +783,8 @@ async function campaignOptions(st, campaign) {
         credits: C.num('MP_Default_Credits', 6000),
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
+        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
+        groundAutoResolve: true
       });
       show();
     });
@@ -1010,7 +1012,8 @@ async function openStaging(args) {
     preBuilt: true,
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
+    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
+    groundAutoResolve: true
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1298,7 +1301,9 @@ async function openStaging(args) {
         credits: o.credits ?? st.credits,
         tech: o.tech ?? st.tech,
         maxTech: o.maxTech ?? st.maxTech,
-        autoResolve: o.autoResolve ?? st.autoResolve
+        autoResolve: o.autoResolve ?? st.autoResolve,
+        // a save from before the option keeps the old prompt until the host turns it on
+        groundAutoResolve: o.groundAutoResolve ?? false
       });
     } else {
       const knownMap = isDynamic(base.mapFile)
@@ -1607,7 +1612,8 @@ async function openStaging(args) {
             [
               T('TEXT_ALLOW_AUTORESOLVE', 'Auto-resolve combat'),
               st.autoResolve === 0 ? T('TEXT_ALLOW_AUTORESOLVE_ALWAYS', 'Always') : T('TEXT_ALLOW_AUTORESOLVE_ASK', 'Ask')
-            ]
+            ],
+            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve !== false ? yes : no]
           ]
         : [
             [
@@ -1776,7 +1782,13 @@ async function openStaging(args) {
         humanTypes,
         ...(globalThis.shooterMode ? { shooter: true } : {}),
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
-        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve },
+        options: {
+          credits: st.credits,
+          tech: st.tech,
+          maxTech: st.maxTech,
+          autoResolve: st.autoResolve,
+          groundAutoResolve: st.groundAutoResolve !== false
+        },
         players: players.map(s =>
           s.kind === 'human'
             ? { human: true, peer: s.peer, name: s.name, faction: entry.menu || s.faction, color: s.color }

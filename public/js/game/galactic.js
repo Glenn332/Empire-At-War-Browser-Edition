@@ -2,7 +2,7 @@ import { expansion } from '../edition.js';
 import { ridesFlagship } from './campaignbattle.js';
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { switchTarget } from './switchsides.js';
-import { applyCampaignSettings } from './campaignsettings.js';
+import { applyCampaignSettings, applyGroundAutoResolve } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { preloadLinkedPlots, resolveNetLinked } from './linkednet.js';
@@ -78,6 +78,7 @@ import { GalacticScreenText } from './galacticscreentext.js';
 import { GalacticStoryDialog } from './galacticstorydialog.js';
 import { GalacticMovies } from './galacticmovies.js';
 import { GalacticLog } from './galacticlog.js';
+import { GalacticSearch } from './galacticsearch.js';
 import { Menus } from './menus.js';
 import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticeconomy.js';
 import { GalacticAI } from './galacticai.js';
@@ -237,7 +238,7 @@ export class GalacticGame {
     this.overview?.cancelDrag();
     this.unsubscribeLanguage?.();
     this.speechStoryDone?.();
-    for (const part of [this.story, this.ai, this.storyDialog, this.galacticLog, this.movies, this.scriptUI, this.screenText]) {
+    for (const part of [this.story, this.ai, this.storyDialog, this.galacticLog, this.locationUI, this.movies, this.scriptUI, this.screenText]) {
       try {
         part?.dispose?.();
       } catch (e) {
@@ -280,6 +281,8 @@ export class GalacticGame {
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     else if (this.setup.campaignSettings) applyCampaignSettings(g, this.setup.campaignSettings, camp.str('Starting_Active_Player'));
+    // the lobby's "auto-resolve all ground battles" choice; a save from before it existed keeps the old prompt
+    applyGroundAutoResolve(g, this.setup);
     if (this.setup.net) {
       this.multiplayerGalaxy(g);
       stampIds(g);
@@ -454,6 +457,7 @@ export class GalacticGame {
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
+    this.locationUI = new GalacticSearch(this);
     onOrbit((planet, owner, units, raid) => {
       if (this.galaxy.planets.includes(planet)) this.story?.fleetEntered?.({ owner, units, raid: raid ? planet.index : undefined }, planet);
     });
@@ -1406,7 +1410,8 @@ export class GalacticGame {
       const name = db.t(p.type.str('Text_ID')) || p.name;
       this.galacticLog?.message(String(db.t('TEXT_ENEMY_FLEET_APPROACHING_LOCATION')).replace('##0', name), {
         urgent: true,
-        color: [0, 193, 91]
+        color: [0, 193, 91],
+        planet: p.index
       });
       this.audio?.play(db.faction(this.me)?.str('SFXEvent_Enemy_Fleet_Approaching_Planet'));
     }
@@ -1419,7 +1424,7 @@ export class GalacticGame {
     const args = [db.t(planet.type.str('Text_ID')) || planet.name, name(old), name(now), bonus];
     this.galacticLog?.message(
       text.replace(/%l?[sd]/g, () => String(args.shift() ?? '')),
-      { urgent: false, color: [255, 24, 39] }
+      { urgent: false, color: [255, 24, 39], planet: planet.index }
     );
     if (mine && bonus) this.audio?.playAudioEvent('SFXEvent_Planet_Capture_Bonus_Reward');
     const faction = db.faction(this.me);
@@ -1643,7 +1648,7 @@ export class GalacticGame {
     addEventListener('pointerdown', unlock, true);
     addEventListener('keydown', unlock, true);
     addEventListener('keydown', e => {
-      if (this.over || this.modeSuspended) return;
+      if (this.over || this.modeSuspended || this.locationUI?.typing) return;
       if (e.code === 'F2') {
         e.preventDefault();
         this.toggleBenchmark();
@@ -1963,6 +1968,24 @@ export class GalacticGame {
       if (['garrison', 'groundStructures', 'orbitalStructures'].some(l => (p[l] || []).some(is))) return (this.leaderAt = p.index);
     for (const f of g.fleets) if (f.planet >= 0 && f.units.some(is)) return (this.leaderAt = f.planet);
     return -1;
+  }
+
+  // the search box and the location log: bring a planet into view and select it, as clicking it would. This is the
+  // local player's view only; in multiplayer the selection goes out the way a click on the planet does.
+  focusPlanet(i) {
+    const p = this.galaxy.planets[i],
+      v = this.view;
+    if (!p || p.background || this.over || this.battle || this.controlsLocked || this.scriptUI?.modal || this.storyMovie?.active) return false;
+    if (this.baseLayout?.open) return false;
+    if (v.zoom > 0 || v.dir > 0) {
+      this.zoomIn(i);
+      return true;
+    }
+    v.x = p.pos[0];
+    v.y = p.pos[1];
+    v.z = this.cam.plane;
+    this.select(i);
+    return true;
   }
 
   cameraHome() {
@@ -3914,12 +3937,15 @@ export class GalacticGame {
           if (x.owner === this.me)
             this.galacticLog?.message(
               String(db.t('TEXT_TOOLTIP_INTERRUPTED_PRODUCTION')).replace('%s', db.t(x.planet.type.str('Text_ID')) || x.planet.name),
-              { urgent: true, color: [0, 193, 91] }
+              { urgent: true, color: [0, 193, 91], planet: x.planet.index }
             );
         if (completed.length) {
           this.mergeFleets();
           for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
+          for (const done of completed)
+            if (done.owner === (this.localFaction ?? this.me))
+              this.galacticLog?.locate(done.planet, (db.t(done.type.str('Text_ID')) || done.type.name) + ' produced');
           for (const done of completed)
             if (done.tech !== undefined) {
               this.story?.signalTech(done.owner, done.tech);
@@ -4018,6 +4044,7 @@ export class GalacticGame {
     if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.rate);
     (this.corruptionVisuals ||= new CorruptionVisuals(this)).update(this.paused ? 0 : real * this.rate);
     this.galacticLog?.update(elapsed);
+    this.locationUI?.update();
     this.lightLoop();
     if ((this.hudTimer -= real) <= 0) {
       this.hudTimer = 0.25;

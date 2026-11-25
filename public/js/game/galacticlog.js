@@ -17,6 +17,7 @@ import { renderHistory } from './galactichistory.js';
 import { renderTechTree } from './galactictechtree.js';
 import { renderSummary } from './galacticsummary.js';
 import { GalacticEncyclopedia } from './galacticencyclopedia.js';
+import { recordLocation } from './galacticsearch.js';
 
 const pictures = new Map();
 export class GalacticLog {
@@ -204,8 +205,13 @@ export class GalacticLog {
   hideLinked() {
     this.encyclopedia?.hideLinked();
   }
-  message(text, { urgent = true, color = [255, 255, 255], sfx = '' } = {}) {
+  // an event with a place: it is also kept in the per-planet location log (the local player's view, not game state)
+  locate(planet, text) {
+    if (recordLocation(this.game.galaxy, planet, text)) this.game.locationUI?.refresh();
+  }
+  message(text, { urgent = true, color = [255, 255, 255], sfx = '' , planet } = {}) {
     if (!text) return;
+    if (Number.isInteger(planet)) this.locate(planet, text);
     const record = { text, color, sfx, urgent };
     if (urgent) {
       this.queue.unshift(record);

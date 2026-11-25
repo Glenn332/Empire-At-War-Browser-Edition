@@ -168,7 +168,9 @@ assert.deepEqual(result, {
   faction: tutorial[0].campaign.str('Starting_Active_Player'),
   difficulty: 'medium',
   players: [],
-  teamFactions: []
+  teamFactions: [],
+  // a new galactic game starts with ground battles auto-resolved (the lobby option, on by default)
+  options: { groundAutoResolve: true }
 });
 assert(dialog.closed);
 assert.equal(listeners.size, 0);
@@ -198,7 +200,9 @@ assert.deepEqual(result, {
   faction: picked.str('Starting_Active_Player'),
   difficulty: 'hard',
   players: [],
-  teamFactions: []
+  teamFactions: [],
+  // a new galactic game starts with ground battles auto-resolved (the lobby option, on by default)
+  options: { groundAutoResolve: true }
 });
 await openCampaignMenu({
   tutorial: true,

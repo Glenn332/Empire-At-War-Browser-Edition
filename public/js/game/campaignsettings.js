@@ -29,7 +29,8 @@ export function campaignDefaults(campaign, faction) {
     credits: factionValue(campaign, 'Starting_Credits', faction, 0),
     tech: factionValue(campaign, 'Starting_Tech_Level', faction, 0),
     maxTech: factionValue(campaign, 'Max_Tech_Level', faction, 5),
-    autoResolve: 2
+    autoResolve: 2,
+    groundAutoResolve: true
   };
 }
 
@@ -43,6 +44,13 @@ export function creditsAt(limits, position) {
 export function techRange(limits, faction) {
   const adj = techAdjust(faction);
   return { lo: limits.minTech - adj, hi: limits.maxTech - adj, adj };
+}
+
+// The lobby's "auto-resolve all ground battles" choice rides in the shared setup so every peer agrees. A setup or save
+// from before the option has no value, which keeps the old attack/retreat prompt.
+export function applyGroundAutoResolve(g, setup) {
+  const on = setup?.options?.groundAutoResolve;
+  if (on !== undefined) g.groundAutoResolve = !!on;
 }
 
 export function applyCampaignSettings(g, settings, human) {

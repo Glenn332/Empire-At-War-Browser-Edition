@@ -2269,6 +2269,7 @@ export class GalacticStoryHost extends StoryPlots {
           campaign: p[0],
           faction: faction?.name,
           difficulty: ['easy', 'medium', 'hard'][+p[2]] || 'medium',
+          options: { groundAutoResolve: !!game.galaxy?.groundAutoResolve },
           ...(p[3] != null && p[3] !== '' && +p[3] >= 0 && +p[3] < 6 ? { startingTechLevel: +p[3] } : {})
         };
         break;

@@ -79,6 +79,11 @@ export class PendingBattle {
       !!this.game.pendingLinkedTactical
     );
   }
+  // the shared "auto-resolve all ground battles" option: land battles settle without the prompt unless a script or
+  // the campaign rules out auto-resolve there
+  groundAuto(request) {
+    return request.mode === 'land' && !!this.game.galaxy?.groundAutoResolve && !this.single(request);
+  }
   tutorial() {
     return !!this.game.galaxy?.players?.find(p => key(p.faction) === key(this.game.me))?.tutorial;
   }
@@ -92,7 +97,7 @@ export class PendingBattle {
       return true;
     }
     if (!db.constants.bool('Strategic_Queue_Tactical_Battles', true)) return this.fight(request);
-    if (game.autoResolveOption || game.galaxy.campaignAutoResolve === 0) return this.resolve(request);
+    if (game.autoResolveOption || game.galaxy.campaignAutoResolve === 0 || this.groundAuto(request)) return this.resolve(request);
     if (!this.restricted(request.p) && game.battles.overrun(request)) return this.resolve(request, false, true);
     return this.show(request);
   }
@@ -101,7 +106,7 @@ export class PendingBattle {
     const game = this.game,
       C = db.constants,
       humans = [request.attacker, request.defender].filter(f => game.isHuman(f));
-    if (!game.playable(humans) || (game.setup.options?.autoResolve ?? 2) === 0) return this.resolve(request);
+    if (!game.playable(humans) || (game.setup.options?.autoResolve ?? 2) === 0 || this.groundAuto(request)) return this.resolve(request);
     request.id = this.netCount = (this.netCount || 0) + 1;
     const sides = [request.attacker, request.defender].map(key);
     request.voters = (game.setup.players || [])
@@ -546,7 +551,7 @@ export class PendingBattle {
     const token = (text, ...values) => values.reduce((s, v, i) => s.replace('##' + i, v), text);
     for (const type of [...theirs, ...mine])
       if (type.bool('Is_Named_Hero') || [...type.categories()].some(c => c.includes('HERO')))
-        log?.message(token(db.t('TEXT_AR_HERO_LOSS'), nameOf(type), planetName), { color: red });
+        log?.message(token(db.t('TEXT_AR_HERO_LOSS'), nameOf(type), planetName), { color: red, planet: p });
     const a = mine.length,
       b = theirs.length,
       kind = space ? 'SPACE' : 'LAND';
@@ -562,7 +567,7 @@ export class PendingBattle {
           ? 'LOSS_REGULAR'
           : 'LOSS_MINOR';
     const line = token(db.t(`TEXT_AR_${kind}_${verdict}`), faction, planetName, String(a));
-    log?.message(line, { color: red });
+    log?.message(line, { color: red, planet: p });
     if (silent || !fighting) return;
     if (game.net) return this.netResult(line);
     const dlg = await openSummary();
