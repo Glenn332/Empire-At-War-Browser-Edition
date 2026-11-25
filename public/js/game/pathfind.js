@@ -28,6 +28,7 @@ const MOVING_GOAL_REPLAN = 150;
 const BATCH_DELAY = 20;
 const BATCH_MAX = 8;
 const RETRY = 2;
+const LATE_MS = 3000;
 const newRouteThread = () => {
   if (typeof Worker !== 'undefined' && !globalThis.SWR_PAGE_ROUTES)
     return new Worker(new URL('./pathworker.js', import.meta.url), { type: 'module' });
@@ -115,6 +116,7 @@ export class Pathfinder extends PathCore {
     this.batch = [];
     this.due = new Map();
     this.arrived = new Map();
+    this.sent = new Map();
     await this.wasmReady;
     if (!this.worker) {
       this.expBudget = searchBudget(this.K);
@@ -149,6 +151,8 @@ export class Pathfinder extends PathCore {
     for (const wk of this.pool) {
       wk.onmessage = e => {
         if (e.data.kind === 'batch') {
+          // a batch sent again after a lost answer may come back twice; the first answer counts
+          if (!this.sent.delete(e.data.bid)) return;
           this.arrived.set(e.data.bid, e.data.answers);
           this.onArrive?.();
         }
@@ -165,15 +169,38 @@ export class Pathfinder extends PathCore {
   ready() {
     if (!this.fixed || !this.worker) return true;
     const bid = this.due.get(this.stepNo + 1);
-    return bid === undefined || this.arrived.has(bid);
+    if (bid === undefined || this.arrived.has(bid)) return true;
+    this.watchLate(bid);
+    return false;
+  }
+
+  // A step waits for its route batch. If the answer is lost (a route thread that died or dropped it), the same batch
+  // goes to the next route thread after a few seconds. Answers depend only on the batch, so this cannot change the
+  // battle or split lockstep peers; before, the battle stopped for good without a word.
+  watchLate(bid) {
+    if (this.lateTimer) return;
+    this.lateTimer = setTimeout(() => {
+      this.lateTimer = null;
+      const s = this.sent.get(bid);
+      if (!s || this.arrived.has(bid)) return;
+      const pool = this.pool || [this.worker];
+      s.thread = (s.thread + 1) % pool.length;
+      s.tries++;
+      console.warn('route planning: batch ' + bid + ' had no answer after ' + s.tries * LATE_MS + ' ms, sent again to route thread ' + s.thread);
+      pool[s.thread].postMessage(s.msg);
+      this.onArrive?.();
+    }, LATE_MS);
   }
 
   flush() {
     if (!this.fixed || !this.worker || !this.batch.length) return;
     const bid = ++this.bid;
     this.due.set(this.stepNo + BATCH_DELAY, bid);
-    const pool = this.pool || [this.worker];
-    pool[bid % pool.length].postMessage({ kind: 'batch', bid, world: this.snapshot(), finds: this.batch });
+    const pool = this.pool || [this.worker],
+      msg = { kind: 'batch', bid, world: this.snapshot(), finds: this.batch },
+      thread = bid % pool.length;
+    this.sent.set(bid, { msg, thread, tries: 0 });
+    pool[thread].postMessage(msg);
     this.batch = [];
   }
 

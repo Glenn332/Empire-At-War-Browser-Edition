@@ -326,6 +326,15 @@ export class SpaceMirror {
       this.lastAt = performance.now();
       this.stats.applyMs += this.lastAt - t;
     }
+    // Everything here is shown, the battle runs and nothing holds it, yet no step for ten seconds: the battle thread
+    // has stopped. Say so instead of leaving a frozen battle.
+    if (single && !held && !Q.length && !this.heldFor && !g.over && now - (this.arrivedAt || now) > 10000) {
+      if (!this.silent) {
+        this.silent = true;
+        console.error('space worker: no battle step for ' + Math.round((now - this.arrivedAt) / 1000) + ' s at game time ' + this.shown);
+        g.message?.('The battle stopped responding. Please save a battle report and send it to us.', 'bad');
+      }
+    } else this.silent = false;
     g.present(this.shown === undefined ? 0 : Math.max(0, Math.min(1, (this.clock - this.shown + TICK) / TICK)));
   }
 

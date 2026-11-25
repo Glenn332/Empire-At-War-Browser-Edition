@@ -493,7 +493,8 @@ async function run(m) {
   };
   const held = [];
   let heldFor = null;
-  let heldSince = 0;
+  let heldSince = 0,
+    heldTimer = 0;
   const drain = () => {
     while (held.length && (!w.paths || w.paths.ready())) {
       const c = held.shift();
@@ -587,7 +588,22 @@ async function run(m) {
     while (!paused && next <= now && n < (replaying ? 16 : 4) && unseen < AHEAD) {
       if (fixed && w.paths && !w.paths.ready()) {
         routesPending = true;
+        // a wait of more than half a second is reported, as lockstep does, so the page can tell it from a stopped
+        // battle thread
+        heldTimer ||= setTimeout(() => {
+          heldTimer = 0;
+          if (routesPending && heldFor !== 'route planning') {
+            heldFor = 'route planning';
+            heldSince = performance.now();
+            postMessage({ k: 'held', why: heldFor });
+          }
+        }, 500);
         return;
+      }
+      if (heldFor && !held.length) {
+        phaseMs.routeWait += performance.now() - heldSince;
+        heldFor = null;
+        postMessage({ k: 'held', why: null });
       }
       step(commands.splice(0), false);
       unseen++;
