@@ -90,6 +90,41 @@ async function animOf(type, kind) {
   return null;
 }
 
+// Every animation clip of a type's model, by kind, loaded before a unit of it is made: setAnim draws its random
+// variant and start time only when a clip of the kind is there, so in a multiplayer battle the clips must not be
+// left to arrive whenever each machine's loads happen to finish.
+async function readyClips(type) {
+  const s = animSet(type);
+  if (!s.ready && s.listed) await s.listed.catch(() => {});
+  await Promise.all(
+    [...s.kinds].map(async ([kind, names]) => {
+      if (Array.isArray(s.clips.get(kind))) return;
+      const list = (await Promise.all(names.map(n => Promise.resolve(loadALA(n)).catch(() => null)))).filter(Boolean);
+      if (!Array.isArray(s.clips.get(kind))) s.clips.set(kind, list);
+    })
+  );
+}
+
+// What a company member needs from files before it can be made: its model and its four base animations, and in a
+// multiplayer battle (all) also every clip of its model and the models its hardpoints attach, whose bones give
+// the hardpoints their muzzles and turrets.
+async function memberAssets(t, all) {
+  const file = t.str('Land_Model_Name'),
+    data = file ? await loadALO(file).catch(() => null) : null;
+  if (!data) return { data: null, anims: [] };
+  const jobs = [Promise.all(['IDLE', 'MOVE', 'ATTACK', 'DIE'].map(k => animOf(t, k)))];
+  if (all) {
+    jobs.push(readyClips(t).catch(() => {}));
+    for (const name of t.list('HardPoints')) {
+      const h = db.hardpoint(name),
+        f = h && h.str('Model_To_Attach');
+      if (f) jobs.push(loadALO(f).catch(() => null));
+    }
+  }
+  const [anims] = await Promise.all(jobs);
+  return { data, anims };
+}
+
 const SETS = new Map();
 
 // Sight eyes are bucketed into every cell their reveal circle overlaps, so a target only tests the eyes of its own cell.
@@ -130,7 +165,7 @@ function animSet(type) {
   if (!s) {
     s = { kinds: new Map(), clips: new Map(), ready: false };
     SETS.set(base, s);
-    findFiles('MODELS\\\\' + base + '_[A-Z_]+_\\d\\d\\.ALA$')
+    s.listed = findFiles('MODELS\\\\' + base + '_[A-Z_]+_\\d\\d\\.ALA$')
       .then(list => {
         if (s.ready) return;
         s.kinds = animKinds(base, list.map(f => f.split(/[\\/]/).pop().toUpperCase()));
@@ -776,12 +811,12 @@ export class LandSquad {
   }
   get health() {
     let h = 0;
-    for (const u of this.members) h += u.health;
+    for (const u of this.members) if (u) h += u.health;
     return h;
   }
   get maxHealth() {
     let h = 0;
-    for (const u of this.members) h += u.maxHealth;
+    for (const u of this.members) if (u) h += u.maxHealth;
     return Math.max(h, this.full || 0);
   }
   get hitRadius() {
@@ -835,6 +870,7 @@ export class LandSquad {
     let h = 0,
       m = 0;
     for (const u of this.members) {
+      if (!u) continue;
       h += u.health;
       m += u.maxHealth;
     }
@@ -842,12 +878,12 @@ export class LandSquad {
   }
   get maxShield() {
     let m = 0;
-    for (const u of this.members) m += u.maxShield;
+    for (const u of this.members) if (u) m += u.maxShield;
     return m;
   }
   get shield() {
     let m = 0;
-    for (const u of this.members) m += u.shield;
+    for (const u of this.members) if (u) m += u.shield;
     return m;
   }
   abilityState(kind) {
@@ -3835,13 +3871,23 @@ export class LandWorld {
     return { inst, land, off, scale: variant.num('Scale_Factor', craft.num('Scale_Factor', 1)) };
   }
 
-  async reinforce(side, typeName, x, y, heading = 0, landed = null, opts = null) {
+  // The landing transport comes in on a spawn turn (see spawnTurn): its craft squad, unit and place in the
+  // transports list are added in the order the reinforcements were called, between the same two ticks everywhere.
+  reinforce(side, typeName, x, y, heading = 0, landed = null, opts = null) {
+    const turn = this.spawnTurn(),
+      out = this.reinforceOn(turn, side, typeName, x, y, heading, landed, opts);
+    out.then(turn.done, turn.done);
+    return out;
+  }
+
+  async reinforceOn(turn, side, typeName, x, y, heading = 0, landed = null, opts = null) {
     const cargo = opts?.cargo || null;
     if (!landed && !cargo) this.onReinforce?.(this.factions[side], typeName);
     const type = db.type(typeName),
       craft = type && db.type(type.str('Company_Transport_Unit') || '');
     const pending = type && !landed && !cargo ? new LandSquad(this, type, side, { arriving: true }) : null;
     if (pending) {
+      // a placeholder member, so the arriving company counts as alive; the squad's health and shield sums skip it
       pending.members = [0];
       this.squads.push(pending);
     }
@@ -3851,7 +3897,13 @@ export class LandWorld {
     const variant = craft && (db.type(craft.str('Landing_Transport_Variant')) || craft);
     const file = craft && landingModel(craft, variant),
       inst = file && (await loadModel(file).catch(() => null));
+    const [land, off] = inst
+      ? await Promise.all(['LAND', 'TAKEOFF'].map(k => Promise.resolve(loadALA(animName(file, k))).catch(() => null)))
+      : [null, null];
+    await turn.ready;
     if (!inst) {
+      // what comes next takes turns of its own
+      turn.done();
       if (landed) return null;
       if (cargo) {
         await cargo(null);
@@ -3861,7 +3913,6 @@ export class LandWorld {
       Promise.resolve(q).then(unpend, unpend);
       return q;
     }
-    const [land, off] = await Promise.all(['LAND', 'TAKEOFF'].map(k => Promise.resolve(loadALA(animName(file, k))).catch(() => null)));
     const holder = new THREE.Group();
     holder.add(inst.root);
     const kinds = type.has('Company_Units')
@@ -4119,14 +4170,20 @@ export class LandWorld {
     const gap = foot ? 14 : 55,
       cols = foot ? 3 : per,
       apart = foot ? gap * (solo ? 1.1 : 4.5) : 60;
-    await Promise.all(
-      kinds.map(async (t, n) => {
+    // The members are made one after another in the order Company_Units lists them, never in the order their models
+    // and animations happen to finish loading: the unit list, the unit ids, the random numbers each member draws and
+    // where it finds room all follow that order, and in a multiplayer battle it must be the same on every machine.
+    // The loads run together first; the spawn turn keeps spawns asked for together in the order they were asked for,
+    // and the lockstep does not run the next tick while one is still loading (spawnsPending).
+    const turn = this.spawnTurn();
+    try {
+      const assets = await Promise.all(kinds.map(t => memberAssets(t, this.fixed)));
+      await turn.ready;
+      const place = (t, n) => {
         const { gi, i, inGroup } = slots[n],
           squad = squads[gi],
           side0 = (gi - (groups - 1) / 2) * apart;
-        const file = t.str('Land_Model_Name');
-        const data = file && (await loadALO(file).catch(() => null));
-        while (data && !this.fixed && this.sliceOver()) await this.nextSlice();
+        const { data, anims } = assets[n];
         let inst = null;
         try {
           inst = data ? buildModel(data, { teamColor: this.teamColorFor(side, t) }) : null;
@@ -4134,8 +4191,7 @@ export class LandWorld {
           inst = null;
         }
         if (!inst) return;
-        const [idle, move, attack, die] = await Promise.all(['IDLE', 'MOVE', 'ATTACK', 'DIE'].map(k => animOf(t, k)));
-        while (!this.fixed && this.sliceOver()) await this.nextSlice();
+        const [idle, move, attack, die] = anims;
         const off = { x: -Math.floor(i / cols) * gap, y: ((i % cols) - (Math.min(cols, inGroup) - 1) / 2) * gap };
         const c = Math.cos(heading),
           s = Math.sin(heading);
@@ -4552,34 +4608,64 @@ export class LandWorld {
           const h = this.bonusSource(u.rider, side, u);
           if (h) h.carried = true;
         }
-      })
-    );
-    const made = squads.filter(q => q.members.length);
-    for (const squad of made) {
-      squad.full = Math.max(
-        squad.full,
-        squad.members.reduce((a, u) => a + u.maxHealth, 0)
-      );
-      squad.mates = made;
-      this.squads.push(squad);
-    }
-    if (type.has('Company_Units') && made[0])
-      this.carryBonuses(
-        type,
-        made[0].members[0],
-        made.flatMap(q => q.members.flatMap(u => (u.rider ? [u.type, u.rider] : [u.type])))
-      );
-    if (this.shooter && !saved) for (const q of made) this.shooter.made(q);
-    const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
-    for (const q of squads) q.forming = false;
-    this.walkOut(exits, heading);
-    for (const q of made)
-      if (q.scriptQueue) {
-        const list = q.scriptQueue;
-        q.scriptQueue = null;
-        for (const go of list) go();
+      };
+      for (let n = 0; n < kinds.length; n++) {
+        // a single player battle spreads a big spawn over frames; the order stays the same
+        if (!this.fixed && this.sliceOver()) await this.nextSlice();
+        place(kinds[n], n);
       }
-    return made[0] || squads[0];
+      const made = squads.filter(q => q.members.length);
+      for (const squad of made) {
+        squad.full = Math.max(
+          squad.full,
+          squad.members.reduce((a, u) => a + u.maxHealth, 0)
+        );
+        squad.mates = made;
+        this.squads.push(squad);
+      }
+      if (type.has('Company_Units') && made[0])
+        this.carryBonuses(
+          type,
+          made[0].members[0],
+          made.flatMap(q => q.members.flatMap(u => (u.rider ? [u.type, u.rider] : [u.type])))
+        );
+      if (this.shooter && !saved) for (const q of made) this.shooter.made(q);
+      const exits = saved ? [] : this.unloadGrid(made, x, y, heading, from);
+      for (const q of squads) q.forming = false;
+      this.walkOut(exits, heading);
+      for (const q of made)
+        if (q.scriptQueue) {
+          const list = q.scriptQueue;
+          q.scriptQueue = null;
+          for (const go of list) go();
+        }
+      return made[0] || squads[0];
+    } finally {
+      turn.done();
+    }
+  }
+
+  // A turn for something the simulation adds once its files have loaded (a company, a landing transport). Turns are
+  // handed out when it is asked for, inside a tick, so the same on every machine; each waits for the turns before it,
+  // whichever of their loads finish first. While any is out the land lockstep holds the next tick (spawnsPending),
+  // so what it adds comes in between the same two ticks everywhere.
+  spawnTurn() {
+    const before = this.spawnTail || null;
+    let release;
+    const mine = new Promise(r => (release = r));
+    this.spawnTail = mine;
+    this.spawnsPending = (this.spawnsPending || 0) + 1;
+    let open = true;
+    return {
+      ready: before || Promise.resolve(),
+      done: () => {
+        if (!open) return;
+        open = false;
+        this.spawnsPending--;
+        if (this.spawnTail === mine) this.spawnTail = null;
+        release();
+      }
+    };
   }
 
   unloadGrid(made, x, y, heading, from = null) {
@@ -5370,7 +5456,8 @@ export class LandWorld {
       ),
       b = unit(cross(a, d)),
       an = unit(a);
-    const th = Math.random() * Math.PI * 2,
+    // the spinning wreck stays a unit until it hits the ground, so its path is the simulation's: the sim generator
+    const th = simRandom() * Math.PI * 2,
       sn = Math.sin(th),
       cs = Math.cos(th),
       r = L * 0.3;

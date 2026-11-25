@@ -465,7 +465,7 @@ export class Lockstep {
   }
 
   nextSetup() {
-    const { net, restore, ...rest } = this.game.setup;
+    const { net, restore, keepReport, ...rest } = this.game.setup;
     const s = JSON.parse(JSON.stringify(rest));
     s.resyncs = (s.resyncs || 0) + 1;
     s.restoreSlot = -1;
@@ -518,8 +518,16 @@ export class Lockstep {
       rig = g.renderer?.rig,
       view = rig ? { x: rig.x, y: rig.y, dist: rig.dist, yaw: rig.yaw, pitch: rig.pitch } : null;
     const net = { ...this.net, epoch, gone: this.host ? [...this.gone] : [], speed: this.host ? g.speed || 1 : 1 };
+    // the battle report so far (who built and lost what, the graphs over time) lives outside the saved battle:
+    // it goes on into the relaunched battle instead of starting again at nothing
+    let keepReport = null;
+    try {
+      keepReport = g.keepReport?.() || null;
+    } catch (e) {
+      console.warn('[lockstep] battle report', e);
+    }
     this.close();
-    this.net.relaunch({ ...setup, restore: snap, keepView: view, net });
+    this.net.relaunch({ ...setup, restore: snap, keepView: view, keepReport, net });
   }
 
   behind() {

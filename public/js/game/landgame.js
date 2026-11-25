@@ -453,6 +453,33 @@ export class LandGame {
       color: p.color
     });
   }
+  // The battle report's figures, carried over a resync (Lockstep.relaunch): the save holds the battle, not what
+  // this machine has counted about it, so without this the report would start again at Built 0 / Lost 0 with a flat
+  // graph. Earned income is only report figures as well (World.earned and collected decide nothing).
+  keepReport() {
+    const w = this.world;
+    return {
+      view: this.reportView?.carry?.() || null,
+      losses: [...(this.losses || new Map())].map(([k, m]) => [k, [...m].map(([t, n]) => [t.name, n])]),
+      earned: w?.earned ? w.earned.slice() : null,
+      collected: Array.isArray(w?.collected) ? w.collected.slice() : null
+    };
+  }
+  takeReport(k) {
+    const w = this.world;
+    if (k.view) this.reportView?.adopt?.(k.view);
+    if (Array.isArray(k.losses))
+      for (const [key, list] of k.losses) {
+        const m = new Map();
+        for (const [name, n] of list) {
+          const t = db.type(name);
+          if (t) m.set(t, n);
+        }
+        this.losses.set(key, m);
+      }
+    for (const f of ['earned', 'collected'])
+      if (Array.isArray(k[f]) && Array.isArray(w[f]) && k[f].length === w[f].length) for (let i = 0; i < k[f].length; i++) w[f][i] = Math.max(w[f][i], k[f][i]);
+  }
   hashState(keep = null) {
     const w = this.world;
     let h = 0x811c9dc5 | 0;
@@ -611,7 +638,10 @@ export class LandGame {
     const w = this.world,
       lock = this.lock;
     try {
-      while (!this.over && this.owed >= LAND_TICK && lock.step()) {
+      // a company or transport the last tick asked for is still loading: it must come in before the next tick on
+      // every machine, so no tick runs until it is placed (World.spawnTurn)
+      const loading = () => w.spawnsPending > 0 && ((lock.blocked = 'loading arriving units'), true);
+      while (!this.over && this.owed >= LAND_TICK && !loading() && lock.step()) {
         if (this.paused) {
           this.owed = 0;
           break;
@@ -1275,6 +1305,10 @@ export class LandGame {
     this.listen('resize', () => this.fit());
     if (this.observer) this.spectatorView = new SpectatorView(this, 'land');
     this.reportView = this.spectatorView || (this.setup.benchmark ? null : new SpectatorView(this, 'land', { quiet: true }));
+    if (this.setup.keepReport) {
+      this.takeReport(this.setup.keepReport);
+      delete this.setup.keepReport;
+    }
     window.game = this;
     if (this.setup.benchmark) await this.startBenchmark(this.setup.benchmark);
     if (this.scripts && !setup.net && this.netRole !== 'client' && !q.has('nowarm') && !this.savedScripts)

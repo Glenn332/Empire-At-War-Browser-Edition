@@ -24,7 +24,8 @@ export function unitDetail(world) {
       u.type?.name || '',
       u.player?.id ?? u.side ?? -1,
       u.dead ? 1 : 0,
-      ...FIELDS.map(k => (typeof u[k] === 'number' ? u[k] : null)),
+      // NaN and Infinity as text: the other side's report comes as JSON, which would turn them into null
+      ...FIELDS.map(k => (typeof u[k] === 'number' ? (Number.isFinite(u[k]) ? u[k] : String(u[k])) : null)),
       o?.kind || '',
       o && typeof o.x === 'number' ? o.x : null,
       o && typeof o.y === 'number' ? o.y : null,
