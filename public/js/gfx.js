@@ -21,7 +21,7 @@ const OWN = {
   gamma: 0.5,
   level: -1,
   // frames per second the galaxy map and battles draw at most; 0 draws at the screen's own refresh rate
-  fpsCap: 60
+  fpsCap: 0
 };
 
 function read() {
