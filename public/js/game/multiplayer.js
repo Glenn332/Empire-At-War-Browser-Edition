@@ -161,7 +161,15 @@ function resizeFramed(box, w0, h0, w1, h1) {
 }
 
 export const GAME_TYPES = [
-  { id: 1, type: 'campaign', text: 'TEXT_GAME_TYPE_CAMPAIGN', desc: 'TEXT_GAME_DESCRIPTION_CAMPAIGN', fallback: 'Campaign' },
+  {
+    id: 1,
+    type: 'campaign',
+    text: 'TEXT_GAME_TYPE_CAMPAIGN',
+    desc: 'TEXT_GAME_DESCRIPTION_CAMPAIGN',
+    fallback: 'Campaign',
+    about:
+      'Galactic conquest for several players. Players who join the host side play it together; other players may take a side of their own.'
+  },
   { id: 2, type: 'land', text: 'TEXT_GAME_TYPE_TEAM_LAND', desc: 'TEXT_GAME_DESCRIPTION_TEAM_LAND', fallback: 'Land' },
   { id: 3, type: 'space', text: 'TEXT_GAME_TYPE_TEAM_SPACE', desc: 'TEXT_GAME_DESCRIPTION_TEAM_SPACE01', fallback: 'Space' },
   {
@@ -182,10 +190,19 @@ export const GAME_TYPES = [
   }
 ];
 const gameType = t => GAME_TYPES.find(g => g.type === t) || GAME_TYPES[2];
-const typeLabel = mode => {
-  const g = gameType(mode === 'galactic' ? 'campaign' : mode);
-  return T(g.text, g.fallback);
+// Game data (the stock text or a mod's) may mark a game type as not supported, as the original multiplayer did for
+// campaigns. This engine runs every type it lists, so such a note is left out of the name and such a description is
+// replaced with our own.
+const UNSUPPORTED = /not\s+supported|unsupported/i;
+export const gameTypeName = g =>
+  T(g.text, g.fallback)
+    .replace(/\s*[([][^)\]]*(?:not\s+supported|unsupported)[^)\]]*[)\]]/gi, '')
+    .trim() || g.fallback;
+export const gameTypeAbout = g => {
+  const text = T(g.desc, g.about || '');
+  return UNSUPPORTED.test(text) ? g.about || '' : text;
 };
+const typeLabel = mode => gameTypeName(gameType(mode === 'galactic' ? 'campaign' : mode));
 const TYPE_KEY = 'swr.mptype';
 
 const SCREEN = { stretch: true, nativeFrame: true };
@@ -285,14 +302,14 @@ async function hostOptions({ name, campaigns, landMaps, customMaps = { land: [] 
   }
   const describe = () => {
     const g = gameType(type);
-    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', T(g.desc, g.about || ''));
+    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', gameTypeAbout(g));
     const d = dlg.ctl('IDC_GAME_TYPE_DESCRIPTION_TEXT');
     if (d) d.style.whiteSpace = 'normal';
   };
   dlg
     .list(
       'IDC_GAME_TYPE_LIST',
-      types.map(g => ({ key: g.type, label: T(g.text, g.fallback) })),
+      types.map(g => ({ key: g.type, label: gameTypeName(g) })),
       row => {
         type = row.key;
         describe();
