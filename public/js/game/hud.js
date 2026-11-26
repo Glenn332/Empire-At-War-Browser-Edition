@@ -1167,7 +1167,8 @@ export class CommandBar {
     const menu = sel.length === 1 && sel[0].player === p && !!ui.padOf?.(sel[0]);
     const units = menu
       ? []
-      : sel.filter(s => s.isSquad || s.isMobile || s.sellable || (!s.isPad && !(sel.length === 1 && w.buildOptions(s, p).length)));
+      : // a lone builder shows what it builds, even one that can move (a mod station anchored by an ability)
+        sel.filter(s => s.isSquad || s.sellable || ((s.isMobile || !s.isPad) && !(sel.length === 1 && w.buildOptions(s, p).length)));
     const items = new Array(24).fill(null),
       columns = [];
     let skip = this.coveredColumns(false);

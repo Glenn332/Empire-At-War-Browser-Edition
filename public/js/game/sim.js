@@ -2029,6 +2029,11 @@ export class World {
       this.units.push(e);
       if (bonusSourceDefs(type, SPACE).length) this.bonusSource(type, player, e);
       this.takeBonuses(e);
+      // A starbase made for a side whose main station is gone takes its place. Mods start a side on a
+      // placeholder station and swap in the real one from Lua (Create_Generic_Object, then Despawn the old):
+      // the side keeps a station for the empty-selection build bar, tech level and the loss check.
+      const team = player && player.id >= 0 && player.team;
+      if (e.isStation && team && (!team.station || team.station.dead)) team.station = e;
     }
     this.tacticalSuperweapons?.add(e);
     // Only something with a locomotor jumps in. A reinforcement that cannot move (a defence platform built and
@@ -2293,6 +2298,20 @@ export class World {
   removeUnit(u) {
     u.dead = true;
     this.scene.remove(u.obj);
+  }
+
+  // A script took a side's main station away (Despawn, not a kill): another live starbase of the same owner
+  // becomes the main one, the newest first, as when a mod swaps its placeholder for the real station.
+  handOverStation(u) {
+    const team = u.isStation && u.player && u.player.team;
+    if (!team || team.station !== u) return;
+    for (let i = this.units.length - 1; i >= 0; i--) {
+      const s = this.units[i];
+      if (s !== u && s.isStation && !s.dead && s.player === u.player) {
+        team.station = s;
+        return;
+      }
+    }
   }
 
   recountPop() {

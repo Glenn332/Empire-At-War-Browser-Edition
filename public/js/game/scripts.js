@@ -1155,6 +1155,7 @@ export class ScriptHost {
       },
       Despawn: () => {
         for (const u of e.isSquad ? e.fighters.slice() : [e]) w.removeUnit(u);
+        if (!e.isSquad) w.handOverStation?.(e);
         if (e.isSquad) {
           e.fighters.length = 0;
           e.dead = true;
