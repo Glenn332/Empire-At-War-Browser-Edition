@@ -1241,8 +1241,11 @@ export class Unit {
         return;
       }
     }
-    if (this.isFighter) this.playAnim('DEPLOY');
-    else this.playAnim('IDLE', { loop: true, random: true });
+    // A fighter's rest pose is its attack pose (S-foils open). Its DEPLOY clip folds them into the
+    // locked cruise pose, so it only plays while Lock S-foils is on; a model built mid-lock starts folded.
+    if (this.isFighter) {
+      if (this.abilities?.some(s => s.active && s.def.kind === 'SPOILER_LOCK') && this.playAnim('DEPLOY')) this.anim.time = this.anim.anim.duration;
+    } else this.playAnim('IDLE', { loop: true, random: true });
   }
 
   playAnim(kind, { loop = false, random = false } = {}) {
