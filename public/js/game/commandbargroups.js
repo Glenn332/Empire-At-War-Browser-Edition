@@ -6,7 +6,8 @@
 // - inside a panel the slots run down each column (top, then bottom), and a panel always ends on a column
 //   boundary, so it takes ceil(slots / 2) columns and gets one border piece and its ability buttons over them;
 // - every unit has its own slot until the bar is too full; then the biggest stack not yet collapsed becomes one
-//   slot with a count, again and again until everything fits. What still does not fit is left off the bar.
+//   slot with a count, again and again until everything fits. What still does not fit is left off the bar by
+//   the engine; ours scrolls instead (see layoutSelectionPanels).
 
 // The engine's unit ability numbering, which orders the panels.
 const ABILITY_ORDER = [
@@ -94,38 +95,47 @@ function abilityDefsOf(panel) {
 }
 
 // Lays the selected units out on the 12 x 2 slot bar. `skipColumns` columns on the left are covered by other
-// controls. Returns the 24 slot items and one record per used column.
-export function layoutSelectionPanels(units, heldBy, skipColumns) {
+// controls. Stacks are collapsed until the selection fits, as the engine does; a selection that still does not fit
+// (more stacks than slots) scrolls, our own addition where the engine leaves the rest off: `scrollColumns` is how
+// many columns the view is moved right. Returns the 24 slot items, one record per shown column and how many
+// columns the whole selection takes.
+export function layoutSelectionPanels(units, heldBy, skipColumns, scrollColumns = 0) {
+  const visibleColumns = COLUMNS - skipColumns;
+  const panels = buildPanels(units, heldBy);
+  collapseUntilFits(panels, visibleColumns * 2);
+  const allItems = [],
+    allColumns = [];
+  for (const panel of panels) {
+    const firstSlot = allItems.length;
+    for (const stack of panel.stacks) {
+      if (stack.collapsed) allItems.push({ unit: stack.units[0], group: stack.units, held: heldBy.get(stack.units[0]) });
+      else for (const unit of stack.units) allItems.push({ unit, held: heldBy.get(unit) });
+    }
+    if (allItems.length === firstSlot) continue;
+    if (allItems.length % 2) allItems.push(null);
+    allColumns.push({ first: firstSlot / 2, last: allItems.length / 2 - 1, units: panel.units, defs: abilityDefsOf(panel), held: panel.held });
+  }
+  const totalColumns = allItems.length / 2,
+    scroll = Math.max(0, Math.min(totalColumns - visibleColumns, scrollColumns)),
+    shift = skipColumns - scroll;
   const items = new Array(COLUMNS * 2).fill(null),
     columns = [];
-  const panels = buildPanels(units, heldBy);
-  collapseUntilFits(panels, (COLUMNS - skipColumns) * 2);
-  let slot = skipColumns * 2;
-  for (const panel of panels) {
-    const firstSlot = slot;
-    for (const stack of panel.stacks) {
-      const entries = stack.collapsed
-        ? [{ unit: stack.units[0], group: stack.units, held: heldBy.get(stack.units[0]) }]
-        : stack.units.map(unit => ({ unit, held: heldBy.get(unit) }));
-      for (const entry of entries) if (slot < items.length) items[slot++] = entry;
-    }
-    if (slot === firstSlot) continue;
-    if (slot % 2) slot++;
-    const first = firstSlot / 2,
-      last = slot / 2 - 1,
-      span = last - first + 1,
-      defs = abilityDefsOf(panel);
+  for (let slot = 0; slot < visibleColumns * 2; slot++) items[skipColumns * 2 + slot] = allItems[scroll * 2 + slot] || null;
+  for (const panel of allColumns) {
+    const first = Math.max(panel.first, scroll) + shift,
+      last = Math.min(panel.last, scroll + visibleColumns - 1) + shift;
+    if (last < first) continue;
+    const span = last - first + 1;
     for (let col = first; col <= last; col++)
       columns.push({
         col,
         first,
         span,
         units: panel.units,
-        defs,
+        defs: panel.defs,
         held: panel.held,
         part: span === 1 ? 0 : col === first ? 1 : col === last ? 3 : 2
       });
-    if (slot >= items.length) break;
   }
-  return { items, columns };
+  return { items, columns, totalColumns, scrollColumns: scroll };
 }

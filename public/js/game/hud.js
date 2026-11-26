@@ -29,6 +29,8 @@ const el = (cls, parent) => {
   return d;
 };
 const css = url => (url ? `url("${url}")` : 'none');
+// a selection only losing units (deaths) keeps its place; any unit added makes it a new selection
+const addsUnits = (previous, units) => !previous || units.some(unit => !previous.has(unit));
 // Blank_Texture_Name on the unit/build slots lists a ground pad then a space pad, the same pairing the
 // galactic build bar uses per tab.
 export const selectPadIndex = game => (game?.land === true ? 0 : 1);
@@ -497,6 +499,7 @@ export class CommandBar {
       delete mm.dataset.component;
     }
     this.offKeys?.();
+    for (const off of this.windowWheelOffs || []) off();
     this.padMenu?.root.remove();
     removeEventListener('resize', this.onResize);
     for (const ev of ['pointermove', 'pointerdown']) removeEventListener(ev, this.onPoint, true);
@@ -608,17 +611,31 @@ export class CommandBar {
       thumb.style.left = (offset / Math.max(1, total)) * 100 + '%';
       thumb.style.width = (visible / Math.max(1, total)) * 100 + '%';
     };
-    bar.wheel = node =>
-      node.addEventListener(
-        'wheel',
-        e => {
-          if (bar.total <= bar.visible) return;
-          e.preventDefault();
-          e.stopPropagation();
-          to(bar.offset + Math.sign(e.deltaY || e.deltaX));
-        },
-        { passive: false }
-      );
+    // the wheel scrolls anywhere over the slots, the borders, the ability buttons and the scroll bar itself,
+    // in the gaps too, before the camera can take it as a zoom
+    bar.wheelArea = nodesOf => {
+      const onWheel = e => {
+        if (bar.total <= bar.visible || track.closest('[hidden]') || !track.isConnected) return;
+        let left = Infinity,
+          right = -Infinity,
+          top = Infinity,
+          bottom = -Infinity;
+        for (const node of [track, ...nodesOf()]) {
+          const box = node.getBoundingClientRect();
+          if (!box.width || !box.height) continue;
+          left = Math.min(left, box.left);
+          right = Math.max(right, box.right);
+          top = Math.min(top, box.top);
+          bottom = Math.max(bottom, box.bottom);
+        }
+        if (e.clientX < left || e.clientX > right || e.clientY < top || e.clientY > bottom) return;
+        e.preventDefault();
+        e.stopPropagation();
+        to(bar.offset + Math.sign(e.deltaY || e.deltaX));
+      };
+      addEventListener('wheel', onWheel, { capture: true, passive: false });
+      (this.windowWheelOffs ||= []).push(() => removeEventListener('wheel', onWheel, { capture: true }));
+    };
     return bar;
   }
 
@@ -1092,12 +1109,14 @@ export class CommandBar {
     for (let i = 0; i < 24; i++) this.slots.push(this.selectSlot(i));
     this.buildBar = this.scrollBar(
       this.slots.map((_, i) => 's_select_' + String(i).padStart(2, '0')),
-      o => {
-        this.buildScroll = o;
+      offset => {
+        if (this.barMode === 'units') this.unitScroll = offset;
+        else this.buildScroll = offset;
         this.ui.hudTimer = 0;
       }
     );
-    if (this.buildBar) for (const s of this.slots) this.buildBar.wheel(s.el);
+    if (this.buildBar)
+      this.buildBar.wheelArea(() => [...this.slots.map(slot => slot.el), ...this.borders, ...this.abilityLayer.children]);
     this.abilityLayer = el('hlayer', root);
     this.info = document.getElementById('encyc');
     this.info.className = 'hidden';
@@ -1180,9 +1199,17 @@ export class CommandBar {
       if (host && sel.includes(host.squad)) held.set(q, host);
     }
     if (units.length) {
-      const { items, columns } = layoutSelectionPanels(units, held, skip);
+      if (addsUnits(this.unitScrollSelection, units)) {
+        this.unitScroll = 0;
+        this.unitScrollSelection = new Set(units);
+      }
+      const { items, columns, totalColumns, scrollColumns } = layoutSelectionPanels(units, held, skip, this.unitScroll);
+      this.unitScroll = scrollColumns;
+      this.barMode = 'units';
+      this.buildBar?.set(totalColumns, 12 - skip, scrollColumns);
       return { mode: 'units', items, columns };
     }
+    this.barMode = 'build';
     const b = ui.builder();
     if (b) {
       skip = this.coveredColumns(true);

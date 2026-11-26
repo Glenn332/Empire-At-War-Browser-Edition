@@ -256,7 +256,7 @@ export class GalacticBar extends CommandBar {
         this.refresh();
       }
     );
-    if (this.buildBar) for (const b of this.slots) this.buildBar.wheel(b);
+    if (this.buildBar) this.buildBar.wheelArea(() => this.slots);
     this.queueSlots = [];
     for (let i = 0; i < 10; i++) {
       const name = 'queue' + String(i).padStart(2, '0'),
