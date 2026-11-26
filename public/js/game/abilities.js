@@ -582,7 +582,7 @@ function start(world, u, st, target) {
     }
   }
   refreshMods(u);
-  if (kind === 'SPOILER_LOCK') u.playAnim('DEPLOY');
+  if (kind === 'SPOILER_LOCK') u.playAnim('DEPLOY', { reverses: 'UNDEPLOY' });
   sound(world, u, def.sfxOn);
 }
 
@@ -604,7 +604,7 @@ function stop(world, u, st) {
   }
   st.data = null;
   refreshMods(u);
-  if (def.kind === 'SPOILER_LOCK') u.playAnim('UNDEPLOY');
+  if (def.kind === 'SPOILER_LOCK') u.playAnim('UNDEPLOY', { reverses: 'DEPLOY' });
   sound(world, u, def.sfxOff);
 }
 

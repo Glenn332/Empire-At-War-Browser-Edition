@@ -1248,10 +1248,16 @@ export class Unit {
     } else this.playAnim('IDLE', { loop: true, random: true });
   }
 
-  playAnim(kind, { loop = false, random = false } = {}) {
+  // `reverses` names the clip this one undoes (DEPLOY/UNDEPLOY): when that clip is still playing, the new one
+  // starts at the mirrored point so a quick re-toggle turns the parts back instead of snapping, as the engine does.
+  playAnim(kind, { loop = false, random = false, reverses = null } = {}) {
     const a = this.model && getALA(animName(this.modelFile || '', kind));
     if (!a) return false;
-    this.anim = new AnimState(this.model, a, { loop, time: random ? Math.random() * a.duration : 0 });
+    let time = random ? Math.random() * a.duration : 0;
+    const p = this.anim;
+    if (reverses && p && !p.done && p.anim.duration > 0 && p.anim === getALA(animName(this.modelFile || '', reverses)))
+      time = Math.max(0, Math.min(a.duration, a.duration * (1 - p.time / p.anim.duration)));
+    this.anim = new AnimState(this.model, a, { loop, time });
     return true;
   }
 
