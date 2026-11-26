@@ -71,6 +71,17 @@ function iconNameFor(type) {
 }
 
 const defaultAbilityIcon = kind => nativeAbilityIcon(kind) || 'i_sa_' + kind.toLowerCase() + '.tga';
+// The health bar under a unit's overlay. A unit without an icon takes a bar as wide as it shows on screen; a squadron
+// or a fighter hero under its icon takes the icon's grab-bar width. A hero ship keeps the bar its size gives it, as
+// wide as any ship that size, and never less than the grab bar: the icon above it does not make a capital ship's
+// bar small.
+export function overlayBarWidth(s, hasIcon, screenRadius, iconSize, grabHealth) {
+  const bySize = Math.max(26, Math.min(120, screenRadius * 1.5));
+  if (!hasIcon) return bySize;
+  const icon = grabHealth || iconSize;
+  return s.isSquad || s.isFighter ? icon : Math.max(icon, bySize);
+}
+
 export function abilityIconName(kind, override = '') {
   for (const n of [override, defaultAbilityIcon(kind), 'i_sa_blank_button.tga'])
     if (n && iconCanvasRect(n)) return n;
@@ -1925,7 +1936,7 @@ export class UI {
         g.globalAlpha = 1;
       }
       if (!s.isPad) {
-        const w = hasIcon ? grabHealth || size : Math.max(26, Math.min(120, r * 1.5)),
+        const w = overlayBarWidth(s, hasIcon, r, size, grabHealth),
           x = p.x - w / 2,
           y = hasIcon ? p.y + size / 2 + 9 : p.y - r - 9;
         g.fillStyle = 'rgba(0,0,0,0.6)';

@@ -189,7 +189,9 @@ function newWing(world, first, kind, gx, gy, target) {
   return w;
 }
 
-function composeWings(movers, kind, gx, gy, target) {
+// `free`: a move at each unit's own top speed (double right-click). Squadrons then fly to the point themselves
+// instead of escorting a ship of the same selection.
+function composeWings(movers, kind, gx, gy, target, free = false) {
   const world = movers[0] && movers[0].world;
   const out = new Map();
   if (!world) return out;
@@ -238,7 +240,7 @@ function composeWings(movers, kind, gx, gy, target) {
     }
   }
   for (const w of wings) {
-    if (ships.length) {
+    if (ships.length && !free) {
       const p = posOf(w.squads[0]);
       let best = Infinity;
       for (const e of ships) {

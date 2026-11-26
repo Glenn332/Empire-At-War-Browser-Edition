@@ -3243,9 +3243,16 @@ export class World {
     if (u.padOf) {
       const pad = u.padOf;
       pad.padChild = null;
-      pad.obj.visible = true;
       pad.padOwner = null;
       if (pad.capture) pad.capture.progress = 0;
+      // Destroy_When_Child_Dies (the mining asteroid under an extractor): the pad goes with its building and
+      // comes back after its Tactical_Respawn_Time_In_Secs, not at once.
+      if (!pad.dead && pad.type.bool('Destroy_When_Child_Dies') && this.razable(pad)) {
+        this.removeUnit(pad);
+        this.mapGone.add(pad.mapIndex);
+        this.respawnLater(pad);
+        this.onEvent('died', { entity: pad });
+      } else pad.obj.visible = true;
     }
     if (u.isStation && u.player.team.station === u && !this.campaign) this.checkVictory(u.player.team);
     this.recountPop();
@@ -5744,7 +5751,9 @@ export class World {
         .split(/[|,\s]+/)
         .filter(Boolean)
         .map(c => c.toUpperCase()),
-      file = particleFile(proj.str('Projectile_Instant_Heal_Spawn_Effect'));
+      file = particleFile(proj.str('Projectile_Instant_Heal_Spawn_Effect')),
+      // the healed effect stays on the unit for Projectile_Instant_Heal_Duration_Frames logic frames
+      shown = Math.max(1, proj.num('Projectile_Instant_Heal_Duration_Frames', 30)) / LOGIC_FPS;
     const team = owner.team || owner.player?.team;
     for (const u of this.units) {
       if (u.dead || u.hyper || u.player.team !== team || (u.x - x) ** 2 + (u.y - y) ** 2 > R * R) continue;
@@ -5754,7 +5763,7 @@ export class World {
       }
       if (u.health >= u.maxHealth) continue;
       u.health = Math.min(u.maxHealth, u.health + add);
-      if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, 1);
+      if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, shown);
     }
   }
 

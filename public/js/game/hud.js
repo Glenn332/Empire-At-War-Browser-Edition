@@ -1149,6 +1149,8 @@ export class CommandBar {
           ui.hudTimer = 0;
         }
       };
+      q.onmouseenter = () => this.queueHover(i, true);
+      q.onmouseleave = () => this.queueHover(i, false);
       this.queueSlots.push(q);
     }
   }
@@ -1843,7 +1845,10 @@ export class CommandBar {
       const x = i < 5 ? ships[i] : research[i - 5];
       q._item = x || null;
       q.style.display = x ? '' : 'none';
-      if (!x) return;
+      if (!x) {
+        if (this.queueHovered === i && this.tipTarget?.id?.startsWith('queue' + i + '|')) this.hideInfo();
+        return;
+      }
       const url = iconUrl(iconNameFor(x.it.type));
       if (q._url !== url) {
         q._url = url;
@@ -1852,7 +1857,8 @@ export class CommandBar {
       const first = x.u.buildQueues.get(x.name)[0] === x.it;
       q.querySelector('.prog').style.height = 100 * (x.it.left / x.it.total) + '%';
       q.lastChild.textContent = first ? Math.round(100 * (1 - x.it.left / x.it.total)) + '%' : '';
-      q.title = (db.t(x.it.type.str('Text_ID')) || x.it.type.name) + ' — click to cancel';
+      q.setAttribute('aria-label', (db.t(x.it.type.str('Text_ID')) || x.it.type.name) + ' — click to cancel');
+      if (this.queueHovered === i && this.tipTarget?.id !== 'queue' + i + '|' + x.it.type.name) this.queueHover(i, true);
     });
   }
 
@@ -1952,6 +1958,14 @@ export class CommandBar {
 
   heroHover(h, on) {
     if (on) this.tipOn('hero' + h.e.id, h.type);
+    else this.hideInfo();
+  }
+
+  // A build queue item shows the encyclopedia popup of what it builds, as its unit button does.
+  queueHover(i, on) {
+    const x = on ? this.queueSlots[i]?._item : null;
+    this.queueHovered = on ? i : -1;
+    if (x) this.tipOn('queue' + i, x.it.type);
     else this.hideInfo();
   }
 
