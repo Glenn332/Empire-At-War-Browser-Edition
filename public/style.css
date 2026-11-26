@@ -889,6 +889,8 @@ body:not(.original-hud) .heroframe {
   translate: 0 calc(var(--slack, 0px) * -1);
 }
 #cmdbar .hlayer {
+  /* the ability buttons sit over the selection scroll bar, which runs behind them */
+  z-index: 4;
   left: 0;
   bottom: 0;
   width: 0;

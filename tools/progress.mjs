@@ -1112,7 +1112,7 @@ const GROUPS = [
       [
         'Land command bar and build menus',
         D,
-        'the game bar itself: selection slots with health, build menus of buildings and pads, queue, research column, reinforcement window, hero portraits, ability buttons, sell; attack, attack-move, guard and waypoints; the radar shows the ground as the game does - each kind of ground in the colour RadarMap.xml gives it for that kind of planet, under the fog of war in its colour'
+        'the game bar itself: selection slots with health (laid out in ability panels and scrolled as in space, see the space selection slots), build menus of buildings and pads, queue, research column, reinforcement window, hero portraits, ability buttons, sell; attack, attack-move, guard and waypoints; the radar shows the ground as the game does - each kind of ground in the colour RadarMap.xml gives it for that kind of planet, under the fog of war in its colour'
       ],
       ['Land maps (.ted terrain chunks)', D],
       [
