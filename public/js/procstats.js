@@ -259,7 +259,7 @@ export const readProcessStats = count => (inApp() ? appSample() : browserSample(
 
 // asks about once a second while it runs; nothing happens per frame
 export class ProcessStatsSampler {
-  constructor({ read = readProcessStats, interval = SAMPLE_MS, onSample = null, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  constructor({ read = readProcessStats, interval = SAMPLE_MS, onSample = null, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) } = {}) {
     Object.assign(this, { read, interval, onSample, setTimer, clearTimer });
     this.log = new ProcessStatsLog();
     this.latest = null;
