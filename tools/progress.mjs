@@ -454,7 +454,11 @@ const GROUPS = [
     [
       ['Command bar from the original layout', D],
       ['Radar', D],
-      ['Selection slots with health and shields', D],
+      [
+        'Selection slots with health and shields',
+        D,
+        'as the engine lays out a selection: units are put in panels by their primary ability (the first unit ability of the type), so different types share a panel; panels run in the engine ability order, units with no ability first and units held inside a ship last; inside a panel the units of one type and owner whose primary ability is in the same state form a stack, slots run down each column and a panel ends on a column boundary with one border piece per column and its ability buttons over it, the first centred and the next half a column to the right. Every unit has its own slot until the bar is full, then the biggest stack not yet collapsed becomes one slot with a count until everything fits; what still does not fit is left off, as in the engine. Ours: the ability states that split a stack are active, recharging and ready (the engine has five), and a panel shows the buttons of the abilities of its first unit'
+      ],
       ['Build slots', D],
       [
         'Production queue',

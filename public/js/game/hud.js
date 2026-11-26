@@ -10,6 +10,7 @@ import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl } from '../icons.js
 import { fontFamily } from '../fonts.js';
 import { buildCost, isUpgradeType, companySpaceUnits } from './sim.js';
 import { parseAbilities } from './abilities.js';
+import { layoutSelectionPanels } from './commandbargroups.js';
 import { abilityLocked } from './blackmarket.js';
 import { battlePlanetName } from './battleplanet.js';
 import { playerSpecial } from './superweapon.js';
@@ -1179,39 +1180,7 @@ export class CommandBar {
       if (host && sel.includes(host.squad)) held.set(q, host);
     }
     if (units.length) {
-      const groups = new Map();
-      for (const s of units) {
-        const k = s.type.name + '|' + s.player.id + (held.has(s) ? '|held' : '');
-        if (!groups.has(k)) groups.set(k, []);
-        groups.get(k).push(s);
-      }
-      const recs = [...groups.values()].map(list => ({ list, one: false }));
-      let need = units.length;
-      while (need > items.length - skip * 2) {
-        const big = recs.filter(r => !r.one && r.list.length > 1).sort((a, b) => b.list.length - a.list.length)[0];
-        if (!big) break;
-        big.one = true;
-        need -= big.list.length - 1;
-      }
-      let col = skip;
-      for (const { list, one } of recs) {
-        const first = col,
-          entries = one ? [{ unit: list[0], group: list, held: held.get(list[0]) }] : list.map(s => ({ unit: s, held: held.get(s) }));
-        for (let i = 0; i < entries.length && col < 12; i += 2, col++) {
-          entries.slice(i, i + 2).forEach((it, r) => {
-            items[col * 2 + r] = it;
-          });
-        }
-        for (let c = first; c < col; c++)
-          columns.push({
-            col: c,
-            first,
-            span: col - first,
-            units: list,
-            held: held.has(list[0]),
-            part: col - first === 1 ? 0 : c === first ? 1 : c === col - 1 ? 3 : 2
-          });
-      }
+      const { items, columns } = layoutSelectionPanels(units, held, skip);
       return { mode: 'units', items, columns };
     }
     const b = ui.builder();
@@ -1700,34 +1669,35 @@ export class CommandBar {
       const mine = L.columns.filter(
         c => !c.held && c.units[0].player === p && c.col === c.first && this.rect('special_button_' + String(c.col * 2).padStart(2, '0'))
       );
-      const abilityKey = mine.map(c => c.col + ':' + c.units[0].abilities.map(a => a.def.kind).join('/')).join(',');
-      const habX = (base, span, k, n) => base.x + (span - 1) * 27.5 + (k - (n - 1) / 2) * 27.5;
+      const abilityKey = mine.map(c => c.col + '+' + c.span + ':' + c.defs.map(def => def.kind).join('/')).join(',');
+      // a panel's first ability button sits centred over it, each further one half a column to the right
+      const abilityRect = (first, span, k) => {
+        const own = this.rect('special_button_' + String(first * 2 + span - 1 + k).padStart(2, '0'));
+        if (own) return own;
+        const base = this.rect('special_button_' + String(first * 2).padStart(2, '0'));
+        return base && { ...base, x: base.x + (span - 1 + k) * 27.5 };
+      };
+      const unitsWith = (units, kind) => units.filter(unit => unit.abilities.some(ability => ability.def.kind === kind));
       if (abilityKey === this.abilityKey && this.abilityButtons) {
         let i = 0;
         for (const c of mine) {
-          const base = this.rect('special_button_' + String(c.col * 2).padStart(2, '0')),
-            n = c.units[0].abilities.length;
-          for (let k = 0; k < n; k++) {
+          c.defs.forEach((def, k) => {
             const rec = this.abilityButtons[i++];
-            rec.units = c.units;
-            rec.b.style.left = habX(base, c.span, k, n) + 'px';
-          }
+            rec.units = unitsWith(c.units, def.kind);
+            rec.b.style.left = abilityRect(c.first, c.span, k).x + 'px';
+          });
         }
       } else {
         this.abilityKey = abilityKey;
         this.abilityLayer.replaceChildren();
         this.abilityButtons = [];
-        for (const { col, first, span, units, held } of L.columns) {
-          if (held || units[0].player !== p || col !== first) continue;
-          const defs = units[0].abilities.map(a => a.def);
-          const base = this.rect('special_button_' + String(col * 2).padStart(2, '0'));
-          if (!base) continue;
+        for (const { col, first, span, units, defs } of mine) {
           defs.forEach((def, k) => {
             const b = el('hab', this.abilityLayer);
-            b.dataset.component = 'SPECIAL_BUTTON_' + String(col * 2 + k).padStart(2, '0');
+            b.dataset.component = 'SPECIAL_BUTTON_' + String(col * 2 + span - 1 + k).padStart(2, '0');
             b._ability = def.kind;
-            const x = habX(base, span, k, defs.length);
-            b.style.cssText = `left:${x}px;bottom:${base.y}px;width:${base.w}px;height:${base.h}px`;
+            const place = abilityRect(first, span, k);
+            b.style.cssText = `left:${place.x}px;bottom:${place.y}px;width:${place.w}px;height:${place.h}px`;
             b.style.setProperty('--blank', css(this.tex('special_button_00', 'Blank_Texture_Name')));
             b.style.setProperty('--icon', css(def.text ? iconUrl('i_sa_blank_button.tga') : abilityIcon(def.kind, def.icon)));
             b.style.setProperty('--over', css(this.tex('special_button_00', 'Mouse_Over_Texture_Name')));
@@ -1757,7 +1727,7 @@ export class CommandBar {
             const rec = {
               b,
               def,
-              units,
+              units: unitsWith(units, def.kind),
               rest:
                 (def.target === 'unit' ? ' — then click an enemy' : def.target === 'point' ? ' — then click a location' : '') +
                 (def.autofire ? ' · right-click: auto-fire' : '')
