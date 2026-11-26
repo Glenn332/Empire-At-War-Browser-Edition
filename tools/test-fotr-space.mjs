@@ -81,7 +81,7 @@ const step = (w, s) => {
     const { w, a } = setup(21);
     const ship = w.spawn(SHIP, a, -3000, 0, 0),
       sq = w.spawn(SQUAD, a, -3000, 500, 0);
-    execute(w, a, { c: 'move', u: [ship.id, sq.id], x: 4000, y: 0, ...(max ? { max: true } : {}) });
+    execute(w, a, { c: 'move', u: [ship.id, sq.id], x: 4000, y: 0, ...(max ? { fast: true } : {}) });
     return { w, ship, sq };
   };
   const plain = run(false);

@@ -128,7 +128,7 @@ const { execute } = await import('../public/js/game/commands.js');
     const sd = w.spawn(T('Star_Destroyer'), empire, 0, 0, 0),
       cv = w.spawn(T('Corellian_Corvette'), empire, 0, 200, 0);
     assert(cv.maxSpeed > sd.maxSpeed, 'the corvette is the faster ship');
-    execute(w, empire, { c: 'move', u: [sd.id, cv.id], x: 7000, y: 100, ...(flag ? { max: true } : {}) });
+    execute(w, empire, { c: 'move', u: [sd.id, cv.id], x: 7000, y: 100, ...(flag ? { fast: true } : {}) });
     return { sd, cv, w, run, empire };
   };
   const plain = start(false);
@@ -144,10 +144,10 @@ const { execute } = await import('../public/js/game/commands.js');
   assert(plain.cv.speed < top(plain.cv) * 0.95, 'matched to the group it runs slower: ' + plain.cv.speed);
   assert(quick.cv.x > plain.cv.x, 'and gets further');
   const am = start(false);
-  execute(am.w, am.empire, { c: 'move', u: [am.sd.id, am.cv.id], x: 7000, y: 100, attack: true, max: true });
-  assert(am.cv.order.pace < 1, 'an attack move keeps the formation pace');
+  execute(am.w, am.empire, { c: 'move', u: [am.sd.id, am.cv.id], x: 7000, y: 100, attack: true, fast: true });
+  assert.equal(am.cv.order.pace, 1, 'a double-click attack move rushes as well');
   const other = start(false);
-  execute(other.w, other.w.players[1], { c: 'move', u: [other.sd.id], x: 100, y: 100, max: true });
+  execute(other.w, other.w.players[1], { c: 'move', u: [other.sd.id], x: 100, y: 100, fast: true });
   assert.notEqual(other.sd.order.x, 100, 'only the owner moves a ship');
 }
 {
