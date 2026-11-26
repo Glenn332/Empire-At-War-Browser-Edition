@@ -216,10 +216,8 @@ export class LandUI {
       buildOptions: b => {
         const own = this.siteOf(b);
         if (own) return w.siteMenu(own, this.me);
-        const u = b.members[0],
-          out = [];
-        if (!u) return out;
-        return out.concat(u.builds);
+        const u = b.members[0];
+        return u && u.builds ? [...u.builds] : [];
       },
       cantBuild: (b, t) => {
         const own = this.siteOf(b);

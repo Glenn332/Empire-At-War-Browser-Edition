@@ -1188,7 +1188,7 @@ export class CommandBar {
     const units = menu
       ? []
       : // a lone builder shows what it builds, even one that can move (a mod station anchored by an ability)
-        sel.filter(s => s.isSquad || s.sellable || ((s.isMobile || !s.isPad) && !(sel.length === 1 && w.buildOptions(s, p).length)));
+        sel.filter(s => s.isSquad || s.sellable || ((s.isMobile || !s.isPad) && !(sel.length === 1 && this.listedBuildOptions(s).length)));
     const items = new Array(24).fill(null),
       columns = [];
     let skip = this.coveredColumns(false);
@@ -1213,16 +1213,7 @@ export class CommandBar {
     const b = ui.builder();
     if (b) {
       skip = this.coveredColumns(true);
-      const opts = w.buildOptions(b, p).filter(t => {
-        if (/^Requires /.test(w.cantBuild(b, t, p) || '')) return false;
-        if (!isUpgradeType(t)) return true;
-        const seen = new Set();
-        for (let n = t; n && !seen.has(n); n = db.type(n.str('Next_Upgrade_Level_Type'))) {
-          seen.add(n);
-          if (p.upgrades.has(n.name.toUpperCase())) return false;
-        }
-        return true;
-      });
+      const opts = this.listedBuildOptions(b);
       const cols = Math.ceil(opts.length / 2);
       if (this.buildKey !== b) {
         this.buildKey = b;
@@ -1235,6 +1226,22 @@ export class CommandBar {
       this.buildBar?.set(cols, 12 - skip, this.buildScroll);
     }
     return { mode: 'build', items, columns };
+  }
+
+  // what a builder lists on the bar: not what still needs something first, nor an upgrade already owned
+  listedBuildOptions(builder) {
+    const w = this.world,
+      p = this.player;
+    return w.buildOptions(builder, p).filter(t => {
+      if (/^Requires /.test(w.cantBuild(builder, t, p) || '')) return false;
+      if (!isUpgradeType(t)) return true;
+      const seen = new Set();
+      for (let n = t; n && !seen.has(n); n = db.type(n.str('Next_Upgrade_Level_Type'))) {
+        seen.add(n);
+        if (p.upgrades.has(n.name.toUpperCase())) return false;
+      }
+      return true;
+    });
   }
 
   coveredColumns(build) {
