@@ -54,7 +54,8 @@ const SLICE_MS = 1.5;
 const SHAPE = { head: 18, waist: 8, foot: 1, step: 10 };
 const FOE_CELL = 128,
   FOE_PAD = 24,
-  CLUTTER_CELL = 128;
+  CLUTTER_CELL = 128,
+  FAR_APART = 1.0001;
 const _tilt = new THREE.Quaternion(),
   _turn = new THREE.Quaternion(),
   _up = new THREE.Vector3();
@@ -518,6 +519,7 @@ class LandUnit {
     this.fixedHeading = undefined;
     this.scanAt = undefined;
     this.antiAir = undefined;
+    this.cone = undefined;
     this.unpowered = undefined;
     this.repath = undefined;
     this.lift = undefined;
@@ -1596,6 +1598,11 @@ export class LandWorld {
   route(ax, ay, bx, by, need = 1, opt = null) {
     const d = this.routeDanger && !(opt && opt.danger) ? { ...opt, danger: this.routeDanger } : opt;
     return this.paths.route(ax, ay, bx, by, this.maskOf(need), (d && d.clearance) || 0, d);
+  }
+
+  // route() !== null, for a caller that only asks whether there is a way
+  reaches(ax, ay, bx, by, need = 1) {
+    return this.paths.reaches(ax, ay, bx, by, this.maskOf(need), this.routeDanger ? { danger: this.routeDanger } : null);
   }
 
   moveGoal(from, x, y, need = 1) {
@@ -3642,12 +3649,17 @@ export class LandWorld {
       }
       return;
     }
+    // Whether the group takes a foe depends on the group and the foe, not on which of its squads saw the foe, and
+    // a refusal changes nothing: a foe the group has refused in this pass is not put to it again.
+    let refused = null;
     for (const q of live) {
       const f = this.marchNum(q, 'Attack_Move_Response_Range');
       if (f < 0) continue;
       const u = q.members.find(m => !m.dead && m.weapon) || q.members[0],
         e = this.nearestFoe(u, this.units, q.maxRange + f);
-      if (e && this.marchTake(G, live, e.squad)) return;
+      if (!e || (refused && refused.has(e.squad))) continue;
+      if (this.marchTake(G, live, e.squad)) return;
+      (refused ||= new Set()).add(e.squad);
     }
   }
 
@@ -5244,9 +5256,28 @@ export class LandWorld {
       bd = Infinity,
       bl = false,
       bf = null,
-      bp = Infinity;
+      bp = Infinity,
+      shareOf = null,
+      share = 0;
     const T = this.team,
       mine = u.confuseUntil > this.time ? undefined : T[u.side];
+    // whether u may take e at all: sight, categories, the gun's arc
+    const allowed = e => {
+      if (!this.targetEnemy(u, e) || e.x === undefined || (skip && skip.has(e))) return false;
+      if (gun && gun.spare.has(e.flies ? 'AIR' : e.kind)) return false;
+      if (!e.spot && this.barred(u, e)) return false;
+      if (this.shooter && !this.shooter.sees(u, e)) return false;
+      if (gun && !gun.turret && gun.cone < Math.PI * 2) {
+        let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading - (gun.facing || 0);
+        a = Math.atan2(Math.sin(a), Math.cos(a));
+        if (Math.abs(a) > gun.cone / 2 + (gun.onHead ? u.turret.extent : 0) && !(gun.onHead && this.headTurns(u))) return false;
+      }
+      return true;
+    };
+    // Most foes in reach lose to the best one found so far, and for those the answer above does not matter: it is
+    // asked only of a foe that would be taken. Not in the shooter, whose sight test keeps its own state and has to
+    // be asked of every foe as before.
+    const late = !this.shooter;
     for (const e of among) {
       if (mine !== undefined && e && T[e.side] === mine) continue;
       if (
@@ -5258,29 +5289,26 @@ export class LandWorld {
         e.inside ||
         (auto && e.noOpportunity) ||
         e.side < 0 ||
-        (e.flies && !aa && !gun) ||
-        !this.targetEnemy(u, e) ||
-        e.x === undefined ||
-        (skip && skip.has(e))
+        (e.flies && !aa && !gun)
       )
         continue;
-      if (gun && gun.spare.has(e.flies ? 'AIR' : e.kind)) continue;
-      if (!e.spot && this.barred(u, e)) continue;
+      // out of reach is the usual answer, so it is asked before the sight and category tests, which cost more
       const d = (e.x - u.x) ** 2 + (e.y - u.y) ** 2,
         far = reach + this.edgeOf(e);
       if (d >= far * far) continue;
-      if (this.shooter && !this.shooter.sees(u, e)) continue;
-      if (gun && !gun.turret && gun.cone < Math.PI * 2) {
-        let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading - (gun.facing || 0);
-        a = Math.atan2(Math.sin(a), Math.cos(a));
-        if (Math.abs(a) > gun.cone / 2 + (gun.onHead ? u.turret.extent : 0) && !(gun.onHead && this.headTurns(u))) continue;
-      }
+      if (!late && !allowed(e)) continue;
       let p = this.priorityFor(set, e);
       if (p < 0) {
         if (auto) continue;
         p = 1e18;
       }
-      const l = this.healthShare(e) <= low;
+      // the members of a company share one health figure, and they come one after another
+      const q = e.squad;
+      if (!(q && q === shareOf && q.members.length > 1)) {
+        share = this.healthShare(e);
+        shareOf = q;
+      }
+      const l = share <= low;
       let take = !best;
       if (!take) {
         if (l !== bl) take = l;
@@ -5291,7 +5319,7 @@ export class LandWorld {
           take = f !== bf ? f : d < bd;
         }
       }
-      if (take) {
+      if (take && (!late || allowed(e))) {
         bp = p;
         bl = l;
         bd = d;
@@ -5326,7 +5354,18 @@ export class LandWorld {
   canFireNow(u, e, gun) {
     if (gun) return true;
     if (!u.weapon) return false;
-    let a = Math.atan2(e.y - u.y, e.x - u.x) - u.heading;
+    const dx = e.x - u.x,
+      dy = e.y - u.y;
+    // a unit that fires all round has every bearing inside its cone: no angle to work out, as long as there is one
+    if (
+      !u.turret &&
+      (u.cone ??= (u.type.num('Turret_Rotate_Extent_Degrees', 360) || 360) * DEG) >= Math.PI &&
+      dx === dx &&
+      dy === dy &&
+      Number.isFinite(u.heading)
+    )
+      return true;
+    let a = Math.atan2(dy, dx) - u.heading;
     a = Math.atan2(Math.sin(a), Math.cos(a));
     if (u.turret) {
       const d = a - u.turret.yaw;
@@ -6151,6 +6190,14 @@ export class LandWorld {
       let hit = null,
         ht = 2;
       for (const o of this.foesNear(s.x, s.y, step + this.hitMax)) {
+        // Nearly every unit the grid hands over is too far for this step. Nothing dead is ever struck, and for a
+        // unit whose collision mesh is already known the reach test below can be asked first, before whose side
+        // it is on.
+        if (o.dead) continue;
+        if (o.coll !== undefined && o.collModel === (o.inst && o.inst.model)) {
+          const near = Math.max(o.coll ? o.collR : o.hitRadius, o.collBall || 0) + step;
+          if ((o.x - s.x) ** 2 + (o.y - s.y) ** 2 > near * near) continue;
+        }
         if (!this.shotMeets(o, s) && !(this.shooter && this.shooter.blocks(o, s))) continue;
         const C = this.meshOf(o),
           r = C ? o.collR : o.hitRadius,
@@ -7391,14 +7438,20 @@ export class LandWorld {
           }
           box.path[0] = { x: box.x + (dx / len) * keep, y: box.y + (dy / len) * keep };
         }
+        // nearFp holds each neighbour's soft footprint beside it: teamWalk() asks for it once per walker and tick
         const near = box.near || (box.near = []),
+          fps = box.nearFp || (box.nearFp = []),
           reach = box.slack + 45;
-        near.length = 0;
+        near.length = fps.length = 0;
         for (const o of this.squads) {
           if (o === q || o.structure || !o.members.length) continue;
           const ob = o.box || o.members[0];
           if (!o.members[0].foot || (ob.x - box.x) ** 2 + (ob.y - box.y) ** 2 > (reach + (o.box ? o.box.slack : 10)) ** 2) continue;
-          for (const u of o.members) if (!u.dead && !u.inside && !u.flies) near.push(u);
+          for (const u of o.members)
+            if (!u.dead && !u.inside && !u.flies) {
+              near.push(u);
+              fps.push((u.fp ??= u.type.num('Custom_Soft_Footprint_Radius', 0) || 3));
+            }
         }
       }
       const dx = p.x - box.x,
@@ -7524,12 +7577,16 @@ export class LandWorld {
           lx2 = -hy,
           ly2 = hx,
           mine = (u.fp ??= t.num('Custom_Soft_Footprint_Radius', 0) || 3);
+        const fps = box.nearFp || [],
+          ux = u.x,
+          uy = u.y;
         let ax = 0,
           ay = 0;
-        for (const o of near) {
-          const ox = o.x - u.x,
-            oy = o.y - u.y,
-            R = (mine + (o.fp ??= o.type.num('Custom_Soft_Footprint_Radius', 0) || 3)) * 1.3,
+        for (let i = 0; i < near.length; i++) {
+          const o = near[i],
+            ox = o.x - ux,
+            oy = o.y - uy,
+            R = (mine + (fps[i] ?? (o.fp ??= o.type.num('Custom_Soft_Footprint_Radius', 0) || 3))) * 1.3,
             d2 = ox * ox + oy * oy;
           if (d2 >= R * R || o.dead) continue;
           if ((o.v || 0) > 1 && Math.cos(o.heading - u.heading) > 0.5) continue;
@@ -8426,6 +8483,15 @@ export class LandWorld {
   }
 
   placeAnchors(x, y, need, attempt) {
+    const held = this.clutterHold();
+    try {
+      return this.placeAnchorsNow(x, y, need, attempt);
+    } finally {
+      this.clutterFree(held);
+    }
+  }
+
+  placeAnchorsNow(x, y, need, attempt) {
     let zone = null;
     for (let k = 0; k <= 41; k++) {
       const forced = k === 41,
@@ -8540,10 +8606,13 @@ export class LandWorld {
     return len + Math.hypot(bx - px, by - py);
   }
 
-  clutterNear(px, py, reach) {
+  // The grid of squads that cluttered() searches. It is filled where a tick first asks for it and kept for the rest
+  // of that tick, so the moment of the first question decides which cell a squad that moves later is found in.
+  clutterFresh() {
     if (this.clutterAt !== this.time || this.clutterCount !== this.squads.length) {
       this.clutterAt = this.time;
       this.clutterCount = this.squads.length;
+      this.clutterGen = (this.clutterGen || 0) + 1;
       const G = (this.clutterGrid ||= new Map());
       for (const l of G.values()) l.length = 0;
       (this.clutterSent ||= []).length = 0;
@@ -8556,59 +8625,163 @@ export class LandWorld {
         l.push(q);
       }
     }
-    const out = (this.clutterList ||= []),
-      G = this.clutterGrid,
-      r = reach + FOE_PAD;
-    out.length = 0;
-    const x0 = Math.floor((px - r) / CLUTTER_CELL),
-      x1 = Math.floor((px + r) / CLUTTER_CELL),
-      y0 = Math.floor((py - r) / CLUTTER_CELL),
-      y1 = Math.floor((py + r) / CLUTTER_CELL);
-    for (let cx = x0; cx <= x1; cx++)
-      for (let cy = y0; cy <= y1; cy++) {
-        const l = G.get(cx * 4096 + cy);
-        if (l) for (let i = 0; i < l.length; i++) out.push(l[i]);
+  }
+
+  // A search for a free place asks cluttered() about hundreds of spots while nothing on the field moves. Between
+  // clutterHold() and clutterFree() the squads' members are read once per grid cell into flat lists (clutterPack),
+  // in the order the grid holds them, and every spot of the search is tested against those.
+  clutterHold() {
+    const was = !!this.clutterHeld;
+    if (!was) {
+      this.clutterHeld = true;
+      this.clutterGen = (this.clutterGen || 0) + 1;
+    }
+    return was;
+  }
+
+  clutterFree(was) {
+    this.clutterHeld = was;
+  }
+
+  // One grid cell's squads and their members as flat lists. A member's place is read here; what cluttered() works
+  // out about it when a spot first comes near (whether it can be in the way at all, its extents, its facing) is
+  // kept beside it for the other spots of the same search: state 0 not asked yet, 1 in the way, 2 never.
+  clutterPack(l) {
+    let P = l.pack;
+    if (!P) {
+      const f = () => new Float64Array(64),
+        lists = { X: f(), Y: f(), C: f(), S: f(), HX: f(), HY: f(), R: f(), state: new Uint8Array(64) };
+      P = l.pack = { gen: -1, ...lists, units: [], squads: [], from: [] };
+    }
+    if (P.gen === this.clutterGen) return P;
+    P.gen = this.clutterGen;
+    let n = 0;
+    P.squads.length = P.from.length = 0;
+    for (const q of l) {
+      const m = q.members;
+      if (!m.length) continue;
+      if (n + m.length > P.X.length) {
+        const size = Math.max(n + m.length, P.X.length * 2);
+        for (const k of ['X', 'Y', 'C', 'S', 'HX', 'HY', 'R', 'state']) {
+          const a = new P[k].constructor(size);
+          a.set(P[k]);
+          P[k] = a;
+        }
       }
-    return out;
+      P.squads.push(q);
+      P.from.push(n);
+      for (const u of m) {
+        P.X[n] = u.x;
+        P.Y[n] = u.y;
+        P.state[n] = 0;
+        P.units[n++] = u;
+      }
+    }
+    P.from.push(n);
+    P.units.length = n;
+    return P;
   }
 
   cluttered(px, py, hx, hy, c, s, need, sent, slots = null) {
     const most = 0.15 * hx * hy,
       wide = Math.hypot(hx, hy) + db.constants.num('Destination_Collision_Query_Extension', 60);
-    const mine = [];
-    for (const q of sent) for (const u of q.members) if (!u.dead && !u.inside && !u.flies) mine.push(u);
-    const boxes = (slots && slots.length ? slots : [{ x: 0, y: 0, hx, hy, q: null }]).map(b => ({
-      x: px + c * b.x - s * b.y,
-      y: py + s * b.x + c * b.y,
-      c,
-      s,
-      hx: b.hx,
-      hy: b.hy,
-      q: b.q
-    }));
+    // This runs thousands of times while a large group is given places, so it keeps its own scratch and leaves
+    // out work that cannot change the answer: the sent squads' members are listed only when a box needs them, and
+    // overlap() is asked only about a unit whose circle reaches the box's.
+    let mine = null;
+    const sentMembers = () => {
+      mine = [];
+      for (const q of sent) for (const u of q.members) if (!u.dead && !u.inside && !u.flies) mine.push(u);
+      return mine;
+    };
+    let boxes;
+    if (slots && slots.length)
+      boxes = slots.map(b => ({ x: px + c * b.x - s * b.y, y: py + s * b.x + c * b.y, c, s, hx: b.hx, hy: b.hy, q: b.q, r: 0 }));
+    else {
+      boxes = this.clutterOne ||= [{ x: 0, y: 0, c: 0, s: 0, hx: 0, hy: 0, q: null, r: 0 }];
+      const b = boxes[0];
+      b.x = px + c * 0 - s * 0;
+      b.y = py + s * 0 + c * 0;
+      b.c = c;
+      b.s = s;
+      b.hx = hx;
+      b.hy = hy;
+    }
     const crushed = (list, u) =>
       list.length > 0 &&
       list.every(v => v.dead || v.inside || (v.crusher && this.enemy(v, u) && (u.squashable || (v.supercrusher && u.squashableBig))));
-    let area = 0;
-    for (const q of this.clutterNear(px, py, wide)) {
-      if (!q.members.length || sent.includes(q)) continue;
-      for (const u of q.members) {
-        if (u.dead || u.inside || u.flies || (u.ccls ??= collisionClass(u.type)) < 5) continue;
-        if ((u.x - px) ** 2 + (u.y - py) ** 2 > wide * wide) continue;
-        const ux = hardExtent(u, 'X'),
-          uy = hardExtent(u, 'Y'),
-          ub = { x: u.x, y: u.y, c: Math.cos(u.heading), s: Math.sin(u.heading), hx: ux, hy: uy };
-        let hit = false;
-        for (const b of boxes) {
-          if (this.overlap(b, ub) <= 0 || crushed(b.q ? b.q.members : mine, u)) continue;
-          hit = true;
-          break;
-        }
-        if (!hit) continue;
-        area += ux * uy;
-        if (area > most) return true;
-      }
+    let among = null;
+    if (sent.length > 4) {
+      among = this.clutterAmong ||= new Set();
+      among.clear();
+      for (const q of sent) among.add(q);
     }
+    const ub = (this.clutterUnit ||= { x: 0, y: 0, c: 0, s: 0, hx: 0, hy: 0 });
+    for (const b of boxes) b.r = Math.sqrt(b.hx * b.hx + b.hy * b.hy);
+    this.clutterFresh();
+    // outside a held search nothing says the units stand still between two calls: the cells are read afresh
+    if (!this.clutterHeld) this.clutterGen++;
+    const grid = this.clutterGrid,
+      turns = c === c && s === s,
+      reach = wide + FOE_PAD,
+      wide2 = wide * wide,
+      x0 = Math.floor((px - reach) / CLUTTER_CELL),
+      x1 = Math.floor((px + reach) / CLUTTER_CELL),
+      y0 = Math.floor((py - reach) / CLUTTER_CELL),
+      y1 = Math.floor((py + reach) / CLUTTER_CELL);
+    let area = 0;
+    for (let cx = x0; cx <= x1; cx++)
+      for (let cy = y0; cy <= y1; cy++) {
+        const l = grid.get(cx * 4096 + cy);
+        if (!l || !l.length) continue;
+        const P = this.clutterPack(l),
+          { X, Y, C, S, HX, HY, R, state, units, squads, from } = P;
+        for (let k = 0; k < squads.length; k++) {
+          const q = squads[k];
+          if (among ? among.has(q) : sent.includes(q)) continue;
+          for (let i = from[k], end = from[k + 1]; i < end; i++) {
+            if ((X[i] - px) ** 2 + (Y[i] - py) ** 2 > wide2 || state[i] === 2) continue;
+            const u = units[i];
+            if (!state[i]) {
+              if (u.dead || u.inside || u.flies || (u.ccls ??= collisionClass(u.type)) < 5) {
+                state[i] = 2;
+                continue;
+              }
+              state[i] = 1;
+              HX[i] = hardExtent(u, 'X');
+              HY[i] = hardExtent(u, 'Y');
+              R[i] = Math.sqrt(HX[i] * HX[i] + HY[i] * HY[i]);
+              C[i] = Math.cos(u.heading);
+              S[i] = Math.sin(u.heading);
+            }
+            const ux = HX[i],
+              uy = HY[i],
+              ur = R[i];
+            let hit = false,
+              turned = false;
+            for (const b of boxes) {
+              // two boxes whose circles stay apart are apart along one of their own axes, where overlap() gives 0
+              const far = b.r + ur;
+              if (turns && C[i] === C[i] && (b.x - X[i]) ** 2 + (b.y - Y[i]) ** 2 > far * far * FAR_APART) continue;
+              if (!turned) {
+                turned = true;
+                ub.x = X[i];
+                ub.y = Y[i];
+                ub.c = C[i];
+                ub.s = S[i];
+                ub.hx = ux;
+                ub.hy = uy;
+              }
+              if (this.overlap(b, ub) <= 0 || crushed(b.q ? b.q.members : mine || sentMembers(), u)) continue;
+              hit = true;
+              break;
+            }
+            if (!hit) continue;
+            area += ux * uy;
+            if (area > most) return true;
+          }
+        }
+      }
     return false;
   }
 
@@ -8647,67 +8820,128 @@ export class LandWorld {
       c = Math.cos(dir),
       s = Math.sin(dir);
     cands.sort((a, b) => -(a.x - T.x) * s + (a.y - T.y) * c - (-(b.x - T.x) * s + (b.y - T.y) * c));
-    const least = edge * 1.4;
+    const least = edge * 1.4,
+      spots = new Map();
     const ring = (set, r, half) => {
       const n = set.length,
         mid = n >> 1,
         out = new Array(n),
         FIVE = 5 * DEG;
+      // Whether a squad can stand at an angle of this ring does not change while one attack is planned, and the
+      // rings are tried again for every smaller count and every wider arc: each spot is worked out once.
+      const stands = (g, ang, px, py) => {
+        let byR = spots.get(g);
+        if (!byR) spots.set(g, (byR = new Map()));
+        let byAng = byR.get(r);
+        if (!byAng) byR.set(r, (byAng = new Map()));
+        let ok = byAng.get(ang);
+        if (ok === undefined) {
+          const stop = Math.max(0, r - edge - 10);
+          ok =
+            this.isOpen(px, py, g.need) &&
+            !this.cluttered(px, py, g.hx, g.hy, Math.cos(dir + ang + Math.PI), Math.sin(dir + ang + Math.PI), g.need, list) &&
+            this.clear(px, py, px - Math.cos(dir + ang) * stop, py - Math.sin(dir + ang) * stop, 1) &&
+            this.reaches(g.x, g.y, px, py, g.need);
+          byAng.set(ang, ok);
+        }
+        return ok;
+      };
       const at = (g, ang) => {
         const px = T.x + Math.cos(dir + ang) * r,
           py = T.y + Math.sin(dir + ang) * r;
         for (const o of out) if (o && (o.x - px) ** 2 + (o.y - py) ** 2 < ((o.g.hy + g.hy) * 0.9) ** 2) return null;
-        if (
-          !this.isOpen(px, py, g.need) ||
-          this.cluttered(px, py, g.hx, g.hy, Math.cos(dir + ang + Math.PI), Math.sin(dir + ang + Math.PI), g.need, list)
-        )
-          return null;
-        const stop = Math.max(0, r - edge - 10);
-        if (!this.clear(px, py, px - Math.cos(dir + ang) * stop, py - Math.sin(dir + ang) * stop, 1)) return null;
-        if (!this.route(g.x, g.y, px, py, g.need)) return null;
-        return { g, x: px, y: py };
+        return stands(g, ang, px, py) ? { g, x: px, y: py } : null;
       };
-      const step = (i, k) => Math.asin(Math.min(1, (set[i].hy + set[k].hy) / (2 * r)));
-      let a = n & 1 ? 0 : 2 * Math.asin(Math.min(1, set[mid].hy / (2 * r)));
-      for (; Math.abs(a) <= half && !(out[mid] = at(set[mid], a)); a = a === 0 ? FIVE : a > 0 ? -a : -a + FIVE);
-      if (!out[mid]) return null;
+      // the angle between two neighbours of the ring; gap[i] is the one between squads i and i + 1
+      const gap = new Array(Math.max(0, n - 1));
+      for (let i = 0; i + 1 < n; i++) gap[i] = Math.asin(Math.min(1, (set[i].hy + set[i + 1].hy) / (2 * r)));
+      const step = (i, k) => gap[Math.min(i, k)];
+      // The squads after k on one side of the ring, each given its first angle past the one before: a squad that
+      // has to look further only moves outward, so a ring that does not fit this way cannot be filled at all.
+      const fits = (cur, from, way) => {
+        for (let k = from; k >= 0 && k < n; k += way) {
+          cur += way * (k === mid + way ? 2 : 1) * step(k, k - way);
+          if (!(way > 0 ? cur <= half : cur >= -half)) return false;
+        }
+        return true;
+      };
+      const next = a => (a === 0 ? FIVE : a > 0 ? -a : -a + FIVE);
+      const a0 = n & 1 ? 0 : 2 * Math.asin(Math.min(1, set[mid].hy / (2 * r)));
+      let last;
+      for (let a = a0; Math.abs(a) <= half; a = next(a)) if (fits(a, mid - 1, -1) && fits(a, mid + 1, 1)) last = a;
+      if (last === undefined) return null;
+      let a = a0;
+      for (; Math.abs(a) <= half && !(out[mid] = at(set[mid], a)); a = next(a)) if (a === last) return null;
+      if (!out[mid] || !fits(a, mid - 1, -1) || !fits(a, mid + 1, 1)) return null;
       for (const way of [-1, 1]) {
         let cur = a;
         for (let k = mid + way; k >= 0 && k < n; k += way) {
-          let ang = cur + way * (k === mid + way ? 2 : 1) * step(k, k - way);
+          const first = cur + way * (k === mid + way ? 2 : 1) * step(k, k - way);
+          let ang = first;
           for (; Math.abs(ang) <= half && !(out[k] = at(set[k], ang)); ang += way * FIVE);
           if (!out[k]) return null;
           cur = ang;
+          if (ang !== first && !fits(cur, k + way, way)) return null;
         }
       }
       return out;
     };
-    let plan = null;
-    for (let k = db.constants.num('Base_Land_Targeting_Arc_Angle_Coefficient', 0.2); k > -1 && !plan; k -= 0.2) {
-      const half = ((1 - k) * Math.PI) / 2,
-        got = [];
-      let rest = cands.slice(),
-        r = R,
-        ok = true;
-      while (rest.length && ok) {
-        const D = Math.max(...rest.map(g => g.hx)),
-          at = r - D;
-        if (at - D < least || at < Math.max(least, R * k)) {
-          ok = false;
-          break;
+    const arc = db.constants.num('Base_Land_Targeting_Arc_Angle_Coefficient', 0.2);
+    // The search below skips rings that cannot be filled, and with them the spots they would have looked at. The
+    // first open spot of the full search is where this tick's clutter grid gets filled, so that moment is kept:
+    // the middle squad's spots are walked in the full search's order up to the first open one.
+    {
+      const D = Math.max(...cands.map(g => g.hx)),
+        r = R - D,
+        FIVE = 5 * DEG;
+      first: for (let k = arc; k > -1; k -= 0.2) {
+        if (r - D < least || r < Math.max(least, R * k)) continue;
+        const half = ((1 - k) * Math.PI) / 2;
+        for (let n = cands.length; n > 0; n--) {
+          const g = cands[n >> 1];
+          for (
+            let a = n & 1 ? 0 : 2 * Math.asin(Math.min(1, g.hy / (2 * r)));
+            Math.abs(a) <= half;
+            a = a === 0 ? FIVE : a > 0 ? -a : -a + FIVE
+          )
+            if (this.isOpen(T.x + Math.cos(dir + a) * r, T.y + Math.sin(dir + a) * r, g.need)) {
+              this.clutterFresh();
+              break first;
+            }
         }
-        let put = null,
-          n = rest.length;
-        for (; n > 0 && !(put = ring(rest.slice(0, n), at, half)); n--);
-        if (!put) {
-          ok = false;
-          break;
-        }
-        got.push(...put);
-        rest = rest.slice(n);
-        r = at - D;
       }
-      if (ok) plan = got;
+    }
+    let plan = null;
+    const held = this.clutterHold();
+    try {
+      for (let k = arc; k > -1 && !plan; k -= 0.2) {
+        const half = ((1 - k) * Math.PI) / 2,
+          got = [];
+        let rest = cands.slice(),
+          r = R,
+          ok = true;
+        while (rest.length && ok) {
+          const D = Math.max(...rest.map(g => g.hx)),
+            at = r - D;
+          if (at - D < least || at < Math.max(least, R * k)) {
+            ok = false;
+            break;
+          }
+          let put = null,
+            n = rest.length;
+          for (; n > 0 && !(put = ring(rest.slice(0, n), at, half)); n--);
+          if (!put) {
+            ok = false;
+            break;
+          }
+          got.push(...put);
+          rest = rest.slice(n);
+          r = at - D;
+        }
+        if (ok) plan = got;
+      }
+    } finally {
+      this.clutterFree(held);
     }
     if (!plan) {
       for (const g of cands) this.attack(g.q, foe);
