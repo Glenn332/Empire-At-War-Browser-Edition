@@ -10,7 +10,7 @@ import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl } from '../icons.js
 import { fontFamily } from '../fonts.js';
 import { buildCost, isUpgradeType, companySpaceUnits } from './sim.js';
 import { parseAbilities } from './abilities.js';
-import { layoutSelectionPanels } from './commandbargroups.js';
+import { layoutSelectionPanels, slotClickSelection } from './commandbargroups.js';
 import { abilityLocked } from './blackmarket.js';
 import { battlePlanetName } from './battleplanet.js';
 import { playerSpecial } from './superweapon.js';
@@ -1264,8 +1264,7 @@ export class CommandBar {
           ui.selection.filter(x => !picked.includes(x)),
           false
         );
-      else if (it.group) ui.select(it.group, false);
-      else ui.select([it.unit], false);
+      else ui.select(slotClickSelection(it), false);
     } else if (it.build) {
       const r = this.game.command({ c: 'build', b: it.builder.id, type: it.build.name, n: ev.shiftKey ? 5 : 1 });
       if (!(r && r.why)) this.game.audio.play('GUI_Button_Press_2_SFX');

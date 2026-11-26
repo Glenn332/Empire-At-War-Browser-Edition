@@ -108,8 +108,8 @@ export function layoutSelectionPanels(units, heldBy, skipColumns, scrollColumns 
   for (const panel of panels) {
     const firstSlot = allItems.length;
     for (const stack of panel.stacks) {
-      if (stack.collapsed) allItems.push({ unit: stack.units[0], group: stack.units, held: heldBy.get(stack.units[0]) });
-      else for (const unit of stack.units) allItems.push({ unit, held: heldBy.get(unit) });
+      if (stack.collapsed) allItems.push({ unit: stack.units[0], group: stack.units, held: heldBy.get(stack.units[0]), panel: panel.units, selection: units });
+      else for (const unit of stack.units) allItems.push({ unit, held: heldBy.get(unit), panel: panel.units, selection: units });
     }
     if (allItems.length === firstSlot) continue;
     if (allItems.length % 2) allItems.push(null);
@@ -138,4 +138,16 @@ export function layoutSelectionPanels(units, heldBy, skipColumns, scrollColumns 
       });
   }
   return { items, columns, totalColumns, scrollColumns: scroll };
+}
+
+// What a click on a unit slot selects, narrowing step by step: while the bar shows more than one panel, the
+// whole panel of the clicked unit (every unit sharing its primary ability); once one panel is left, every unit of
+// the clicked type (and owner); once one type is left, the clicked slot alone (a unit, or the stack behind a count).
+export function slotClickSelection(entry) {
+  const slotUnits = entry.group || [entry.unit];
+  if (!entry.panel || !entry.selection) return slotUnits;
+  if (entry.panel.length < entry.selection.length) return entry.panel;
+  const sameType = entry.panel.filter(unit => unit.type === entry.unit.type && unit.player === entry.unit.player);
+  if (sameType.length < entry.panel.length) return sameType;
+  return slotUnits;
 }
