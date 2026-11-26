@@ -2756,6 +2756,7 @@ export class LandWorld {
   // unless it only reinforces. Returns the point and that structure, if any.
   async addCapturePoint(o, side = -1, { madeByScript = false } = {}) {
     const pt = await this.addPoint(o, side >= 0 && side < this.factions.length ? side : -1);
+    if (madeByScript) (this.scriptPoints ||= []).push(pt);
     const behaviors = [...o.type.list('Behavior'), ...o.type.list('LandBehavior')].map(name => name.toUpperCase());
     let capturable = null;
     if (behaviors.includes('TACTICAL_BUILD_OBJECTS')) this.addPadSite(pt, o).spawnsGarrison = madeByScript;

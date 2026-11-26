@@ -1389,6 +1389,9 @@ export class LandGame {
         ),
         credits: w.credits.map(Math.round),
         ready: w.ready.map(l => l.map(t => t.name)),
+        // capture points a script made during the battle (the EaW-X field base pads) are not on the map, so a load makes
+        // them again before the points and sites, which are kept by their place in the list, are restored
+        scriptPoints: (w.scriptPoints || []).map(p => ({ type: p.type.name, x: r1(p.x), y: r1(p.y) })),
         points: w.points.map(p => ({ side: p.side, taker: p.taker, progress: +p.progress.toFixed(3) })),
         sites: w.sites.map(st => ({
           structure:
@@ -1433,6 +1436,15 @@ export class LandGame {
           })),
           ...(fl => (fl ? { fl } : {}))(scriptFlags(q))
         })),
+        // which squads each garrison spawner already has out, so a load neither forgets them nor spawns them again
+        garrisons: [...w.garrisons].map(([u, g]) => {
+          const site = w.sites.findIndex(st => st.structure === u);
+          return {
+            ...(site >= 0 ? { site } : { squad: live.indexOf(u.squad) }),
+            wait: r1(Math.max(0, g.timer - w.time)),
+            out: g.entries.map(e => e.out.map(group => group.map(q => live.indexOf(q)).filter(i => i >= 0)).filter(group => group.length))
+          };
+        }),
         unloading: w.transports
           .filter(t => t.stage === 'unload' && t.queue?.length)
           .map(t => ({
@@ -1661,6 +1673,10 @@ export class LandGame {
       w.queueOf(side, t).push({ type: t, left, total: Math.max(left, timeOf(t) * w.mods[side].build), from, side });
     };
     this.reorder = reorder;
+    for (const made of b.scriptPoints || []) {
+      const type = db.type(made.type);
+      if (type) await w.addCapturePoint({ type, pos: [made.x, made.y, w.groundZ(made.x, made.y)], rot: [0, 0, 0], scale: 1 }, -1, { madeByScript: true });
+    }
     (b.points || []).forEach((p, i) => {
       const pt = w.points[i];
       if (!pt) return;
@@ -1802,6 +1818,15 @@ export class LandGame {
       if (every > 0) e.every = every;
     }
     adoptGarrisons(w);
+    for (const saved of b.garrisons || []) {
+      const spawner = saved.site >= 0 ? w.sites[saved.site]?.structure : squads[saved.squad]?.members?.[0],
+        g = spawner && w.garrisons.get(spawner);
+      if (!g) continue;
+      g.timer = w.time + (saved.wait || 0);
+      (saved.out || []).forEach((groups, k) => {
+        if (g.entries[k]) g.entries[k].out = groups.map(group => group.map(i => squads[i]).filter(Boolean)).filter(group => group.length);
+      });
+    }
     this.say(`Loaded: ${this.setup.restore.name}`);
     return { squads, landing, landingGids: (b.landing || []).map(l => l.gid) };
   }
