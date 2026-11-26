@@ -1211,6 +1211,11 @@ export class CommandBar {
     }
     this.barMode = 'build';
     const b = ui.builder();
+    // on land a pad's options float beside it, as the original shows them, and the bar stays empty
+    if (b && this.game?.land === true && this.padMenu && b === this.menuPad()) {
+      this.buildBar?.set(0, 12 - skip, 0);
+      return { mode: 'build', items, columns };
+    }
     if (b) {
       skip = this.coveredColumns(true);
       const opts = this.listedBuildOptions(b);
@@ -1568,14 +1573,20 @@ export class CommandBar {
     }
   }
 
+  // the build pad whose options float beside it: a lone selected pad of the player's side, empty, in space or on land
+  menuPad() {
+    const ui = this.ui,
+      sel = ui.selection.length === 1 ? ui.selection[0] : null;
+    return sel && sel.isPad && !sel.dead && !sel.padChild && (sel.padOwner ?? sel.player) === this.player ? sel : null;
+  }
+
   updatePadMenu() {
     const M = this.padMenu;
     if (!M) return;
     const ui = this.ui,
       w = this.world,
       p = this.player,
-      sel = ui.selection.length === 1 ? ui.selection[0] : null,
-      pad = sel && sel.isPad && !sel.dead && !sel.padChild && sel.padOwner === p ? sel : null,
+      pad = this.menuPad(),
       opts = pad ? w.buildOptions(pad, p).filter(t => !/^Requires /.test(w.cantBuild(pad, t, p) || '')).slice(0, 6) : [];
     const at = opts.length ? ui.screenOf(pad) : null;
     if (!at || at.behind) {

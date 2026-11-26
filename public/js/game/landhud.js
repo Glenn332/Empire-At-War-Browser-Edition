@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { db } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
 import { CommandBar } from './hud.js';
@@ -138,6 +139,9 @@ class PadPick {
   }
   get y() {
     return this.site.y;
+  }
+  get z() {
+    return this.site.z;
   }
   get healthFrac() {
     return 1;
@@ -534,6 +538,15 @@ export class LandUI {
       }
     }
     return best >= 0 ? this.padPick(best) : null;
+  }
+
+  // where a thing stands on the screen, for the build menu that floats beside a pad
+  screenOf(s, out = {}) {
+    const at = (this.screenPoint ||= new THREE.Vector3()).set(s.x, s.y, s.z ?? 0).project(this.game.camera);
+    out.x = (at.x * 0.5 + 0.5) * innerWidth;
+    out.y = (-at.y * 0.5 + 0.5) * innerHeight;
+    out.behind = at.z > 1;
+    return out;
   }
 
   padPick(i) {
