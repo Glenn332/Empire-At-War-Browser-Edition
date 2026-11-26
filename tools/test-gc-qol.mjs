@@ -130,7 +130,7 @@ const logGame = () => {
 
 // ---- the option: default, setup flow, old saves ----
 {
-  assert.equal(campaignDefaults(campaign, campaign.str('Starting_Active_Player')).groundAutoResolve, true, 'on by default');
+  assert.equal(campaignDefaults(campaign, campaign.str('Starting_Active_Player')).groundAutoResolve, false, 'off by default');
   const g = {};
   applyGroundAutoResolve(g, { options: { groundAutoResolve: true } });
   assert.equal(g.groundAutoResolve, true, 'the shared setup option reaches the galaxy');

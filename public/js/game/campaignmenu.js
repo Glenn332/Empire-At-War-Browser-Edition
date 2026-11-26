@@ -113,8 +113,8 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       players: [],
       teamFactions: [],
       ...(settings?.custom ? { campaignSettings: { ...settings } } : {}),
-      // tutorials teach the ground battles, so only a conquest starts with them auto-resolved
-      options: { groundAutoResolve: !tutorial && (settings ? settings.groundAutoResolve !== false : true) }
+      // off unless the player ticks it, and never in a tutorial, which teaches the ground battles
+      options: { groundAutoResolve: !tutorial && settings?.groundAutoResolve === true }
     });
   };
   dlg.show('IDC_DIALOG_CLOSE_BUTTON', false);
@@ -238,7 +238,7 @@ export async function campaignOptionsDialog(st, campaign, faction) {
     );
     // the random-events box has nothing to offer in the galaxy; the slot carries the ground auto-resolve choice
     dlg.setText('IDC_ALLOW_RANDOM_EVENTS', 'Auto-resolve all ground battles');
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve !== false, on => {
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve === true, on => {
       st.groundAutoResolve = on;
     });
   };

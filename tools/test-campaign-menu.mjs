@@ -201,8 +201,8 @@ assert.deepEqual(result, {
   difficulty: 'hard',
   players: [],
   teamFactions: [],
-  // a new galactic game starts with ground battles auto-resolved (the lobby option, on by default)
-  options: { groundAutoResolve: true }
+  // a new galactic game prompts for its ground battles (the lobby option is off by default)
+  options: { groundAutoResolve: false }
 });
 await openCampaignMenu({
   tutorial: true,

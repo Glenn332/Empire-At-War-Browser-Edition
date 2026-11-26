@@ -795,7 +795,7 @@ async function campaignOptions(st, campaign) {
     );
     // random story events come from single-player story rewards only, so that box carries the ground auto-resolve choice
     dlg.setText('IDC_ALLOW_RANDOM_EVENTS', T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve !== false, on => {
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve === true, on => {
       st.groundAutoResolve = on;
     });
   };
@@ -818,7 +818,7 @@ async function campaignOptions(st, campaign) {
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
         autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-        groundAutoResolve: true
+        groundAutoResolve: false
       });
       show();
     });
@@ -1047,7 +1047,7 @@ async function openStaging(args) {
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
     autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-    groundAutoResolve: true
+    groundAutoResolve: false
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1648,7 +1648,7 @@ async function openStaging(args) {
               T('TEXT_ALLOW_AUTORESOLVE', 'Auto-resolve combat'),
               st.autoResolve === 0 ? T('TEXT_ALLOW_AUTORESOLVE_ALWAYS', 'Always') : T('TEXT_ALLOW_AUTORESOLVE_ASK', 'Ask')
             ],
-            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve !== false ? yes : no]
+            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve === true ? yes : no]
           ]
         : [
             [
@@ -1822,7 +1822,7 @@ async function openStaging(args) {
           tech: st.tech,
           maxTech: st.maxTech,
           autoResolve: st.autoResolve,
-          groundAutoResolve: st.groundAutoResolve !== false
+          groundAutoResolve: st.groundAutoResolve === true
         },
         players: players.map(s =>
           s.kind === 'human'

@@ -30,7 +30,7 @@ export function campaignDefaults(campaign, faction) {
     tech: factionValue(campaign, 'Starting_Tech_Level', faction, 0),
     maxTech: factionValue(campaign, 'Max_Tech_Level', faction, 5),
     autoResolve: 2,
-    groundAutoResolve: true
+    groundAutoResolve: false
   };
 }
 
