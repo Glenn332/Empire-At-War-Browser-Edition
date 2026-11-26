@@ -149,7 +149,7 @@ import { openDialog } from './dialogs.js';
 
 import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
-import { pressed, held, bothButtonsRotate, keysOf, keyName } from './keybinds.js';
+import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan } from './keybinds.js';
 import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
 
@@ -2590,10 +2590,15 @@ export class LandGame {
       { passive: true }
     );
     el.addEventListener('contextmenu', e => e.preventDefault());
+    document.documentElement.addEventListener('mouseleave', () => (ui.mouse.gone = true));
+    addEventListener('mouseup', e => (ui.mouse.buttons = e.buttons));
     addEventListener('mousemove', e => {
       ui.mouse.x = e.clientX;
       ui.mouse.y = e.clientY;
       ui.mouse.inside = e.target === el;
+      ui.mouse.moved = true;
+      ui.mouse.gone = false;
+      ui.mouse.buttons = e.buttons;
       if (ui.bribeTip && !ui.bribeTip.hidden) {
         ui.bribeTip.style.left = e.clientX + 'px';
         ui.bribeTip.style.top = e.clientY + 'px';
@@ -3206,8 +3211,20 @@ export class LandGame {
         fx = -Math.cos(v.yaw),
         fy = -Math.sin(v.yaw);
       const steer = !!this.direct && this.steerDirect();
-      const f = steer ? 0 : (held(k, 'SCROLL_UP') ? 1 : 0) - (held(k, 'SCROLL_DOWN') ? 1 : 0);
-      const r = steer ? 0 : (held(k, 'SCROLL_RIGHT') ? 1 : 0) - (held(k, 'SCROLL_LEFT') ? 1 : 0);
+      let f = steer ? 0 : (held(k, 'SCROLL_UP') ? 1 : 0) - (held(k, 'SCROLL_DOWN') ? 1 : 0);
+      let r = steer ? 0 : (held(k, 'SCROLL_RIGHT') ? 1 : 0) - (held(k, 'SCROLL_LEFT') ? 1 : 0);
+      // the cursor pushed against the window edge pans too, the way it does in space and on the galaxy map;
+      // the edges count over the HUD as well, since the bottom bar covers the battle canvas there
+      const m = this.ui.mouse;
+      if (!steer && edgePan() && m.moved && !m.gone && !m.buttons && !this.track?.on && !this.chase?.on && !document.pointerLockElement && document.hasFocus()) {
+        const edge = 6;
+        if (m.x < edge) r -= 1;
+        else if (m.x > innerWidth - edge) r += 1;
+        if (m.y < edge) f += 1;
+        else if (m.y > innerHeight - edge) f -= 1;
+        f = Math.max(-1, Math.min(1, f));
+        r = Math.max(-1, Math.min(1, r));
+      }
       v.x += (fx * f + fy * r) * sp;
       v.y += (fy * f - fx * r) * sp;
       if (held(k, 'ROTATE_LEFT')) v.yaw -= real * 1.2;

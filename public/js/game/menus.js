@@ -84,7 +84,7 @@ const FULLSCREEN_MOUSE_TIP =
   'Keeps the mouse inside the game so it cannot slip onto another monitor: in fullscreen, and in the desktop app in a window too. Esc or Alt+Tab frees it.';
 const FRAME_CAP_TIP =
   'Draws the galaxy map and battles at most 60 times a second instead of at the screen refresh rate, which cuts graphics card load on fast monitors and laptops. The battle behind the main menu draws at most 30 times a second either way.';
-const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space battles and on the galaxy map.';
+const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space and land battles and on the galaxy map.';
 
 // Where the added keyboard rows go on a keyboard options page: the two columns of the page's own key boxes, the
 // labels inside the frame and left of the divider, and rows that stay inside the frame. The Forces of Corruption and
