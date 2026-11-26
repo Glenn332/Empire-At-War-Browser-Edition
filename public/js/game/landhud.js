@@ -765,7 +765,7 @@ export class LandUI {
         if (!t.show) continue;
         const own = u.side === me || (u.side >= 0 && w.ally(u.side, me)),
           enemy = !own && u.side >= 0;
-        if (enemy && (!t.enemy || u.cloaked || (!radar && !u.captures))) continue;
+        if (enemy && (!t.enemy || u.cloaked || (!radar && !u.capturable && u.seen === false))) continue;
         if (!own && !this.seeAll && u.seen === false && !t.fogged) continue;
         if (many) done.add(q);
         draw(t, u.x, u.y, u.heading || 0, u.side);

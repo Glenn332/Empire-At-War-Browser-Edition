@@ -549,7 +549,7 @@ const GROUPS = [
       [
         'Radar only with a communications array or station (Enable_Radar_Ability)',
         D,
-        'enemies show on the radar only while the side has a working Enable_Radar_Ability - on from the start, or switched on by an intact Comm Array hardpoint (HARD_POINT_ENABLE_SPECIAL_ABILITY) of a station of its own or an ally; capture points always'
+        'enemies show on the radar only while the side has a working Enable_Radar_Ability - on from the start, or switched on by an intact Comm Array hardpoint (HARD_POINT_ENABLE_SPECIAL_ABILITY) of a station of its own or an ally; capture points always; ours also shows an enemy the side can see right now without a radar source, as players report the original does in campaign battles where neither side has one'
       ],
       [
         'Space radar (minimap) as the engine draws it',

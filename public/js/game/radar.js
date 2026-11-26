@@ -458,7 +458,9 @@ export class Radar {
         if (!t.show) continue;
         const own = u.player.team === player.team,
           isEnemy = !own && u.player.id >= 0;
-        if (isEnemy && (!t.enemy || u.cloaked || (!radar && !u.capture))) continue;
+        // without a radar source an enemy still shows while the side can see it (as the original in campaign battles,
+        // where neither side has one): only enemies out of sight need the radar
+        if (isEnemy && (!t.enemy || u.cloaked || (!radar && !u.capture && w.fog && !(u.seenBy & bit)))) continue;
         if (!own && w.fog && !this.seeAll && !(u.seenBy & bit) && !t.fogged) continue;
         // A built-on pad gives way to what stands on it, unless the viewer cannot see that: then the pad stays, in the
         // colour the viewer last saw.
@@ -525,7 +527,7 @@ export class Radar {
         if (!n) continue;
         const own = q.player.team === player.team,
           isEnemy = !own && q.player.id >= 0;
-        if (isEnemy && (!t.enemy || hidden || !radar)) continue;
+        if (isEnemy && (!t.enemy || hidden || (!radar && w.fog && !seen))) continue;
         if (!own && w.fog && !this.seeAll && !seen && !t.fogged) continue;
         const c = sel && q.selected ? sel : q.player.id >= 0 ? this.colorOf(q.player) : this.tone(NEUTRAL);
         g.globalAlpha = 1;
