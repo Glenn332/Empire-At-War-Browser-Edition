@@ -68,6 +68,18 @@ struct State {
     local: Vec<String>,
 }
 
+impl State {
+    /// The expansion's game opened with the files it needs to start.
+    fn game_ready(&self) -> bool {
+        self.foc.as_ref().is_some_and(|opened| {
+            opened
+                .game
+                .resolve("Data/XML/GameObjectFiles.xml")
+                .is_some()
+        })
+    }
+}
+
 fn canonical(p: &Path) -> Option<String> {
     let c = std::fs::canonicalize(p)
         .ok()?
@@ -280,7 +292,9 @@ impl Server {
             .chain(dir.iter().cloned())
             .filter_map(|p| canonical(&p))
             .collect();
-        if let Some(w) = was.filter(|w| w.dir.is_some() && w.dir == dir) {
+        // the same folder keeps its opened game, unless that game could not start (files that
+        // were still being copied in): then it is opened again
+        if let Some(w) = was.filter(|w| w.dir.is_some() && w.dir == dir && w.game_ready()) {
             return State {
                 settings,
                 dir,
@@ -355,12 +369,7 @@ impl Server {
             .as_deref()
             .map(vfs::missing_game_files)
             .unwrap_or_default();
-        let ready = st.foc.as_ref().is_some_and(|opened| {
-            opened
-                .game
-                .resolve("Data/XML/GameObjectFiles.xml")
-                .is_some()
-        });
+        let ready = st.game_ready();
         // a phone or tablet has no folder dialog: the page tells the player where to copy the game
         #[cfg(mobile)]
         let copy_to = Some(setup::player_folder());

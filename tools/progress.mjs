@@ -622,7 +622,7 @@ const GROUPS = [
       [
         'Android app',
         P,
-        'first pass: npm run app:android builds an APK for 64-bit ARM; the player copies the game folder over USB into Android/data/com.playeaw.browseredition/files, and the setup page names that folder and looks again on request. Without the desktop updater, folder dialogs, Discord status and invite links. Still to do: run it on a phone, release signing and a release workflow job, a way to bring the game in without a computer, and a check of memory use with the whole game on a phone. iOS needs a Mac with Xcode and an Apple developer account'
+        'first pass: npm run app:android builds an APK for 64-bit ARM (with --emulator for x86-64); the player copies the game folder over USB into Android/data/com.playeaw.browseredition/files, and the setup page names that folder and looks again on request. On the x86-64 emulator (WebView 113, host GPU) the game is found and indexed, a skirmish runs full screen with the HUD and taps buy units, but the 3D view stays black: draws to the screen fail inside the emulator GL translator (the model viewer loses its context too) while fresh WebGL contexts draw, so this needs a real phone to tell apart. Without the desktop updater, folder dialogs, Discord status, invite links and native game fonts. Still to do: check the 3D view on a phone, release signing and a release workflow job, a way to bring the game in without a computer, and memory use with the whole game on a phone. iOS needs a Mac with Xcode and an Apple developer account'
       ],
       [
         'macOS and Linux apps',
