@@ -112,7 +112,9 @@ export class PostFX {
       return t;
     };
     this.targets = {
-      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true, samples }),
+      // the passes below only read the scene's colour; resolving its multisampled stencil as well is slow on
+      // Direct3D (WebGL through ANGLE on Windows) and ran on every draw into this target
+      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true, samples, resolveStencilBuffer: false }),
       a1: rt(W >> 2, H >> 2),
       a2: rt(W >> 2, H >> 2),
       heat: rt(W >> 2, H >> 2)
