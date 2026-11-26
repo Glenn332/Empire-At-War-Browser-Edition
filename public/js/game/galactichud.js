@@ -235,7 +235,6 @@ export class GalacticBar extends CommandBar {
       b.setAttribute('role', 'button');
       b.dataset.control = name;
       b.classList.add('galactic-build');
-      b._dimmedWhenDisabled = true;
       b.addEventListener('pointerenter', e => {
         this.game.buildTip = { slot: i, b, x: e.clientX, y: e.clientY };
       });

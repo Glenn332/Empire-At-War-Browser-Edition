@@ -6,7 +6,7 @@ import { movieDefinitions } from './galacticmovies.js';
 import { parseXML } from '../xml.js';
 import { loadALO, parseALO } from '../alo.js';
 import { loadTextureCanvas } from '../dds.js';
-import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl, iconDimmedUrl } from '../icons.js';
+import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl } from '../icons.js';
 import { fontFamily } from '../fonts.js';
 import { buildCost, isUpgradeType, companySpaceUnits } from './sim.js';
 import { parseAbilities } from './abilities.js';
@@ -15,7 +15,7 @@ import { battlePlanetName } from './battleplanet.js';
 import { playerSpecial } from './superweapon.js';
 import { withKey, keysOf, keyName, onBindingsChange } from './keybinds.js';
 import { TooltipGate } from './tooltipgate.js';
-import { loadBarSkins, textureKey, decodeSkinIcons, skinDimmedIcon } from './barskins.js';
+import { loadBarSkins, textureKey, decodeSkinIcons } from './barskins.js';
 
 const BAR_H = 330,
   BAR_W = 1080;
@@ -28,8 +28,6 @@ const el = (cls, parent) => {
   return d;
 };
 const css = url => (url ? `url("${url}")` : 'none');
-// A disabled galactic build button is drawn at vertex colour 128.
-const DISABLED_BRIGHTNESS = 128 / 255;
 // Blank_Texture_Name on the unit/build slots lists a ground pad then a space pad, the same pairing the
 // galactic build bar uses per tab.
 export const selectPadIndex = game => (game?.land === true ? 0 : 1);
@@ -714,11 +712,6 @@ export class CommandBar {
   setButtonImage(button, kind, texture) {
     const own = this.skinIcon(texture);
     button.style.setProperty('--' + kind, css(own || iconUrl(texture)));
-    if (button._dimmedWhenDisabled && (kind === 'blank' || kind === 'icon'))
-      button.style.setProperty(
-        '--' + kind + '-dimmed',
-        css(own ? skinDimmedIcon(this.skin, texture, DISABLED_BRIGHTNESS) : iconDimmedUrl(texture, DISABLED_BRIGHTNESS))
-      );
     const state = button._nativeButton,
       image = (own && this.skin.rects.get(textureKey(texture))) || iconCanvasRect(texture);
     if (!state?.mesh) return;

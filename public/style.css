@@ -1012,11 +1012,8 @@ body:not(.original-hud) .heroframe {
 .hb-native.dis > .hb-art-dis {
   display: block;
 }
-.hb-native.galactic-build.dis > .hb-art-blank {
-  background-image: var(--blank-dimmed) !important;
-}
-.hb-native.galactic-build.dis > .hb-art-icon {
-  background-image: var(--icon-dimmed) !important;
+.hb-native.galactic-build.dis > .hb-art {
+  filter: brightness(0.502);
 }
 .hb-native.galactic-build.dis > .hb-art-dis {
   display: none;

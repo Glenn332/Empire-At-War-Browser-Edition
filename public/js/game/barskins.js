@@ -1,6 +1,6 @@
 import { findFiles } from '../vfs.js';
 import { loadTextureCanvas, canvasUrl } from '../dds.js';
-import { iconCanvasRect, canvasDimmedUrl } from '../icons.js';
+import { iconCanvasRect } from '../icons.js';
 
 export const textureKey = name =>
   String(name || '')
@@ -23,7 +23,7 @@ export async function loadBarSkins() {
     const parts = key.split(/[\\/]/),
       faction = parts[parts.length - 2].toUpperCase();
     let s = skins.get(faction);
-    if (!s) skins.set(faction, (s = { files: new Map(), icons: new Map(), dimmedIcons: new Map(), canvases: new Map(), rects: new Map(), models: new Map(), xml: [] }));
+    if (!s) skins.set(faction, (s = { files: new Map(), icons: new Map(), rects: new Map(), models: new Map(), xml: [] }));
     return { s, parts };
   };
   for (const key of textures || []) {
@@ -56,18 +56,7 @@ export async function decodeSkinIcons(skin, names) {
         const cv = await loadTextureCanvas(skin.files.get(k)).catch(() => null);
         if (!cv) return;
         skin.rects.set(k, { x: 0, y: 0, w: cv.width, h: cv.height });
-        skin.canvases.set(k, cv);
         skin.icons.set(k, await canvasUrl(cv));
       })
   );
-}
-
-export function skinDimmedIcon(skin, name, brightness) {
-  const key = textureKey(name),
-    cacheKey = key + '|' + brightness;
-  if (skin.dimmedIcons.has(cacheKey)) return skin.dimmedIcons.get(cacheKey);
-  const canvas = skin.canvases.get(key),
-    url = canvas ? canvasDimmedUrl(canvas, brightness) : '';
-  skin.dimmedIcons.set(cacheKey, url);
-  return url;
 }
