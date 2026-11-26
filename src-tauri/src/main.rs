@@ -6,6 +6,7 @@ mod fonts;
 mod gog;
 mod invite;
 mod nightly;
+mod procstats;
 mod report;
 mod setup;
 mod steam;
@@ -769,6 +770,9 @@ impl Server {
         }
         if p == "/api/power" {
             return json(&report::power());
+        }
+        if p == "/api/process-stats" {
+            return json(&procstats::stats());
         }
         if p == "/api/screenshot" {
             return match report::screenshot(app) {

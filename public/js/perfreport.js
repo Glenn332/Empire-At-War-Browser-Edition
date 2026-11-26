@@ -1,4 +1,5 @@
 import { recentFrames, lastMinute, perfTimeline, backgroundSwitches } from './perfsampler.js';
+import { processSnapshot, processStatsLines } from './procstats.js';
 
 const PROFILE_MS = 3000;
 const PROFILE_TOP = 30;
@@ -169,7 +170,12 @@ async function graphicsSettings() {
 }
 
 export async function collectPerformance(game) {
-  const [stages, settings, renderer] = await Promise.all([stageAverages(), graphicsSettings(), rendererSnapshot(game)]);
+  const [stages, settings, renderer, processes] = await Promise.all([
+    stageAverages(),
+    graphicsSettings(),
+    rendererSnapshot(game),
+    processSnapshot().catch(() => null)
+  ]);
   return {
     frames: recentFrames(),
     lastMinute: lastMinute(),
@@ -177,6 +183,9 @@ export async function collectPerformance(game) {
     threads: threadSnapshot(game),
     stages,
     settings,
+    // what the game's processes use now, and over the last benchmark run when there was one
+    processes,
+    benchmarkProcesses: globalThis.benchmarkResult?.processes || null,
     backgroundSwitches: backgroundSwitches(),
     timeline: perfTimeline()
   };
@@ -241,6 +250,8 @@ export function performanceLines(performance, warnings, profileResult) {
     lines.push(
       `  Graphics: shaders ${settings.shader}, shadows ${settings.shadows ? settings.shadow : 'off'}, resolution scale ${settings.scale}, supersampling ${settings.supersampling}x, anti-aliasing ${settings.aa ? 'on' : 'off'}, particles ${settings.particle}`
     );
+  lines.push(...processStatsLines(performance?.processes, '  ', 'Processes now'));
+  lines.push(...processStatsLines(performance?.benchmarkProcesses, '  ', 'Processes during the last benchmark'));
   lines.push(`  CPU profile: ${profileResult?.profile ? 'included (profile.txt)' : profileResult?.why || 'not taken'}`);
   lines.push(`  Possible causes: ${warnings.length ? warnings.join('; ') : 'none spotted'}`);
   return lines;
