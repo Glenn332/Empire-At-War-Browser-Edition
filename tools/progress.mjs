@@ -210,7 +210,7 @@ const GROUPS = [
       [
         'Build pads and construction',
         D,
-        'a capture point made by a script (Create_Generic_Object) is set up as a map-placed one: a capture point with its build pad or capturable structure, so the EaW-X field base pads its land script puts on every reinforcement point can be captured and built on. As the engine, a structure finished on a pad takes the pad garrison spawn flag, which a script-made pad does not have, so a field base built there spawns no garrison unless a script turns it on (read from the engine)'
+        'a capture point made by a script (Create_Generic_Object) is set up as a map-placed one: a capture point with its build pad or capturable structure, so the EaW-X field base pads its land script puts on every reinforcement point can be captured and built on. As the engine, a structure finished on a pad takes the pad garrison spawn flag, which a script-made pad does not have, and only map pads have theirs switched off when the battle starts, so a field base built on a pad a script made spawns the garrison its text lists (our reading of the engine, matching the mod design; a map pad still passes no spawning on)'
       ],
       [
         'Salvage bounty on object deaths (tactical)',

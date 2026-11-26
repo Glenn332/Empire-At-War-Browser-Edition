@@ -2754,11 +2754,11 @@ export class LandWorld {
   // A capture point and what it carries, the same whether the map places it or a script makes one
   // (Create_Generic_Object): a build pad when its type builds (TACTICAL_BUILD_OBJECTS), else a capturable structure
   // unless it only reinforces. Returns the point and that structure, if any.
-  async addCapturePoint(o, side = -1) {
+  async addCapturePoint(o, side = -1, { madeByScript = false } = {}) {
     const pt = await this.addPoint(o, side >= 0 && side < this.factions.length ? side : -1);
     const behaviors = [...o.type.list('Behavior'), ...o.type.list('LandBehavior')].map(name => name.toUpperCase());
     let capturable = null;
-    if (behaviors.includes('TACTICAL_BUILD_OBJECTS')) this.addPadSite(pt, o);
+    if (behaviors.includes('TACTICAL_BUILD_OBJECTS')) this.addPadSite(pt, o).spawnsGarrison = madeByScript;
     else if (!pt.reinforce) capturable = await addCapturable(this, pt, o);
     return { pt, capturable };
   }
@@ -2776,7 +2776,11 @@ export class LandWorld {
       scale: o.scale || 1,
       options: null,
       structure: null,
-      building: null
+      building: null,
+      // what is finished on a pad a script made during the battle (the EaW-X field base pads) spawns its garrison:
+      // the engine passes a pad's spawn flag on to what is built on it and only map pads have theirs switched off at
+      // the start of the battle (our reading; the field bases' own texts list the squads they put out)
+      spawnsGarrison: false
     };
     this.sites.push(site);
     return site;
@@ -2943,7 +2947,7 @@ export class LandWorld {
     if (!u.weapon) this.armHardPoints(u, type, inst);
     if (site.pad || site.mdu) {
       const from = uc !== type ? uc : site.mdu?.type || site.pad;
-      u.noGarrison = !(from && isSpawner(from)) || !!site.mdu?.noGarrison;
+      u.noGarrison = site.spawnsGarrison ? false : !(from && isSpawner(from)) || !!site.mdu?.noGarrison;
     }
     const proj = u.weapon && u.weapon.proj;
     if (proj) {
