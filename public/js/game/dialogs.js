@@ -617,11 +617,12 @@ async function nativeList(parent, id, c) {
       row.style.height = rowHeight + 'px';
       row.style.marginLeft = textGap + 'px';
       row.style.color = item.color;
+      if (Number.isInteger(item.planet)) row.dataset.planet = String(item.planet);
       return row;
     };
     rows.style.backgroundImage = 'none';
     lines = items.flatMap(item =>
-      (item.wrap ? wrapDialogText(item.text, c.w - sw - ix * 4, measure) : [item.text]).map(text => ({ text, color: item.color }))
+      (item.wrap ? wrapDialogText(item.text, c.w - sw - ix * 4, measure) : [item.text]).map(text => ({ text, color: item.color, planet: item.planet }))
     );
     max = Math.max(0, lines.length - count);
     scroll.classList.toggle('disabled', !max);

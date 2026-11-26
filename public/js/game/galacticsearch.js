@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { fontFamily } from '../fonts.js';
 import { logState } from './galacticlogdata.js';
 import { cycleNumber } from './galacticeconomy.js';
+import { linkPlanets } from './planetlinks.js';
 
 // Planet search and the location log of the galactic HUD. Both are views for the local player only: nothing here
 // is part of the simulated state, so it never goes through the lockstep. Selection and camera use the same
@@ -122,6 +123,8 @@ export class GalacticSearch {
     toggle.addEventListener('click', () => this.showLog(this.log.hidden));
     root.addEventListener('pointerdown', e => e.stopPropagation());
     root.addEventListener('wheel', e => e.stopPropagation());
+    // double-clicking a planet named in an entry's text jumps to that planet
+    this.unlink = linkPlanets(this.log, game);
   }
 
   get typing() {
@@ -200,6 +203,8 @@ export class GalacticSearch {
         const li = document.createElement('li'),
           t = Object.assign(document.createElement('div'), { className: 'gs-time', textContent: `Cycle ${r.cycle} - ${r.time}` }),
           p = Object.assign(document.createElement('span'), { className: 'gs-place', textContent: r.name + ': ' });
+        p.dataset.planet = String(r.planet);
+        p.dataset.planetLabel = '';
         li.append(t, p, document.createTextNode(r.text));
         li.addEventListener('click', () => this.game.focusPlanet?.(r.planet));
         return li;
@@ -215,6 +220,7 @@ export class GalacticSearch {
   }
 
   dispose() {
+    this.unlink?.();
     this.root.remove();
   }
 }

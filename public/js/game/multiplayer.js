@@ -9,6 +9,8 @@ import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { startMarks } from './mapstarts.js';
 import { loadCampaignData } from './galaxy.js';
+import { contentNow } from '../content.js';
+import { listingContent, listLocalPref, setListLocalPref, describeListing, detailLines } from './lobbycontent.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 import { inApp } from '../platform.js';
 
@@ -269,6 +271,18 @@ async function hostOptions({ name, campaigns, landMaps, customMaps = { land: [] 
     passBox.maxLength = 24;
     passBox.type = 'password';
   }
+  // local (non-workshop) mods are listed only by count unless the host opts in to showing their names
+  const localCount = (contentNow()?.mods || []).filter(m => !/^\d{1,20}$/.test(String(m.workshop ?? ''))).length;
+  if (passBox && localCount) {
+    const label = document.createElement('label'),
+      box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = listLocalPref();
+    box.onchange = () => setListLocalPref(box.checked);
+    label.append(box, ' Show my local mod names on the game list');
+    label.style.cssText = `position:absolute;left:${passBox.style.left || passBox.offsetLeft + 'px'};top:calc(${passBox.style.top || passBox.offsetTop + 'px'} + ${passBox.offsetHeight + 8}px);font-size:12px;color:inherit;white-space:nowrap`;
+    passBox.parentElement?.appendChild(label);
+  }
   const describe = () => {
     const g = gameType(type);
     dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', T(g.desc, g.about || ''));
@@ -514,11 +528,12 @@ export async function openMultiplayer({
       games = [];
     }
     const ours = g => g.version === version && g.mod === data;
+    const ids = new Map(games.map(g => [g.id, describeListing(g, { version, data })]));
     const rows = games.map(g => ({
       key: g.id,
       label: g.name,
       parts: [
-        (g.locked ? '* ' : '') + g.name + (ours(g) ? '' : ' (other version)'),
+        (g.locked ? '* ' : '') + g.name + (ours(g) ? '' : ' (other version)') + `  [${ids.get(g.id).label} #${ids.get(g.id).hash}]`,
         typeLabel(g.mode),
         `${g.players}/${g.slots}`,
         g.mode === 'galactic' ? campaignName(g.map) : mapName(g.map),
@@ -533,6 +548,7 @@ export async function openMultiplayer({
       rows,
       row => {
         picked = games.find(g => g.id === row.key);
+        if (picked) for (const line of detailLines(picked, { version, data })) say(line);
       },
       row => {
         picked = games.find(g => g.id === row.key);
@@ -541,6 +557,7 @@ export async function openMultiplayer({
     );
     const els = dlg.ctl('IDC_GAME_LIST')?.querySelectorAll('.dlg-row') || [];
     rows.forEach((r, i) => els[i] && lay(els[i], r.parts));
+    games.forEach((g, i) => els[i] && (els[i].title = detailLines(g, { version, data }).join('\n')));
     if (picked && games.some(g => g.id === picked.id)) list?.select(picked.id);
     else picked = null;
     if (failed) say('The game list could not be reached: ' + failed.message);
@@ -1093,7 +1110,8 @@ async function openStaging(args) {
       players: humans().length,
       slots: slots.filter(s => s.kind === 'human' || s.kind === 'open').length,
       version,
-      mod: data
+      mod: data,
+      content: listingContent(contentNow(), { listLocal: listLocalPref() })
     });
   const single = () => campaign() && !!campaignOf(st.mapFile)?.variants,
     menuEntry = () => campaign() && !!campaignOf(st.mapFile)?.menu;

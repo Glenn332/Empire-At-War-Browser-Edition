@@ -1,3 +1,4 @@
+import { cleanContent } from './content.js';
 const MAX_FRAME = 64 * 1024;
 const MAX_PEERS = 108;
 const MAX_LOBBIES = 500;
@@ -263,6 +264,7 @@ function cleanMeta(meta) {
     slots: i(meta.slots, 0, 100),
     version: s(meta.version, 64),
     mod: s(meta.mod, 64),
+    content: cleanContent(meta.content),
     locked: !!meta.locked,
     started: !!meta.started
   };

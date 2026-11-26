@@ -4,6 +4,7 @@ import { BinkPlayer } from '../bink.js';
 import { movieDefinitions } from './galacticmovies.js';
 import { StoryCinematic } from './storycinematic.js';
 import { loadTextureCanvas } from '../dds.js';
+import { linkPlanets } from './planetlinks.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 
 const key = s => String(s || '').toUpperCase(),
@@ -263,6 +264,7 @@ export class GalacticStoryDialog {
       }
       this.dialog = d;
       this.list = coloredList(d, 'IDC_STORY_TEXT', skin);
+      linkPlanets(d.ctl('IDC_STORY_TEXT'), this.game);
       d.el.setAttribute('role', 'dialog');
       d.el.setAttribute('aria-modal', 'true');
       d.onLanguageRefresh(() => {
@@ -347,6 +349,7 @@ export class GalacticStoryDialog {
       }
       this.dialog = d;
       this.list = coloredList(d, 'IDC_STORY_RECAP', skin);
+      linkPlanets(d.ctl('IDC_STORY_RECAP'), this.game);
       d.el.setAttribute('role', 'dialog');
       d.el.setAttribute('aria-modal', 'true');
       d.el.setAttribute('aria-label', db.t('TEXT_STORY_GOALS'));

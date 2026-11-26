@@ -1,5 +1,7 @@
 import { db, factionColor } from '../gamedata.js';
 import { iconUrl } from '../icons.js';
+import { contentNow } from '../content.js';
+import { listingContent, listLocalPref } from './lobbycontent.js';
 import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
 import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar, dynamicTurn } from './dynamicmap.js';
@@ -195,7 +197,8 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
       players: humans().length,
       slots: players.filter(p => p.kind === 'human' || p.kind === 'open').length,
       version: mp.version,
-      mod: mp.data
+      mod: mp.data,
+      content: listingContent(contentNow(), { listLocal: listLocalPref() })
     });
   };
   const publish = () => {

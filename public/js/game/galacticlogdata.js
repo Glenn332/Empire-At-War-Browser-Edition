@@ -15,7 +15,7 @@ export const logColor = c => `rgba(${c.slice(0, 3).join(',')},${(c[3] ?? 255) / 
 export function logState(g) {
   return (g.log ||= { messages: [], history: {} });
 }
-export function appendLog(g, text, color = db.constants.vec('Droid_Text_Color', [255, 255, 255])) {
+export function appendLog(g, text, color = db.constants.vec('Droid_Text_Color', [255, 255, 255]), planet = null) {
   const record = {
     cycle: cycleNumber(g),
     text: String(text),
@@ -25,13 +25,14 @@ export function appendLog(g, text, color = db.constants.vec('Droid_Text_Color', 
     separator: db.t('TEXT_HELP_SEPERATOR'),
     separatorColor: db.constants.vec('Droid_Seperator_Color', [128, 128, 128])
   };
+  if (Number.isInteger(planet) && planet >= 0) record.planet = planet;
   logState(g).messages.push(record);
   return record;
 }
 export function logRows(g) {
   return logState(g).messages.flatMap(r => [
     { text: r.heading, color: logColor(r.dateColor), wrap: false },
-    { text: r.text, color: logColor(r.color), wrap: true },
+    { text: r.text, color: logColor(r.color), wrap: true, planet: r.planet },
     { text: r.separator, color: logColor(r.separatorColor), wrap: false }
   ]);
 }
