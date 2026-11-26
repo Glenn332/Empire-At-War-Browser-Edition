@@ -113,7 +113,8 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       players: [],
       teamFactions: [],
       ...(settings?.custom ? { campaignSettings: { ...settings } } : {}),
-      options: { groundAutoResolve: settings ? settings.groundAutoResolve !== false : true }
+      // tutorials teach the ground battles, so only a conquest starts with them auto-resolved
+      options: { groundAutoResolve: !tutorial && (settings ? settings.groundAutoResolve !== false : true) }
     });
   };
   dlg.show('IDC_DIALOG_CLOSE_BUTTON', false);

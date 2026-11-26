@@ -169,8 +169,8 @@ assert.deepEqual(result, {
   difficulty: 'medium',
   players: [],
   teamFactions: [],
-  // a new galactic game starts with ground battles auto-resolved (the lobby option, on by default)
-  options: { groundAutoResolve: true }
+  // a tutorial plays its ground battles
+  options: { groundAutoResolve: false }
 });
 assert(dialog.closed);
 assert.equal(listeners.size, 0);

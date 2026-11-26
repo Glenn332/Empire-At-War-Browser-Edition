@@ -92,7 +92,7 @@ export async function openMainCampaignMenu({ start, cancel = null, audio = null 
       difficulty,
       players: [],
       teamFactions: [],
-      options: { groundAutoResolve: true }
+      options: { groundAutoResolve: false }
     });
   };
   dlg.on('IDC_CANCEL_BUTTON', back);
