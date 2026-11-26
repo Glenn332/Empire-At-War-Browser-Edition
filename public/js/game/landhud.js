@@ -549,6 +549,22 @@ export class LandUI {
     return this.game.command(cmd);
   }
 
+  // The squad under the mouse (u is the unit picked there). While the mouse rests, the hovered squad stays hovered
+  // as long as the cursor is still on one of its members, so a unit walking across it or a refresh landing on the
+  // edge of a pick does not flip the pointer between the attack and the move pointer.
+  updateHover(u) {
+    const g = this.game,
+      m = this.mouse,
+      prev = this.hover,
+      resting = !!prev && m.inside && !g.menus?.open && m.x === this.hoverX && m.y === this.hoverY;
+    let hover = u && !u.dead && !u.squad.craft ? u.squad : null;
+    if (resting && hover !== prev && g.squadUnder?.(prev, m.x, m.y)) hover = prev;
+    this.hover = hover;
+    this.hoverX = m.x;
+    this.hoverY = m.y;
+    return hover;
+  }
+
   refresh() {
     const sel = this.selection;
     const lost = s =>
@@ -556,7 +572,7 @@ export class LandUI {
     if (sel.some(s => s.dead || lost(s))) this.select(sel.filter(s => !lost(s)));
     const g = this.game,
       u = this.mouse.inside && !g.menus.open ? g.unitAt(this.mouse.x, this.mouse.y) : null;
-    this.hover = u && !u.dead && !u.squad.craft ? u.squad : null;
+    this.updateHover(u);
     {
       const a = this.aiming,
         who =

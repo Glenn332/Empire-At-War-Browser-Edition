@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { db } from '../gamedata.js';
 import { pickCinematicSubject, cinematicShot } from './spacecinematic.js';
+import { TACTICAL_CAMERA_DEFAULTS } from './tacticalcameradata.js';
 
-const CINEMATIC_NEAR = 1,
-  CINEMATIC_FAR = 10000;
+// The shot camera is a free camera: while a shot runs it draws through the clip planes of the Unlocked
+// TacticalCamera (TacticalCameras.xml), as the scripted cinematic camera does. A fixed far plane of 10000
+// culled whole ships out of mod shots framed from their large extents (Thrawn's Revenge sets 1 to 6000000).
+export function cinematicLens(game) {
+  return game?.tacticalCameraData || TACTICAL_CAMERA_DEFAULTS;
+}
 const _pos = new THREE.Vector3(),
   _look = new THREE.Vector3(),
   _target = new THREE.Vector3();
@@ -97,8 +102,9 @@ export class Cinematic {
       else _pos.lerp(_target, 1 - Math.pow(shot.lag, dt * 30));
       shot.fresh = false;
     }
-    const near = shot ? CINEMATIC_NEAR : this.savedNear,
-      far = shot ? CINEMATIC_FAR : this.savedFar;
+    const lens = cinematicLens(this.game),
+      near = shot ? lens.near : this.savedNear,
+      far = shot ? lens.far : this.savedFar;
     if (cam.near !== near || cam.far !== far) {
       cam.near = near;
       cam.far = far;

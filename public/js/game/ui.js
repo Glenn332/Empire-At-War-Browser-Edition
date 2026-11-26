@@ -1483,6 +1483,46 @@ export class UI {
     return true;
   }
 
+  // The object under the mouse, once a frame. While the mouse rests, the hovered object stays hovered for as long
+  // as the cursor is still on it: a squadron icon or a small ship crossing over it (own fighters swarming the
+  // enemy they attack) no longer takes the hover for a frame and hands it back, which flipped the pointer between
+  // the attack and the select or move pointer many times a second.
+  updateHover(m) {
+    const prev = this.hover,
+      can = m.inside && !this.drag?.box && !this.placing,
+      resting = can && !!prev && m.x === this.hoverX && m.y === this.hoverY;
+    this.hoverX = m.x;
+    this.hoverY = m.y;
+    if (resting && this.stillUnder(prev, m.x, m.y)) return (this.hover = prev);
+    const onSystem = prev && can && this.systemUnder(prev, m.x, m.y);
+    this.hover = onSystem ? prev : can ? this.pick(m.x, m.y) : null;
+    if (
+      !this.hover &&
+      prev &&
+      !prev.dead &&
+      !prev.isSquad &&
+      prev.hpDriven &&
+      m.inside &&
+      this.sees(prev) &&
+      this.amongHardpoints(prev, m.x, m.y)
+    )
+      this.hover = prev;
+    return this.hover;
+  }
+
+  // Whether the cursor is still on this object by the tests pick() uses: its icon, its screen circle, or for a
+  // ship with hardpoints a hardpoint or the spread of its hardpoints.
+  stillUnder(s, x, y) {
+    if (!s || s.dead || !this.sees(s) || hiddenInJump(s)) return false;
+    if (s._iconFrame === this.overlayFrame) {
+      const h = s._iconSize / 2 + 2;
+      if (Math.abs(x - s._iconX) <= h && Math.abs(y - s._iconY) <= h) return true;
+    }
+    const p = this.screenOf(s, (this._still ||= {}));
+    if (!p.behind && Math.hypot(p.x - x, p.y - y) <= this.screenRadius(s)) return true;
+    return !s.isSquad && !!s.hpDriven && (!!this.hardpointAt(s, x, y, 26) || this.amongHardpoints(s, x, y));
+  }
+
   systemUnder(unit, x, y) {
     if (!unit || unit.dead || unit.isSquad || !unit.hpDriven || !this.sees(unit)) return null;
     return this.hardpointAt(unit, x, y) ? unit : null;
@@ -1530,6 +1570,7 @@ export class UI {
       if (!h.alive || !h.targetable || !h.destroyable) continue;
       h.worldPos(w);
       this.r.project(w.x, w.y, w.z, p);
+      if (p.behind) continue;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < bd) {
         bd = d;
@@ -1742,20 +1783,7 @@ export class UI {
     rig.clamp();
 
     this.selection = this.selection.filter(s => !s.dead);
-    const prev = this.hover;
-    const onSystem = prev && m.inside && !this.drag?.box && !this.placing && this.systemUnder(prev, m.x, m.y);
-    this.hover = onSystem ? prev : m.inside && !this.drag?.box && !this.placing ? this.pick(m.x, m.y) : null;
-    if (
-      !this.hover &&
-      prev &&
-      !prev.dead &&
-      !prev.isSquad &&
-      prev.hpDriven &&
-      m.inside &&
-      this.sees(prev) &&
-      this.amongHardpoints(prev, m.x, m.y)
-    )
-      this.hover = prev;
+    this.updateHover(m);
     const pointers = (this.pointers ||= new Pointers(this.r.dom));
     if (this.armed?.startsWith('ability:')) {
       const kind = this.armed.slice(8);

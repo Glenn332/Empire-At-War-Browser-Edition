@@ -28,26 +28,50 @@ async function readDefs() {
   return out;
 }
 
+// Each frame is decoded into an image the page keeps, before the pointer is used: a cursor whose url the browser
+// still has to load shows the fallback system arrow meanwhile, so swapping animation frames that were not ready
+// flashed the normal pointer between the attack pointer frames.
+async function ready(url) {
+  if (typeof Image === 'undefined') return null;
+  const img = new Image();
+  img.src = url;
+  try {
+    await img.decode();
+  } catch {}
+  return img;
+}
+
+// The frame number is the two digits at the end of the texture name (ATTACKPOINTER_00 is followed by _01, _02 ...).
+export function pointerFrameName(base, i) {
+  const m = /^(.*)(\d\d)$/.exec(base);
+  return m ? m[1] + String(i).padStart(2, '0') : i ? null : base;
+}
+
+const loaded = new Map();
 export async function pointer(name) {
   const key = String(name).toUpperCase();
   if (made.has(key)) return made.get(key);
   const job = (async () => {
     defs ||= readDefs();
     const d = (await defs).get(key) || DEFAULT;
-    const base = d.texture.replace(/\.\w+$/, ''),
-      at = base.indexOf('0');
-    const frames = [];
+    const base = d.texture.replace(/\.\w+$/, '');
+    const urls = [];
     for (let i = 0; i < 100; i++) {
-      const cv = await loadTextureCanvas(at < 0 ? base : base.slice(0, at) + String(i).padStart(2, '0') + base.slice(at + 2)).catch(
-        () => null
-      );
+      const file = pointerFrameName(base, i);
+      if (!file) break;
+      const cv = await loadTextureCanvas(file).catch(() => null);
       if (!cv) break;
-      frames.push(`url(${cv.toDataURL()}) ${d.x} ${d.y}, default`);
-      if (at < 0) break;
+      urls.push(cv.toDataURL());
     }
-    return frames.length ? { frames, delay: ((d.delay + 1) * 1000) / 60 } : null;
+    if (!urls.length) return null;
+    const images = await Promise.all(urls.map(ready));
+    return { frames: urls.map(u => `url(${u}) ${d.x} ${d.y}, default`), images, delay: ((d.delay + 1) * 1000) / 60 };
   })();
   made.set(key, job);
+  job.then(
+    p => loaded.set(key, p),
+    () => loaded.set(key, null)
+  );
   return job;
 }
 
@@ -57,7 +81,8 @@ export class Pointers {
     this.name = null;
     this.timer = null;
   }
-  async set(name) {
+  // Sets the pointer at once when it is loaded; the first use of a pointer waits for its frames.
+  set(name) {
     if (name === this.name || !this.el?.style) return;
     this.name = name;
     clearInterval(this.timer);
@@ -66,8 +91,13 @@ export class Pointers {
       this.el.style.cursor = '';
       return;
     }
-    const p = await pointer(name);
-    if (this.name !== name) return;
+    const key = String(name).toUpperCase();
+    if (loaded.has(key)) return this.show(loaded.get(key));
+    return pointer(name).then(p => {
+      if (this.name === name) this.show(p);
+    });
+  }
+  show(p) {
     if (!p) {
       this.el.style.cursor = '';
       return;

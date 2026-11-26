@@ -23,7 +23,7 @@ import { loadALA, animName } from './ala.js';
 import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
-import { loadTacticalCamera } from './game/tacticalcameradata.js';
+import { loadTacticalCamera, loadTacticalCameraData } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { UnitPoses } from './game/unitposes.js';
 import { benchFleet } from './game/benchfleet.js';
@@ -598,6 +598,8 @@ class Game {
       console.warn('command bar', e);
       return null;
     });
+    // the Unlocked camera lens (clip planes) the cinematic shot camera and scripted cinematics draw through
+    this.tacticalCameraData ||= await loadTacticalCameraData().catch(() => null);
     this.cine = new Cinematic(this);
     this.menus = new Menus(this);
     this.advisor = new Advisor(this);

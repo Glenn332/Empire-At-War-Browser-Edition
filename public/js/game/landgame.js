@@ -2879,6 +2879,45 @@ export class LandGame {
     return null;
   }
 
+  // How far the screen point is from a unit standing on the ground, in its own half widths (under 1 is on it):
+  // the distance to the segment from its feet to its head as the camera sees it. Infinity when off screen.
+  standHit(u, sx, sy) {
+    const p = this.proj || (this.proj = new THREE.Vector3()),
+      W = innerWidth,
+      H = innerHeight;
+    p.set(u.x, u.y, u.z).project(this.camera);
+    if (p.z >= 1) return Infinity;
+    const x0 = ((p.x + 1) / 2) * W,
+      y0 = ((1 - p.y) / 2) * H;
+    const tall = Math.max(8, (u.aimZ || 6) * 2.1);
+    p.set(u.x, u.y, u.z + tall).project(this.camera);
+    if (p.z >= 1) return Infinity;
+    const x1 = ((p.x + 1) / 2) * W,
+      y1 = ((1 - p.y) / 2) * H;
+    if (
+      (x0 < -W / 4 && x1 < -W / 4) ||
+      (x0 > W * 1.25 && x1 > W * 1.25) ||
+      (y0 < -H / 4 && y1 < -H / 4) ||
+      (y0 > H * 1.25 && y1 > H * 1.25)
+    )
+      return Infinity;
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1,
+      ppu = len / tall;
+    const t = Math.max(0, Math.min(1, ((sx - x0) * (x1 - x0) + (sy - y0) * (y1 - y0)) / (len * len)));
+    const d = Math.hypot(sx - (x0 + (x1 - x0) * t), sy - (y0 + (y1 - y0) * t));
+    const half = Math.max(u.structure ? 30 : 12, (u.structure ? u.hitRadius : u.body || u.hitRadius || 6) * ppu * 1.15);
+    return d / half;
+  }
+
+  // Whether the screen point is still on a member of this squad: its hero icon, or the member itself.
+  squadUnder(squad, sx, sy) {
+    if (!squad || squad.dead) return false;
+    for (const h of this.iconHits || []) if (h.u?.squad === squad && Math.abs(sx - h.x) <= h.r && Math.abs(sy - h.y) <= h.r) return true;
+    for (const u of squad.members || [])
+      if (!u.dead && u.seen !== false && !u.inside && !u.structure && this.standHit(u, sx, sy) < 1) return true;
+    return false;
+  }
+
   unitAt(sx, sy) {
     for (const h of this.iconHits || []) if (Math.abs(sx - h.x) <= h.r && Math.abs(sy - h.y) <= h.r) return h.u;
     const p = this.proj || (this.proj = new THREE.Vector3()),
@@ -2890,29 +2929,9 @@ export class LandGame {
     for (const u of this.world.units) {
       if (u.seen === false || u.inside || u.dead) continue;
       if (boxedBuilding(u)) continue;
-      p.set(u.x, u.y, u.z).project(this.camera);
-      if (p.z >= 1) continue;
-      const x0 = ((p.x + 1) / 2) * W,
-        y0 = ((1 - p.y) / 2) * H;
-      const tall = Math.max(8, (u.aimZ || 6) * 2.1);
-      p.set(u.x, u.y, u.z + tall).project(this.camera);
-      if (p.z >= 1) continue;
-      const x1 = ((p.x + 1) / 2) * W,
-        y1 = ((1 - p.y) / 2) * H;
-      if (
-        (x0 < -W / 4 && x1 < -W / 4) ||
-        (x0 > W * 1.25 && x1 > W * 1.25) ||
-        (y0 < -H / 4 && y1 < -H / 4) ||
-        (y0 > H * 1.25 && y1 > H * 1.25)
-      )
-        continue;
-      const len = Math.hypot(x1 - x0, y1 - y0) || 1,
-        ppu = len / tall;
-      const t = Math.max(0, Math.min(1, ((sx - x0) * (x1 - x0) + (sy - y0) * (y1 - y0)) / (len * len)));
-      const d = Math.hypot(sx - (x0 + (x1 - x0) * t), sy - (y0 + (y1 - y0) * t));
-      const half = Math.max(u.structure ? 30 : 12, (u.structure ? u.hitRadius : u.body || u.hitRadius || 6) * ppu * 1.15);
-      if (d / half < bd) {
-        bd = d / half;
+      const score = this.standHit(u, sx, sy);
+      if (score < bd) {
+        bd = score;
         best = u;
       }
     }
