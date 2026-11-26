@@ -26,12 +26,25 @@ fn steam_folders() -> Vec<PathBuf> {
     out
 }
 
+/// Steam's own folder on macOS and Linux: the usual install, and on Linux the Flatpak and
+/// Snap packages, which keep Steam inside their own sandbox folders.
 #[cfg(not(windows))]
 fn steam_folders() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
-    [".steam/steam", ".local/share/Steam"]
+    let candidates: &[&str] = if cfg!(target_os = "macos") {
+        &["Library/Application Support/Steam"]
+    } else {
+        &[
+            ".steam/steam",
+            ".local/share/Steam",
+            ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+            "snap/steam/common/.local/share/Steam",
+        ]
+    };
+    candidates
         .iter()
-        .map(|p| Path::new(&home).join(p))
+        .map(|folder| Path::new(&home).join(folder))
+        .filter(|folder| folder.is_dir())
         .collect()
 }
 
@@ -65,7 +78,7 @@ pub fn game_folder() -> Option<PathBuf> {
     let found: Vec<PathBuf> = libraries()
         .into_iter()
         .map(|l| l.join("steamapps").join("common").join(FOLDER))
-        .filter(|p| p.join("GameData").is_dir())
+        .filter(|p| crate::setup::is_game(p))
         .collect();
     crate::vfs::most_complete(found, |path| path)
 }

@@ -874,7 +874,20 @@ impl Server {
     }
 }
 
+/// WebKitGTK's DMA-BUF renderer shows a blank window with NVIDIA's own driver; it is turned off
+/// there unless the player chose a setting of their own.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn prepare_linux_webview() {
+    const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
+    if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
+        // still one thread: nothing else reads the environment yet
+        unsafe { std::env::set_var(SETTING, "1") };
+    }
+}
+
 fn main() {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    prepare_linux_webview();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let env_game = std::env::var_os("SWR_GAME")
@@ -994,9 +1007,22 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running the app");
+        .build(tauri::generate_context!())
+        .expect("error while building the app")
+        .run(handle_run_event);
 }
+
+/// macOS hands invite links to the running app as open-URL events, not as arguments.
+#[cfg(target_os = "macos")]
+fn handle_run_event(app: &AppHandle, event: tauri::RunEvent) {
+    if let tauri::RunEvent::Opened { urls } = event {
+        let links: Vec<String> = urls.iter().map(|url| url.to_string()).collect();
+        open_invite(app, &links);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn handle_run_event(_app: &AppHandle, _event: tauri::RunEvent) {}
 
 /// A second start of the app (an invite link clicked while it runs) brings this window
 /// forward and joins the game. Leaving a running battle still asks first.

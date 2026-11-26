@@ -1,10 +1,50 @@
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const REPO = process.env.GITHUB_REPOSITORY || 'Glenn332/Empire-At-War-Browser-Edition';
 const ASSET = 'EmpireAtWarBrowserEdition-setup.exe';
+// each system's build: what it bundles, the release files made from the bundles, and the updater
+// platforms each signed file serves (a universal macOS app serves both processor kinds)
+const MAC_TARGET = 'universal-apple-darwin';
+const BUILDS = {
+  win32: {
+    name: 'windows',
+    bundleDir: path.join('target', 'release', 'bundle'),
+    tauriArgs: [],
+    files: [{ kind: 'nsis', ending: '-setup.exe', asset: ASSET, updater: ['windows-x86_64'] }]
+  },
+  darwin: {
+    name: 'macos',
+    bundleDir: path.join('target', MAC_TARGET, 'release', 'bundle'),
+    tauriArgs: ['--target', MAC_TARGET],
+    files: [
+      { kind: 'dmg', ending: '.dmg', asset: 'EmpireAtWarBrowserEdition-macos.dmg' },
+      {
+        kind: 'macos',
+        ending: '.app.tar.gz',
+        asset: 'EmpireAtWarBrowserEdition-macos.app.tar.gz',
+        updater: ['darwin-aarch64', 'darwin-x86_64']
+      }
+    ]
+  },
+  linux: {
+    name: 'linux',
+    bundleDir: path.join('target', 'release', 'bundle'),
+    tauriArgs: [],
+    files: [
+      {
+        kind: 'appimage',
+        ending: '.AppImage',
+        asset: 'EmpireAtWarBrowserEdition-linux-x86_64.AppImage',
+        updater: ['linux-x86_64', 'linux-x86_64-appimage']
+      },
+      { kind: 'deb', ending: '.deb', asset: 'EmpireAtWarBrowserEdition-linux-amd64.deb', updater: ['linux-x86_64-deb'] }
+    ]
+  }
+};
+const FEED_PART = /^feed-.+\.json$/;
 
 const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(web, 'dist-release');
@@ -75,44 +115,80 @@ function tag() {
   console.log(`app ${version} is building: https://github.com/${REPO}/actions/workflows/release.yml`);
 }
 
+// the one bundle of a kind this version built, whatever name the bundler gave it (the macOS
+// updater archive is the only one named without the version)
+function bundled(bundleRoot, kind, ending, version) {
+  const folder = path.join(bundleRoot, kind);
+  const matching = existsSync(folder) ? readdirSync(folder).filter(name => name.endsWith(ending)) : [];
+  const ofThisVersion = matching.filter(name => name.includes(version));
+  const names = ofThisVersion.length ? ofThisVersion : matching;
+  if (names.length !== 1) fail(`expected one ${ending} for ${version} in ${folder}, found ${names.length ? names.join(', ') : 'none'}`);
+  return path.join(folder, names[0]);
+}
+
+// builds this system's app into dist-release/: its release files and feed-<system>.json, the
+// part of the updater feed it signs; publish merges the parts of every system into latest.json
 function build() {
-  const { version, productName } = conf();
-  if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== tagOf(version))
+  const { version } = conf();
+  if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== tagOf(version))
     fail(`tag ${process.env.GITHUB_REF_NAME} does not match the app version ${version}`);
   if (!process.env.TAURI_SIGNING_PRIVATE_KEY) fail('TAURI_SIGNING_PRIVATE_KEY is not set: add it as a repository secret');
-  run('node', ['tools/build-app.mjs'], {
+  const system = BUILDS[process.platform];
+  if (!system) fail(`no app build for ${process.platform}`);
+  run('node', ['tools/build-app.mjs', '--', ...system.tauriArgs], {
     stdio: 'inherit',
     encoding: undefined,
     env: { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '', ...process.env }
   });
 
-  const built = path.join(web, 'src-tauri', 'target', 'release', 'bundle', 'nsis', `${productName}_${version}_x64-setup.exe`);
-  const release = notesOf(version);
+  const bundleRoot = path.join(web, 'src-tauri', system.bundleDir);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
-  copyFileSync(built, path.join(out, ASSET));
-  const feed = {
-    version,
-    notes: release ? release.notes : '',
-    pub_date: new Date().toISOString(),
-    platforms: {
-      'windows-x86_64': {
-        signature: readFileSync(built + '.sig', 'utf8').trim(),
-        url: `https://github.com/${REPO}/releases/download/${tagOf(version)}/${ASSET}`
-      }
+  const platforms = {};
+  for (const file of system.files) {
+    const built = bundled(bundleRoot, file.kind, file.ending, version);
+    copyFileSync(built, path.join(out, file.asset));
+    if (!file.updater) continue;
+    const signatureFile = built + '.sig';
+    // a bundle the updater cannot install (no updater signature was made for it) stays a plain download
+    if (!existsSync(signatureFile)) {
+      console.log(`${path.basename(built)} has no updater signature: shipped as a download only`);
+      continue;
     }
-  };
+    const signature = readFileSync(signatureFile, 'utf8').trim();
+    for (const platform of file.updater)
+      platforms[platform] = { signature, url: `https://github.com/${REPO}/releases/download/${tagOf(version)}/${file.asset}` };
+  }
+  writeFileSync(path.join(out, `feed-${system.name}.json`), JSON.stringify({ version, platforms }, null, 2) + '\n');
+  console.log(`${system.name} release ${version} in dist-release/`);
+}
+
+// latest.json from the feed parts the system builds left in dist-release/
+function mergeFeed(version) {
+  const parts = readdirSync(out).filter(name => FEED_PART.test(name));
+  if (!parts.includes('feed-windows.json')) fail(`dist-release/ holds no Windows build of ${version}`);
+  const platforms = {};
+  for (const name of parts) {
+    const part = JSON.parse(readFileSync(path.join(out, name), 'utf8'));
+    if (part.version !== version) fail(`dist-release/${name} is for ${part.version}, not ${version}`);
+    Object.assign(platforms, part.platforms);
+  }
+  const release = notesOf(version);
+  const feed = { version, notes: release ? release.notes : '', pub_date: new Date().toISOString(), platforms };
   writeFileSync(path.join(out, 'latest.json'), JSON.stringify(feed, null, 2) + '\n');
-  console.log(`release ${version} in dist-release/`);
+  console.log(`latest.json serves ${Object.keys(platforms).join(', ')}`);
+  return feed;
 }
 
 function publish() {
   const { version } = conf(),
     name = tagOf(version);
-  const feed = JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8'));
-  if (feed.version !== version) fail(`dist-release/ holds no release ${version}`);
+  const feed = mergeFeed(version);
   const gh = (...args) => run('gh', [...args, '--repo', REPO], { stdio: 'inherit', encoding: undefined });
-  const files = [path.join(out, ASSET), path.join(out, 'latest.json')];
+  const assets = Object.values(BUILDS)
+    .flatMap(system => system.files.map(file => file.asset))
+    .filter(asset => existsSync(path.join(out, asset)));
+  const files = [...assets, 'latest.json'].map(name => path.join(out, name));
 
   let existing = null;
   try {

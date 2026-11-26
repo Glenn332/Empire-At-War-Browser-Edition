@@ -112,7 +112,7 @@ Other commands:
 | `npm run wasm` | rebuild the WebAssembly modules from `wasm/` |
 | `npm run build:prod` | build the site into `dist/` |
 | `npm run deploy:prod` | build and publish the site and the multiplayer lobby (`lobby/`) to Cloudflare |
-| `npm run app` | build the Windows app (`src-tauri/`, Tauri) |
+| `npm run app` | build the desktop app for the system it runs on (`src-tauri/`, Tauri; Windows, macOS or Linux) |
 
 The code lives in a few places:
 

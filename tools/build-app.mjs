@@ -23,4 +23,7 @@ writeFileSync(
 );
 console.log(`staged dist-app/ (${build})`);
 
-if (!process.argv.includes('--stage')) run('npx', ['tauri', 'build'], { stdio: 'inherit', encoding: undefined });
+// arguments after -- go to tauri build (the release build passes the macOS universal target)
+const separator = process.argv.indexOf('--'),
+  tauriArgs = separator >= 0 ? process.argv.slice(separator + 1) : [];
+if (!process.argv.includes('--stage')) run('npx', ['tauri', 'build', ...tauriArgs], { stdio: 'inherit', encoding: undefined });

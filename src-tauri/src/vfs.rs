@@ -103,6 +103,12 @@ fn find_case_insensitive(root: &Path, rel: &str) -> Option<PathBuf> {
     Some(cur)
 }
 
+/// The game's GameData folder, found whatever its letter case (Linux and macOS file systems
+/// tell the cases apart, and a copied install keeps whatever case it was copied with).
+pub fn game_data(game_dir: &Path) -> PathBuf {
+    find_case_insensitive(game_dir, "GameData").unwrap_or_else(|| game_dir.join("GameData"))
+}
+
 fn mega_files(xml: &Path) -> Vec<String> {
     let text = latin1(&fs::read(xml).unwrap_or_default());
     let rx = regex::Regex::new(r"<File>\s*([^<]+?)\s*</File>").unwrap();
@@ -118,7 +124,7 @@ fn mega_files(xml: &Path) -> Vec<String> {
 /// Steam release has no expansion Cinematics.meg, and the engine skips listed archives that
 /// are not there), so this is a measure of how complete a copy is, not a verdict.
 pub fn missing_game_files(game_dir: &Path) -> Vec<String> {
-    let mut roots = vec![("GameData".to_string(), game_dir.join("GameData"))];
+    let mut roots = vec![("GameData".to_string(), game_data(game_dir))];
     for name in crate::setup::EXPANSION_DIRS {
         if let Some(root) = find_case_insensitive(game_dir, name) {
             let shown = root
@@ -164,7 +170,9 @@ fn names_a_language(archive: &str) -> bool {
 }
 
 fn meg_list(root: &Path, language: usize) -> Vec<String> {
-    let mut out = mega_files(&root.join("Data").join("megafiles.xml"));
+    let mut out = find_case_insensitive(root, "Data/megafiles.xml")
+        .map(|list| mega_files(&list))
+        .unwrap_or_default();
     out.extend(["Data/Patch.meg", "Data/Patch2.meg", "Data/64Patch.meg"].map(String::from));
     for f in [
         "sfx2d_non_localized".to_string(),
@@ -373,7 +381,7 @@ impl Game {
             apply(index, &entries);
             layers.push(Layer { root, entries });
         };
-        let mut roots = vec![game_dir.join("GameData")];
+        let mut roots = vec![game_data(game_dir)];
         if expansion {
             roots.extend(
                 crate::setup::EXPANSION_DIRS
@@ -382,9 +390,12 @@ impl Game {
             );
         }
         for root in roots {
-            if !root.join("Data").join("megafiles.xml").exists() {
+            let Some(data) = find_case_insensitive(&root, "Data")
+                .filter(|data| find_case_insensitive(data, "megafiles.xml").is_some())
+                .and_then(|data| data.file_name().map(|n| n.to_string_lossy().into_owned()))
+            else {
                 continue;
-            }
+            };
             let archives = meg_list(&root, language);
             for (position, rel) in archives.iter().enumerate() {
                 let f = find_case_insensitive(&root, rel);
@@ -397,7 +408,7 @@ impl Game {
                 }
             }
             let mut loose = Entries::new();
-            index_loose(&root, "Data", &mut loose);
+            index_loose(&root, &data, &mut loose);
             mount(&mut layers, &mut index, None, loose);
         }
         for root in mods {

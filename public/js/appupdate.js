@@ -4,7 +4,21 @@ import { BUILD } from './build.js';
 const REPO = 'Glenn332/Empire-At-War-Browser-Edition';
 const ASSET = 'EmpireAtWarBrowserEdition-setup.exe';
 export const FEED = `https://api.github.com/repos/${REPO}/releases/latest`;
-export const DOWNLOAD = `https://github.com/${REPO}/releases/latest/download/${ASSET}`;
+const downloadOf = asset => `https://github.com/${REPO}/releases/latest/download/${asset}`;
+export const DOWNLOAD = downloadOf(ASSET);
+// the build offered on the site: the visitor's own system when the latest release has it, else Windows
+const BUILDS = {
+  windows: { asset: ASSET, name: 'Windows', needs: 'Windows 10 and 11' },
+  macos: { asset: 'EmpireAtWarBrowserEdition-macos.dmg', name: 'macOS', needs: 'macOS 11 or newer, Apple silicon and Intel' },
+  linux: { asset: 'EmpireAtWarBrowserEdition-linux-x86_64.AppImage', name: 'Linux', needs: 'Linux x86-64 AppImage' }
+};
+const visitorSystem = () => {
+  const agent = navigator.userAgent;
+  if (/Windows/.test(agent) || /Android|iPhone|iPad/.test(agent)) return 'windows';
+  if (/Macintosh|Mac OS X/.test(agent)) return 'macos';
+  if (/Linux|X11/.test(agent)) return 'linux';
+  return 'windows';
+};
 const SKIP = 'swr-update-skip';
 
 const $ = id => document.getElementById(id);
@@ -40,24 +54,28 @@ export function desktopStrip() {
 }
 
 async function onTheSite() {
-  const get = el('a', 'launch', 'Download for Windows');
-  get.href = DOWNLOAD;
+  const get = el('a', 'launch');
   get.setAttribute('download', '');
-  const say = note =>
+  const say = (build, note) => {
+    get.textContent = `Download for ${build.name}`;
+    get.href = downloadOf(build.asset);
     strip({
       badge: 'Desktop',
-      what: 'Empire at War Browser Edition for Windows',
+      what: `Empire at War Browser Edition for ${build.name}`,
       state: 'Finds your game and mods by itself, and keeps itself up to date.',
       note,
       acts: [get]
     });
-  say('Windows 10 and 11');
+  };
+  say(BUILDS.windows, BUILDS.windows.needs);
   try {
     const r = await fetch(FEED, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) return;
     const f = await r.json(),
-      exe = f.assets?.find(a => a.name === ASSET);
-    say(`Version ${f.tag_name.replace(/^v/, '')}${exe?.size ? ' · ' + mb(exe.size) : ''} · Windows 10 and 11`);
+      own = BUILDS[visitorSystem()],
+      build = f.assets?.some(a => a.name === own.asset) ? own : BUILDS.windows,
+      file = f.assets?.find(a => a.name === build.asset);
+    say(build, `Version ${f.tag_name.replace(/^v/, '')}${file?.size ? ' · ' + mb(file.size) : ''} · ${build.needs}`);
   } catch {}
 }
 

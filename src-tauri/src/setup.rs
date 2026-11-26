@@ -11,11 +11,36 @@ pub struct Settings {
     pub nightly: bool,
 }
 
+/// Where the app keeps its settings and caches: the per-user application data folder of
+/// each system (the same folder Tauri itself uses for this identifier).
 pub fn data_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
+    user_data_base()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("com.playeaw.browseredition")
+}
+
+#[cfg(windows)]
+fn user_data_base() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+}
+
+#[cfg(target_os = "macos")]
+fn user_data_base() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+    })
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn user_data_base() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("com.playeaw.browseredition")
+        .filter(|folder| folder.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
+        })
 }
 
 impl Settings {

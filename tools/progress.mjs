@@ -620,6 +620,11 @@ const GROUPS = [
         'a Tauri build released through GitHub Releases by a workflow on each v tag (signed installer and latest.json updater feed); the browser asks before leaving a running battle or campaign'
       ],
       [
+        'macOS and Linux apps',
+        P,
+        'the release workflow also builds a universal macOS app (dmg, ad-hoc signed, not notarized) and a Linux AppImage and deb, all in the one updater feed; game folders are found whatever their letter case, Steam is looked for in its macOS, Linux, Flatpak and Snap folders, and playeaw invite links are claimed on both. Not yet run on a Mac or a Linux machine: check the first builds there. Without the Windows helpers these builds have no native game fonts, process stats, page screenshot in bug reports or GOG detection'
+      ],
+      [
         'Benchmark mode',
         D,
         'space: ?benchmark=N ships a side; land: ?mode=land&benchmark=N companies a side of what each side buildings sell, met in the middle with no commanders and no fog, the same figures for a minute'

@@ -1,6 +1,7 @@
 // Invite links that open the app: playeaw://join/<code>?lobby=<lobby url>&kind=lan
-// The site offers one of these next to its own invite link; Windows hands it to the app,
-// which opens the multiplayer lobby and joins the game.
+// The site offers one of these next to its own invite link; the system hands it to the app
+// (Windows and Linux as an argument, macOS as an open-URL event), which opens the multiplayer
+// lobby and joins the game.
 
 pub const SCHEME: &str = "playeaw";
 
@@ -121,5 +122,70 @@ pub fn register() {
     }
 }
 
-#[cfg(not(windows))]
+/// Points playeaw:// links at this copy of the app through a desktop entry in the user's
+/// applications folder and the xdg default for the scheme. An AppImage names itself in
+/// APPIMAGE (its own binary runs from a temporary mount). A development build leaves the
+/// links to the installed app.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn register() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    let Some(exe) = std::env::var_os("APPIMAGE")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_exe().ok())
+    else {
+        return;
+    };
+    let Some(applications) = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| std::path::Path::new(&home).join(".local").join("share"))
+        })
+        .map(|data| data.join("applications"))
+    else {
+        return;
+    };
+    let entry_name = format!("{SCHEME}-invite.desktop");
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=Empire at War Browser Edition\nExec={} %u\nNoDisplay=true\nTerminal=false\nMimeType=x-scheme-handler/{SCHEME};\n",
+        desktop_exec_quote(&exe.to_string_lossy())
+    );
+    let entry_path = applications.join(&entry_name);
+    if std::fs::read_to_string(&entry_path).is_ok_and(|current| current == entry) {
+        return;
+    }
+    let written =
+        std::fs::create_dir_all(&applications).and_then(|_| std::fs::write(&entry_path, &entry));
+    if let Err(error) = written {
+        eprintln!("could not register {SCHEME}:// links: {error}");
+        return;
+    }
+    let _ = std::process::Command::new("xdg-mime")
+        .args([
+            "default",
+            &entry_name,
+            &format!("x-scheme-handler/{SCHEME}"),
+        ])
+        .status();
+}
+
+/// A path as one quoted Exec argument of a desktop entry.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn desktop_exec_quote(path: &str) -> String {
+    let mut quoted = String::from("\"");
+    for character in path.chars() {
+        if matches!(character, '"' | '`' | '$' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(character);
+    }
+    quoted.push('"');
+    quoted
+}
+
+/// On macOS the bundle's Info.plist claims the scheme, and links arrive as open-URL events.
+#[cfg(target_os = "macos")]
 pub fn register() {}
