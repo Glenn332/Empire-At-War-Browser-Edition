@@ -796,7 +796,11 @@ const GROUPS = [
     'Land battles',
     'rest',
     [
-      ['Terrain and heightmaps', D],
+      [
+        'Terrain and heightmaps',
+        D,
+        'the terrain header gives the cells along x and along y separately; most maps are square, some mod maps are not (Thrawns Revenge has ten, from 311 by 249 to 528 by 590). Ours lays such a map into a square of its longer side: the cells past its shorter side repeat its last row or column and are impassable, so the heights, textures and passability keep their real rows (read as square they came out as stripes of impassable ground, routes failed and the radar showed stripes)'
+      ],
       [
         'Terrain textures and blending',
         D,
