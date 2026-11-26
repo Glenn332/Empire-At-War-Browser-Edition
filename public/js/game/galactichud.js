@@ -584,7 +584,8 @@ export class GalacticBar extends CommandBar {
         'icon',
         t.str('Icon_Name') || db.type(t.list('Company_Units')[0] || t.list('Squadron_Units')[0])?.str('Icon_Name')
       );
-      b.classList.toggle('dis', !!why || disabled(t.name));
+      b._barDisabled = !!why || disabled(t.name);
+      b.classList.toggle('dis', b._barDisabled || !!game.scriptUI?.scriptDisabled(b.dataset.control));
       const bright = queueRoom && t.num('Population_Value', 0) <= Math.max(0, popCap - popUsed),
         v = bright ? 255 : 128,
         base = t.num('Build_Cost_Credits', 0),

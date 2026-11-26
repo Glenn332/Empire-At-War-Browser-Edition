@@ -127,8 +127,12 @@ export class ScriptUI {
     if (visible && /^Shell$/i.test(c?.val('Type') || '') && c.val('Model_Name') && !this.shells.has(s.name)) this.loadShell(s.name);
     this.apply(s.name);
   }
+  scriptDisabled(name) {
+    return this.states.get(String(name).toUpperCase())?.enabled === false;
+  }
   enable(name, enabled) {
     const s = this.state(name);
+    if (s.enabled === !!enabled) return;
     s.enabled = !!enabled;
     if (yes(this.comps.get(s.name)?.val('Disable_Darken'))) {
       const v = enabled ? 1 : 128 / 255;
@@ -500,7 +504,8 @@ export class ScriptUI {
       for (const el of this.game.ui.root.querySelectorAll('[data-control]'))
         if (el.dataset.control.toUpperCase() === key) {
           el.hidden = !s.visible;
-          el.classList.toggle('dis', !s.enabled);
+          // A script lock adds to the command bar's own disabled state (a full queue, too few credits), never clears it.
+          el.classList.toggle('dis', !s.enabled || !!el._barDisabled);
           if ('disabled' in el) el.disabled = !s.enabled;
         }
       return;
