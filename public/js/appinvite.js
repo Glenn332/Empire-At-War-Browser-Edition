@@ -1,6 +1,6 @@
 import { inApp, topFrame } from './platform.js';
 import { lobbyUrl } from './net.js';
-import { DOWNLOAD } from './appupdate.js';
+import { ownDownload } from './appupdate.js';
 
 const CODE = /^[A-Za-z0-9_-]{6,32}$/;
 const ASKED = 'swr-invite-asked';
@@ -57,7 +57,7 @@ export function offerDesktopApp(params) {
       location.href = appLink(code, kind);
       text.textContent =
         'Opening the desktop app… Allow your browser to open Empire at War Browser Edition. If nothing opened, the app is not installed.';
-      const download = choice('Download the app', false, () => (location.href = DOWNLOAD));
+      const download = choice('Download the app', false, async () => (location.href = await ownDownload()));
       row.replaceChildren(choice('Try again', true, openApp), choice('Play in the browser', false, inBrowser), download);
     };
     ask();
