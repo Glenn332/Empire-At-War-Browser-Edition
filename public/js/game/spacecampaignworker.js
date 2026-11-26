@@ -144,6 +144,16 @@ export async function campaignBattle(game, m, refs, thing, events) {
   game.campaignBook = { entity: new Map(), waiting: [], absent: [], station: null, anchors: {}, called: new Map() };
   restoreSpaceCampaign(game, save, refs);
   game.campaignBook.called ||= new Map();
+  // Reinforcements called down from the reserve go back to the galaxy only if they are on this list, as on the page.
+  const told = w.onEvent;
+  w.onEvent = (kind, data) => {
+    told.call(w, kind, data);
+    if (kind !== 'built' || !data?.entity || !data.player?.team) return;
+    const called = game.campaignBook.called,
+      team = data.player.team.id;
+    if (!called.has(team)) called.set(team, []);
+    called.get(team).push(data.entity);
+  };
   await installTacticalBattle(game);
   // Tactical superweapons: the targets are map objects (scenery on the page), in map order on both sides.
   const manager = w.tacticalSuperweapons;

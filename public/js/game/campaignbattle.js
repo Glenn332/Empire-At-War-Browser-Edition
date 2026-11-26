@@ -619,7 +619,7 @@ export function battleResult(w, book, cb, winnerTeam) {
       const e = book.called && book.called.get(team) && book.called.get(team).find(x => x.type === u.type && !called.has(x));
       if (e) {
         called.set(e, true);
-        if (!e.dead && !w.parentModeDeaths?.has(e)) alive.push(u.gid);
+        if ((!e.dead || e.retreated) && !w.parentModeDeaths?.has(e)) alive.push(u.gid);
       }
     }
   }
