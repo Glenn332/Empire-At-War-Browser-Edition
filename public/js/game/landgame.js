@@ -43,7 +43,6 @@ import {
   activateSpawners,
   addHouse,
   addWall,
-  addCapturable,
   putInside,
   tickCapturables,
   usedOf,
@@ -228,11 +227,9 @@ async function spawnMapLoadTables(game, world, map) {
     let made = null;
     try {
       if (beh(t).has('CAPTURE_POINT')) {
-        const pt = await world.addPoint(at, side >= 0 && side < world.factions.length ? side : -1);
+        const { pt, capturable } = await world.addCapturePoint(at, side);
         pt.hostile = side === world.wild && hostileOwner(t, o);
-        if (beh(t).has('TACTICAL_BUILD_OBJECTS')) world.addPadSite(pt, at);
-        else if (!pt.reinforce) made = await addCapturable(world, pt, at);
-        made ||= { type: t, point: pt };
+        made = capturable || { type: t, point: pt };
       } else if (t.has('Company_Units') || beh(t).has('WALK_LOCOMOTOR')) {
         const q = await world.spawn(t.name, o.pos[0], o.pos[1], o.rot[2] * DEG, side < 0 ? world.wild : side);
         if (q && (side < 0 || side === world.wild)) {
@@ -833,11 +830,9 @@ export class LandGame {
           if (beh(o.type).has('MARKER') || o.type.bool('Is_Marker'))
             world.mapObjects.set(mapIndex, [new TacticalMarker(o, () => world.sidePlayers[side >= 0 ? side : world.wild])]);
           if (beh(o.type).has('CAPTURE_POINT')) {
-            const pt = await world.addPoint(o);
+            const { pt } = await world.addCapturePoint(o);
             pt.hostile = hostileOwner(o.type, o);
             world.mapObjects.set(mapIndex, [{ point: pt }]);
-            if (beh(o.type).has('TACTICAL_BUILD_OBJECTS')) world.addPadSite(pt, o);
-            else if (!pt.reinforce) await addCapturable(world, pt, o);
           } else if (team && /^REINFORCEMENT_POINT/i.test(team[2]) && db.type(team[2])) {
             if (side >= 0) await world.addPoint(o, side, db.type(team[2]));
           } else if (team && o.type.has('Marker_For_Specific_Object_Type')) {

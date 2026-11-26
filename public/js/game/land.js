@@ -18,7 +18,7 @@ import { LandPaths } from './landpath.js';
 import { POSE_MARGIN } from './landinstances.js';
 import { cachedPose, settlePose } from './posecache.js';
 
-import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks, canExit } from './landbase.js';
+import { equip, tickBase, shieldStops, ungarrison, hostOf, specialAttack, looks, canExit, addCapturable } from './landbase.js';
 import { landAbilities, useAbility, abilityBlocked, refreshMods, tickAbilities, blastFactor } from './landabilities.js';
 import { tickClashes } from './landclash.js';
 import { BountyBook, bountyValue } from './bounty.js';
@@ -2749,6 +2749,18 @@ export class LandWorld {
       readyAt: 0
     };
     this.sites.push(u.padSite);
+  }
+
+  // A capture point and what it carries, the same whether the map places it or a script makes one
+  // (Create_Generic_Object): a build pad when its type builds (TACTICAL_BUILD_OBJECTS), else a capturable structure
+  // unless it only reinforces. Returns the point and that structure, if any.
+  async addCapturePoint(o, side = -1) {
+    const pt = await this.addPoint(o, side >= 0 && side < this.factions.length ? side : -1);
+    const behaviors = [...o.type.list('Behavior'), ...o.type.list('LandBehavior')].map(name => name.toUpperCase());
+    let capturable = null;
+    if (behaviors.includes('TACTICAL_BUILD_OBJECTS')) this.addPadSite(pt, o);
+    else if (!pt.reinforce) capturable = await addCapturable(this, pt, o);
+    return { pt, capturable };
   }
 
   addPadSite(pt, o) {

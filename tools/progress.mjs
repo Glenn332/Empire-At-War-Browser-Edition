@@ -207,7 +207,11 @@ const GROUPS = [
         D,
         "as the engine: a drop is refused when the last Space_Reinforcement_Collision_Check_Distance of its approach meets anything on the unit's own Space_Layer (moving ships where they will be over the next 115 frames) or on the static layer, for a squadron anything that is not corvette layer; AI drops arrive facing the player's start facing. Ours: the lane is a capsule tested against circles, and a human drop keeps the heading chosen while placing it"
       ],
-      ['Build pads and construction', D],
+      [
+        'Build pads and construction',
+        D,
+        'a capture point made by a script (Create_Generic_Object) is set up as a map-placed one: a capture point with its build pad or capturable structure, so the EaW-X field base pads its land script puts on every reinforcement point can be captured and built on. As the engine, a structure finished on a pad takes the pad garrison spawn flag, which a script-made pad does not have, so a field base built there spawns no garrison unless a script turns it on (read from the engine)'
+      ],
       [
         'Salvage bounty on object deaths (tactical)',
         D,

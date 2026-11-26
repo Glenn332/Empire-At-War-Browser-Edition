@@ -731,8 +731,15 @@ export class LandScripts {
   }
 
   spawnNow(type, player, at) {
-    const w = this.game.world,
-      o = w.isOpen(at.x, at.y) ? at : w.nearestOpen(at.x, at.y) || at;
+    const w = this.game.world;
+    if ([...type.list('Behavior'), ...type.list('LandBehavior')].some(name => /^CAPTURE_POINT$/i.test(name))) {
+      // a capture point made by a script (the field base pads EaW-X puts on every reinforcement point) is set up
+      // as the map would have placed it, so it can be captured and, if it is a pad, built on
+      const side = player && player.id >= 0 && player.id < w.factions.length ? player.id : -1;
+      w.addCapturePoint({ type, pos: [at.x, at.y, w.groundZ(at.x, at.y)], rot: [0, 0, 0], scale: 1 }, side);
+      return null;
+    }
+    const o = w.isOpen(at.x, at.y) ? at : w.nearestOpen(at.x, at.y) || at;
     const hostile = !!player && player === w.hostilePlayer;
     w.spawning = null;
     w.spawn(type.name, o.x, o.y, 0, hostile ? w.wild : player.id).catch(e => console.warn('script spawn', type.name, e));

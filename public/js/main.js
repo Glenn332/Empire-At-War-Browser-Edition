@@ -2731,7 +2731,7 @@ async function boot() {
         benchmark: lbench,
         direct: true,
         preBuilt: params.get('prebuilt') !== '0',
-        mapFile: quickLand.find(m => m.toUpperCase().includes(want)) || quickLand[0],
+        mapFile: [...quickLand, ...customMaps.land].find(m => m.toUpperCase().includes(want)) || quickLand[0],
         credits: getCredits(),
         popCap: lbench ? 9999 : getPop(),
         fog: lbench ? false : getFog(),
