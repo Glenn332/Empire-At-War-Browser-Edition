@@ -1223,6 +1223,21 @@ function beginMM(W, c, T) {
   }
 }
 
+// A mover held by a standing unit tries going round once more with that unit passable before it attacks or waits.
+// When that fails, the contact ends (an attack) and is found again a few frames later, so the failed search would
+// repeat several times a second: it is tried again only after the second a waiting contact waits to be re-decided.
+const ROUND_AGAIN_WAIT = 1;
+const roundAgainKey = (A, B) => A.id * 1e6 + B.id;
+function roundAgainDue(W, A, B) {
+  const until = W.roundAgainUntil?.get(roundAgainKey(A, B));
+  return until === undefined || W.time >= until;
+}
+function roundAgainFailed(W, A, B) {
+  const failed = (W.roundAgainUntil ||= new Map());
+  if (failed.size > 4096) for (const [key, until] of failed) if (W.time >= until) failed.delete(key);
+  failed.set(roundAgainKey(A, B), W.time + ROUND_AGAIN_WAIT);
+}
+
 function classifyMS(W, c, bodies, T) {
   const A = c.a,
     B = c.b,
@@ -1243,9 +1258,12 @@ function classifyMS(W, c, bodies, T) {
     return;
   }
   if (A.cls > 6 || B.cls > 6) {
-    if (goRound(W, c, A, B, false, 1, T) || goRound(W, c, A, B, false, 5, T)) {
-      c.state = MS.PATH_AROUND;
-      return;
+    if (roundAgainDue(W, A, B)) {
+      if (goRound(W, c, A, B, false, 1, T) || goRound(W, c, A, B, false, 5, T)) {
+        c.state = MS.PATH_AROUND;
+        return;
+      }
+      roundAgainFailed(W, A, B);
     }
     if (!friend && B.u && A.u) {
       W.attack(A.u.squad, B.u.squad);
