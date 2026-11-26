@@ -22,7 +22,10 @@ export function spaceRetreat(game, cb) {
         !e.isStation &&
         !e.underConstruction &&
         !e.hyper &&
-        (e.type?.bool('Hyperspace') || !!e.squad?.type?.bool('Hyperspace')) &&
+        // a squadron's own type usually has no Hyperspace tag, its fighters do: it leaves with them
+        (e.type?.bool('Hyperspace') ||
+          !!e.squad?.type?.bool('Hyperspace') ||
+          !!e.fighters?.some(f => !f.dead && f.type?.bool('Hyperspace'))) &&
         !(
           e.hardpoints &&
           e.hardpoints.some(h => h.kind === 'HARD_POINT_ENGINE') &&
