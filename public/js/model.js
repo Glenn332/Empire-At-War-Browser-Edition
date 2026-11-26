@@ -1,7 +1,7 @@
 import { diag } from './diag.js';
 import * as THREE from '../vendor/three/build/three.module.js';
 import { loadALO } from './alo.js';
-import { loadTexture, whiteTexture, blackTexture } from './dds.js';
+import { loadTexture, whiteTexture, blackTexture, capCopy } from './dds.js';
 import { gfx } from './gfx.js';
 import { planetVertex, planetFragment } from './planetshader.js';
 import { effectInfo, effectLOD, selectEffectTechnique } from './fxo.js';
@@ -388,7 +388,15 @@ function planetEffectInfo() {
   ));
 }
 
+// The largest planet texture, in texels, that planet materials made from now on keep (0 = the whole file). The galaxy
+// map loads its planets with a cap and lifts it per planet on zoom (capTexture).
+let planetCap = 0;
+export function setPlanetTextureCap(cap) {
+  planetCap = cap | 0;
+}
+
 function makePlanetMaterial(p) {
+  const cap = planetCap;
   const c3 = (v, d) => (Array.isArray(v) ? new THREE.Color(v[0], v[1], v[2]) : new THREE.Color(d, d, d));
   const detail = gfx.shader | 0,
     requests = [];
@@ -409,6 +417,7 @@ function makePlanetMaterial(p) {
       texture.copy(source);
       texture.isCompressedTexture = source.isCompressedTexture === true;
       texture.isDataTexture = source.isDataTexture === true;
+      if (name) capCopy(texture, cap);
       const fixedStates = [
         ...effect.globalStates,
         ...(technique?.passes.filter(p => !p.annotations.AlamoCleanup).flatMap(p => p.states) || [])
@@ -622,6 +631,8 @@ function makeMaterial(mat, format, teamColor, selfShadow = false) {
       ? shader +
         '|' +
         (gfx.shader | 0) +
+        '|' +
+        planetCap +
         '|' +
         JSON.stringify(
           Object.keys(p)

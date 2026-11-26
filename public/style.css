@@ -23,6 +23,7 @@ body {
     Tahoma,
     sans-serif;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 #view {
   position: fixed;
@@ -1124,12 +1125,20 @@ body:not(.original-hud) .heroframe {
   inset: 0;
   background: center/100% 100% no-repeat;
 }
+.hslot .pad {
+  /* 56px pad around a 50px icon, as the engine draws them */
+  inset: -6%;
+  pointer-events: none;
+}
 .hslot .dark {
   display: none;
   background: rgba(0, 0, 0, 0.6);
 }
 .hslot.off .dark {
   display: block;
+}
+.hslot.off .pad {
+  filter: brightness(0.4);
 }
 .hslot:hover .ic {
   filter: brightness(1.25);
@@ -1265,6 +1274,7 @@ body:not(.original-hud) .heroframe {
 }
 .heroslot {
   position: absolute;
+  pointer-events: auto;
 }
 .heroslot.mine {
   cursor: pointer;
@@ -1564,6 +1574,35 @@ body:not(.original-hud) .heroframe {
 #bench dd {
   margin: 0;
   color: #fff;
+}
+#bench .bt {
+  display: grid;
+  grid-template-columns: 1fr repeat(5, auto);
+  gap: 0 7px;
+  font-size: 10px;
+  color: #fff;
+  text-align: right;
+  white-space: nowrap;
+}
+#bench .bt.two {
+  grid-template-columns: auto 1fr;
+  text-align: left;
+}
+#bench .bt .h,
+#bench .bt .n {
+  color: #5d7690;
+}
+#bench .bt .n {
+  text-align: left;
+}
+#bench .bt .t {
+  color: var(--accent);
+}
+#bench .bt .w {
+  grid-column: 1 / -1;
+  color: #5d7690;
+  text-align: left;
+  white-space: normal;
 }
 #bench .bg {
   margin-top: 6px;

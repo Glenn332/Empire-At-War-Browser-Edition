@@ -270,18 +270,25 @@ export class GalacticBar extends CommandBar {
       q.innerHTML = '<i class="ic"></i><i class="prog"></i><span></span>';
       this.positionCount(q.children[2], name);
       q.children[1].style.backgroundImage = css(this.tex(name, 'Build_Texture_Name'));
-      q.onclick = () => {
-        const item = q._item;
-        if (item && this.game.net) {
-          this.game.order(orders.cancel(this.game.galaxy, this.game.selected, item));
-          return;
-        }
-        if (item && cancelProduction(this.game.galaxy, this.game.selected, this.game.me, item))
-          this.game.audio.play(item.type.str('SFXEvent_Build_Cancelled'));
-        this.refresh();
+      q.onclick = () => this.cancelItem(q._item);
+      q.oncontextmenu = e => {
+        e.preventDefault();
+        this.cancelItem(q._item);
       };
       this.queueSlots.push(q);
     }
+  }
+
+  // left or right click on a queued item cancels it; cancelProduction refunds what was paid
+  cancelItem(item) {
+    const game = this.game;
+    if (!item) return;
+    if (game.net) {
+      game.order(orders.cancel(game.galaxy, game.selected, item));
+      return;
+    }
+    if (cancelProduction(game.galaxy, game.selected, game.me, item)) game.audio.play(item.type.str('SFXEvent_Build_Cancelled'));
+    this.refresh();
   }
 
   refreshAllegiance(g, p) {
@@ -475,6 +482,11 @@ export class GalacticBar extends CommandBar {
 
   heroClick(h) {
     this.heroFocus(h);
+  }
+
+  heroHover(h, on) {
+    if (on) this.game.heroTip = { id: h.e.id, type: h.type };
+    else if (this.game.heroTip?.id === h.e.id) this.game.heroTip = null;
   }
 
   heroFocus(h) {

@@ -445,6 +445,11 @@ const cats = u =>
     .split(/[\s|,]+/)
     .filter(Boolean));
 const inCats = (u, want) => !want || want.some(c => cats(u).includes(c) || (c === 'HERO' && cats(u).some(x => /HERO/.test(x))));
+const upperName = t => (t._upperName ??= t.name.toUpperCase());
+// a Parameter_Type list narrows a perception to the named object types; none given leaves it open
+const named = (u, types) => !types || !types.length || types.includes(upperName(u.type));
+const BASE_PART = 'DUMMY_LAND_BASE_LEVEL_COMPONENT';
+const basePart = t => (t._basePart ??= t.list('LandBehavior').some(b => b.toUpperCase() === BASE_PART));
 export const catParam = params => {
   const p = params
     .filter(([k]) => /Parameter_Category/i.test(k))
@@ -548,7 +553,7 @@ export class Mind extends Reason {
     this.foes = w.units.filter(u => !u.dead && u.side >= 0 && !w.ally(u.side, side) && !u.bomber && !u.inside);
     const weigh = (u, att) => power(u) * (att ? 1 - (1 - Math.max(0, Math.min(1, u.health / (u.maxHealth || 1)))) * att : 1);
     this.weigh = weigh;
-    const sum = (list, c, att = 0) => list.reduce((n, u) => n + (inCats(u, c) ? weigh(u, att) : 0), 0);
+    const sum = (list, c, att = 0, types = null) => list.reduce((n, u) => n + (inCats(u, c) && named(u, types) ? weigh(u, att) : 0), 0);
     this.sum = sum;
     this.total = Math.max(0, sum(this.friends) + sum(this.foes));
     this.faction = (w.factions[side] || '').toUpperCase();
@@ -595,8 +600,8 @@ export class Mind extends Reason {
     return (z.pc = Int32Array.from(set));
   }
 
-  grid(foe, kind, cats, att) {
-    const key = (foe ? 'e' : 'f') + kind + (cats ? cats.join('|') : '') + '@' + att;
+  grid(foe, kind, cats, att, types = null) {
+    const key = (foe ? 'e' : 'f') + kind + (cats ? cats.join('|') : '') + '@' + att + (types && types.length ? '#' + types.join('|') : '');
     let g = this.grids.get(key);
     if (g) return g;
     const gn = this.gn,
@@ -605,7 +610,7 @@ export class Mind extends Reason {
       cap = db.constants.num('AI_LandThreatRangeCap', 0);
     g = new Float32Array(gn * gn);
     for (const u of foe ? this.foes : this.friends) {
-      if (!inCats(u, cats)) continue;
+      if (!inCats(u, cats) || !named(u, types)) continue;
       const v = this.weigh(u, att);
       if (!(v > 0)) continue;
       if (kind === 'stand') {
@@ -634,13 +639,13 @@ export class Mind extends Reason {
     return gx < 0 || gy < 0 || gx >= gn || gy >= gn ? 0 : (g[gy * gn + gx] * 640000) / (this.cell * this.cell);
   }
 
-  at(t, foe, kind, cats, att) {
+  at(t, foe, kind, cats, att, types = null) {
     const z = this.zone(t);
     if (!z) return 0;
-    const g = this.grid(foe, kind, cats, att);
+    const g = this.grid(foe, kind, cats, att, types);
     let n = 0;
     for (const i of this.cellsOf(z)) n += g[i];
-    if (t.unit && kind === 'stand' && foe !== this.w.ally(t.unit.side, this.side) && inCats(t.unit, cats))
+    if (t.unit && kind === 'stand' && foe !== this.w.ally(t.unit.side, this.side) && inCats(t.unit, cats) && named(t.unit, types))
       n = Math.max(0, n - this.weigh(t.unit, att));
     return kind === 'force' ? n * this.areaScale : n;
   }
@@ -708,7 +713,7 @@ export class Mind extends Reason {
     let d = 1e18;
     const r0 = t.unit ? t.unit.hitRadius || 0 : 0;
     for (const u of list) {
-      if (u === t.unit || !inCats(u, c) || (types && types.length && !types.includes(u.type.name.toUpperCase()))) continue;
+      if (u === t.unit || !inCats(u, c) || !named(u, types)) continue;
       const v = Math.hypot(u.x - t.x, u.y - t.y) - r0 - (u.hitRadius || 0);
       if (v < d) d = v;
     }
@@ -765,25 +770,37 @@ export class Mind extends Reason {
         case 'FRIENDLYFORCEUNNORMALIZED':
         case 'FORCEUNNORMALIZED':
         case 'LANDEDFORCEUNNORMALIZED':
-          return this.sum(own, c, att);
+          return this.sum(own, c, att, types);
         case 'FRIENDLYFORCE':
         case 'FORCE':
-          return this.norm(this.sum(own, c, att));
+          return this.norm(this.sum(own, c, att, types));
         case 'ENEMYFORCEUNNORMALIZED':
-          return this.sum(other, c, att);
+          return this.sum(other, c, att, types);
         case 'ENEMYFORCE':
-          return this.norm(this.sum(other, c, att));
+          return this.norm(this.sum(other, c, att, types));
         case 'FORCENBTD':
-          return this.norm(this.sum(own, c, att), this.sum(own, null, 0));
-        case 'REINFORCEMENTSUNNORMALIZED':
-          return self
-            ? (w.ready[side] || []).reduce(
-                (n, ty) => n + ty.list('Company_Units').reduce((m, x) => m + (db.type(x) ? db.type(x).num('AI_Combat_Power', 30) : 0), 0),
-                0
-              )
-            : 0;
+          return this.norm(this.sum(own, c, att, types), this.sum(own, null, 0));
+        case 'REINFORCEMENTSUNNORMALIZED': {
+          // the companies waiting to land, by the units in them that the category and type lists let through
+          // (Need_Heroes_Landed asks for LandHero only)
+          if (!self) return 0;
+          let n = 0;
+          for (const ty of w.ready[side] || [])
+            for (const x of ty.list('Company_Units')) {
+              const ut = db.type(x);
+              if (!ut || (types.length && !types.includes(upperName(ut)))) continue;
+              if (c) {
+                const has = ut.categories();
+                if (!c.some(k => has.has(k) || (k === 'HERO' && [...has].some(y => /HERO/.test(y))))) continue;
+              }
+              n += ut.num('AI_Combat_Power', 30);
+            }
+          return n;
+        }
         case 'TACTICALBUILTSTRUCTURECOUNT':
-          return own.filter(u => u.structure && (!types.length || types.includes(u.type.name.toUpperCase()))).length;
+          // with a type list: every standing structure of those types. With none it is the built half of
+          // Build_Pad_Count ("the total count, occupied or not"): only what stands on a build pad, not the base
+          return own.filter(u => u.structure && (types.length ? types.includes(upperName(u.type)) : !!(u.site && u.site.pad))).length;
         case 'HASUNIT':
           return own.some(u => types.includes(u.type.name.toUpperCase())) ||
             types.some(n => this.owned.has(n)) ||
@@ -797,9 +814,15 @@ export class Mind extends Reason {
         case 'UNITSPACEAVAILABLE':
           return Math.max(0, w.popCap(side) - w.popUsed(side));
         case 'BASELEVEL':
+          // a battle for a planet: the ground base that still stands, one level a base structure
+          // (Allowed_As_Defender_Land and Want_To_Retreat_From_Land test it against 0, "we don't have a base left")
+          if (w.campaign)
+            return Math.min(db.constants.num('MaximumGroundbaseLevel', 5), own.filter(u => u.structure && !u.dead && basePart(u.type)).length);
           return 1 + [...this.owned].filter(n => /LEVEL_\w+_TECH/.test(n)).length;
         case 'OPENBUILDPADCOUNT':
-          return w.sites.filter(s => !s.structure && !s.building && w.siteOptions(s, side).length).length;
+          return w.sites.filter(
+            s => !s.structure && !s.building && (!types.length || (s.pad && types.includes(upperName(s.pad)))) && w.siteOptions(s, side).length
+          ).length;
         case 'CREDITSUNNORMALIZED':
           return w.credits[side];
         case 'ISBOMBINGRUNAVAILABLE':
@@ -847,8 +870,21 @@ export class Mind extends Reason {
           const f = t.owner >= 0 && t.owner < w.factions.length ? w.factions[t.owner].toUpperCase() : '';
           return params.some(([k, v]) => /Faction/i.test(k) && v.toUpperCase() === f) ? 1 : 0;
         }
-        case 'HASBUILTOBJECT':
-          return t.site && (t.site.structure || t.site.building) ? 1 : 0;
+        case 'HASBUILTOBJECT': {
+          const s = t.site;
+          if (!s || !(s.structure || s.building)) return 0;
+          if (!types.length) return 1;
+          // with a type list: only when what stands (or is going up) on the pad is one of the types
+          const has = [];
+          if (s.structure && s.structure.type) has.push(upperName(s.structure.type));
+          const uc = s.building && s.building.uc;
+          if (uc) {
+            has.push(upperName(uc));
+            const made = uc.str && db.type(uc.str('Tactical_Buildable_Constructed'));
+            if (made) has.push(upperName(made));
+          }
+          return has.some(n => types.includes(n)) ? 1 : 0;
+        }
         case 'ISCONTESTABLE':
           return t.point ? 1 : 0;
         case 'ISINSIDEFRIENDLYSHIELD':
@@ -871,29 +907,29 @@ export class Mind extends Reason {
           return all.some(is) ? 1 : 0;
         }
         case 'ENEMYFORCEUNNORMALIZED':
-          return this.at(t, true, 'force', c, att);
+          return this.at(t, true, 'force', c, att, types);
         case 'FRIENDLYFORCEUNNORMALIZED':
-          return this.at(t, false, 'force', c, att);
+          return this.at(t, false, 'force', c, att, types);
         case 'ENEMYFORCE':
-          return this.norm(this.at(t, true, 'force', c, att));
+          return this.norm(this.at(t, true, 'force', c, att, types));
         case 'FRIENDLYFORCE':
-          return this.norm(this.at(t, false, 'force', c, att));
+          return this.norm(this.at(t, false, 'force', c, att, types));
         case 'ENEMYFORCENBTD':
-          return this.norm(this.at(t, true, 'force', c, att), this.sum(this.foes, null, 0));
+          return this.norm(this.at(t, true, 'force', c, att, types), this.sum(this.foes, null, 0));
         case 'FRIENDLYFORCENBTD':
-          return this.norm(this.at(t, false, 'force', c, att), this.sum(this.friends, null, 0));
+          return this.norm(this.at(t, false, 'force', c, att, types), this.sum(this.friends, null, 0));
         case 'ENEMYUNITCONCENTRATIONUNNORMALIZED':
-          return this.at(t, true, 'stand', c, 0);
+          return this.at(t, true, 'stand', c, 0, types);
         case 'FRIENDLYUNITCONCENTRATIONUNNORMALIZED':
-          return this.at(t, false, 'stand', c, 0);
+          return this.at(t, false, 'stand', c, 0, types);
         case 'ENEMYUNITCONCENTRATION':
-          return this.norm(this.at(t, true, 'stand', c, 0));
+          return this.norm(this.at(t, true, 'stand', c, 0, types));
         case 'FRIENDLYUNITCONCENTRATION':
-          return this.norm(this.at(t, false, 'stand', c, 0));
+          return this.norm(this.at(t, false, 'stand', c, 0, types));
         case 'ENEMYUNITCONCENTRATIONNBTD':
-          return this.norm(this.at(t, true, 'stand', c, 0), this.sum(this.foes, null, 0));
+          return this.norm(this.at(t, true, 'stand', c, 0, types), this.sum(this.foes, null, 0));
         case 'FRIENDLYUNITCONCENTRATIONNBTD':
-          return this.norm(this.at(t, false, 'stand', c, 0), this.sum(this.friends, null, 0));
+          return this.norm(this.at(t, false, 'stand', c, 0, types), this.sum(this.friends, null, 0));
         case 'DISTANCETONEARESTFRIENDLY':
           return this.nearest(this.friends, t, c, types);
         case 'DISTANCETONEARESTENEMY':

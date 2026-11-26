@@ -1,4 +1,5 @@
 import { channel } from './galacticmpbattle.js';
+import { ownCopy } from './plainobject.js';
 
 export function startGalaxyFrame(setup) {
   const session = setup.net.session,
@@ -20,6 +21,9 @@ export function startGalaxyFrame(setup) {
     frame.focus();
   };
   host.next = s => {
+    // the next campaign's setup comes from the old galaxy window: copy it here, or the new galaxy would keep the old
+    // window (and every game data table it loaded) alive through it
+    s = ownCopy(s);
     const old = host.frame,
       oldLink = host.link,
       game = old?.contentWindow?.game;

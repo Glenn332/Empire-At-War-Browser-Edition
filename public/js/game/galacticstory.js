@@ -12,6 +12,7 @@ import { LuaVM, LuaRef, Multi, loadFengari, engineLacksMethod } from '../lua.js'
 import { GalacticNeutralizePopup } from './galacticpopup.js';
 import { NeutralizeShell } from './neutralizeshell.js';
 import { readBrain, Reason, typeParam, catParam } from './landbrain.js';
+import { level } from './galacticai.js';
 import { placeStartingForce, forceKind, replaceFirstFleet } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { planetIncome, playerIncome, adjustCredits } from './galacticeconomy.js';
@@ -668,7 +669,7 @@ export class GalacticStoryHost extends StoryPlots {
       __call: (owner, equation, flags, probability, range) =>
         game.ai?.findTarget(owner?.__faction, equation, flags, probability, null, null, range),
       Reachable_Target: (owner, equation, flags, reach, probability, target, range) =>
-        game.ai?.findTarget(owner?.__faction, equation, flags, probability, target?.__planet, reach, range)
+        game.ai?.findTarget(owner?.__faction, equation, flags, probability, target?.__planet || target?.__object?.planet, reach, range)
     });
     vm.global('FindPlanet', {
       __wrap: true,
@@ -678,23 +679,32 @@ export class GalacticStoryHost extends StoryPlots {
     });
     vm.global('Get_Story_Plot', name => this.plotWrapper(name));
     vm.global('Story_Event', name => this.signal('STORY_AI_NOTIFICATION', name));
-    vm.global('GUI_Component_Visibility', (name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0));
+    // What a script shows in answer to one player's click (a menu opening, a label, a highlight) is drawn on that
+    // player's screen only. Enabling a button stays shared: it decides whether a click is carried out at all.
+    const view = f => (...args) => (game.scriptUI?.elsewhere?.() ? undefined : f(...args));
+    vm.global('GUI_Component_Visibility', view((name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0)));
     vm.global('GUI_Component_Enable', (name, on) => game.scriptUI?.enable(String(name), on !== false && on !== 0));
-    vm.global('GUI_Component_Text', (name, text) => game.scriptUI?.text(String(name), String(text ?? '')));
-    vm.global('GUI_Component_Color', (name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a));
-    vm.global('GUI_Text_Color', (name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a));
-    vm.global('GUI_Component_Blink', (name, on) => game.scriptUI?.blink(String(name), !!on));
-    vm.global('GUI_Component_Flash', (name, perpetual, duration, count) => {
-      if (/^b_story_arc/i.test(String(name)) && !game.scriptUI?.elements?.(String(name)).length) game.storyButtonFlash?.(true);
-      else game.scriptUI?.flash(String(name), !!perpetual, +duration || 0, +count || 0);
-    });
-    vm.global('GUI_Component_Stop_Flash', name => {
-      if (/^b_story_arc/i.test(String(name))) game.storyButtonFlash?.(false);
-      game.scriptUI?.stopFlash(String(name));
-    });
-    vm.global('GUI_Component_Play_Anim', (name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop));
-    vm.global('GUI_Component_Stop_Anim', name => game.scriptUI?.stopAnim(String(name)));
-    vm.global('GUI_Button_Icon', (name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args));
+    vm.global('GUI_Component_Text', view((name, text) => game.scriptUI?.text(String(name), String(text ?? ''))));
+    vm.global('GUI_Component_Color', view((name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a)));
+    vm.global('GUI_Text_Color', view((name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a)));
+    vm.global('GUI_Component_Blink', view((name, on) => game.scriptUI?.blink(String(name), !!on)));
+    vm.global(
+      'GUI_Component_Flash',
+      view((name, perpetual, duration, count) => {
+        if (/^b_story_arc/i.test(String(name)) && !game.scriptUI?.elements?.(String(name)).length) game.storyButtonFlash?.(true);
+        else game.scriptUI?.flash(String(name), !!perpetual, +duration || 0, +count || 0);
+      })
+    );
+    vm.global(
+      'GUI_Component_Stop_Flash',
+      view(name => {
+        if (/^b_story_arc/i.test(String(name))) game.storyButtonFlash?.(false);
+        game.scriptUI?.stopFlash(String(name));
+      })
+    );
+    vm.global('GUI_Component_Play_Anim', view((name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop)));
+    vm.global('GUI_Component_Stop_Anim', view(name => game.scriptUI?.stopAnim(String(name))));
+    vm.global('GUI_Button_Icon', view((name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args)));
     vm.global('Check_Story_Flag', (player, name, target, clear) => {
       const flags = this.aiFlags.get(key(player?.__faction)),
         id = key(name) + '|' + key(target?.__planet?.name || target?.__object?.type.name);
@@ -902,7 +912,7 @@ export class GalacticStoryHost extends StoryPlots {
         if (!p || typeof level !== 'number') return;
         raiseTech(this.game, p.faction, level);
       },
-      Get_Difficulty: () => ({ easy: 'Easy', medium: 'Normal', hard: 'Hard' })[this.game.setup?.difficulty] || 'Normal',
+      Get_Difficulty: () => ({ easy: 'Easy', normal: 'Normal', hard: 'Hard' })[level(data()?.difficulty || this.game.setup?.difficulty)],
       Lock_Tech: type => this.tech(faction.name, type?.__type, false),
       Unlock_Tech: type => this.tech(faction.name, type?.__type, true),
       Is_Enemy: other => {
@@ -1118,7 +1128,7 @@ export class GalacticStoryHost extends StoryPlots {
         },
         Is_Valid: () => true,
         Get_Type: () => this.type(p.type),
-        Get_Owner: () => this.player(p.owner),
+        Get_Owner: () => this.ownerPlayer(p.owner),
         Get_Position: () => this.position(...p.pos),
         Get_Planet_Location: () => wrapper,
         Get_Next_Starbase_Type: () => this.nextBase(p, true),
@@ -1375,7 +1385,7 @@ export class GalacticStoryHost extends StoryPlots {
       __object: object,
       Is_Valid: () => !object.dead && !record.dead,
       Get_Type: () => this.type(object.type),
-      Get_Owner: () => this.player(object.owner),
+      Get_Owner: () => this.ownerPlayer(object.owner),
       Get_Planet_Location: () => this.planet(object.planet),
       Get_Game_Scoring_Type: () => this.type(record.carries || object.type),
       Get_Final_Blow_Player: () => this.player(object.finalBlowOwner || this.neutralOwner()),
@@ -1885,6 +1895,9 @@ export class GalacticStoryHost extends StoryPlots {
     if (fn) inst.events.push({ fn, params });
   }
 
+  ownerPlayer(owner) {
+    return this.player(owner || this.neutralOwner());
+  }
   neutralOwner() {
     return [...db.factions.values()].find(t => t.bool('Is_Neutral'))?.name;
   }
@@ -2256,6 +2269,7 @@ export class GalacticStoryHost extends StoryPlots {
           campaign: p[0],
           faction: faction?.name,
           difficulty: ['easy', 'medium', 'hard'][+p[2]] || 'medium',
+          options: { groundAutoResolve: !!game.galaxy?.groundAutoResolve },
           ...(p[3] != null && p[3] !== '' && +p[3] >= 0 && +p[3] < 6 ? { startingTechLevel: +p[3] } : {})
         };
         break;

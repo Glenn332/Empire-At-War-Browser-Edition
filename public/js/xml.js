@@ -27,6 +27,21 @@ const TOKEN =
   /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<\/\s*([^\s>]+)\s*>|<([^\s>\/!?]+)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/g;
 const ATTR = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
+// A string cut from the file (a match, a slice) points into the whole file's text, so one name kept from a file keeps
+// all of it: a large mod's hundreds of XML files would stay in memory for the session. The tree keeps copies instead,
+// with tag names, attribute names and runs of spacing shared. Strings under 13 characters are always copies.
+const shared = new Map();
+const own = s => (s.length < 13 ? s : (' ' + s).slice(1));
+function common(s) {
+  let v = shared.get(s);
+  if (v === undefined) {
+    v = own(s);
+    if (shared.size < 65536) shared.set(v, v);
+  }
+  return v;
+}
+const SPACE = /^\s*$/;
+
 export function parseXML(src) {
   const root = new XNode('#root', {});
   const stack = [root];
@@ -47,11 +62,16 @@ export function parseXML(src) {
       const attrs = {};
       let a;
       ATTR.lastIndex = 0;
-      while ((a = ATTR.exec(m[3]))) attrs[a[1]] = a[2] ?? a[3];
-      const node = new XNode(m[2], attrs);
+      while ((a = ATTR.exec(m[3]))) attrs[common(a[1])] = own(a[2] ?? a[3]);
+      const node = new XNode(common(m[2]), attrs);
       top.children.push(node);
       if (!m[4]) stack.push(node);
     }
+  }
+  for (const todo = [root]; todo.length; ) {
+    const node = todo.pop();
+    if (node.text) node.text = SPACE.test(node.text) ? common(node.text) : own(node.text);
+    for (const c of node.children) todo.push(c);
   }
   return root;
 }

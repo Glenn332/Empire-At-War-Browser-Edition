@@ -198,6 +198,7 @@ export class MpBattles {
     b.done = true;
     this.closeFrame(b);
     b.setup.net?.session?.close?.();
+    b.setup.shooterNet?.session?.close?.();
     this.current = null;
     game.battle = null;
     if (game.fadeEl) game.fadeEl.style.opacity = '0';
@@ -333,6 +334,7 @@ export class MpBattles {
     this.closeFrame(b);
 
     b.setup.net?.session?.close?.();
+    b.setup.shooterNet?.session?.close?.();
     this.current = null;
     game.battle = null;
     if (game.fadeEl) game.fadeEl.style.opacity = '0';

@@ -2,7 +2,7 @@ import { expansion } from '../edition.js';
 import { ridesFlagship } from './campaignbattle.js';
 import { readLinkedTactical, tacticalMapLoad, takeStoryMap } from './linktactical.js';
 import { switchTarget } from './switchsides.js';
-import { applyCampaignSettings } from './campaignsettings.js';
+import { applyCampaignSettings, applyGroundAutoResolve } from './campaignsettings.js';
 import { loadBlackMarket, completePurchase } from './blackmarket.js';
 import { launchLinkedMission, returnLinkedMission, linkedMissionVictory, abortLinkedMission } from './linkedmission.js';
 import { preloadLinkedPlots, resolveNetLinked } from './linkednet.js';
@@ -23,14 +23,14 @@ import { showSplash, hideSplash } from '../splash.js';
 import * as THREE from 'three';
 import { BenchOverlay } from '../benchoverlay.js';
 import { db, switchLanguage, categoryMask } from '../gamedata.js';
-import { loadModel, planetLighting, lighting, updateBillboards, planetClock, programSources } from '../model.js';
+import { loadModel, planetLighting, lighting, updateBillboards, planetClock, programSources, setPlanetTextureCap } from '../model.js';
 import { env as gpuEnv, wantGPU } from '../gpu/env.js';
-import { loadTexture } from '../dds.js';
+import { loadTexture, capTexture } from '../dds.js';
 import { RouteBatches } from './routebatch.js';
 import { loadALA, animName, AnimState } from '../ala.js';
 import { fontFamily, loadGameFonts } from '../fonts.js';
 import { fontPixels } from '../fontpolicy.js';
-import { gfx, pixelRatio, gammaOn } from '../gfx.js';
+import { gfx, pixelRatio, gammaOn, frameCap, FrameGate } from '../gfx.js';
 import { loadCampaignData, startingGalaxy, snapshotGalaxy, applyGalaxy, stampIds, PLANET_RADIUS, isHumanFaction, onOrbit, placeStartingForce } from './galaxy.js';
 import { GalacticNet, orders, runCommand, galaxyHash, recordRef } from './galacticnet.js';
 import { MpBattles } from './galacticmpbattle.js';
@@ -78,6 +78,7 @@ import { GalacticScreenText } from './galacticscreentext.js';
 import { GalacticStoryDialog } from './galacticstorydialog.js';
 import { GalacticMovies } from './galacticmovies.js';
 import { GalacticLog } from './galacticlog.js';
+import { GalacticSearch } from './galacticsearch.js';
 import { Menus } from './menus.js';
 import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticeconomy.js';
 import { GalacticAI } from './galacticai.js';
@@ -123,6 +124,7 @@ const SILENT = new Proxy(function () {}, {
   apply: () => undefined
 });
 const DEG = Math.PI / 180;
+const PLANET_TEXTURE_CAP = 1024;
 const _pickRay = new THREE.Raycaster(),
   _pickAt = new THREE.Vector2(),
   _pickC = new THREE.Vector3(),
@@ -236,7 +238,7 @@ export class GalacticGame {
     this.overview?.cancelDrag();
     this.unsubscribeLanguage?.();
     this.speechStoryDone?.();
-    for (const part of [this.story, this.ai, this.storyDialog, this.galacticLog, this.movies, this.scriptUI, this.screenText]) {
+    for (const part of [this.story, this.ai, this.storyDialog, this.galacticLog, this.locationUI, this.movies, this.scriptUI, this.screenText]) {
       try {
         part?.dispose?.();
       } catch (e) {
@@ -279,6 +281,8 @@ export class GalacticGame {
     const g = (this.galaxy = startingGalaxy(data, camp));
     if (this.setup.restore) applyGalaxy(g, this.setup.restore);
     else if (this.setup.campaignSettings) applyCampaignSettings(g, this.setup.campaignSettings, camp.str('Starting_Active_Player'));
+    // the lobby's "auto-resolve all ground battles" choice; a save from before it existed keeps the old prompt
+    applyGroundAutoResolve(g, this.setup);
     if (this.setup.net) {
       this.multiplayerGalaxy(g);
       stampIds(g);
@@ -366,6 +370,7 @@ export class GalacticGame {
     P('Placing the planets', 0.1);
     await loadGameFonts().catch(() => null);
     let done = 0;
+    setPlanetTextureCap(PLANET_TEXTURE_CAP);
     await Promise.all(
       g.planets.map(async (p, i) => {
         const file = destroyedPlanetModel(p);
@@ -390,7 +395,8 @@ export class GalacticGame {
         this.planetViews[i] = { inst, name: db.t(p.type.str('Text_ID')) || p.name, show: !p.background };
         P(`Placing the planets (${++done}/${g.planets.length})`, 0.1 + (0.8 * done) / g.planets.length);
       })
-    );
+    ).finally(() => setPlanetTextureCap(0));
+    this.uploadPlanetTextures().catch(e => console.warn('planet textures', e));
     this.bounds = this.planetBounds();
     this.clampPan();
     this.marker = await loadModel('w_planet_select_neutral.alo').catch(() => null);
@@ -451,6 +457,7 @@ export class GalacticGame {
     });
     this.storyDialog = new GalacticStoryDialog(this);
     this.galacticLog = new GalacticLog(this, hud);
+    this.locationUI = new GalacticSearch(this);
     onOrbit((planet, owner, units, raid) => {
       if (this.galaxy.planets.includes(planet)) this.story?.fleetEntered?.({ owner, units, raid: raid ? planet.index : undefined }, planet);
     });
@@ -896,8 +903,47 @@ export class GalacticGame {
     this.screenText?.removeAll();
   }
   showStoryDialog(request) {
-    if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
+    // A popup that arrives while the story window is already up joins it: in multiplayer the galaxy waits until each
+    // reader closes the window holding it, so it must not be dropped for the one already showing.
+    if (this.storyDialog?.opened) return this.storyDialog.addPopup(request);
     this.storyDialog?.show(request);
+  }
+  // In multiplayer a story popup holds the galaxy until its readers close it (holdForDialog). Each frame this checks the
+  // holds still have a reason to be on: a popup this player has to read is kept on screen, a popup nobody can show any
+  // more is closed here, and the other players are told who the galaxy is waiting for.
+  watchHolds(now = performance.now()) {
+    if (!this.setup.net || !this.storyDialog) return;
+    const me = this.localPid;
+    if ((this.holdCheckAt ?? -Infinity) > now) return;
+    this.holdCheckAt = now + 1000;
+    const sent = (this.dialogSent ||= new Set()),
+      dialog = this.storyDialog;
+    let waitingOn = null;
+    for (const [id, waiting] of this.holds || []) {
+      if (!waiting.has(me)) {
+        waitingOn ||= waiting;
+        continue;
+      }
+      if (sent.has(id) || dialog.holding?.(id)) continue;
+      const request = this.story?.storyGoals?.find(g => g.id === id);
+      if (!request) {
+        // the goal is gone (a script removed it): there is nothing left to read
+        sent.add(id);
+        this.order?.({ c: 'dialog', id });
+      } else if (dialog.opened) dialog.addPopup(request);
+      else dialog.show(request);
+    }
+    for (const id of sent) if (!this.holds?.has(id)) sent.delete(id);
+    if (waitingOn && !this.holds?.size) waitingOn = null;
+    const who = waitingOn && [...waitingOn].map(i => this.setup.players?.[i]?.name || 'Player').join(', ');
+    if (who && (this.holdToldAt ?? -Infinity) <= now) {
+      this.holdToldAt = now + 15000;
+      this.message(`Waiting for ${who} to read the briefing...`);
+    } else if (!who) this.holdToldAt = -Infinity;
+    if (this.scriptPauses > 0 && !this.holds?.size && (this.scriptPauseToldAt ?? -Infinity) <= now) {
+      this.scriptPauseToldAt = now + 15000;
+      this.message('The campaign script has paused the galaxy.');
+    } else if (!(this.scriptPauses > 0)) this.scriptPauseToldAt = -Infinity;
   }
   notifyStoryGoal(request, sound = true) {
     if (this.storyDialog?.opened) return this.storyDialog.refreshSummary();
@@ -1364,7 +1410,8 @@ export class GalacticGame {
       const name = db.t(p.type.str('Text_ID')) || p.name;
       this.galacticLog?.message(String(db.t('TEXT_ENEMY_FLEET_APPROACHING_LOCATION')).replace('##0', name), {
         urgent: true,
-        color: [0, 193, 91]
+        color: [0, 193, 91],
+        planet: p.index
       });
       this.audio?.play(db.faction(this.me)?.str('SFXEvent_Enemy_Fleet_Approaching_Planet'));
     }
@@ -1377,7 +1424,7 @@ export class GalacticGame {
     const args = [db.t(planet.type.str('Text_ID')) || planet.name, name(old), name(now), bonus];
     this.galacticLog?.message(
       text.replace(/%l?[sd]/g, () => String(args.shift() ?? '')),
-      { urgent: false, color: [255, 24, 39] }
+      { urgent: false, color: [255, 24, 39], planet: planet.index }
     );
     if (mine && bonus) this.audio?.playAudioEvent('SFXEvent_Planet_Capture_Bonus_Reward');
     const faction = db.faction(this.me);
@@ -1601,7 +1648,7 @@ export class GalacticGame {
     addEventListener('pointerdown', unlock, true);
     addEventListener('keydown', unlock, true);
     addEventListener('keydown', e => {
-      if (this.over || this.modeSuspended) return;
+      if (this.over || this.modeSuspended || this.locationUI?.typing) return;
       if (e.code === 'F2') {
         e.preventDefault();
         this.toggleBenchmark();
@@ -1923,6 +1970,24 @@ export class GalacticGame {
     return -1;
   }
 
+  // the search box and the location log: bring a planet into view and select it, as clicking it would. This is the
+  // local player's view only; in multiplayer the selection goes out the way a click on the planet does.
+  focusPlanet(i) {
+    const p = this.galaxy.planets[i],
+      v = this.view;
+    if (!p || p.background || this.over || this.battle || this.controlsLocked || this.scriptUI?.modal || this.storyMovie?.active) return false;
+    if (this.baseLayout?.open) return false;
+    if (v.zoom > 0 || v.dir > 0) {
+      this.zoomIn(i);
+      return true;
+    }
+    v.x = p.pos[0];
+    v.y = p.pos[1];
+    v.z = this.cam.plane;
+    this.select(i);
+    return true;
+  }
+
   cameraHome() {
     if (this.view.zoom || this.view.planet >= 0) return;
     const i = this.leaderPlanet(),
@@ -2012,6 +2077,11 @@ export class GalacticGame {
     if (!encyclopedia) return;
     const tips = (this.tips ||= new TooltipGate(this, encyclopedia));
     tips.update();
+    const hero = this.heroTip;
+    if (hero) {
+      tips.hover({ id: 'hero:' + hero.id, key: 'hero:' + hero.type.name, show: () => encyclopedia.showType(hero.type, false) });
+      return;
+    }
     const build = this.buildTip,
       b = build?.b;
     if (b && b._type && b.style.display !== 'none') {
@@ -2472,21 +2542,35 @@ export class GalacticGame {
     if (!cfg) return;
     // a native click must name one of the galaxy screen's own buttons
     if (native && this.scriptUI?.nativeControls && !this.scriptUI.nativeControls.has(name)) return;
-    if (cfg.peer === 0) {
-      if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
-      else this.scriptUI?.click(name, false, true);
-      return;
-    }
+    const run = () => {
+      this.uiPid = pid;
+      try {
+        if (native) this.asStorySide(pid, () => this.story?.clickGUI(name));
+        else this.asStorySide(pid, () => this.scriptUI?.click(name, false, true));
+      } finally {
+        this.uiPid = undefined;
+      }
+    };
+    if (cfg.peer === 0) return run();
     const faction = this.story?.clickFaction(name);
     if (faction) {
       (this.menuFactions ||= {})[pid] = faction;
       if (pid === this.localPid)
         this.message(`${db.t(db.faction(faction)?.str('Text_ID')) || faction}: your side when the host starts the game.`);
-    } else if (native && this.storyPartner(pid)) this.asStorySide(pid, () => this.story?.clickGUI(name));
-    else if (pid === this.localPid && !this.toldHostOnly) {
+    } else if (this.storyPartner(pid)) {
+      // A player sharing the story's side (co-op on one faction) uses its scripted buttons as the host does:
+      // build filters, planet displays and the like.
+      run();
+    } else if (pid === this.localPid && !this.toldHostOnly) {
       this.toldHostOnly = true;
       this.message('Only the host sets this up; the faction buttons choose your own side.');
     }
+  }
+
+  // Whether player `pid` plays the same faction as this machine's player (co-op on one side).
+  sameSide(pid) {
+    const side = i => String(db.faction(this.setup.players?.[i]?.faction)?.name || this.setup.players?.[i]?.faction || '').toUpperCase();
+    return pid === this.localPid || (!!side(pid) && side(pid) === side(this.localPid));
   }
 
   get held() {
@@ -3248,7 +3332,12 @@ export class GalacticGame {
       })
     )
       return false;
-    if (f.owner === this.me) this.story?.generic('start_hyperspace');
+    // In lockstep every machine runs this for the ordering player, so the story hears it on all of them alike.
+    const acting = this.actingPid !== undefined ? this.setup.players?.[this.actingPid] : null;
+    if (acting) {
+      if (String(acting.faction).toUpperCase() === String(f.owner).toUpperCase())
+        this.asStorySide(this.actingPid, () => this.story?.generic('start_hyperspace'));
+    } else if (!this.setup.net && f.owner === this.me) this.story?.generic('start_hyperspace');
     return true;
   }
 
@@ -3547,6 +3636,7 @@ export class GalacticGame {
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
+    if (this.capped(now)) return;
     const elapsed = Math.max(0, (now - this.last) / 1000),
       real = Math.min(0.1, elapsed);
     if (this.bench) this.bench.tick(now - this.last, now);
@@ -3557,6 +3647,7 @@ export class GalacticGame {
     this.audio?.speech?.update();
     this.movies?.update(elapsed);
     this.updateStoryButton();
+    if (this.net && !this.battle) this.watchHolds(now);
     if (this.tutorialFx || this.dualFlash) {
       stepDualFlash(this, real);
       this.tutorialFx?.update(real);
@@ -3666,6 +3757,45 @@ export class GalacticGame {
     if (this.battleFlash !== undefined && !this.battle) this.endBattleFlash();
     this.stepPlanetFlashes(real);
     this.present(real, elapsed, zoom);
+  }
+
+  // The galaxy map draws at most frameCap() times a second: a fast screen asks for a frame up to 144+ times a second,
+  // and each one redraws every planet. A skipped frame does nothing, so the next one catches up the time it missed.
+  capped(now) {
+    return (this.frameGate ||= new FrameGate(frameCap)).skip(now);
+  }
+
+  planetTextures(n) {
+    const out = new Set();
+    this.planetViews[n]?.inst?.root.traverse(o => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material])
+        for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture && u.value.userData.ready) out.add(u.value);
+    });
+    return out;
+  }
+
+  // Send every planet's textures to the GPU once they are in, so their pictures leave the page's memory. A planet off
+  // screen (or a view of it not shown yet) is never drawn, and would otherwise hold its file data all game.
+  async uploadPlanetTextures() {
+    const all = new Set();
+    for (let i = 0; i < this.planetViews.length; i++) for (const t of this.planetTextures(i)) all.add(t);
+    await Promise.all([...all].map(t => Promise.resolve(t.userData.ready).catch(() => null)));
+    // A copy made after its cached texture let its pictures go reads the file again (see FileTexture.copy).
+    await Promise.all([...all].map(t => Promise.resolve(t.userData.pictures).catch(() => null)));
+    if (this.over || !this.renderer?.initTexture) return;
+    for (const t of all) if (!t.userData.missing && (t.mipmaps?.[0]?.data || t.image?.data)) this.renderer.initTexture(t);
+  }
+
+  // The galaxy map loads planet textures at most PLANET_TEXTURE_CAP texels: zoomed out, a planet is a few hundred
+  // pixels across. The planet zoomed into gets its whole textures, and keeps them until another planet is zoomed into.
+  planetDetail(i) {
+    if (this.fullPlanet === i) return;
+    const textures = n => new Set([...this.planetTextures(n)].filter(t => 'cap' in t.userData));
+    const now = textures(i);
+    if (this.fullPlanet !== undefined) for (const t of textures(this.fullPlanet)) if (!now.has(t)) capTexture(t, PLANET_TEXTURE_CAP);
+    for (const t of now) capTexture(t, 0);
+    this.fullPlanet = i;
   }
 
   // The radar ping a battle starts has no timeout, so turn it off once the battle is over, however it ended
@@ -3807,12 +3937,15 @@ export class GalacticGame {
           if (x.owner === this.me)
             this.galacticLog?.message(
               String(db.t('TEXT_TOOLTIP_INTERRUPTED_PRODUCTION')).replace('%s', db.t(x.planet.type.str('Text_ID')) || x.planet.name),
-              { urgent: true, color: [0, 193, 91] }
+              { urgent: true, color: [0, 193, 91], planet: x.planet.index }
             );
         if (completed.length) {
           this.mergeFleets();
           for (const f of this.galaxy.fleets) if (!this.fleetViews.has(f)) this.fleetView(f);
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
+          for (const done of completed)
+            if (done.owner === (this.localFaction ?? this.me))
+              this.galacticLog?.locate(done.planet, (db.t(done.type.str('Text_ID')) || done.type.name) + ' produced');
           for (const done of completed)
             if (done.tech !== undefined) {
               this.story?.signalTech(done.owner, done.tech);
@@ -3911,6 +4044,7 @@ export class GalacticGame {
     if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.update(this.paused ? 0 : real * this.rate);
     (this.corruptionVisuals ||= new CorruptionVisuals(this)).update(this.paused ? 0 : real * this.rate);
     this.galacticLog?.update(elapsed);
+    this.locationUI?.update();
     this.lightLoop();
     if ((this.hudTimer -= real) <= 0) {
       this.hudTimer = 0.25;
@@ -3940,6 +4074,7 @@ export class GalacticGame {
           if (meshes) for (const m of meshes) m.visible = n === state && !m.userData.hiddenByDefault;
       }
       this.zoomStation(pv, i, real);
+      if (this.view.planet === i && (this.view.zoom > 0 || this.view.dir > 0)) this.planetDetail(i);
       if (pv.inst.billboards.length && !pv.inst.root.userData.culled) updateBillboards(pv.inst, this.camera);
     }
     if (this.marker) this.marker.root.visible = this.selected >= 0 && this.view.zoom === 0 && this.view.dir <= 0;

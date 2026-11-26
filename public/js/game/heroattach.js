@@ -26,7 +26,7 @@ export async function loadHeroAttach() {
       const text = await fetchText('Data/Scripts/GameObject/' + name + '.lua').catch(() => '');
       if (!text) return;
       const read = tag => {
-        const m = new RegExp('^\s*' + tag + '\s*=\s*(-?[\d.]+)', 'm').exec(text);
+        const m = new RegExp('^\\s*' + tag + '\\s*=\\s*(-?[\\d.]+)', 'm').exec(text);
         return m ? +m[1] : 0;
       };
       const limit = { min: read('MinPlanAttachCost'), max: read('MaxPlanAttachCost') };

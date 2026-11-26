@@ -60,7 +60,7 @@ const nameMatch = (re, name) => {
   }
   return r;
 };
-const level = value =>
+export const level = value =>
   ({ easy: 'easy', medium: 'normal', normal: 'normal', hard: 'hard' })[
     key(String(value || '').match(/\[([^\]]+)\]$/)?.[1] ?? value).toLowerCase()
   ] || 'normal';
@@ -165,6 +165,10 @@ export class GalacticMind extends Reason {
     this.unsupported = new Set();
     this.invalid = new Map();
     this.perceptions = new WeakMap();
+  }
+  desire(goal, t = null) {
+    const base = super.desire(goal, t);
+    return base > 0 && t?.planet ? base + this.ai.plans.desireBonus(this.controller.player.faction, goal, t.planet) : base;
   }
   fn(name, target) {
     const type = target?.type || target?.planet?.type,
@@ -855,7 +859,6 @@ export class GalacticAI {
     this.forceAt = -Infinity;
     this.forceCache = new Map();
     this.evaluators = new Map();
-    this.bonuses = [];
     this.freeStores = new Map();
   }
   async initialize() {

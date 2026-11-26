@@ -1,3 +1,5 @@
+import { ProcessStatsSampler, processTable, browserTable, DESKTOP_ONLY } from './procstats.js';
+
 const FT_FRAMES = 240;
 const FT_TOP = 50;
 const GRAPH_BACKGROUND = '#0f1925';
@@ -63,6 +65,8 @@ export class BenchOverlay {
       </dl>`
           : ''
       }
+      <div class="bh"><b>PROC</b><span data-k="pnote"></span><i data-k="pn"></i></div>
+      <div class="bt" data-k="ptable"></div>
       <div class="bg"><span>frame ms</span><canvas data-k="ft"></canvas></div>
       <div class="bg"><span>fps / run</span><canvas data-k="fg"></canvas></div>`;
     this.el = Object.fromEntries([...box.querySelectorAll('[data-k]')].map(e => [e.dataset.k, e]));
@@ -78,6 +82,40 @@ export class BenchOverlay {
     }
     if (this.open) box.querySelector('.bp').style.display = 'none';
     parent.appendChild(box);
+    // the processes' CPU, memory, GPU and I/O, asked about once a second (never per frame)
+    this.proc = new ProcessStatsSampler({ onSample: sample => this.showProcesses(sample) }).start();
+  }
+
+  showProcesses(sample) {
+    const e = this.el,
+      cell = (text, cls) => `<span${cls ? ` class="${cls}"` : ''}>${text}</span>`;
+    if (sample?.supported) {
+      const rows = processTable(sample);
+      e.pnote.textContent = 'app processes';
+      e.pn.textContent = rows.length - 1;
+      e.ptable.className = 'bt';
+      e.ptable.innerHTML =
+        ['', 'cpu', 'mem', 'gpu', 'vram', 'r/w /s'].map(h => cell(h, 'h')).join('') +
+        rows
+          .map(r =>
+            [
+              cell(r.label, r.label === 'total' ? 'n t' : 'n'),
+              cell(r.cpu),
+              cell(r.memory),
+              cell(r.gpu),
+              cell(r.gpuMemory),
+              cell(r.io)
+            ].join('')
+          )
+          .join('');
+      return;
+    }
+    const rows = browserTable(sample);
+    e.pnote.textContent = sample?.browser ? 'browser tab' : 'not measured';
+    e.pn.textContent = '';
+    e.ptable.className = 'bt two';
+    e.ptable.innerHTML =
+      rows.map(r => cell(r.label, 'n') + cell(r.value)).join('') + cell(sample?.browser ? DESKTOP_ONLY : sample?.why || DESKTOP_ONLY, 'w');
   }
 
   restart() {
@@ -87,6 +125,7 @@ export class BenchOverlay {
     this.fps.length = 0;
     this.resetRun();
     this.calls = this.tris = this.callFrames = this.drawSum = this.drawN = this.peakShots = 0;
+    this.proc.reset();
   }
 
   resetRun() {
@@ -103,6 +142,7 @@ export class BenchOverlay {
       console.log('benchmark', JSON.stringify(this.result));
     }
     this.done = true;
+    this.proc.stop();
     this.info.autoReset = true;
     this.box.remove();
   }
@@ -157,7 +197,8 @@ export class BenchOverlay {
       over50ms: o50,
       avgDrawCalls: Math.round(this.drawSum / this.drawN),
       ...(this.shotsLabel ? {} : { peakShots: this.peakShots }),
-      ...this.more?.()
+      ...this.more?.(),
+      processes: this.proc.summary()
     };
     this.result = result;
     const e = this.el;
@@ -200,6 +241,7 @@ export class BenchOverlay {
     this.drawFrameTimes(avg);
     this.drawFps();
     if (this.done) {
+      this.proc.stop();
       this.info.autoReset = true;
       window.benchmarkResult = result;
       console.log('benchmark', JSON.stringify(result));

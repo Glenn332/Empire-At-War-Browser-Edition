@@ -622,6 +622,11 @@ export class SpaceMirror {
     for (const [wid, child, a, b] of m.pads || []) {
       const e = this.byW.get(wid);
       if (!e || e.dead) continue;
+      if (child === -5) {
+        e.viewSees = a === 1;
+        e.viewOwner = b >= 0 ? w.players.find(p => p.id === b) || null : null;
+        continue;
+      }
       if (child === -4) {
         e.construction ||= { result: db.type(e.type.str('Tactical_Buildable_Constructed')) };
         e.construction.left = a;

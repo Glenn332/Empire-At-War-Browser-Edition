@@ -31,6 +31,12 @@ export function executeLand(game, side, cmd) {
         mode = cmd.mode || '';
       if (!attack && !g) return {};
       const at = !attack && g && mode !== 'waypoint' ? w.places(sel, g.x, g.y) : new Map();
+      // Double right-click: no shared formation pace, each squad goes at its own top speed.
+      if (cmd.max && !attack && !mode)
+        for (const q of sel) {
+          q.formSpeed = null;
+          q.formPending = null;
+        }
       const together = attack && sel.length > 1;
       if (together) w.attackGroup(sel, foe);
       let why = null;

@@ -112,7 +112,7 @@ async function switchChannel(channel) {
     what: 'Switching',
     state: channel === 'nightly' ? 'Checking the nightly build…' : 'Going back to the shipped files…'
   });
-  const r = await fetch('api/channel?set=' + channel).catch(e => ({ ok: false, text: async () => e.message }));
+  const r = await fetch('api/channel?set=' + channel, { method: 'POST', headers: { 'x-swr': '1' } }).catch(e => ({ ok: false, text: async () => e.message }));
   if (!r.ok) {
     strip({ badge: 'Nightly', what: 'Could not switch', state: await r.text(), acts: [button('OK', hide)] });
     return;

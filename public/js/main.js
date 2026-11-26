@@ -16,14 +16,14 @@ import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
-import { gfx, storeGfx, pixelRatio } from './gfx.js';
+import { gfx, storeGfx, pixelRatio, frameCap, menuFrameCap, FrameGate } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
 import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
-import { loadTacticalCamera } from './game/tacticalcameradata.js';
+import { loadTacticalCamera, loadTacticalCameraData } from './game/tacticalcameradata.js';
 import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { UnitPoses } from './game/unitposes.js';
 import { benchFleet } from './game/benchfleet.js';
@@ -112,10 +112,12 @@ import { SpectatorView } from './game/spectator.js';
 import { switchTarget } from './game/switchsides.js';
 import { restoreWindowSize } from './windowsize.js';
 import { EXTRA_FX_TIP, extraFxSetting, setExtraFx } from './game/extrafx.js';
+import { guardNativeUI } from './nativeui.js';
 const AI_STEP_MS = 4,
   AI_STEP_WORK = 80;
 
 guardLeaving();
+guardNativeUI();
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -598,6 +600,8 @@ class Game {
       console.warn('command bar', e);
       return null;
     });
+    // the Unlocked camera lens (clip planes) the cinematic shot camera and scripted cinematics draw through
+    this.tacticalCameraData ||= await loadTacticalCameraData().catch(() => null);
     this.cine = new Cinematic(this);
     this.menus = new Menus(this);
     this.advisor = new Advisor(this);
@@ -2230,6 +2234,8 @@ class Game {
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
+    // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); the benchmark measures uncapped
+    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap)).skip(now)) return;
     diag.begin(now);
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     if (this.bench) this.bench.tick(now - this.last, now);

@@ -27,6 +27,7 @@ import { loadHudAssets } from './hud.js';
 import { LandUI, sidePlayersOf } from './landhud.js';
 import { SelectionRings, loadBlobMaterials } from './render.js';
 import { shownAbility, abilityIconName } from './ui.js';
+import { landBarWidth } from './healthbars.js';
 import { Pointers, tacticalPointer } from './pointers.js';
 import { showSummary } from './summary.js';
 import { openRetryDialog } from './retrydialog.js';
@@ -36,6 +37,7 @@ import { RetreatCoordinator, showRetreatLine, hasRetreatPrevention } from './ret
 import { aiAbilities } from './landabilities.js';
 import { commandArmy } from './landai.js';
 import { LandGoals } from './landgoals.js';
+import { DoubleClick } from './doubleclick.js';
 import { Decals, scorch } from './landdecals.js';
 import {
   activateSpawners,
@@ -66,7 +68,7 @@ import { LandScripts } from './landscripts.js';
 import { TacticalStoryHost } from './tacticalstory.js';
 import { stepTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
-import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
+import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn, frameCap, menuFrameCap, FrameGate } from '../gfx.js';
 import { fitShadowToView } from './shadowfit.js';
 import { tickGarrisons, adoptGarrisons } from './landgarrison.js';
 import { PostFX } from './post.js';
@@ -453,6 +455,33 @@ export class LandGame {
       color: p.color
     });
   }
+  // The battle report's figures, carried over a resync (Lockstep.relaunch): the save holds the battle, not what
+  // this machine has counted about it, so without this the report would start again at Built 0 / Lost 0 with a flat
+  // graph. Earned income is only report figures as well (World.earned and collected decide nothing).
+  keepReport() {
+    const w = this.world;
+    return {
+      view: this.reportView?.carry?.() || null,
+      losses: [...(this.losses || new Map())].map(([k, m]) => [k, [...m].map(([t, n]) => [t.name, n])]),
+      earned: w?.earned ? w.earned.slice() : null,
+      collected: Array.isArray(w?.collected) ? w.collected.slice() : null
+    };
+  }
+  takeReport(k) {
+    const w = this.world;
+    if (k.view) this.reportView?.adopt?.(k.view);
+    if (Array.isArray(k.losses))
+      for (const [key, list] of k.losses) {
+        const m = new Map();
+        for (const [name, n] of list) {
+          const t = db.type(name);
+          if (t) m.set(t, n);
+        }
+        this.losses.set(key, m);
+      }
+    for (const f of ['earned', 'collected'])
+      if (Array.isArray(k[f]) && Array.isArray(w[f]) && k[f].length === w[f].length) for (let i = 0; i < k[f].length; i++) w[f][i] = Math.max(w[f][i], k[f][i]);
+  }
   hashState(keep = null) {
     const w = this.world;
     let h = 0x811c9dc5 | 0;
@@ -611,7 +640,10 @@ export class LandGame {
     const w = this.world,
       lock = this.lock;
     try {
-      while (!this.over && this.owed >= LAND_TICK && lock.step()) {
+      // a company or transport the last tick asked for is still loading: it must come in before the next tick on
+      // every machine, so no tick runs until it is placed (World.spawnTurn)
+      const loading = () => w.spawnsPending > 0 && ((lock.blocked = 'loading arriving units'), true);
+      while (!this.over && this.owed >= LAND_TICK && !loading() && lock.step()) {
         if (this.paused) {
           this.owed = 0;
           break;
@@ -1275,6 +1307,10 @@ export class LandGame {
     this.listen('resize', () => this.fit());
     if (this.observer) this.spectatorView = new SpectatorView(this, 'land');
     this.reportView = this.spectatorView || (this.setup.benchmark ? null : new SpectatorView(this, 'land', { quiet: true }));
+    if (this.setup.keepReport) {
+      this.takeReport(this.setup.keepReport);
+      delete this.setup.keepReport;
+    }
     window.game = this;
     if (this.setup.benchmark) await this.startBenchmark(this.setup.benchmark);
     if (this.scripts && !setup.net && this.netRole !== 'client' && !q.has('nowarm') && !this.savedScripts)
@@ -2585,16 +2621,34 @@ export class LandGame {
       if (!this.controlsLocked && this.turnDrag === 'tilt' && e.buttons & 2)
         v.pitch = Math.min(far[1] * DEG, Math.max(k[0][1] * DEG, v.pitch + e.movementY * 0.005));
     });
-    const send = (x, y, mode = '') => {
+    const send = (x, y, mode = '', twice = false) => {
       if (this.controlsLocked) return;
-      const foe = this.unitAt(x, y),
-        g = this.groundAt(x, y),
-        attack = foe && !w.ally(foe.side, me) && !foe.dead;
+      issue(this.unitAt(x, y), this.groundAt(x, y), mode, twice);
+    };
+    const rightTwice = new DoubleClick();
+    // A right click on the minimap (or a click there with a move order armed) sends the selection to that spot of the map,
+    // the way a right click on the ground does.
+    this.mapOrder = (x, y, mode = '', twice = false) => {
+      if (this.controlsLocked || this.setup.attract || this.cine.on || this.direct) return false;
+      const lo = this.map.playMin || [0, 0],
+        hi = this.map.playMax || lo;
+      x = Math.min(hi[0], Math.max(lo[0], x));
+      y = Math.min(hi[1], Math.max(lo[1], y));
+      const armed = ARMED_ORDERS.has(ui.armed) && !ui.placing && !ui.aiming ? ui.armed : null;
+      issue(null, { x, y }, armed || mode, twice && !armed);
+      if (armed && armed !== 'attackmove') ui.armed = null;
+      this.hudTimer = 0;
+      return true;
+    };
+    const issue = (foe, g, mode = '', twice = false) => {
+      const attack = foe && !w.ally(foe.side, me) && !foe.dead;
+      // A double right-click on the ground sends every squad at its own top speed, not the group's shared pace.
+      twice = twice && !attack && !mode && !!g;
       let spoke = false;
       const sel = ui.movers();
       if (!sel.length || (!attack && !g)) return;
-      const r = this.command({ c: 'move', u: sel.map(q => q.id), mode, t: attack ? foe.squad.id : 0, ...(g ? { x: g.x, y: g.y } : {}) });
-      if (!attack && g) ui.radar?.click(g.x, g.y, mode === 'attack');
+      const r = this.command({ c: 'move', u: sel.map(q => q.id), mode, t: attack ? foe.squad.id : 0, ...(g ? { x: g.x, y: g.y } : {}), ...(twice ? { max: true } : {}) });
+      if (!attack && g) ui.radar?.click(g.x, g.y, mode === 'attack', twice);
       const at = r?.at || new Map();
       for (const q of sel) {
         if (!attack && g && mode === 'attack' && q.members.some(u => u.needsDeploy && u.weapon)) {
@@ -2614,7 +2668,9 @@ export class LandGame {
                   ? '#7fd4ff'
                   : mode === 'guard'
                     ? '#4fb3ff'
-                    : '#6be675'
+                    : twice
+                      ? '#d8ffd8'
+                      : '#6be675'
           });
         if (!spoke) spoke = !!this.audio.playVoice(q.members[0], q.members[0].type.str(attack ? 'SFXEvent_Attack' : 'SFXEvent_Move'));
       }
@@ -2777,7 +2833,7 @@ export class LandGame {
             if (w.canExit(on)) ui.leave(on);
             else this.audio.play('GUI_Bad_Sound');
           } else if (on && w.ally(on.side, me) && on.slots && ui.movers().length) ui.enter(on);
-          else send(cx, cy);
+          else send(cx, cy, '', rightTwice.hit(e.clientX, e.clientY));
         }
       }
     });
@@ -2824,6 +2880,45 @@ export class LandGame {
     return null;
   }
 
+  // How far the screen point is from a unit standing on the ground, in its own half widths (under 1 is on it):
+  // the distance to the segment from its feet to its head as the camera sees it. Infinity when off screen.
+  standHit(u, sx, sy) {
+    const p = this.proj || (this.proj = new THREE.Vector3()),
+      W = innerWidth,
+      H = innerHeight;
+    p.set(u.x, u.y, u.z).project(this.camera);
+    if (p.z >= 1) return Infinity;
+    const x0 = ((p.x + 1) / 2) * W,
+      y0 = ((1 - p.y) / 2) * H;
+    const tall = Math.max(8, (u.aimZ || 6) * 2.1);
+    p.set(u.x, u.y, u.z + tall).project(this.camera);
+    if (p.z >= 1) return Infinity;
+    const x1 = ((p.x + 1) / 2) * W,
+      y1 = ((1 - p.y) / 2) * H;
+    if (
+      (x0 < -W / 4 && x1 < -W / 4) ||
+      (x0 > W * 1.25 && x1 > W * 1.25) ||
+      (y0 < -H / 4 && y1 < -H / 4) ||
+      (y0 > H * 1.25 && y1 > H * 1.25)
+    )
+      return Infinity;
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1,
+      ppu = len / tall;
+    const t = Math.max(0, Math.min(1, ((sx - x0) * (x1 - x0) + (sy - y0) * (y1 - y0)) / (len * len)));
+    const d = Math.hypot(sx - (x0 + (x1 - x0) * t), sy - (y0 + (y1 - y0) * t));
+    const half = Math.max(u.structure ? 30 : 12, (u.structure ? u.hitRadius : u.body || u.hitRadius || 6) * ppu * 1.15);
+    return d / half;
+  }
+
+  // Whether the screen point is still on a member of this squad: its hero icon, or the member itself.
+  squadUnder(squad, sx, sy) {
+    if (!squad || squad.dead) return false;
+    for (const h of this.iconHits || []) if (h.u?.squad === squad && Math.abs(sx - h.x) <= h.r && Math.abs(sy - h.y) <= h.r) return true;
+    for (const u of squad.members || [])
+      if (!u.dead && u.seen !== false && !u.inside && !u.structure && this.standHit(u, sx, sy) < 1) return true;
+    return false;
+  }
+
   unitAt(sx, sy) {
     for (const h of this.iconHits || []) if (Math.abs(sx - h.x) <= h.r && Math.abs(sy - h.y) <= h.r) return h.u;
     const p = this.proj || (this.proj = new THREE.Vector3()),
@@ -2835,29 +2930,9 @@ export class LandGame {
     for (const u of this.world.units) {
       if (u.seen === false || u.inside || u.dead) continue;
       if (boxedBuilding(u)) continue;
-      p.set(u.x, u.y, u.z).project(this.camera);
-      if (p.z >= 1) continue;
-      const x0 = ((p.x + 1) / 2) * W,
-        y0 = ((1 - p.y) / 2) * H;
-      const tall = Math.max(8, (u.aimZ || 6) * 2.1);
-      p.set(u.x, u.y, u.z + tall).project(this.camera);
-      if (p.z >= 1) continue;
-      const x1 = ((p.x + 1) / 2) * W,
-        y1 = ((1 - p.y) / 2) * H;
-      if (
-        (x0 < -W / 4 && x1 < -W / 4) ||
-        (x0 > W * 1.25 && x1 > W * 1.25) ||
-        (y0 < -H / 4 && y1 < -H / 4) ||
-        (y0 > H * 1.25 && y1 > H * 1.25)
-      )
-        continue;
-      const len = Math.hypot(x1 - x0, y1 - y0) || 1,
-        ppu = len / tall;
-      const t = Math.max(0, Math.min(1, ((sx - x0) * (x1 - x0) + (sy - y0) * (y1 - y0)) / (len * len)));
-      const d = Math.hypot(sx - (x0 + (x1 - x0) * t), sy - (y0 + (y1 - y0) * t));
-      const half = Math.max(u.structure ? 30 : 12, (u.structure ? u.hitRadius : u.body || u.hitRadius || 6) * ppu * 1.15);
-      if (d / half < bd) {
-        bd = d / half;
+      const score = this.standHit(u, sx, sy);
+      if (score < bd) {
+        bd = score;
         best = u;
       }
     }
@@ -3116,6 +3191,9 @@ export class LandGame {
   frame(now) {
     if (this.modeSuspended) return;
     if (!this.warming) requestAnimationFrame(this.frame);
+    // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); warm-up and the benchmark are uncapped
+    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap));
+    if (!this.warming && gate.skip(now)) return;
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
     this.last = now;
@@ -4800,7 +4878,7 @@ export class LandGame {
       if (!s) continue;
       if (pips) this.garrisonPips(g, u, s[0], s[1] - 2);
       if (!u.squad.selected && u.health >= u.maxHealth && u.shield >= u.maxShield) continue;
-      const wd = u.structure ? 70 : u.maxHealth > 150 ? 44 : 22,
+      const wd = landBarWidth(u),
         f = Math.max(0, u.health / u.maxHealth);
       g.fillStyle = 'rgba(0,0,0,.7)';
       g.fillRect(s[0] - wd / 2 - 1, s[1] - 1, wd + 2, u.maxShield ? 8 : 5);

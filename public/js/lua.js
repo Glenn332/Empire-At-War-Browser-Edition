@@ -350,6 +350,10 @@ export class LuaVM {
           obj = {};
         let n = 0,
           list = true;
+        // Values stored under keys that are neither numbers nor strings (game objects, tables). Scripts build
+        // sets keyed by the object itself (recent_enemy_units[obj] = obj) and hand them to the engine, which
+        // walks the values (Find_Best_Local_Threat_Center).
+        let other = null;
         lua.lua_pushnil(L);
         while (lua.lua_next(L, at) !== 0) {
           const kt = lua.lua_type(L, -2),
@@ -358,8 +362,17 @@ export class LuaVM {
             obj[key] = this.get(-1, L, depth + 1);
             n++;
             if (typeof key !== 'number') list = false;
-          }
+          } else (other ||= []).push(this.get(-1, L, depth + 1));
           lua.lua_pop(L, 1);
+        }
+        if (other) {
+          // A table with string keys keeps its record shape; otherwise the numbered values come first, in order,
+          // then the values under object keys in the table's own traversal order.
+          if (!list) return obj;
+          const keys = Object.keys(obj)
+            .map(Number)
+            .sort((a, b) => a - b);
+          return [...keys.map(k => obj[k]), ...other];
         }
         if (!list || !n) return n ? obj : [];
         const arr = [];
@@ -769,6 +782,17 @@ export class LuaVM {
     } catch {}
     if (luaTrace.on) luaTrace.error(this, t.name || 'a thread', error);
     return { done: true, error };
+  }
+  // Whether two references hold the same Lua value (each read of a function from Lua makes its own LuaRef).
+  sameRef(a, b) {
+    if (a === b) return true;
+    if (!(a instanceof LuaRef) || !(b instanceof LuaRef) || a.ref === undefined || b.ref === undefined) return false;
+    const { lua, L } = this;
+    lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, a.ref);
+    lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, b.ref);
+    const same = lua.lua_rawequal(L, -1, -2);
+    lua.lua_pop(L, 2);
+    return !!same;
   }
   free(ref) {
     if (ref instanceof LuaRef) {

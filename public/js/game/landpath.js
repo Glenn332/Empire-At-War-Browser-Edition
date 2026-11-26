@@ -2,7 +2,8 @@ import { CELL } from './terrain.js';
 import { TERRAIN } from './landtables.js';
 
 const HALF = CELL / 2;
-const HASH_MOST = 20000;
+const HASH_MOST = 20000,
+  REACHED = [];
 const f32 = Math.fround;
 
 export class LandPaths {
@@ -13,6 +14,7 @@ export class LandPaths {
     this.mask = 0;
     this.clearance = 0;
     this.cost = null;
+    this.goalOnly = false;
     this.limit = Infinity;
     this.bits = new Int32Array(this.n * this.n);
     this.zoneMaps = new Map();
@@ -253,6 +255,40 @@ export class LandPaths {
     return way.length ? way : [{ x: b.x, y: b.y }];
   }
 
+  // Whether route() would find a way, without laying the way out: the same ends, zones and search, stopped where the
+  // search reaches the goal. A search that gives up (too many nodes) gives up here as well.
+  reaches(ax, ay, bx, by, mask, opt = null) {
+    this.sync();
+    this.mask = mask;
+    let a = { x: ax, y: ay },
+      b = { x: bx, y: by };
+    if (!this.enters(cellOf(ax), cellOf(ay)) || this.rectOf(ax, ay) < 0) {
+      a = this.nearestCell(ax, ay);
+      if (!a) return false;
+    }
+    if (!this.enters(cellOf(bx), cellOf(by)) || this.rectOf(bx, by) < 0) {
+      b = this.nearestCell(bx, by);
+      if (!b) return false;
+    }
+    const za = this.zoneAt(cellOf(a.x), cellOf(a.y), mask);
+    if (za < 0 || za !== this.zoneAt(cellOf(b.x), cellOf(b.y), mask)) return false;
+    const d = opt && opt.danger;
+    this.cost = d
+      ? (cx, cy) => {
+          const t = d.at(cx * CELL, cy * CELL);
+          return t < d.threshold ? 1 : Math.max(1, t * d.weight + 1);
+        }
+      : null;
+    this.clearance = 0;
+    this.goalOnly = true;
+    try {
+      return !!this.search(a, b, true);
+    } finally {
+      this.goalOnly = false;
+      this.cost = null;
+    }
+  }
+
   nearestCell(x, y) {
     const cx = cellOf(x),
       cy = cellOf(y);
@@ -310,6 +346,7 @@ export class LandPaths {
     const rs = this.rectOfCell(sx, sy),
       rg = this.rectOfCell(gx, gy);
     if (rs === rg) {
+      if (this.goalOnly) return REACHED;
       const pts = [];
       if (a.x !== sx * CELL || a.y !== sy * CELL) pts.push({ x: a.x, y: a.y });
       pts.push({ x: sx * CELL, y: sy * CELL }, { x: gx * CELL, y: gy * CELL });
@@ -396,7 +433,7 @@ export class LandPaths {
       const e = pop(),
         node = EN[e],
         cur = NR[node];
-      if (cur === rg) return this.way(node, a, b, sx, sy, gx, gy, smooth);
+      if (cur === rg) return this.goalOnly ? REACHED : this.way(node, a, b, sx, sy, gx, gy, smooth);
       const prev = NU[node] >= 0 ? NR[NU[node]] : rs,
         mine = seen.get(prev * R + cur);
       if (mine) mine.closed = true;

@@ -17,6 +17,8 @@ import { renderHistory } from './galactichistory.js';
 import { renderTechTree } from './galactictechtree.js';
 import { renderSummary } from './galacticsummary.js';
 import { GalacticEncyclopedia } from './galacticencyclopedia.js';
+import { recordLocation } from './galacticsearch.js';
+import { linkPlanets } from './planetlinks.js';
 
 const pictures = new Map();
 export class GalacticLog {
@@ -171,6 +173,21 @@ export class GalacticLog {
   }
   async renderLog(d) {
     d.coloredTextList('IDC_DROID_LIST', logRows(this.game.galaxy));
+    // double-clicking a planet's name in the log shows that planet
+    const droid = d.ctl('IDC_DROID_LIST');
+    if (droid) {
+      const game = this.game,
+        focus = game.focusPlanet;
+      linkPlanets(droid, {
+        galaxy: game.galaxy,
+        planetViews: game.planetViews,
+        focusPlanet: i => {
+          const ok = focus?.call(game, i);
+          if (ok) this.close();
+          return ok;
+        }
+      });
+    }
     const label = () => d.ctl('IDC_DROID_LIST')?.setAttribute('aria-label', db.t('TEXT_DROID_LOG'));
     label();
     d.onLanguageRefresh(label);
@@ -187,9 +204,9 @@ export class GalacticLog {
     for (const [i, name] of LOG_WEATHER.entries()) work.push(this.picture(d, 'IDC_WEATHER_ICON' + i, name));
     await Promise.all(work);
   }
-  add(text, color) {
+  add(text, color, planet) {
     if (!text) return;
-    appendLog(this.game.galaxy, text, color);
+    appendLog(this.game.galaxy, text, color, planet);
     if (this.opened && this.page === 0) this.dialog?.coloredTextList('IDC_DROID_LIST', logRows(this.game.galaxy));
   }
   showType(type) {
@@ -204,9 +221,14 @@ export class GalacticLog {
   hideLinked() {
     this.encyclopedia?.hideLinked();
   }
-  message(text, { urgent = true, color = [255, 255, 255], sfx = '' } = {}) {
+  // an event with a place: it is also kept in the per-planet location log (the local player's view, not game state)
+  locate(planet, text) {
+    if (recordLocation(this.game.galaxy, planet, text)) this.game.locationUI?.refresh();
+  }
+  message(text, { urgent = true, color = [255, 255, 255], sfx = '' , planet } = {}) {
     if (!text) return;
-    const record = { text, color, sfx, urgent };
+    if (Number.isInteger(planet)) this.locate(planet, text);
+    const record = { text, color, sfx, urgent, planet: Number.isInteger(planet) ? planet : null };
     if (urgent) {
       this.queue.unshift(record);
       this.hold = 0;
@@ -245,7 +267,7 @@ export class GalacticLog {
     }
     if (!this.queue.length) return;
     const record = this.queue.shift();
-    this.add(record.text, record.color);
+    this.add(record.text, record.color, record.planet);
     const faction = db.faction(g.me);
     g.audio?.play(record.sfx || faction.str(record.urgent ? 'SFXEvent_HUD_Advisor_Urgent' : 'SFXEvent_HUD_Advisor_Message'));
     this.hold = record.text.length * db.constants.num('Advisor_Hint_Duration', 0.1);

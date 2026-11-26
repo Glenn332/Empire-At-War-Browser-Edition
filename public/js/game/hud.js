@@ -28,6 +28,9 @@ const el = (cls, parent) => {
   return d;
 };
 const css = url => (url ? `url("${url}")` : 'none');
+// Blank_Texture_Name on the unit/build slots lists a ground pad then a space pad, the same pairing the
+// galactic build bar uses per tab.
+export const selectPadIndex = game => (game?.land === true ? 0 : 1);
 let tipBar = null;
 if (typeof addEventListener === 'function')
   addEventListener('mousemove', e => {
@@ -1085,20 +1088,7 @@ export class CommandBar {
       b.style.backgroundImage = css(this.tex('special_border_00', 'Icon_Alternate_Texture_Name', 0));
       this.borders.push(b);
     }
-    for (let i = 0; i < 24; i++) {
-      const id = String(i).padStart(2, '0');
-      const s = this.place(el('hslot', root), 's_select_' + id);
-      s.innerHTML = '<i class="ic"></i><i class="dark"></i><span class="cost"></span><span class="num"></span>';
-      const hp = this.thin(el('hbar hp', root), 's_health_' + id),
-        sh = this.thin(el('hbar sh', root), 's_shield_' + id);
-      hp.innerHTML = sh.innerHTML = '<i></i>';
-      hp.style.backgroundImage = sh.style.backgroundImage = css(iconUrl('i_bar_control_wide.tga'));
-      sh.firstChild.style.backgroundImage = css(iconUrl('i_bar_shield_small10.tga'));
-      s.onclick = ev => this.slotClick(i, ev);
-      s.onmouseenter = () => this.slotHover(i);
-      s.onmouseleave = () => this.hideInfo();
-      this.slots.push({ el: s, hp, sh, item: null });
-    }
+    for (let i = 0; i < 24; i++) this.slots.push(this.selectSlot(i));
     this.buildBar = this.scrollBar(
       this.slots.map((_, i) => 's_select_' + String(i).padStart(2, '0')),
       o => {
@@ -1136,21 +1126,36 @@ export class CommandBar {
       q.style.backgroundImage = css(this.tex('tqueue00', 'Blank_Texture_Name'));
       q.innerHTML = '<i class="ic"></i><i class="prog"></i><span></span>';
       q.querySelector('.prog').style.backgroundImage = css(this.tex('tqueue00', 'Build_Texture_Name'));
-      q.onclick = () => {
-        const it = q._item;
-        if (it) {
-          this.game.command({
-            c: 'cancel',
-            b: it.u.id,
-            q: it.name,
-            i: it.u.buildQueues.get(it.name).indexOf(it.it),
-            type: it.it.type.name
-          });
-          ui.hudTimer = 0;
-        }
+      q.onclick = () => this.cancelQueued(q._item);
+      q.oncontextmenu = e => {
+        e.preventDefault();
+        this.cancelQueued(q._item);
       };
+      q.onmouseenter = () => this.queueHover(i, true);
+      q.onmouseleave = () => this.queueHover(i, false);
       this.queueSlots.push(q);
     }
+  }
+
+  selectSlot(i) {
+    const root = this.root,
+      id = String(i).padStart(2, '0');
+    const s = this.place(el('hslot', root), 's_select_' + id);
+    s.innerHTML = '<i class="ic"></i><i class="dark"></i><span class="cost"></span><span class="num"></span>';
+    // Pad frame (Blank_Texture_Name) under the unit icon.
+    const pad = document.createElement('i');
+    pad.className = 'pad';
+    pad.style.backgroundImage = css(this.tex('s_select_' + id, 'Blank_Texture_Name', selectPadIndex(this.game)));
+    s.prepend(pad);
+    const hp = this.thin(el('hbar hp', root), 's_health_' + id),
+      sh = this.thin(el('hbar sh', root), 's_shield_' + id);
+    hp.innerHTML = sh.innerHTML = '<i></i>';
+    hp.style.backgroundImage = sh.style.backgroundImage = css(iconUrl('i_bar_control_wide.tga'));
+    sh.firstChild.style.backgroundImage = css(iconUrl('i_bar_shield_small10.tga'));
+    s.onclick = ev => this.slotClick(i, ev);
+    s.onmouseenter = () => this.slotHover(i);
+    s.onmouseleave = () => this.hideInfo();
+    return { el: s, hp, sh, item: null };
   }
 
   layout() {
@@ -1237,6 +1242,14 @@ export class CommandBar {
 
   coveredColumns(build) {
     return (this.covers || []).some(c => (!build || c.build) && c.node.isConnected && !c.node.closest('[hidden]') && c.node.style.display !== 'none') ? 1 : 0;
+  }
+
+  // left or right click on a queued build or research cancels it (the build is refunded by cancelBuild)
+  cancelQueued(x) {
+    const q = x && x.u.buildQueues.get(x.name);
+    if (!q) return;
+    this.game.command({ c: 'cancel', b: x.u.id, q: x.name, i: q.indexOf(x.it), type: x.it.type.name });
+    this.ui.hudTimer = 0;
   }
 
   slotClick(i, ev) {
@@ -1843,7 +1856,10 @@ export class CommandBar {
       const x = i < 5 ? ships[i] : research[i - 5];
       q._item = x || null;
       q.style.display = x ? '' : 'none';
-      if (!x) return;
+      if (!x) {
+        if (this.queueHovered === i && this.tipTarget?.id?.startsWith('queue' + i + '|')) this.hideInfo();
+        return;
+      }
       const url = iconUrl(iconNameFor(x.it.type));
       if (q._url !== url) {
         q._url = url;
@@ -1852,7 +1868,8 @@ export class CommandBar {
       const first = x.u.buildQueues.get(x.name)[0] === x.it;
       q.querySelector('.prog').style.height = 100 * (x.it.left / x.it.total) + '%';
       q.lastChild.textContent = first ? Math.round(100 * (1 - x.it.left / x.it.total)) + '%' : '';
-      q.title = (db.t(x.it.type.str('Text_ID')) || x.it.type.name) + ' — click to cancel';
+      q.setAttribute('aria-label', (db.t(x.it.type.str('Text_ID')) || x.it.type.name) + ' — click to cancel');
+      if (this.queueHovered === i && this.tipTarget?.id !== 'queue' + i + '|' + x.it.type.name) this.queueHover(i, true);
     });
   }
 
@@ -1903,11 +1920,13 @@ export class CommandBar {
           d.firstChild.style.backgroundImage = css(iconUrl(iconNameFor(r.type)));
           d.onmouseenter = () => this.tipOn('side' + i, r.type);
           d.onmouseleave = () => this.hideInfo();
-          if (r.it)
-            d.onclick = () => {
-              this.game.command({ c: 'cancel', b: r.u.id, q: r.name, i: r.u.buildQueues.get(r.name).indexOf(r.it), type: r.it.type.name });
-              this.ui.hudTimer = 0;
+          if (r.it) {
+            d.onclick = () => this.cancelQueued(r);
+            d.oncontextmenu = e => {
+              e.preventDefault();
+              this.cancelQueued(r);
             };
+          }
           return d;
         });
       const columns = [];
@@ -1948,6 +1967,19 @@ export class CommandBar {
 
   heroClick(h, ev) {
     this.ui.select([h.e], ev.shiftKey);
+  }
+
+  heroHover(h, on) {
+    if (on) this.tipOn('hero' + h.e.id, h.type);
+    else this.hideInfo();
+  }
+
+  // A build queue item shows the encyclopedia popup of what it builds, as its unit button does.
+  queueHover(i, on) {
+    const x = on ? this.queueSlots[i]?._item : null;
+    this.queueHovered = on ? i : -1;
+    if (x) this.tipOn('queue' + i, x.it.type);
+    else this.hideInfo();
   }
 
   heroFocus(h) {
@@ -2011,10 +2043,17 @@ export class CommandBar {
         ring.style.backgroundImage = css(this.tex(id, 'Blank_Texture_Name'));
         over.style.backgroundImage = css(this.tex(id, 'Mouse_Over_Texture_Name'));
         hp.style.backgroundImage = css(this.tex('hero_hb_' + side + '00', 'Bar_Texture_Name'));
-        d.title = db.t(h.type.str('Text_ID')) || h.type.name.replace(/_/g, ' ');
+        // The encyclopedia popup the unit buttons show, not a native title, for every hero icon, own or not.
+        d.setAttribute('aria-label', db.t(h.type.str('Text_ID')) || h.type.name.replace(/_/g, ' '));
+        d.onmouseenter = () => this.heroHover(d._h, true);
+        d.onmouseleave = () => this.heroHover(d._h, false);
+        d.onmousedown = ev => ev.stopPropagation();
         if (good && h.e.player === this.player) {
           const c = this.comp(id);
-          d.onmouseenter = () => this.game.audio.play(c.val('Mouse_Over_SFX'));
+          d.onmouseenter = () => {
+            this.game.audio.play(c.val('Mouse_Over_SFX'));
+            this.heroHover(d._h, true);
+          };
           d.onclick = ev => {
             ev.stopPropagation();
             this.game.audio.play(c.val('Click_SFX'));

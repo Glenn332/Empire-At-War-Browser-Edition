@@ -2,6 +2,7 @@ import { activeLanguage } from '../language.js';
 import { linkedTacticalSetup, linkedMapLoaded, finishLinkedTactical } from './linktactical.js';
 import { snapshotGalaxy } from './galaxy.js';
 import { StoryFlags } from './storyflags.js';
+import { ownCopy } from './plainobject.js';
 export async function launchLinkedMission(game, request) {
   if (game.linkedMission) return false;
   const session = linkedTacticalSetup(game, request);
@@ -53,6 +54,8 @@ export async function returnLinkedMission(game, result) {
   const session = game.linkedMission;
   if (!session || session.returning) return false;
   session.returning = true;
+  // the result was made in the battle window, which closes now; the galaxy keeps it (lastResult, story flags)
+  result = ownCopy(result);
   const child = session.frame.contentWindow.game;
   if (child) child.modeSuspended = true;
   try {

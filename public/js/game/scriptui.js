@@ -16,6 +16,7 @@ const pair = s =>
 const css = s => (s ? `url("${s}")` : 'none');
 
 const LOCAL_KEYS = new Set(['B_OPTION_G', 'B_DROID_HELP', 'B_STORY_ARC_G']);
+const VIEW_KEYS = /^B_FILTERS\d$/;
 function boneButton(matrix, bone, component) {
   const icon = iconCanvasRect(token(component, 'Icon_Texture_Name')),
     scale = component.num('Scale', 1),
@@ -296,11 +297,21 @@ export class ScriptUI {
     return rec;
   }
 
+  // A click another player made, being carried out here in lockstep (or a script press it set off): its game effects run
+  // on every machine, but what it shows (a pressed tab, a menu opening) belongs to that player's screen.
+  elsewhere() {
+    const g = this.game,
+      pid = g.uiPid;
+    return !!g.net && pid !== undefined && pid !== g.localPid;
+  }
+
   click(name, forced = false, net = false) {
     const key = String(name).toUpperCase(),
       c = this.comps.get(key),
       s = this.state(key);
-    if (!c || (!forced && (!s.visible || !s.enabled))) return false;
+    // shown or hidden is each player's own view; whether the button works (enabled) is shared, so a click arriving from
+    // another player is checked against that alone and runs the same everywhere
+    if (!c || (!forced && ((!net && !s.visible) || !s.enabled))) return false;
     const own = !forced && !net && this.handlers?.get(key);
     if (own) {
       this.game.audio?.play(c.val('Click_SFX') || 'GUI_Button_Press_2_SFX');
@@ -318,11 +329,31 @@ export class ScriptUI {
     ) {
       this.game.audio?.play(c.val('Click_SFX') || 'GUI_Button_Press_2_SFX');
       this.game.order({ c: 'ui', name: key });
+      // The click takes effect a few turns later on every machine; light the button now so it reads as pressed.
+      if (!yes(c.val('Tab'))) {
+        s.selected = true;
+        clearTimeout(s.release);
+        s.release = setTimeout(() => {
+          s.selected = false;
+          this.apply(key);
+        }, 200);
+        this.apply(key);
+      }
+      return true;
+    }
+    // A player on another side clicked (or a script pressed a button for them): the story hears it on every machine,
+    // but this screen's buttons stay as its own player left them.
+    // (A forced press of one of the screen's own buttons never reaches the story, here or anywhere.)
+    if ((net || forced) && this.game.uiPid !== undefined && this.game.sameSide?.(this.game.uiPid) === false) {
+      if (!(forced && this.nativeControls.get(key))) this.game.story?.clickGUI(key);
       return true;
     }
     const group = c.val('Group'),
-      tab = yes(c.val('Tab'));
-    if (tab) s.selected = !(s.selected && yes(c.val('Toggle')));
+      tab = yes(c.val('Tab')),
+      theirs = this.elsewhere();
+    if (theirs) {
+      // nothing on this screen changes; the click's effects on the game follow below
+    } else if (tab) s.selected = !(s.selected && yes(c.val('Toggle')));
     else {
       s.selected = true;
       clearTimeout(s.release);
@@ -331,7 +362,7 @@ export class ScriptUI {
         this.apply(key);
       }, 200);
     }
-    if (tab && s.selected && group)
+    if (!theirs && tab && s.selected && group)
       for (const [n, t] of this.states) {
         const other = this.comps.get(n);
         if (n === key || !t.selected || other?.val('Group') !== group || !yes(other.val('Tab'))) continue;
@@ -341,6 +372,10 @@ export class ScriptUI {
       }
     this.apply(key);
     const native = forced && this.nativeControls.get(key);
+    // A script pressing a view-only button (the galaxy map's display filters) for a player's click presses it on that
+    // player's screen only; the other players keep their own filters.
+    const clicker = this.game.uiPid;
+    if (native && VIEW_KEYS.test(key) && clicker !== undefined && clicker !== this.game.localPid) return true;
     if (native) {
       this.forcedNativeDepth++;
       try {
@@ -353,7 +388,8 @@ export class ScriptUI {
     if (!forced && !net) this.game.audio?.play(c.val('Click_SFX') || 'GUI_Button_Press_2_SFX');
     if (!forced && !net && key === 'B_OPTION_G') this.game.toggleMenu();
     if (key === 'B_FAST_FORWARD' && !net) this.game.setFastForward?.(tab ? s.selected : !this.game.fastForward);
-    this.game.pendingBattle?.click(key);
+    // a vote button casts the clicking player's own vote, from that player's machine
+    if (!theirs) this.game.pendingBattle?.click(key);
     if (key === 'ATTACK_BUTTON' && this.game.pauseShellOpen) this.game.setUserPaused(false);
     if (key === 'B_DROID_HELP' && !net) this.game.galacticLog?.toggle();
     if ((key === 'HACK_CLOSE' || key === 'HACK_HACK') && !this.game.hackPanel?.open) this.visibility('hack_shell', false);

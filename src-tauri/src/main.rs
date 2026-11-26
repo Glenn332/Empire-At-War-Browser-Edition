@@ -6,6 +6,7 @@ mod fonts;
 mod gog;
 mod invite;
 mod nightly;
+mod procstats;
 mod report;
 mod setup;
 mod steam;
@@ -484,7 +485,8 @@ impl Server {
         let changes = (p.starts_with("/api/setup/") && p != "/api/setup/")
             || p == "/api/update/install"
             || p == "/api/pick-folder"
-            || p == "/api/save-report";
+            || p == "/api/save-report"
+            || (p == "/api/channel" && arg("set").is_some());
         if changes
             && (req.method() != tauri::http::Method::POST || req.headers().get("x-swr").is_none())
         {
@@ -769,6 +771,9 @@ impl Server {
         if p == "/api/power" {
             return json(&report::power());
         }
+        if p == "/api/process-stats" {
+            return json(&procstats::stats());
+        }
         if p == "/api/screenshot" {
             return match report::screenshot(app) {
                 Some(png) => send(200, png, "image/png", &[("Cache-Control", "no-store")]),
@@ -831,7 +836,7 @@ impl Server {
         } else {
             p[1..].to_string()
         };
-        if rel.split(['/', '\\']).any(|s| s == "..") {
+        if rel.split(['/', '\\']).any(|s| s == "..") || !nightly::plain_relative(&rel) {
             return text(403, "forbidden");
         }
         let nightly = self.state.read().unwrap().settings.nightly;
@@ -901,7 +906,11 @@ fn main() {
         });
     let mods = first
         .as_ref()
-        .map(|d| steam::mods(&args, d))
+        // an invite link is the only argument a browser passes: never read mod options next to it
+        .map(|d| match invite::find_link(&args) {
+            Some(_) => steam::mods(&[], d),
+            None => steam::mods(&args, d),
+        })
         .unwrap_or_default();
     let public = std::env::var_os("SWR_PUBLIC")
         .map(PathBuf::from)

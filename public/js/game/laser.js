@@ -113,8 +113,15 @@ export class LaserBatch {
     d[k3 + 1] = L.g;
     d[k3 + 2] = L.b;
   }
+  // only the shots of this frame go to the card (the whole pool of 4000 went every frame, even with none flying)
   end() {
-    this.mesh.geometry.instanceCount = this.count;
-    for (const a of this.attrs) a.needsUpdate = true;
+    const n = this.count;
+    this.mesh.geometry.instanceCount = n;
+    if (!n) return;
+    for (const a of this.attrs) {
+      a.clearUpdateRanges();
+      a.addUpdateRange(0, n * a.itemSize);
+      a.needsUpdate = true;
+    }
   }
 }

@@ -189,6 +189,8 @@ export class GPURenderer {
     this.format = navigator.gpu.getPreferredCanvasFormat();
     if (this.domElement.style) this.domElement.style.transform = 'scaleY(-1)';
     this.autoClear = true;
+    // a pass drawn under a later one on the same canvas: keep it in the MSAA target and let the last pass resolve it all once
+    this.holdResolve = false;
     this.sortObjects = true;
     this.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.debug = { checkShaderErrors: false };
@@ -432,6 +434,22 @@ export class GPURenderer {
     for (const x of xs) if (x) this.trash.push(x);
   }
 
+  // A render target's dispose() lets its GPU textures go now, as WebGL does: shadow maps, the full-screen bloom and
+  // scene targets a window resize replaces, portrait targets. Without it they stayed on the card until garbage
+  // collection came round to them. A target used again after dispose() is simply made anew.
+  dropTarget(t) {
+    const s = this.targets.get(t);
+    if (!s) return;
+    this.targets.delete(t);
+    this.clears.delete(t);
+    if (this.textures.get(t.texture)?.rt) this.textures.delete(t.texture);
+    if (t.depthTexture) this.depthViews.delete(t.depthTexture);
+    t.removeEventListener?.('dispose', this.onTargetDispose);
+    // a frame being recorded may still use them: they go after it is submitted
+    if (this.encoder) this.later(s.color, s.depth, s.multisampled);
+    else for (const x of [s.color, s.depth, s.multisampled]) x?.destroy();
+  }
+
   begin() {
     if (this.encoder) return;
     this.encoder = this.device.createCommandEncoder();
@@ -571,10 +589,23 @@ export class GPURenderer {
     const samples = t.samples > 1 && !t.depthTexture ? MSAA : 1;
     if (!s || s.w !== t.width || s.h !== t.height || s.samples !== samples) {
       if (s) this.later(s.color, s.depth, s.multisampled);
+      else if (typeof t.addEventListener === 'function')
+        t.addEventListener('dispose', (this.onTargetDispose ||= ev => this.dropTarget(ev.target)));
       const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
       const tx = t.texture,
         levels = tx.generateMipmaps && MIP_FILTERS.has(tx.minFilter) ? Math.floor(Math.log2(Math.max(t.width, t.height))) + 1 : 1;
-      s = { w: t.width, h: t.height, samples, format: 'rgba8unorm', resolve: null, multisampled: null, gen: (s ? s.gen : 0) + 1, levels };
+      // gen is unique over every target, so a bind group cached under it (pass groups key on the shadow map's gen)
+      // never outlives the textures it was made with
+      s = {
+        w: t.width,
+        h: t.height,
+        samples,
+        format: 'rgba8unorm',
+        resolve: null,
+        multisampled: null,
+        gen: (this.targetGen = (this.targetGen || 0) + 1),
+        levels
+      };
       s.color = this.device.createTexture({ size: [t.width, t.height], format: 'rgba8unorm', mipLevelCount: levels, usage });
       if (samples > 1) {
         s.multisampled = this.device.createTexture({
@@ -643,7 +674,7 @@ export class GPURenderer {
     this.softNow = soft;
     const color = {
       view: T.colorView,
-      resolveTarget: T.samples > 1 && !soft ? T.resolve : undefined,
+      resolveTarget: T.samples > 1 && !soft && !this.holdResolve ? T.resolve : undefined,
       loadOp: owed && owed.color ? 'clear' : 'load',
       storeOp: 'store',
       clearValue: (owed && owed.value) || [0, 0, 0, 1]
@@ -758,7 +789,7 @@ export class GPURenderer {
     rp.end();
     const pass = this.encoder.beginRenderPass({
       colorAttachments: [
-        { view: T.colorView, resolveTarget: T.samples > 1 ? T.resolve : undefined, loadOp: 'load', storeOp: 'store' }
+        { view: T.colorView, resolveTarget: T.samples > 1 && !this.holdResolve ? T.resolve : undefined, loadOp: 'load', storeOp: 'store' }
       ],
       depthStencilAttachment: {
         view: T.depthView,

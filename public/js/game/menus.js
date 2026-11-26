@@ -3,7 +3,7 @@ import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
 import { toMainMenu, loadSaved } from './transit.js';
-import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX, SUPERSAMPLE_STEPS, supersampling } from '../gfx.js';
+import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX, SUPERSAMPLE_STEPS, supersampling, frameCap } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
 import { PARTICLE_CAP } from '../particlesim.js';
 import { snapshot, snapshotNow, listSaves, putSave, getSave, deleteSave, downloadSave, importSaveFile } from './savegame.js';
@@ -82,6 +82,8 @@ const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
 const checkBox = (id, x, y, w, h) => ({ kind: 'CONTROL', text: '', id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y, w, h });
 const FULLSCREEN_MOUSE_TIP =
   'Keeps the mouse inside the game so it cannot slip onto another monitor: in fullscreen, and in the desktop app in a window too. Esc or Alt+Tab frees it.';
+const FRAME_CAP_TIP =
+  'Draws the galaxy map and battles at most 60 times a second instead of at the screen refresh rate, which cuts graphics card load on fast monitors and laptops. The battle behind the main menu draws at most 30 times a second either way.';
 const EDGE_PAN_TIP = 'Moving the mouse against the edge of the screen pans the camera, in space battles and on the galaxy map.';
 
 // Where the added keyboard rows go on a keyboard options page: the two columns of the page's own key boxes, the
@@ -887,6 +889,9 @@ export class Menus {
     dlg.setText('IDC_FULLSCREEN_MOUSE_CAPTURE', 'Capture the mouse');
     const captureBox = dlg.ctl('IDC_FULLSCREEN_MOUSE_CAPTURE');
     if (captureBox) captureBox.title = FULLSCREEN_MOUSE_TIP;
+    dlg.setText('IDC_VSYNC_ENABLED', 'Limit frame rate to 60 fps');
+    const capBox = dlg.ctl('IDC_VSYNC_ENABLED');
+    if (capBox) capBox.title = FRAME_CAP_TIP;
     const apply = () => {
       storeGfx();
       if (window.applyGraphics) window.applyGraphics(window.game && window.game.renderer);
@@ -964,6 +969,10 @@ export class Menus {
           apply();
         });
       dlg.check('IDC_FULLSCREEN_MOUSE_CAPTURE', fullscreenCapture(), setFullscreenCapture);
+      dlg.check('IDC_VSYNC_ENABLED', frameCap() > 0, on => {
+        gfx.fpsCap = on ? 60 : 0;
+        apply();
+      });
       dlg.check('IDC_WINDOWED_MODE', !fullscreen(), on => {
         try {
           if (on) exitFullscreen();
@@ -973,7 +982,7 @@ export class Menus {
     };
     show();
     if (levels.length < 2) dlg.enable('IDC_DETAIL_LEVEL_SLIDER', false);
-    for (const id of ['IDC_HARDWARE_MOUSE', 'IDC_VSYNC_ENABLED', 'IDC_WIDESCREEN', 'IDC_AUTO_DETECT']) dlg.enable(id, false);
+    for (const id of ['IDC_HARDWARE_MOUSE', 'IDC_WIDESCREEN', 'IDC_AUTO_DETECT']) dlg.enable(id, false);
     dlg.show('IDC_DEVICE_DESC_STATIC', false);
     dlg.on('IDC_ADVANCED', () => this.videoAdvanced());
     dlg.on('IDC_OK', () => this.pop());

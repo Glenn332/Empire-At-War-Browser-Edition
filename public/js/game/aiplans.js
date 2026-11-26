@@ -10,6 +10,16 @@ import { difficultyAdjustment } from './landbrain.js';
 const lead = e => (e && e.isSquad ? e.fighters[0] : e);
 const gone = e => !e || e.dead || (e.isSquad && !e.fighters.length);
 const bodies = e => (e.isSquad ? e.fighters : e.members) || [e];
+// Whether a task force unit is of one of the kinds a script names: a category of its lead body, or the name of
+// that body's type, of the team type its company makes (Plex_Soldier_Team) or of the company or squadron itself
+export const ofKind = (e, want) => {
+  const lead = bodies(e)[0],
+    t = lead && (lead.scriptType || lead.type);
+  if (!t) return false;
+  if (!want.length) return true;
+  const names = [t, e.scriptType, e.type].filter(x => x && x.name).map(x => x.name.toUpperCase());
+  return want.some(k => t.categories().has(k) || names.includes(k));
+};
 const unset = e => {
   if (e)
     for (const b of bodies(e)) {
@@ -238,6 +248,7 @@ export class Plans {
       this.world.onUnitHit = (t, from, loss) => this.hit(t, from, loss);
       this.world.onUnitSignal = (e, name, extra) => this.signal(e, name, extra);
     }
+    if (host.land && this.world) this.world.onUnitHit = (e, a, deliberate) => this.landHit(e, a, deliberate);
     this.find();
   }
 
@@ -1416,6 +1427,15 @@ export class Plans {
     }
   }
 
+  // a company of a land plan was hurt: Unit_Damaged with the company that did it and whether it was aiming at this one
+  landHit(e, a, deliberate) {
+    const inst = e && e.aiPlan;
+    if (!inst || !inst.forces || inst.state !== 'run' || gone(e)) return;
+    const f = inst.forces.find(x => x.units.includes(e));
+    if (!f) return;
+    this.queueOnce(inst, f, 'Unit_Damaged', () => [f.wrapper, this.host.wrap(e), a && !gone(a) ? this.host.wrap(a) : undefined, !!deliberate]);
+  }
+
   decayThreats(inst, f, e) {
     const k = e.threats;
     if (!k || !k.map.size) return;
@@ -2067,9 +2087,7 @@ export class Plans {
             .filter(Boolean);
         if (!set) return;
         for (const e of alive()) {
-          const lead = bodies(e)[0],
-            t = lead && (lead.scriptType || lead.type);
-          if (!t || (want.length && !want.some(k => t.categories().has(k) || t.name.toUpperCase() === k))) continue;
+          if (!ofKind(e, want)) continue;
           for (const b of bodies(e)) if (b) b.prioSet = set;
         }
       },
@@ -2146,9 +2164,7 @@ export class Plans {
           .map(s => s.trim().toUpperCase())
           .filter(Boolean);
         for (const e of f.units) {
-          const lead = bodies(e)[0],
-            t = lead && (lead.scriptType || lead.type);
-          if (!t || (want.length && !want.some(k => t.categories().has(k) || t.name.toUpperCase() === k))) continue;
+          if (!ofKind(e, want)) continue;
           host.wrap(e)?.Set_Targeting_Stickiness_Time_Threshold?.(seconds);
         }
       },
@@ -2284,6 +2300,8 @@ export class Plans {
           this.decayThreats(inst, f, e);
           continue;
         }
+        // the land world reports each hit with its attacker (landHit); a view that does not is watched for lost health
+        if (w.reportsHits) continue;
         const u = lead(e),
           total = u ? u.health + (u.shield || 0) : 0,
           was = f.seen.get(e);

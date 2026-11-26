@@ -70,7 +70,8 @@ fn is_known_lobby(url: &str) -> bool {
         return false;
     };
     let host = host.trim_end_matches('/');
-    !host.contains(['/', '@', ':', '?', '#'])
+    !host.contains(['/', '\\', '@', ':', '?', '#', '%'])
+        && !host.chars().any(char::is_whitespace)
         && (host == "playeaw.com" || host.ends_with(".playeaw.com") || host == NIGHTLY_LOBBY)
 }
 

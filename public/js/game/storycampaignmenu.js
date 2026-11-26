@@ -91,7 +91,8 @@ export async function openMainCampaignMenu({ start, cancel = null, audio = null 
       faction: campaign.str('Starting_Active_Player'),
       difficulty,
       players: [],
-      teamFactions: []
+      teamFactions: [],
+      options: { groundAutoResolve: false }
     });
   };
   dlg.on('IDC_CANCEL_BUTTON', back);

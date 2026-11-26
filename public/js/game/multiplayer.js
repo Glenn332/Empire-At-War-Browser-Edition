@@ -9,6 +9,8 @@ import { openInstantBattle } from './instantmenu.js';
 import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
 import { startMarks } from './mapstarts.js';
 import { loadCampaignData } from './galaxy.js';
+import { contentNow } from '../content.js';
+import { listingContent, listLocalPref, setListLocalPref, describeListing, detailLines } from './lobbycontent.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 import { inApp } from '../platform.js';
 
@@ -159,7 +161,15 @@ function resizeFramed(box, w0, h0, w1, h1) {
 }
 
 export const GAME_TYPES = [
-  { id: 1, type: 'campaign', text: 'TEXT_GAME_TYPE_CAMPAIGN', desc: 'TEXT_GAME_DESCRIPTION_CAMPAIGN', fallback: 'Campaign' },
+  {
+    id: 1,
+    type: 'campaign',
+    text: 'TEXT_GAME_TYPE_CAMPAIGN',
+    desc: 'TEXT_GAME_DESCRIPTION_CAMPAIGN',
+    fallback: 'Campaign',
+    about:
+      'Galactic conquest for several players. Players who join the host side play it together; other players may take a side of their own.'
+  },
   { id: 2, type: 'land', text: 'TEXT_GAME_TYPE_TEAM_LAND', desc: 'TEXT_GAME_DESCRIPTION_TEAM_LAND', fallback: 'Land' },
   { id: 3, type: 'space', text: 'TEXT_GAME_TYPE_TEAM_SPACE', desc: 'TEXT_GAME_DESCRIPTION_TEAM_SPACE01', fallback: 'Space' },
   {
@@ -180,10 +190,19 @@ export const GAME_TYPES = [
   }
 ];
 const gameType = t => GAME_TYPES.find(g => g.type === t) || GAME_TYPES[2];
-const typeLabel = mode => {
-  const g = gameType(mode === 'galactic' ? 'campaign' : mode);
-  return T(g.text, g.fallback);
+// Game data (the stock text or a mod's) may mark a game type as not supported, as the original multiplayer did for
+// campaigns. This engine runs every type it lists, so such a note is left out of the name and such a description is
+// replaced with our own.
+const UNSUPPORTED = /not\s+supported|unsupported/i;
+export const gameTypeName = g =>
+  T(g.text, g.fallback)
+    .replace(/\s*[([][^)\]]*(?:not\s+supported|unsupported)[^)\]]*[)\]]/gi, '')
+    .trim() || g.fallback;
+export const gameTypeAbout = g => {
+  const text = T(g.desc, g.about || '');
+  return UNSUPPORTED.test(text) ? g.about || '' : text;
 };
+const typeLabel = mode => gameTypeName(gameType(mode === 'galactic' ? 'campaign' : mode));
 const TYPE_KEY = 'swr.mptype';
 
 const SCREEN = { stretch: true, nativeFrame: true };
@@ -269,16 +288,28 @@ async function hostOptions({ name, campaigns, landMaps, customMaps = { land: [] 
     passBox.maxLength = 24;
     passBox.type = 'password';
   }
+  // local (non-workshop) mods are listed only by count unless the host opts in to showing their names
+  const localCount = (contentNow()?.mods || []).filter(m => !/^\d{1,20}$/.test(String(m.workshop ?? ''))).length;
+  if (passBox && localCount) {
+    const label = document.createElement('label'),
+      box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = listLocalPref();
+    box.onchange = () => setListLocalPref(box.checked);
+    label.append(box, ' Show my local mod names on the game list');
+    label.style.cssText = `position:absolute;left:${passBox.style.left || passBox.offsetLeft + 'px'};top:calc(${passBox.style.top || passBox.offsetTop + 'px'} + ${passBox.offsetHeight + 8}px);font-size:12px;color:inherit;white-space:nowrap`;
+    passBox.parentElement?.appendChild(label);
+  }
   const describe = () => {
     const g = gameType(type);
-    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', T(g.desc, g.about || ''));
+    dlg.setText('IDC_GAME_TYPE_DESCRIPTION_TEXT', gameTypeAbout(g));
     const d = dlg.ctl('IDC_GAME_TYPE_DESCRIPTION_TEXT');
     if (d) d.style.whiteSpace = 'normal';
   };
   dlg
     .list(
       'IDC_GAME_TYPE_LIST',
-      types.map(g => ({ key: g.type, label: T(g.text, g.fallback) })),
+      types.map(g => ({ key: g.type, label: gameTypeName(g) })),
       row => {
         type = row.key;
         describe();
@@ -514,11 +545,12 @@ export async function openMultiplayer({
       games = [];
     }
     const ours = g => g.version === version && g.mod === data;
+    const ids = new Map(games.map(g => [g.id, describeListing(g, { version, data })]));
     const rows = games.map(g => ({
       key: g.id,
       label: g.name,
       parts: [
-        (g.locked ? '* ' : '') + g.name + (ours(g) ? '' : ' (other version)'),
+        (g.locked ? '* ' : '') + g.name + (ours(g) ? '' : ' (other version)') + `  [${ids.get(g.id).label} #${ids.get(g.id).hash}]`,
         typeLabel(g.mode),
         `${g.players}/${g.slots}`,
         g.mode === 'galactic' ? campaignName(g.map) : mapName(g.map),
@@ -533,6 +565,7 @@ export async function openMultiplayer({
       rows,
       row => {
         picked = games.find(g => g.id === row.key);
+        if (picked) for (const line of detailLines(picked, { version, data })) say(line);
       },
       row => {
         picked = games.find(g => g.id === row.key);
@@ -541,6 +574,7 @@ export async function openMultiplayer({
     );
     const els = dlg.ctl('IDC_GAME_LIST')?.querySelectorAll('.dlg-row') || [];
     rows.forEach((r, i) => els[i] && lay(els[i], r.parts));
+    games.forEach((g, i) => els[i] && (els[i].title = detailLines(g, { version, data }).join('\n')));
     if (picked && games.some(g => g.id === picked.id)) list?.select(picked.id);
     else picked = null;
     if (failed) say('The game list could not be reached: ' + failed.message);
@@ -759,13 +793,14 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    // random story events come from single-player story rewards only; the galaxy has none to offer here
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', false, () => {});
+    // random story events come from single-player story rewards only, so that box carries the ground auto-resolve choice
+    dlg.setText('IDC_ALLOW_RANDOM_EVENTS', T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
+    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve !== false, on => {
+      st.groundAutoResolve = on;
+    });
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
-  dlg.show('IDC_ALLOW_RANDOM_EVENTS', false);
-  dlg.enable('IDC_ALLOW_RANDOM_EVENTS', false);
   show();
   return new Promise(done => {
     dlg.on('IDC_BUTTON_ACCEPT', () => {
@@ -782,7 +817,8 @@ async function campaignOptions(st, campaign) {
         credits: C.num('MP_Default_Credits', 6000),
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
+        autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
+        groundAutoResolve: true
       });
       show();
     });
@@ -1010,7 +1046,8 @@ async function openStaging(args) {
     preBuilt: true,
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
-    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2
+    autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
+    groundAutoResolve: true
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1090,7 +1127,8 @@ async function openStaging(args) {
       players: humans().length,
       slots: slots.filter(s => s.kind === 'human' || s.kind === 'open').length,
       version,
-      mod: data
+      mod: data,
+      content: listingContent(contentNow(), { listLocal: listLocalPref() })
     });
   const single = () => campaign() && !!campaignOf(st.mapFile)?.variants,
     menuEntry = () => campaign() && !!campaignOf(st.mapFile)?.menu;
@@ -1298,7 +1336,9 @@ async function openStaging(args) {
         credits: o.credits ?? st.credits,
         tech: o.tech ?? st.tech,
         maxTech: o.maxTech ?? st.maxTech,
-        autoResolve: o.autoResolve ?? st.autoResolve
+        autoResolve: o.autoResolve ?? st.autoResolve,
+        // a save from before the option keeps the old prompt until the host turns it on
+        groundAutoResolve: o.groundAutoResolve ?? false
       });
     } else {
       const knownMap = isDynamic(base.mapFile)
@@ -1607,7 +1647,8 @@ async function openStaging(args) {
             [
               T('TEXT_ALLOW_AUTORESOLVE', 'Auto-resolve combat'),
               st.autoResolve === 0 ? T('TEXT_ALLOW_AUTORESOLVE_ALWAYS', 'Always') : T('TEXT_ALLOW_AUTORESOLVE_ASK', 'Ask')
-            ]
+            ],
+            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve !== false ? yes : no]
           ]
         : [
             [
@@ -1776,7 +1817,13 @@ async function openStaging(args) {
         humanTypes,
         ...(globalThis.shooterMode ? { shooter: true } : {}),
         seed: crypto.getRandomValues(new Uint32Array(1))[0],
-        options: { credits: st.credits, tech: st.tech, maxTech: st.maxTech, autoResolve: st.autoResolve },
+        options: {
+          credits: st.credits,
+          tech: st.tech,
+          maxTech: st.maxTech,
+          autoResolve: st.autoResolve,
+          groundAutoResolve: st.groundAutoResolve !== false
+        },
         players: players.map(s =>
           s.kind === 'human'
             ? { human: true, peer: s.peer, name: s.name, faction: entry.menu || s.faction, color: s.color }

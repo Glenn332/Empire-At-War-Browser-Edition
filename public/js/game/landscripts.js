@@ -506,6 +506,16 @@ export class LandScripts {
     game.world.scriptHost = s.host;
     const w = game.world,
       before = w.onDeath;
+    const hurt = w.onHurt;
+    s.view.reportsHits = true;
+    w.onHurt = (u, from, amount) => {
+      if (hurt) hurt(u, from, amount);
+      const q = u.squad;
+      if (!q || !q.aiPlan || !s.view.onUnitHit) return;
+      const a = from && from !== u && from.type && !from.dead && from.squad && from.squad !== q ? from.squad : null,
+        aim = a && from.target;
+      s.view.onUnitHit(q, a, !!a && ((!!aim && (aim === u || aim.squad === q)) || a.foe === q));
+    };
     w.onDeath = u => {
       if (before) before(u);
       const q = u.squad;

@@ -364,6 +364,7 @@ export function snapshotGalaxy(g) {
     displayFilters: g.displayFilters || 0,
     autoReveal: g.autoReveal,
     ...(g.campaignAutoResolve !== undefined ? { campaignAutoResolve: g.campaignAutoResolve } : {}),
+    ...(g.groundAutoResolve !== undefined ? { groundAutoResolve: !!g.groundAutoResolve } : {}),
     aiPathfinders: !!g.aiPathfinders,
     ...(g.diplomacy ? { diplomacy: { ...g.diplomacy } } : {}),
     visibility: g.visibility
@@ -534,6 +535,7 @@ export function applyGalaxy(g, s) {
   g.displayFilters = s.displayFilters || 0;
   if (Object.hasOwn(s, 'autoReveal')) g.autoReveal = s.autoReveal;
   if (Object.hasOwn(s, 'campaignAutoResolve')) g.campaignAutoResolve = s.campaignAutoResolve;
+  if (Object.hasOwn(s, 'groundAutoResolve')) g.groundAutoResolve = !!s.groundAutoResolve;
   if (Object.hasOwn(s, 'aiPathfinders')) g.aiPathfinders = !!s.aiPathfinders;
   g.visibility = s.visibility ? visibilityState(s.visibility) : null;
   g.visibilityByFaction = s.visibility?.byFaction

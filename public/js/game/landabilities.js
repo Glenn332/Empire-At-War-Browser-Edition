@@ -550,6 +550,10 @@ function toggled(world, q, st) {
   if (kind === 'ROCKET_ATTACK')
     for (const u of q.members) {
       if (!u.abilityKinds.has(kind)) continue;
+      if (u.guns || (u.weapon && u.weapon.hp)) {
+        u.target = null;
+        continue;
+      }
       if (st.active) {
         if (!u.altWeapon) {
           const hps = u.type

@@ -20,11 +20,13 @@ const ORDER_KEYS = [
 ];
 import { Pointers, tacticalPointer } from './pointers.js';
 import { Radar } from './radar.js';
+import { DoubleClick } from './doubleclick.js';
 import { showHand, formation, slotAt, stretched, laidOut, WHEEL_TURN } from './placehand.js';
 import { ArcView } from './directview.js';
 import { ChaseView } from './chaseview.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { playerSpecial, specialTargets } from './superweapon.js';
+import { spaceBarWidth } from './healthbars.js';
 // game and mod text goes into markup escaped, so a unit name can't carry HTML
 const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -70,6 +72,17 @@ function iconNameFor(type) {
 }
 
 const defaultAbilityIcon = kind => nativeAbilityIcon(kind) || 'i_sa_' + kind.toLowerCase() + '.tga';
+// The health bar under a unit's overlay. A unit without an icon takes a bar as wide as it shows on screen; a squadron
+// or a fighter hero under its icon takes the icon's grab-bar width. A hero ship keeps the bar its size gives it, as
+// wide as any ship that size, and never less than the grab bar: the icon above it does not make a capital ship's
+// bar small.
+export function overlayBarWidth(s, hasIcon, screenRadius, iconSize, grabHealth) {
+  const bySize = Math.max(26, Math.min(120, screenRadius * 1.5));
+  if (!hasIcon) return bySize;
+  const icon = grabHealth || iconSize;
+  return s.isSquad || s.isFighter ? icon : Math.max(icon, bySize);
+}
+
 export function abilityIconName(kind, override = '') {
   for (const n of [override, defaultAbilityIcon(kind), 'i_sa_blank_button.tga'])
     if (n && iconCanvasRect(n)) return n;
@@ -191,6 +204,8 @@ export class UI {
     this.buildSig = '';
     this.selSig = '';
     this.pings = [];
+    this.rightTwice = new DoubleClick();
+    this.mapTwice = new DoubleClick();
     this.lastAlert = -100;
     this.placing = null;
     this.reinSig = null;
@@ -360,7 +375,7 @@ export class UI {
         this.arm(null);
         return;
       }
-      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: e.detail >= 2 };
+      this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: this.rightTwice.hit(m.x, m.y) };
       this.ctrlTurn = e.ctrlKey && !e.shiftKey && !e.altKey ? { x: m.x, y: m.y } : null;
       const movers = this.mine().filter(s => !s.dead && (s.isSquad || s.isMobile)),
         g = this.r.pickGround(m.x, m.y),
@@ -1480,6 +1495,46 @@ export class UI {
     return true;
   }
 
+  // The object under the mouse, once a frame. While the mouse rests, the hovered object stays hovered for as long
+  // as the cursor is still on it: a squadron icon or a small ship crossing over it (own fighters swarming the
+  // enemy they attack) no longer takes the hover for a frame and hands it back, which flipped the pointer between
+  // the attack and the select or move pointer many times a second.
+  updateHover(m) {
+    const prev = this.hover,
+      can = m.inside && !this.drag?.box && !this.placing,
+      resting = can && !!prev && m.x === this.hoverX && m.y === this.hoverY;
+    this.hoverX = m.x;
+    this.hoverY = m.y;
+    if (resting && this.stillUnder(prev, m.x, m.y)) return (this.hover = prev);
+    const onSystem = prev && can && this.systemUnder(prev, m.x, m.y);
+    this.hover = onSystem ? prev : can ? this.pick(m.x, m.y) : null;
+    if (
+      !this.hover &&
+      prev &&
+      !prev.dead &&
+      !prev.isSquad &&
+      prev.hpDriven &&
+      m.inside &&
+      this.sees(prev) &&
+      this.amongHardpoints(prev, m.x, m.y)
+    )
+      this.hover = prev;
+    return this.hover;
+  }
+
+  // Whether the cursor is still on this object by the tests pick() uses: its icon, its screen circle, or for a
+  // ship with hardpoints a hardpoint or the spread of its hardpoints.
+  stillUnder(s, x, y) {
+    if (!s || s.dead || !this.sees(s) || hiddenInJump(s)) return false;
+    if (s._iconFrame === this.overlayFrame) {
+      const h = s._iconSize / 2 + 2;
+      if (Math.abs(x - s._iconX) <= h && Math.abs(y - s._iconY) <= h) return true;
+    }
+    const p = this.screenOf(s, (this._still ||= {}));
+    if (!p.behind && Math.hypot(p.x - x, p.y - y) <= this.screenRadius(s)) return true;
+    return !s.isSquad && !!s.hpDriven && (!!this.hardpointAt(s, x, y, 26) || this.amongHardpoints(s, x, y));
+  }
+
   systemUnder(unit, x, y) {
     if (!unit || unit.dead || unit.isSquad || !unit.hpDriven || !this.sees(unit)) return null;
     return this.hardpointAt(unit, x, y) ? unit : null;
@@ -1527,6 +1582,7 @@ export class UI {
       if (!h.alive || !h.targetable || !h.destroyable) continue;
       h.worldPos(w);
       this.r.project(w.x, w.y, w.z, p);
+      if (p.behind) continue;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < bd) {
         bd = d;
@@ -1581,8 +1637,8 @@ export class UI {
     this.sayMove(mine, g.x, g.y, attackMove);
   }
 
-  radarClick(x, y, attack) {
-    this.radar.click(x, y, attack);
+  radarClick(x, y, attack, twice = false) {
+    this.radar.click(x, y, attack, twice);
   }
 
   minimapClick(e) {
@@ -1739,20 +1795,7 @@ export class UI {
     rig.clamp();
 
     this.selection = this.selection.filter(s => !s.dead);
-    const prev = this.hover;
-    const onSystem = prev && m.inside && !this.drag?.box && !this.placing && this.systemUnder(prev, m.x, m.y);
-    this.hover = onSystem ? prev : m.inside && !this.drag?.box && !this.placing ? this.pick(m.x, m.y) : null;
-    if (
-      !this.hover &&
-      prev &&
-      !prev.dead &&
-      !prev.isSquad &&
-      prev.hpDriven &&
-      m.inside &&
-      this.sees(prev) &&
-      this.amongHardpoints(prev, m.x, m.y)
-    )
-      this.hover = prev;
+    this.updateHover(m);
     const pointers = (this.pointers ||= new Pointers(this.r.dom));
     if (this.armed?.startsWith('ability:')) {
       const kind = this.armed.slice(8);
@@ -1861,8 +1904,10 @@ export class UI {
     this.overlayFrame = (this.overlayFrame || 0) + 1;
     this.logicFramesShown = this.logicFramesSince();
     for (const s of this.world.selectablesInto((this.shown ||= []))) {
-      const enemy = s.player.team !== me.team && s.player.id >= 0;
-      if (enemy && !this.sees(s)) continue;
+      // A capture point shows the owner the viewer last saw, not one it changed to out of sight.
+      const owner = s.capture && this.world.shownOwner ? this.world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
+        enemy = !!owner && owner.team !== me.team;
+      if (s.player.team !== me.team && s.player.id >= 0 && !this.sees(s)) continue;
       if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
@@ -1871,14 +1916,7 @@ export class UI {
       // the size on screen only matters without an icon, or for the corners drawn around a selected or hovered unit
       const cornered = !this.r.rings && (s.selected || s === this.hover);
       const r = !hasIcon || cornered ? Math.min(this.screenRadius(s), 260) : 0;
-      const col =
-        s.player.id < 0
-          ? '#b9c4cf'
-          : enemy
-            ? '#ff5a4d'
-            : s.player === me
-              ? '#6be675'
-              : (s.player._hex ||= '#' + s.player.color.getHexString());
+      const col = !owner ? '#b9c4cf' : enemy ? '#ff5a4d' : owner === me ? '#6be675' : (owner._hex ||= '#' + owner.color.getHexString());
       if (cornered) {
         g.strokeStyle = col;
         g.lineWidth = s.selected ? 1.6 : 1;
@@ -1899,7 +1937,7 @@ export class UI {
         g.globalAlpha = 1;
       }
       if (!s.isPad) {
-        const w = hasIcon ? grabHealth || size : Math.max(26, Math.min(120, r * 1.5)),
+        const w = overlayBarWidth(s, hasIcon, r, size, grabHealth),
           x = p.x - w / 2,
           y = hasIcon ? p.y + size / 2 + 9 : p.y - r - 9;
         g.fillStyle = 'rgba(0,0,0,0.6)';
@@ -1923,7 +1961,8 @@ export class UI {
             const k = size / 28,
               fw = Math.round(rect.w * k),
               fh = Math.round(rect.h * k);
-            g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, Math.round(p.x + size / 2 + 1), Math.round(y + 3 - fh), fw, fh);
+            const fx = Math.round(p.x + Math.max(size, w) / 2 + 1);
+            g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, fx, Math.round(y + 3 - fh), fw, fh);
           }
         }
         if (!s.isSquad && s.maxShield > 0) {
@@ -1938,25 +1977,30 @@ export class UI {
           g.fillStyle = '#ffd76a';
           g.fillRect(x, y + 6, w * (1 - s.construction.left / s.construction.total), 2);
         }
-        if (s === this.hover && this.game.setup.net && s.player.id >= 0 && s.player !== me) {
+        if (s === this.hover && this.game.setup.net && owner && owner !== me) {
           const ty = hasIcon ? p.y - size / 2 - 5 : y - 10;
           g.font = 'bold 12px "Segoe UI", sans-serif';
           g.textAlign = 'center';
-          const tw = g.measureText(s.player.name).width;
+          const tw = g.measureText(owner.name).width;
           g.fillStyle = 'rgba(0,0,0,0.7)';
           g.fillRect(p.x - tw / 2 - 4, ty - 12, tw + 8, 16);
-          g.fillStyle = s.player._hex ||= '#' + s.player.color.getHexString();
-          g.fillText(s.player.name, p.x, ty);
+          g.fillStyle = owner._hex ||= '#' + owner.color.getHexString();
+          g.fillText(owner.name, p.x, ty);
         }
       }
     }
     if ((this.predictionPaths ??= db.constants.bool('ShouldDisplayPredictionPaths', false))) this.drawPredictionPaths(g);
     this.drawWaypointLines(g);
-    for (const u of this.world.units) {
-      if (u.dead || !u.capture || u.padChild) continue;
+    const W = this.world,
+      vbit = W.viewer && W.fog && !W.reveal ? W.viewer.bit : 0;
+    for (const u of W.units) {
+      if (u.dead || !u.capture) continue;
+      // A pad hides under what is built on it; while the viewer cannot see that, the pad still shows what it last saw.
+      const child = u.padChild;
+      if (child && (!vbit || child.player.team === W.viewer.team || child.seenBy & vbit)) continue;
       this.r.project(u.x, u.y, u.z, p);
       if (p.behind) continue;
-      const owner = u.isPad ? u.padOwner : u.player.id >= 0 ? u.player : null;
+      const owner = W.shownOwner ? W.shownOwner(u) : u.isPad ? u.padOwner : u.player.id >= 0 ? u.player : null;
       const c = u.capture;
       g.lineWidth = 2;
       if (owner) {
@@ -1965,7 +2009,7 @@ export class UI {
         g.arc(p.x, p.y, 15, 0, 6.283);
         g.stroke();
       }
-      if (globalThis.showCaptureBars && c.by && c.by !== owner && c.progress > 0 && c.progress < c.time) {
+      if (globalThis.showCaptureBars && c.by && c.by !== owner && c.progress > 0 && c.progress < c.time && (!W.viewWatches || W.viewWatches(u))) {
         g.strokeStyle = '#' + c.by.color.getHexString();
         g.beginPath();
         g.arc(p.x, p.y, 19, -1.57, -1.57 + (6.283 * c.progress) / c.time);
@@ -1983,6 +2027,11 @@ export class UI {
       g.beginPath();
       g.ellipse(p.x, p.y, 8 + pg.t * 40, (8 + pg.t * 40) * 0.6, 0, 0, 6.283);
       g.stroke();
+      if (pg.twice) {
+        g.beginPath();
+        g.ellipse(p.x, p.y, 4 + pg.t * 70, (4 + pg.t * 70) * 0.6, 0, 0, 6.283);
+        g.stroke();
+      }
       this.pings[n++] = pg;
     }
     this.pings.length = n;
@@ -2113,7 +2162,8 @@ export class UI {
     s._iconFrame = this.overlayFrame;
     const selected = s.selected && !enemy;
     const alpha = (s.isSquad ? s.fighters[0]?.cloaked : s.cloaked) ? 0.4 : s === this.hover || selected ? 1 : 0.9;
-    const color = s.player.id < 0 ? '#9aa7b4' : (s.player._hex ||= '#' + s.player.color.getHexString());
+    const shown = s.capture && this.world.shownOwner ? this.world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
+      color = !shown ? '#9aa7b4' : (shown._hex ||= '#' + shown.color.getHexString());
     const mode = selected ? 2 : s === this.hover ? 1 : 0,
       pad = 12;
     const seen = (this.iconSeen ||= new WeakMap()).get(s);
@@ -2393,7 +2443,8 @@ export class UI {
     }
     if (one) {
       const who = pl => (pl === me ? pl.factionName : `${pl.name} · ${pl.factionName}`);
-      const owner = one.player.id < 0 ? (one.isPad && one.padOwner ? who(one.padOwner) : 'Neutral') : who(one.player);
+      const shown = one.capture && this.world.shownOwner ? this.world.shownOwner(one) : null,
+        owner = one.capture && this.world.shownOwner ? (shown ? who(shown) : 'Neutral') : one.player.id < 0 ? (one.isPad && one.padOwner ? who(one.padOwner) : 'Neutral') : who(one.player);
       const hasShield = !one.isSquad && one.maxShield > 0;
       this.selTitle.textContent = one.name;
       let sub = owner;
@@ -2519,7 +2570,7 @@ export class UI {
       head.className = 'head';
       const research = items.filter(x => isUpgradeType(x.it.type)).length,
         recruit = items.length - research;
-      head.innerHTML = '<span></span><span>click to cancel</span>';
+      head.innerHTML = '<span></span><span>click or right-click to cancel</span>';
       head.firstChild.textContent = [recruit ? `Recruitment ${recruit}` : '', research ? `Research ${research}` : '']
         .filter(Boolean)
         .join(' · ');
@@ -2540,6 +2591,10 @@ export class UI {
         d.onclick = () => {
           this.game.command({ c: 'cancel', b: x.u.id, q: x.name, i: x.u.buildQueues.get(x.name).indexOf(x.it), type: x.it.type.name });
           this.hudTimer = 0;
+        };
+        d.oncontextmenu = e => {
+          e.preventDefault();
+          d.onclick();
         };
         d._x = x;
         grid.appendChild(d);

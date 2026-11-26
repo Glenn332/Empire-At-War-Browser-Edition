@@ -161,6 +161,55 @@ export function sizeClass(type) {
   return SIZE_CLASSES.includes(sc) ? sc : 'FRIGATE';
 }
 
+// A unit still out in hyperspace: before its arrival streak shows it is not in the battle (it cannot be seen,
+// targeted or hit). Once it shows (HYPER.show) it fights while it finishes the jump.
+export const inJump = o => !!o.hyper && !o.hyper.shown;
+// Units are more vulnerable right after they are brought in (GameConstants: "Units are more vulnerable right after
+// being unloaded"). The engine gives each reinforcement, and each member of a reinforced squadron, a timed DEFENSE
+// combat modifier named "Elevated_Vulnerability" of Space_Elevated_Vulnerability_Factor for
+// Space_Elevated_Vulnerability_Duration seconds (land: Elevated_Vulnerability_*), in stacking category 0, from the
+// moment it is created, in the same place the Defense_Bonus_Percentage of a combat bonus goes. Take_Damage scales
+// damage by (1 + attacker damage bonus) * (1 - target defense bonus), the rule bonus.defense already
+// follows, so a factor of -2.0 (Thrawn's Revenge) is 3x damage and -3.0 (FoC) 4x. The values the engine's
+// GameConstants constructor sets when the tags are missing are 15 s and -3.0.
+// The battle keeps it beside the unit's combat modifiers (unit.vulnerable), not in them, because only damage reads
+// it and the page mirror does not deal damage; arrivalDefense adds it to the DEFENSE sum the way CombatMods does.
+export function elevatedVulnerability(land = false) {
+  const c = db.constants,
+    pre = land ? '' : 'Space_';
+  return { duration: c.num(pre + 'Elevated_Vulnerability_Duration', 15), factor: c.num(pre + 'Elevated_Vulnerability_Factor', -3) };
+}
+const noVulnerability = new WeakMap();
+// A type's Battlefield_Modifier_Ability with Disable_Reinforcement_Vulnerability: null, or whether it covers allies.
+function disablesReinforcementVulnerability(type) {
+  if (!type || typeof type.sub !== 'function') return null;
+  if (noVulnerability.has(type)) return noVulnerability.get(type);
+  const yes = v => /^(yes|true)$/i.test(String(v || '').trim());
+  let out = null;
+  for (const node of type.sub('Abilities').flatMap(a => a.all('Battlefield_Modifier_Ability')))
+    if (yes(node.val('Disable_Reinforcement_Vulnerability'))) out = { allies: !!(out?.allies || yes(node.val('Apply_To_All_Allies'))) };
+  noVulnerability.set(type, out);
+  return out;
+}
+// The defense damage factor (1 - DEFENSE sum) with one more DEFENSE modifier of `value` in stacking category `key`:
+// per category the highest value counts (own and shared lists alike), the categories add up in key order, and the
+// sum is held to the DEFENSE limits of combatmods.js (no floor, 0.75 at most).
+export function arrivalDefense(m, key, value) {
+  const mine = m ? m.lists[MOD.DEFENSE] : null,
+    shared = m ? m.shared(MOD.DEFENSE) : null,
+    other = shared && shared.size ? shared.lists[MOD.DEFENSE] : null;
+  const keys = new Set([key]);
+  if (mine) for (const k of mine.keys()) keys.add(k);
+  if (other) for (const k of other.keys()) keys.add(k);
+  let sum = 0;
+  for (const k of [...keys].sort((a, b) => a - b)) {
+    let best = k === key ? value : -Infinity;
+    for (const list of [mine && mine.get(k), other && other.get(k)]) if (list) for (const x of list) if (x.value > best) best = x.value;
+    sum += best;
+  }
+  return 1 - Math.min(sum, 0.75);
+}
+
 export function hiddenInJump(e) {
   const h = (e.isSquad ? e.fighters[0] : e)?.hyper;
   return !!h && !h.shown;
@@ -354,17 +403,18 @@ const castsShadow = m => {
   if (v === undefined) shadowModels.set(m, (v = !!m.meshes?.some(x => x.subs?.some(s => /shadowvolume/i.test(s.material?.shader || '')))));
   return v;
 };
-function bankIntoTurn(unit, turn, turnRate, dt) {
+export function bankIntoTurn(unit, turn, turnRate, dt) {
   const bank = unit.bankAngle;
   if (!(dt > 0)) return;
   if (!(bank > 0) || !(unit.rollRate > 0)) {
     if (!(bank > 0)) unit.roll = 0;
     return;
   }
-  const turnShare = Math.min(1, Math.abs(turn) / (turnRate * dt || 1));
-  let want = turn >= 0 ? bank : -bank;
-  if (turnShare < 0.5) want *= turnShare * 2;
-  const step = clamp(Math.abs(want - unit.roll) / bank, 0.1, 1) * unit.rollRate * dt;
+  // Bank_Turn_Angle is the lean at Max_Rate_Of_Turn; the lean follows how much of that rate the ship is turning at,
+  // and moves at no more than Max_Rate_Of_Roll.
+  const share = turnRate > 0 ? Math.min(1, Math.abs(turn) / (turnRate * dt)) : 0;
+  const want = (turn >= 0 ? bank : -bank) * share;
+  const step = unit.rollRate * dt;
   unit.roll = unit.roll < want ? Math.min(want, unit.roll + step) : Math.max(want, unit.roll - step);
 }
 const spaceSpeedFactor = () => db.constants.num('Object_Max_Speed_Multiplier_Space', 1);
@@ -409,6 +459,12 @@ function incomeModOn(u, m) {
       }
   return m.reverse ? !on : on;
 }
+// Who holds a capture point: a build pad's holder (or whoever stands on it), a captured object's player, else nobody.
+export function captureOwner(u) {
+  if (u.isPad) return u.padChild && !u.padChild.dead && u.padChild.player.id >= 0 ? u.padChild.player : u.padOwner || null;
+  return u.player && u.player.id >= 0 ? u.player : null;
+}
+
 const blastTier = (d, r, tiers) => Math.max(0, Math.min(1, 1 - Math.floor(d * (tiers / r)) / (tiers + 1)));
 
 export class Team {
@@ -746,6 +802,7 @@ export class Unit {
     this.pathExt = undefined;
     this.construction = undefined;
     this.heal = undefined;
+    this.heals = undefined;
     this.padOwner = undefined;
     this.capAff = undefined;
     this.influences = undefined;
@@ -789,6 +846,7 @@ export class Unit {
     this.spawnDelay = undefined;
     this.pickAt = undefined;
     this.lossRate = undefined;
+    this.vulnerable = null;
     this.lossAt = undefined;
     this.hurtBy = undefined;
     this.hurtByNext = undefined;
@@ -1068,25 +1126,31 @@ export class Unit {
       this.modsIncome = true;
       (this.world.incomeModUnits ??= []).push(this);
     }
-    const heal = t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))[0];
-    if (heal) {
-      this.heal = {
+    for (const heal of t.sub('Abilities').flatMap(a => a.all('Force_Healing_Ability'))) {
+      const names = tag =>
+        heal
+          .val(tag)
+          .split(/[,|\s]+/)
+          .filter(Boolean)
+          .map(c => c.toUpperCase());
+      (this.heals ||= []).push({
         range: heal.num('Heal_Range', 0),
         percent: heal.num('Heal_Percent', 0),
         amount: heal.num('Heal_Amount', 0),
         interval: Math.max(0.1, heal.num('Heal_Interval_In_Secs', 1)),
         single: !/^(no|false)$/i.test(heal.val('Single_Target_Heal', 'Yes')),
-        cats: heal
-          .val('Applicable_Unit_Categories')
-          .split(/[,|\s]+/)
-          .filter(Boolean)
-          .map(c => c.toUpperCase()),
+        cats: names('Applicable_Unit_Categories'),
+        types: names('Applicable_Unit_Types'),
+        excluded: names('Excluded_Unit_Types'),
         sfx: heal.val('SFXEvent_Target_Affected'),
+        // The area overlay shown while the healer is selected (ShadowBlobMaterials.xml), sized to Heal_Range.
+        blob: heal.val('Heal_Range_Blob_Material').trim().toUpperCase(),
         targetLook: healFeedbackLook(heal, 'Target'),
         ownerLook: healFeedbackLook(heal, 'Owner'),
         timer: 1
-      };
+      });
     }
+    if (this.heals) this.heal = this.heals[0];
     if (this.player && this.player.id >= 0) {
       this.buildList = buildListFor(t, this.player.factionName);
       for (const e of spawnList(t, this.player.techLevel))
@@ -1650,6 +1714,15 @@ const velocityOf = (u, out) => {
   out.z = u.isFighter ? Math.sin(p) * s : 0;
   return out;
 };
+// The last two positions a unit had before its moves, which lead prediction reads.
+function shiftHistory(u) {
+  u.l2x = u.l1x;
+  u.l2y = u.l1y;
+  u.l2z = u.l1z;
+  u.l1x = u.x;
+  u.l1y = u.y;
+  u.l1z = u.z;
+}
 const leadOf = (out, x, y, z, T, ax, ay, az, speed) => {
   if (T.l1x === undefined) {
     const v = velocityOf(T, _p5);
@@ -1704,7 +1777,9 @@ export class Squad {
     this.mode = undefined;
     this.tolerance = undefined;
     this.err = undefined;
-    this.alone = false;
+    // A squadron put down on the map (starting forces, map objects) stands as one that has arrived: it chases what
+    // comes within Idle_Chase_Range. Only a Stop order parks it (see squadPick).
+    this.alone = true;
     this.route = undefined;
     this.routed = false;
     this.goal = undefined;
@@ -1816,7 +1891,7 @@ export class Squad {
         if (i < 0) defs.push(d);
         else if (says(d) > says(defs[i])) defs[i] = d;
       }
-      for (const f of this.fighters) attachAbilities(f, defs);
+      for (const f of this.fighters) attachAbilities(f, defs, f.passives.map(s => s.def));
     }
     this.speed = f0 ? Math.min(...this.fighters.map(f => f.maxSpeed)) : 100;
     this.sizeClass = f0 ? f0.sizeClass : 'FIGHTER';
@@ -1947,7 +2022,9 @@ export class World {
       this.takeBonuses(e);
     }
     this.tacticalSuperweapons?.add(e);
-    if (opts.hyperspace && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
+    // Only something with a locomotor jumps in. A reinforcement that cannot move (a defence platform built and
+    // deployed like a unit) is set down where it was placed at once, as the original does.
+    if (opts.hyperspace && (e.isSquad || e.isMobile) && !this.tacticalSuperweapons?.record(e)) this.startHyperspace(e);
     this.recountPop();
     return e;
   }
@@ -2127,7 +2204,7 @@ export class World {
       return;
     }
     if (!(s.dps > 0)) return;
-    const foe = o => !o.dead && !o.hyper && !o.limbo && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
+    const foe = o => !o.dead && !inJump(o) && !o.limbo && o.targetableUnit && o.player.id >= 0 && o.player.team !== u.player.team;
     let prey = null,
       best = s.chase * s.chase;
     for (const o of this.units) {
@@ -2170,6 +2247,38 @@ export class World {
       e.hyper = HYPER.frames / LOGIC_FPS;
       e.alone = true;
     }
+    this.elevateVulnerability(e);
+  }
+
+  // The arrival vulnerability (see elevatedVulnerability): a DEFENSE modifier in stacking category 0 for the
+  // configured time from the moment the unit is brought in. A player holding a Battlefield_Modifier_Ability with
+  // Disable_Reinforcement_Vulnerability (FoC Enhanced Deployment) is spared.
+  elevateVulnerability(e) {
+    const { duration, factor } = elevatedVulnerability(false);
+    if (!(duration > 0) || !factor || this.reinforcementVulnerabilityOff(e.player)) return;
+    const until = this.time + duration;
+    for (const u of e.isSquad ? e.fighters : [e]) if (!u.dead) u.vulnerable = { until, factor };
+  }
+
+  // The defense damage factor of a unit, its arrival vulnerability included while that lasts.
+  defenseOf(u) {
+    const v = u.vulnerable;
+    if (!v) return u.bonus.defense;
+    if (this.time >= v.until) {
+      u.vulnerable = null;
+      return u.bonus.defense;
+    }
+    return arrivalDefense(u.cmods && u.cmods.size ? u.cmods : null, 0, v.factor);
+  }
+
+  reinforcementVulnerabilityOff(player) {
+    if (!player) return false;
+    for (const u of this.units) {
+      if (u.dead || !u.player || u.player.team !== player.team) continue;
+      const off = disablesReinforcementVulnerability(u.type);
+      if (off && (u.player === player || off.allies)) return true;
+    }
+    return false;
   }
 
   removeUnit(u) {
@@ -2368,7 +2477,7 @@ export class World {
     uc.construction = { left: secs, total: secs, result: db.type(type.str('Tactical_Buildable_Constructed')) };
     builder.obj.visible = !builder.type.bool('Hides_When_Built_On', true);
     this.audio.playFor(p, type.str('SFXEvent_Build_Started'));
-    this.audio.playAt(p, p.faction.str('SFXEvent_Tactical_Object_Building_Started'), builder.x, builder.y);
+    if (this.audible(builder.x, builder.y, p)) this.audio.playAt(p, p.faction.str('SFXEvent_Tactical_Object_Building_Started'), builder.x, builder.y);
     return uc;
   }
 
@@ -2693,7 +2802,7 @@ export class World {
   damage(target, amount, opts) {
     const hook = this.onUnitHit,
       from = opts && opts.from;
-    if (!hook || !from || target.dead || target.hyper || target.invulnerable || target.limbo) return this.applyDamage(target, amount, opts);
+    if (!hook || !from || target.dead || inJump(target) || target.invulnerable || target.limbo) return this.applyDamage(target, amount, opts);
     const before = target.health + (target.shield || 0);
     this.applyDamage(target, amount, opts);
     hook(target, from, before - target.health - (target.shield || 0));
@@ -2717,7 +2826,7 @@ export class World {
       proj = null
     } = {}
   ) {
-    if (target.dead || target.hyper || target.invulnerable || target.limbo) return;
+    if (target.dead || inJump(target) || target.invulnerable || target.limbo) return;
     if (target.noOpportunity) target.noOpportunity = false;
     if (attacker?.noOpportunity) attacker.noOpportunity = false;
     const retreating = this.retreatState?.list.has(target);
@@ -2726,7 +2835,7 @@ export class World {
       amount *= this.retreatState.damaged(target.player);
     }
     if (proj && from && from.mods && from.mods.diminish !== false && normalDamage(proj)) amount *= diminishedHit(target, this.time);
-    amount *= target.mods.damageTaken * target.bonus.defense;
+    amount *= target.mods.damageTaken * this.defenseOf(target);
     if (proj) this.projectileMods.apply(this.time, target, proj, (u, pm, fresh) => {
       if ((u.cmods ||= new CombatMods()).set(pm.type, pm.key, pm, pm.value)) u.applyBonuses();
       if (fresh && pm.spaceFx && this.viewerSees(u)) this.fx.attachFx?.(u, pm.spaceFx, pm.dur);
@@ -3098,7 +3207,9 @@ export class World {
       }
     }
     const seen = u.l1x !== undefined;
-    this.fx.deathClone(
+    // A wreck tumbling away in the fog stays hidden like the ship it was.
+    if (this.viewerSees(u))
+      this.fx.deathClone(
       u,
       ct.name,
       spin,
@@ -3137,9 +3248,16 @@ export class World {
     if (u.padOf) {
       const pad = u.padOf;
       pad.padChild = null;
-      pad.obj.visible = true;
       pad.padOwner = null;
       if (pad.capture) pad.capture.progress = 0;
+      // Destroy_When_Child_Dies (the mining asteroid under an extractor): the pad goes with its building and
+      // comes back after its Tactical_Respawn_Time_In_Secs, not at once.
+      if (!pad.dead && pad.type.bool('Destroy_When_Child_Dies') && this.razable(pad)) {
+        this.removeUnit(pad);
+        this.mapGone.add(pad.mapIndex);
+        this.respawnLater(pad);
+        this.onEvent('died', { entity: pad });
+      } else pad.obj.visible = true;
     }
     if (u.isStation && u.player.team.station === u && !this.campaign) this.checkVictory(u.player.team);
     this.recountPop();
@@ -3235,7 +3353,7 @@ export class World {
       for (const u of units) if (u.pendingAbility && !u.dead) this.checkPending(u);
       for (const sq of this.squads) if (sq.pendingAbility && !sq.dead) this.checkPending(sq);
       for (const u of units) {
-        if (u.dead || !u.player.human || u.hyper || !u.abilities.length || !u.abilities.some(a => a.auto)) continue;
+        if (u.dead || u.player.id < 0 || u.hyper || !u.abilities.length || !u.abilities.some(a => a.auto)) continue;
         if (!u.squad) aiUseAbilities(this, u, true);
         else if (u.squad.fighters[0] === u) aiUseAbilities(this, u.squad, true);
       }
@@ -3257,14 +3375,11 @@ export class World {
         u.l1y = u.y;
         u.l1z = u.z;
       }
-      u.l2x = u.l1x;
-      u.l2y = u.l1y;
-      u.l2z = u.l1z;
-      u.l1x = u.x;
-      u.l1y = u.y;
-      u.l1z = u.z;
+      // A fighter moves later, in moveFighters, which shifts its history right before the move.
+      if (!u.isFighter || u.hyper) shiftHistory(u);
       if (u.hyper) {
         this.updateHyper(u, dt);
+        if (u.hyper && u.hyper.shown && !u.isFighter && !u.dead && u.player.id >= 0) this.arrivalFire(u, dt);
         continue;
       }
       if (u.retreatFlight) continue;
@@ -3349,6 +3464,18 @@ export class World {
     }
   }
 
+  // Weapons of a ship still finishing its hyperspace arrival: it picks targets and fires as it would on arrival.
+  arrivalFire(u, dt) {
+    if (!(u.hasWeapons || u.weapon)) return;
+    u.scanTimer -= dt;
+    if (u.scanTimer <= 0) {
+      u.scanTimer = 0.4 + simRandom() * 0.2;
+      this.scan(u);
+    }
+    this.updateWeapons(u, dt);
+    if (u.weapon) this.updateTurret(u, dt);
+  }
+
   updateHyper(u, dt) {
     const h = u.hyper;
     if (this.holdHyperspace) return;
@@ -3371,7 +3498,7 @@ export class World {
       h.shown = true;
       u.obj.scale.setScalar(u.scale);
       u.obj.updateMatrix();
-      if (!u.isFighter || u.squad.fighters[0] === u)
+      if ((!u.isFighter || u.squad.fighters[0] === u) && this.audible(h.tx, h.ty, u.player))
         this.audio.playAt(
           u.player,
           u.player.faction
@@ -3385,7 +3512,7 @@ export class World {
   }
 
   updateUnit(u, dt) {
-    if (u.abilities.length || u.statuses.length) {
+    if (u.abilities.length || u.statuses.length || (u.passives && u.passives.length)) {
       tickAbilities(this, u, dt);
       if (u.dead) return;
     }
@@ -3441,7 +3568,7 @@ export class World {
         }
       }
     }
-    if (u.heal && u.player.id >= 0 && !u.construction) this.updateHeal(u, dt);
+    if (u.heals && u.player.id >= 0 && !u.construction) for (const h of u.heals) this.updateHeal(u, dt, h);
     if (u.income && u.player.id >= 0 && !(u.income.skirmish && this.campaign)) {
       const inc = u.income;
       let v = inc.value,
@@ -3509,7 +3636,7 @@ export class World {
     }
     if (u.flyBy && (u.flyTimer -= dt) <= 0) {
       u.flyTimer = ambientDelay(u.type);
-      if (u.speed > 1 && (!u.squad || u.squad.fighters?.[0] === u)) this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
+      if (u.speed > 1 && (!u.squad || u.squad.fighters?.[0] === u) && this.audible(u.x, u.y, u.player)) this.audio.playAt(u.player, u.flyBy, u.x, u.y, u);
     }
     if (u.player.id < 0) {
       if (u.isMobile) u.syncObj();
@@ -3540,7 +3667,7 @@ export class World {
     const sel = u.selected;
     this.removeUnit(u);
     if (!result) return;
-    this.audio.playAt(u.player, u.player.faction.str('SFXEvent_Tactical_Object_Building_Complete'), u.x, u.y);
+    if (this.audible(u.x, u.y, u.player)) this.audio.playAt(u.player, u.player.faction.str('SFXEvent_Tactical_Object_Building_Complete'), u.x, u.y);
     const built = this.spawn(result, u.player, u.x, u.y, u.heading);
     built.padOf = pad;
     built.selected = sel;
@@ -3882,7 +4009,7 @@ export class World {
       const show = this.time >= (u.asteroidFx ?? 0);
       if (show) {
         u.asteroidFx = this.time + rand(0.6, 1.2);
-        this.audio.playAt(u.player, t.str('SFXEvent_Damaged_By_Asteroid'), x, y);
+        if (this.audible(x, y, u.player)) this.audio.playAt(u.player, t.str('SFXEvent_Damaged_By_Asteroid'), x, y);
       }
       const dmg = c.num('Asteroid_Field_Damage', 20),
         fx = { hit: particleFile(t.str('Asteroid_Damage_Hit_Particles')) };
@@ -4148,6 +4275,47 @@ export class World {
     for (const u of this.units)
       if (!u.dead && u.spotted)
         for (const s of u.spotted) if (s.team === v.team && s.until > now) mark((s.cx + 0.5) * C, (s.cy + 0.5) * C, s.n * C);
+    // Capture points (mining asteroids, build pads) stay on screen under fog, so what the viewer is shown of them is
+    // what the viewer last saw: grey until first seen, then the owner at the last look, never a capture it missed.
+    // Only a cell in sight this tick counts: the fog's regrow time keeps a cell open after the last look, and a
+    // capture made in that window was not seen.
+    for (const u of this.units) {
+      if (u.dead || !u.capture) continue;
+      const cx = Math.floor(u.x / C) - g.x0,
+        cy = Math.floor(u.y / C) - g.y0,
+        sees = this.fogLifted & v.bit ? true : cx >= 0 && cy >= 0 && cx < g.w && cy < g.h && at[cy * g.w + cx] === now;
+      u.viewSees = sees;
+      if (sees) u.viewOwner = captureOwner(u);
+    }
+  }
+
+  // The owner the viewer is shown for a capture point: the real one when its own side holds it, it is in sight,
+  // or there is no fog; otherwise the owner when the viewer last saw it (neutral if never).
+  shownOwner(u) {
+    const real = captureOwner(u),
+      v = this.viewer;
+    if (!this.fog || !v || this.reveal || (v.bit && this.fogLifted & v.bit) || (real && real.team === v.team)) return real;
+    if (u.viewSees) return real;
+    return u.viewOwner && u.viewOwner.team !== v.team ? u.viewOwner : null;
+  }
+
+  // Whether the viewer can watch a capture point right now (its capture bar, its build-on child).
+  viewWatches(u) {
+    const v = this.viewer;
+    if (!this.fog || !v || this.reveal || (v.bit && this.fogLifted & v.bit)) return true;
+    const real = captureOwner(u);
+    if (real && real.team === v.team) return true;
+    if (u.capture && u.capture.by && u.capture.by.team === v.team) return true;
+    return u.viewSees !== false;
+  }
+
+  // Whether a sound made at (x, y) by `player` reaches the viewer: its own side's sounds always do, others only out
+  // of the fog, as the original's fogged objects make no sound.
+  audible(x, y, player) {
+    const v = this.viewer;
+    if (!this.fog || !v || this.reveal) return true;
+    if (player && player.team === v.team) return true;
+    return !this.viewFogged(x, y);
   }
 
   viewFogged(x, y) {
@@ -4327,7 +4495,7 @@ export class World {
   seekTake(o, i) {
     const sk = _seek,
       p = sk.p;
-    if (o.dead || o.hyper || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
+    if (o.dead || inJump(o) || !o.targetableUnit || o.player.id < 0 || o.player.team === p.team) return;
     const d2 = (o.x - p.x) ** 2 + (o.y - p.y) ** 2 + (o.z - p.z) ** 2;
     if ((d2 < sk.bd || (d2 === sk.bd && sk.best && i < sk.bi)) && !this.jammed(o)) {
       sk.bd = d2;
@@ -4345,7 +4513,7 @@ export class World {
     const bit = me.bit;
     const take = o => {
       if (
-        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || o.hyper || o.limbo || o.noOpportunity || !(o.seenBy & bit)) &&
+        !(o.dead || o.player.team === me.team || o.player.id < 0 || !o.targetableUnit || inJump(o) || o.limbo || o.noOpportunity || !(o.seenBy & bit)) &&
         dist2(u, o) <= r2
       )
         list.push(o);
@@ -4353,7 +4521,7 @@ export class World {
     const ug = this.unitGrid,
       pre = this.ahead && this.ahead.take(u);
     if (pre) {
-      for (const o of pre) if (!o.dead && !o.hyper) list.push(o);
+      for (const o of pre) if (!o.dead && !inJump(o)) list.push(o);
       for (let i = this.unitGridN; i < this.units.length; i++) take(this.units[i]);
     } else if (ug && this.unitGridN <= this.units.length) {
       const pad = range + UNIT_PAD,
@@ -4380,7 +4548,7 @@ export class World {
     const inReach = o => dist2(u, o) <= (reach + o.hitRadius) ** 2;
     const rate = o => (set ? priorityOf(set, o.type) : 1);
     let cur =
-      u.target && !u.target.dead && !u.target.hyper && u.target.targetableUnit && u.target.seenBy & bit && inReach(u.target)
+      u.target && !u.target.dead && !inJump(u.target) && u.target.targetableUnit && u.target.seenBy & bit && inReach(u.target)
         ? u.target
         : null;
     if (cur) {
@@ -4411,7 +4579,7 @@ export class World {
       }
       const lo = o.healthFrac <= low,
         lb = (bestIsLow ??= best.healthFrac <= low);
-      if (lo !== lb ? lo : r < br || dist2(u, o) < dist2(u, best)) {
+      if (lo !== lb ? lo : r !== br ? r < br : dist2(u, o) < dist2(u, best)) {
         best = o;
         br = r;
         bestIsLow = lo;
@@ -4850,8 +5018,7 @@ export class World {
     }
   }
 
-  updateHeal(u, dt) {
-    const h = u.heal;
+  updateHeal(u, dt, h = u.heal) {
     if ((h.timer -= dt) > 0) return;
     h.timer = h.interval;
     const mend = t => {
@@ -4882,8 +5049,15 @@ export class World {
       if (t.dead || t === u || t.hyper || t.player.team !== u.player.team || t.isStructure) continue;
       const f = t.healShare();
       if (f >= 1 || (t.x - u.x) ** 2 + (t.y - u.y) ** 2 > h.range * h.range) continue;
-      const cats = t.type.categories();
-      if (h.cats.length && !h.cats.some(c => cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))) continue;
+      const cats = t.type.categories(),
+        name = h.types.length || h.excluded.length ? t.type.name.toUpperCase() : '';
+      if (h.excluded.includes(name)) continue;
+      if (
+        !h.types.includes(name) &&
+        (h.cats.length || h.types.length) &&
+        !h.cats.some(c => c === 'ALL' || cats.has(c) || (c === 'HERO' && (cats.has('SPACEHERO') || cats.has('HERO'))))
+      )
+        continue;
       if (!h.single) {
         mend(t);
         this.showHealFeedback(t, h.targetLook);
@@ -4901,7 +5075,7 @@ export class World {
       healedAny = true;
       if (h.sfx && this.time - (h.said ?? -9) > 1.5) {
         h.said = this.time;
-        this.audio.playAt(best.player, h.sfx, best.x, best.y);
+        if (this.audible(best.x, best.y, best.player)) this.audio.playAt(best.player, h.sfx, best.x, best.y);
       }
       this.onEvent('healed', { unit: best, by: u });
     }
@@ -5203,32 +5377,35 @@ export class World {
       !(!u.player.human && !(hp.rechargeMax > db.constants.num('Hardpoint_Recharge_Cutoff_For_Opportunity_Fire', 3)))
     )
       return null;
-    const had = hp.target;
-    if (had && !had.dead && had !== ord && this.canBear(u, hp, had)) return had;
+    const set = setOf(u),
+      rank = o => (set ? priorityOf(set, o.type) : 1);
+    const had = hp.target && !hp.target.dead && hp.target !== ord && this.canBear(u, hp, hp.target) ? hp.target : null;
+    if (had && (rank(had) === 1 || this.time < (hp.lookAt || 0))) return had;
     if (this.time < (hp.lookAt || 0)) return null;
     hp.lookAt = this.time + 0.5;
-    const set = setOf(u);
-    let best = null,
-      br = Infinity;
+    let best = had,
+      br = had ? rank(had) : Infinity,
+      bd = Infinity;
     hp.worldPos(_p);
     const px = _p.x,
       py = _p.y,
       range = hp.range,
       arc = this.arcOf(u, hp);
+    if (had) bd = (had.x - px) ** 2 + (had.y - py) ** 2;
     for (const o of u.enemies) {
-      if (o.dead) continue;
+      if (o.dead || o === had) continue;
       const dx = o.x - px,
         dy = o.y - py,
+        d = dx * dx + dy * dy,
         reach = range + o.hitRadius;
-      if (dx * dx + dy * dy > reach * reach) continue;
-      // An enemy that would not be preferred over the one already found is passed over before the costly question
-      // of whether the hardpoint can bear on it: with priority lists nearly every enemy in reach is such a one.
-      const r = set ? priorityOf(set, o.type) : 1;
-      if (r < 0 || (best && !(r < br))) continue;
+      if (d > reach * reach) continue;
+      const r = rank(o);
+      // The held target stays unless something ranks above it; among fresh picks the nearest of the best rank wins.
+      if (r < 0 || (best && (r > br || (r === br && (best === had || d >= bd))))) continue;
       if (!this.bearsFrom(hp, o, px, py, arc)) continue;
       best = o;
       br = r;
-      if (r === 1) break;
+      bd = d;
     }
     return best;
   }
@@ -5270,7 +5447,7 @@ export class World {
           : { range: hp.range, damage: hp.projDamage }
     );
     if (ok === false) return false;
-    this.audio.playFrom(u, weaponFireSound(u.type, hp), x, y);
+    if (this.audible(x, y, u.player)) this.audio.playFrom(u, weaponFireSound(u.type, hp), x, y);
     return true;
   }
 
@@ -5502,7 +5679,7 @@ export class World {
       late = proj ? (proj._aeDelay ??= proj.num('Max_Secs_For_AE_Delayed_Damage', 0)) : 0;
     let victims = 0;
     for (const o of this.units.slice()) {
-      if (o.dead || o.hyper || !o.targetableUnit) continue;
+      if (o.dead || inJump(o) || !o.targetableUnit) continue;
       if (immune) {
         if (String(o.player.factionName || '').toUpperCase() === immune) continue;
       } else if (o.player.id < 0 || (owner && o.player.team === owner.team)) continue;
@@ -5563,10 +5740,11 @@ export class World {
       healing = proj.bool('Projectile_Instant_Heal_On_Detonation'),
       detonationParticle =
         particleFile(proj.str('Projectile_Lifetime_Detonation_Particle')) || particleFile(proj.str('Projectile_Object_Detonation_Particle'));
-    if (healing) this.fx.made?.(detonationParticle, x, y, z);
-    else this.fx.explosion(x, y, z, Math.min(600, range * 0.8), big || range > 300, detonationParticle);
+    const shown = this.audible(x, y, owner);
+    if (shown && healing) this.fx.made?.(detonationParticle, x, y, z);
+    else if (shown) this.fx.explosion(x, y, z, Math.min(600, range * 0.8), big || range > 300, detonationParticle);
     const sfx = proj.str('Projectile_SFXEvent_Detonate') || (healing ? '' : 'Unit_Star_Destroyer_Death_SFX');
-    if (sfx) this.audio.play(sfx, x, y);
+    if (sfx && shown) this.audio.play(sfx, x, y);
     this.areaDamage(x, y, range, dmg, proj.str('Damage_Type'), owner, {
       shields: proj.bool('Projectile_Does_Shield_Damage', true),
       hull: proj.bool('Projectile_Does_Hitpoint_Damage', true),
@@ -5576,7 +5754,8 @@ export class World {
     if (healing && owner) this.instantHeal(proj, owner, x, y);
   }
 
-  instantHeal(proj, owner, x, y) {
+  // dry: only tell whether anything in reach would be healed.
+  instantHeal(proj, owner, x, y, dry = false) {
     const R = proj.num('Projectile_Instant_Heal_Radius', 100),
       add = proj.num('Projectile_Instant_Heal_Health_Increase', 0),
       cats = proj
@@ -5584,7 +5763,9 @@ export class World {
         .split(/[|,\s]+/)
         .filter(Boolean)
         .map(c => c.toUpperCase()),
-      file = particleFile(proj.str('Projectile_Instant_Heal_Spawn_Effect'));
+      file = particleFile(proj.str('Projectile_Instant_Heal_Spawn_Effect')),
+      // the healed effect stays on the unit for Projectile_Instant_Heal_Duration_Frames logic frames
+      shown = Math.max(1, proj.num('Projectile_Instant_Heal_Duration_Frames', 30)) / LOGIC_FPS;
     const team = owner.team || owner.player?.team;
     for (const u of this.units) {
       if (u.dead || u.hyper || u.player.team !== team || (u.x - x) ** 2 + (u.y - y) ** 2 > R * R) continue;
@@ -5592,10 +5773,37 @@ export class World {
         const has = u.type.categories();
         if (!cats.some(c => has.has(c))) continue;
       }
-      if (u.health >= u.maxHealth) continue;
-      u.health = Math.min(u.maxHealth, u.health + add);
-      if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, 1);
+      if (!this.mend(u, add, dry)) continue;
+      if (dry) return true;
+      if (file && this.viewerSees(u)) this.fx.attachFx?.(u, file, shown);
     }
+    return false;
+  }
+
+  // Raises the hull and every surviving hardpoint by the same share, so the two health pools stay in step.
+  mend(u, amount, dry = false) {
+    let parts = false,
+      left = 0,
+      all = 0;
+    if (u.hpDriven)
+      for (const p of u.hardpoints) {
+        if (!p.destroyable) continue;
+        all += p.maxHealth;
+        if (!p.alive || !(p.health > 0)) continue;
+        left += p.health;
+        if (p.health < p.maxHealth) parts = true;
+      }
+    // Lost hardpoints hold the hull below full for good (pullPools); that is not damage a repair can undo.
+    const gap = (this.hullGap ??= db.constants.num('Hull_Vs_Hard_Points_Health_Constraint', 0.2)),
+      cap = u.hpDies && all > 0 ? Math.min(1, left / all + gap) : 1;
+    if (!(amount > 0) || !(u.maxHealth > 0) || (!parts && !(u.health < u.maxHealth * cap - 1e-6))) return false;
+    if (dry) return true;
+    const share = amount / u.maxHealth;
+    u.health = Math.min(u.maxHealth, u.health + amount);
+    if (parts)
+      for (const p of u.hardpoints)
+        if (p.destroyable && p.alive && p.health > 0) p.health = Math.min(p.maxHealth, p.health + p.maxHealth * share);
+    return true;
   }
 
   delayed(seconds, x, y, z, fn) {
@@ -5747,7 +5955,7 @@ export class World {
         } else store.release(row);
         continue;
       }
-      if (p.homing && (!t || t.dead || t.hyper)) {
+      if (p.homing && (!t || t.dead || inJump(t))) {
         p.target = p.targetHp = null;
         if (p.scan > 0) {
           p.target = this.seekTarget(p);
@@ -6024,7 +6232,7 @@ export class World {
     hitters.length = 0;
     this.hitWhole = false;
     for (const o of this.units) {
-      if (o.dead || o.hyper || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
+      if (o.dead || inJump(o) || !o.targetableUnit || (o.player.id < 0 && !this.razable(o))) continue;
       if (!(o.type.collidable ??= o.type.bool('Collidable_By_Projectile_Living', false))) continue;
       hitters.push(o);
       if (!teams.has(o.player.team)) teams.set(o.player.team, teams.size);
@@ -6166,7 +6374,7 @@ export class World {
     let best = null,
       bd = Infinity;
     for (const o of this.units) {
-      if (o.dead || o.player.id < 0 || o.player.team === e.player.team || !o.targetableUnit || o.hyper || !(o.seenBy & bit)) continue;
+      if (o.dead || o.player.id < 0 || o.player.team === e.player.team || !o.targetableUnit || inJump(o) || !(o.seenBy & bit)) continue;
       let dd = dist2(e, o);
       if (o.isStructure) dd *= 4;
       if (dd < bd) {
@@ -6308,8 +6516,10 @@ export class World {
     return false;
   }
 
-  squadPick(s, lead, cur) {
-    const ord = s.order,
+  // `escorted`: the ship a squadron escorts on an attack order (see escortGoal). The squadron then answers what
+  // comes at that ship or at itself as if it guarded the ship, and goes back to the escort once that is dealt with.
+  squadPick(s, lead, cur, escorted = null) {
+    const ord = escorted ? { kind: 'guard', target: escorted } : s.order,
       kind = ord.kind,
       lt = s.type;
     const range =
@@ -6330,7 +6540,7 @@ export class World {
     const respond = (o, start = true) => {
       if (range < 0) return false;
       // Idle squadrons take on what comes into weapon reach, parked ones too (ours: they used to shoot only from where they sat).
-      if (kind === 'idle' && inWeapon(o)) return true;
+      if ((kind === 'idle' || kind === 'guard') && inWeapon(o)) return true;
       const hurt = (ext || parked) && this.hurtBy(s, o);
       if (parked && !hurt) return false;
       const f = hull + range + (ext && (hurt || (guarded && this.hurtBy(guarded, o))) ? ext : 0);
@@ -6342,55 +6552,62 @@ export class World {
       low = db.constants.num('Health_Low_Percent_Threshold', 0.33);
     let keep = cur && !cur.dead ? (cur.isSquad ? cur.fighters[0] : cur) : null;
     if (keep && !respond(keep, false)) keep = null;
-    const was = s.fireTarget && !s.fireTarget.dead ? (s.fireTarget.isSquad ? s.fireTarget.fighters[0] : s.fireTarget) : null;
+    const team = s.player.team,
+      sight = s.player.bit,
+      valid = o => !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || inJump(o) || !(o.seenBy & sight));
+    const was0 = s.fireTarget && !s.fireTarget.dead ? (s.fireTarget.isSquad ? s.fireTarget.fighters[0] : s.fireTarget) : null,
+      was = was0 && valid(was0) ? was0 : null;
     const wp = !!lead.weapon;
+    // Two picks from the same scan: what the guns fire at (in weapon reach or answered) and what the squadron goes
+    // after (answered only), so an enemy that only passes in front of the guns never hides one that is answered.
     let best = null,
-      br = 0,
-      bp,
-      bestIsLow;
+      chase = null;
     if (was && (inWeapon(was) || respond(was)) && rate(was) >= 0) {
       const left = (was.toKill + (was.shield || 0)) / Math.max(1e-6, this.damageRate(was));
       if (rate(was) === 1 || left <= lead.type.num('Targeting_Stickiness_Time_Threshold', 0)) best = was;
     }
-    if (!best) {
-      const team = s.player.team,
-        sight = s.player.bit;
+    const sticky = !!best;
+    if (best && kind !== 'move' && respond(best)) chase = best;
+    if (!best || (!chase && kind !== 'move' && range >= 0)) {
       const candidates = this.unitsAround(
         lead,
         reach,
         range < 0 ? null : anchor,
         hull + range + ext + reach,
-        o =>
-          !(o.dead || o.player.team === team || o.player.id < 0 || !o.targetableUnit || o.hyper || !(o.seenBy & sight)) &&
-          (inWeapon(o) || respond(o)),
+        o => valid(o) && (inWeapon(o) || respond(o)),
         this.squadPickCandidates
       );
+      const fires = new Map(),
+        fire = o => {
+          let v = fires.get(o);
+          if (v === undefined) fires.set(o, (v = this.canFire(lead, o)));
+          return v;
+        };
+      const better = (o, r, b, brate) => {
+        const lo = o.healthFrac <= low,
+          lb = b.healthFrac <= low;
+        if (lo !== lb) return lo;
+        if (r !== brate) return r < brate;
+        if (wp && fire(b) !== fire(o)) return fire(o);
+        return dist2(lead, o) < dist2(lead, b);
+      };
+      let br = 0,
+        cr = 0;
       for (const o of candidates) {
         const r = rate(o);
         if (r < 0) continue;
-        if (!best) {
+        if (!sticky && (!best || better(o, r, best, br))) {
           best = o;
           br = r;
-          continue;
         }
-        const lo = o.healthFrac <= low,
-          lb = (bestIsLow ??= best.healthFrac <= low);
-        let take,
-          po;
-        if (lo !== lb) take = lo;
-        else if (r < br) take = true;
-        else if (wp && (bp ??= this.canFire(lead, best)) !== (po = this.canFire(lead, o))) take = po;
-        else take = dist2(lead, o) < dist2(lead, best);
-        if (take) {
-          best = o;
-          br = r;
-          bp = po;
-          bestIsLow = lo;
+        if (kind !== 'move' && respond(o) && (!chase || better(o, r, chase, cr))) {
+          chase = o;
+          cr = r;
         }
       }
     }
     s.fireTarget = best ? best.squad || best : null;
-    if (best && kind !== 'move' && respond(best)) return best.squad || best;
+    if (chase && kind !== 'move') return chase.squad || chase;
     return keep ? cur : null;
   }
 
@@ -6472,7 +6689,7 @@ export class World {
   }
 
   dogAnswer(t, by) {
-    if (!t.fighters[0] || t.mode === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
+    if (!t.fighters[0] || t.order.kind === 'move' || t.direct || t.isActive('ION_CANNON_SHOT') || t.isActive('LUCKY_SHOT')) return;
     const tt = t.target || t.fireTarget;
     if (tt && !tt.dead && tt.isSquad) return;
     this.autoAttack(t, by);
@@ -6569,7 +6786,9 @@ export class World {
     s.cruise = undefined;
     const wing = ord.wing && (ord.kind === 'move' || ord.kind === 'attackmove' || ord.kind === 'attack') ? ord.wing : null,
       esc = wing && wing.escort && s.fighters[0] ? this.escortGoal(s, wing) : null;
-    if (ord.kind === 'attack') tgt = esc ? null : ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
+    const atkTarget = ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target) ? ord.target : null;
+    // An escort keeps what it took on in defence of its ship (squadPick with the ship) until that is gone.
+    if (ord.kind === 'attack') tgt = esc ? (tgt && tgt !== ord.target && !this.befriended(s, tgt) ? tgt : null) : atkTarget;
     if (!esc && !tgt && s.dogKey >= 0 && (ord.kind === 'attack' || s.target)) {
       const e = this.dogEnemy(s);
       if (e) {
@@ -6585,12 +6804,17 @@ export class World {
     }
     const lead = s.fighters[0];
     if (ord.kind === 'attack' && !esc) s.fireTarget = tgt;
-    else if (ord.kind === 'attack' && ord.target && !ord.target.dead && !this.befriended(s, ord.target)) s.fireTarget = ord.target;
-    else if (s.scanTimer <= 0 && lead) {
+    else if (ord.kind === 'attack' && esc) {
+      if (s.scanTimer <= 0 && lead) {
+        s.scanTimer = 1 + simRandom() * 0.5;
+        tgt = this.squadPick(s, lead, tgt, wing.escort);
+      }
+      if (!tgt && (!s.fireTarget || s.fireTarget.dead)) s.fireTarget = atkTarget;
+    } else if (s.scanTimer <= 0 && lead) {
       s.scanTimer = 1 + simRandom() * 0.5;
       if (ord.kind === 'idle' && s.homeOf !== ord) {
         s.homeOf = ord;
-        s.home = { x: s.x, y: s.y };
+        s.home = { x: lead.x, y: lead.y };
       }
       tgt = this.squadPick(s, lead, tgt);
     }
@@ -6680,8 +6904,10 @@ export class World {
         }
       } else if (ord.kind === 'guard') {
         if (ord.target && ord.target.dead) {
-          const t = this.posOf(ord.target);
-          s.setOrder({ kind: 'move', x: t.x, y: t.y });
+          // As a ship whose guarded unit dies (updateShip): idle where it is, answering what comes within
+          // Idle_Chase_Range, not a move to the wreck that answers nothing on the way.
+          s.setOrder({ kind: 'idle' });
+          s.alone = true;
         } else {
           const p = this.guardSpot(s, ord),
             keep = 150 + (ord.target ? ord.target.radius || 0 : 0);
@@ -6736,7 +6962,10 @@ export class World {
           (o.kind === 'move' || o.kind === 'attackmove') &&
           o.x !== undefined &&
           (sh.x - o.x) ** 2 + (sh.y - o.y) ** 2 > (ESCORT_KEEP + (sh.radius || 0)) ** 2;
-      if ((!sh.going && !underway) || (o.kind === 'attack' && o.reached)) {
+      // A ship held still for three checks in a row (a route that failed, turning on the spot, a jam) is no
+      // longer taking its escort anywhere: the squadrons go on to the target themselves.
+      w.still = sh.going && sh.speed < 1 ? (w.still || 0) + 1 : 0;
+      if ((!underway && (!sh.going || w.still >= 3)) || (o.kind === 'attack' && o.reached)) {
         dropEscort(w);
         return null;
       }
@@ -7180,6 +7409,7 @@ export class World {
     this.fighterDecisions.run(dt);
     const moveFrom = performance.now();
     this.stepTimes.decide += moveFrom - from;
+    for (const u of this.units) if (u.isFighter && !u.dead && !u.hyper && u.l1x !== undefined) shiftHistory(u);
     const moved = this.fighterMoves.run(dt);
     const fireFrom = performance.now();
     for (const u of moved) if (!u.dead && !u.suspended) this.fireFighterWeapons(u, dt);
