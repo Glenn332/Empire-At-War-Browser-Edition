@@ -76,13 +76,16 @@ fn is_known_lobby(url: &str) -> bool {
         && (host == "playeaw.com" || host.ends_with(".playeaw.com") || host == NIGHTLY_LOBBY)
 }
 
-/// Points playeaw:// links at this copy of the app. A release build always takes them over;
-/// a development build only when no working app has them, so it does not steal them from
-/// the installed app.
+/// The installer points playeaw:// links at the installed app (installer-hooks.nsh), so a
+/// release build leaves the registry alone. A development build takes the links only when no
+/// working app has them, so invites can be tried without stealing them from an installed app.
 #[cfg(windows)]
 pub fn register() {
     use winreg::RegKey;
     use winreg::enums::HKEY_CURRENT_USER;
+    if !cfg!(debug_assertions) {
+        return;
+    }
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -95,16 +98,13 @@ pub fn register() {
         .open_subkey(&open_path)
         .and_then(|key| key.get_value(""))
         .ok();
-    if registered.as_deref() == Some(command.as_str()) {
-        return;
-    }
     let registered_works = registered.as_deref().is_some_and(|line| {
         line.trim_start_matches('"')
             .split('"')
             .next()
             .is_some_and(|path| std::path::Path::new(path).is_file())
     });
-    if cfg!(debug_assertions) && registered_works {
+    if registered_works {
         return;
     }
     let write = || -> std::io::Result<()> {
