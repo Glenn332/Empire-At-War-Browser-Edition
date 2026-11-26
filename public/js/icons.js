@@ -105,6 +105,41 @@ export function iconUrl(name) {
   return url;
 }
 
+// An image with its colour multiplied by brightness and its alpha kept, the way the engine draws a disabled build
+// button (vertex colour 128). Baked into the image so the page needs no CSS filter, which flickered.
+function dimmedPixelsUrl(source, rect, brightness) {
+  const src = source.data,
+    rows = Math.min(rect.h, source.height - rect.y),
+    columns = Math.max(0, Math.min(rect.w, source.width - rect.x));
+  return pixelsUrl(rect.w, rect.h, (bytes, at) => {
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < columns; x++) {
+        const from = ((rect.y + y) * source.width + rect.x + x) * 4,
+          to = at + (y * rect.w + x) * 4;
+        bytes[to] = Math.round(src[from] * brightness);
+        bytes[to + 1] = Math.round(src[from + 1] * brightness);
+        bytes[to + 2] = Math.round(src[from + 2] * brightness);
+        bytes[to + 3] = src[from + 3];
+      }
+  });
+}
+
+export function iconDimmedUrl(name, brightness) {
+  if (!name || !pixels) return '';
+  const key = name.trim().toUpperCase(),
+    cacheKey = key + '|*' + brightness;
+  if (urls.has(cacheKey)) return urls.get(cacheKey);
+  const rect = rects.get(key),
+    url = rect ? dimmedPixelsUrl(pixels, rect, brightness) : '';
+  urls.set(cacheKey, url);
+  return url;
+}
+
+export function canvasDimmedUrl(canvas, brightness) {
+  const source = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  return dimmedPixelsUrl(source, { x: 0, y: 0, w: canvas.width, h: canvas.height }, brightness);
+}
+
 export function iconAdditiveUrl(name, tint = null) {
   if (!name || !pixels) return '';
   const key = name.trim().toUpperCase(),
