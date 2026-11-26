@@ -9,6 +9,7 @@
     "deploy:prod": "node tools/build.mjs && cd lobby && npx wrangler deploy --env production && npx wrangler pages deploy ../dist --project-name empire-at-war-browser-edition --branch main --commit-dirty=true && cd .. && node tools/release-app.mjs tag",
     "wasm": "asc wasm/pathsearch.ts -o public/js/game/pathsearch.wasm -O3 --runtime stub --noAssert --initialMemory 32 && asc wasm/landpose.ts -o public/js/game/landpose.wasm -O3 --runtime stub --noAssert --initialMemory 2 --enable simd",
     "app": "node tools/build-app.mjs",
+    "tauri": "tauri",
     "app:bump": "node tools/release-app.mjs bump",
     "app:android": "node tools/build-android.mjs",
     "test": "node tools/run-tests.mjs",

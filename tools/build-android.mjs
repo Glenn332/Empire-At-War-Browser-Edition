@@ -31,7 +31,9 @@ const androidDir = path.join(tauriDir, 'gen', 'android');
 const windows = process.platform === 'win32';
 
 const run = (cmd, args, options = {}) => execFileSync(cmd, args, { cwd: web, stdio: 'inherit', shell: windows, ...options });
-const quoted = value => JSON.stringify(value);
+// Windows runs these through its shell, which needs paths with spaces quoted; elsewhere the
+// arguments go to the program as they are
+const quoted = value => (windows ? JSON.stringify(value) : value);
 const fail = message => {
   console.error(message);
   process.exit(1);
