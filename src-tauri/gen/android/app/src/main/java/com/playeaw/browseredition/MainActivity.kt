@@ -1,6 +1,9 @@
 package com.playeaw.browseredition
 
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,7 +21,31 @@ class MainActivity : TauriActivity() {
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
-    if (hasFocus) hideSystemBars()
+    if (hasFocus) {
+      hideSystemBars()
+      focusPage()
+    }
+  }
+
+  // a connected keyboard types into the page from the start, not only after the first tap;
+  // the page is made once the window is up, so this looks again until it is there
+  private fun focusPage(triesLeft: Int = 20) {
+    val page = findWebView(window.decorView)
+    if (page == null) {
+      if (triesLeft > 0) window.decorView.postDelayed({ focusPage(triesLeft - 1) }, 250)
+      return
+    }
+    page.isFocusable = true
+    page.isFocusableInTouchMode = true
+    if (!page.hasFocus()) page.requestFocus()
+  }
+
+  private fun findWebView(view: View): WebView? {
+    if (view is WebView) return view
+    if (view is ViewGroup) {
+      for (index in 0 until view.childCount) findWebView(view.getChildAt(index))?.let { return it }
+    }
+    return null
   }
 
   // the game fills the screen: the status and navigation bars stay hidden until swiped in
