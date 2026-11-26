@@ -10,11 +10,13 @@ export const DOWNLOAD = downloadOf(ASSET);
 const BUILDS = {
   windows: { asset: ASSET, name: 'Windows', needs: 'Windows 10 and 11' },
   macos: { asset: 'EmpireAtWarBrowserEdition-macos.dmg', name: 'macOS', needs: 'macOS 11 or newer, Apple silicon and Intel' },
-  linux: { asset: 'EmpireAtWarBrowserEdition-linux-x86_64.AppImage', name: 'Linux', needs: 'Linux x86-64 AppImage' }
+  linux: { asset: 'EmpireAtWarBrowserEdition-linux-x86_64.AppImage', name: 'Linux', needs: 'Linux x86-64 AppImage' },
+  android: { asset: 'EmpireAtWarBrowserEdition-android-arm64.apk', name: 'Android', needs: '64-bit Android phones and tablets' }
 };
 const visitorSystem = () => {
   const agent = navigator.userAgent;
-  if (/Windows/.test(agent) || /Android|iPhone|iPad/.test(agent)) return 'windows';
+  if (/Android/.test(agent)) return 'android';
+  if (/Windows/.test(agent) || /iPhone|iPad/.test(agent)) return 'windows';
   if (/Macintosh|Mac OS X/.test(agent)) return 'macos';
   if (/Linux|X11/.test(agent)) return 'linux';
   return 'windows';

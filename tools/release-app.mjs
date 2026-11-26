@@ -44,6 +44,9 @@ const BUILDS = {
     ]
   }
 };
+// the Android app is built on any system with --android; it is updated by installing the new
+// APK over the old one (same release key), not through the in-app updater feed
+const ANDROID = { name: 'android', files: [{ asset: 'EmpireAtWarBrowserEdition-android-arm64.apk' }] };
 const FEED_PART = /^feed-.+\.json$/;
 
 const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -128,10 +131,11 @@ function bundled(bundleRoot, kind, ending, version) {
 
 // builds this system's app into dist-release/: its release files and feed-<system>.json, the
 // part of the updater feed it signs; publish merges the parts of every system into latest.json
-function build() {
+async function build() {
   const { version } = conf();
   if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== tagOf(version))
     fail(`tag ${process.env.GITHUB_REF_NAME} does not match the app version ${version}`);
+  if (rest.includes('--android')) return buildAndroidRelease(version);
   if (!process.env.TAURI_SIGNING_PRIVATE_KEY) fail('TAURI_SIGNING_PRIVATE_KEY is not set: add it as a repository secret');
   const system = BUILDS[process.platform];
   if (!system) fail(`no app build for ${process.platform}`);
@@ -163,6 +167,18 @@ function build() {
   console.log(`${system.name} release ${version} in dist-release/`);
 }
 
+// the APK signed with the app's release key (ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASSWORD,
+// ANDROID_KEY_ALIAS) into dist-release/, with an empty feed part so publish knows it was built
+async function buildAndroidRelease(version) {
+  const { buildAndroid } = await import('./build-android.mjs');
+  const signed = buildAndroid({ signing: 'release' });
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  copyFileSync(signed, path.join(out, ANDROID.files[0].asset));
+  writeFileSync(path.join(out, `feed-${ANDROID.name}.json`), JSON.stringify({ version, platforms: {} }, null, 2) + '\n');
+  console.log(`android release ${version} in dist-release/`);
+}
+
 // latest.json from the feed parts the system builds left in dist-release/
 function mergeFeed(version) {
   const parts = readdirSync(out).filter(name => FEED_PART.test(name));
@@ -185,7 +201,7 @@ function publish() {
     name = tagOf(version);
   const feed = mergeFeed(version);
   const gh = (...args) => run('gh', [...args, '--repo', REPO], { stdio: 'inherit', encoding: undefined });
-  const assets = Object.values(BUILDS)
+  const assets = [...Object.values(BUILDS), ANDROID]
     .flatMap(system => system.files.map(file => file.asset))
     .filter(asset => existsSync(path.join(out, asset)));
   const files = [...assets, 'latest.json'].map(name => path.join(out, name));

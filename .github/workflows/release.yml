@@ -65,9 +65,69 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  android:
+    # signed with the app's release key from the repository secrets; without them the job is
+    # skipped and the release goes out without an APK
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - name: Release key
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD are not set, so no Android build"
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+        if: env.HAS_KEY == 'true'
+        with:
+          packages: platform-tools build-tools;34.0.0 ndk;${{ env.NDK_VERSION }}
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.HAS_KEY == 'true'
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        if: env.HAS_KEY == 'true'
+        with:
+          workspaces: src-tauri
+          key: android
+      - if: env.HAS_KEY == 'true'
+        run: npm ci
+      - name: Build and sign
+        if: env.HAS_KEY == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: playeaw
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export ANDROID_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE"
+          node tools/release-app.mjs build --android
+          rm -f "$ANDROID_KEYSTORE"
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          name: app-android
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
-    needs: build
-    # publishes when at least the Windows build made it; a missing macOS or Linux build is left out
+    needs: [build, android]
+    # publishes when at least the Windows build made it; a missing macOS, Linux or Android build is left out
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
