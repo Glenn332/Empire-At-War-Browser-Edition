@@ -2878,6 +2878,14 @@ export class GalacticGame {
     return Object.fromEntries(this.galaxy.players.map(p => [p.faction, (p.blackMarket || []).slice()]));
   }
 
+  // The engine keeps one GlobalValue table for the whole game, so what the galaxy's scripts set (EaW-X stores its
+  // MOD_ID there from GameScoring) is there for the battle's scripts too. Only plain values cross into a battle.
+  globalValues() {
+    const out = {};
+    for (const [key, value] of this.story?.values || []) if (['string', 'number', 'boolean'].includes(typeof value)) out[key] = value;
+    return out;
+  }
+
   techLevels() {
     return Object.fromEntries(this.galaxy.players.map(p => [p.faction, p.tech || 0]));
   }
@@ -3012,6 +3020,7 @@ export class GalacticGame {
         storyPlots,
         autoResolve: this.autoResolveFor(b),
         galacticPerceptions: this.galacticPerceptions(b),
+        globalValues: this.globalValues(),
         treasury: this.tacticalTreasury(b),
         tech: this.techLevels(),
         blackMarket: this.blackMarketOwned(),
@@ -3279,6 +3288,7 @@ export class GalacticGame {
         galaxy: snap,
         storyPlots,
         galacticPerceptions: this.galacticPerceptions(b),
+        globalValues: this.globalValues(),
         treasury: this.tacticalTreasury(b),
         orbitOwners: [...new Set(g.fleets.filter(f => f.planet === b.p && !f.leg && f.units.length).map(f => f.owner))],
         bombingRun: orbitBombingRun(g, b.p, b.attacker),

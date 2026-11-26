@@ -88,7 +88,7 @@ export class ScriptHost {
     this.errors = new Map();
     this.inert = new Set();
     this.instances = [];
-    this.values = new Map();
+    this.values = new Map(Object.entries(game.setup?.campaign?.globalValues || {}));
     this.wrapped = new WeakMap();
     this.brains = new Map();
     this.current = null;
