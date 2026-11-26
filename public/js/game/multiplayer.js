@@ -13,6 +13,7 @@ import { contentNow } from '../content.js';
 import { listingContent, listLocalPref, setListLocalPref, describeListing, detailLines } from './lobbycontent.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 import { inApp } from '../platform.js';
+import { optionBoxes, offersRandomEvents } from './campaignsettings.js';
 
 const T = (id, fallback) => {
   const s = db.text.get(id);
@@ -793,11 +794,7 @@ async function campaignOptions(st, campaign) {
         st.autoResolve = +v;
       }
     );
-    // random story events come from single-player story rewards only, so that box carries the ground auto-resolve choice
-    dlg.setText('IDC_ALLOW_RANDOM_EVENTS', T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve === true, on => {
-      st.groundAutoResolve = on;
-    });
+    optionBoxes(dlg, st, T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
@@ -818,7 +815,8 @@ async function campaignOptions(st, campaign) {
         tech: C.num('MP_Default_Start_Tech_Level', 1),
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
         autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-        groundAutoResolve: false
+        groundAutoResolve: false,
+        randomEvents: true
       });
       show();
     });
@@ -1047,7 +1045,8 @@ async function openStaging(args) {
     tech: C.num('MP_Default_Start_Tech_Level', 1),
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
     autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
-    groundAutoResolve: false
+    groundAutoResolve: false,
+    randomEvents: true
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1338,7 +1337,8 @@ async function openStaging(args) {
         maxTech: o.maxTech ?? st.maxTech,
         autoResolve: o.autoResolve ?? st.autoResolve,
         // a save from before the option keeps the old prompt until the host turns it on
-        groundAutoResolve: o.groundAutoResolve ?? false
+        groundAutoResolve: o.groundAutoResolve ?? false,
+        randomEvents: o.randomEvents ?? true
       });
     } else {
       const knownMap = isDynamic(base.mapFile)
@@ -1648,7 +1648,8 @@ async function openStaging(args) {
               T('TEXT_ALLOW_AUTORESOLVE', 'Auto-resolve combat'),
               st.autoResolve === 0 ? T('TEXT_ALLOW_AUTORESOLVE_ALWAYS', 'Always') : T('TEXT_ALLOW_AUTORESOLVE_ASK', 'Ask')
             ],
-            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve === true ? yes : no]
+            [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve === true ? yes : no],
+            ...(offersRandomEvents() ? [[T('TEXT_ALLOW_RANDOM_EVENTS', 'Allow random events'), st.randomEvents !== false ? yes : no]] : [])
           ]
         : [
             [
@@ -1822,7 +1823,8 @@ async function openStaging(args) {
           tech: st.tech,
           maxTech: st.maxTech,
           autoResolve: st.autoResolve,
-          groundAutoResolve: st.groundAutoResolve === true
+          groundAutoResolve: st.groundAutoResolve === true,
+          ...(offersRandomEvents() ? { randomEvents: st.randomEvents !== false } : {})
         },
         players: players.map(s =>
           s.kind === 'human'

@@ -776,7 +776,8 @@ export class GalacticMind extends Reason {
       const story = this.ai.game.story;
       return story ? Math.max(0, (story.time || 0) - (story.storyGoalAt || 0)) : 0;
     }
-    if (name === 'GAME.INTERVENTIONSENABLED') return 1;
+    // the setup's "Allow random events" box; on unless the player turned it off
+    if (name === 'GAME.INTERVENTIONSENABLED') return this.ai.game.galaxy?.randomEvents === false ? 0 : 1;
     if (host && nameMatch(KNOWN_HOST_RE, name)) return host.perception(variable, params, host.player(c.player.faction), target || {});
     this.ai.missing.set(variable, (this.ai.missing.get(variable) || 0) + 1);
     throw new UnknownPerception(variable);

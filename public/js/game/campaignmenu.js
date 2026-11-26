@@ -4,7 +4,15 @@ import { iconAtlas, iconCanvasRect } from '../icons.js';
 import { loadTextureCanvas } from '../dds.js';
 import { openDialog } from './dialogs.js';
 import { loadCampaignData } from './galaxy.js';
-import { campaignLimits, campaignDefaults, creditSteps, creditsAt, techRange } from './campaignsettings.js';
+import {
+  campaignLimits,
+  campaignDefaults,
+  creditSteps,
+  creditsAt,
+  techRange,
+  optionBoxes,
+  offersRandomEvents
+} from './campaignsettings.js';
 
 const key = s =>
   String(s || '')
@@ -114,7 +122,10 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       teamFactions: [],
       ...(settings?.custom ? { campaignSettings: { ...settings } } : {}),
       // off unless the player ticks it, and never in a tutorial, which teaches the ground battles
-      options: { groundAutoResolve: !tutorial && settings?.groundAutoResolve === true }
+      options: {
+        groundAutoResolve: !tutorial && settings?.groundAutoResolve === true,
+        ...(offersRandomEvents() ? { randomEvents: settings?.randomEvents !== false } : {})
+      }
     });
   };
   dlg.show('IDC_DIALOG_CLOSE_BUTTON', false);
@@ -236,11 +247,7 @@ export async function campaignOptionsDialog(st, campaign, faction) {
         mark();
       }
     );
-    // the random-events box has nothing to offer in the galaxy; the slot carries the ground auto-resolve choice
-    dlg.setText('IDC_ALLOW_RANDOM_EVENTS', 'Auto-resolve all ground battles');
-    dlg.check('IDC_ALLOW_RANDOM_EVENTS', st.groundAutoResolve === true, on => {
-      st.groundAutoResolve = on;
-    });
+    optionBoxes(dlg, st, 'Auto-resolve all ground battles');
   };
   if (!limits.custom)
     for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER', 'IDC_ALLOW_AUTORESOLVE_COMBO'])
