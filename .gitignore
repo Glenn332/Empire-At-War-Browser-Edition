@@ -4,7 +4,7 @@ node_modules/
 .wrangler/
 dist/
 src-tauri/target/
-src-tauri/gen/
+src-tauri/gen/schemas/
 dist-app/
 dist-release/
 

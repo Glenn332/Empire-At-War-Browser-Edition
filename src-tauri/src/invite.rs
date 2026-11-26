@@ -126,7 +126,7 @@ pub fn register() {
 /// applications folder and the xdg default for the scheme. An AppImage names itself in
 /// APPIMAGE (its own binary runs from a temporary mount). A development build leaves the
 /// links to the installed app.
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub fn register() {
     if cfg!(debug_assertions) {
         return;
@@ -173,7 +173,7 @@ pub fn register() {
 }
 
 /// A path as one quoted Exec argument of a desktop entry.
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 fn desktop_exec_quote(path: &str) -> String {
     let mut quoted = String::from("\"");
     for character in path.chars() {
@@ -186,6 +186,7 @@ fn desktop_exec_quote(path: &str) -> String {
     quoted
 }
 
-/// On macOS the bundle's Info.plist claims the scheme, and links arrive as open-URL events.
-#[cfg(target_os = "macos")]
+/// On macOS the bundle's Info.plist claims the scheme, and links arrive as open-URL events;
+/// Android and iOS have no invite links yet.
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn register() {}

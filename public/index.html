@@ -2827,6 +2827,7 @@
       const HOW = {
         steam: 'found through Steam',
         gog: 'found through GOG',
+        copied: 'copied into the app',
         chosen: 'chosen by you',
         env: 'set by SWR_GAME',
         dev: 'the copy next to the app (development)'
@@ -2907,6 +2908,10 @@
           gameStatus('Opening the game…');
           if (await changeSetup('game', { path }, gameStatus)) location.reload();
         });
+        if (g.copyTo) {
+          showCopiedGame(el, h, g);
+          return;
+        }
         const parts = g.path ? [span('path', g.path, g.path), span('meta', HOW[g.how] || g.how)] : [];
         if (g.how === 'chosen' && g.steam)
           parts.push(
@@ -2923,6 +2928,22 @@
         p.className = 'modadd';
         p.append(choose);
         el.append(p);
+      }
+      // phones and tablets have no folder dialog: the player copies the game into the app's folder
+      function showCopiedGame(el, heading, g) {
+        heading.textContent = g.path
+          ? 'The game is played from the copy in the app folder:'
+          : 'No game was found. Copy your game folder (the one with GameData and corruption) from a computer into this folder on the device, over USB, then look again:';
+        const parts = [span('path', g.path || g.copyTo, g.path || g.copyTo)];
+        if (g.path) parts.push(span('meta', HOW[g.how] || g.how));
+        const look = document.createElement('p');
+        look.className = 'modadd';
+        look.append(
+          button('Look again', async () => {
+            if (await changeSetup('game', { path: '' }, gameStatus)) location.reload();
+          })
+        );
+        el.append(heading, row(...parts), look);
       }
       function showAppSources() {
         const el = $('appSources');

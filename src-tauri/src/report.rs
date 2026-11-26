@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -65,6 +65,7 @@ pub fn screenshot(_app: &AppHandle) -> Option<Vec<u8>> {
     None
 }
 
+#[cfg(desktop)]
 fn downloads_folder() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
@@ -93,7 +94,19 @@ fn safe_file_name(name: &str) -> String {
     }
 }
 
-fn show_in_folder(path: &Path) {
+/// A phone has no save dialog: the report goes in the reports folder inside the app's own
+/// files, where the player copies the game to as well.
+#[cfg(mobile)]
+pub fn save(_app: &AppHandle, name: &str, bytes: &[u8]) -> Result<Option<PathBuf>, String> {
+    let folder = crate::setup::player_folder().join("reports");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    let path = folder.join(safe_file_name(name));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path))
+}
+
+#[cfg(desktop)]
+fn show_in_folder(path: &std::path::Path) {
     #[cfg(windows)]
     {
         let _ = std::process::Command::new("explorer")
@@ -104,6 +117,7 @@ fn show_in_folder(path: &Path) {
     let _ = path;
 }
 
+#[cfg(desktop)]
 pub fn save(app: &AppHandle, name: &str, bytes: &[u8]) -> Result<Option<PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Save bug report")
@@ -168,7 +182,7 @@ pub fn power() -> serde_json::Value {
             key.enum_values()
                 .flatten()
                 .filter_map(|(name, _)| {
-                    let program = Path::new(&name)
+                    let program = std::path::Path::new(&name)
                         .file_name()
                         .map(|f| f.to_string_lossy().into_owned())
                         .unwrap_or_else(|| name.clone());

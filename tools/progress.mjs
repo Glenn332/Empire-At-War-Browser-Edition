@@ -620,6 +620,11 @@ const GROUPS = [
         'a Tauri build released through GitHub Releases by a workflow on each v tag (signed installer and latest.json updater feed); the browser asks before leaving a running battle or campaign'
       ],
       [
+        'Android app',
+        P,
+        'first pass: npm run app:android builds an APK for 64-bit ARM; the player copies the game folder over USB into Android/data/com.playeaw.browseredition/files, and the setup page names that folder and looks again on request. Without the desktop updater, folder dialogs, Discord status and invite links. Still to do: run it on a phone, release signing and a release workflow job, a way to bring the game in without a computer, and a check of memory use with the whole game on a phone. iOS needs a Mac with Xcode and an Apple developer account'
+      ],
+      [
         'macOS and Linux apps',
         P,
         'the release workflow also builds a universal macOS app (dmg, ad-hoc signed, not notarized) and a Linux AppImage and deb, all in the one updater feed; game folders are found whatever their letter case, Steam is looked for in its macOS, Linux, Flatpak and Snap folders, and playeaw invite links are claimed on both. Not yet run on a Mac or a Linux machine: check the first builds there. Without the Windows helpers these builds have no native game fonts, process stats, page screenshot in bug reports or GOG detection'

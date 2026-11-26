@@ -13,10 +13,80 @@ pub struct Settings {
 
 /// Where the app keeps its settings and caches: the per-user application data folder of
 /// each system (the same folder Tauri itself uses for this identifier).
+#[cfg(desktop)]
 pub fn data_dir() -> PathBuf {
     user_data_base()
         .unwrap_or_else(std::env::temp_dir)
         .join("com.playeaw.browseredition")
+}
+
+/// Android's private files folder of the app, which only the app itself can reach.
+#[cfg(target_os = "android")]
+pub fn data_dir() -> PathBuf {
+    PathBuf::from("/data/data")
+        .join(android_package())
+        .join("files")
+}
+
+/// The folder the player copies the game into on Android: the app's own folder in shared
+/// storage, Android/data/<package>/files, which a computer reaches over USB. The app's
+/// activity asks Android for it at start, which makes the folder.
+#[cfg(target_os = "android")]
+pub fn player_folder() -> PathBuf {
+    PathBuf::from("/storage/emulated/0/Android/data")
+        .join(android_package())
+        .join("files")
+}
+
+/// The package this process runs as: Android names each app process after its package.
+#[cfg(target_os = "android")]
+fn android_package() -> String {
+    std::fs::read("/proc/self/cmdline")
+        .ok()
+        .and_then(|line| {
+            let name = line.split(|&byte| byte == 0).next()?;
+            let name = String::from_utf8_lossy(name);
+            let package = name.split(':').next()?.trim().to_string();
+            (!package.is_empty()).then_some(package)
+        })
+        .unwrap_or_else(|| "com.playeaw.browseredition".into())
+}
+
+/// iOS keeps everything inside the app's container: settings in Library, and the game in
+/// Documents, which the Files app shows when the app shares its documents.
+#[cfg(target_os = "ios")]
+pub fn data_dir() -> PathBuf {
+    ios_container().join("Library").join("Application Support")
+}
+
+#[cfg(target_os = "ios")]
+pub fn player_folder() -> PathBuf {
+    ios_container().join("Documents")
+}
+
+#[cfg(target_os = "ios")]
+fn ios_container() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// The game a phone or tablet player copied into the app's folder: the folder itself, or
+/// one folder inside it (the whole "Star Wars Empire at War" folder copied as it is).
+#[cfg(mobile)]
+pub fn copied_game() -> Option<PathBuf> {
+    let folder = player_folder();
+    if is_game(&folder) {
+        return Some(folder);
+    }
+    let mut inside: Vec<PathBuf> = std::fs::read_dir(&folder)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| is_game(path))
+        .collect();
+    inside.sort();
+    crate::vfs::most_complete(inside, |path| path)
 }
 
 #[cfg(windows)]
@@ -33,7 +103,7 @@ fn user_data_base() -> Option<PathBuf> {
     })
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 fn user_data_base() -> Option<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
