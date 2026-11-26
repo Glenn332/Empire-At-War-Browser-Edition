@@ -113,7 +113,7 @@ Other commands:
 | `npm run build:prod` | build the site into `dist/` |
 | `npm run deploy:prod` | build and publish the site and the multiplayer lobby (`lobby/`) to Cloudflare |
 | `npm run app` | build the desktop app for the system it runs on (`src-tauri/`, Tauri; Windows, macOS or Linux) |
-| `npm run app:android` | build the Android app (an APK; needs JDK 17, `ANDROID_HOME` and `NDK_HOME`; `-- --debug` for a test build) |
+| `npm run app:android` | build the Android app (an APK; needs JDK 17, `ANDROID_HOME` and `NDK_HOME`; `-- --debug` for a test build, `-- --tester` for a release APK signed with the SDK debug key to share with testers) |
 
 The code lives in a few places:
 
