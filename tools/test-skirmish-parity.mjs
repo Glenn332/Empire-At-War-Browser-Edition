@@ -180,7 +180,7 @@ function battle(seed) {
     u.setOrder({ kind: 'idle' });
     u.shield = u.maxShield = 0;
   }
-  a.hyper = { f: 10, tx: a.x, ty: a.y, h: 0, shown: false };
+  w.startHyperspace(a);
   const h0 = a.health;
   w.damage(a, 100, { damageType: 'Damage_Default' });
   assert.equal(a.health, h0, 'a ship not yet out of hyperspace cannot be hit');
@@ -192,7 +192,13 @@ function battle(seed) {
   const lostA = h0 - a.health,
     lostB = b.maxHealth - b.health;
   assert(lostB > 0, 'a hit lands');
-  assert(Math.abs(lostA / lostB - S.ARRIVAL_DAMAGE_TAKEN) < 1e-6, 'an arriving ship takes ' + S.ARRIVAL_DAMAGE_TAKEN + 'x: ' + lostA / lostB);
+  // GameConstants Space_Elevated_Vulnerability_Factor as a DEFENSE modifier: damage x (1 - factor).
+  const arrival = 1 - S.elevatedVulnerability().factor;
+  assert(Math.abs(lostA / lostB - arrival) < 1e-6, 'an arriving ship takes ' + arrival + 'x: ' + lostA / lostB);
+  // Its jump done, the cruiser is back where it was placed for the next check.
+  a.x = a.hyper.tx;
+  a.y = a.hyper.ty;
+  a.hyper = null;
 
   // An arriving Star Destroyer opens fire on a cruiser in reach while it finishes the jump.
   const sd = w.spawn(T('Star_Destroyer'), empire, -1500, 0);

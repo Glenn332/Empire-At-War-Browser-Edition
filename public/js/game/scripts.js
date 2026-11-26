@@ -57,7 +57,6 @@ function shouldSwitch(u, t) {
 const HARM_FADE = 6;
 const gone = e => !e || e.dead || (e.isSquad && !e.fighters.length);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const PROXIMITY_EVENTS_PER_SERVICE = 6;
 const hasProp = typeHasProperty;
 
 export class ScriptHost {
@@ -155,7 +154,9 @@ export class ScriptHost {
             what = sq || u;
           if (sq && sq.fighters.some(f => f !== u && !f.dead)) return;
           this.dying = what;
-          this.tell('Tactical_Unit_Destroyed_Event', this.wrap(what), this.player(data.killer || this.world.neutral));
+          // No killing player is passed as nil: GameScoring's Update_Kill_Stats_Table skips a death whose
+          // killer fails TestValid (MISCELLANEOUS\GAMESCORING.LUA), so it is not scored against anyone.
+          this.tell('Tactical_Unit_Destroyed_Event', this.wrap(what), data.killer ? this.player(data.killer) : undefined);
           this.dying = null;
         } else if (kind === 'built' || kind === 'reinforcementReady')
           this.tell('Tactical_Production_End_Event', this.type(data.type), this.player(data.player), this.wrap(data.player.station));
@@ -987,7 +988,28 @@ export class ScriptHost {
         return !!(a && b && a.type && b.type && self.goodAgainst(a.scriptType || a.type, b.scriptType || b.type));
       },
       Get_Game_Object: () => obj,
-      Get_Time_Till_Dead: () => 1e6,
+      // Seconds until the object dies at the damage it is taking now: what is left to destroy (hull, or the
+      // destroyable hard points of a hard-point ship, plus shields) over the recent damage per second. In
+      // space that rate is the one the battle keeps for targeting (World.damageRate). Where the world keeps
+      // none (land), it is measured between two calls. Not taking damage gives a very long time, so the
+      // scripts' "about to die" tests (PGEVENTS Default_Unit_Damaged: < 20) stay false.
+      Get_Time_Till_Dead: () => {
+        const us = members().filter(u => !u.dead);
+        if (!us.length) return 0;
+        let left = 0,
+          rate = 0;
+        for (const u of us) left += Math.max(0, u.toKill ?? u.health ?? 0) + Math.max(0, u.shield || 0);
+        if (typeof w.damageRate === 'function') for (const u of us) rate += w.damageRate(u);
+        else {
+          const now = w.time,
+            last = obj.__ttd;
+          if (!last || now - last.t >= 0.05) {
+            rate = last && now > last.t ? Math.max(0, (last.left - left) / (now - last.t)) : 0;
+            obj.__ttd = { t: now, left, rate };
+          } else rate = last.rate;
+        }
+        return rate > 0 ? left / rate : 1e6;
+      },
       Get_Build_Pad_Contents: () => {
         const c = self.cmd.padContents ? self.cmd.padContents(e) : e.padContents ? e.padContents() : e.padChild;
         return c && c.type ? self.wrap(c) : undefined;
@@ -1143,9 +1165,13 @@ export class ScriptHost {
         const inst = self.current;
         if (inst && fn instanceof LuaRef) inst.prox.push({ fn, range: +range || 0, who: (filter && filter.__player) || null, of: e });
       },
-      Cancel_Event_Object_In_Range: () => {
+      // Cancels the handler given (an object can carry several, e.g. FoC UM02 Prox_UseControls and
+      // Prox_UseControls_Wrong on one marker); with no handler every one on the object goes.
+      Cancel_Event_Object_In_Range: fn => {
         const inst = self.current;
-        if (inst) inst.prox = inst.prox.filter(p => p.of !== e);
+        if (!inst) return;
+        const given = fn instanceof LuaRef;
+        inst.prox = inst.prox.filter(p => p.of !== e || (given && !self.vm.sameRef(p.fn, fn)));
       },
       Highlight: (on, z) => self.effect('scriptHighlight', { unit: e, on: on === true, z: +z || 0, small: false }),
       Highlight_Small: (on, z) => self.effect('scriptHighlight', { unit: e, on: on === true, z: +z || 0, small: true }),
@@ -2390,25 +2416,29 @@ export class ScriptHost {
     }
   }
 
-  // Up to six selectable objects within the registered range, in the order of world.selectables():
-  // squadrons first, then single units in world order. In space the units come from the unit grid,
-  // which keeps that order, instead of a walk over every object in the battle.
+  // Every object within the registered range, each service. The scripts expect all of them in one service:
+  // DARTHVADER.LUA counts 10 distinct units between two OnUpdate resets before it tries FORCE_WHIRLWIND, and
+  // nothing in the scripts or the data names a cap. In space the objects are the individual ships and
+  // fighters, not the squadrons: SLAVE_I.LUA ("Don't track sub-squadron individuals") and the FoC hero
+  // scripts turn a fighter or bomber into its squadron with Get_Parent_Object(). Land still reports the
+  // squads or companies of world.selectables(). In space the units come from the unit grid, in world order.
   queueProximity(inst, prox) {
     const w = this.world,
       centre = prox.of;
-    let found = 0;
     const take = o => {
-      if (o === centre || gone(o) || (prox.who && o.player !== prox.who) || dist(o, centre) > prox.range) return false;
+      if (o === centre || gone(o) || (prox.who && o.player !== prox.who) || dist(o, centre) > prox.range) return;
       inst.events.push({ fn: prox.fn, params: [this.wrap(centre), this.wrap(o)] });
-      return ++found >= PROXIMITY_EVENTS_PER_SERVICE;
     };
     if (typeof w.near !== 'function' || !w.squads) {
-      for (const o of w.selectables()) if (take(o)) return;
+      for (const o of w.selectables()) take(o);
       return;
     }
-    for (const squad of w.squads) if (!squad.dead && take(squad)) return;
+    const own = centre.isSquad ? centre.fighters : null;
     for (const unit of w.near(centre, prox.range, (this.proximityNear ||= [])))
-      if (!unit.dead && !unit.squad && unit.selectable && !(unit.isPad && unit.padChild) && take(unit)) return;
+      if (unit.dead) continue;
+      else if (unit.squad) {
+        if (!unit.squad.dead && !(own && own.includes(unit))) take(unit);
+      } else if (unit.selectable && !(unit.isPad && unit.padChild)) take(unit);
   }
 
   service(inst) {
@@ -2469,7 +2499,11 @@ export class ScriptHost {
     }
     if (r.error && !inst.exit) this.errors.set(inst.name, r.error);
     if (r.done || r.value === false || inst.exit || (inst.plan && !inst.threads.length)) {
-      if (inst.services === 1 && !r.error && e) this.inert.add(e.scriptType || e.type);
+      // A script whose main simply returned on its first service does nothing for any object of its type, so
+      // later objects of that type are not given one. A ScriptExit() is left out: the stock scripts call it
+      // for one object only (when Object.Get_Owner().Is_Human(), DARTHVADER.LUA, SLAVE_I.LUA, INTERDICTOR.LUA
+      // and others), and an AI-owned object of the same type keeps its own script, as in the original.
+      if (inst.services === 1 && !r.error && e && r.done && !inst.exit && r.value !== false) this.inert.add(e.scriptType || e.type);
       this.drop(inst);
       inst.state = 'over';
     }

@@ -164,8 +164,51 @@ export function sizeClass(type) {
 // A unit still out in hyperspace: before its arrival streak shows it is not in the battle (it cannot be seen,
 // targeted or hit). Once it shows (HYPER.show) it fights while it finishes the jump.
 export const inJump = o => !!o.hyper && !o.hyper.shown;
-// Damage taken while the arrival is still finishing (Thrawn's Revenge: half again as much until the jump completes).
-export const ARRIVAL_DAMAGE_TAKEN = 1.5;
+// Units are more vulnerable right after they are brought in (GameConstants: "Units are more vulnerable right after
+// being unloaded"). The engine gives each reinforcement, and each member of a reinforced squadron, a timed DEFENSE
+// combat modifier named "Elevated_Vulnerability" of Space_Elevated_Vulnerability_Factor for
+// Space_Elevated_Vulnerability_Duration seconds (land: Elevated_Vulnerability_*), in stacking category 0, from the
+// moment it is created, in the same place the Defense_Bonus_Percentage of a combat bonus goes. Take_Damage scales
+// damage by (1 + attacker damage bonus) * (1 - target defense bonus), the rule bonus.defense already
+// follows, so a factor of -2.0 (Thrawn's Revenge) is 3x damage and -3.0 (FoC) 4x. The values the engine's
+// GameConstants constructor sets when the tags are missing are 15 s and -3.0.
+// The battle keeps it beside the unit's combat modifiers (unit.vulnerable), not in them, because only damage reads
+// it and the page mirror does not deal damage; arrivalDefense adds it to the DEFENSE sum the way CombatMods does.
+export function elevatedVulnerability(land = false) {
+  const c = db.constants,
+    pre = land ? '' : 'Space_';
+  return { duration: c.num(pre + 'Elevated_Vulnerability_Duration', 15), factor: c.num(pre + 'Elevated_Vulnerability_Factor', -3) };
+}
+const noVulnerability = new WeakMap();
+// A type's Battlefield_Modifier_Ability with Disable_Reinforcement_Vulnerability: null, or whether it covers allies.
+function disablesReinforcementVulnerability(type) {
+  if (!type || typeof type.sub !== 'function') return null;
+  if (noVulnerability.has(type)) return noVulnerability.get(type);
+  const yes = v => /^(yes|true)$/i.test(String(v || '').trim());
+  let out = null;
+  for (const node of type.sub('Abilities').flatMap(a => a.all('Battlefield_Modifier_Ability')))
+    if (yes(node.val('Disable_Reinforcement_Vulnerability'))) out = { allies: !!(out?.allies || yes(node.val('Apply_To_All_Allies'))) };
+  noVulnerability.set(type, out);
+  return out;
+}
+// The defense damage factor (1 - DEFENSE sum) with one more DEFENSE modifier of `value` in stacking category `key`:
+// per category the highest value counts (own and shared lists alike), the categories add up in key order, and the
+// sum is held to the DEFENSE limits of combatmods.js (no floor, 0.75 at most).
+export function arrivalDefense(m, key, value) {
+  const mine = m ? m.lists[MOD.DEFENSE] : null,
+    shared = m ? m.shared(MOD.DEFENSE) : null,
+    other = shared && shared.size ? shared.lists[MOD.DEFENSE] : null;
+  const keys = new Set([key]);
+  if (mine) for (const k of mine.keys()) keys.add(k);
+  if (other) for (const k of other.keys()) keys.add(k);
+  let sum = 0;
+  for (const k of [...keys].sort((a, b) => a - b)) {
+    let best = k === key ? value : -Infinity;
+    for (const list of [mine && mine.get(k), other && other.get(k)]) if (list) for (const x of list) if (x.value > best) best = x.value;
+    sum += best;
+  }
+  return 1 - Math.min(sum, 0.75);
+}
 
 export function hiddenInJump(e) {
   const h = (e.isSquad ? e.fighters[0] : e)?.hyper;
@@ -801,6 +844,7 @@ export class Unit {
     this.spawnDelay = undefined;
     this.pickAt = undefined;
     this.lossRate = undefined;
+    this.vulnerable = null;
     this.lossAt = undefined;
     this.hurtBy = undefined;
     this.hurtByNext = undefined;
@@ -2197,6 +2241,38 @@ export class World {
       e.hyper = HYPER.frames / LOGIC_FPS;
       e.alone = true;
     }
+    this.elevateVulnerability(e);
+  }
+
+  // The arrival vulnerability (see elevatedVulnerability): a DEFENSE modifier in stacking category 0 for the
+  // configured time from the moment the unit is brought in. A player holding a Battlefield_Modifier_Ability with
+  // Disable_Reinforcement_Vulnerability (FoC Enhanced Deployment) is spared.
+  elevateVulnerability(e) {
+    const { duration, factor } = elevatedVulnerability(false);
+    if (!(duration > 0) || !factor || this.reinforcementVulnerabilityOff(e.player)) return;
+    const until = this.time + duration;
+    for (const u of e.isSquad ? e.fighters : [e]) if (!u.dead) u.vulnerable = { until, factor };
+  }
+
+  // The defense damage factor of a unit, its arrival vulnerability included while that lasts.
+  defenseOf(u) {
+    const v = u.vulnerable;
+    if (!v) return u.bonus.defense;
+    if (this.time >= v.until) {
+      u.vulnerable = null;
+      return u.bonus.defense;
+    }
+    return arrivalDefense(u.cmods && u.cmods.size ? u.cmods : null, 0, v.factor);
+  }
+
+  reinforcementVulnerabilityOff(player) {
+    if (!player) return false;
+    for (const u of this.units) {
+      if (u.dead || !u.player || u.player.team !== player.team) continue;
+      const off = disablesReinforcementVulnerability(u.type);
+      if (off && (u.player === player || off.allies)) return true;
+    }
+    return false;
   }
 
   removeUnit(u) {
@@ -2745,7 +2821,6 @@ export class World {
     } = {}
   ) {
     if (target.dead || inJump(target) || target.invulnerable || target.limbo) return;
-    if (target.hyper) amount *= ARRIVAL_DAMAGE_TAKEN;
     if (target.noOpportunity) target.noOpportunity = false;
     if (attacker?.noOpportunity) attacker.noOpportunity = false;
     const retreating = this.retreatState?.list.has(target);
@@ -2754,7 +2829,7 @@ export class World {
       amount *= this.retreatState.damaged(target.player);
     }
     if (proj && from && from.mods && from.mods.diminish !== false && normalDamage(proj)) amount *= diminishedHit(target, this.time);
-    amount *= target.mods.damageTaken * target.bonus.defense;
+    amount *= target.mods.damageTaken * this.defenseOf(target);
     if (proj) this.projectileMods.apply(this.time, target, proj, (u, pm, fresh) => {
       if ((u.cmods ||= new CombatMods()).set(pm.type, pm.key, pm, pm.value)) u.applyBonuses();
       if (fresh && pm.spaceFx && this.viewerSees(u)) this.fx.attachFx?.(u, pm.spaceFx, pm.dur);

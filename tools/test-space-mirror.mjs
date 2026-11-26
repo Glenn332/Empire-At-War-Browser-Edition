@@ -176,6 +176,7 @@ const simOnly = {
     'lastNormalHit',
     'lossAt',
     'lossRate',
+    'vulnerable',
     'pathExt',
     'pathOff',
     'pickAt',
