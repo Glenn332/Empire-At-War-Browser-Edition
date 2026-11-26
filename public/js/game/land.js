@@ -4266,7 +4266,8 @@ export class LandWorld {
                 ? 'STRUCTURE'
                 : 'VEHICLE',
           hitRadius: t.num('Custom_Soft_Footprint_Radius', 0) || Math.max(4, t.num('Select_Box_Scale', 12) * 0.3),
-          captures: t.str('Influences_Capture_Point') ? t.bool('Influences_Capture_Point') : inCategory(t, 'INFANTRY'),
+          // as the engine: every type counts toward a capture point unless it sets Influences_Capture_Point to no
+          captures: t.str('Influences_Capture_Point') ? t.bool('Influences_Capture_Point') : true,
           lift: /hover|flying/i.test(t.str('MovementClass')) ? t.num('Hover_Offset', 0) : 0,
           flies: /flying/i.test(t.str('MovementClass')),
           hoverH: /LOCOMOTOR/i.test(t.str('LandBehavior') + ' ' + t.str('Behavior')) ? t.num('Hover_Height', 0) : 0,
