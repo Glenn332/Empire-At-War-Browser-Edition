@@ -1763,6 +1763,14 @@ export class GalacticGame {
         el.setPointerCapture(e.pointerId);
         if (e.button === 1) e.preventDefault();
       }
+      // a plain middle drag pans the map, as the right one does
+      if (e.button === 1) {
+        if (!orbit) {
+          this.drag = { x: e.clientX, y: e.clientY };
+          el.setPointerCapture(e.pointerId);
+        }
+        return;
+      }
       if (e.button === 2) {
         this.drag = { x: e.clientX, y: e.clientY };
         el.setPointerCapture(e.pointerId);
@@ -1792,7 +1800,7 @@ export class GalacticGame {
       if (!this.planetSelectionLocked && !this.inputBlocked('TUTORIAL_CLICK_PLANET')) this.select(this.pick(e.clientX, e.clientY));
     });
     el.addEventListener('pointerup', e => {
-      if (e.button === 2) this.drag = null;
+      if (e.button === 2 || e.button === 1) this.drag = null;
       if (this.orbitDrag && e.button === this.orbitDrag.button) {
         const was = this.orbitDrag.on;
         this.orbitDrag = null;

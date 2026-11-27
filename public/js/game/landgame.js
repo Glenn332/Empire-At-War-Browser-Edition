@@ -2655,7 +2655,12 @@ export class LandGame {
         this.down = null;
       }
       const tilting = this.turnDrag === 'tilt' && e.buttons & this.tiltDrag[2];
-      if (!this.controlsLocked && (e.buttons & 4 || tilting || (this.turnDrag === true && e.buttons & 3))) v.yaw -= e.movementX * 0.005;
+      // a plain middle drag moves the camera with the cursor
+      if (this.midPan && e.buttons & 4 && !tilting && (e.movementX || e.movementY)) {
+        this.following = null;
+        this.touchView(e.movementX || 0, e.movementY || 0, 0);
+      }
+      if (!this.controlsLocked && (tilting || (this.turnDrag === true && e.buttons & 3))) v.yaw -= e.movementX * 0.005;
       if (!this.controlsLocked && tilting)
         v.pitch = Math.min(far[1] * DEG, Math.max(k[0][1] * DEG, v.pitch + e.movementY * 0.005));
     });
@@ -2755,7 +2760,10 @@ export class LandGame {
       // The camera turn / tilt drag (Ctrl + middle by default) only takes over once the mouse moves.
       const orbit = ui.placing ? 0 : mouseBind(e, 'CAMERA_ORBIT');
       this.ctrlTurn = orbit ? [e.clientX, e.clientY, orbit, e.button] : null;
-      if (orbit && e.button === 1) e.preventDefault();
+      if (e.button === 1) {
+        e.preventDefault();
+        this.midPan = !orbit && !ui.placing;
+      }
       if (bothButtonsRotate() && (e.buttons & 3) === 3 && !ui.placing) {
         this.turnDrag = true;
         this.down = null;
@@ -2764,6 +2772,7 @@ export class LandGame {
       this.down = [e.clientX, e.clientY, e.button];
     });
     addEventListener('mouseup', e => {
+      if (e.button === 1) this.midPan = false;
       if (this.controlsLocked) {
         this.down = null;
         return;
