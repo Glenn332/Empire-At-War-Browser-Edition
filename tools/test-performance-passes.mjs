@@ -212,16 +212,16 @@ import { warmGpuBatches } from '../public/js/game/gpuwarmup.js';
   assert.ok(Math.abs(stats.low1 - 1000 / 99) < 1e-9);
 }
 
-// The F2 panel ignores mouse input except for its explicitly interactive save button.
+// The F2 overlay is a pure read-out: it carries no save button (reports belong in the bug report
+// and the diag panel), so the overlay stays pointer-transparent and battle controls never compete
+// with overlay input.
 {
-  const source = readFileSync(new URL('../public/js/benchoverlay.js', import.meta.url), 'utf8'),
-    button = source.match(/<button[^>]+data-k="save"[^>]*>/)?.[0];
-  assert.ok(button, 'the F2 save button exists');
-  assert.match(button, /pointer-events:auto/, 'the button overrides the panel pointer-events:none');
-  assert.match(source, /'pointerdown', 'pointerup', 'click'/, 'battle controls do not also receive the save click');
+  const source = readFileSync(new URL('../public/js/benchoverlay.js', import.meta.url), 'utf8');
+  assert.ok(!/<button[^>]+data-k="save"/.test(source), 'the F2 overlay has no save button');
+  assert.ok(!/pointer-events:auto/.test(source), 'the overlay stays pointer-transparent');
 }
 
-// The F2 save action downloads a JSON report containing benchmark and diagnostic metrics.
+// The diag save action downloads a JSON report containing benchmark and diagnostic metrics.
 {
   const { Diag } = await import('../public/js/diag.js');
   const d = new Diag(),

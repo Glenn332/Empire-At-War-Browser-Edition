@@ -130,7 +130,7 @@ export class BenchOverlay {
 
   resetRun() {
     this.run = this.open
-      ? { n: 0, sum: 0, worst: 0, o33: 0, o50: 0, hist: new Uint32Array(HIST_BUCKETS), histSum: new Float64Array(HIST_BUCKETS) }
+      ? { n: 0, sum: 0, worst: 0, o33: 0, o50: 0, hist: new Uint32Array(HIST_BUCKETS), histSum: new Float64Array(HIST_BUCKETS), top: 0 }
       : null;
     this.fpsEvery = 1;
     this.fpsPending = [];
@@ -163,6 +163,7 @@ export class BenchOverlay {
       s.hist[b]++;
       s.histSum[b] += ms;
       s.worst = Math.max(s.worst, ms);
+      if (b > s.top) s.top = b;
       if (ms > 33.4) s.o33++;
       if (ms > 50) s.o50++;
       if (this.frames.length > 2 * FT_FRAMES) this.frames.splice(0, this.frames.length - FT_FRAMES);
@@ -267,7 +268,8 @@ export class BenchOverlay {
       want = s.n - Math.floor(s.n * 0.99);
     let left = want,
       slow = 0;
-    for (let b = HIST_BUCKETS - 1; b >= 0 && left > 0; b--) {
+    // only the buckets frames actually touched: a battle's frame times live far below the table's end
+    for (let b = s.top; b >= 0 && left > 0; b--) {
       const c = s.hist[b];
       if (!c) continue;
       const take = Math.min(c, left);
