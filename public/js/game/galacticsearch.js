@@ -68,14 +68,15 @@ export function locationRows(game, limit = 60) {
 }
 
 const CSS = `
-#galactic-search{position:fixed;top:6px;right:6px;z-index:7;width:230px;font:13px/1.3 var(--gs-font);color:#bfe4ff;text-shadow:1px 1px 0 #000}
+#galactic-search{position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:40;width:min(380px,90vw);padding:6px;background:rgba(3,14,26,.9);border:1px solid #3b7ea6;box-shadow:0 4px 18px rgba(0,0,0,.7);font:14px/1.3 var(--gs-font);color:#bfe4ff;text-shadow:1px 1px 0 #000}
+#galactic-search[hidden]{display:none}
 #galactic-search *{box-sizing:border-box}
 #galactic-search .gs-bar{display:flex;gap:4px}
 #galactic-search input{flex:1;min-width:0;background:rgba(3,14,26,.85);color:#e6f6ff;border:1px solid #3b7ea6;padding:3px 6px;font:inherit;outline:none}
 #galactic-search input:focus{border-color:#7fd0ff}
 #galactic-search button{background:rgba(3,14,26,.85);color:#bfe4ff;border:1px solid #3b7ea6;padding:3px 7px;font:inherit;cursor:pointer}
 #galactic-search button:hover,#galactic-search button[aria-pressed=true]{background:rgba(30,90,130,.9)}
-#galactic-search ul{list-style:none;margin:2px 0 0;padding:0;background:rgba(3,14,26,.92);border:1px solid #3b7ea6;max-height:60vh;overflow:auto}
+#galactic-search ul{list-style:none;margin:4px 0 0;padding:0;background:rgba(3,14,26,.92);border:1px solid #3b7ea6;max-height:60vh;overflow:auto}
 #galactic-search li{padding:3px 6px;cursor:pointer;display:block}
 #galactic-search li:hover,#galactic-search li[aria-selected=true]{background:rgba(30,90,130,.9)}
 #galactic-search .gs-time{color:#7fa6bf;font-size:11px}
@@ -90,6 +91,9 @@ export class GalacticSearch {
     this.active = -1;
     const root = (this.root = document.createElement('div'));
     root.id = 'galactic-search';
+    root.hidden = true;
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', 'Search planets');
     root.style.setProperty('--gs-font', `${fontFamily('EmpireAtWar') || 'Arial'}, Arial, sans-serif`);
     const style = document.createElement('style');
     style.textContent = CSS;
@@ -111,20 +115,65 @@ export class GalacticSearch {
     bar.append(input, toggle);
     root.append(style, bar, this.list, this.log);
     parent.appendChild(root);
-    // typing must never reach the game's hotkeys
-    for (const type of ['keydown', 'keyup', 'keypress']) input.addEventListener(type, e => e.stopPropagation());
+    // keys pressed inside the popup must never reach the game's hotkeys
     input.addEventListener('keydown', e => this.key(e));
+    root.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.close();
+      }
+    });
+    for (const type of ['keydown', 'keyup', 'keypress']) root.addEventListener(type, e => e.stopPropagation());
     input.addEventListener('input', () => this.search());
     input.addEventListener('focus', () => {
       this.game.keys?.clear();
       this.search();
     });
-    input.addEventListener('blur', () => setTimeout(() => this.closeResults(), 150));
-    toggle.addEventListener('click', () => this.showLog(this.log.hidden));
+    toggle.addEventListener('click', () => {
+      this.showLog(this.log.hidden);
+      input.focus();
+    });
     root.addEventListener('pointerdown', e => e.stopPropagation());
     root.addEventListener('wheel', e => e.stopPropagation());
     // double-clicking a planet named in an entry's text jumps to that planet
     this.unlink = linkPlanets(this.log, game);
+    // Ctrl+F (Cmd+F) opens the popup in the middle of the screen; a click anywhere outside it closes it
+    this.onKey = e => {
+      if (e.code !== 'KeyF' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || this.blocked) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.open();
+    };
+    this.onDown = e => {
+      if (this.opened && !root.contains(e.target)) this.close();
+    };
+    addEventListener('keydown', this.onKey, true);
+    addEventListener('pointerdown', this.onDown, true);
+  }
+
+  get opened() {
+    return !this.root.hidden;
+  }
+
+  // the popup stays out of the way of dialogs, battles and scripted scenes
+  get blocked() {
+    const g = this.game;
+    return !!(g.over || g.battle || g.controlsLocked || g.modeSuspended || g.scriptUI?.modal || g.storyMovie?.active || g.galacticLog?.opened);
+  }
+
+  open() {
+    this.root.hidden = false;
+    this.input.focus();
+    this.input.select();
+  }
+
+  close() {
+    if (!this.opened) return;
+    this.input.value = '';
+    this.closeResults();
+    this.showLog(false);
+    this.input.blur();
+    this.root.hidden = true;
   }
 
   get typing() {
@@ -168,20 +217,11 @@ export class GalacticSearch {
       e.preventDefault();
       const pick = this.results[Math.max(0, this.active)];
       if (pick) this.go(pick.index);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      if (this.input.value) this.input.value = '';
-      this.closeResults();
-      this.input.blur();
     }
   }
 
   go(index) {
-    if (this.game.focusPlanet?.(index)) {
-      this.input.value = '';
-      this.closeResults();
-      this.input.blur();
-    }
+    if (this.game.focusPlanet?.(index)) this.close();
   }
 
   showLog(on) {
@@ -206,20 +246,21 @@ export class GalacticSearch {
         p.dataset.planet = String(r.planet);
         p.dataset.planetLabel = '';
         li.append(t, p, document.createTextNode(r.text));
-        li.addEventListener('click', () => this.game.focusPlanet?.(r.planet));
+        li.addEventListener('click', () => {
+          if (this.game.focusPlanet?.(r.planet)) this.close();
+        });
         return li;
       })
     );
   }
 
-  // the panel stays out of the way of dialogs, battles and scripted scenes
   update() {
-    const g = this.game,
-      hide = !!(g.over || g.battle || g.controlsLocked || g.scriptUI?.modal || g.storyMovie?.active || g.galacticLog?.opened);
-    if (this.root.hidden !== hide) this.root.hidden = hide;
+    if (this.opened && this.blocked) this.close();
   }
 
   dispose() {
+    removeEventListener('keydown', this.onKey, true);
+    removeEventListener('pointerdown', this.onDown, true);
     this.unlink?.();
     this.root.remove();
   }
