@@ -228,10 +228,10 @@ const first = hpType
   .find(h => h && db.type(h.str('Fire_Projectile_Type')));
 const post = { type: hpType, weapons: [], weapon: null, range: 123 };
 world.armHardPoints(post, hpType, { bone: () => null, meshByName: new Map() });
-assert(post.weapon, 'the first weapon hard point becomes the weapon');
-assert.equal(post.weapon.proj, db.type(first.str('Fire_Projectile_Type')));
-assert.equal(post.range, first.num('Fire_Range_Distance', 123));
-assert.equal(post.weapon.pulses, Math.max(1, first.num('Fire_Pulse_Count', 1)));
+assert(post.guns && post.guns.length, 'the weapon hard points become guns');
+assert.equal(post.guns[0].proj, db.type(first.str('Fire_Projectile_Type')));
+assert.equal(post.range, Math.max(...post.guns.map(g => g.range)));
+assert.equal(post.guns[0].pulses, Math.max(1, first.num('Fire_Pulse_Count', 1)));
 
 // 9. Fire modes: a hard point that does not fire in rocket mode holds while that mode is on, and the other way round.
 world = newWorld();

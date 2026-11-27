@@ -373,7 +373,7 @@ function liftOf(holder, B, M, first) {
 }
 
 function hardpointFacing(inst, h) {
-  if (!inst || !inst.bone) return 0;
+  if (!inst || !inst.bone || !inst.root) return 0;
   inst.root.updateMatrixWorld(true);
   _hi.copy(inst.root.matrixWorld).invert();
   const fire = inst.bone(h.str('Fire_Bone_A')),
