@@ -1045,6 +1045,25 @@ pub fn run() {
             let (server, app) = (server.clone(), ctx.app_handle().clone());
             std::thread::spawn(move || responder.respond(server.handle(&app, &req)));
         })
+        // a new page starts with the mouse free: only the game page asks for it to be kept in,
+        // and it asks again once it starts, so leaving it for the launcher lets go
+        .on_page_load(|webview, payload| {
+            #[cfg(desktop)]
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                #[cfg(windows)]
+                {
+                    cursorclip::set_mode(cursorclip::OFF);
+                    sync_grab(&webview.window());
+                }
+                #[cfg(not(windows))]
+                {
+                    CURSOR_GRAB.store(false, Ordering::Relaxed);
+                    let _ = webview.window().set_cursor_grab(false);
+                }
+            }
+            #[cfg(mobile)]
+            let _ = (webview, payload);
+        })
         .on_window_event(|w, e| {
             // a phone or tablet window is always the whole screen: nothing to keep up with
             #[cfg(mobile)]
