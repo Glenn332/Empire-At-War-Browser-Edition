@@ -1411,7 +1411,8 @@ export class GalacticGame {
       this.galacticLog?.message(String(db.t('TEXT_ENEMY_FLEET_APPROACHING_LOCATION')).replace('##0', name), {
         urgent: true,
         color: [0, 193, 91],
-        planet: p.index
+        planet: p.index,
+        kind: 'approach'
       });
       this.audio?.play(db.faction(this.me)?.str('SFXEvent_Enemy_Fleet_Approaching_Planet'));
     }
@@ -1424,7 +1425,7 @@ export class GalacticGame {
     const args = [db.t(planet.type.str('Text_ID')) || planet.name, name(old), name(now), bonus];
     this.galacticLog?.message(
       text.replace(/%l?[sd]/g, () => String(args.shift() ?? '')),
-      { urgent: false, color: [255, 24, 39], planet: planet.index }
+      { urgent: false, color: [255, 24, 39], planet: planet.index, kind: 'capture' }
     );
     if (mine && bonus) this.audio?.playAudioEvent('SFXEvent_Planet_Capture_Bonus_Reward');
     const faction = db.faction(this.me);
@@ -3993,7 +3994,7 @@ export class GalacticGame {
           if (x.owner === this.me)
             this.galacticLog?.message(
               String(db.t('TEXT_TOOLTIP_INTERRUPTED_PRODUCTION')).replace('%s', db.t(x.planet.type.str('Text_ID')) || x.planet.name),
-              { urgent: true, color: [0, 193, 91], planet: x.planet.index }
+              { urgent: true, color: [0, 193, 91], planet: x.planet.index, kind: 'production' }
             );
         if (completed.length) {
           this.mergeFleets();
@@ -4001,7 +4002,7 @@ export class GalacticGame {
           for (const done of completed) if (done.owner === this.me) this.audio.play(done.type.str('SFXEvent_Build_Complete'));
           for (const done of completed)
             if (done.owner === (this.localFaction ?? this.me))
-              this.galacticLog?.locate(done.planet, (db.t(done.type.str('Text_ID')) || done.type.name) + ' produced');
+              this.galacticLog?.locate(done.planet, (db.t(done.type.str('Text_ID')) || done.type.name) + ' produced', 'production');
           for (const done of completed)
             if (done.tech !== undefined) {
               this.story?.signalTech(done.owner, done.tech);

@@ -224,14 +224,15 @@ export class GalacticLog {
   }
   // an event with a place: it is also kept in the per-planet location log (the local player's view, not game state),
   // but only when the local player could see that planet, so a capture far off in the fog stays out of it
-  locate(planet, text) {
+  locate(planet, text, kind) {
     const g = this.game.galaxy;
     if (!witnessed(g, g?.planets?.[planet], this.game.localFaction ?? this.game.me)) return;
-    if (recordLocation(this.game.galaxy, planet, text)) this.game.locationUI?.refresh();
+    const entry = recordLocation(g, planet, text, kind);
+    if (entry) this.game.locationUI?.added(entry);
   }
-  message(text, { urgent = true, color = [255, 255, 255], sfx = '' , planet } = {}) {
+  message(text, { urgent = true, color = [255, 255, 255], sfx = '', planet, kind } = {}) {
     if (!text) return;
-    if (Number.isInteger(planet)) this.locate(planet, text);
+    if (Number.isInteger(planet)) this.locate(planet, text, kind);
     const record = { text, color, sfx, urgent, planet: Number.isInteger(planet) ? planet : null };
     if (urgent) {
       this.queue.unshift(record);

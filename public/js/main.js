@@ -2966,6 +2966,23 @@ async function boot() {
     };
   }
   {
+    const box = $('optPlanetFinder');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-planet-finder') === '1';
+    } catch {}
+    box.checked = on;
+    window.planetFinder = on;
+    box.parentElement.title =
+      'In galactic conquest, a panel listing the planets with a search box and the recent events you could see. Drag it by its title, resize it from its corner, and use its cog to choose what it lists.';
+    box.onchange = () => {
+      window.planetFinder = box.checked;
+      try {
+        localStorage.setItem('swr-planet-finder', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
     const box = $('optClearShots');
     let on = false;
     try {

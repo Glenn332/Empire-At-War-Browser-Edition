@@ -551,7 +551,7 @@ export class PendingBattle {
     const token = (text, ...values) => values.reduce((s, v, i) => s.replace('##' + i, v), text);
     for (const type of [...theirs, ...mine])
       if (type.bool('Is_Named_Hero') || [...type.categories()].some(c => c.includes('HERO')))
-        log?.message(token(db.t('TEXT_AR_HERO_LOSS'), nameOf(type), planetName), { color: red, planet: p });
+        log?.message(token(db.t('TEXT_AR_HERO_LOSS'), nameOf(type), planetName), { color: red, planet: p, kind: 'battle' });
     const a = mine.length,
       b = theirs.length,
       kind = space ? 'SPACE' : 'LAND';
@@ -567,7 +567,7 @@ export class PendingBattle {
           ? 'LOSS_REGULAR'
           : 'LOSS_MINOR';
     const line = token(db.t(`TEXT_AR_${kind}_${verdict}`), faction, planetName, String(a));
-    log?.message(line, { color: red, planet: p });
+    log?.message(line, { color: red, planet: p, kind: 'battle' });
     if (silent || !fighting) return;
     if (game.net) return this.netResult(line);
     const dlg = await openSummary();

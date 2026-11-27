@@ -79,6 +79,7 @@ const TWEAKS = [
   { id: 'IDC_TWEAK_LINE_MOVE', input: 'optLineMove', label: 'Send selected units to a line with a right-drag' },
   { id: 'IDC_TWEAK_DIRECT_CONTROL', input: 'optDirectControl', label: 'Direct control of a unit' },
   { id: 'IDC_TWEAK_CLEAR_SHOTS', input: 'optClearShots', label: 'Land units move to get a clear shot' },
+  { id: 'IDC_TWEAK_PLANET_FINDER', input: 'optPlanetFinder', label: 'Planet finder and events panel (galactic conquest)' },
   { id: 'IDC_TWEAK_DISCORD', input: 'optDiscord', label: 'Show what you are playing on Discord', app: true }
 ].filter(t => !t.app || inApp());
 

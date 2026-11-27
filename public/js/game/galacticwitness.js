@@ -29,7 +29,7 @@ const shownAt = (g, p, viewer, f) => !!p && !fleetStealthed(f) && fleetsVisibleA
 
 export const approachText = p => String(db.t('TEXT_ENEMY_FLEET_APPROACHING_LOCATION')).replace('##0', planetName(p));
 
-// Compares the fleets with the last look and returns [planet, text] for what the viewer saw change: another
+// Compares the fleets with the last look and returns [planet, text, kind] for what the viewer saw change: another
 // faction's fleet arriving at or leaving a planet in sight, and every enemy fleet that sets course for one of the
 // viewer's planets, whether or not the viewer has a fleet there. Fleets already moving when it starts are not news.
 export class FleetWatch {
@@ -53,7 +53,7 @@ export class FleetWatch {
       if (!primed || !was || same(f.owner, viewer) || !f.units?.length) continue;
       if (was.leg && !leg && f.planet === was.leg.b) {
         const p = g.planets[f.planet];
-        if (shownAt(g, p, viewer, f)) out.push([p.index, `${factionName(f.owner)} fleet arrived`]);
+        if (shownAt(g, p, viewer, f)) out.push([p.index, `${factionName(f.owner)} fleet arrived`, 'fleet']);
         continue;
       }
       if (!leg || leg === was.leg) continue;
@@ -64,9 +64,10 @@ export class FleetWatch {
           from.index,
           to && visibleTransit(g, f, viewer)
             ? `${factionName(f.owner)} fleet left for ${planetName(to)}`
-            : `${factionName(f.owner)} fleet left`
+            : `${factionName(f.owner)} fleet left`,
+          'fleet'
         ]);
-      if (to && same(to.owner, viewer) && relation(f.owner, viewer) === 1 && !hidden(f)) out.push([to.index, approachText(to)]);
+      if (to && same(to.owner, viewer) && relation(f.owner, viewer) === 1 && !hidden(f)) out.push([to.index, approachText(to), 'approach']);
     }
     return out;
   }
