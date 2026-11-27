@@ -1579,6 +1579,11 @@ export class Unit {
 }
 
 const MAP_EDGE = 100;
+// Hunt search moves (our own values): close enough to count as arrived, and how much closer a unit must have come
+// in the given time to count as still getting there.
+const HUNT_ARRIVED = 400,
+  HUNT_PROGRESS_SECONDS = 5,
+  HUNT_PROGRESS_MIN = 100;
 function onMap(w, o) {
   if (!w?.min || !w.max || (o.kind !== 'move' && o.kind !== 'attackmove') || !Number.isFinite(o.x) || !Number.isFinite(o.y)) return o;
   const x = clamp(o.x, w.min.x + MAP_EDGE, w.max.x - MAP_EDGE),
@@ -6403,28 +6408,53 @@ export class World {
     return best;
   }
 
+  // Hunt for enemies: an idle unit goes after the nearest enemy it can see, or searches the map. The orders it
+  // gives itself are marked as hunt orders and looked at again every second, so a unit that sees an enemy while
+  // searching turns on it, and one that reaches its search point (or stops getting closer) picks another.
   updateHunt(e, dt) {
-    if (e.order.kind !== 'idle' || !e.isActive('HUNT')) return;
+    const order = e.order;
+    if (!e.isActive('HUNT') || (order.kind !== 'idle' && !order.hunt)) return;
     if ((e.huntTimer = (e.huntTimer || 0) - dt) > 0) return;
     e.huntTimer = 1;
+    if (order.hunt && order.kind === 'attack' && order.target && !order.target.dead) return;
+    const prey = this.nearestHuntTarget(e);
+    if (prey) {
+      e.setOrder({ kind: 'attack', target: prey.squad || prey, hunt: true });
+      if (!e.isSquad) e.target = prey;
+    } else if (!order.hunt || order.kind !== 'attackmove' || this.huntSearchOver(e, order)) {
+      const point = this.clearOf(e, rand(this.min.x, this.max.x) * 0.85, rand(this.min.y, this.max.y) * 0.85);
+      e.setOrder({ kind: 'attackmove', ...point, hunt: true, checkX: e.x, checkY: e.y, checkAt: this.time });
+    }
+  }
+
+  nearestHuntTarget(e) {
     const bit = e.player.bit;
     let best = null,
-      bd = Infinity;
+      bestDistance = Infinity;
     for (const o of this.units) {
       if (o.dead || o.player.id < 0 || o.player.team === e.player.team || !o.targetableUnit || inJump(o) || !(o.seenBy & bit)) continue;
-      let dd = dist2(e, o);
-      if (o.isStructure) dd *= 4;
-      if (dd < bd) {
-        bd = dd;
+      let distance = dist2(e, o);
+      if (o.isStructure) distance *= 4;
+      if (distance < bestDistance) {
+        bestDistance = distance;
         best = o;
       }
     }
-    if (best) {
-      e.setOrder({ kind: 'attack', target: best.squad || best });
-      if (!e.isSquad) e.target = best;
-    } else {
-      e.setOrder({ kind: 'attackmove', ...this.clearOf(e, rand(this.min.x, this.max.x) * 0.85, rand(this.min.y, this.max.y) * 0.85) });
-    }
+    return best;
+  }
+
+  // A search move is over when the unit is near its point, or when it has not come closer for a few seconds
+  // (the point lies behind something it cannot pass).
+  huntSearchOver(e, order) {
+    if ((e.x - order.x) ** 2 + (e.y - order.y) ** 2 < HUNT_ARRIVED ** 2) return true;
+    if (this.time - order.checkAt < HUNT_PROGRESS_SECONDS) return false;
+    const before = (order.checkX - order.x) ** 2 + (order.checkY - order.y) ** 2,
+      now = (e.x - order.x) ** 2 + (e.y - order.y) ** 2;
+    if (Math.sqrt(before) - Math.sqrt(now) < HUNT_PROGRESS_MIN) return true;
+    order.checkX = e.x;
+    order.checkY = e.y;
+    order.checkAt = this.time;
+    return false;
   }
 
   closing(s, lead, tgt) {
