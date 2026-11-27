@@ -3,7 +3,7 @@ import * as THREE from '../../vendor/three/build/three.module.js';
 import { loadGameData, db } from '../gamedata.js';
 import { setTacticalRules } from './tacticalrules.js';
 import { loadMap } from '../ted.js';
-import { World, Player, Team, Unit, Squad, modelsForType, resetEntityIds } from './sim.js';
+import { World, Player, Team, Unit, Squad, modelsForType, factionArtTypes, resetEntityIds } from './sim.js';
 import { seedSim, simRandomState, simRandomDraws } from './simrandom.js';
 import { unitDetail } from './desyncreport.js';
 import { TacticalMarker } from './tacticalobjects.js';
@@ -60,6 +60,9 @@ async function setUp(m, events) {
     const ty = db.type(n);
     if (ty) modelsForType(ty, null, names, seen);
   }
+  // Units made later (built, called from a reserve, spawned by a script) need their models here too, or their
+  // weapons fire from the hull's centre instead of the hardpoints.
+  for (const ty of factionArtTypes(m.teams.map(team => team.faction))) modelsForType(ty, null, names, seen);
   await preloadModels([...names].filter(Boolean));
   const clips = new Set((await findFiles('MODELS\\\\[^\\\\]*_(IDLE|DIE|DEPLOY|UNDEPLOY|BUILD)_00\\.ALA$')).map(n => n.split('\\').pop()));
   const wanted = [];

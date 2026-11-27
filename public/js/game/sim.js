@@ -361,6 +361,18 @@ export function modelsForType(type, factions = null, out = new Set(), seen = new
   return out;
 }
 
+// Every ship and squadron type the given factions can field in a battle: built, called down from a reserve or
+// spawned by a script. Their models must be loaded before such a unit is made, or it has no hardpoint positions.
+export function factionArtTypes(factionNames) {
+  const sides = new Set(factionNames.filter(Boolean).map(name => name.toUpperCase()));
+  const out = [];
+  for (const type of db.types.values()) {
+    if (!type.str('Space_Model_Name') && !type.list('Squadron_Units').length) continue;
+    if (type.list('Affiliation').some(side => sides.has(side.toUpperCase()))) out.push(type);
+  }
+  return out;
+}
+
 const NEBULA_KEEPS = new Set([
   'HUNT',
   'LURE',

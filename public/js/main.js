@@ -24,7 +24,7 @@ import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera, loadTacticalCameraData } from './game/tacticalcameradata.js';
-import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
+import { World, Player, Team, modelsForType, factionArtTypes, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { UnitPoses } from './game/unitposes.js';
 import { benchFleet } from './game/benchfleet.js';
 import { seedSim } from './game/simrandom.js';
@@ -348,12 +348,7 @@ class Game {
         }
       }
     if (!this.setup.attract && !this.setup.campaign && !instant) {
-      const sides = new Set(factions.map(f => f.toUpperCase()));
-      for (const t of db.types.values()) {
-        if (!t.str('Space_Model_Name') && !t.list('Squadron_Units').length) continue;
-        if (!t.list('Affiliation').some(a => sides.has(a.toUpperCase()))) continue;
-        if (!seen.has(t) && !later.includes(t)) later.push(t);
-      }
+      for (const t of factionArtTypes(factions)) if (!seen.has(t) && !later.includes(t)) later.push(t);
     }
     for (const env of map.environments || []) for (const s of env.skydomes) names.add(s.str('Space_Model_Name'));
     {
