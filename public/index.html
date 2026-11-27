@@ -96,9 +96,9 @@
         top: calc(100vh - 13vmax);
         transform: translateX(-36%);
         border-radius: 50%;
-        box-shadow:
-          0 0 90px rgba(98, 198, 255, 0.16),
-          0 0 18px rgba(98, 198, 255, 0.22);
+        /* avoid a huge composited box-shadow layer on HiDPI screens: WebKitGTK can fail to
+           composite it when the page scrolls or repaints, leaving the rest unpainted or frozen */
+        box-shadow: none;
         background: radial-gradient(circle closest-side at 50% 50%, #03070c 95.5%, #0a1b2a 98.4%, #1d5379 99.5%, #7fd2ff 100%);
       }
       #fleet {
@@ -1476,8 +1476,21 @@
         starsAt = setTimeout(stars, 150);
       });
 
-      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true });
+      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true, failIfMajorPerformanceCaveat: false });
       if (gl) {
+        // A context loss on the background animation must never freeze or blank the launcher: hide
+        // the canvas and stop drawing until the context is back. (WebKitGTK can lose the context
+        // on HiDPI/fractional-scale displays, e.g. while the page scrolls and repaints.)
+        let lost = false;
+        $('fleet').addEventListener('webglcontextlost', e => {
+          e.preventDefault();
+          lost = true;
+          $('fleet').style.visibility = 'hidden';
+        });
+        $('fleet').addEventListener('webglcontextrestored', () => {
+          lost = false;
+          $('fleet').style.visibility = 'visible';
+        });
         const R = (a, b) => a + Math.random() * (b - a);
         const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
           sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -1923,6 +1936,10 @@
         const sun = norm([-0.45, 0.75, 0.5]);
 
         function frame(now) {
+          if (lost) {
+            requestAnimationFrame(frame);
+            return;
+          }
           const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
           last = now;
           view();
