@@ -3131,7 +3131,8 @@ export class LandGame {
       !ai.led &&
       this.reinforcementsEnabled?.[String(this.factions[side] || '').toUpperCase()] !== false
     ) {
-      const t = w.ready[side][0],
+      // in the shooter the field cap holds back soldier companies, but not heroes, so heroes go first
+      const t = (this.shooter && w.ready[side].find(k => this.shooter.passesFieldCap(k))) || w.ready[side][0],
         o = w.nearestOpen(home.x + 40 + simRandom() * 80, home.y - 60 + simRandom() * 120);
       if (o && !w.cantReinforce(side, t.name, o.x, o.y)) {
         w.ready[side].splice(w.ready[side].indexOf(t), 1);

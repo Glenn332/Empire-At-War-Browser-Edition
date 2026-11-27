@@ -113,7 +113,7 @@ const REACH = 1600,
   LOCK = { cone: 0.09, time: 1.2, damage: 1.5, reach: 1.1 },
   SCOPE = { fov: 12, damage: 1.6, spread: 0.15, sens: 0.18 },
   HEAVY = { heat: 0.55 },
-  HERO = { points: 1500, drain: 1 / 150, kill: 0.08 },
+  HERO = { points: 1500, drain: 1 / 150, kill: 0.08, landingWait: 90 },
   SQUAD_SPAWN = { calm: 5, max: 4 },
   AUDIO = { air: 300, airMin: 1800, muffle: 700, quiet: 0.55, occReach: 2500, hrtf: 1500, wetMax: 0.4, wetTick: 0.5, whiz: 35, whizGap: 120, stride: 15, stepReach: 150, stepMax: 6, fight: 900, verb: 1.6 },
   STEP_SFX = { grass: 'GRASS', snow: 'SNOW', ice: 'SNOW', water: 'WATER', concrete: 'CONCRETE', mud: 'MUD' },
@@ -661,6 +661,7 @@ export class Shooter {
     const w = this.world,
       m = q.members[0];
     if (this.spawning || this.kept.has(q) || !m || q.side < 0 || q.side === w.wild || q.native || q.structure || m.structure || !(m.speed > 0)) return false;
+    if (inCategory(m.type, 'HERO') || m.type.bool('Is_Named_Hero')) return false;
     const b = this.bornOf.get(q);
     if (b && this.singles.has(b.by) && this.firstOf.get(b.by) === q) return false;
     if (m.foot) {
@@ -668,7 +669,6 @@ export class Shooter {
       if (this.popUsed(q.side) + (this.spawningN[q.side] || 0) + queued <= this.fieldCap(q.side)) return false;
     } else {
       if (this.conquest || (m.kind !== 'VEHICLE' && m.kind !== 'AIR')) return false;
-      if (inCategory(m.type, 'HERO') || m.type.bool('Is_Named_Hero')) return false;
       let n = 0;
       for (const u of w.units) if (!u.dead && !u.gone && u.side === q.side && !u.foot && !u.structure && u.speed > 0 && (u.kind === 'VEHICLE' || u.kind === 'AIR') && !u.squad?.native) n++;
       if (n <= BOT_RESPAWN.maxVehicles) return false;
@@ -3986,6 +3986,7 @@ export class Shooter {
       this.respawnAt = w.time + 0.5;
       this.respawnBots();
     }
+    this.takeLandedHero();
     for (const p of this.pendingDummies)
       if (p.take && w.time >= p.until) {
         const take = p.take;
@@ -4003,7 +4004,7 @@ export class Shooter {
     const w = this.world;
     if (this.state === 'alive' && this.body && this.body.dead) this.died();
     if (this.rideQ && (this.rideQ.dead || !this.rideQ.members.length || this.rideQ.members.every(m => m.dead))) this.leave(true);
-    if (!this.heroSaid && this.matchScore >= this.heroAt) {
+    if (!this.heroSaid && !this.conquest && this.matchScore >= this.heroAt) {
       this.heroSaid = true;
       this.announce('Hero unlocked - choose one at your next deploy', 'good');
     }
@@ -4515,6 +4516,9 @@ export class Shooter {
       if (!w.ally(s, side)) continue;
       const h = this.hq(s);
       if (h && Math.hypot(h.x - x, h.y - y) <= h.hitRadius + HOME.reach) return true;
+      // a galactic attacker has no base; its landing zone at the entry marker is its home
+      const landingZone = h ? null : this.home(s);
+      if (landingZone && Math.hypot(landingZone.x - x, landingZone.y - y) <= HOME.reach) return true;
     }
     return false;
   }
@@ -5215,7 +5219,8 @@ export class Shooter {
     if (!c || this.spawning || this.state === 'alive') return;
     if (w.time < this.readyAt) return;
     const heroic = !!(c.hero || c.heroSpawn);
-    if (heroic && this.matchScore < this.heroAt) return;
+    if (heroic && !this.heroUnlocked()) return;
+    if (c.reserve) return this.landReserveHero(c, p, true);
     if (this.netClient && c.vehicle) return this.netRide(c);
     if (this.netClient && heroic) return this.netDeploy(c, this.from || { x: c.hero?.members[0]?.x ?? 0, y: c.hero?.members[0]?.y ?? 0 }, true);
     this.role = this.roleOf(c, this.classes());
@@ -5719,9 +5724,19 @@ export class Shooter {
     w.show(u, dt);
   }
 
-  heroUsed() {
+  heroUnlocked() {
+    return !!this.conquest || this.matchScore >= this.heroAt;
+  }
+
+  // In a galactic battle the hero was paid for on the galaxy map, so taking one costs no points
+  spendHeroUnlock() {
+    if (this.conquest) return;
     this.heroAt = this.matchScore + HERO.points;
     this.heroSaid = false;
+  }
+
+  heroUsed() {
+    this.spendHeroUnlock();
     this.role = 'hero';
   }
 
@@ -6057,7 +6072,7 @@ export class Shooter {
       if (b.health > loss + 1) b.health -= loss;
       else w.hurt(b, b.health + 1, null);
     }
-    if (!this.heroSaid && this.matchScore >= this.heroAt) {
+    if (!this.heroSaid && !this.conquest && this.matchScore >= this.heroAt) {
       this.heroSaid = true;
       this.announce('Hero unlocked - choose one at your next deploy', 'good');
     }
@@ -6145,6 +6160,95 @@ export class Shooter {
     return [...out.values()];
   }
 
+  // Galactic heroes still waiting in the reinforcement pool. The respawn pools leave hero companies out, so
+  // without these cards a hero brought from the galaxy map would never reach the battle.
+  reserveHeroCards() {
+    const w = this.world,
+      waiting = this.conquest?.ready && !this.netClient ? w.ready[this.me] : null,
+      out = new Map();
+    for (const company of waiting || []) {
+      if (out.has(company.name) || !(isHeroCompany(company) || this.isHeroType(company))) continue;
+      const leaves = company.has('Company_Units') ? this.leafTypes(company) : [company],
+        unit = leaves.find(k => this.isHeroType(k)) || leaves[0];
+      if (!unit) continue;
+      const playable = /infantry/i.test(unit.str('MovementClass')) && !!unit.str('Projectile_Types');
+      out.set(company.name, { company, unit, cost: 0, heroSpawn: true, reserve: true, aiOnly: !playable });
+    }
+    return [...out.values()];
+  }
+
+  isHeroType(t) {
+    return inCategory(t, 'HERO') || t.bool('Is_Named_Hero');
+  }
+
+  // The field cap limits respawned soldiers, which keep the field full; a hero brought to the battle still lands
+  passesFieldCap(t) {
+    return !!t && (isHeroCompany(t) || this.isHeroType(t));
+  }
+
+  heroSpawnPoint(p) {
+    const w = this.world,
+      a = simRandom() * Math.PI * 2;
+    return w.nearestOpen(p.x + Math.cos(a) * 40, p.y + Math.sin(a) * 40) || { x: p.x, y: p.y };
+  }
+
+  landReserveHero(c, p, play) {
+    const w = this.world,
+      side = this.me,
+      waiting = w.ready[side],
+      at = waiting ? waiting.indexOf(c.company) : -1;
+    if (at < 0 || !p || (play && c.aiOnly)) return;
+    const o = this.heroSpawnPoint(p),
+      refused = w.cantReinforce(side, c.company.name, o.x, o.y);
+    if (refused) {
+      this.flash(refused);
+      return;
+    }
+    waiting.splice(at, 1);
+    this.heroLanding = play ? { unit: c.unit, until: w.time + HERO.landingWait } : null;
+    w.reinforce(side, c.company.name, o.x, o.y, Math.atan2(w.n * 10 - o.y, w.n * 10 - o.x));
+    this.announce(`${this.cardName(c)} is landing`, 'good');
+    this.refreshDeploy(true);
+  }
+
+  takeLandedHero() {
+    const landing = this.heroLanding,
+      w = this.world;
+    if (!landing) return;
+    if (this.state === 'alive' || w.time > landing.until) {
+      this.heroLanding = null;
+      return;
+    }
+    for (const q of w.squads) {
+      if (q.side !== this.me || q.arriving) continue;
+      const u = q.members.find(m => m && !m.dead && !m.inside && m.type === landing.unit);
+      if (!u) continue;
+      this.heroLanding = null;
+      this.role = 'hero';
+      this.possess(q, u, true);
+      return;
+    }
+  }
+
+  async sendHeroAsAI() {
+    const w = this.world,
+      c = this.pick,
+      p = this.from;
+    if (!c || !c.heroSpawn || !p || this.netClient || this.spawning || !this.heroUnlocked()) return;
+    if (c.reserve) return this.landReserveHero(c, p, false);
+    const o = this.heroSpawnPoint(p);
+    this.spawning = true;
+    const q = await this.spawnClass(c, o, Math.atan2(w.n * 10 - o.y, w.n * 10 - o.x), this.me);
+    this.spawning = false;
+    if (!q || !q.members[0]) {
+      this.flash('Could not deploy');
+      return;
+    }
+    this.spendHeroUnlock();
+    this.announce(`${this.cardName(c)} joins the battle`, 'good');
+    this.refreshDeploy(true);
+  }
+
   rides() {
     const out = [];
     if (this.netClient) {
@@ -6193,7 +6297,7 @@ export class Shooter {
 
   cards() {
     const cls = this.classes();
-    return [...cls, ...this.rides(), ...this.heroCards()];
+    return [...cls, ...this.rides(), ...this.heroCards(), ...this.reserveHeroCards()];
   }
 
   spawnSpots() {
@@ -7501,7 +7605,7 @@ export class Shooter {
               <div class="sh-portrait"></div>
               <div class="sh-dtext"><div class="sh-dname"></div><div class="sh-dkind"></div><div class="sh-stats"></div></div>
             </div>
-            <div class="sh-foot"><div class="sh-status"></div><button class="sh-go eaw-btn">Deploy</button></div>
+            <div class="sh-foot"><div class="sh-status"></div><button class="sh-ai eaw-btn">Send In as AI</button><button class="sh-go eaw-btn">Deploy</button></div>
           </div>
         </div>
       </div>`;
@@ -7518,6 +7622,9 @@ export class Shooter {
     this.wait = q('.sh-status');
     this.go = q('.sh-go');
     this.go.onclick = () => this.deploy();
+    this.goAI = q('.sh-ai');
+    this.goAI.title = 'Put this hero in the field under the control of your side, without playing it yourself';
+    this.goAI.onclick = () => this.sendHeroAsAI();
     this.mapCv.addEventListener('mousedown', e => this.mapClick(e));
     this.mapCv.addEventListener('mousemove', e => {
       this.mapHover = this.mapPoint(e);
@@ -7746,7 +7853,7 @@ export class Shooter {
       g = this.game,
       cls = this.cards(),
       pts = this.spawnSpots(),
-      heroOk = this.matchScore >= this.heroAt;
+      heroOk = this.heroUnlocked();
     if (!this.pick || !cls.some(c => c.unit === this.pick.unit && c.vehicle === this.pick.vehicle)) this.pick = cls[0] || null;
     else this.pick = cls.find(c => c.unit === this.pick.unit && c.vehicle === this.pick.vehicle);
     if (!this.from || !pts.includes(this.from)) this.from = pts[0] || null;
@@ -7823,7 +7930,7 @@ export class Shooter {
       b.className = 'sh-setbtn eaw-btn';
       b.textContent = 'Settings';
       b.onclick = () => this.openSettings();
-      foot.insertBefore(b, this.go);
+      foot.insertBefore(b, this.goAI);
       if (this.ov?.on) {
         const t = document.createElement('button');
         t.className = 'sh-setbtn eaw-btn';
@@ -7833,6 +7940,9 @@ export class Shooter {
         foot.insertBefore(t, b);
       }
     }
+    const canSendAI = !!pc && !!pc.heroSpawn && !this.netClient;
+    this.goAI.style.display = canSendAI ? '' : 'none';
+    this.goAI.disabled = !canSendAI || locked || !this.from || this.spawning;
     const boarding = this.waves.waiting(this.me, 'me') || (this.netClient && this.waves.clientWait > performance.now());
     if (boarding) {
       const left = this.netClient ? Math.max(0, Math.ceil((this.waves.clientWait - performance.now()) / 1000)) : this.waves.launchIn(this.me);
@@ -7840,10 +7950,14 @@ export class Shooter {
       this.go.disabled = true;
       return;
     }
-    this.wait.textContent = out
+    this.wait.textContent = this.heroLanding
+      ? 'Your hero is landing - you take command when they reach the ground'
+      : out
       ? 'No tickets left'
       : locked
         ? `Hero unlocks at ${this.heroAt} points - you have ${this.matchScore}`
+      : pc?.aiOnly
+        ? 'This hero cannot be played on foot - send them in as AI'
       : left > 0
         ? `Ready in ${left} s`
         : this.pick && !this.tickets && !this.pick.hero && money < this.pick.cost
@@ -7853,7 +7967,7 @@ export class Shooter {
             : this.from?.squad && !free
               ? `Spawn with squad ${this.from.n} - press Enter or Deploy`
               : 'Press Enter or Deploy';
-    this.go.disabled = out || locked || left > 0 || !this.pick || (!this.from && !free) || (!this.tickets && !this.pick?.hero && money < (this.pick?.cost || 0));
+    this.go.disabled = !!this.heroLanding || !!pc?.aiOnly || out || locked || left > 0 || !this.pick || (!this.from && !free) || (!this.tickets && !this.pick?.hero && money < (this.pick?.cost || 0));
   }
 
   iconOf(t) {

@@ -322,12 +322,14 @@ class LandView {
       const o = w.nearestOpen(pt.x + 40 + simRandom() * 60, pt.y - 40 + simRandom() * 80);
       if (!o || w.cantReinforce(side, t.name, o.x, o.y)) continue;
       const k = rd.indexOf(t);
-      if (k >= 0) rd.splice(k, 1);
       const E = this.pools && this.pools[side];
       if (E) {
         const j = E.indexOf(entry);
         if (j >= 0) E.splice(j, 1);
       }
+      // the unit already left the reinforcement pool another way (the side's own drop, or the player)
+      if (k < 0) return false;
+      rd.splice(k, 1);
       Promise.resolve(w.reinforce(side, t.name, o.x, o.y, Math.atan2(at.y - o.y, at.x - o.x))).then(
         r => {
           if (r && r.typeName) r.onOut = onOut;

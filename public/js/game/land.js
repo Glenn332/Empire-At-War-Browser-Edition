@@ -2578,7 +2578,8 @@ export class LandWorld {
   cantReinforce(side, typeName, x, y, extraPop = 0) {
     const t = db.type(typeName);
     if (!t) return 'Unknown unit';
-    if (this.popUsed(side) + extraPop + this.popOf(t) > this.popCap(side)) return this.shooter ? 'Too many units on the field' : 'Population limit reached - hold more reinforcement points';
+    if (this.popUsed(side) + extraPop + this.popOf(t) > this.popCap(side) && !this.shooter?.passesFieldCap(t))
+      return this.shooter ? 'Too many units on the field' : 'Population limit reached - hold more reinforcement points';
     if (
       !this.points.some(p => p.reinforce && p.side >= 0 && this.ally(p.side, side) && Math.hypot(p.x - x, p.y - y) <= p.enable) &&
       !(this.shooter && this.shooter.nearHome(side, x, y))
@@ -5695,6 +5696,7 @@ export class LandWorld {
       !u.path.length &&
       !u.inside &&
       !(u.once && u.once !== 'attack' && this.time < u.onceEnd) &&
+      !(u.cast > this.time) &&
       (u.squad.spread || 1) <= 1 &&
       simRandom() < 0.35
     ) {
