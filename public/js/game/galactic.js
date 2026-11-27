@@ -1711,6 +1711,11 @@ export class GalacticGame {
         e.preventDefault();
         this.cameraHome();
       }
+      if (pressed(e, 'PAUSE') && !this.net && !e.repeat) {
+        e.preventDefault();
+        this.setUserPaused(!this.userPaused);
+        this.ui?.refresh?.();
+      }
     });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
