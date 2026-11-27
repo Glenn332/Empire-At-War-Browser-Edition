@@ -6408,12 +6408,14 @@ export class World {
     return best;
   }
 
-  // Hunt for enemies: an idle unit goes after the nearest enemy it can see, or searches the map. The orders it
-  // gives itself are marked as hunt orders and looked at again every second, so a unit that sees an enemy while
-  // searching turns on it, and one that reaches its search point (or stops getting closer) picks another.
+  // Hunt for enemies: an idle or guarding unit goes after the nearest enemy it can see, or searches the map. Guard
+  // counts as idle because launched squadrons are always given one on their carrier (and fall back to it after a
+  // move), so Hunt would otherwise never start for them. The orders it gives itself are marked as hunt orders and
+  // looked at again every second, so a unit that sees an enemy while searching turns on it, and one that reaches
+  // its search point (or stops getting closer) picks another.
   updateHunt(e, dt) {
     const order = e.order;
-    if (!e.isActive('HUNT') || (order.kind !== 'idle' && !order.hunt)) return;
+    if (!e.isActive('HUNT') || (order.kind !== 'idle' && order.kind !== 'guard' && !order.hunt)) return;
     if ((e.huntTimer = (e.huntTimer || 0) - dt) > 0) return;
     e.huntTimer = 1;
     if (order.hunt && order.kind === 'attack' && order.target && !order.target.dead) return;
