@@ -1,4 +1,6 @@
 mod audio;
+#[cfg(windows)]
+mod cursorclip;
 #[cfg(desktop)]
 mod discord;
 #[cfg(mobile)]
@@ -802,9 +804,29 @@ impl Server {
         #[cfg(desktop)]
         if p == "/api/cursor-grab" {
             let on = arg("on").as_deref() == Some("1");
-            CURSOR_GRAB.store(on, Ordering::Relaxed);
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.set_cursor_grab(on);
+            // on Windows the page sends what it wants (mode) and the app keeps to it whenever
+            // the game window is in front; `on` is the page's own guess, for older pages
+            #[cfg(windows)]
+            {
+                let mode = match arg("mode").as_deref() {
+                    Some("always") => cursorclip::ALWAYS,
+                    Some("fullscreen") => cursorclip::FULLSCREEN,
+                    Some(_) => cursorclip::OFF,
+                    None if on => cursorclip::ALWAYS,
+                    None => cursorclip::OFF,
+                };
+                cursorclip::set_mode(mode);
+                if let Some(w) = app.get_webview_window("main") {
+                    cursorclip::set_fullscreen(w.is_fullscreen().unwrap_or(false));
+                    sync_grab(&w.as_ref().window());
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                CURSOR_GRAB.store(on, Ordering::Relaxed);
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_cursor_grab(on);
+                }
             }
             return json(&serde_json::json!({ "ok": true }));
         }
@@ -1038,11 +1060,18 @@ pub fn run() {
                 let _ = w.set_cursor_grab(true);
             }
             #[cfg(windows)]
-            if let tauri::WindowEvent::Resized(size) = e {
+            if matches!(
+                e,
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
+            ) {
                 let full = w.is_fullscreen().unwrap_or(false);
+                cursorclip::set_fullscreen(full);
+                sync_grab(w);
                 if let (Ok(Some(m)), Ok(h)) = (w.current_monitor(), w.hwnd()) {
                     let h = h.0 as isize;
-                    if full && *size == *m.size() {
+                    // in fullscreen the window is kept where fullscreen_rect puts it, whatever
+                    // moved it (entering fullscreen, Alt+Tab, a monitor or resolution change)
+                    if full {
                         let others: Vec<_> = w
                             .available_monitors()
                             .unwrap_or_default()
@@ -1050,7 +1079,14 @@ pub fn run() {
                             .filter(|o| o.position() != m.position())
                             .map(|o| (*o.position(), *o.size()))
                             .collect();
-                        keep_off_scanout(h, *m.position(), *m.size(), &others);
+                        let want = fullscreen_rect(*m.position(), *m.size(), &others);
+                        let now = match (w.outer_position(), w.outer_size()) {
+                            (Ok(p), Ok(s)) => (p.x, p.y, s.width as i32, s.height as i32),
+                            _ => want,
+                        };
+                        if now != want {
+                            place_window(h, want);
+                        }
                     }
                     if full != TASKBAR_FULL.swap(full, Ordering::Relaxed) {
                         mark_fullscreen(h, full);
@@ -1065,6 +1101,10 @@ pub fn run() {
                 .inner_size(1600.0, 900.0)
                 .additional_browser_args(flags.trim())
                 .build()?;
+            #[cfg(windows)]
+            if let Some(Ok(h)) = app.get_webview_window("main").map(|w| w.hwnd()) {
+                cursorclip::start(h.0 as isize);
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -1100,19 +1140,17 @@ fn open_invite(app: &AppHandle, args: &[String]) {
     }
 }
 
-/// A window exactly the size of the monitor gets scanned out directly, and some drivers
-/// stop drawing the mouse there after Alt+Tab. The window reaches one pixel past an edge
-/// of the monitor instead, so the whole screen still shows the game and the mouse reaches
-/// every edge; the edge picked has no other monitor beside it, so nothing shows there.
+/// Where the fullscreen window goes. A window exactly the size of the monitor gets scanned
+/// out directly, and some drivers stop drawing the mouse there after Alt+Tab, so the window
+/// reaches one pixel past an edge of the monitor instead: the whole screen still shows the
+/// game and the mouse reaches every edge. The edge picked has no other monitor beside it, so
+/// nothing shows there; with monitors on all four sides it stays one pixel short instead.
 #[cfg(windows)]
-fn keep_off_scanout(
-    h: isize,
+fn fullscreen_rect(
     at: tauri::PhysicalPosition<i32>,
     size: tauri::PhysicalSize<u32>,
     others: &[(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)],
-) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+) -> (i32, i32, i32, i32) {
     let (x0, y0) = (at.x, at.y);
     let (x1, y1) = (x0 + size.width as i32, y0 + size.height as i32);
     let side = |o: &(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)| {
@@ -1134,23 +1172,39 @@ fn keep_off_scanout(
         }
     }
     let (w, ht) = (x1 - x0, y1 - y0);
-    let rect = match taken.iter().position(|t| !t) {
+    match taken.iter().position(|t| !t) {
         Some(1) => (x0, y0 - 1, w, ht + 1),
         Some(2) => (x0, y0, w + 1, ht),
         Some(3) => (x0 - 1, y0, w + 1, ht),
         Some(_) => (x0, y0, w, ht + 1),
         None => (x0, y0, w, ht - 1),
-    };
+    }
+}
+
+#[cfg(windows)]
+fn place_window(h: isize, (x, y, w, ht): (i32, i32, i32, i32)) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
     unsafe {
         let _ = SetWindowPos(
             HWND(h as _),
             None,
-            rect.0,
-            rect.1,
-            rect.2,
-            rect.3,
+            x,
+            y,
+            w,
+            ht,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
+    }
+}
+
+/// tao clips the mouse too when its grab is on, and lets go of any clip when it is off, so
+/// its grab follows ours: on whenever the page's choice applies, whichever window is in front.
+#[cfg(windows)]
+fn sync_grab<R: tauri::Runtime>(w: &tauri::Window<R>) {
+    let on = cursorclip::wanted();
+    if on != CURSOR_GRAB.swap(on, Ordering::Relaxed) || on {
+        let _ = w.set_cursor_grab(on);
     }
 }
 

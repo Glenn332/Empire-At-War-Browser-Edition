@@ -185,6 +185,13 @@ export function setFullscreenCapture(on) {
   for (const f of captureWatchers) f(capture);
 }
 export const onFullscreenCapture = f => captureWatchers.add(f);
+// the option set in another frame (the multiplayer galaxy and its battles run in frames)
+if (typeof window !== 'undefined')
+  addEventListener('storage', e => {
+    if (e.key !== CAPTURE_KEY) return;
+    capture = null;
+    for (const f of captureWatchers) f(fullscreenCapture());
+  });
 
 function lock() {
   if (trap.locked || !fullscreenCapture() || !ownFullscreen() || document.pointerLockElement || inApp()) return;
