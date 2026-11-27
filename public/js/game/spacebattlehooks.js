@@ -100,8 +100,14 @@ export function hookBattle(w, events, spawns) {
     if (this.world === w) events.push(['unit', 'playAnim', [{ $u: this.id }, kind, plain(opts)]]);
     return play.call(this, kind, opts);
   };
+  const rest = Unit.prototype.restPose;
+  Unit.prototype.restPose = function () {
+    if (this.world === w) events.push(['unit', 'restPose', [{ $u: this.id }]]);
+    return rest.call(this);
+  };
   return () => {
     Unit.prototype.playAnim = play;
+    Unit.prototype.restPose = rest;
   };
 }
 

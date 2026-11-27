@@ -1,9 +1,19 @@
 import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
+import { animName } from '../ala.js';
 const key = x => String(x || '').toUpperCase(),
   f = Math.fround;
 export const isTacticalSuperweapon = t => !!t?.behaviors().has('TACTICAL_SUPER_WEAPON');
 export const isSuperweaponTarget = t => !!t?.behaviors().has('DUMMY_TACTICAL_SUPER_WEAPON_TARGET');
+// The ATTACK clips a superweapon plays: the planet shot, and the superlaser's Attack_Anim_Sub_Index clip.
+export function superweaponClipNames(type) {
+  const model = type.str('Space_Model_Name'),
+    indexes = new Set([0]);
+  for (const block of type.sub('Abilities'))
+    for (const ability of block.children)
+      if (ability.tag.toUpperCase() === 'SUPER_LASER_ABILITY') indexes.add(ability.num('Attack_Anim_Sub_Index', 0));
+  return [...indexes].map(index => animName(model, 'ATTACK', index));
+}
 const faction = o => key(o.player?.factionName || o.owner || 'Neutral');
 export class TacticalSuperweapons {
   constructor(
@@ -133,9 +143,14 @@ export class TacticalSuperweapons {
     const u = r.unit;
     r.initialized = true;
     const target = this.nearest(u);
+    if (!target) {
+      // With no planet to aim at (a destroyed world) it stays where it arrived, turned toward the map centre.
+      u.heading = Math.atan2(-u.y, -u.x);
+      u.syncObj?.();
+      return;
+    }
     u.heading = 0;
     u.syncObj?.();
-    if (!target) return;
     const defender = u.player.team === this.defender,
       distance = u.type.num(defender ? 'TSW_Attack_Distance_From_Target' : 'TSW_Start_Distance_From_Target', 0),
       length = Math.hypot(u.x - target.x, u.y - target.y, u.z - target.z);
@@ -246,20 +261,7 @@ export class TacticalSuperweapons {
           r.left = Math.trunc(u.type.num('TSW_Explosion_Debris_Creation_Frame_Delay', 0));
           r.transform = { x: t.x, y: t.y, z: t.z, rotation: t.rotation?.slice() || [0, 0, 0], scale: t.scale ?? 1 };
           u.target = null;
-          u.anim = null;
-          if (u.model) {
-            for (const [i, bone] of u.model.bones.entries()) {
-              const rest = bone.userData.rest;
-              if (rest) {
-                bone.position.copy(rest.p);
-                bone.quaternion.copy(rest.q);
-                bone.scale.copy(rest.s);
-              }
-              bone.visible = u.model.model.bones[i].visible;
-              bone.userData.animHid = !bone.visible;
-            }
-            u.model.syncFromBones();
-          }
+          u.restPose?.();
           const clones = t.type.list('Death_Explosions'),
             clone = clones.length ? db.type(clones[Math.floor(this.random() * clones.length)]) : null;
           if (clone) this.replace(clone, r.transform, true);

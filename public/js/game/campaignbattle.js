@@ -317,6 +317,15 @@ export function arrange(units, at, facing) {
   return out;
 }
 
+// Super-category units (the Death Stars) start exactly on the map's Death_Star_Position marker when it has one.
+function placeAtMarker(unit, marker) {
+  unit.x = marker.x;
+  unit.y = marker.y;
+  unit.z = marker.z;
+  unit.heading = marker.heading;
+  unit.syncObj?.();
+}
+
 export function markers(map, name) {
   const want = name.toUpperCase().replace(/[\s_]+/g, ' ');
   return map.objects
@@ -441,7 +450,8 @@ export function placeCampaignBattle(w, map, teams, cb, random = simRandom) {
   w.holdHyperspace = cb.linked?.cinematic === 2;
   const stations = markers(map, 'Space Station Position'),
     defend = markers(map, 'Defending Forces Position')[0] || { x: 0, y: 0 };
-  const entries = markers(map, 'Attacker Entry Position');
+  const entries = markers(map, 'Attacker Entry Position'),
+    superPosition = markers(map, 'Death Star Position')[0] || null;
   const entry = entries.sort((a, b) => Math.hypot(a.x - defend.x, a.y - defend.y) - Math.hypot(b.x - defend.x, b.y - defend.y))[0] || {
     x: -defend.x || -2000,
     y: -defend.y || 0
@@ -487,6 +497,7 @@ export function placeCampaignBattle(w, map, teams, cb, random = simRandom) {
         book.absent.push(u.gid);
         continue;
       }
+      if (superPosition && !e.isSquad && e.type.ownCategories().has('SUPER')) placeAtMarker(e, superPosition);
       spawned.push([u, e]);
       if (u.companyType) companies.push([u.companyType, e]);
       if (hyper && !w.tacticalSuperweapons?.record(e)) w.startHyperspace(e);

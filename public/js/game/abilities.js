@@ -4,6 +4,7 @@ import { swapped } from './weaponswap.js';
 import { simRandom } from './simrandom.js';
 import { MOD } from './combatmods.js';
 import { abilityText } from './abilitytext.js';
+import { getALA, animName } from '../ala.js';
 
 const sound = (world, u, name) => {
   const a = world.audio,
@@ -412,6 +413,7 @@ export function useAbility(world, e, kind, on = true, target = null, approach = 
   let any = false;
   for (const u of members(e)) {
     const st = u.abilities.find(s => s.def.kind === kind);
+    if (on && st && st.active && kind === 'SUPER_LASER') continue;
     if (on && st && st.active && !def.toggle && def.duration > 0 && def.target !== 'none' && target) {
       retarget(u, st, target);
       any = true;
@@ -605,6 +607,7 @@ function stop(world, u, st) {
   st.data = null;
   refreshMods(u);
   if (def.kind === 'SPOILER_LOCK') u.playAnim('UNDEPLOY', { reverses: 'DEPLOY' });
+  if (def.kind === 'SUPER_LASER') u.playAnim?.('IDLE', { loop: true });
   sound(world, u, def.sfxOff);
 }
 
@@ -717,42 +720,9 @@ export function tickAbilities(world, u, dt) {
         });
         world.beam(u, tgt, [0.4, 1, 0.5], 14, 'HP_trac_bone');
         break;
-      case 'SUPER_LASER': {
-        const sp = def.spec,
-          fireAt = (sp ? sp.num('Fire_Frame', 60) : 60) / 30;
-        if (!tgt || tgt.dead) {
-          ended(world, u, st);
-          continue;
-        }
-        if (d.t < fireAt) break;
-        if (!d.fired) {
-          d.fired = true;
-          if (!world.audible || world.audible(u.x, u.y, u.player))
-            world.audio.playFrom(u.isSquad ? u.fighters[0] || u : u, def.node.val('SFXEvent_Special_Ability_Loop').trim(), u.x, u.y);
-        }
-        const c = sp
-          ? sp
-              .val('Line_Color')
-              .trim()
-              .split(/[\s,]+/)
-              .map(Number)
-          : [];
-        world.damage(tgt, (sp ? sp.num('Damage_Per_Frame', 500) : 500) * 30 * dt, {
-          damageType: 'Damage_Default',
-          attacker: u.player,
-          x: tgt.x,
-          y: tgt.y,
-          z: tgt.z,
-          quiet: simRandom() > dt * 12
-        });
-        world.beam(
-          u,
-          tgt,
-          c.length >= 3 && c.every(Number.isFinite) ? [c[0] / 255, c[1] / 255, c[2] / 255] : [0, 0.93, 0.47],
-          sp ? sp.num('Line_Width', 35) : 35
-        );
+      case 'SUPER_LASER':
+        if (superLaserStep(world, u, st, tgt, dt)) continue;
         break;
-      }
       case 'LEECH_SHIELDS': {
         if (!tgt || tgt.dead || !inRange(u, tgt, def.range * 1.1)) {
           ended(world, u, st);
@@ -838,7 +808,7 @@ export function tickAbilities(world, u, dt) {
         break;
     }
     if (!st.active) continue;
-    if (def.duration > 0 && !def.passive && (st.timer -= dt) <= 0) {
+    if (def.duration > 0 && !def.passive && def.kind !== 'SUPER_LASER' && (st.timer -= dt) <= 0) {
       if (def.kind === 'SELF_DESTRUCT') {
         const proj = db.type(def.node.val('Spawned_Object_Type'));
         const { x, y, z } = u;
@@ -849,6 +819,97 @@ export function tickAbilities(world, u, dt) {
       ended(world, u, st);
     }
   }
+}
+
+// The Death Star II superlaser, as in the original game: after Fire_Delay the station turns toward its target
+// (Face_Target) until the target is inside Firing_Cone, plays its ATTACK clip (Attack_Anim_Sub_Index), opens fire on
+// the clip's Fire_Frame and burns the target with Damage_Per_Frame for Expiration_Seconds. It stops early when the
+// target dies or leaves Activation_Max_Range. Returns true once the ability has ended.
+function superLaserStep(world, unit, abilityState, target, dt) {
+  const def = abilityState.def,
+    spec = def.spec,
+    data = abilityState.data;
+  if (!target || target.dead || (def.range && !inRange(unit, target, def.range))) {
+    ended(world, unit, abilityState);
+    return true;
+  }
+  if (!data.phase) data.phase = 'delay';
+  if (data.phase === 'delay') {
+    if (data.t < (spec ? spec.num('Fire_Delay', 0) : 0)) return false;
+    data.phase = spec && /^(yes|true|1)$/i.test(spec.val('Face_Target').trim()) ? 'turn' : 'charge';
+    if (data.phase === 'charge') startSuperLaserClip(unit, spec, data);
+  }
+  if (data.phase === 'turn') {
+    if (!turnTowardTarget(unit, target, spec, dt)) return false;
+    data.phase = 'charge';
+    startSuperLaserClip(unit, spec, data);
+  }
+  if (data.phase === 'charge') {
+    data.clipTime += dt;
+    if (!superLaserFireFrameReached(unit, spec, data.clipTime)) return false;
+    data.phase = 'fire';
+    data.fireLeft = def.node.num('Expiration_Seconds', 0);
+    if (!world.audible || world.audible(unit.x, unit.y, unit.player))
+      world.audio.playFrom(unit, def.node.val('SFXEvent_Special_Ability_Loop').trim(), unit.x, unit.y);
+    return false;
+  }
+  if ((data.fireLeft -= dt) <= 0) {
+    ended(world, unit, abilityState);
+    return true;
+  }
+  world.damage(target, (spec ? spec.num('Damage_Per_Frame', 500) : 500) * 30 * dt, {
+    damageType: 'Damage_Default',
+    attacker: unit.player,
+    x: target.x,
+    y: target.y,
+    z: target.z,
+    quiet: simRandom() > dt * 12
+  });
+  world.beam(unit, target, superLaserColor(spec), spec ? spec.num('Line_Width', 35) : 35, superLaserBone(spec), 'superlaser');
+  return false;
+}
+
+function startSuperLaserClip(unit, spec, data) {
+  data.clipTime = 0;
+  unit.playAnim?.('ATTACK', { index: spec ? spec.num('Attack_Anim_Sub_Index', 0) : 0 });
+}
+
+// Fire_Frame counts frames of the ATTACK clip; with no such clip the laser fires at once.
+function superLaserFireFrameReached(unit, spec, clipTime) {
+  const clip = getALA(animName(unit.type.str('Space_Model_Name'), 'ATTACK', spec ? spec.num('Attack_Anim_Sub_Index', 0) : 0));
+  if (!clip) return true;
+  return clipTime >= clip.duration || clipTime * clip.fps >= (spec ? spec.num('Fire_Frame', 0) : 0);
+}
+
+// Yaw only, at Turn_Rate degrees per logic frame (the unit's own Max_Rate_Of_Turn when Turn_Rate is not above 0).
+function turnTowardTarget(unit, target, spec, dt) {
+  const coneDegrees = spec ? spec.num('Firing_Cone', 45) : 45,
+    cone = ((coneDegrees >= 90 ? 0.01 : coneDegrees) * Math.PI) / 180,
+    wanted = Math.atan2(target.y - unit.y, target.x - unit.x);
+  let difference = wanted - (unit.heading || 0);
+  difference = Math.atan2(Math.sin(difference), Math.cos(difference));
+  if (Math.abs(difference) <= cone) return true;
+  const ownRate = spec ? spec.num('Turn_Rate', -1) : -1,
+    degreesPerFrame = ownRate > 0 ? ownRate : unit.type.num('Max_Rate_Of_Turn', 0),
+    step = ((degreesPerFrame * 30 * Math.PI) / 180) * dt;
+  unit.heading = (unit.heading || 0) + Math.sign(difference) * Math.min(Math.abs(difference), step);
+  unit.syncObj?.();
+  return false;
+}
+
+function superLaserColor(spec) {
+  const rgb = spec
+    ? spec
+        .val('Line_Color')
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number)
+    : [];
+  return rgb.length >= 3 && rgb.every(Number.isFinite) ? [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255] : [0, 0.93, 0.47];
+}
+
+function superLaserBone(spec) {
+  return (spec ? spec.val('Owner_Particle_Bone_Name') : '').trim().split(/[\s,]+/)[0] || null;
 }
 
 const supportSwarm = def =>

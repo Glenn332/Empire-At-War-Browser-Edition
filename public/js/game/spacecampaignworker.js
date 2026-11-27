@@ -9,7 +9,8 @@ import { spaceRetreat, startCinematicRetreat, stepCinematicJumps, autoResolveBat
 import { plain } from './spacebattlehooks.js';
 import { StoryFlags } from './storyflags.js';
 import { storyTypes } from './storyart.js';
-import { isSuperweaponTarget } from './tacticalsuperweapon.js';
+import { isSuperweaponTarget, superweaponClipNames } from './tacticalsuperweapon.js';
+import { loadALA } from '../ala.js';
 import { promoteToCinematicLayer } from './cinematiclayer.js';
 import { modelsForType } from './sim.js';
 import { preloadModels } from '../model.js';
@@ -161,7 +162,7 @@ export async function campaignBattle(game, m, refs, thing, events) {
   manager.resetHUD = () => events.push(['game', 'superweaponHUDReset', []]);
   manager.music = name => events.push(['game', 'superweaponMusic', [name]]);
   for (const o of game.map?.objects || []) {
-    if (!isSuperweaponTarget(o.type)) continue;
+    if (!isSuperweaponTarget(o.type) || manager.planet?.destroyed) continue;
     const index = manager.targets.length;
     manager.addTarget({
       type: o.type,
@@ -177,6 +178,10 @@ export async function campaignBattle(game, m, refs, thing, events) {
   }
   // The battle's units were put back before the manager existed; on the page it saw them arrive.
   for (const u of w.units) if (!u.dead) manager.add(u);
+  // The superlaser opens fire on a frame of its ATTACK clip, so this thread needs the clip timing too.
+  await Promise.all(
+    [...new Set(manager.units.flatMap(u => superweaponClipNames(u.type)))].map(name => Promise.resolve(loadALA(name)).catch(() => null))
+  );
   restoreTacticalSuperweapons(w, save.battle?.superweapons, thing);
   let weaponsShown = '';
   game.tacticalVictory.notify = result => {

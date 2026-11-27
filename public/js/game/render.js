@@ -16,6 +16,7 @@ import { fitShadowToView } from './shadowfit.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
+import { SuperLaserBeams } from './superlaserbeam.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade } from './extrafx.js';
 
 const DEG = Math.PI / 180;
@@ -453,6 +454,15 @@ class RingBatch {
   }
 }
 const _beamFrom = new THREE.Vector3();
+// Beam_Texture_Name and Num_Anim_Frames of the unit's Super_Laser_Ability, read once per ability.
+function superLaserLook(unit) {
+  const def = unit.abilityState?.('SUPER_LASER')?.def;
+  if (!def) return { texture: 'tractor_beam01.tga', frames: 1 };
+  return (def.beamLook ??= {
+    texture: def.spec?.val('Beam_Texture_Name').trim() || 'tractor_beam01.tga',
+    frames: def.spec?.num('Num_Anim_Frames', 1) || 1
+  });
+}
 const boneLocals = new WeakMap();
 const boneLocal = (u, name, bone) => {
   let m = boneLocals.get(u.model);
@@ -1551,7 +1561,8 @@ export class Renderer {
         f.z = u.z + lz;
         f.rot = u.heading + Math.PI / 2;
         f.roll = ro;
-        f.scale = 1;
+        // An effect on the model's bones is as large as the model (Scale_Factor).
+        f.scale = u.scale || 1;
         f.vx = c * u.speed * cp;
         f.vy = s * u.speed * cp;
         f.vz = u.speed * sp;
@@ -2116,8 +2127,10 @@ export class Renderer {
     for (const a of this.idlers) a.step(dt);
     for (const inst of this.sceneryBillboards) updateBillboards(inst, cam);
     if (this.clones.length) this.updateClones(dt);
-    const pulls = (this.pulls ||= []);
+    const pulls = (this.pulls ||= []),
+      superLasers = (this.superLaserList ||= []);
     pulls.length = 0;
+    superLasers.length = 0;
     if (world)
       for (const b of world.beams) {
         const a = b.a,
@@ -2135,6 +2148,11 @@ export class Renderer {
             : _beamFrom.set(a.x, a.y, (a.z ?? 0) + (b.bone ? 0 : (a.height || 0) * 0.3));
         if (b.kind === 'tractor') {
           pulls.push({ a, b: t, from: from.clone(), to: new THREE.Vector3(t.x, t.y, tz) });
+          continue;
+        }
+        if (b.kind === 'superlaser') {
+          const look = superLaserLook(a);
+          superLasers.push({ from: from.clone(), to: new THREE.Vector3(t.x, t.y, tz), width: b.width, color: b.color, ...look });
           continue;
         }
         bolts.add(
@@ -2155,6 +2173,7 @@ export class Renderer {
     if (lit) lit.end();
     else clearBolts();
     if (pulls.length || this.tractor) (this.tractor ||= new TractorBeams(this.scene)).update(dt || 0, pulls, cam, sp);
+    if (superLasers.length || this.superLasers) (this.superLasers ||= new SuperLaserBeams(this.scene)).update(superLasers, cam);
     sp.end();
     bolts.end();
     pills.end();

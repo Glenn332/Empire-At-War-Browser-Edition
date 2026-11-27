@@ -1087,12 +1087,14 @@ export class Unit {
           });
           continue;
         }
-        if (px.hidden) continue;
+        let byBone = false;
+        for (let b = px.bone; b && b !== this.model.root && !byBone; b = b.parent) byBone = !b.visible;
+        // A hidden effect on a bone that is hidden at rest belongs to an animation that shows the bone (the Death
+        // Star's superlaser on its ATTACK clips); it plays while the bone is shown.
+        if (px.hidden && !byBone) continue;
         let hp = null;
         for (let b = px.bone; b && !hp; b = b.parent) hp = damageBones.get(b) || null;
         const damage = !!hp || /damage|smoke|fire|elec|_ALT\d/i.test(px.name) || /_ALT\d/i.test(px.bone.name);
-        let byBone = false;
-        for (let b = px.bone; b && b !== this.model.root && !byBone; b = b.parent) byBone = !b.visible;
         const proxy = {
           name: px.name,
           bone: px.bone,
@@ -1252,8 +1254,8 @@ export class Unit {
 
   // `reverses` names the clip this one undoes (DEPLOY/UNDEPLOY): when that clip is still playing, the new one
   // starts at the mirrored point so a quick re-toggle turns the parts back instead of snapping, as the engine does.
-  playAnim(kind, { loop = false, random = false, reverses = null } = {}) {
-    const a = this.model && getALA(animName(this.modelFile || '', kind));
+  playAnim(kind, { loop = false, random = false, reverses = null, index = 0 } = {}) {
+    const a = this.model && getALA(animName(this.modelFile || '', kind, index));
     if (!a) return false;
     let time = random ? Math.random() * a.duration : 0;
     const p = this.anim;
@@ -1261,6 +1263,24 @@ export class Unit {
       time = Math.max(0, Math.min(a.duration, a.duration * (1 - p.time / p.anim.duration)));
     this.anim = new AnimState(this.model, a, { loop, time });
     return true;
+  }
+
+  // Stops the clip and puts every bone back to the model's rest pose and visibility (the superweapon's laser parts
+  // shown by its ATTACK clip go out again).
+  restPose() {
+    this.anim = null;
+    if (!this.model) return;
+    for (const [i, bone] of this.model.bones.entries()) {
+      const rest = bone.userData.rest;
+      if (rest) {
+        bone.position.copy(rest.p);
+        bone.quaternion.copy(rest.q);
+        bone.scale.copy(rest.s);
+      }
+      bone.visible = this.model.model.bones[i].visible;
+      bone.userData.animHid = !bone.visible;
+    }
+    this.model.syncFromBones();
   }
 
   abilityState(kind) {

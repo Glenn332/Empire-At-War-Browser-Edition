@@ -1600,11 +1600,9 @@ export class GalacticGame {
     const out = [];
     for (const p of this.galaxy.planets) {
       const v = intelligence(this.galaxy, p);
-      const abilityTarget =
-        !p.destroyed && this.dragFleet?.planet === p.index && this.dragFleet.units.some(u => hasPlanetDestruction(u.carries || u.type));
-      if (p.background || p.destroyed || !v?.discovered || (!p.type.bool('Planet_Surface_Accessible', true) && !abilityTarget)) continue;
+      if (p.background || p.destroyed || !v?.discovered || !p.type.bool('Planet_Surface_Accessible', true)) continue;
       const units = v.groundCount ? p.garrison.filter(u => u.owner === p.owner) : [];
-      const target = abilityTarget || (this.dragFleet?.planet === p.index && canLand(this.galaxy, this.dragFleet, p.index));
+      const target = this.dragFleet?.planet === p.index && canLand(this.galaxy, this.dragFleet, p.index);
       if (!units.length && !target) continue;
       const point = this.overlayPoint(p.pos, 0, this.groundComp.offset[1], ui);
       if (point) out.push({ p: p.index, units, empty: !units.length, ...point });
@@ -2421,15 +2419,27 @@ export class GalacticGame {
                 : SLOTS.find(s => s.code === { steal: 1, smuggle: 5, blackmarket: 9, sabotage: 2, corrupt: 7 }[kind]) || null;
             if (slot) break;
           }
-      if (!slot && hero) {
-        const s = slotFor(this, record, p, f.owner);
-        if (s && (f.units.length === 1 || s.code === 6)) slot = s;
+      let slotRecord = record;
+      if (!slot) {
+        const destroyer = this.planetDestroyerSlot(f, p);
+        if (destroyer) ({ slot, record: slotRecord } = destroyer);
       }
+      if (!slot && hero && f.units.length === 1) slot = slotFor(this, record, p, f.owner);
       if (!slot) continue;
       const point = this.overlayPoint(p.pos, this.specialComp.offset[0], 0, ui);
-      if (point) out.push({ p: p.index, slot, record: raid ? null : record, raid, ...point });
+      if (point) out.push({ p: p.index, slot, record: raid ? null : slotRecord, raid, ...point });
     }
     return out;
+  }
+
+  // The destroy-planet slot is offered for any fleet that carries a planet destroyer, whatever else it holds.
+  planetDestroyerSlot(fleet, planet) {
+    for (const record of fleet.units) {
+      if (!hasPlanetDestruction(record.carries || record.type)) continue;
+      const slot = slotFor(this, record, planet, fleet.owner);
+      if (slot?.code === 6) return { slot, record };
+    }
+    return null;
   }
 
   get busy() {
@@ -3245,19 +3255,6 @@ export class GalacticGame {
 
   land(fleet, p, { records = null, raid = false } = {}) {
     const chosen = records ? fleet.units.filter(u => records.includes(u)) : fleet.units;
-    if (
-      !this.over &&
-      !this.busy &&
-      fleet.owner === this.me &&
-      fleet.planet === p &&
-      !fleet.leg &&
-      chosen.some(
-        u =>
-          hasPlanetDestruction(u.carries || u.type) &&
-          this.story?.activate(this.story.object(u, this.galaxy.planets[p], fleet.owner).__object)
-      )
-    )
-      return true;
     if (this.busy || fleet.owner !== this.me || !canLand(this.galaxy, fleet, p, { raid })) return false;
     const pl = this.galaxy.planets[p],
       troops = invasionForces(this.galaxy, p, fleet.owner).filter(({ gid }) => {

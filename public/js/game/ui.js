@@ -199,6 +199,7 @@ export class UI {
     this.drag = null;
     this.hover = null;
     this.armed = null;
+    this.armedUsers = null;
     this.lastClick = { t: 0, type: null };
     this.hudTimer = 0;
     this.buildSig = '';
@@ -1397,7 +1398,18 @@ export class UI {
     return best;
   }
 
+  // An ability aimed for units that are not selected (the Death Star II's superlaser switch).
+  armAbilityFor(kind, users) {
+    this.arm('ability:' + kind);
+    this.armedUsers = users;
+  }
+
+  abilityUsers() {
+    return this.armedUsers ? this.armedUsers.filter(unit => !unit.dead) : this.mine();
+  }
+
   arm(mode) {
+    this.armedUsers = null;
     if (
       mode &&
       mode !== 'special' &&
@@ -1471,7 +1483,7 @@ export class UI {
   }
 
   runAbility(kind, x, y) {
-    const users = this.mine().filter(s => s.abilityState(kind));
+    const users = this.abilityUsers().filter(s => s.abilityState(kind));
     if (!users.length) return true;
     const def = users[0].abilityState(kind).def;
     let target;
@@ -1808,7 +1820,7 @@ export class UI {
     if (this.armed?.startsWith('ability:')) {
       const kind = this.armed.slice(8);
       if (
-        !this.mine().some(s => {
+        !this.abilityUsers().some(s => {
           const st = s.abilityState(kind);
           return st && ((!st.active && !(st.cooldown > 0)) || autoRetarget(st));
         })
@@ -2102,7 +2114,7 @@ export class UI {
       g.textAlign = 'left';
       g.fillStyle = '#ffd76a';
       const ab = this.armed.startsWith('ability:')
-        ? this.mine()
+        ? this.abilityUsers()
             .map(s => s.abilityState(this.armed.slice(8)))
             .find(Boolean)
         : null;
