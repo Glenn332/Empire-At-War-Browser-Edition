@@ -129,3 +129,21 @@ const D = machine();
 const envD = D.persist.newRef(D.persist.restore(lossyData).value(lossyEnv));
 assert.equal(D.vm.run("local n = 0 for _ in pairs(Holder) do n = n + 1 end assert(Holder.keep == 3 and n == 1)", 'lossy', envD), null);
 console.log('lossy save ok');
+
+// A saved game object that is gone on loading comes back as nil and is listed; the rest of the state loads.
+const E = machine();
+const envE = E.vm.environment({});
+E.vm.set(envE, 'Kept', E.make(1));
+E.vm.set(envE, 'Gone', E.make(-1));
+assert.equal(E.vm.run('Group = { keep = 3, gone = Gone, kept = Kept }; Group[Gone] = 5', 'gone', envE), null);
+const goneSave = E.persist.begin();
+const goneEnv = goneSave.enc(E.persist.refValue(envE));
+const goneData = JSON.parse(JSON.stringify(goneSave.end()));
+const F2 = machine();
+const resolveF2 = F2.persist.hooks.resolve;
+F2.persist.hooks.resolve = d => (d.thing === -1 ? undefined : resolveF2(d));
+const goneRestored = F2.persist.restore(goneData);
+const envF2 = F2.persist.newRef(goneRestored.value(goneEnv));
+assert.equal(goneRestored.dropped.length, 3, 'each missing object is listed');
+assert.equal(F2.vm.run('local n = 0 for _ in pairs(Group) do n = n + 1 end assert(Group.keep == 3 and Group.gone == nil and Group.kept.Get_Id() == 1 and n == 2)', 'gone', envF2), null);
+console.log('lossy restore ok');
