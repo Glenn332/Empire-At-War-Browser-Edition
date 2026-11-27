@@ -52,6 +52,8 @@ import { CombatMods, MOD, SPACE, bonusSourceDefs, bonusTypeFits, bonusOwnerFits 
 export const spacePop = t =>
   t.has('Space_Override_Population_Value') ? t.num('Space_Override_Population_Value', 0) : t.num('Population_Value', 0);
 
+export const reinforcePop = t => Math.trunc(spacePop(t) + 0.5);
+
 export const LOGIC_FPS = 30;
 
 export function stationLevel(unit) {
@@ -2579,9 +2581,7 @@ export class World {
       pool.pop();
       return null;
     }
-    let fielded = p.pop;
-    if (!this.campaign) for (const t of p.reinforcements) fielded -= spacePop(t);
-    if (p.popCap - fielded < Math.trunc(spacePop(type) + 0.5)) return null;
+    if (this.popRoom(p) < reinforcePop(type)) return null;
     const th = this.startFacing(p);
     for (let i = 0; i < 10; i++) {
       const a = th + i * 0.6283185;
@@ -2605,6 +2605,14 @@ export class World {
     }
     st.r += 500;
     return null;
+  }
+
+  // Population still free on the battlefield. Skirmish counts queued
+  // reinforcements in p.pop, a campaign battle does not.
+  popRoom(p) {
+    let fielded = p.pop;
+    if (!this.campaign) for (const t of p.reinforcements) fielded -= spacePop(t);
+    return p.popCap - fielded;
   }
 
   insidePrevention(p, at) {
@@ -2718,6 +2726,7 @@ export class World {
   deployReinforcement(player, type, x, y, heading) {
     const i = player.reinforcements.indexOf(type);
     if (i < 0) return 'Not available';
+    if (this.popRoom(player) < reinforcePop(type)) return 'Population cap reached';
     const why = this.cantReinforce(player, x, y, footprintOf(type), type, Number.isFinite(heading) ? heading : this.startFacing(player));
     if (why) return why;
     player.reinforcements.splice(i, 1);

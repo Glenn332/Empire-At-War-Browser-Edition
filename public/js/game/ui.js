@@ -6,7 +6,7 @@ import { BeaconView } from './beacons.js';
 import { iconUrl, iconCanvasRect, iconAtlas, iconOpaque } from '../icons.js';
 import { nativeAbilityIcon } from './nativeabilityicons.js';
 import { loadTextureCanvas } from '../dds.js';
-import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump, directState } from './sim.js';
+import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, reinforcePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
 import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind } from './keybinds.js';
@@ -979,6 +979,7 @@ export class UI {
     this.cancelPlacing();
     this.placing = { list: [], ghosts: [], slots: [], dragging, ok: false, x: 0, y: 0, heading: 0, turned: false, why: '' };
     this.addPlacing(type);
+    if (this.placing && !this.placing.list.length) this.cancelPlacing();
   }
 
   addPlacing(type) {
@@ -987,7 +988,9 @@ export class UI {
       if (!pl || pl.list.length) return this.startPlacing(type, false);
     }
     const have = this.player.reinforcements.filter(t => t === type).length;
-    if (pl.list.filter(t => t === type).length >= have) {
+    let picked = reinforcePop(type);
+    for (const t of pl.list) picked += reinforcePop(t);
+    if (pl.list.filter(t => t === type).length >= have || picked > this.world.popRoom(this.player)) {
       this.game.audio.play('GUI_Bad_Sound');
       return;
     }

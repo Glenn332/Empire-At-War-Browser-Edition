@@ -416,7 +416,9 @@ export class LandUI {
   addPlacing(type) {
     if (!this.placing || this.dragPlace) return this.startPlacing(type, false);
     const have = this.player.reinforcements.filter(t => t === type).length;
-    if (this.placeList.filter(t => t === type).length >= have) {
+    let picked = this.world.popOf(type);
+    for (const t of this.placeList) picked += this.world.popOf(t);
+    if (this.placeList.filter(t => t === type).length >= have || this.player.pop + picked > this.player.popCap) {
       this.game.audio.play('GUI_Bad_Sound');
       return;
     }
