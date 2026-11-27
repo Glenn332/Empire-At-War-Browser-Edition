@@ -127,6 +127,12 @@ export class GalacticEncyclopedia {
     );
   }
   async showType(type, droid = true, cost) {
+    // A type with no name text and no description has nothing to show (mods hide helper objects this way, such as the
+    // Thrawns Revenge popup activator), so no popup instead of one titled with the internal type name.
+    if (!type.str('Text_ID').trim() && !type.list('Encyclopedia_Text').some(id => id.trim())) {
+      this.hide();
+      return;
+    }
     this.type = type;
     const generation = ++this.generation;
     await this.warm([
