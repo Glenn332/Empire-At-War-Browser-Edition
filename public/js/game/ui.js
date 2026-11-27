@@ -9,7 +9,7 @@ import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, reinforcePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
-import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind } from './keybinds.js';
+import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind, scrollScale } from './keybinds.js';
 
 const ORDER_KEYS = [
   ['ATTACK_MOVE', 'attackmove'],
@@ -1764,7 +1764,7 @@ export class UI {
       });
       this.beaconView.update(w.beacons.live(w.time).filter(b => b.owner.team === this.player.team));
     }
-    const pan = rig.dist * 0.9 * dt;
+    const pan = rig.dist * 0.9 * dt * scrollScale();
     let px = 0,
       py = 0;
     if (held(k, 'SCROLL_LEFT')) px -= 1;

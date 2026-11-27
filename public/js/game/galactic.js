@@ -115,7 +115,7 @@ import { stageStart } from './transit.js';
 import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
-import { pressed, held, edgePan, mouseBind } from './keybinds.js';
+import { pressed, held, edgePan, mouseBind, scrollRate } from './keybinds.js';
 import { planetMaxStarbase } from './planetstats.js';
 
 const $ = id => document.getElementById(id);
@@ -3730,10 +3730,8 @@ export class GalacticGame {
     ) {
       const c = db.constants,
         region = c.num('Strategic_Edge_Scroll_Region', 2),
-        lo = c.num('Strategic_Min_Scroll_Speed', 80),
-        hi = c.num('Strategic_Max_Scroll_Speed', 400),
         m = this.mouse,
-        speed = lo + (hi - lo) / 2,
+        speed = scrollRate('Strategic').speed,
         side = (key, depth) => (held(k, key) || (m.in && edge && depth > 0) ? speed : 0),
         dt = Math.min(1, elapsed),
         edge = edgePan();

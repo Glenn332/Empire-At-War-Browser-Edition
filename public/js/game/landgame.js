@@ -148,7 +148,7 @@ import { openDialog } from './dialogs.js';
 
 import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
-import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind } from './keybinds.js';
+import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind, scrollScale } from './keybinds.js';
 import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
 
@@ -3253,7 +3253,7 @@ export class LandGame {
       k = this.keys,
       dt = this.warming || this.paused || this.over || this.tacticalMovies?.pausesMode ? 0 : real * this.speed;
     if (!this.menus.open && !this.controlsLocked) {
-      const sp = v.dist * 1.1 * real * (k.has('ShiftLeft') || k.has('ShiftRight') ? 2.6 : 1),
+      const sp = v.dist * 1.1 * real * scrollScale() * (k.has('ShiftLeft') || k.has('ShiftRight') ? 2.6 : 1),
         fx = -Math.cos(v.yaw),
         fy = -Math.sin(v.yaw);
       const steer = !!this.direct && this.steerDirect();

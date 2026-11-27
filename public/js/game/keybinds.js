@@ -315,6 +315,39 @@ export function edgePan() {
   }
   return edgeScroll;
 }
+// the options' scroll speed slider, 0 to 1; the middle is the pace panning had before the slider worked
+let scrollSlider = null;
+export function scrollSpeed() {
+  if (scrollSlider === null) {
+    let v = NaN;
+    try {
+      v = parseFloat(localStorage.getItem('swr-scroll-speed'));
+    } catch {}
+    scrollSlider = v >= 0 && v <= 1 ? v : 0.5;
+  }
+  return scrollSlider;
+}
+export function setScrollSpeed(v) {
+  scrollSlider = Math.max(0, Math.min(1, +v || 0));
+  try {
+    localStorage.setItem('swr-scroll-speed', String(scrollSlider));
+  } catch {}
+}
+const SCROLL_RANGE = { Tactical: [1000, 4000], Strategic: [80, 400] };
+// the slider picks a point between the game constants' <mode>_Min_Scroll_Speed and _Max_Scroll_Speed
+export function scrollRate(mode) {
+  const c = db.constants,
+    [dlo, dhi] = SCROLL_RANGE[mode],
+    lo = c ? c.num(`${mode}_Min_Scroll_Speed`, dlo) : dlo,
+    hi = c ? c.num(`${mode}_Max_Scroll_Speed`, dhi) : dhi;
+  return { speed: lo + (hi - lo) * scrollSpeed(), mid: (lo + hi) / 2 };
+}
+// the factor on a battle camera's own pan pace: 1 at the slider's middle
+export function scrollScale(mode = 'Tactical') {
+  const { speed, mid } = scrollRate(mode);
+  return mid > 0 ? speed / mid : 1;
+}
+
 const edgeWatchers = new Set();
 export const onEdgePan = f => edgeWatchers.add(f);
 export function setEdgePan(on) {

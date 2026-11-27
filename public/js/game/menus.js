@@ -31,6 +31,8 @@ import {
   bothButtonsRotate,
   setBothButtonsRotate,
   edgePan,
+  scrollSpeed,
+  setScrollSpeed,
   setEdgePan,
   mouseCode,
   isMouseAction
@@ -1187,7 +1189,7 @@ export class Menus {
       } catch {}
     };
     const strategic = !!g.galactic,
-      was = { speed: g.speed, auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate(), edge: edgePan() };
+      was = { speed: g.speed, auto: $('optAutofire').checked, simplified, autoResolve, delayed, both: bothButtonsRotate(), edge: edgePan(), scroll: scrollSpeed() };
     const setDelayed = on => {
       delayed = on;
       g.delayTooltips = on;
@@ -1220,6 +1222,7 @@ export class Menus {
       dlg.check('IDC_DELAY_TOOLTIPS', delayed, setDelayed);
       dlg.check('IDC_BOTH_MOUSE_BUTTONS_ROTATE', bothButtonsRotate(), setBothButtonsRotate);
       dlg.check('IDC_EDGE_PAN', edgePan(), setEdgePan);
+      dlg.slider('IDC_SCROLL_SPEED_SLIDER', scrollSpeed(), setScrollSpeed);
       if (g.galactic) dlg.check('IDC_AUTORESOLVE', autoResolve, setAutoResolve);
     };
     show();
@@ -1227,13 +1230,11 @@ export class Menus {
       // battles have no speed slider (ours): they start at normal speed and fast forward doubles it
       'IDC_GAME_SPEED_SLIDER',
       ...(strategic ? [] : ['IDC_STRATEGIC_GAME_SPEED_SLIDER']),
-      'IDC_SCROLL_SPEED_SLIDER',
       'IDC_ALTERNATE_MOUSE_CONTROLS',
       'IDC_ABSOLUTE_SCROLLING',
       ...(g.galactic ? [] : ['IDC_AUTORESOLVE']),
       'IDC_RIGHT_BUTTON_SCROLL',
-      'IDC_GALACTIC_GAME_SPEED_TEXT',
-      'IDC_SCROLL_SPEED'
+      'IDC_GALACTIC_GAME_SPEED_TEXT'
     ])
       dlg.enable(id, false);
     const levels = ['easy', 'medium', 'hard'],
@@ -1259,6 +1260,7 @@ export class Menus {
       setDelayed(was.delayed);
       setBothButtonsRotate(was.both);
       setEdgePan(was.edge);
+      setScrollSpeed(was.scroll);
       if (g.galactic) setAutoResolve(was.autoResolve);
       this.pop();
     });
@@ -1274,6 +1276,7 @@ export class Menus {
       setDelayed(false);
       setBothButtonsRotate(false);
       setEdgePan(false);
+      setScrollSpeed(0.5);
       if (g.galactic) setAutoResolve(false);
       show();
     });
