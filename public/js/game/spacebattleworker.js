@@ -35,25 +35,39 @@ const AI_STEP_MS = 4,
   REPLAY_SPEED = 16;
 const nothing = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : nothing), apply: () => undefined });
 
+const CLIP_KINDS = ['IDLE', 'DIE', 'DEPLOY', 'UNDEPLOY', 'BUILD'];
+const loadClip = name => Promise.resolve(loadALA(name)).catch(() => null);
 const fixedSeed = m => (m.net ? m.net.seed : m.record ? m.record.seed : null);
 
 // A script spawning a type whose models are not loaded yet waits for them (its thread yields on the promise), so the
-// unit never comes without its hardpoints. In a recorded or multiplayer battle the battle also stops stepping while
-// the models load (world.artLoading), so the thread resumes at the same step in every run and on every peer.
+// unit never comes without its hardpoints. A unit made where nothing can wait (a game event or story callback) is
+// made at once and takes its models when they are in (world.lateArt). In a recorded or multiplayer battle the battle
+// also stops stepping while the models load (world.artLoading), so the thread resumes, and a late unit takes its
+// models, at the same step in every run and on every peer.
 function artLoader(world, fixed) {
   const loads = new Map(),
-    settled = new Set();
+    settled = new Set(),
+    late = new Set();
   world.artLoading = new Set();
-  return type => {
+  const giveLateModels = () => {
+    for (const unit of late) {
+      if (!unit.dead && !settled.has(unit.type)) continue;
+      late.delete(unit);
+      unit.takeLateModel();
+    }
+  };
+  const artFor = type => {
     if (!type || settled.has(type)) return null;
     const want = [...modelsForType(type, null, new Set(), new Set())].filter(Boolean);
     if (want.every(name => getModelData(name))) return null;
     let load = loads.get(type);
     if (!load) {
       load = preloadModels(want)
+        .then(() => Promise.all(want.flatMap(name => CLIP_KINDS.map(kind => loadClip(animName(name, kind))))))
         .catch(() => null)
         .then(() => {
           settled.add(type);
+          if (!fixed) giveLateModels();
         });
       loads.set(type, load);
       if (fixed) {
@@ -62,13 +76,19 @@ function artLoader(world, fixed) {
         load.then(() =>
           setTimeout(() => {
             world.artLoading.delete(load);
-            if (!world.artLoading.size) world.onArtLoaded?.();
+            if (world.artLoading.size) return;
+            giveLateModels();
+            world.onArtLoaded?.();
           }, 0)
         );
       }
     }
     return load;
   };
+  world.lateArt = unit => {
+    if (artFor(unit.type)) late.add(unit);
+  };
+  return artFor;
 }
 
 async function setUp(m, events) {
@@ -101,7 +121,7 @@ async function setUp(m, events) {
   const clips = new Set((await findFiles('MODELS\\\\[^\\\\]*_(IDLE|DIE|DEPLOY|UNDEPLOY|BUILD)_00\\.ALA$')).map(n => n.split('\\').pop()));
   const wanted = [];
   for (const n of names)
-    for (const kind of ['IDLE', 'DIE', 'DEPLOY', 'UNDEPLOY', 'BUILD']) {
+    for (const kind of CLIP_KINDS) {
       const a = animName(n, kind);
       if (clips.has(a)) wanted.push(a);
     }
