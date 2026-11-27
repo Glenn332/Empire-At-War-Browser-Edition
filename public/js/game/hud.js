@@ -8,7 +8,7 @@ import { loadALO, parseALO } from '../alo.js';
 import { loadTextureCanvas } from '../dds.js';
 import { iconUrl, iconCanvasRect, warmIcons, iconAdditiveUrl } from '../icons.js';
 import { fontFamily } from '../fonts.js';
-import { buildCost, isUpgradeType, companySpaceUnits } from './sim.js';
+import { buildCost, isUpgradeType, companySpaceUnits, spacePop } from './sim.js';
 import { parseAbilities } from './abilities.js';
 import { layoutSelectionPanels, slotClickSelection } from './commandbargroups.js';
 import { abilityLocked } from './blackmarket.js';
@@ -2106,7 +2106,13 @@ export class CommandBar {
     for (const t of p.reinforcements) counts.set(t, (counts.get(t) || 0) + 1);
     const grid = (this.reinGrid ||= reinforceGrid(this.rshell));
     const rows = Math.max(1, Math.min(grid.rows, Math.ceil(counts.size / grid.cols)));
-    const sig = (this.reinforceOpen ? 'o' : 'c') + rows + [...counts].map(([t, n]) => t.name + n).join();
+    // A slot greys out when one more of that unit would not fit under the cap.
+    const w = this.world,
+      room = w.popRoom ? w.popRoom(p) : p.popCap - p.pop,
+      unitPop = t => (w.popOf ? w.popOf(t) : spacePop(t)),
+      full = t => unitPop(t) > 0 && room < unitPop(t);
+    const sig =
+      (this.reinforceOpen ? 'o' : 'c') + rows + [...counts].map(([t, n]) => t.name + n + (full(t) ? 'x' : '')).join();
     if (sig === this.reinSig) {
       if (this.reinPop) this.reinPop.textContent = `${p.pop}/${p.popCap}`;
       return;
@@ -2160,6 +2166,13 @@ export class CommandBar {
       s.style.setProperty('--over', css(iconAdditiveUrl('i_button_unit_frame_select.tga')));
       s.innerHTML = `<span>${n > 1 ? n : ''}</span>`;
       s.onmouseenter = () => this.tipOn('rein' + i, t);
+      if (full(t)) {
+        s.classList.add('dis');
+        s.onmouseleave = () => this.hideInfo();
+        s.onmousedown = ev => ev.button === 0 && ev.preventDefault();
+        i++;
+        continue;
+      }
       s.onmouseleave = ev => {
         this.hideInfo();
         if (this.reinPress === t && ev.buttons & 1) {

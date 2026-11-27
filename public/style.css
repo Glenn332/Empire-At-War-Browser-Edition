@@ -1336,6 +1336,13 @@ body:not(.original-hud) .heroframe {
 .rslot:hover::after {
   background-image: var(--over);
 }
+.rslot.dis {
+  filter: brightness(0.5);
+  cursor: default;
+}
+.rslot.dis:hover::after {
+  background-image: none;
+}
 .rslot span {
   position: absolute;
   right: 3px;
