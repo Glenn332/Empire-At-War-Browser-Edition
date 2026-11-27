@@ -196,9 +196,12 @@ let parsers = null,
   parserId = 0;
 const parserJobs = new Map();
 function parserFailed() {
-  for (const worker of parsers || []) worker.terminate();
+  for (const worker of parsers || []) worker.terminate?.();
   parsers = [];
-  for (const job of parserJobs.values()) job.resolve(null);
+  for (const job of parserJobs.values()) {
+    clearTimeout(job.timer);
+    job.resolve(null);
+  }
   parserJobs.clear();
 }
 function parseElsewhere(buffer, outline) {
@@ -212,7 +215,10 @@ function parseElsewhere(buffer, outline) {
         worker.onmessage = ({ data }) => {
           const job = parserJobs.get(data.id);
           parserJobs.delete(data.id);
-          if (job) job.resolve(data.error ? null : data.model);
+          if (job) {
+            clearTimeout(job.timer);
+            job.resolve(data.error ? null : data.model);
+          }
         };
         worker.onerror = parserFailed;
         parsers.push(worker);
@@ -224,7 +230,9 @@ function parseElsewhere(buffer, outline) {
   if (!parsers.length) return Promise.resolve(null);
   const id = ++parserId;
   return new Promise(resolve => {
-    parserJobs.set(id, { resolve });
+    // A worker that never answers (a stub in a test host, a wedged real worker) must not hang model
+    // loading: the first silent worker tears the whole pool down and later loads parse synchronously.
+    parserJobs.set(id, { resolve, timer: setTimeout(parserFailed, 5000) });
     // Do not transfer the caller's buffer: outline and fallback paths may still need it.
     const copy = buffer.slice(0);
     parsers[parserNext++ % parsers.length].postMessage({ id, buffer: copy, outline }, [copy]);
