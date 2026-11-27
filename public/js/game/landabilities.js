@@ -485,6 +485,14 @@ function finish(world, q, st) {
         u.cloaked = false;
         cloakLook(u, false, world);
       }
+  if (kind === 'FLAME_THROWER') {
+    q.busy = false;
+    for (const u of q.members)
+      if (u.animKind === '~cast') {
+        u.cast = 0;
+        u.anim = null;
+      }
+  }
   if (kind === 'MISSILE_SHIELD' || kind === 'FLAME_THROWER')
     for (const u of q.members) {
       u.rooted = false;
@@ -617,6 +625,56 @@ export function refreshMods(world, q) {
       cy = m.reduce((a, u) => a + u.y, 0) / m.length;
     if (!m.some(u => u.path.length)) world.order(q, cx, cy, m[0].heading);
   }
+}
+
+// The engine's personal flame thrower: the user keeps facing the target every frame while the model's
+// FLAME_ATTACK animation loops, and the flame runs from the emitter proxy the model carries. Every frame each
+// applicable foe inside the cone takes Damage_Amount / (Fire_Time - Damage_Delay) per second, so a victim held
+// in the flame for the whole burn takes about Damage_Amount; the clicked target itself is spared for the first
+// Damage_Delay seconds. The cone axis follows the heading, its half angle is Damage_Arc_In_Degrees, and its
+// reach is the flame length (user to target) measured from the middle of the flame.
+function burnFlameThrower(world, q, st, c, target, applies, sn, sv) {
+  const halfArcCos = Math.cos((sn('Damage_Arc_In_Degrees', 90) * Math.PI) / 180),
+    delay = sn('Damage_Delay_In_Secs', 0.5),
+    damagePerSecond = sn('Damage_Amount', 225) / Math.max(1 / FPS, st.def.duration - delay),
+    aim = { x: target ? target.x : c.x + Math.cos(c.heading) * 50, y: target ? target.y : c.y + Math.sin(c.heading) * 50 };
+  let elapsed = 0,
+    posed = false;
+  const burning = () => st.active && q.busy && !c.dead;
+  c.rooted = true;
+  c.path = [];
+  c.target = null;
+  q.busy = true;
+  world.onProxyFx?.(c, sv('Flame_Emitter_Model_Name'), burning);
+  effect(world, dt => {
+    if (!burning()) {
+      if (st.active) finish(world, q, st);
+      return true;
+    }
+    // the clip loads on first use, so the cast is tried again until it is in
+    if (!posed) posed = world.cast(c, 'FLAME_ATTACK', st.def.duration - elapsed, true);
+    elapsed += dt;
+    if (target && target.dead) target = null;
+    if (target) {
+      aim.x = target.x;
+      aim.y = target.y;
+    }
+    c.heading = Math.atan2(aim.y - c.y, aim.x - c.x);
+    const length = Math.max(1, dist(c, aim)),
+      middleX = (c.x + aim.x) / 2,
+      middleY = (c.y + aim.y) / 2,
+      forwardX = Math.cos(c.heading),
+      forwardY = Math.sin(c.heading);
+    for (const victim of near(world, middleX, middleY, length, applies)) {
+      if (victim === target && elapsed <= delay) continue;
+      const toX = victim.x - c.x,
+        toY = victim.y - c.y,
+        away = Math.hypot(toX, toY);
+      if (away > 1e-3 && (toX * forwardX + toY * forwardY) / away < halfArcCos) continue;
+      world.hurt(victim, damagePerSecond * dt, c);
+    }
+    return false;
+  });
 }
 
 function start(world, q, st, c, tgt) {
@@ -776,30 +834,9 @@ function start(world, q, st, c, tgt) {
       break;
     }
 
-    case 'FLAME_THROWER': {
-      const reach = def.range || 100,
-        half = (sn('Damage_Arc_In_Degrees', 90) * Math.PI) / 360,
-        every = sn('Damage_Delay_In_Secs', 0.5),
-        each = (sn('Damage_Amount', 225) * every) / Math.max(every, def.duration);
-      let wait = 0,
-        left = def.duration;
-      if (c.target) face(c.target);
-      c.rooted = true;
-      c.path = [];
-      effect(world, dt => {
-        if (c.dead || (left -= dt) <= 0 || !st.active) return true;
-        if ((wait -= dt) > 0) return false;
-        wait += every;
-        fx(world, sv('Flame_Emitter_Model_Name'), { x: c.x + Math.cos(c.heading) * 14, y: c.y + Math.sin(c.heading) * 14, z: c.z }, c.aimZ);
-        for (const u of near(world, c.x, c.y, reach, applies)) {
-          let a = Math.atan2(u.y - c.y, u.x - c.x) - c.heading;
-          a = Math.atan2(Math.sin(a), Math.cos(a));
-          if (Math.abs(a) <= half) world.hurt(u, each);
-        }
-        return false;
-      });
+    case 'FLAME_THROWER':
+      burnFlameThrower(world, q, st, c, t || tgt, applies, sn, sv);
       break;
-    }
 
     case 'JET_PACK': {
       const o = world.nearestOpen(tgt.x, tgt.y),

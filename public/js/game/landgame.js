@@ -153,6 +153,12 @@ import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
 
 const LAND_TICK = 1 / 30;
+// The engine blends into an ability's attack animation over 0.2 s before its model proxy starts emitting.
+const PROXY_FX_BLEND_SECONDS = 0.2;
+// cos of 10 degrees: how far a unit's proxy bone may turn before its particle system is made again
+const PROXY_FX_REAIM_COS = Math.cos((10 * Math.PI) / 180);
+const proxyAxisZ = basis => (basis ? basis[8] : 1),
+  proxyAxisCos = (a, b) => (a ? a[6] : 0) * (b ? b[6] : 0) + (a ? a[7] : 0) * (b ? b[7] : 0) + proxyAxisZ(a) * proxyAxisZ(b);
 const ARMED_ORDERS = new Set(['guard', 'attack', 'move', 'attackmove']);
 const nextTask = () =>
   new Promise(r => {
@@ -1055,6 +1061,11 @@ export class LandGame {
         },
         { maxEmit: 4 }
       );
+    };
+    world.onProxyFx = (unit, proxyName, running) => {
+      if (!proxyName) return;
+      fx.state(proxyName);
+      (this.unitProxyFx ||= []).push({ unit, name: proxyName.toUpperCase(), running, wait: PROXY_FX_BLEND_SECONDS, sys: null, basis: null });
     };
     world.onShot = s => {
       const made = (s.w.proj._landMade ??= particle(s.w.proj.str('Projectile_Object_Creation_Particle')));
@@ -3315,6 +3326,7 @@ export class LandGame {
       if (p.grp.visible && p.anim) p.anim.step(this.paused ? 0 : real * (this.speed || 1));
       if (p.proxies?.length) this.stepPropProxies(p);
     }
+    if (this.unitProxyFx?.length) this.stepUnitProxyFx(this.paused ? 0 : real * (this.speed || 1));
     this.linkedPresentation?.update(real, !!this.menus?.open);
     this.linkedPresentation?.paint();
     if ((this.hudTimer -= real) <= 0) {
@@ -4347,6 +4359,49 @@ export class LandGame {
     for (const p of proxies) this.fx?.state(p.name);
     return { grp, inst, anim, proxies };
   }
+  // Runs a particle proxy of a unit's own model (such as a flame thrower emitter on a hand bone) while the
+  // ability that asked for it is running, then stops its emission so the last particles burn out. A system keeps
+  // the orientation it was made with, so when the bone turns further than PROXY_FX_REAIM_COS allows (the unit
+  // turns or the animation moves the arm) a fresh system takes over and the old particles burn out.
+  stepUnitProxyFx(dt) {
+    this.unitProxyFx = this.unitProxyFx.filter(entry => {
+      const unit = entry.unit;
+      if (!entry.running()) {
+        entry.sys?.release();
+        return false;
+      }
+      if (!unit.inst || !unit.holder) return true;
+      const proxy = unit.inst.proxies?.find(p => p.name.toUpperCase() === entry.name);
+      if (!proxy) return false;
+      entry.wait -= dt;
+      const posing = unit.animKind === '~cast' && unit.anim ? unit.anim.time < PROXY_FX_BLEND_SECONDS : entry.wait > 0;
+      if (posing || this.fx.state(proxy.name) !== 'ready') return true;
+      const bone = proxy.bone;
+      bone.updateWorldMatrix(true, false);
+      const basis = basisOf(bone.matrixWorld.elements);
+      if (entry.sys && !entry.sys.dead && proxyAxisCos(basis, entry.basis) >= PROXY_FX_REAIM_COS) return true;
+      if (!entry.sys && this.fx.systems.length >= 300) return true;
+      entry.sys?.release();
+      entry.basis = basis;
+      const at = new THREE.Vector3();
+      entry.sys = this.fx.spawn(
+        proxy.name,
+        f => {
+          bone.getWorldPosition(at);
+          f.x = at.x;
+          f.y = at.y;
+          f.z = at.z;
+          f.rot = 0;
+          f.scale = 1;
+          f.vx = f.vy = 0;
+          return unit.holder.visible !== false;
+        },
+        { scale: unit.holder.scale.x, basis }
+      );
+      return true;
+    });
+  }
+
   stepPropProxies(e) {
     for (const p of e.proxies) {
       let on = e.grp.visible;
