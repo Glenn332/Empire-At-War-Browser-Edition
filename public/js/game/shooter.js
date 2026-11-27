@@ -3064,7 +3064,7 @@ export class Shooter {
       this.postCompiled = !R.compileAsync || !!R.isMirror || R === this.game.gpu;
       if (!this.postCompiled)
         (async () => {
-          for (const m of [P.mBright, P.mBlur, P.mCombine, this.lens]) {
+          for (const m of [P.mBright, P.mBlur, P.mCombine, P.mCopy, this.lens]) {
             P.quad.material = m;
             await Promise.resolve(R.compileAsync(P.quad, P.quadCam, P.quadScene)).catch(() => {});
           }

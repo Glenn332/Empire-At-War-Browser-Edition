@@ -3242,8 +3242,16 @@ export class LandGame {
   frame(now) {
     if (this.modeSuspended) return;
     if (!this.warming) requestAnimationFrame(this.frame);
+    // A menu movie keeps its own 30 fps clock while the decorative battle behind it yields resources.
+    const menuMovie = !!this.setup.attract && !!this.tacticalMovies?.active;
+    if (menuMovie && !this.warming) {
+      const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+      this.last = now;
+      this.tacticalMovies.update(real, !!this.paused || !!this.menus?.open);
+      return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
+    }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); warm-up and the benchmark are uncapped
-    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap));
+    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active) : frameCap));
     if (!this.warming && gate.skip(now)) return;
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
@@ -4071,7 +4079,7 @@ export class LandGame {
       this.extraCompiled = !R.compileAsync || !!R.isMirror || R === this.gpu;
       if (!this.extraCompiled)
         (async () => {
-          for (const m of [P.mBright, P.mBlur, P.mCombine, P.extraLens]) {
+          for (const m of [P.mBright, P.mBlur, P.mCombine, P.mCopy, P.extraLens]) {
             P.quad.material = m;
             await Promise.resolve(R.compileAsync(P.quad, P.quadCam, P.quadScene)).catch(() => {});
           }

@@ -2245,8 +2245,16 @@ class Game {
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
+    // A menu movie keeps its own 30 fps clock while the decorative battle behind it yields resources.
+    const menuMovie = !!this.setup.attract && !!this.tacticalMovies?.active;
+    if (menuMovie) {
+      const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+      this.last = now;
+      this.tacticalMovies.update(real, !!this.paused);
+      return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
+    }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); the benchmark measures uncapped
-    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap)).skip(now)) return;
+    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active) : frameCap)).skip(now)) return;
     diag.begin(now);
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     if (this.bench) this.bench.tick(now - this.last, now);

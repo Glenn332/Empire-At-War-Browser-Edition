@@ -13,6 +13,8 @@ import { parseXML } from '../xml.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { Instances, mulInto } from './instances.js';
 import { fitShadowToView } from './shadowfit.js';
+import { shadowCacheKey, shadowRedrawDue } from './shadowcache.js';
+import { projectedRadius, visualDetail, importantShadowCaster, effectBudget } from './performance.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
@@ -695,9 +697,10 @@ export class Renderer {
     this.height = h;
     this.renderer.setPixelRatio(pixelRatio());
     this.renderer.setSize(w, h, false);
-    const pr = Math.min(devicePixelRatio, 2);
-    this.overlay.width = w * pr;
-    this.overlay.height = h * pr;
+    // Match the 3D resolution scale, but do not spend extra pixels supersampling the 2D overlay.
+    const pr = Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1));
+    this.overlay.width = Math.round(w * pr);
+    this.overlay.height = Math.round(h * pr);
     this.ctx.setTransform(pr, 0, 0, pr, 0, 0);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -900,7 +903,7 @@ export class Renderer {
   // inside the shadow camera's square; ships farther away cast nothing that can be seen.
   // Squadron fighters cast no shadow: they are small, many and move every step.
   castsShadowInView(unit) {
-    if (!unit.casters || !this.shadowsOn || unit.squad) return false;
+    if (!this.shadowsOn || !importantShadowCaster(unit)) return false;
     const rig = this.rig,
       reach = shadowHalfExtent(rig.dist) * SHADOW_CASTER_REACH + (unit.visualRadius || 0);
     return (unit.x - rig.x) ** 2 + (unit.y - rig.y) ** 2 <= reach * reach;
@@ -961,11 +964,30 @@ export class Renderer {
     fitShadowToView(this.camera, cam, rig.x, rig.y, 0, half);
     if (world) this.coverShadowedUnits(world, cam, rig.x, rig.y, half);
     lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+    const key = world ? shadowCacheKey(cam, world.units, unit => this.castsShadowInView(unit), this.scene) : null,
+      now = performance.now();
+    if (sh.key === key && sh.renderer === r) {
+      sh.reused = (sh.reused || 0) + 1;
+      return;
+    }
+    // WASD changes the lookup matrix above every frame, but must not force a full shadow render.
+    // A changed caster set is structural; moving ships and the camera wait for the 15 Hz slot.
+    const casterSetChanged = sh.casterCount !== key.slice(0, key.indexOf(':'));
+    if (sh.renderer === r && !shadowRedrawDue(now, sh.at, casterSetChanged)) {
+      sh.reused = (sh.reused || 0) + 1;
+      return;
+    }
+    sh.key = key;
+    sh.cameraKey = key.slice(0, key.lastIndexOf(':'));
+    sh.casterCount = key.slice(0, key.indexOf(':'));
+    sh.at = now;
+    sh.renderer = r;
+    sh.drawn = (sh.drawn || 0) + 1;
     const batches = sh.batches;
     for (const b of batches.values()) b.n = 0;
     if (world)
       for (const u of world.units) {
-        if (u.dead || !u.casters || !u.obj.visible || !this.castsShadowInView(u)) continue;
+        if (u.dead || !u.casters || !(u.obj.visible || u.instStamp > 0) || !this.castsShadowInView(u)) continue;
         for (const m of u.casters) {
           let b = batches.get(m.geometry);
           if (!b) batches.set(m.geometry, (b = { n: 0, im: null }));
@@ -1957,10 +1979,26 @@ export class Renderer {
       }
     } else this.blasts = null;
     if (world) {
-      const stamp = ++this.shotStamp;
+      const stamp = ++this.shotStamp,
+        budget = effectBudget(world.units.length);
+      this.effectBudget = budget;
+      this.smokeBudget = budget.smokePerFrame;
+      let shotEffects = 0;
+      const shots = (this.visibleShots ||= []);
+      shots.length = 0;
       for (const p of world.projectiles) {
         p.fxSeen = stamp;
-        if (p.hidden) continue;
+        if (p.hidden || !_frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) continue;
+        p.fxDistance = cpos.distanceToSquared(_boltAt);
+        // Keep the nearest modelled shots without sorting the whole projectile list every frame.
+        if (shots.length < budget.shotModels) shots.push(p);
+        else {
+          let worst = 0;
+          for (let i = 1; i < shots.length; i++) if (shots[i].fxDistance > shots[worst].fxDistance) worst = i;
+          if (p.fxDistance < shots[worst].fxDistance) shots[worst] = p;
+        }
+      }
+      for (const p of shots) {
         const P = p.def;
         if (lit && hulls.length && _frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) {
           const reach = (p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius) * zk;
@@ -1999,10 +2037,10 @@ export class Renderer {
         if (!(P._cr ??= P.num('Projectile_Custom_Render', 0)) && !(P._sm ??= P.str('Space_Model_Name'))) continue;
         const inv = 1 / p.speed;
         const look = this.shotModels.lookOf(p.def);
-        if (p.fxs === null) p.fxs = look && look.proxies.length ? this.startShotFx(p, look) : NO_FX;
+        if (p.fxs === null) p.fxs = look && look.proxies.length && shotEffects++ < budget.shotEffects ? this.startShotFx(p, look) : NO_FX;
         if (look) {
           if (look.parts.length) this.shotModels.add(look.parts, p.def._shotModel.scale, p.x, p.y, p.z, p.vx * inv, p.vy * inv, p.vz * inv);
-        } else if (p.missile && p.def.num('Projectile_Custom_Render', 0) > 0) {
+        } else if (!look && p.missile && p.def.num('Projectile_Custom_Render', 0) > 0) {
           laser(p, inv);
         } else if (p.missile) {
           sp.add(p.x, p.y, p.z, 7 + p.width, p.r, p.g, p.b, 1.2);
@@ -2073,8 +2111,18 @@ export class Renderer {
             u.animOwed = 0;
           }
         }
-        if (u.turrets.length) this.aimTurrets(u, dt);
-        if (u.model && u.model.billboards.length) updateBillboards(u.model, cam);
+        _sphere.center.set(u.x, u.y, u.z || 0);
+        _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach || 0);
+        const inView = _frustum.intersectsSphere(_sphere) || this.castsShadowInView(u),
+          distance = Math.max(1, cpos.distanceTo(_boltAt.set(u.x, u.y, u.z || 0))),
+          detail = visualDetail(projectedRadius(u.visualRadius || 50, distance, this.height, cam.fov));
+        u.visualDetail = detail;
+        const turretDue = detail === 2 || ((this.shotStamp + u.id) & (detail === 1 ? 3 : 7)) === 0;
+        if (u.turrets.length && inView && turretDue) {
+          this.aimTurrets(u, Math.min(0.25, dt + (u.turretOwed || 0)));
+          u.turretOwed = 0;
+        } else if (u.turrets.length && inView) u.turretOwed = Math.min(0.25, (u.turretOwed || 0) + dt);
+        if (inView && detail > 0 && u.model && u.model.billboards.length) updateBillboards(u.model, cam);
         if (u.shieldMesh) {
           const on = !!u.abilities?.some(s => s.active && s.def.kind === 'DEFEND');
           if (u.shieldMesh.visible !== on) u.shieldMesh.visible = on;
@@ -2084,7 +2132,7 @@ export class Renderer {
           const on = !u.hyper && (u.retreatFlight || u.speed > u.maxSpeed * 0.08) && u.engineAlive();
           for (const m of u.engineMeshes) if (m.visible !== on) m.visible = on;
         }
-        if (u.isMobile && !u.hyper && u.engineGlows.length) {
+        if (inView && detail > 0 && u.isMobile && !u.hyper && u.engineGlows.length) {
           const c = Math.cos(u.heading),
             s = Math.sin(u.heading);
           const thrust = u.retreatFlight ? 1 : 0.55 + 0.45 * Math.min(1, u.speed / (u.maxSpeed || 1));
@@ -2100,10 +2148,12 @@ export class Renderer {
             sp.add(u.x + c * l.x - s * ly, u.y + s * l.x + c * ly, u.z + lz, size, 0.45, 0.65, 1, 0.9);
           }
         }
-        if (!u.smokingPoints) continue;
+        if (!inView || detail === 0 || !u.smokingPoints || this.smokeBudget <= 0) continue;
         for (const hp of u.hardpoints) {
+          if (this.smokeBudget <= 0) break;
           if (hp.alive || !hp.smoke) continue;
           if (Math.random() < dt * 5) {
+            this.smokeBudget--;
             hp.worldPos(_w);
             this.spawnParticle(
               _w.x,
@@ -2254,7 +2304,7 @@ export class Renderer {
     if (!G || !this.instances) return null;
     const C = this.instances.constructor;
     const shot = async () => {
-      if (this.shadows) this.shadows.frame = 0;
+      if (this.shadows) this.shadows.key = null;
       const p = G.readNext();
       this.draw(world, G, 0);
       return p;
@@ -2317,7 +2367,7 @@ export class Renderer {
       return { width: W, height: H, data: out };
     };
     const draw = r => {
-      if (this.shadows) this.shadows.frame = 0;
+      if (this.shadows) this.shadows.key = null;
       this.draw(world, r, 0);
     };
     let a, b, c;

@@ -2,13 +2,14 @@
 // that keeps them, render targets that free their GPU textures on dispose(), particle batches that shrink back and
 // lasers that upload only the shots in flight.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
 
 // no game files here: textures the batches ask for are simply missing
 globalThis.fetch = async () => new Response(null, { status: 404 });
 
-const { FrameGate, MENU_FPS, menuFrameCap, frameCap, gfx } = await import('../public/js/gfx.js');
+const { FrameGate, MENU_FPS, MENU_MOVIE_FPS, menuFrameCap, frameCap, gfx } = await import('../public/js/gfx.js');
 
 // draws a gate lets through over `seconds` of a screen refreshing at `hz` (with an optional jitter in ms)
 function draws(cap, hz, seconds = 10, jitter = 0) {
@@ -42,6 +43,8 @@ function draws(cap, hz, seconds = 10, jitter = 0) {
   gfx.fpsCap = 0;
   assert.equal(frameCap(), 0, 'the option turns the battle cap off');
   assert.equal(menuFrameCap(), MENU_FPS, 'the menu backdrop stays capped');
+  assert.equal(menuFrameCap(true), MENU_MOVIE_FPS, 'a menu movie halves decorative backdrop work');
+  assert.ok(Math.abs(draws(MENU_MOVIE_FPS, 60) - 15) <= 0.15, 'the movie backdrop draws every fourth 60 Hz refresh');
   gfx.fpsCap = 20;
   assert.equal(menuFrameCap(), 20, 'a lower battle cap also holds for the menu');
   gfx.fpsCap = was;
@@ -56,6 +59,17 @@ function draws(cap, hz, seconds = 10, jitter = 0) {
     last = now;
   }
   assert.ok(Math.abs(seen - last) < 1e-9 && last > 9950, 'the drawn frames cover all of the elapsed time');
+}
+
+// The space overlay follows the chosen resolution scale, without multiplying it by 3D supersampling.
+{
+  const source = readFileSync(new URL('../public/js/game/render.js', import.meta.url), 'utf8');
+  const body = source.match(/  resize\(\) \{([\s\S]*?)\n  \}/)?.[1];
+  assert.ok(body, 'the space renderer resize method is present');
+  const ratio = new Function('devicePixelRatio', 'gfx', `return ${body.match(/const pr = (.*);/)[1]};`);
+  assert.equal(ratio(2, { scale: 1, supersample: 2 }), 2, 'full resolution keeps the existing sharp overlay');
+  assert.equal(ratio(2, { scale: 0.5, supersample: 2 }), 1, 'half resolution quarters the overlay pixels, independent of supersampling');
+  assert.equal(ratio(1, { scale: 0.25 }), 0.25, 'the lowest supported scale is respected');
 }
 
 // An object made in another window (a battle frame) keeps that whole window alive while anything holds it.

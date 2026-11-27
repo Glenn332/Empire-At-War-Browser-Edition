@@ -189,6 +189,52 @@ export function parseALO(buffer, { outline = false } = {}) {
 
 const models = new Map();
 
+// Parsing and vertex conversion are pure CPU work. Keep them off the UI thread, but retain the
+// synchronous parser for Node, tests, non-browser hosts and a worker startup failure.
+let parsers = null,
+  parserNext = 0,
+  parserId = 0;
+const parserJobs = new Map();
+function parserFailed() {
+  for (const worker of parsers || []) worker.terminate();
+  parsers = [];
+  for (const job of parserJobs.values()) job.resolve(null);
+  parserJobs.clear();
+}
+function parseElsewhere(buffer, outline) {
+  if (parsers === null) {
+    parsers = [];
+    try {
+      if (typeof Worker === 'undefined') return Promise.resolve(null);
+      const count = Math.min(2, Math.max(1, (globalThis.navigator?.hardwareConcurrency || 4) - 2));
+      for (let i = 0; i < count; i++) {
+        const worker = new Worker(new URL('./aloworker.js', import.meta.url), { type: 'module' });
+        worker.onmessage = ({ data }) => {
+          const job = parserJobs.get(data.id);
+          parserJobs.delete(data.id);
+          if (job) job.resolve(data.error ? null : data.model);
+        };
+        worker.onerror = parserFailed;
+        parsers.push(worker);
+      }
+    } catch {
+      parserFailed();
+    }
+  }
+  if (!parsers.length) return Promise.resolve(null);
+  const id = ++parserId;
+  return new Promise(resolve => {
+    parserJobs.set(id, { resolve });
+    // Do not transfer the caller's buffer: outline and fallback paths may still need it.
+    const copy = buffer.slice(0);
+    parsers[parserNext++ % parsers.length].postMessage({ id, buffer: copy, outline }, [copy]);
+  });
+}
+async function parseLoaded(buffer, name, outline = false) {
+  const parsed = await parseElsewhere(buffer, outline);
+  return parsed || diag.task('model ' + name, () => parseALO(buffer, { outline }));
+}
+
 const modelStem = name =>
   name
     .replace(/^.*[\\/]/, '')
@@ -206,7 +252,7 @@ export function loadALO(name) {
   const key = modelStem(name);
   let p = models.get(key);
   if (!p) {
-    p = fetchModelBytes(name).then(buf => (buf ? diag.task('model ' + name, () => parseALO(buf)) : null));
+    p = fetchModelBytes(name).then(buf => (buf ? parseLoaded(buf, name) : null));
     models.set(key, p);
   }
   return p;
@@ -301,9 +347,9 @@ async function outlineFrom(path) {
   if (bytes === undefined) return undefined;
   if (bytes === null) {
     const whole = await fetchBinary(path, { keep: false });
-    return whole ? parseALO(whole, { outline: true }) : null;
+    return whole ? parseLoaded(whole, path, true) : null;
   }
-  return parseALO(bytes, { outline: true });
+  return parseLoaded(bytes, path, true);
 }
 
 export async function loadALOOutline(name) {

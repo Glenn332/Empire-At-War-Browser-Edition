@@ -63,9 +63,11 @@ export function frameCap() {
 
 // The 3D battle behind the main menu is only a backdrop: it draws at most this many frames a second.
 export const MENU_FPS = 30;
-export function menuFrameCap() {
-  const cap = frameCap();
-  return cap ? Math.min(cap, MENU_FPS) : MENU_FPS;
+export const MENU_MOVIE_FPS = 15;
+export function menuFrameCap(moviePlaying = false) {
+  const cap = frameCap(),
+    backdrop = moviePlaying ? MENU_MOVIE_FPS : MENU_FPS;
+  return cap ? Math.min(cap, backdrop) : backdrop;
 }
 
 // Decides which screen refreshes draw a frame under a frames-per-second cap (the galaxy map's rule, shared with the

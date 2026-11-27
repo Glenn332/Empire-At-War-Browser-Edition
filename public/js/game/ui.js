@@ -1923,12 +1923,30 @@ export class UI {
     const grabHealth = gb && gb.health ? Math.max(10, Math.round(gb.health.w * gb.healthScale * unit)) : 0;
     this.overlayFrame = (this.overlayFrame || 0) + 1;
     this.logicFramesShown = this.logicFramesSince();
-    for (const s of this.world.selectablesInto((this.shown ||= []))) {
+    const world = this.world,
+      mirror = this.game.mirror,
+      clock = mirror && mirror.clock !== undefined ? mirror.clock : world.time;
+    // Membership and fog visibility change on battle updates, not on interpolated render frames.
+    // Projection, health, hover and selection remain live so the HUD stays responsive and smooth.
+    if (this.shownClock !== clock || this.shownPlayer !== me || this.shownObserver !== this.game.observer || this.shownReveal !== world.reveal || this.shownViewer !== world.viewer) {
+      this.shownClock = clock;
+      this.shownPlayer = me;
+      this.shownObserver = this.game.observer;
+      this.shownReveal = world.reveal;
+      this.shownViewer = world.viewer;
+      const shown = world.selectablesInto((this.shown ||= []));
+      let n = 0;
+      for (const s of shown) {
+        if (s.player.team !== me.team && s.player.id >= 0 && !this.sees(s)) continue;
+        if (hiddenInJump(s)) continue;
+        shown[n++] = s;
+      }
+      shown.length = n;
+    }
+    for (const s of this.shown || []) {
       // A capture point shows the owner the viewer last saw, not one it changed to out of sight.
-      const owner = s.capture && this.world.shownOwner ? this.world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
+      const owner = s.capture && world.shownOwner ? world.shownOwner(s) : s.player.id >= 0 ? s.player : null,
         enemy = !!owner && owner.team !== me.team;
-      if (s.player.team !== me.team && s.player.id >= 0 && !this.sees(s)) continue;
-      if (hiddenInJump(s)) continue;
       this.screenOf(s, p);
       if (p.behind || p.x < -100 || p.x > this.r.width + 100 || p.y < -100 || p.y > this.r.height + 100) continue;
       const size = grab ? grab : s.isSquad || s.isFighter ? Math.round(iconSize * 0.9) : iconSize;
