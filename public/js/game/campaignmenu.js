@@ -2,7 +2,7 @@ import { db, loadFileList } from '../gamedata.js';
 import { fetchText } from '../vfs.js';
 import { iconAtlas, iconCanvasRect } from '../icons.js';
 import { loadTextureCanvas } from '../dds.js';
-import { openDialog } from './dialogs.js';
+import { openDialog, loadDialogs } from './dialogs.js';
 import { loadCampaignData } from './galaxy.js';
 import {
   campaignLimits,
@@ -11,7 +11,9 @@ import {
   creditsAt,
   techRange,
   optionBoxes,
-  offersRandomEvents
+  offersRandomEvents,
+  popCapRowsLayout,
+  popCapSliders
 } from './campaignsettings.js';
 
 const key = s =>
@@ -124,7 +126,9 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       // off unless the player ticks it, and never in a tutorial, which teaches the ground battles
       options: {
         groundAutoResolve: !tutorial && settings?.groundAutoResolve === true,
-        ...(offersRandomEvents() ? { randomEvents: settings?.randomEvents !== false } : {})
+        ...(offersRandomEvents() ? { randomEvents: settings?.randomEvents !== false } : {}),
+        ...(!tutorial && settings?.landPopCap ? { landPopCap: settings.landPopCap } : {}),
+        ...(!tutorial && settings?.spacePopCap ? { spacePopCap: settings.spacePopCap } : {})
       }
     });
   };
@@ -181,7 +185,9 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
 }
 
 export async function campaignOptionsDialog(st, campaign, faction) {
-  const dlg = await openDialog('IDD_CAMPAIGN_ADVANCED_OPTIONS_DIALOG', { modal: true, nativeImages: true, nativeFonts: true });
+  const id = 'IDD_CAMPAIGN_ADVANCED_OPTIONS_DIALOG',
+    def = (await loadDialogs())?.dialogs.get(id);
+  const dlg = await openDialog(id, { modal: true, nativeImages: true, nativeFonts: true, ...popCapRowsLayout(def) });
   if (!dlg) return false;
   const limits = campaignLimits(campaign),
     { lo, hi, adj } = techRange(limits, faction),
@@ -248,6 +254,8 @@ export async function campaignOptionsDialog(st, campaign, faction) {
       }
     );
     optionBoxes(dlg, st, 'Auto-resolve all ground battles');
+    // not a custom setting: the caps leave credits and tech at the campaign's own values
+    popCapSliders(dlg, st);
   };
   if (!limits.custom)
     for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER', 'IDC_ALLOW_AUTORESOLVE_COMBO'])

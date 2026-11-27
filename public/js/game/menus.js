@@ -2,6 +2,7 @@ import { expansion } from '../edition.js';
 import { movieSubtitles, setMovieSubtitles } from './subtitles.js';
 import { db } from '../gamedata.js';
 import { openDialog, loadDialogs } from './dialogs.js';
+import { popCapSliders } from './campaignsettings.js';
 import { toMainMenu, loadSaved } from './transit.js';
 import { gfx, storeGfx, presets, shadowReach, SHADOW_RANGE_MAX, SUPERSAMPLE_STEPS, supersampling, frameCap } from '../gfx.js';
 import { particleCap, setParticleCap } from '../particles.js';
@@ -716,25 +717,103 @@ export class Menus {
   }
 
   async options() {
-    const def = (await loadDialogs())?.dialogs.get('IDD_IN_GAME_OPTIONS_DIALOG');
+    const g = this.game,
+      def = (await loadDialogs())?.dialogs.get('IDD_IN_GAME_OPTIONS_DIALOG');
     const okC = def && def.controls.find(c => c.id === 'IDC_OK_IN_GAME');
     const above = okC && def.controls.filter(c => /^IDC_IN_GAME_OPTIONS_/.test(c.id) && c.y < okC.y).sort((a, b) => b.y - a.y)[0];
     const ok = okC || { x: 41, y: 275, w: 239, h: 21 },
       step = above ? ok.y - above.y : 43;
+    // GC Settings only on the galaxy map: a battle inside a campaign runs as its own game without the galactic flag
+    const added = ['IDC_IN_GAME_OPTIONS_TWEAKS', ...(g.galactic && g.galaxy ? ['IDC_IN_GAME_OPTIONS_GC_SETTINGS'] : [])];
     const dlg = await this.push('IDD_IN_GAME_OPTIONS_DIALOG', {
-      size: { w: def ? def.w : 321, h: (def ? def.h : 328) + step },
-      extra: [{ kind: 'PUSHBUTTON', text: '', id: 'IDC_IN_GAME_OPTIONS_TWEAKS', x: ok.x, y: ok.y, w: ok.w, h: ok.h, style: '' }],
-      adjust: c => (c.id === 'IDC_OK_IN_GAME' ? { ...c, y: ok.y + step } : null)
+      size: { w: def ? def.w : 321, h: (def ? def.h : 328) + step * added.length },
+      extra: added.map((id, i) => ({ kind: 'PUSHBUTTON', text: '', id, x: ok.x, y: ok.y + step * i, w: ok.w, h: ok.h, style: '' })),
+      adjust: c => (c.id === 'IDC_OK_IN_GAME' ? { ...c, y: ok.y + step * added.length } : null)
     });
     if (!dlg) return;
     dlg.setText('IDC_IN_GAME_OPTIONS_TWEAKS', 'Tweaks');
     dlg.on('IDC_IN_GAME_OPTIONS_TWEAKS', () => this.tweaks());
+    if (dlg.ctl('IDC_IN_GAME_OPTIONS_GC_SETTINGS')) {
+      dlg.setText('IDC_IN_GAME_OPTIONS_GC_SETTINGS', 'GC Settings');
+      dlg.on('IDC_IN_GAME_OPTIONS_GC_SETTINGS', () => this.gcSettings());
+    }
     dlg.on('IDC_IN_GAME_OPTIONS_AUDIO', () => this.audio());
     dlg.on('IDC_IN_GAME_OPTIONS_VIDEO', () => this.video());
     dlg.on('IDC_IN_GAME_OPTIONS_GAMEPLAY', () => this.gameplay());
     dlg.enable('IDC_IN_GAME_OPTIONS_NETWORK', false);
     dlg.on('IDC_IN_GAME_OPTIONS_KEYBOARD', () => this.keyboard());
     dlg.on('IDC_OK_IN_GAME', () => this.pop());
+  }
+
+  // Pop caps for the land and space battles of a running galactic conquest. In multiplayer only the host can change
+  // them; the change goes out as an order so every peer sets up its battles alike.
+  async gcSettings() {
+    const g = this.game,
+      galaxy = g.galaxy;
+    if (!g.galactic || !galaxy) return;
+    // built on the in-game options dialog, measured from whatever version the game or mod ships: its width, its OK
+    // button and its title (the stock one has its own title control, some mods only a full-width banner)
+    const def = (await loadDialogs())?.dialogs.get('IDD_IN_GAME_OPTIONS_DIALOG'),
+      base = def?.w || 321,
+      first = def?.controls.filter(c => /^IDC_IN_GAME_OPTIONS_/.test(c.id)).sort((a, b) => a.y - b.y)[0],
+      title =
+        def?.controls.find(c => c.id === 'IDC_STATIC_IN_GAME_OPTIONS') ||
+        def?.controls.filter(c => /^(LTEXT|CTEXT|RTEXT)$/.test(c.kind) && (!first || c.y < first.y)).sort((a, b) => a.y - b.y)[0];
+    const W = 520,
+      top = Math.max(56, title ? title.y + title.h + 14 : 56),
+      row = 34,
+      back = top + row * 2 + 24,
+      shift = (W - base) / 2,
+      wide = title && title.x <= 2 && title.x + title.w >= base - 2;
+    const ids = ['IDC_SWR_LAND_POP_CAP', 'IDC_SWR_SPACE_POP_CAP'];
+    const dlg = await this.push('IDD_IN_GAME_OPTIONS_DIALOG', {
+      size: { w: W, h: back + 53 },
+      extra: ids.flatMap((id, i) => [
+        { kind: 'LTEXT', text: '', id: id + '_TEXT', x: 24, y: top + row * i + 4, w: 170, h: 20, style: '' },
+        { kind: 'CONTROL', text: '', id, cls: 'msctls_trackbar32', style: 'TBS_HORZ', x: 200, y: top + row * i + 2, w: W - 330, h: 20 },
+        { kind: 'LTEXT', text: '', id: id + '_VALUE', x: W - 120, y: top + row * i + 4, w: 96, h: 20, style: '' }
+      ]),
+      adjust: c =>
+        c.id === 'IDC_OK_IN_GAME'
+          ? { ...c, x: c.x + shift, y: back }
+          : c === title
+            ? wide
+              ? { ...c, w: W }
+              : { ...c, kind: 'LTEXT', x: 24 }
+            : ids.some(id => c.id.startsWith(id))
+              ? null
+              : { ...c, x: c.x + shift }
+    });
+    if (!dlg) return;
+    if (title) dlg.setText(title.id, 'GC Settings');
+    // everything else the dialog carries (the stock option buttons, or a mod's extras) stays out of the way
+    for (const c of def?.controls || []) if (c !== title && c.id !== 'IDC_OK_IN_GAME' && c.kind !== 'GROUPBOX' && !/^IDC_STATIC$/.test(c.id)) dlg.show(c.id, false);
+    const mayChange = !g.net || !!g.net.host;
+    const st = { landPopCap: galaxy.landPopCap || 0, spacePopCap: galaxy.spacePopCap || 0 };
+    let sent = { ...st },
+      timer = 0;
+    // one order per settled value, not one per step of a drag
+    const send = () => {
+      clearTimeout(timer);
+      if (st.landPopCap === sent.landPopCap && st.spacePopCap === sent.spacePopCap) return;
+      sent = { ...st };
+      g.order({ c: 'popcaps', land: st.landPopCap, space: st.spacePopCap });
+    };
+    popCapSliders(dlg, st, {
+      mark: () => {
+        clearTimeout(timer);
+        timer = setTimeout(send, 300);
+      },
+      enabled: mayChange
+    });
+    const tip = mayChange
+      ? "Most units each side may field in this campaign's battles. Default keeps the game's own limits."
+      : 'Only the host can change these.';
+    for (const id of ids) for (const part of [id + '_TEXT', id]) dlg.ctl(part) && (dlg.ctl(part).title = tip);
+    dlg.on('IDC_OK_IN_GAME', () => {
+      if (mayChange) send();
+      this.pop();
+    });
   }
 
   async tweaks() {

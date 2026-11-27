@@ -1,6 +1,6 @@
 import { db, factionColor, autoColors } from '../gamedata.js';
 import { PALETTE, ROWS, MAX_SLOTS, slotWindow, rowsOf } from './slotrows.js';
-import { openDialog } from './dialogs.js';
+import { openDialog, loadDialogs } from './dialogs.js';
 import { mapHeader, mapTitle, controlMap, loadMapPreview } from '../ted.js';
 import { NetSession, Hall, listGames, newGameId, lobbyUrl, lobbyFromLink } from '../net.js';
 import { LOBBY, SITE } from '../deploy.js';
@@ -13,7 +13,7 @@ import { contentNow } from '../content.js';
 import { listingContent, listLocalPref, setListLocalPref, describeListing, detailLines } from './lobbycontent.js';
 import { listSaves, getSave, deleteSave, importSaveFile, validate, packSave, unpackSave } from './savegame.js';
 import { inApp } from '../platform.js';
-import { optionBoxes, offersRandomEvents } from './campaignsettings.js';
+import { optionBoxes, offersRandomEvents, popCapRowsLayout, popCapSliders, popCapText } from './campaignsettings.js';
 
 const T = (id, fallback) => {
   const s = db.text.get(id);
@@ -737,7 +737,8 @@ export async function openMultiplayer({
 }
 
 async function campaignOptions(st, campaign) {
-  const dlg = await openDialog('IDD_CAMPAIGN_ADVANCED_OPTIONS_DIALOG', SCREEN);
+  const id = 'IDD_CAMPAIGN_ADVANCED_OPTIONS_DIALOG',
+    dlg = await openDialog(id, { ...SCREEN, ...popCapRowsLayout((await loadDialogs())?.dialogs.get(id)) });
   if (!dlg) return false;
   const was = { ...st },
     C = db.constants,
@@ -795,6 +796,7 @@ async function campaignOptions(st, campaign) {
       }
     );
     optionBoxes(dlg, st, T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'));
+    popCapSliders(dlg, st);
   };
   for (const id of ['IDC_SKIRMISH_CREDITS_SLIDER', 'IDC_SKIRMISH_STARTING_TECH_LEVEL_SLIDER', 'IDC_SKIRMISH_MAX_TECH_LEVEL_SLIDER'])
     dlg.enable(id, custom);
@@ -816,7 +818,9 @@ async function campaignOptions(st, campaign) {
         maxTech: C.num('MP_Default_Max_Tech_Level', 5),
         autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
         groundAutoResolve: false,
-        randomEvents: true
+        randomEvents: true,
+        landPopCap: 0,
+        spacePopCap: 0
       });
       show();
     });
@@ -1046,7 +1050,9 @@ async function openStaging(args) {
     maxTech: C.num('MP_Default_Max_Tech_Level', 5),
     autoResolve: C.num('MP_Default_Allow_Auto_Resolve', 2) === 0 ? 0 : 2,
     groundAutoResolve: false,
-    randomEvents: true
+    randomEvents: true,
+    landPopCap: 0,
+    spacePopCap: 0
   };
   const campaign = () => st.type === 'campaign';
   const SLOTS = rowsOf(dlg) || ROWS;
@@ -1338,7 +1344,9 @@ async function openStaging(args) {
         autoResolve: o.autoResolve ?? st.autoResolve,
         // a save from before the option keeps the old prompt until the host turns it on
         groundAutoResolve: o.groundAutoResolve ?? false,
-        randomEvents: o.randomEvents ?? true
+        randomEvents: o.randomEvents ?? true,
+        landPopCap: o.landPopCap ?? 0,
+        spacePopCap: o.spacePopCap ?? 0
       });
     } else {
       const knownMap = isDynamic(base.mapFile)
@@ -1649,7 +1657,9 @@ async function openStaging(args) {
               st.autoResolve === 0 ? T('TEXT_ALLOW_AUTORESOLVE_ALWAYS', 'Always') : T('TEXT_ALLOW_AUTORESOLVE_ASK', 'Ask')
             ],
             [T('TEXT_GROUND_AUTORESOLVE', 'Auto-resolve all ground battles'), st.groundAutoResolve === true ? yes : no],
-            ...(offersRandomEvents() ? [[T('TEXT_ALLOW_RANDOM_EVENTS', 'Allow random events'), st.randomEvents !== false ? yes : no]] : [])
+            ...(offersRandomEvents() ? [[T('TEXT_ALLOW_RANDOM_EVENTS', 'Allow random events'), st.randomEvents !== false ? yes : no]] : []),
+            ['Land Pop Cap', popCapText(st.landPopCap)],
+            ['Space Pop Cap', popCapText(st.spacePopCap)]
           ]
         : [
             [
@@ -1824,7 +1834,9 @@ async function openStaging(args) {
           maxTech: st.maxTech,
           autoResolve: st.autoResolve,
           groundAutoResolve: st.groundAutoResolve === true,
-          ...(offersRandomEvents() ? { randomEvents: st.randomEvents !== false } : {})
+          ...(offersRandomEvents() ? { randomEvents: st.randomEvents !== false } : {}),
+          landPopCap: st.landPopCap || 0,
+          spacePopCap: st.spacePopCap || 0
         },
         players: players.map(s =>
           s.kind === 'human'

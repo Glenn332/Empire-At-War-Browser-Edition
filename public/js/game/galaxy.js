@@ -367,6 +367,8 @@ export function snapshotGalaxy(g) {
     ...(g.campaignAutoResolve !== undefined ? { campaignAutoResolve: g.campaignAutoResolve } : {}),
     ...(g.groundAutoResolve !== undefined ? { groundAutoResolve: !!g.groundAutoResolve } : {}),
     ...(g.randomEvents !== undefined ? { randomEvents: !!g.randomEvents } : {}),
+    ...(g.landPopCap ? { landPopCap: g.landPopCap } : {}),
+    ...(g.spacePopCap ? { spacePopCap: g.spacePopCap } : {}),
     aiPathfinders: !!g.aiPathfinders,
     ...(g.diplomacy ? { diplomacy: { ...g.diplomacy } } : {}),
     visibility: g.visibility
@@ -539,6 +541,8 @@ export function applyGalaxy(g, s) {
   if (Object.hasOwn(s, 'campaignAutoResolve')) g.campaignAutoResolve = s.campaignAutoResolve;
   if (Object.hasOwn(s, 'groundAutoResolve')) g.groundAutoResolve = !!s.groundAutoResolve;
   if (Object.hasOwn(s, 'randomEvents')) g.randomEvents = !!s.randomEvents;
+  g.landPopCap = s.landPopCap | 0;
+  g.spacePopCap = s.spacePopCap | 0;
   if (Object.hasOwn(s, 'aiPathfinders')) g.aiPathfinders = !!s.aiPathfinders;
   g.visibility = s.visibility ? visibilityState(s.visibility) : null;
   g.visibilityByFaction = s.visibility?.byFaction

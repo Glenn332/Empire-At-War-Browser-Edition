@@ -14,6 +14,7 @@ import { sabotageStructure } from './galacticsabotage.js';
 import { completePurchase } from './blackmarket.js';
 import { locateRecord } from './galacticsell.js';
 import { isRaidForce } from './raid.js';
+import { setPopCaps } from './campaignsettings.js';
 
 export const GTICK = 1 / 30;
 const key = x => String(x || '').toUpperCase();
@@ -352,6 +353,12 @@ export function runCommand(game, faction, cmd) {
       return {};
     case 'left':
       return {};
+    case 'popcaps': {
+      // the GC Settings menu: in multiplayer only the host's change counts, so every peer fights with the same caps
+      if (game.net && game.actingPid !== game.net.lock?.hostPlayer) return {};
+      setPopCaps(g, { landPopCap: cmd.land, spacePopCap: cmd.space });
+      return { ok: true };
+    }
   }
   return {};
 }
