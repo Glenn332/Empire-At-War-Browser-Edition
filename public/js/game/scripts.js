@@ -714,6 +714,14 @@ export class ScriptHost {
           });
           return self.pos(v.x, v.y, v.z);
         }
+        if (u.localOf && u.model) {
+          // A space unit: the bone from the unit's own position and heading, the way weapons are placed. The drawn
+          // model is never moved on the battle thread, so its matrices would put the bone around the map centre.
+          const local = u.localOf(bone),
+            cos = Math.cos(u.heading),
+            sin = Math.sin(u.heading);
+          return self.pos(u.x + cos * local.x - sin * local.y, u.y + sin * local.x + cos * local.y, (u.z || 0) + local.z);
+        }
         bone.updateWorldMatrix(true, false);
         const m = bone.matrixWorld.elements;
         let top = bone;
