@@ -96,8 +96,7 @@ const addTypes = (out, u, depth = 0) => {
   add(u.type);
   add(u.carries);
 };
-const runsInGalaxy = src =>
-  /["']Galactic["']/.test(src) || !/Get_Game_Mode\s*\(\s*\)\s*~=\s*["'](Space|Land)["']/.test(src);
+const runsInGalaxy = src => /["']Galactic["']/.test(src) || !/Get_Game_Mode\s*\(\s*\)\s*~=\s*["'](Space|Land)["']/.test(src);
 
 export class GalacticStoryHost extends StoryPlots {
   static async create(game, { warm = true } = {}) {
@@ -336,7 +335,8 @@ export class GalacticStoryHost extends StoryPlots {
     const inst = this.current;
     if (inst?.side && !this.sideContext && inst.randoms.length) return inst.randoms.shift();
     const r = simRandom();
-    if (inst && !inst.side && inst.copies?.length && !this.sideContext) for (const copy of inst.copies) if (copy.state !== 'over') copy.randoms.push(r);
+    if (inst && !inst.side && inst.copies?.length && !this.sideContext)
+      for (const copy of inst.copies) if (copy.state !== 'over') copy.randoms.push(r);
     return r;
   }
 
@@ -541,7 +541,8 @@ export class GalacticStoryHost extends StoryPlots {
   }
 
   absent(kind) {
-    return name => (/^[A-Z]/.test(name) && !engineLacksMethod(kind, name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined);
+    return name =>
+      /^[A-Z]/.test(name) && !engineLacksMethod(kind, name) ? (...args) => this.unsupported(kind + '.' + name, args) : undefined;
   }
   unsupported(name) {
     this.missing.set(name, (this.missing.get(name) || 0) + 1);
@@ -565,71 +566,77 @@ export class GalacticStoryHost extends StoryPlots {
         : 'Galactic'
     );
     vm.global('Is_Multiplayer_Mode', () => !!game.setup?.net);
-    vm.global('WeightedTypeList', (this.weightedTypes = {
-      __wrap: true,
-      __name: 'WeightedTypeList',
-      Create: () => {
-        const types = [],
-          add = (name, weight) => {
-            const t = name?.__type || db.type(String(name));
-            if (t) types.push([t, +weight || 0]);
+    vm.global(
+      'WeightedTypeList',
+      (this.weightedTypes = {
+        __wrap: true,
+        __name: 'WeightedTypeList',
+        Create: () => {
+          const types = [],
+            add = (name, weight) => {
+              const t = name?.__type || db.type(String(name));
+              if (t) types.push([t, +weight || 0]);
+            };
+          return {
+            __wrap: true,
+            __name: 'WeightedTypeList',
+            __weighted: types,
+            Is_Valid: () => true,
+            Add_Type: add,
+            Parse: (names, weights) => {
+              if (Array.isArray(names)) names.forEach((n, i) => add(n, Array.isArray(weights) ? weights[i] : weights));
+              else {
+                const parts = String(names || '')
+                  .split(',')
+                  .map(x => x.trim());
+                if (Array.isArray(weights)) parts.forEach((n, i) => add(n, weights[i]));
+                else for (let i = 0; i + 1 < parts.length; i += 2) add(parts[i], parts[i + 1]);
+              }
+            },
+            Get_Count: () => types.length,
+            Get_Weight: name => types.find(([t]) => t === (name?.__type || db.type(String(name))))?.[1] || 0,
+            Get_Type_At: i => (types[+i - 1] ? self.type(types[+i - 1][0]) : undefined),
+            __missing: this.absent('WeightedTypeList')
           };
-        return {
-          __wrap: true,
-          __name: 'WeightedTypeList',
-          __weighted: types,
-          Is_Valid: () => true,
-          Add_Type: add,
-          Parse: (names, weights) => {
-            if (Array.isArray(names)) names.forEach((n, i) => add(n, Array.isArray(weights) ? weights[i] : weights));
-            else {
-              const parts = String(names || '')
-                .split(',')
-                .map(x => x.trim());
-              if (Array.isArray(weights)) parts.forEach((n, i) => add(n, weights[i]));
-              else for (let i = 0; i + 1 < parts.length; i += 2) add(parts[i], parts[i + 1]);
-            }
-          },
-          Get_Count: () => types.length,
-          Get_Weight: name => types.find(([t]) => t === (name?.__type || db.type(String(name))))?.[1] || 0,
-          Get_Type_At: i => (types[+i - 1] ? self.type(types[+i - 1][0]) : undefined),
-          __missing: this.absent('WeightedTypeList')
-        };
-      },
-      __missing: this.absent('WeightedTypeList')
-    }));
+        },
+        __missing: this.absent('WeightedTypeList')
+      })
+    );
     vm.global('Is_Campaign_Game', () => true);
     vm.global('Enable_AI_Fleet_Pathfinders', on => {
       if (game.galaxy) game.galaxy.aiPathfinders = !!on;
     });
-    vm.global('DiscreteDistribution', (this.distributions = {
-      __wrap: true,
-      __name: 'DiscreteDistribution',
-      __missing: this.absent('DiscreteDistribution'),
-      Create: () => {
-        const items = [];
-        return {
-          __wrap: true,
-          __name: 'DiscreteDistribution',
-          __dist: items,
-          Is_Valid: () => true,
-          __missing: this.absent('DiscreteDistribution'),
-          Insert: (value, weight) => {
-            items.push([value, Math.max(0, +weight || 0)]);
-          },
-          Sample: () => {
-            let sum = 0;
-            for (const [, x] of items) sum += x;
-            let r = simRandom() * sum;
-            for (const [v, x] of items) {
-              r -= x;
-              if (r <= 0) return v;
+    vm.global(
+      'DiscreteDistribution',
+      (this.distributions = {
+        __wrap: true,
+        __name: 'DiscreteDistribution',
+        __missing: this.absent('DiscreteDistribution'),
+        Create: () => {
+          const items = [];
+          return {
+            __wrap: true,
+            __name: 'DiscreteDistribution',
+            __dist: items,
+            Is_Valid: () => true,
+            __missing: this.absent('DiscreteDistribution'),
+            Insert: (value, weight) => {
+              items.push([value, Math.max(0, +weight || 0)]);
+            },
+            Sample: () => {
+              let sum = 0;
+              for (const [, x] of items) sum += x;
+              let r = simRandom() * sum;
+              for (const [v, x] of items) {
+                r -= x;
+                if (r <= 0) return v;
+              }
+              return items.length ? items[items.length - 1][0] : undefined;
             }
-            return items.length ? items[items.length - 1][0] : undefined;
-          }
-        };
-      }
-    }));
+          };
+        }
+      })
+    );
     vm.global('StringCompare', (a, b) => key(a) === key(b));
     vm.global('GetCurrentTime', {
       __wrap: true,
@@ -681,13 +688,31 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Story_Event', name => this.signal('STORY_AI_NOTIFICATION', name));
     // What a script shows in answer to one player's click (a menu opening, a label, a highlight) is drawn on that
     // player's screen only. Enabling a button stays shared: it decides whether a click is carried out at all.
-    const view = f => (...args) => (game.scriptUI?.elsewhere?.() ? undefined : f(...args));
-    vm.global('GUI_Component_Visibility', view((name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0)));
+    const view =
+      f =>
+      (...args) =>
+        game.scriptUI?.elsewhere?.() ? undefined : f(...args);
+    vm.global(
+      'GUI_Component_Visibility',
+      view((name, on) => game.scriptUI?.visibility(String(name), on !== false && on !== 0))
+    );
     vm.global('GUI_Component_Enable', (name, on) => game.scriptUI?.enable(String(name), on !== false && on !== 0));
-    vm.global('GUI_Component_Text', view((name, text) => game.scriptUI?.text(String(name), String(text ?? ''))));
-    vm.global('GUI_Component_Color', view((name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a)));
-    vm.global('GUI_Text_Color', view((name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a)));
-    vm.global('GUI_Component_Blink', view((name, on) => game.scriptUI?.blink(String(name), !!on)));
+    vm.global(
+      'GUI_Component_Text',
+      view((name, text) => game.scriptUI?.text(String(name), String(text ?? '')))
+    );
+    vm.global(
+      'GUI_Component_Color',
+      view((name, r, g, b, a) => game.scriptUI?.color(String(name), r, g, b, a))
+    );
+    vm.global(
+      'GUI_Text_Color',
+      view((name, r, g, b, a) => game.scriptUI?.textColor(String(name), r, g, b, a))
+    );
+    vm.global(
+      'GUI_Component_Blink',
+      view((name, on) => game.scriptUI?.blink(String(name), !!on))
+    );
     vm.global(
       'GUI_Component_Flash',
       view((name, perpetual, duration, count) => {
@@ -702,9 +727,18 @@ export class GalacticStoryHost extends StoryPlots {
         game.scriptUI?.stopFlash(String(name));
       })
     );
-    vm.global('GUI_Component_Play_Anim', view((name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop)));
-    vm.global('GUI_Component_Stop_Anim', view(name => game.scriptUI?.stopAnim(String(name))));
-    vm.global('GUI_Button_Icon', view((name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args)));
+    vm.global(
+      'GUI_Component_Play_Anim',
+      view((name, anim, at, loop) => game.scriptUI?.play(String(name), 0, !!loop))
+    );
+    vm.global(
+      'GUI_Component_Stop_Anim',
+      view(name => game.scriptUI?.stopAnim(String(name)))
+    );
+    vm.global(
+      'GUI_Button_Icon',
+      view((name, icon, ...args) => game.scriptUI?.icon(String(name), String(icon), ...args))
+    );
     vm.global('Check_Story_Flag', (player, name, target, clear) => {
       const flags = this.aiFlags.get(key(player?.__faction)),
         id = key(name) + '|' + key(target?.__planet?.name || target?.__object?.type.name);
@@ -746,7 +780,8 @@ export class GalacticStoryHost extends StoryPlots {
     vm.global('Add_Planet_Highlight', (planet, id) => {
       const p = planet?.__planet,
         scene = game.scene || game.renderer?.scene;
-      if (p && scene) tutorialFx(game).highlight('planet:' + String(id), true, { scene, position: { x: p.pos[0], y: p.pos[1], z: p.pos[2] || 0 } });
+      if (p && scene)
+        tutorialFx(game).highlight('planet:' + String(id), true, { scene, position: { x: p.pos[0], y: p.pos[1], z: p.pos[2] || 0 } });
     });
     vm.global('Remove_Planet_Highlight', id => tutorialFx(game).highlight('planet:' + String(id), false));
     vm.global('Game_Message', name => game.message?.(db.t(String(name))));
@@ -1008,9 +1043,8 @@ export class GalacticStoryHost extends StoryPlots {
     const matching = object =>
       (!types.length || types.includes(key(object.type.name))) && (!categories || categories.some(c => object.type.categories().has(c)));
     if (name === 'VARIABLE_TARGET.MAXGROUNDBASELEVEL') return target.planet?.type.num('Max_Ground_Base_Level', 0) || 0;
-    if (name === 'VARIABLE_TARGET.MAXSTRUCTURESLOTSUNNORMALIZED')
-      return p ? planetMaxGroundSlots(p) : 0;
-    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVEL') return (target.planet ? planetMaxStarbase(target.planet, 0) : 0);
+    if (name === 'VARIABLE_TARGET.MAXSTRUCTURESLOTSUNNORMALIZED') return p ? planetMaxGroundSlots(p) : 0;
+    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVEL') return target.planet ? planetMaxStarbase(target.planet, 0) : 0;
     if (name === 'VARIABLE_SELF.TECHLEVEL') return owner?.Get_Tech_Level() || 0;
     if (name === 'VARIABLE_SELF.CREDITS') return owner?.Get_Credits() || 0;
     if (name === 'VARIABLE_SELF.GROSSINCOMEUNNORMALIZED') return playerIncome(g, owner?.__faction);
@@ -1028,7 +1062,7 @@ export class GalacticStoryHost extends StoryPlots {
     if (name === 'VARIABLE_TARGET.INCOMEUNNORMALIZED') return p ? planetIncome(g, p) : 0;
     if (name === 'VARIABLE_TARGET.GROUNDBASELEVELUNNORMALIZED') return p ? groundLevel(p, p.owner) : 0;
     if (name === 'VARIABLE_TARGET.STARBASELEVELUNNORMALIZED' || name === 'VARIABLE_TARGET.STARBASELEVEL') return p?.spaceLevel || 0;
-    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVELUNNORMALIZED') return (p ? planetMaxStarbase(p, 0) : 0);
+    if (name === 'VARIABLE_TARGET.MAXSTARBASELEVELUNNORMALIZED') return p ? planetMaxStarbase(p, 0) : 0;
     if (name === 'VARIABLE_TARGET.OPENSTRUCTURESLOTSUNNORMALIZED')
       return p ? Math.max(0, planetMaxGroundSlots(p, 0) - p.groundStructures.length) : 0;
     if (name === 'VARIABLE_TARGET.HASSTRUCTURE' || name === 'VARIABLE_SELF.HASSTRUCTURE')
@@ -1077,7 +1111,9 @@ export class GalacticStoryHost extends StoryPlots {
         (friendly ? owner?.Is_Ally(this.player(who)) : owner?.Is_Enemy(this.player(who))) &&
         (!factions.length || factions.includes(key(who)));
       return space
-        ? +g.fleets.some(f => f.planet === p.index && !f.leg && matches(f.owner) && f.units.some(u => !u.dead && !strategicStealth(u, f.owner)))
+        ? +g.fleets.some(
+            f => f.planet === p.index && !f.leg && matches(f.owner) && f.units.some(u => !u.dead && !strategicStealth(u, f.owner))
+          )
         : +p.garrison.some(u => !u.dead && matches(u.owner));
     }
     if (name === 'VARIABLE_TARGET.FRIENDLYFORCE.HASGROUNDUNITSBITFIELD')
@@ -1522,7 +1558,10 @@ export class GalacticStoryHost extends StoryPlots {
   galacticFleet(f) {
     const g = this.game.galaxy,
       at = f.leg ? null : g.planets[f.planet];
-    const wrap = this.fleet(f.units.filter(u => !u.dead).map(u => this.object(u, at || undefined, f.owner)), f);
+    const wrap = this.fleet(
+      f.units.filter(u => !u.dead).map(u => this.object(u, at || undefined, f.owner)),
+      f
+    );
     return wrap;
   }
   fleet(list, galactic = null) {
@@ -1858,7 +1897,9 @@ export class GalacticStoryHost extends StoryPlots {
     this.neutralizeNotice(object, row, planet);
     this.abilityLanded(planet, object);
     this.despawn(object);
-    scheduleHeroRespawn(this.game, mine, planet, object.owner, null, row.ownerTime ?? 0, true);
+    // Only a hero comes back after Owner_Respawn_Time; any other user of the ability is spent (the Thrawns Revenge
+    // popup activator is spawned anew for each popup, and a respawned one at another planet left the next popup empty).
+    if (this.heroTypes(object.type).length) scheduleHeroRespawn(this.game, mine, planet, object.owner, null, row.ownerTime ?? 0, true);
     return true;
   }
 
@@ -2342,7 +2383,7 @@ export class GalacticStoryHost extends StoryPlots {
         __call: (name, arg) => {
           const thread = vm.thread(inst.env, String(name));
           if (!thread) return -1;
-          thread.id = (inst.threadIds = Math.max(inst.threadIds || 0, inst.threads.length) + 1);
+          thread.id = inst.threadIds = Math.max(inst.threadIds || 0, inst.threads.length) + 1;
           thread.arg = arg;
           thread.values = new Map();
           inst.threads.push(thread);
@@ -2562,10 +2603,12 @@ export class GalacticStoryHost extends StoryPlots {
       if (objectScriptName(record.type)) out.push([record, planet, owner]);
       const holder = record.carries || record.type;
       if (holder && memberNames(holder).scripted)
-        for (const member of this.membersOf(record)) if (!member.dead && objectScriptName(member.type)) members.push([member, planet, owner]);
+        for (const member of this.membersOf(record))
+          if (!member.dead && objectScriptName(member.type)) members.push([member, planet, owner]);
     };
     for (const p of g.planets)
-      for (const list of [p.groundStructures, p.orbitalStructures, p.garrison]) for (const record of list || []) visit(record, p, record.owner || p.owner);
+      for (const list of [p.groundStructures, p.orbitalStructures, p.garrison])
+        for (const record of list || []) visit(record, p, record.owner || p.owner);
     for (const fleet of g.fleets || []) {
       const planet = fleet.leg ? null : g.planets[fleet.planet];
       for (const record of fleet.units) visit(record, planet, fleet.owner);
@@ -2580,7 +2623,10 @@ export class GalacticStoryHost extends StoryPlots {
     if (!names.length) return [];
     let members = (this.memberCache ||= new WeakMap()).get(record);
     if (!members || members.holder !== holder) {
-      members = names.map(n => db.type(n)).filter(Boolean).map(type => ({ type, memberOf: record, dead: false }));
+      members = names
+        .map(n => db.type(n))
+        .filter(Boolean)
+        .map(type => ({ type, memberOf: record, dead: false }));
       members.holder = holder;
       this.memberCache.set(record, members);
     }
