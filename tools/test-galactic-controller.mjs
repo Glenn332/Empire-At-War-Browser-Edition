@@ -15,13 +15,13 @@ globalThis.fetch = async input => {
 };
 const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
-const { stepPolitics, presenceController, politicalGoal } = await import('../public/js/game/galacticpolitics.js');
+const { stepPolitics, presenceController, politicalGoal, retainsResidualInfluence } = await import('../public/js/game/galacticpolitics.js');
 const playable = [...db.factions.values()].filter(f => f.bool('Is_Playable')).map(f => f.name),
   [a, b] = playable,
   neutral = [...db.factions.values()].find(f => f.bool('Is_Neutral')).name;
 const planets = [...db.types.values()].filter(t => t.num('Planet_Credit_Value', -1) >= 0 && t.has?.('Planet_Surface_Accessible'));
 const land =
-    planets.find(t => t.bool('Planet_Surface_Accessible', true) && !t.bool('Planet_Retains_Residual_Influence')) ||
+    planets.find(t => t.bool('Planet_Surface_Accessible', true) && !retainsResidualInfluence(t)) ||
     planets.find(t => t.bool('Planet_Surface_Accessible', true)),
   space = planets.find(t => !t.bool('Planet_Surface_Accessible', true));
 assert(land && space, 'a land planet and a space-only planet');
@@ -56,11 +56,11 @@ assert.deepEqual(claim(planet(land, a, { station: plain, stationOwner: b, spaceL
 assert.deepEqual(claim(planet(land, a, { production: { space: [{ owner: a }], ground: [] } })), { owner: a, by: 'production' });
 assert.deepEqual(
   claim(planet(land, a), [fleet(b)]),
-  land.bool('Planet_Retains_Residual_Influence') ? { owner: a, by: 'residual' } : { owner: neutral, by: 'neutral' },
+  retainsResidualInfluence(land) ? { owner: a, by: 'residual' } : { owner: neutral, by: 'neutral' },
   'a fleet does not claim a reachable surface'
 );
 assert.deepEqual(claim(planet(space, a), [fleet(b)]), { owner: b, by: 'orbit' }, 'a fleet claims a space-only planet');
-assert.deepEqual(claim(planet(space, a), [fleet(b, [{ type: plain }], { leg: {} })]).owner, space.bool('Planet_Retains_Residual_Influence') ? a : neutral);
+assert.deepEqual(claim(planet(space, a), [fleet(b, [{ type: plain }], { leg: {} })]).owner, retainsResidualInfluence(space) ? a : neutral);
 assert.deepEqual(claim(planet(land, a, { destroyed: true }), [fleet(b)]), { owner: b, by: 'orbit' }, 'a destroyed planet is claimed from orbit');
 assert.equal(claim(planet(land, a, { destroyed: true })).owner, neutral, 'a destroyed planet keeps no residual influence');
 
@@ -72,7 +72,7 @@ const step = (g, dt = 0.5) => {
 let p = planet(land, a),
   g = galaxy(p);
 step(g);
-assert.equal(p.owner, land.bool('Planet_Retains_Residual_Influence') ? a : neutral, 'an empty planet is settled at once');
+assert.equal(p.owner, retainsResidualInfluence(land) ? a : neutral, 'an empty planet is settled at once');
 assert.deepEqual(changes, [], 'the first evaluation sets the controller without a hand-over');
 
 p = planet(land, a, { garrison: [{ owner: a, type: plain }] });
@@ -81,7 +81,7 @@ step(g);
 assert.equal(p.owner, a);
 const troops = p.garrison.splice(0);
 step(g);
-if (!land.bool('Planet_Retains_Residual_Influence')) {
+if (!retainsResidualInfluence(land)) {
   assert.equal(p.owner, neutral, 'the last troops leave and the planet goes neutral');
   assert.deepEqual(changes, [[neutral, a, 'neutral']]);
   assert.equal(p.politicalValue, 0, 'the meter starts again');
@@ -90,7 +90,7 @@ changes = [];
 p.garrison.push(...troops);
 step(g);
 assert.equal(p.owner, a, 'troops landing on a neutral planet take it');
-assert.deepEqual(changes, [[a, land.bool('Planet_Retains_Residual_Influence') ? undefined : neutral, 'troops']].filter(c => c[1]));
+assert.deepEqual(changes, [[a, retainsResidualInfluence(land) ? undefined : neutral, 'troops']].filter(c => c[1]));
 
 changes = [];
 p = planet(space, a, { station: plain, stationOwner: a, spaceLevel: 1 });
@@ -105,7 +105,7 @@ assert.equal(p.owner, b, 'without the star base the fleet in orbit takes it');
 assert.deepEqual(changes, [[b, a, 'orbit']]);
 g.fleets = [];
 step(g);
-assert.equal(p.owner, space.bool('Planet_Retains_Residual_Influence') ? b : neutral, 'residual influence keeps the last controller');
+assert.equal(p.owner, retainsResidualInfluence(space) ? b : neutral, 'residual influence keeps the last controller');
 
 p = planet(land, a, { groundStructures: [{ owner: a, type: plain }, { owner: a, type: plain }, { owner: a, type: plain }] });
 const target = (fleets, by = 'base') => politicalGoal(galaxy(p, fleets), p, fleets, by).target;

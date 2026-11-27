@@ -1586,7 +1586,7 @@ export class GalacticPlanning {
       Test_Target_Contrast: value => {
         inst.testContrast = value !== false;
       },
-      Get_Goal_Type_Name: () => inst.goal,
+      Get_Goal_Type_Name: () => inst.ai.brain.defs.get(inst.goal)?.typeName ?? inst.goal,
       Get_Planet: () => this.host.planet(planet()),
       Add_Force: wrapped => {
         const object = wrapped?.__object,

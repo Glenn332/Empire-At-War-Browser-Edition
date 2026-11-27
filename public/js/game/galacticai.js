@@ -16,6 +16,7 @@ import { blackMarketItems } from './blackmarket.js';
 import { antiStealth } from './galacticdetect.js';
 import { loadHeroAttach } from './heroattach.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
+import { retainsResidualInfluence } from './galacticpolitics.js';
 
 const KEYS = new Map(),
   key = x => {
@@ -519,7 +520,7 @@ export class GalacticMind extends Reason {
         count = targets.filter(p => (p.currentCorruption ?? -1) !== -1).length;
       return name.endsWith('UNNORMALIZED') ? count : targets.length ? count / targets.length : 0;
     }
-    if (name === 'VARIABLE_TARGET.RETAINSRESIDUALINFLUENCE') return +!!p?.type.bool('Planet_Retains_Residual_Influence');
+    if (name === 'VARIABLE_TARGET.RETAINSRESIDUALINFLUENCE') return +(!!p && retainsResidualInfluence(p.type));
     if (name.startsWith('VARIABLE_TARGET.HINTS.')) {
       const value = this.ai.hint(c, p, name.slice(22));
       if (value !== undefined) return value;

@@ -26,6 +26,8 @@ function presence(p, owner, orbit) {
 const live = list => list.find(u => u && !u.dead);
 const neutralFaction = () => [...db.factions.values()].find(f => f.bool('Is_Neutral'))?.name ?? null;
 export const surfaceReachable = p => !p.destroyed && p.type.bool('Planet_Surface_Accessible', true);
+// On unless a planet type turns it off, as the engine sets it when it creates a type.
+export const retainsResidualInfluence = type => type.bool('Planet_Retains_Residual_Influence', true);
 
 export function presenceController(g, p, orbit) {
   const base = live(p.groundStructures);
@@ -38,7 +40,7 @@ export function presenceController(g, p, orbit) {
     if (q?.owner) return { owner: q.owner, by: 'production' };
   }
   if (!surfaceReachable(p)) for (const f of orbit || []) if (f.owner && live(f.units)) return { owner: f.owner, by: 'orbit' };
-  if (!p.destroyed && p.type.bool('Planet_Retains_Residual_Influence') && p.owner) return { owner: p.owner, by: 'residual' };
+  if (!p.destroyed && retainsResidualInfluence(p.type) && p.owner) return { owner: p.owner, by: 'residual' };
   const leaning = Math.max(0, Math.min(5, planetPolitics(p))),
     faction = db.faction(p.type.str('Political_Faction').trim());
   if (leaning > 0 && faction) return { owner: faction.name, by: 'leaning' };

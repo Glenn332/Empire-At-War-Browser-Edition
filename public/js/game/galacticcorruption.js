@@ -2,7 +2,7 @@ import { panelSide, offerPanel } from './panelside.js';
 import { simRandom } from './simrandom.js';
 import { db } from '../gamedata.js';
 import { adjustCredits } from './galacticeconomy.js';
-import { changeController } from './galacticpolitics.js';
+import { changeController, retainsResidualInfluence } from './galacticpolitics.js';
 import { scheduleHeroRespawn, abilityRespawnTime } from './galacticherorespawn.js';
 import { intelligence } from './galacticfog.js';
 import { vigilant } from './galacticslicer.js';
@@ -204,6 +204,7 @@ export function canCorrupt(game, actor, planet) {
     !planet.corruptionRestricted &&
     !planet.destroyed &&
     !planet.background &&
+    retainsResidualInfluence(planet.type) &&
     !db.faction(owner)?.bool('Is_Neutral') &&
     !allied(actor.owner, owner) &&
     corruptionOf(planet) === -1 &&

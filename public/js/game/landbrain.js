@@ -268,6 +268,7 @@ export async function readBrain(FILES, SETS, GOALS = null, shared = null) {
       if (!defs.has(name))
         defs.set(name, {
           name,
+          typeName: m[1],
           flags,
           bits: flags.reduce((a, f) => a | (GOAL_BITS[f] || 0), 0),
           mode: one('GameMode').toUpperCase(),
