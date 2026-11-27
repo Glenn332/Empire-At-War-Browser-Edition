@@ -1178,12 +1178,15 @@ export class GalacticGame {
       scale: value?.num('Scale', 1) ?? 1
     };
     this.statusStyles = [
-      ['G_WEATHER', 'Encyclopedia_Weather_Icon', [-20, -31], 'Encyclopedia_Weather_Name', 'Encyclopedia_Weather_Info'],
-      ['G_PLANET_ABILITY', 'Planet_Ability_Icon', [0, -34], 'Planet_Ability_Name', 'Planet_Ability_Description']
-    ].map(([n, tag, fallback, title, body]) => ({
+      // the weather icon keeps its own colours, the ability icon takes the owner's; their tooltips show the planet
+      // fields named here as header and text
+      ['G_WEATHER', 'Encyclopedia_Weather_Icon', [-20, -31], 'Encyclopedia_Weather_Name', 'Encyclopedia_Weather_Info', false],
+      ['G_PLANET_ABILITY', 'Planet_Ability_Icon', [0, -34], 'Describe_Advantage', 'Encyclopedia_Text', true]
+    ].map(([n, tag, fallback, title, body, ownerTint]) => ({
       tag,
       title,
       body,
+      ownerTint,
       offset: pair(comps?.get(n), 'Offset', fallback),
       scale: comps?.get(n)?.num('Scale', 1) ?? 1
     }));
@@ -2172,7 +2175,7 @@ export class GalacticGame {
       tips.hover({
         id: 'feature:' + feature.p + ':' + style.tag,
         key: 'feature:' + feature.p + ':' + style.tag,
-        show: () => encyclopedia.showInfo(feature.icon, db.t(type.str(style.title).trim()), db.t(type.str(style.body).trim()))
+        show: () => encyclopedia.showInfo(feature.icon, db.t(type.str(style.title).trim()), db.t(type.list(style.body)[0] || ''))
       });
       return;
     }
@@ -4283,7 +4286,7 @@ export class GalacticGame {
   drawPlanetStatus(ctx, p, point, scale, ratio) {
     for (const s of this.statusStyles || []) {
       const name = p.type.str(s.tag).trim();
-      const img = name && this.tinted(name, [1, 1, 1]);
+      const img = name && this.tinted(name, s.ownerTint ? this.factionColor(displayOwner(this.galaxy, p)) : [1, 1, 1]);
       if (!img) continue;
       const z = scale * ratio * s.scale,
         cx = (point.x + s.offset[0] * scale) * ratio,
