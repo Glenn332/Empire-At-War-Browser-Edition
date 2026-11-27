@@ -33,7 +33,7 @@ import { playScriptMusic, startStrategicMusic } from './galacticmusic.js';
 import { galacticStoryReward } from './storyrewards.js';
 import { aidebug as D, who, group, nameOf } from '../aidebug.js';
 import { flashSpawned, tutorialFx } from './tutorialrewards.js';
-import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
+import { planetCreditValue, planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 import { generatedPlotSave, restoreGeneratedPlot } from './randomstory.js';
 
 const SIDE_LIVE = new Set([
@@ -1009,7 +1009,7 @@ export class GalacticStoryHost extends StoryPlots {
       (!types.length || types.includes(key(object.type.name))) && (!categories || categories.some(c => object.type.categories().has(c)));
     if (name === 'VARIABLE_TARGET.MAXGROUNDBASELEVEL') return target.planet?.type.num('Max_Ground_Base_Level', 0) || 0;
     if (name === 'VARIABLE_TARGET.MAXSTRUCTURESLOTSUNNORMALIZED')
-      return p?.structureSlots ?? p?.type.num('Special_Structures_Land', 3) ?? 0;
+      return p ? planetMaxGroundSlots(p) : 0;
     if (name === 'VARIABLE_TARGET.MAXSTARBASELEVEL') return (target.planet ? planetMaxStarbase(target.planet, 0) : 0);
     if (name === 'VARIABLE_SELF.TECHLEVEL') return owner?.Get_Tech_Level() || 0;
     if (name === 'VARIABLE_SELF.CREDITS') return owner?.Get_Credits() || 0;
@@ -1030,7 +1030,7 @@ export class GalacticStoryHost extends StoryPlots {
     if (name === 'VARIABLE_TARGET.STARBASELEVELUNNORMALIZED' || name === 'VARIABLE_TARGET.STARBASELEVEL') return p?.spaceLevel || 0;
     if (name === 'VARIABLE_TARGET.MAXSTARBASELEVELUNNORMALIZED') return (p ? planetMaxStarbase(p, 0) : 0);
     if (name === 'VARIABLE_TARGET.OPENSTRUCTURESLOTSUNNORMALIZED')
-      return p ? Math.max(0, p.type.num('Special_Structures_Land', 0) - p.groundStructures.length) : 0;
+      return p ? Math.max(0, planetMaxGroundSlots(p, 0) - p.groundStructures.length) : 0;
     if (name === 'VARIABLE_TARGET.HASSTRUCTURE' || name === 'VARIABLE_SELF.HASSTRUCTURE')
       return this.objects().some(o => at(o) && matching(o)) ? 1 : 0;
     if (name === 'VARIABLE_TARGET.ACTIVETRADEROUTES') {

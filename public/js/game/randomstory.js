@@ -2,7 +2,7 @@ import { db } from '../gamedata.js';
 import { simRandom } from './simrandom.js';
 import { relation } from './galacticrelation.js';
 import { groundLevel } from './galacticproduction.js';
-import { planetMaxStarbase } from './planetstats.js';
+import { planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 import { registerStoryScript, dropStoryScript } from './galacticstorydialog.js';
 
 const key = s =>
@@ -90,7 +90,7 @@ function trigger(ctx, name, chapter) {
           ground = rand(0, 1) === 0;
         if (!p) continue;
         const cur = ground ? groundLevel(p, p.owner) : p.spaceLevel || 0,
-          max = ground ? Math.min(p.type.num('Special_Structures_Land', 3), 5) : planetMaxStarbase(p);
+          max = ground ? Math.min(planetMaxGroundSlots(p), 5) : planetMaxStarbase(p);
         if (cur < max) {
           params[0] = p.type.name;
           params[1] = String(rand(cur + 1, max));

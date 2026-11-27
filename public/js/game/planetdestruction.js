@@ -108,6 +108,7 @@ export function destroyPlanet(game, p, notify = true) {
   p.groundStructures = [];
   p.tacticalStructures = [];
   p.groundLevel = 0;
+  p.structureSlots = 0;
   p.currentCorruption = -1;
   clearSiphon(p);
   p.corruptionOwner = -1;

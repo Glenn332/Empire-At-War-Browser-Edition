@@ -4,7 +4,7 @@ import { forceKind, placeStartingForce, isHumanFaction } from './galaxy.js';
 import { planetAllowsCompany } from './invasion.js';
 import { adjustCredits } from './galacticeconomy.js';
 import { strategicStealth } from './galacticfog.js';
-import { planetMaxStarbase } from './planetstats.js';
+import { planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 
 const mobile = t => ['company', 'starship', 'squadron'].includes(forceKind(t));
 export const techAdvance = t => t.num('Build_Advances_Tech_Level', 0);
@@ -396,7 +396,7 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
       .filter(q => forceKind(q.type) === force).length;
     if (
       force === 'ground structure' &&
-      p.groundStructures.length + pending >= (p.structureSlots ?? p.type.num('Special_Structures_Land', 3))
+      p.groundStructures.length + pending >= planetMaxGroundSlots(p)
     )
       return 'No ground structure slots';
     if (force === 'orbital structure' && p.orbitalStructures.length + pending >= p.type.num('Special_Structures_Space', 5))

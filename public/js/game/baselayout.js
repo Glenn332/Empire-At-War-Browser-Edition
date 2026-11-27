@@ -7,6 +7,7 @@ import { iconCanvasRect, iconUrl } from '../icons.js';
 import { NativePanel, loadNativePanelAssets, tintShell, animateScan } from './nativepanel.js';
 import { drawMesh } from './hud.js';
 import { displayIncome, intelligence, stepVisibility, VIS } from './galacticfog.js';
+import { planetMaxGroundSlots } from './planetstats.js';
 import {
   assignBaseLayout,
   canViewBaseLayout,
@@ -200,7 +201,7 @@ export class BaseLayout extends NativePanel {
       if (this.labels[name]) this.setText(this.labels[name], value);
     };
     putText('unit_cap_number', p.garrison.length + '/' + this.game.overview.ground.length);
-    putText('building_cap_number', p.groundStructures.length + '/' + (p.structureSlots ?? p.type.num('Special_Structures_Land', 3)));
+    putText('building_cap_number', p.groundStructures.length + '/' + planetMaxGroundSlots(p));
     putText('Planet_name_text', title(p.type));
     putText('Planetary_Income_number', String(Math.round(displayIncome(g, p))));
     putText('Day_Counter_text', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));

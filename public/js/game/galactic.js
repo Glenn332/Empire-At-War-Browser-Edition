@@ -116,7 +116,7 @@ import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
 import { pressed, held, edgePan, mouseBind, scrollRate } from './keybinds.js';
-import { planetMaxStarbase } from './planetstats.js';
+import { planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 
 const $ = id => document.getElementById(id);
 const SILENT = new Proxy(function () {}, {
@@ -2263,7 +2263,7 @@ export class GalacticGame {
         }
       : null;
     const space = [v.spaceLevel ? p.spaceLevel || 0 : 0, Math.min(5, planetMaxStarbase(p))];
-    const land = [v.groundLevel ? p.groundStructures.length : 0, Math.min(9, p.type.num('Special_Structures_Land', 3))];
+    const land = [v.groundLevel ? p.groundStructures.length : 0, Math.min(9, planetMaxGroundSlots(p))];
     const data = {
       key: i,
       type: p.type,
@@ -4301,7 +4301,7 @@ export class GalacticGame {
 
   drawPips(ctx, p, v, col, point, scale, ratio) {
     const counts = [v.spaceLevel ? p.spaceLevel || 0 : 0, v.groundLevel ? p.groundStructures.length : 0];
-    const caps = [Math.min(5, planetMaxStarbase(p)), Math.min(9, p.type.num('Special_Structures_Land', 3))];
+    const caps = [Math.min(5, planetMaxStarbase(p)), Math.min(9, planetMaxGroundSlots(p))];
     for (let row = 0; row < 2; row++) {
       const s = this.pipStyles[row],
         z = scale * ratio * s.scale;

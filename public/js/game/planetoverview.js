@@ -5,6 +5,7 @@ import { isRaidForce } from './raid.js';
 import { strategicStealth } from './galacticfog.js';
 import { drawMesh, uiMeshDepthAt } from './hud.js';
 import { NativePanel, loadNativePanelAssets, typeIcon } from './nativepanel.js';
+import { planetMaxGroundSlots } from './planetstats.js';
 export { overviewIcon } from './nativepanel.js';
 import { intelligence, unitVisible, VIS } from './galacticfog.js';
 import { canViewBaseLayout } from './baselayoutdata.js';
@@ -62,7 +63,7 @@ export function overviewContents(g, p) {
     structures,
     fleets,
     own,
-    capacity: open ? Math.max(0, p.type.num('Special_Structures_Land', 3)) : 0,
+    capacity: open ? Math.max(0, planetMaxGroundSlots(p)) : 0,
     station: p?.station && v?.spaceLevel ? p.station : null
   };
 }

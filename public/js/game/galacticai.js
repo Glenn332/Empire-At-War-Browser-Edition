@@ -15,7 +15,7 @@ import { relation } from './galacticrelation.js';
 import { blackMarketItems } from './blackmarket.js';
 import { antiStealth } from './galacticdetect.js';
 import { loadHeroAttach } from './heroattach.js';
-import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
+import { planetCreditValue, planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 import { retainsResidualInfluence, surfaceReachable } from './galacticpolitics.js';
 
 const KEYS = new Map(),
@@ -659,14 +659,14 @@ export class GalacticMind extends Reason {
         ? own.filter(p =>
             name.endsWith('STARBASES')
               ? (p.spaceLevel || 0) === planetMaxStarbase(p)
-              : groundLevel(p, p.owner) === Math.min(5, p.type.num('Special_Structures_Land', 3))
+              : groundLevel(p, p.owner) === Math.min(5, planetMaxGroundSlots(p))
           ).length / own.length
         : 0;
     }
     if (p?.type && !!nameMatch(NAME_RE[10], name)) {
       if (name === 'VARIABLE_TARGET.TYPE.ISTYPE') return +typeSet.has(key(p.type.name));
       if (name === 'VARIABLE_TARGET.ISSURFACEACCESSIBLE') return +surfaceReachable(p);
-      const structureSlots = p.structureSlots ?? p.type.num('Special_Structures_Land', 3),
+      const structureSlots = planetMaxGroundSlots(p),
         ground = groundLevel(p, p.owner),
         space = p.spaceLevel || 0;
       const scalar = {
