@@ -389,20 +389,20 @@ function prerequisite(g, p, owner, type, strategic = false, snap = null) {
   if (allowed.length && !allowed.includes(p.type.name.toUpperCase())) return 'Requires another production planet';
   if (!hasStructures(p, owner, type)) return 'Requires a special structure';
   if (!hasOrbiting(g, p, owner, type)) return 'Requires an orbiting unit';
-  if (strategic) {
-    const jobs = ['ground structure', 'orbital structure'].includes(force) ? (snap ? snap.jobs : queued(g, owner)) : [];
+  // Structure slots hold for every builder: what stands on the planet plus what is queued there must fit.
+  if (force === 'ground structure' || force === 'orbital structure') {
+    const pending = Object.values(p.production || {})
+      .flat()
+      .filter(q => forceKind(q.type) === force).length;
     if (
       force === 'ground structure' &&
-      p.groundStructures.length + jobs.filter(q => q.planet === p.index && forceKind(q.type) === 'ground structure').length >=
-        p.type.num('Special_Structures_Land', 3)
+      p.groundStructures.length + pending >= (p.structureSlots ?? p.type.num('Special_Structures_Land', 3))
     )
       return 'No ground structure slots';
-    if (
-      force === 'orbital structure' &&
-      p.orbitalStructures.length + jobs.filter(q => q.planet === p.index && forceKind(q.type) === 'orbital structure').length >=
-        p.type.num('Special_Structures_Space', 5)
-    )
+    if (force === 'orbital structure' && p.orbitalStructures.length + pending >= p.type.num('Special_Structures_Space', 5))
       return 'No orbital structure slots';
+  }
+  if (strategic) {
     if (force === 'station' && type.num('Base_Level', 0) !== nextStarbaseLevel(g, p)) return 'Invalid starbase level';
     if (force === 'station' && enemyInOrbit(g, p, owner)) return 'Cannot be produced here';
   }

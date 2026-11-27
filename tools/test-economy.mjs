@@ -297,6 +297,27 @@ assert.equal(site.production.space.length, 1, 'A departing orbiting unit alone d
 site.spaceLevel = ship.num('Required_Star_Base_Level');
 stepProduction(recheck, 0);
 assert.equal(site.production.space.length, 0, 'A star base level drop re-checks the queue and drops the item without its orbiting unit');
+{
+  // The player's queue counts against the planet's structure slots like the AI's does.
+  const slots = G(),
+    world = slots.planets[p.index],
+    me = slots.players.find(x => x.faction === owner);
+  me.credits = 1e9;
+  const build = () => availableUnits(slots, world.index, owner, 'ground').find(t => forceKind(t) === 'ground structure');
+  const cap = world.structureSlots ?? world.type.num('Special_Structures_Land', 3);
+  let queuedStructures = 0;
+  for (let i = 0; i < cap + 3; i++) {
+    const t = build();
+    if (!t) break;
+    if (queueUnit(slots, world.index, owner, t)) break;
+    queuedStructures++;
+    if (world.production.ground.length >= db.constants.num('Max_Build_Queue', 5)) world.production.ground.shift(), world.groundStructures.push({ type: t, owner });
+  }
+  const pending = world.production.ground.filter(q => forceKind(q.type) === 'ground structure').length;
+  assert(queuedStructures > 0, 'A ground structure is buildable on the test planet');
+  assert(world.groundStructures.length + pending <= cap, `Structures built plus queued stay within ${cap} slots`);
+  assert(!build(), 'No ground structure is offered once the slots are spoken for');
+}
 console.log(
   `PASS: ${mod < 0 ? 'base' : 'mod'} income/routes/mines/fiscal timing; ${p.name} ${land.name} + ${ship.name}; price, parallel queues, cancellation, limits, battle snapshots and completion placement`
 );
