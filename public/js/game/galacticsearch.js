@@ -346,17 +346,11 @@ export class GalacticSearch {
     this.log = el('ul', { className: 'gs-log' });
     this.log.setAttribute('aria-label', 'Recent events');
     this.settings = this.buildSettings(el);
-    const bar = el('div', { className: 'gs-bar' });
+    const bar = (this.bar = el('div', { className: 'gs-bar' }));
     bar.append(input);
-    root.append(
-      el('style', { textContent: CSS }),
-      title,
-      bar,
-      this.list,
-      el('div', { className: 'gs-head', textContent: 'Recent events' }),
-      this.log,
-      this.settings
-    );
+    this.head = el('div', { className: 'gs-head', textContent: 'Recent events' });
+    root.append(el('style', { textContent: CSS }), title, bar, this.list, this.head, this.log, this.settings);
+    this.sections();
     parent.appendChild(root);
     skinScrollBars(root);
 
@@ -401,6 +395,7 @@ export class GalacticSearch {
       box.append(
         check(label, this.prefs.planets[k] !== false, on => {
           this.prefs.planets[k] = on;
+          this.sections();
           this.search();
         })
       );
@@ -409,12 +404,23 @@ export class GalacticSearch {
       box.append(
         check(label, this.prefs.events[k] !== false, on => {
           this.prefs.events[k] = on;
+          this.sections();
           this.refresh();
         })
       );
     box.append(el('h4', { textContent: 'When a listed event happens' }));
     box.append(check('Pause the game (single player)', this.prefs.pause, on => (this.prefs.pause = on)));
     return box;
+  }
+
+  // a section with every one of its filters off is left out, and the other one gets the room
+  sections() {
+    const planets = PLANET_KINDS.some(([k]) => this.prefs.planets[k] !== false),
+      events = EVENT_KINDS.some(([k]) => this.prefs.events[k] !== false);
+    this.bar.hidden = this.list.hidden = !planets;
+    this.head.hidden = this.log.hidden = !events;
+    this.head.style.marginTop = planets ? '' : '0';
+    if (!planets && this.typing) this.input.blur();
   }
 
   showSettings(on) {
