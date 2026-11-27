@@ -1,5 +1,6 @@
 import { inApp, topFrame } from './platform.js';
-import { fullscreenCapture, onFullscreenCapture } from './pointertrap.js';
+import { fullscreen, fullscreenCapture, onFullscreenCapture } from './pointertrap.js';
+import { edgePan, onEdgePan } from './game/keybinds.js';
 
 let held = null,
   listening = false;
@@ -16,8 +17,15 @@ const pointerLocked = () => {
   return !!document.pointerLockElement || frameLocks.size > 0;
 };
 
+// screen-edge panning needs the mouse kept on the game's monitor in fullscreen, or it
+// slides past the edge onto the next monitor and the camera never pans that way
 function update() {
-  send(fullscreenCapture() && document.hasFocus() && document.visibilityState === 'visible' && !pointerLocked());
+  send(
+    (fullscreenCapture() || (edgePan() && fullscreen())) &&
+      document.hasFocus() &&
+      document.visibilityState === 'visible' &&
+      !pointerLocked()
+  );
 }
 
 function lockChanged() {
@@ -61,6 +69,7 @@ export function initCursorLock() {
     document.addEventListener('fullscreenchange', update);
     document.addEventListener('pointerlockchange', lockChanged);
     onFullscreenCapture(update);
+    onEdgePan(update);
   }
   update();
 }

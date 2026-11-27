@@ -315,9 +315,12 @@ export function edgePan() {
   }
   return edgeScroll;
 }
+const edgeWatchers = new Set();
+export const onEdgePan = f => edgeWatchers.add(f);
 export function setEdgePan(on) {
   edgeScroll = !!on;
   try {
     localStorage.setItem('swr-edge-pan', on ? '1' : '0');
   } catch {}
+  for (const f of edgeWatchers) f(edgeScroll);
 }
