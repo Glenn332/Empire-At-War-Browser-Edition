@@ -67,6 +67,7 @@ const { scan } = await import('../public/js/mods.js');
 // Linux paths must remain native when the mod scanner descends into Data.
 globalThis.window = { __TAURI_INTERNALS__: {} };
 Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'X11; Linux x86_64' }, configurable: true });
+if (!real) makeMod(); // the block below reads the folder itself: it has to exist first
 bridge(real || made);
 const nativeHandle = localFolder(real || made);
 const nativeData = await nativeHandle.getDirectoryHandle('Data');
