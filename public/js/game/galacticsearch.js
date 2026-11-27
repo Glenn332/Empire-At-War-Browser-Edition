@@ -9,6 +9,7 @@ import { relation } from './galacticrelation.js';
 import { capturePlanet } from './planetinfo.js';
 import { portraitBounds } from './planetportrait.js';
 import { FleetWatch } from './galacticwitness.js';
+import { skinImage } from './dialogs.js';
 
 // The planet finder: a panel of the galactic HUD, turned on in Tweaks, with a planet list and search box over the
 // recent events the local player could see. It is a view for the local player only: nothing here is part of the
@@ -254,7 +255,36 @@ const CSS = `
 #galactic-search .gs-settings h4:first-child{margin-top:0}
 #galactic-search .gs-settings label{display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer}
 #galactic-search [hidden]{display:none}
+#galactic-search ul::-webkit-scrollbar{width:14px}
+#galactic-search ul::-webkit-scrollbar-track{background:var(--sb-track,rgba(0,0,0,.35)) center top/100% auto repeat-y}
+#galactic-search ul::-webkit-scrollbar-thumb{background:#c3ab02;border-style:solid;border-width:3px;border-image:var(--sb-tab) 6 fill stretch}
+#galactic-search ul::-webkit-scrollbar-button:single-button{display:block;height:14px;background:center/100% 100% no-repeat}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:decrement{background-image:var(--sb-up)}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:decrement:hover{background-image:var(--sb-up-over)}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:decrement:active{background-image:var(--sb-up-down)}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment{background-image:var(--sb-down)}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment:hover{background-image:var(--sb-down-over)}
+#galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment:active{background-image:var(--sb-down-down)}
+@supports not selector(::-webkit-scrollbar){#galactic-search ul{scrollbar-width:thin;scrollbar-color:#c3ab02 rgba(0,0,0,.35)}}
 `;
+
+// the scroll bars of the game's own lists: its skin's arrow buttons, track and tab
+const SCROLL_SKIN = {
+  '--sb-up': 'Scroll_Up_Button',
+  '--sb-up-over': 'Scroll_Up_Button_Mouse_Over',
+  '--sb-up-down': 'Scroll_Up_Button_Pressed',
+  '--sb-down': 'Scroll_Down_Button',
+  '--sb-down-over': 'Scroll_Down_Button_Mouse_Over',
+  '--sb-down-down': 'Scroll_Down_Button_Pressed',
+  '--sb-track': 'Scroll_Middle',
+  '--sb-tab': 'Scroll_Tab'
+};
+async function skinScrollBars(el) {
+  for (const [name, key] of Object.entries(SCROLL_SKIN)) {
+    const im = await skinImage(key).catch(() => null);
+    if (im?.url) el.style.setProperty(name, `url("${im.url}")`);
+  }
+}
 
 const MARGIN = 4;
 
@@ -295,6 +325,7 @@ export class GalacticSearch {
       this.settings
     );
     parent.appendChild(root);
+    skinScrollBars(root);
 
     // keys pressed inside the panel must never reach the game's hotkeys
     input.addEventListener('keydown', e => this.key(e));
