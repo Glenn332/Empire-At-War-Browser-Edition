@@ -72,7 +72,8 @@ function relativeMatrices(meshes, holder) {
 
 export function mergeKey(meshes, relatives) {
   const parts = [];
-  for (let i = 0; i < meshes.length; i++) parts.push(meshes[i].geometry.id + '@' + relatives[i].elements.map(value => value.toFixed(3)).join(','));
+  for (let i = 0; i < meshes.length; i++)
+    parts.push(meshes[i].geometry.id + '@' + relatives[i].elements.map(value => value.toFixed(3)).join(','));
   return parts.join(';');
 }
 
@@ -118,7 +119,10 @@ export function mergeGeometries(meshes, relatives) {
   }
   const merged = new THREE.BufferGeometry();
   for (const name of names)
-    merged.setAttribute(name, new THREE.BufferAttribute(new Float32Array(vertexCount * first.attributes[name].itemSize), first.attributes[name].itemSize));
+    merged.setAttribute(
+      name,
+      new THREE.BufferAttribute(new Float32Array(vertexCount * first.attributes[name].itemSize), first.attributes[name].itemSize)
+    );
   const indices = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
   let vertexOffset = 0,
     indexOffset = 0;
@@ -328,7 +332,13 @@ export class LandInstances {
         plan.singles.push(...merging);
         continue;
       }
-      plan.groups.push({ material, geometry: mergedGeometry(material, merging, holder), renderOrder: first.renderOrder, meshes: merging, probe: merging[0] });
+      plan.groups.push({
+        material,
+        geometry: mergedGeometry(material, merging, holder),
+        renderOrder: first.renderOrder,
+        meshes: merging,
+        probe: merging[0]
+      });
     }
     return plan;
   }
@@ -380,9 +390,7 @@ export class LandInstances {
   put(m, h, skinned, mats) {
     let b = m._batch;
     if (!b || b.mat !== m.material || b.geo !== m.geometry || b.skinned !== skinned) {
-      const ok = skinned
-        ? skinBatchable.has(m.material)
-        : instanceable.has(m.material) || alphaInstanceable.has(m.material);
+      const ok = skinned ? skinBatchable.has(m.material) : instanceable.has(m.material) || alphaInstanceable.has(m.material);
       m._batch = b = { mat: m.material, geo: m.geometry, skinned, ok, pool: ok ? this.poolFor(m, skinned) : null };
     }
     const p = b.pool;
@@ -543,10 +551,17 @@ export class LandInstances {
           }
         };
         if (inst.skins) for (const s of inst.skins) back(s.mesh);
+        if (inst.attachedModels) for (const a of inst.attachedModels) for (const s of a.skins) back(s.mesh);
         for (const m of this.rigidOf(u)) back(m);
         continue;
       }
       if (inst.skins) for (const s of inst.skins) if (this.put(s.mesh, h, true, s.mats)) rest = true;
+      if (inst.attachedModels)
+        for (const a of inst.attachedModels) {
+          if (!a.skins.length) continue;
+          a.syncSkins();
+          for (const s of a.skins) if (this.put(s.mesh, h, true, s.mats)) rest = true;
+        }
       for (const m of this.rigidOf(u)) if (this.put(m, h, false, null)) rest = true;
       if (!rest) {
         h.visible = false;

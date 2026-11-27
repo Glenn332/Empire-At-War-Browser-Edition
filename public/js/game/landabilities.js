@@ -402,7 +402,7 @@ export function cantTarget(world, q, def, tgt) {
     return null;
   }
   if (world.ally(u.side, q.side)) return 'Not on your own';
-  if (def.kind === 'TARGETED_HACK') return u.structure && u.weapon ? null : 'Only turrets can be taken over';
+  if (def.kind === 'TARGETED_HACK') return u.structure && (u.weapon || u.guns) ? null : 'Only turrets can be taken over';
   if (def.kind === 'TACTICAL_BRIBE') return u.structure || isHero(u) || !(bribeCost(world, q, u) > 0) ? 'Cannot be bribed' : null;
   if (def.kind === 'CAPTURE_VEHICLE') return def.types.includes(u.type.name.toUpperCase()) ? null : 'Cannot be captured';
   return fits(u, def.cats, def.types, def.excluded) ? null : 'No effect on that';
