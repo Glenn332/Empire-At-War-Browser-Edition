@@ -968,6 +968,20 @@ impl Server {
 /// the right one.
 #[cfg(target_os = "linux")]
 fn prepare_linux_webview() {
+    // On Wayland the webview's DMABUF renderer stalls the compositor mid-scroll and its fallback
+    // path is slow on some drivers (seen on AMD + WebKitGTK 2.54.3). XWayland uses a different
+    // buffer path that does not have that bug, so Wayland sessions run through X11 unless the
+    // player chose a backend of their own. still one thread: nothing else reads the environment yet
+    if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        unsafe { std::env::set_var("GDK_BACKEND", "x11") };
+    }
+    // The same WebKitGTK build's DMABUF path also freezes under X11, and its shared-memory
+    // fallback crawls. Software compositing is the only path that stays both interactive and
+    // smooth on this driver combo, so it is the default unless the player chose a mode of their
+    // own (setting the variable to 0 forces the GPU compositor back on).
+    if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+        unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
+    }
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
     if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
         // still one thread: nothing else reads the environment yet
