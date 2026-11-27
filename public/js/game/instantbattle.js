@@ -10,7 +10,10 @@ export const INSTANT_BUDGET = 15000;
 export const INSTANT_BUDGET_MIN = 1000;
 export const INSTANT_BUDGET_MAX = 100000000;
 
-export const isHeroType = t => [...t.categories()].some(c => c.includes('HERO'));
+// A hero squadron such as Rogue Squadron carries Is_Named_Hero but no CategoryMask; the SpaceHero mask sits on
+// its galactic container, which instant action never places.
+const heroFlag = t => !!t && ([...t.categories()].some(c => c.includes('HERO')) || t.bool('Is_Named_Hero') || t.bool('Is_Generic_Hero'));
+export const isHeroType = t => heroFlag(t) || t.list('Squadron_Units').some(n => heroFlag(db.type(n)));
 
 export function leftOutOfInstant(type) {
   const b = type.behaviors();
@@ -110,7 +113,7 @@ export function instantRoster(faction, allHeroes = true) {
       offered = new Set(
         out
           .flatMap(r => shipsOf(r.type))
-          .map(s => rootOf(s))
+          .flatMap(s => [s, rootOf(s)])
           .filter(isHeroType)
       ),
       extra = [];
@@ -122,6 +125,8 @@ export function instantRoster(faction, allHeroes = true) {
       if (!ships.length || !(isHeroType(t) || ships.some(isHeroType))) continue;
       if (t.tag.toLowerCase() === 'starbase' || t.behaviors().has('TACTICAL_BUILD_OBJECTS')) continue;
       const roots = ships.map(rootOf);
+      // A named ship can be a variant of a plain one (The Peacebringer), so the ship itself is matched as well as its root.
+      if (ships.some(s => isHeroType(s) && offered.has(s))) continue;
       if (roots.some(r => isHeroType(r) && (offered.has(r) || !r.list('Affiliation').some(a => a.toUpperCase() === F)))) continue;
       extra.push({
         type: t,

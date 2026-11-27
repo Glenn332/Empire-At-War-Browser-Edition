@@ -1968,14 +1968,15 @@ export class CommandBar {
     const mine = [],
       theirs = [],
       allies = [];
-    const add = (e, type) => {
-      if (e.dead || e.hyper || e.player.id < 0 || !isHero(type)) return;
+    const add = (e, type, owner = type) => {
+      if (e.dead || e.hyper || e.player.id < 0 || !(isHero(type) || owner.bool('Is_Named_Hero'))) return;
       if (e.player === p) mine.push({ e, type });
       else if (e.player.team === p.team) allies.push({ e, type });
       else theirs.push({ e, type });
     };
     for (const u of w.units) if (!u.squad) add(u, u.heroType || u.type);
-    for (const q of w.squads) if (q.fighters[0]) add(q, q.fighters[0].type);
+    // A named hero squadron (Rogue Squadron) is flagged on the squadron type, not on its fighters' CategoryMask.
+    for (const q of w.squads) if (q.fighters[0]) add(q, q.fighters[0].type, q.type);
     this.heroRow('evil', theirs.slice(0, 11));
     this.heroRow('good', mine.concat(allies).slice(0, 11));
   }
