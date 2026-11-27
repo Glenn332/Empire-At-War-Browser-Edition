@@ -1,5 +1,6 @@
 import { setComponentText } from './componenttext.js';
 import { db } from '../gamedata.js';
+import { LANGUAGES, activeLanguage } from '../language.js';
 import { iconUrl, iconCanvasRect } from '../icons.js';
 import { CommandBar, loadHudAssets, loadFactionModel, loadShellModel, uiMeshes } from './hud.js';
 import { displayIncome, intelligence } from './galacticfog.js';
@@ -21,6 +22,13 @@ const css = url => (url ? `url("${url}")` : 'none');
 const label = t => db.t(t.str('Text_ID')) || t.name;
 const truth = value => /^(true|yes|1)$/i.test(value || '');
 const rounded = n => Math.sign(n) * Math.floor(Math.abs(n) + 0.5);
+const DOT_GROUPED_LANGUAGES = new Set(['FRENCH', 'SPANISH', 'ITALIAN']);
+// the credit reserve is grouped in the player's own number format, as in the original game; French, Spanish and
+// Italian game text always groups with dots
+const groupedCredits = credits => {
+  const text = Math.trunc(credits).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return DOT_GROUPED_LANGUAGES.has(LANGUAGES[activeLanguage]) ? text.replace(/,/g, '.') : text;
+};
 
 export async function loadGalacticHudAssets(faction = '') {
   const data = await loadHudAssets(faction);
@@ -428,8 +436,8 @@ export class GalacticBar extends CommandBar {
     }
   }
 
-  setReadout(name, value) {
-    setComponentText(this.readouts[name], this.comp(name), value, { scale: this.scale, height: this.scale * 768, bottom: true });
+  setReadout(name, value, tint = null) {
+    setComponentText(this.readouts[name], this.comp(name), value, { scale: this.scale, height: this.scale * 768, bottom: true, tint });
   }
 
   layoutSlots(options) {
@@ -533,7 +541,7 @@ export class GalacticBar extends CommandBar {
       this.page = 0;
     }
     this.updatePips();
-    this.setReadout('Text_Credits', '$ ' + rounded(player?.credits || 0));
+    this.setReadout('Text_Credits', '$ ' + groupedCredits(player?.credits || 0));
     this.setReadout('Text_Day_Credits', '$ ' + rounded(playerIncome(g, game.me)));
     this.setReadout('Text_Day_Counter', db.t('TEXT_CYCLES') + ': ' + cycleNumber(g));
     this.setReadout(
@@ -544,8 +552,9 @@ export class GalacticBar extends CommandBar {
     );
     this.setReadout('Text_Pop_Cap', popUsed + ' / ' + popCap);
     this.refreshHeroes();
-    this.setReadout('Text_Planet', p ? label(p.type) : '');
-    this.setReadout('Text_Planetary_Income', p ? '$ ' + rounded(displayIncome(g, p)) : '');
+    const planetColor = p ? [...game.planetLabelColors(p).ink.map(c => Math.round(c * 255)), 255] : null;
+    this.setReadout('Text_Planet', p ? label(p.type) : '', planetColor);
+    this.setReadout('Text_Planetary_Income', p ? '$ ' + rounded(displayIncome(g, p)) : '', planetColor);
     this.refreshAllegiance(g, p);
     for (const { b, bit, name } of this.filters) {
       const selected = !!(game.filters & bit);

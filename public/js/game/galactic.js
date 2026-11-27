@@ -1139,7 +1139,9 @@ export class GalacticGame {
           .split(/[,\s]+/)
           .filter(Boolean) || [],
       pt: name?.num('Font_Point_Size', 7) ?? 7,
-      offset: pair(name, 'Offset', [30, 0]),
+      // only the x of the name's Offset moves it: the name stays level with the planet (a mod giving the name and the
+      // income the same Offset still shows the income below the name, as in the original game)
+      offset: [pair(name, 'Offset', [30, 0])[0], 0],
       text: pair(name, 'Text_Offset', [0, 0]),
       center: /^(false|no|0)$/i.test((name?.val('Left_Justified') || '').trim()),
       scale: name?.num('Scale', 1) ?? 1,
@@ -1176,9 +1178,15 @@ export class GalacticGame {
       scale: value?.num('Scale', 1) ?? 1
     };
     this.statusStyles = [
-      ['G_WEATHER', 'Encyclopedia_Weather_Icon', [-20, -31]],
-      ['G_PLANET_ABILITY', 'Planet_Ability_Icon', [0, -34]]
-    ].map(([n, tag, fallback]) => ({ tag, offset: pair(comps?.get(n), 'Offset', fallback), scale: comps?.get(n)?.num('Scale', 1) ?? 1 }));
+      ['G_WEATHER', 'Encyclopedia_Weather_Icon', [-20, -31], 'Encyclopedia_Weather_Name', 'Encyclopedia_Weather_Info'],
+      ['G_PLANET_ABILITY', 'Planet_Ability_Icon', [0, -34], 'Planet_Ability_Name', 'Planet_Ability_Description']
+    ].map(([n, tag, fallback, title, body]) => ({
+      tag,
+      title,
+      body,
+      offset: pair(comps?.get(n), 'Offset', fallback),
+      scale: comps?.get(n)?.num('Scale', 1) ?? 1
+    }));
     const last = (c, key, fallback) => {
       const v = c
         ?.all(key)
@@ -1315,6 +1323,16 @@ export class GalacticGame {
       (this.simplifiedFactionColors ?? this.setup.simplifiedFactionColors ?? false) ||
       this.galaxy?.players?.find(p => p.faction === this.me)?.tutorial
     );
+  }
+
+  // the owner colour a planet's name and income are written in, on the map and in the command bar
+  planetLabelColors(p) {
+    const owner = displayOwner(this.galaxy, p),
+      faction = db.faction(owner),
+      relative = this.relativeColors(),
+      ring = relative && faction ? this.factionColor(owner) : rgb(faction?.str('Color')),
+      ink = !relative && faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : ring;
+    return { ring, ink };
   }
 
   factionColor(owner) {
@@ -2146,7 +2164,18 @@ export class GalacticGame {
       return;
     }
     const idle = this.mouse.in !== false && !this.dragFleet && this.dragGround === undefined,
-      at = idle ? this.pickCorruptionIcon(this.mouse.x, this.mouse.y) : null;
+      at = idle ? this.pickCorruptionIcon(this.mouse.x, this.mouse.y) : null,
+      feature = idle && !at && !this.radar?.contains(this.mouse.x, this.mouse.y) ? this.pickFeatureIcon(this.mouse.x, this.mouse.y) : null;
+    if (feature) {
+      const type = this.galaxy.planets[feature.p].type,
+        style = feature.style;
+      tips.hover({
+        id: 'feature:' + feature.p + ':' + style.tag,
+        key: 'feature:' + feature.p + ':' + style.tag,
+        show: () => encyclopedia.showInfo(feature.icon, db.t(type.str(style.title).trim()), db.t(type.str(style.body).trim()))
+      });
+      return;
+    }
     const free = idle && !at && !this.radar?.contains(this.mouse.x, this.mouse.y),
       orbit = free ? this.pickStack(this.lastSpots, this.mouse.x, this.mouse.y) : null,
       ground = free && !orbit?.f ? this.pickStack(this.lastSurfaceSpots, this.mouse.x, this.mouse.y) : null,
@@ -4260,7 +4289,20 @@ export class GalacticGame {
         cx = (point.x + s.offset[0] * scale) * ratio,
         cy = (point.y - s.offset[1] * scale) * ratio;
       ctx.drawImage(img, cx - (img.width * z) / 2, cy - (img.height * z) / 2, img.width * z, img.height * z);
+      (this.nextFeatureIcons ||= []).push({
+        p: p.index,
+        icon: name,
+        style: s,
+        x: cx / ratio,
+        y: cy / ratio,
+        w: (img.width * z) / ratio,
+        h: (img.height * z) / ratio
+      });
     }
+  }
+
+  pickFeatureIcon(x, y) {
+    return (this.featureIcons || []).find(i => Math.abs(i.x - x) <= i.w / 2 && Math.abs(i.y - y) <= i.h / 2) || null;
   }
 
   statusIcons(p, v) {
@@ -4493,11 +4535,7 @@ export class GalacticGame {
         point = pv?.show && this.overlayPoint(p.pos);
       if (!point) return;
       const v = intelligence(this.galaxy, p),
-        owner = displayOwner(this.galaxy, p),
-        faction = db.faction(owner),
-        relative = this.relativeColors(),
-        col = relative && faction ? this.factionColor(owner) : rgb(faction?.str('Color')),
-        ink = !relative && faction?.str('Display_Font_Color') ? rgb(faction.str('Display_Font_Color')) : col;
+        { ring: col, ink } = this.planetLabelColors(p);
       const ring = i !== this.selected && !!this.ringComp.texture && this.tinted(this.ringComp.texture, col);
       if (ring) {
         const z = ui * this.ringComp.scale;
@@ -4576,6 +4614,8 @@ export class GalacticGame {
         put(s.units || s.f?.units || [], s.f?.owner || this.me, this.fleetComp, s.x, s.y, !s.f, s.f, s.f && 'slot:' + s.p + ':' + (s.f.slot ?? 0));
     this.corruptionIcons = this.nextIcons || [];
     this.nextIcons = [];
+    this.featureIcons = this.nextFeatureIcons || [];
+    this.nextFeatureIcons = [];
     this.lastSpecialSpots = this.specialSpots(scale);
     this.lastSurfaceSpots = this.surfaceSpots(scale);
     for (const s of this.lastSurfaceSpots)
