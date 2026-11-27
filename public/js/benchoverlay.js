@@ -1,5 +1,4 @@
 import { ProcessStatsSampler, processTable, browserTable, DESKTOP_ONLY } from './procstats.js';
-import { diag } from './diag.js';
 
 const FT_FRAMES = 240;
 const FT_TOP = 50;
@@ -48,7 +47,7 @@ export class BenchOverlay {
     this.fps = [];
     const box = (this.box = document.createElement('div'));
     box.id = 'bench';
-    box.innerHTML = `<div class="bh"><b>BENCH</b><span>${label}</span><i data-k="t"></i><button type="button" data-k="save" title="Save benchmark and detailed diagnostics as JSON" style="float:right;margin:0 4px;padding:1px 5px;background:#173b46;color:#cff;border:1px solid #578;cursor:pointer;font:10px Consolas,monospace;pointer-events:auto">Save report</button></div>
+    box.innerHTML = `<div class="bh"><b>BENCH</b><span>${label}</span><i data-k="t"></i></div>
       <div class="bp"><div data-k="bar"></div></div>
       <dl>
         <dt>FPS</dt><dd data-k="fps"></dd><dt>avg</dt><dd data-k="afps"></dd><dt>1% low</dt><dd data-k="low"></dd>
@@ -71,23 +70,6 @@ export class BenchOverlay {
       <div class="bg"><span>frame ms</span><canvas data-k="ft"></canvas></div>
       <div class="bg"><span>fps / run</span><canvas data-k="fg"></canvas></div>`;
     this.el = Object.fromEntries([...box.querySelectorAll('[data-k]')].map(e => [e.dataset.k, e]));
-    for (const event of ['pointerdown', 'pointerup', 'click']) this.el.save.addEventListener(event, e => e.stopPropagation());
-    this.el.save.onclick = async () => {
-      const button = this.el.save;
-      button.disabled = true;
-      try {
-        const result = await diag.saveReport({ benchmark: this.result || this.head, label: this.label });
-        button.textContent = result.where ? 'Saved' : 'Downloaded';
-      } catch (error) {
-        button.textContent = 'Failed';
-        console.error('[benchmark report]', error);
-      } finally {
-        setTimeout(() => {
-          button.textContent = 'Save report';
-          button.disabled = false;
-        }, 2500);
-      }
-    };
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const k of ['ft', 'fg']) {
       const c = this.el[k];
