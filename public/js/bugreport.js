@@ -194,8 +194,14 @@ async function appInfo() {
       return null;
     }
   };
-  const [app, setup, localMods, power] = await Promise.all([readJson('api/app'), readJson('api/setup'), readJson('api/localmods'), readJson('api/power')]);
-  return { app, setup, localMods, power };
+  const [app, setup, localMods, power, windowLog] = await Promise.all([
+    readJson('api/app'),
+    readJson('api/setup'),
+    readJson('api/localmods'),
+    readJson('api/power'),
+    readJson('api/window-log')
+  ]);
+  return { app, setup, localMods, power, windowLog: windowLog?.lines };
 }
 
 async function contentInfo() {

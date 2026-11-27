@@ -69,25 +69,60 @@ function setAppFullscreen(on) {
     .catch(e => console.warn('fullscreen:', e.message));
 }
 
+// a line for the app's window log, which bug reports carry
+const windowNote = note => fetch('api/window-log?note=' + encodeURIComponent(note)).catch(() => {});
+
+// After Alt+Tab in app fullscreen some drivers leave the cursor undrawn until it is set again,
+// so the first pointer move in each frame after coming back hands Windows the plain arrow for
+// two frames, then the game's pointer returns. The app says when its window came back in front
+// (swrCameToFront): the page's own focus event goes to whichever frame had focus, so it misses
+// the multiplayer galaxy and battles, which run in frames. Track camera, chase view, shooter
+// mode and pointer lock keep their hidden cursor.
+const REFRESH_WAIT_MS = 15000;
+function armCursorRefresh(win, label) {
+  try {
+    win.swrCursorArmed = win.performance.now();
+    if (!win.swrCursorListening) {
+      win.swrCursorListening = true;
+      win.addEventListener(
+        'pointermove',
+        () => {
+          const at = win.swrCursorArmed;
+          win.swrCursorArmed = 0;
+          if (!at || win.performance.now() - at > REFRESH_WAIT_MS) return;
+          const doc = win.document,
+            b = doc.body?.classList;
+          if (doc.pointerLockElement || b?.contains('track-cam') || b?.contains('chase-view') || b?.contains('shooter-on')) return;
+          const root = doc.documentElement;
+          root.classList.add('cursor-refresh');
+          win.requestAnimationFrame(() => win.requestAnimationFrame(() => root.classList.remove('cursor-refresh')));
+          windowNote('cursor set again in ' + label);
+        },
+        true
+      );
+    }
+    let n = 0;
+    for (const f of win.document.querySelectorAll('iframe'))
+      if (f.contentWindow) armCursorRefresh(f.contentWindow, label + ' frame ' + n++);
+  } catch {}
+}
+
 if (typeof window !== 'undefined' && inApp() && topFrame()) {
   window.swrAppFullscreen = { get: () => appFull, set: setAppFullscreen };
-  let stale = false;
   addEventListener('focus', () => {
-    stale = appFull;
+    if (appFull) armCursorRefresh(window, 'page');
   });
-  addEventListener(
-    'pointermove',
-    () => {
-      if (!stale) return;
-      stale = false;
-      const b = document.body.classList;
-      if (document.pointerLockElement || b.contains('track-cam') || b.contains('chase-view') || b.contains('shooter-on')) return;
-      const root = document.documentElement;
-      root.classList.add('cursor-refresh');
-      requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('cursor-refresh')));
-    },
-    true
-  );
+  window.swrCameToFront = () => {
+    windowNote(
+      'came to front, fullscreen ' +
+        appFull +
+        ', focus ' +
+        (document.hasFocus() ? 'in page' : 'elsewhere') +
+        ', visible ' +
+        document.visibilityState
+    );
+    if (appFull) armCursorRefresh(window, 'page');
+  };
 }
 
 const ownFullscreen = () => (document.fullscreenElement || document.webkitFullscreenElement) === document.documentElement;

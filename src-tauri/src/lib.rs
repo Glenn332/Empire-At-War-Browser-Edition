@@ -815,7 +815,14 @@ impl Server {
                     None if on => cursorclip::ALWAYS,
                     None => cursorclip::OFF,
                 };
-                cursorclip::set_mode(mode);
+                // a page from before mode lets go whenever it loses focus and asks again only
+                // when its own frame gets focus back, which may not happen: while the window is
+                // behind, its letting go is left to the watch here
+                if arg("mode").is_none() && !on && !cursorclip::in_front() {
+                    cursorclip::log("older page let go while behind: kept");
+                } else {
+                    cursorclip::set_mode(mode);
+                }
                 if let Some(w) = app.get_webview_window("main") {
                     cursorclip::set_fullscreen(w.is_fullscreen().unwrap_or(false));
                     sync_grab(&w.as_ref().window());
@@ -829,6 +836,17 @@ impl Server {
                 }
             }
             return json(&serde_json::json!({ "ok": true }));
+        }
+        #[cfg(windows)]
+        if p == "/api/window-log" {
+            if let Some(note) = arg("note") {
+                cursorclip::log(format!(
+                    "page: {}",
+                    note.chars().take(200).collect::<String>()
+                ));
+                return json(&serde_json::json!({ "ok": true }));
+            }
+            return json(&serde_json::json!({ "lines": cursorclip::log_lines() }));
         }
         if p == "/api/power" {
             return json(&report::power());
@@ -1052,6 +1070,7 @@ pub fn run() {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
                 #[cfg(windows)]
                 {
+                    cursorclip::log("page load: mouse free");
                     cursorclip::set_mode(cursorclip::OFF);
                     sync_grab(&webview.window());
                 }
@@ -1104,6 +1123,9 @@ pub fn run() {
                             _ => want,
                         };
                         if now != want {
+                            cursorclip::log(format!(
+                                "fullscreen window at {now:?}, placed at {want:?}"
+                            ));
                             place_window(h, want);
                         }
                     }
@@ -1122,7 +1144,14 @@ pub fn run() {
                 .build()?;
             #[cfg(windows)]
             if let Some(Ok(h)) = app.get_webview_window("main").map(|w| w.hwnd()) {
-                cursorclip::start(h.0 as isize);
+                let handle = app.handle().clone();
+                // the page refreshes its cursor on coming back: its own focus event goes to
+                // whichever frame had focus, so the app tells it instead
+                cursorclip::start(h.0 as isize, move || {
+                    if let Some(w) = handle.get_webview_window("main") {
+                        let _ = w.eval("window.swrCameToFront && window.swrCameToFront()");
+                    }
+                });
             }
             Ok(())
         })
