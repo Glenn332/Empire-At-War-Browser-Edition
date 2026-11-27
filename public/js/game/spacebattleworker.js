@@ -37,6 +37,40 @@ const nothing = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimi
 
 const fixedSeed = m => (m.net ? m.net.seed : m.record ? m.record.seed : null);
 
+// A script spawning a type whose models are not loaded yet waits for them (its thread yields on the promise), so the
+// unit never comes without its hardpoints. In a recorded or multiplayer battle the battle also stops stepping while
+// the models load (world.artLoading), so the thread resumes at the same step in every run and on every peer.
+function artLoader(world, fixed) {
+  const loads = new Map(),
+    settled = new Set();
+  world.artLoading = new Set();
+  return type => {
+    if (!type || settled.has(type)) return null;
+    const want = [...modelsForType(type, null, new Set(), new Set())].filter(Boolean);
+    if (want.every(name => getModelData(name))) return null;
+    let load = loads.get(type);
+    if (!load) {
+      load = preloadModels(want)
+        .catch(() => null)
+        .then(() => {
+          settled.add(type);
+        });
+      loads.set(type, load);
+      if (fixed) {
+        world.artLoading.add(load);
+        // a macrotask later, so the waiting script thread sees its models before the battle steps again
+        load.then(() =>
+          setTimeout(() => {
+            world.artLoading.delete(load);
+            if (!world.artLoading.size) world.onArtLoaded?.();
+          }, 0)
+        );
+      }
+    }
+    return load;
+  };
+}
+
 async function setUp(m, events) {
   const seed = fixedSeed(m);
   const fixed = seed !== null;
@@ -256,18 +290,9 @@ async function minds(w, m, map, events, thing, refs) {
     const more = new Set();
     for (const t of await scriptTypes([...named]).catch(() => [])) modelsForType(t, null, more, known);
     await preloadModels([...more].filter(Boolean)).catch(() => null);
-  } else if (scripts) {
-    const art = new Map();
-    game.artFor = type => {
-      if (!type) return null;
-      const want = [...modelsForType(type, null, new Set(), new Set())].filter(Boolean);
-      if (want.every(n => getModelData(n))) return null;
-      let p = art.get(type);
-      if (!p) art.set(type, (p = preloadModels(want).catch(() => null)));
-      return p;
-    };
   }
   if (scripts) {
+    game.artFor = artLoader(w, fixed);
     game.scripts = w.scripts = scripts;
     if (!fixed) scripts.budgetMs = 4;
     if (has('noplans')) scripts.plansOff = true;
@@ -503,12 +528,13 @@ async function run(m) {
   let heldFor = null;
   let heldSince = 0,
     heldTimer = 0;
+  const loadingArt = () => fixed && w.artLoading?.size > 0;
   const drain = () => {
-    while (held.length && (!w.paths || w.paths.ready())) {
+    while (held.length && !loadingArt() && (!w.paths || w.paths.ready())) {
       const c = held.shift();
       step(c.cmds, c.hash);
     }
-    const why = held.length ? 'route planning' : null;
+    const why = held.length ? (loadingArt() ? 'loading models' : 'route planning') : null;
     if (why !== heldFor) {
       if (why) heldSince = performance.now();
       else if (heldSince) phaseMs.routeWait += performance.now() - heldSince;
@@ -521,7 +547,15 @@ async function run(m) {
     paused = false,
     unseen = 0,
     waiting = false,
-    routesPending = false;
+    routesPending = false,
+    artPending = false;
+  w.onArtLoaded = () => {
+    drain();
+    if (artPending) {
+      artPending = false;
+      tick();
+    }
+  };
   if (w.paths)
     w.paths.onArrive = () => {
       drain();
@@ -595,6 +629,15 @@ async function run(m) {
     if (paused) next = now;
     const rate = replaying ? REPLAY_SPEED : speed;
     while (!paused && next <= now && n < (replaying ? 16 : 4) && unseen < AHEAD) {
+      if (loadingArt()) {
+        artPending = true;
+        if (heldFor !== 'loading models') {
+          heldFor = 'loading models';
+          heldSince = performance.now();
+          postMessage({ k: 'held', why: heldFor });
+        }
+        return;
+      }
       if (fixed && w.paths && !w.paths.ready()) {
         routesPending = true;
         // a wait of more than half a second is reported, as lockstep does, so the page can tell it from a stopped
