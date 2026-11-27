@@ -2383,8 +2383,10 @@
         $('installStatus').className = 'status ' + cls;
       };
       function showInstall(own) {
+        // the browser's own game folder choice needs the browser's picker: the app's bridge only
+        // serves the mod folders the app found, the game comes from the app itself there
         $('protectedTip').classList.toggle('hidden', !modsSupported());
-        if (!foldersSupported()) {
+        if (!modsSupported()) {
           $('chooseGame').classList.add('hidden');
           $('installOff').classList.remove('hidden');
           return;

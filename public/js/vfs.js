@@ -12,9 +12,17 @@ let overlayState = 'waiting';
 overlay.then(o => (overlayState = o ? 'open' : 'none'));
 const open = new Set();
 export function pendingFiles() {
-  return { folders: overlayState === 'waiting' && openStep ? 'waiting: ' + openStep : overlayState, queued: queued.length, inFlight: out, reading: [...open].slice(0, 5) };
+  return {
+    folders: overlayState === 'waiting' && openStep ? 'waiting: ' + openStep : overlayState,
+    queued: queued.length,
+    inFlight: out,
+    reading: [...open].slice(0, 5)
+  };
 }
-const keyOf = path => String(path).replace(/[\\/]+/g, '\\').toUpperCase();
+const keyOf = path =>
+  String(path)
+    .replace(/[\\/]+/g, '\\')
+    .toUpperCase();
 
 const cache = new Map();
 
@@ -25,7 +33,16 @@ const base = () => globalThis.SWR_BASE || '';
 const GAME = expansion() ? '' : 'game=eaw';
 function url(path, language) {
   const q = [language === undefined ? '' : 'language=' + language, GAME].filter(Boolean).join('&');
-  return base() + 'asset/' + String(path).replace(/[\\/]+/g, '/').split('/').map(encodeURIComponent).join('/') + (q ? '?' + q : '');
+  return (
+    base() +
+    'asset/' +
+    String(path)
+      .replace(/[\\/]+/g, '/')
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/') +
+    (q ? '?' + q : '')
+  );
 }
 
 let worker = null,
@@ -48,7 +65,9 @@ const next = () => {
   }
 };
 const fetchRetry = (u, tries = 0) =>
-  fetchNow(u).catch(e => (tries < 2 ? new Promise(r => setTimeout(r, 300 * (tries + 1))).then(() => fetchRetry(u, tries + 1)) : Promise.reject(e)));
+  fetchNow(u).catch(e =>
+    tries < 2 ? new Promise(r => setTimeout(r, 300 * (tries + 1))).then(() => fetchRetry(u, tries + 1)) : Promise.reject(e)
+  );
 function fetchOff(u) {
   return new Promise((ok, no) => {
     queued.push([u, ok, no]);

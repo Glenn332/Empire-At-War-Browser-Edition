@@ -293,6 +293,7 @@ impl Server {
             .map(|s| s.path.clone())
             .chain(dir.iter().cloned())
             .filter_map(|p| canonical(&p))
+            .map(|p| p.trim_end_matches(['/', '\\']).to_string())
             .collect();
         // the same folder keeps its opened game, unless that game could not start (files that
         // were still being copied in): then it is opened again
@@ -957,12 +958,52 @@ impl Server {
 
 /// WebKitGTK's DMA-BUF renderer shows a blank window with NVIDIA's own driver; it is turned off
 /// there unless the player chose a setting of their own.
+///
+/// The AppImage bundles the GStreamer plugins under usr/lib, and on a mixed 32/64-bit host
+/// (Fedora's multilib puts i686 copies of gstreamer1 in /usr/lib) those are 32-bit: WebKit's audio
+/// then finds no appsink or autoaudiosink, and sounds never start. The app is 64-bit, so its own
+/// plugins are the 64-bit ones of the system, which are pointed at when the bundled set is not
+/// the right one.
 #[cfg(target_os = "linux")]
 fn prepare_linux_webview() {
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
     if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
         // still one thread: nothing else reads the environment yet
         unsafe { std::env::set_var(SETTING, "1") };
+    }
+    use std::io::Read;
+    const PLUGINS: &str = "GST_PLUGIN_SYSTEM_PATH_1_0";
+    // byte 4 of an ELF header is its class: 2 is 64-bit, 1 is 32-bit
+    let is_64bit = |p: &Path| {
+        std::fs::File::open(p).is_ok_and(|mut f| {
+            let mut head = [0u8; 20];
+            f.read_exact(&mut head).is_ok() && head[0..4] == *b"\x7fELF" && head[4] == 2
+        })
+    };
+    let bundled = std::env::var_os("APPDIR")
+        .map(PathBuf::from)
+        .map(|d| d.join("usr/lib/gstreamer-1.0/libgstcoreelements.so"))
+        .filter(|p| p.is_file());
+    // AppRun (linuxdeploy's gstreamer hook) always sets GST_PLUGIN_SYSTEM_PATH_1_0 to the bundle's
+    // folder, so this replaces that value when the folder holds 32-bit plugins, and keeps a path
+    // the player set themselves
+    let ours = std::env::var_os("APPDIR").map(|d| PathBuf::from(d).join("usr/lib/gstreamer-1.0"));
+    let set_by_bundle = std::env::var_os(PLUGINS).is_some_and(|v| Some(PathBuf::from(v)) == ours);
+    if bundled.is_some_and(|p| !is_64bit(&p)) && set_by_bundle {
+        let system = [
+            "/usr/lib64/gstreamer-1.0",
+            "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        ]
+        .into_iter()
+        .find(|d| is_64bit(&Path::new(d).join("libgstcoreelements.so")));
+        if let Some(dir) = system {
+            // the plugin loader reads every spelling; set them together so the 32-bit ones lose
+            unsafe {
+                std::env::set_var(PLUGINS, dir);
+                std::env::set_var("GST_PLUGIN_SYSTEM_PATH", dir);
+                std::env::remove_var("GST_PLUGIN_PATH_1_0");
+            }
+        }
     }
 }
 

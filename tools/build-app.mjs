@@ -1,4 +1,4 @@
-import { cpSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -26,4 +26,30 @@ console.log(`staged dist-app/ (${build})`);
 // arguments after -- go to tauri build (the release build passes the macOS universal target)
 const separator = process.argv.indexOf('--'),
   tauriArgs = separator >= 0 ? process.argv.slice(separator + 1) : [];
-if (!process.argv.includes('--stage')) run('npx', ['tauri', 'build', ...tauriArgs], { stdio: 'inherit', encoding: undefined });
+if (!process.argv.includes('--stage')) {
+  const env = { ...process.env };
+  if (process.platform === 'linux') {
+    // linuxdeploy otherwise picks Fedora's 32-bit /usr/lib on a multilib build host.
+    const elfClass = process.arch === 'ia32' ? 1 : 2;
+    const matchesArchitecture = file => existsSync(file) && readFileSync(file)[4] === elfClass;
+    const libdir =
+      process.env.GSTREAMER_PLUGINS_DIR ||
+      [
+        `/usr/lib/${process.arch === 'x64' ? 'x86_64' : process.arch}-linux-gnu/gstreamer-1.0`,
+        '/usr/lib64/gstreamer-1.0',
+        '/usr/lib/gstreamer-1.0'
+      ].find(dir => matchesArchitecture(path.join(dir, 'libgstcoreelements.so')));
+    const helpers =
+      process.env.GSTREAMER_HELPERS_DIR ||
+      [
+        `/usr/lib/${process.arch === 'x64' ? 'x86_64' : process.arch}-linux-gnu/gstreamer1.0/gstreamer-1.0`,
+        '/usr/libexec/gstreamer-1.0'
+      ].find(dir => matchesArchitecture(path.join(dir, 'gst-plugin-scanner')));
+    if (!libdir || !['libgstapp.so', 'libgstautodetect.so'].every(plugin => matchesArchitecture(path.join(libdir, plugin))))
+      throw new Error('GStreamer plugins matching the app architecture (including libgstapp.so and libgstautodetect.so) are required');
+    if (!helpers) throw new Error('A GStreamer plugin scanner matching the app architecture is required');
+    env.GSTREAMER_PLUGINS_DIR = libdir;
+    env.GSTREAMER_HELPERS_DIR = helpers;
+  }
+  run('npx', ['tauri', 'build', ...tauriArgs], { stdio: 'inherit', encoding: undefined, env });
+}
