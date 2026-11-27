@@ -1,5 +1,6 @@
 import { db } from '../gamedata.js';
 import { carriedCompany, planetAllowsCompany } from './invasion.js';
+import { surfaceReachable } from './galacticpolitics.js';
 
 const key = s =>
   String(s || '')
@@ -56,8 +57,7 @@ export function isRaidForce(fleet) {
 
 export function raidCapable(galaxy, fleet, p) {
   const planet = galaxy.planets[p];
-  if (!planet || planet.background || planet.destroyed || fleet.planet === p || !isRaidForce(fleet)) return false;
-  if (!planet.type.bool('Planet_Surface_Accessible', true)) return false;
+  if (!planet || planet.background || !surfaceReachable(planet) || fleet.planet === p || !isRaidForce(fleet)) return false;
   if (planet.owner && friendly(fleet.owner, planet.owner)) return false;
   return fleet.units.every(u => {
     const company = carriedCompany(u);

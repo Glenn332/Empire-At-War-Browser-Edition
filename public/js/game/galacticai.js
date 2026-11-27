@@ -16,7 +16,7 @@ import { blackMarketItems } from './blackmarket.js';
 import { antiStealth } from './galacticdetect.js';
 import { loadHeroAttach } from './heroattach.js';
 import { planetCreditValue, planetMaxStarbase } from './planetstats.js';
-import { retainsResidualInfluence } from './galacticpolitics.js';
+import { retainsResidualInfluence, surfaceReachable } from './galacticpolitics.js';
 
 const KEYS = new Map(),
   key = x => {
@@ -665,7 +665,7 @@ export class GalacticMind extends Reason {
     }
     if (p?.type && !!nameMatch(NAME_RE[10], name)) {
       if (name === 'VARIABLE_TARGET.TYPE.ISTYPE') return +typeSet.has(key(p.type.name));
-      if (name === 'VARIABLE_TARGET.ISSURFACEACCESSIBLE') return +p.type.bool('Planet_Surface_Accessible', true);
+      if (name === 'VARIABLE_TARGET.ISSURFACEACCESSIBLE') return +surfaceReachable(p);
       const structureSlots = p.structureSlots ?? p.type.num('Special_Structures_Land', 3),
         ground = groundLevel(p, p.owner),
         space = p.spaceLevel || 0;

@@ -1,7 +1,7 @@
 import { db } from '../gamedata.js';
 import { forceKind, enteredOrbit } from './galaxy.js';
 import { ownerCorruption } from './galacticbounty.js';
-import { changeController } from './galacticpolitics.js';
+import { changeController, surfaceReachable } from './galacticpolitics.js';
 import { retreatDestination } from './fleetretreat.js';
 import { orderMove } from './fleets.js';
 
@@ -100,10 +100,9 @@ export function canLand(g, fleet, p, { raid = false } = {}) {
   const pl = g.planets[p];
   return (
     !!pl &&
-    !pl.destroyed &&
     !pl.background &&
     (pl.owner === fleet.owner || pl.invasionEnabled !== false) &&
-    pl.type.bool('Planet_Surface_Accessible', true) &&
+    surfaceReachable(pl) &&
     fleet.planet === p &&
     !fleet.leg &&
     fleet.units.some(u => carriedCompany(u) && planetAllowsCompany(pl, carriedCompany(u))) &&

@@ -2,6 +2,7 @@ import { db } from '../gamedata.js';
 import { orderMove } from './fleets.js';
 import { embarkGround, planetAllowsCompany, landedOnSurface } from './invasion.js';
 import { factionRelated, orbitBlockaded } from './galacticforces.js';
+import { surfaceReachable } from './galacticpolitics.js';
 import { aidebug as D, who, nameOf } from '../aidebug.js';
 
 const stayInOrbit = company =>
@@ -260,7 +261,7 @@ export class GalacticFreeStore {
     return this.statuses.some(s => s.record === record && !s.done);
   }
   landable(p) {
-    return !!p && !p.destroyed && p.type.bool('Planet_Surface_Accessible', true);
+    return !!p && surfaceReachable(p);
   }
   room(p) {
     return p.garrison.length < db.constants.num('Max_Ground_Forces_On_Planet', 10);

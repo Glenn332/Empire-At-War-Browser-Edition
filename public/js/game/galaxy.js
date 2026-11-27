@@ -7,6 +7,7 @@ import { strategicStealth } from './galacticfog.js';
 import { setDiplomacy } from './galacticrelation.js';
 import { overrideState } from './abilityoverride.js';
 import { unlockBelowTech } from './galacticproduction.js';
+import { surfaceReachable } from './galacticpolitics.js';
 
 let orbitListener = null;
 export function onOrbit(fn) {
@@ -97,8 +98,8 @@ function newFleet(fleets, planet, owner) {
 
 export function placeStartingForce(p, owner, type, fleets, depth = 0, seen = new Set()) {
   const kind = forceKind(type),
-    open = !p.destroyed && p.type.bool('Planet_Surface_Accessible', true);
-  if (seen.has(type) || (!open && ['skip', 'ground structure'].includes(kind)) || (p.destroyed && kind === 'station')) return undefined;
+    open = surfaceReachable(p);
+  if (seen.has(type) || (!open && ['skip', 'ground structure'].includes(kind))) return undefined;
   seen.add(type);
   let record;
   if (kind === 'station') {

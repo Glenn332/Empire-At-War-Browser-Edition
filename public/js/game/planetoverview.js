@@ -14,12 +14,13 @@ import { orders } from './galacticnet.js';
 import { canSell, sellPrice } from './galacticsell.js';
 import { allied } from './humanroute.js';
 import { Pointers } from './pointers.js';
+import { surfaceReachable } from './galacticpolitics.js';
 
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
 export function overviewContents(g, p) {
   const v = p && intelligence(g, p),
-    open = !!p && p.type.bool('Planet_Surface_Accessible', true),
+    open = !!p && surfaceReachable(p),
     viewer = g.visibility?.viewer;
   const ground = open && v?.groundCount ? p.garrison.filter(u => allied(u.owner, p.owner)).map(u => (unitVisible(g, u, viewer, p, { ground: true }) ? u : null)) : [];
   const structures = open && v?.groundLevel ? p.groundStructures.map(u => (unitVisible(g, u, viewer, p, { ground: true, structure: true }) ? u : null)) : [];

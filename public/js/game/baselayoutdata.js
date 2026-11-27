@@ -1,6 +1,7 @@
 import { db } from '../gamedata.js';
 import { carriedCompany, canLand, planetAllowsCompany, landedOnSurface } from './invasion.js';
 import { intelligence } from './galacticfog.js';
+import { surfaceReachable } from './galacticpolitics.js';
 
 const normalized = s => s.toUpperCase().replace(/[_\s]+/g, ' ');
 const compatible = (m, t) => m.type.list('Marker_For_Specific_Object_Type').some(n => n.toUpperCase() === t.name.toUpperCase());
@@ -25,7 +26,7 @@ export function layoutMarkerGroups(markers) {
 }
 
 export const canViewBaseLayout = (g, p, viewer) =>
-  !!p && !p.destroyed && p.type.bool('Planet_Surface_Accessible', true) && (p.owner === viewer || !!intelligence(g, p)?.groundContents);
+  !!p && surfaceReachable(p) && (p.owner === viewer || !!intelligence(g, p)?.groundContents);
 
 export function assignBaseLayout(p, markers, persist = false) {
   const groups = layoutMarkerGroups(markers);

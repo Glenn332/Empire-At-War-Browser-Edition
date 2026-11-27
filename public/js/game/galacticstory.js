@@ -3,7 +3,7 @@ import { pool as slicePool } from './galacticslicer.js';
 import { db, typeHasProperty } from '../gamedata.js';
 import { diplomacy, setRelation } from './galacticrelation.js';
 import { activeLanguage } from '../language.js';
-import { changeController } from './galacticpolitics.js';
+import { changeController, surfaceReachable } from './galacticpolitics.js';
 import { planetFactionChange } from './galacticobliterate.js';
 import { StoryPlots } from './storyplots.js';
 import { StoryFlags } from './storyflags.js';
@@ -1415,8 +1415,7 @@ export class GalacticStoryHost extends StoryPlots {
         return (
           !!p &&
           forceKind(object.type) === 'company' &&
-          !p.destroyed &&
-          p.type.bool('Planet_Surface_Accessible', true) &&
+          surfaceReachable(p) &&
           planetAllowsCompany(p, object.type) &&
           p.garrison.length < db.constants.num('Max_Ground_Forces_On_Planet', 10)
         );
