@@ -969,13 +969,8 @@ impl Server {
 #[cfg(target_os = "linux")]
 fn prepare_linux_webview() {
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
-    if std::env::var_os(SETTING).is_none() {
-        // The DMABUF renderer stalls the whole compositor while the page scrolls over the WebGL
-        // background on several driver combinations (NVIDIA's own driver, and AMD/Intel system
-        // builds alike - the app then freezes mid-scroll with hover dead but clicks going
-        // through). It is turned off for every Linux GPU unless the player chose a setting of
-        // their own (setting the variable to 0 forces it back on). still one thread: nothing
-        // else reads the environment yet
+    if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
+        // still one thread: nothing else reads the environment yet
         unsafe { std::env::set_var(SETTING, "1") };
     }
     use std::io::Read;
