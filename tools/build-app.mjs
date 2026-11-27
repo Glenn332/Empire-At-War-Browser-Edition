@@ -51,5 +51,16 @@ if (!process.argv.includes('--stage')) {
     env.GSTREAMER_PLUGINS_DIR = libdir;
     env.GSTREAMER_HELPERS_DIR = helpers;
   }
-  run('npx', ['tauri', 'build', ...tauriArgs], { stdio: 'inherit', encoding: undefined, env });
+  // Linux bundles the AppImage only: the .deb and the updater copy of the AppImage each repeat
+  // the whole bundling work for an artifact a developer build never uses. Pass --bundles through
+  // (npm run app -- -- --bundles appimage deb) when both are wanted.
+  const extra = [];
+  const wantsBundles = a => /^(--bundles|-b)/.test(a);
+  if (process.platform === 'linux' && !tauriArgs.some(wantsBundles)) extra.push('--bundles', 'appimage');
+  // --no-sign builds without the updater's private key: without it tauri fails the whole build
+  // after every bundle is finished, because createUpdaterArtifacts asks for TAURI_SIGNING_PRIVATE_KEY.
+  const wantsConfig = a => /^(--config|-c)/.test(a);
+  if (process.argv.includes('--no-sign') && !process.argv.slice(2).some(wantsConfig) && !tauriArgs.some(wantsConfig))
+    extra.push('--config', JSON.stringify({ bundle: { createUpdaterArtifacts: false } }));
+  run('npx', ['tauri', 'build', ...extra, ...tauriArgs], { stdio: 'inherit', encoding: undefined, env });
 }

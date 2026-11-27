@@ -1,7 +1,9 @@
 //! CPU, memory, GPU and I/O use of the app's own processes: this executable and the WebView2 processes it
 //! started (browser, GPU, renderer, utility). Read-only queries that need no elevation; the benchmark overlay
 //! and the bug report ask about once a second, and every figure is a rate over the time since the last ask.
+#[cfg(any(windows, test))]
 use std::collections::HashMap;
+#[cfg(any(windows, test))]
 use std::time::Duration;
 
 /// Asked again sooner than this, the last answer is given: a rate over a few milliseconds is noise.
@@ -13,6 +15,9 @@ const STALE: Duration = Duration::from_secs(5);
 #[cfg(windows)]
 const FIRST_INTERVAL: Duration = Duration::from_millis(250);
 
+// The rest of this module is Windows-counter parsing: the Linux host answers "unsupported" and
+// only the unit tests exercise the pure helpers, so it is compiled out of Linux release builds.
+#[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Proc {
     pub pid: u32,
@@ -22,6 +27,7 @@ pub struct Proc {
 /// The root and everything it started, directly or not. Windows reuses process ids and never clears the
 /// parent id of an orphan, so a "child" created before its parent is somebody else's process: `created`
 /// (any monotonic stamp, None when unknown) drops those and what hangs below them.
+#[cfg(any(windows, test))]
 pub fn tree(root: u32, procs: &[Proc], created: impl Fn(u32) -> Option<u64>) -> Vec<u32> {
     let mut out = vec![root];
     let mut i = 0;
@@ -45,6 +51,7 @@ pub fn tree(root: u32, procs: &[Proc], created: impl Fn(u32) -> Option<u64>) -> 
 
 /// Share of the whole machine (all logical processors) that `after - before` of CPU time, counted in
 /// 100 ns units as Windows does, is over `elapsed`: what Task Manager's CPU column shows.
+#[cfg(any(windows, test))]
 pub fn cpu_percent(before: u64, after: u64, elapsed: Duration, processors: u32) -> f64 {
     let wall = elapsed.as_secs_f64() * processors.max(1) as f64;
     if wall <= 0.0 {
@@ -55,6 +62,7 @@ pub fn cpu_percent(before: u64, after: u64, elapsed: Duration, processors: u32) 
 }
 
 /// A counter that only grows, as a rate per second.
+#[cfg(any(windows, test))]
 pub fn per_second(before: u64, after: u64, elapsed: Duration) -> f64 {
     let secs = elapsed.as_secs_f64();
     if secs <= 0.0 {
@@ -65,6 +73,7 @@ pub fn per_second(before: u64, after: u64, elapsed: Duration) -> f64 {
 
 /// "pid_4242_luid_0x00000000_0x0000D4B5_phys_0_eng_3_engtype_VideoDecode" is process 4242 on a video
 /// decode engine; the "GPU Process Memory" instances stop after "phys_0" and have no engine.
+#[cfg(any(windows, test))]
 pub fn gpu_instance(name: &str) -> Option<(u32, Option<&str>)> {
     let rest = name.strip_prefix("pid_")?;
     let digits = rest
@@ -75,6 +84,7 @@ pub fn gpu_instance(name: &str) -> Option<(u32, Option<&str>)> {
     Some((pid, engine))
 }
 
+#[cfg(any(windows, test))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuUse {
     pub percent: f64,
@@ -83,6 +93,7 @@ pub struct GpuUse {
 
 /// GPU use per process from the "GPU Engine" counter instances: an engine type's nodes add up, and a
 /// process (like the total over `pids`) is as busy as its busiest engine type, as in Task Manager.
+#[cfg(any(windows, test))]
 pub fn gpu_use(items: &[(String, f64)], pids: &[u32]) -> (HashMap<u32, GpuUse>, Option<GpuUse>) {
     let mut each: HashMap<u32, HashMap<&str, f64>> = HashMap::new();
     let mut all: HashMap<&str, f64> = HashMap::new();
@@ -113,6 +124,7 @@ pub fn gpu_use(items: &[(String, f64)], pids: &[u32]) -> (HashMap<u32, GpuUse>, 
 }
 
 /// Bytes per process from the "GPU Process Memory" counter instances (one per adapter a process uses).
+#[cfg(any(windows, test))]
 pub fn gpu_memory(items: &[(String, f64)], pids: &[u32]) -> HashMap<u32, f64> {
     let mut out = HashMap::new();
     for (name, value) in items {
@@ -126,6 +138,7 @@ pub fn gpu_memory(items: &[(String, f64)], pids: &[u32]) -> HashMap<u32, f64> {
 }
 
 /// What a process of the app is for: WebView2 (Chromium) says so on each child's command line.
+#[cfg(any(windows, test))]
 pub fn process_kind(exe: &str, command_line: &str, root: bool) -> String {
     if root {
         return "app".into();
