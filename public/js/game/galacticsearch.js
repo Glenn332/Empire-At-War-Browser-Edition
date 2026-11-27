@@ -7,12 +7,14 @@ import * as THREE from 'three';
 import { connectionOwner } from './galacticfog.js';
 import { capturePlanet } from './planetinfo.js';
 import { portraitBounds } from './planetportrait.js';
+import { FleetWatch } from './galacticwitness.js';
 
 // Planet search and the location log of the galactic HUD. Both are views for the local player only: nothing here
 // is part of the simulated state, so it never goes through the lockstep. Selection and camera use the same
 // per-player view path as clicking a planet.
 
 export const LOCATION_LIMIT = 200;
+const REPEAT_SECONDS = 5;
 
 const fold = s =>
   String(s ?? '')
@@ -140,6 +142,9 @@ export function recordLocation(galaxy, planet, text) {
   if (!galaxy || !Number.isInteger(planet) || !galaxy.planets?.[planet] || !text) return null;
   const list = (logState(galaxy).locations ||= []),
     entry = { time: Math.round(galaxy.time || 0), cycle: cycleNumber(galaxy), planet, text: String(text) };
+  // the same news about the same planet a moment later (two sources saw it) is kept once
+  for (let i = list.length - 1; i >= 0 && entry.time - list[i].time <= REPEAT_SECONDS; i--)
+    if (list[i].planet === planet && list[i].text === entry.text) return null;
   list.push(entry);
   if (list.length > LOCATION_LIMIT) list.splice(0, list.length - LOCATION_LIMIT);
   return entry;
@@ -185,6 +190,7 @@ const CSS = `
 export class GalacticSearch {
   constructor(game, parent = document.body) {
     this.game = game;
+    this.watch = new FleetWatch();
     this.results = [];
     this.active = -1;
     const root = (this.root = document.createElement('div'));
@@ -345,6 +351,13 @@ export class GalacticSearch {
   }
 
   update() {
+    const g = this.game.galaxy;
+    if (g && !this.game.over) {
+      let added = false;
+      for (const [planet, text] of this.watch.step(g, this.game.localFaction ?? this.game.me))
+        if (recordLocation(g, planet, text)) added = true;
+      if (added) this.refresh();
+    }
     if (this.opened && this.blocked) this.close();
   }
 

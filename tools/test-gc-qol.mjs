@@ -16,6 +16,8 @@ const { PendingBattle } = await import('../public/js/game/galacticpending.js');
 const { GalacticLog } = await import('../public/js/game/galacticlog.js');
 const { galaxyHash } = await import('../public/js/game/galacticnet.js');
 const { campaignDefaults, applyGroundAutoResolve } = await import('../public/js/game/campaignsettings.js');
+const { witnessed, FleetWatch, approachText } = await import('../public/js/game/galacticwitness.js');
+const { relation } = await import('../public/js/game/galacticrelation.js');
 const { searchPlanets, recordLocation, locationRows, locationEntries, LOCATION_LIMIT } = await import(
   '../public/js/game/galacticsearch.js'
 );
@@ -102,6 +104,7 @@ const logGame = () => {
 };
 {
   const { game, galaxy, shown, log } = logGame();
+  galaxy.visibility = { planets: galaxy.planets.map(() => ({ discovered: true, ownerKnown: true, mask: 0 })) };
   galaxy.time = 130;
   const before = galaxyHash({ galaxy });
   galaxy.time = 65;
@@ -245,4 +248,66 @@ for (const net of [false, true]) {
     assert.ok(!outcomes.includes('resolve'));
   }
 }
+// ---- recent events only hold what the local player could see ----
+{
+  const { game, galaxy, log } = logGame();
+  const me = game.me,
+    mine = galaxy.planets.find(p => !p.background && p.owner === me),
+    far = galaxy.planets.find(p => !p.background && p.owner && p.owner !== me);
+  galaxy.visibility = { planets: galaxy.planets.map(() => ({ discovered: true, ownerKnown: false, mask: 0 })) };
+  assert.equal(witnessed(galaxy, mine, me), true, 'your own planet is always in sight');
+  assert.equal(witnessed(galaxy, far, me), false, 'a planet in the fog is not');
+  log.message('Taken in the fog', { planet: far.index });
+  assert.equal(locationEntries(galaxy).length, 0, 'a capture nobody saw is not in recent events');
+  galaxy.visibility.planets[far.index].ownerKnown = true;
+  log.message('Taken in sight', { planet: far.index });
+  assert.deepEqual(locationEntries(galaxy).map(e => e.text), ['Taken in sight'], 'one in sight is');
+  galaxy.time = (galaxy.time || 0) + 2;
+  log.message('Taken in sight', { planet: far.index });
+  assert.equal(locationEntries(galaxy).length, 1, 'the same news a moment later is kept once');
+  galaxy.time += 10;
+  log.message('Taken in sight', { planet: far.index });
+  assert.equal(locationEntries(galaxy).length, 2, 'but not forever');
+}
+
+// ---- fleets the local player sees move ----
+{
+  const galaxy = startingGalaxy(data, campaign),
+    me = galaxy.players[0].faction,
+    foe = galaxy.players.map(p => p.faction).find(f => relation(f, me) === 1),
+    units = galaxy.fleets.find(f => f.units.length)?.units.slice(0, 1) || [];
+  assert.ok(foe && units.length, 'an enemy and some ships to move');
+  const mine = galaxy.planets.find(p => !p.background && p.owner === me),
+    other = galaxy.planets.find(p => !p.background && p.owner !== me);
+  galaxy.visibility = { planets: galaxy.planets.map(() => ({ discovered: true, ownerKnown: true, mask: 0, fleetOverlay: true })) };
+  const fleet = { owner: foe, planet: other.index, leg: null, units, pos: other.pos.slice() };
+  galaxy.fleets = [fleet];
+  const watch = new FleetWatch();
+  assert.deepEqual(watch.step(galaxy, me), [], 'the first look is not news');
+  fleet.leg = { a: other.index, b: mine.index, from: other.pos, to: mine.pos, dir: [1, 0, 0], speed: 1, t: 0 };
+  const left = watch.step(galaxy, me);
+  assert.ok(left.some(([p, text]) => p === other.index && /fleet left/.test(text)), 'a fleet leaving a planet in sight');
+  assert.ok(
+    left.some(([p, text]) => p === mine.index && text === approachText(mine)),
+    'an enemy fleet heading for your planet, with no fleet of yours there'
+  );
+  assert.deepEqual(watch.step(galaxy, me), [], 'the same course is reported once');
+  fleet.leg = null;
+  fleet.planet = mine.index;
+  assert.deepEqual(
+    watch.step(galaxy, me).map(([p, text]) => [p, /fleet arrived/.test(text)]),
+    [[mine.index, true]],
+    'its arrival in sight'
+  );
+  galaxy.visibility.planets.forEach(v => (v.fleetOverlay = false));
+  fleet.leg = { a: mine.index, b: other.index, from: mine.pos, to: other.pos, dir: [1, 0, 0], speed: 1, t: 0 };
+  fleet.planet = mine.index;
+  assert.ok(!watch.step(galaxy, me).some(([, text]) => /fleet left/.test(text)), 'fleets the map does not show are not reported');
+  const own = { owner: me, planet: mine.index, leg: null, units, pos: mine.pos.slice() };
+  galaxy.fleets.push(own);
+  watch.step(galaxy, me);
+  own.leg = { a: mine.index, b: other.index, from: mine.pos, to: other.pos, dir: [1, 0, 0], speed: 1, t: 0 };
+  assert.deepEqual(watch.step(galaxy, me), [], 'your own fleets are not news');
+}
+
 console.log('gc qol ok');
