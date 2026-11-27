@@ -1256,6 +1256,7 @@ export class Unit {
     this.setupAnimation();
     this.showModel();
     this.syncObj();
+    this.instList = undefined;
     return true;
   }
 

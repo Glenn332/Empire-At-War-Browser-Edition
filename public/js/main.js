@@ -438,6 +438,7 @@ class Game {
           if (h && !this.setup.net) h.budgetMs = 4;
         })
         .catch(e => console.warn('scripts', e));
+    world.lateArt = unit => this.lateArt(unit);
     world.artReady = type => {
       if (this.lock) return true;
       const st = this.artState.get(type);
@@ -1019,6 +1020,24 @@ class Game {
     this.bring(type, true);
     if (this.lock) (this.artHolds ||= new Set()).add(type);
     return this.artState.get(type);
+  }
+
+  // A unit made before its art was loaded (a spawn from a script callback that cannot wait) takes its models once they
+  // are in. In lockstep that happens at the start of the next step: the battle does not step while the art loads.
+  lateArt(unit) {
+    const pending = this.artFor(unit.type);
+    if (!pending) return;
+    (this.lateUnits ||= new Set()).add(unit);
+    if (!this.lock) pending.then(() => this.giveLateModels());
+  }
+
+  giveLateModels() {
+    if (!this.lateUnits?.size) return;
+    for (const unit of this.lateUnits) {
+      if (!unit.dead && this.artState.get(unit.type) !== 'here') continue;
+      this.lateUnits.delete(unit);
+      unit.takeLateModel();
+    }
   }
 
   artHeld() {
@@ -2194,6 +2213,7 @@ class Game {
           this.owed = 0;
           break;
         }
+        this.giveLateModels();
         w.updateBegin(TICK);
         this.midStep = true;
       }
