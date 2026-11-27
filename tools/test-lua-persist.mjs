@@ -114,3 +114,18 @@ assert.equal(call(B, envB, 'Bump'), call(A, env, 'Bump'));
 assert.equal(B.vm.resume(t4).value, A.vm.resume(t3).value);
 assert.equal(call(B, envB, 'Bump'), call(A, env, 'Bump'), 'the closure sees what the coroutine did to the shared local');
 console.log('ok', data.nodes.length, 'nodes', JSON.stringify(data).length, 'bytes');
+
+// A value the save cannot name is stored as nil and listed, and the rest of the state still saves.
+const C = machine();
+const envC = C.vm.environment({});
+C.vm.set(envC, 'Unnamed', () => 1);
+C.vm.set(envC, 'Foreign', { __wrap: true, __name: 'Foreign' });
+assert.equal(C.vm.run('Holder = { keep = 3, fn = Unnamed, obj = Foreign }; Holder[Foreign] = 4', 'lossy', envC), null);
+const lossy = C.persist.begin();
+const lossyEnv = lossy.enc(C.persist.refValue(envC));
+const lossyData = JSON.parse(JSON.stringify(lossy.end()));
+assert.equal(lossyData.dropped.length, 5, 'each value with no saved form is listed');
+const D = machine();
+const envD = D.persist.newRef(D.persist.restore(lossyData).value(lossyEnv));
+assert.equal(D.vm.run("local n = 0 for _ in pairs(Holder) do n = n + 1 end assert(Holder.keep == 3 and n == 1)", 'lossy', envD), null);
+console.log('lossy save ok');

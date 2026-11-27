@@ -180,7 +180,13 @@ export class GalacticStoryHost extends StoryPlots {
     game.galaxy.storyFlagSnapshot = () => this.flags.snapshot();
     game.galaxy.storyLuaSnapshot = () => {
       try {
-        return saveStory(this);
+        const saved = saveStory(this);
+        if (saved.lua.dropped) {
+          const note = saved.lua.dropped.length + ' value(s) saved as nil: ' + saved.lua.dropped.slice(0, 3).join('; ');
+          console.warn('Story save: ' + note);
+          this.errors.set('Story save', note);
+        }
+        return saved;
       } catch (error) {
         console.warn('The story could not be saved: ' + error.message);
         this.saveError = error.message;

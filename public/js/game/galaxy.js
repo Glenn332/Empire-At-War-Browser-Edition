@@ -354,7 +354,7 @@ export function snapshotGalaxy(g) {
     fiscal: g.fiscal ? { ...g.fiscal } : null,
     ai: g.aiSnapshot?.() ?? g.aiSaved ?? null,
     story: g.storySnapshot?.() ?? g.storySaved ?? null,
-    storyLua: g.storyLuaSnapshot?.() ?? g.storyLuaSaved ?? null,
+    storyLua: g.storyLuaReady ?? g.storyLuaSnapshot?.() ?? g.storyLuaSaved ?? null,
     scriptUI: g.scriptUISnapshot?.() ?? g.scriptUISaved ?? null,
     screenText: g.screenTextSnapshot?.() ?? g.screenTextSaved ?? null,
     hostState: g.hostSnapshot?.() ?? g.hostSaved ?? null,

@@ -125,6 +125,8 @@ const SILENT = new Proxy(function () {}, {
 });
 const DEG = Math.PI / 180;
 const PLANET_TEXTURE_CAP = 1024;
+const STORY_SAVE_WAIT_SECONDS = 5;
+const STORY_SAVE_RETRY_SECONDS = 0.25;
 const _pickRay = new THREE.Raycaster(),
   _pickAt = new THREE.Vector2(),
   _pickC = new THREE.Vector3(),
@@ -3999,6 +4001,7 @@ export class GalacticGame {
     b.t += real;
     this.fadeEl.style.opacity = Math.max(0, Math.min(1, (b.t - b.zoom) / b.fade));
     if (b.t >= b.zoom + b.fade && !b.gone) {
+      if (!b.linked && !this.mpBattles && !this.storySavedForBattle(b, real)) return false;
       b.gone = true;
       if (b.linked) {
         launchLinkedMission(this, b.linked).catch(error => {
@@ -4011,9 +4014,28 @@ export class GalacticGame {
         this.mpBattles.launch(b);
         return !!b.frame;
       }
-      stageStart(this.battleSetup());
+      this.galaxy.storyLuaReady = b.storySave;
+      try {
+        stageStart(this.battleSetup());
+      } finally {
+        this.galaxy.storyLuaReady = null;
+        b.storySave = null;
+      }
     }
     return false;
+  }
+
+  // The galaxy comes back from a battle out of its snapshot, and story scripts that could not be saved stay stopped
+  // for the rest of the campaign. A save can fail for a moment (a script mid-call), so the battle waits for one
+  // that works, for a few seconds at most, while the scripts keep running.
+  storySavedForBattle(b, real) {
+    if (!this.galaxy.storyLuaSnapshot || !this.story?.persist) return true;
+    b.storyWait = (b.storyWait || 0) + real;
+    if (b.storyWait < (b.storyRetryAt || 0)) return false;
+    b.storySave = this.galaxy.storyLuaSnapshot();
+    if (b.storySave) return true;
+    b.storyRetryAt = b.storyWait + STORY_SAVE_RETRY_SECONDS;
+    return b.storyWait >= STORY_SAVE_WAIT_SECONDS;
   }
 
   playStoryMovie(name, done) {

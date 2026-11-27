@@ -284,6 +284,14 @@ class Session {
     this.protoIds = new Map();
     this.protoKeys = new Map();
     this.tplIds = new Map();
+    this.dropped = [];
+  }
+
+  // A value with no saved form (a game object or function the save cannot name) is stored as nil and listed,
+  // so one such value costs that value instead of stopping every story script after a battle.
+  dropValue(message) {
+    this.dropped.push(message);
+    return null;
   }
 
   id(obj, kind) {
@@ -324,7 +332,11 @@ class Session {
         return { r: this.id(v, tv.type) };
       }
       case T.LCF:
-        return this.fn(v);
+        try {
+          return this.fn(v);
+        } catch (error) {
+          return this.dropValue(error.message);
+        }
       case T.LIGHT: {
         if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return { l: [typeof v, v] };
         if (v === null || v === undefined) return { l: ['undefined'] };
@@ -332,7 +344,7 @@ class Session {
         if (perm !== undefined) return { p: perm };
         const d = p.hooks.describe(v);
         if (d === undefined)
-          throw new Error(
+          return this.dropValue(
             'a Lua value holds an object of the engine that cannot be saved (' +
               (v.__name || v.constructor?.name || typeof v) +
               ') at ' +
@@ -341,7 +353,7 @@ class Session {
         return { h: d };
       }
       default:
-        throw new Error('cannot save a Lua value of type ' + tv.type + ' at ' + this.where());
+        return this.dropValue('cannot save a Lua value of type ' + tv.type + ' at ' + this.where());
     }
   }
 
@@ -388,7 +400,7 @@ class Session {
           const perm = p.perms.get(v);
           if (perm !== undefined) return { pw: perm };
           const d = p.hooks.describe(v);
-          if (d === undefined) throw new Error('a story value is an object of the engine that cannot be saved: ' + (v.__name || '?'));
+          if (d === undefined) return this.dropStoryValue('a story value is a game object that cannot be saved: ' + (v.__name || '?'));
           return { w: d };
         }
         if (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null) {
@@ -396,11 +408,16 @@ class Session {
           for (const k of Object.keys(v)) o[k] = this.js(v[k]);
           return { o };
         }
-        throw new Error('a story value cannot be saved: ' + (v.constructor?.name || 'object'));
+        return this.dropStoryValue('a story value cannot be saved: ' + (v.constructor?.name || 'object'));
       }
       default:
-        throw new Error('a story value cannot be saved: a ' + typeof v);
+        return this.dropStoryValue('a story value cannot be saved: a ' + typeof v);
     }
+  }
+
+  dropStoryValue(message) {
+    this.dropValue(message);
+    return { u: 1 };
   }
 
   cell(tv) {
@@ -412,7 +429,7 @@ class Session {
       const [id, obj, kind] = this.todo.pop();
       this.nodes[id] = this.node(obj, kind);
     }
-    return { nodes: this.nodes };
+    return { nodes: this.nodes, ...(this.dropped.length ? { dropped: this.dropped } : {}) };
   }
 
   node(obj, kind) {
@@ -437,7 +454,8 @@ class Session {
             continue;
           }
           this.trail.push(kname ?? '#' + n);
-          e.push([this.enc(en.key), this.enc(en.value)]);
+          const entryKey = this.enc(en.key);
+          if (entryKey !== null) e.push([entryKey, this.enc(en.value)]);
           this.trail.pop();
           n++;
         }
