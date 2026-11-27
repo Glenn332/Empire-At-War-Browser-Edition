@@ -56,9 +56,16 @@ export function fitShadowToView(view, light, cx, cy, z0, cap, { margin = 0.06, l
     y0 = m - least / 2;
     y1 = m + least / 2;
   }
-  light.left = x0;
-  light.right = x1;
-  light.bottom = y0;
-  light.top = y1;
+  // Quantize the light-space window to whole depth texels. Sub-texel camera motion otherwise
+  // makes an otherwise stable shadow edge crawl even when the depth map is reused.
+  const texels = Math.max(1, light.userData.shadowTexels || 1024),
+    sx = texels / Math.max(1e-6, x1 - x0),
+    sy = texels / Math.max(1e-6, y1 - y0),
+    ox = Math.round(x0 * sx) / sx - x0,
+    oy = Math.round(y0 * sy) / sy - y0;
+  light.left = x0 + ox;
+  light.right = x1 + ox;
+  light.bottom = y0 + oy;
+  light.top = y1 + oy;
   light.updateProjectionMatrix();
 }

@@ -3251,7 +3251,7 @@ export class LandGame {
       return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
     }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); warm-up and the benchmark are uncapped
-    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active) : frameCap));
+    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active, (this.menus?.stack.length || 0) > 1) : frameCap));
     if (!this.warming && gate.skip(now)) return;
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
@@ -4092,12 +4092,12 @@ export class LandGame {
       P.resize(innerWidth, innerHeight);
       P.pr = R.getPixelRatio();
     }
-    P.bloom = !!gfx.bloom;
+    P.bloom = !!gfx.bloom && !this.setup.attract;
     return P;
   }
 
   castShadows() {
-    this.castOn = !!gfx.shadows;
+    this.castOn = !!gfx.shadows && !this.setup.attract;
     if (this.ratioWas !== pixelRatio()) this.fit();
     if (this.cast && this.cast.size !== shadowSize()) {
       this.cast.target.depthTexture.dispose();

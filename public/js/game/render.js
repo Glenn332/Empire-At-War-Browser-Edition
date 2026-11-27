@@ -14,7 +14,7 @@ import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { Instances, mulInto } from './instances.js';
 import { fitShadowToView } from './shadowfit.js';
 import { shadowCacheKey, shadowRedrawDue } from './shadowcache.js';
-import { projectedRadius, visualDetail, importantShadowCaster, effectBudget } from './performance.js';
+import { projectedRadius, visualDetail, importantShadowCaster, effectBudget, retainNearest, selectionTransformKey } from './performance.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
@@ -931,6 +931,7 @@ export class Renderer {
       target.depthTexture.magFilter = target.depthTexture.minFilter = THREE.LinearFilter;
       target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 2);
+      camera.userData.shadowTexels = size;
       const scene = new THREE.Scene();
       scene.matrixWorldAutoUpdate = false;
       sh = this.shadows = {
@@ -963,20 +964,21 @@ export class Renderer {
     cam.updateMatrixWorld();
     fitShadowToView(this.camera, cam, rig.x, rig.y, 0, half);
     if (world) this.coverShadowedUnits(world, cam, rig.x, rig.y, half);
-    lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     const key = world ? shadowCacheKey(cam, world.units, unit => this.castsShadowInView(unit), this.scene) : null,
       now = performance.now();
     if (sh.key === key && sh.renderer === r) {
       sh.reused = (sh.reused || 0) + 1;
       return;
     }
-    // WASD changes the lookup matrix above every frame, but must not force a full shadow render.
-    // A changed caster set is structural; moving ships and the camera wait for the 15 Hz slot.
-    const casterSetChanged = sh.casterCount !== key.slice(0, key.indexOf(':'));
-    if (sh.renderer === r && !shadowRedrawDue(now, sh.at, casterSetChanged)) {
+    // WASD changes the lookup matrix and caster set every frame. Neither may bypass the
+    // dynamic shadow budget: a full extra shadow pass per camera frame stalls integrated GPUs.
+    if (sh.renderer === r && !shadowRedrawDue(now, sh.at)) {
+      // The depth texture and its lookup matrix are one immutable pair. Sampling an old map
+      // through the new camera transform is what made shadows swim/flicker during WASD.
       sh.reused = (sh.reused || 0) + 1;
       return;
     }
+    lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     sh.key = key;
     sh.cameraKey = key.slice(0, key.lastIndexOf(':'));
     sh.casterCount = key.slice(0, key.indexOf(':'));
@@ -1041,6 +1043,9 @@ export class Renderer {
   updateSelection(selection, me) {
     const r = this.rings;
     if (!r) return;
+    const key = selectionTransformKey(selection, me);
+    if (key === this.selectionKey) return;
+    this.selectionKey = key;
     r.begin();
     for (const s of selection) {
       if (s.dead || s.isPad) continue;
@@ -1107,8 +1112,10 @@ export class Renderer {
   }
 
   spawnParticle(x, y, z, vx, vy, vz, size, grow, life, r, g, b, a = 1) {
-    if (this.particles.length > 5000) return;
-    this.particles.push({ x, y, z, vx, vy, vz, size, grow, life, age: 0, r, g, b, a });
+    const budget = this.effectBudget;
+    if (this.particles.length >= (budget?.simpleParticles || 5000)) return;
+    const scale = budget?.glowScale || 1;
+    this.particles.push({ x, y, z, vx, vy, vz, size: size * scale, grow: grow * scale, life, age: 0, r, g, b, a });
   }
 
   updateFog(world, dt) {
@@ -1989,14 +1996,7 @@ export class Renderer {
       for (const p of world.projectiles) {
         p.fxSeen = stamp;
         if (p.hidden || !_frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) continue;
-        p.fxDistance = cpos.distanceToSquared(_boltAt);
-        // Keep the nearest modelled shots without sorting the whole projectile list every frame.
-        if (shots.length < budget.shotModels) shots.push(p);
-        else {
-          let worst = 0;
-          for (let i = 1; i < shots.length; i++) if (shots[i].fxDistance > shots[worst].fxDistance) worst = i;
-          if (p.fxDistance < shots[worst].fxDistance) shots[worst] = p;
-        }
+        retainNearest(shots, p, cpos.distanceToSquared(_boltAt), budget.shotModels);
       }
       for (const p of shots) {
         const P = p.def;
@@ -2044,7 +2044,7 @@ export class Renderer {
           laser(p, inv);
         } else if (p.missile) {
           sp.add(p.x, p.y, p.z, 7 + p.width, p.r, p.g, p.b, 1.2);
-          if (Math.random() < dt * 40) this.spawnParticle(p.x, p.y, p.z, 0, 0, 0, 4, 6, 0.5, p.r * 0.6, p.g * 0.6, p.b * 0.6, 0.6);
+          if (Math.random() < dt * 40 * budget.trailRate) this.spawnParticle(p.x, p.y, p.z, 0, 0, 0, 4, 6, 0.5, p.r * 0.6, p.g * 0.6, p.b * 0.6, 0.6);
         } else laser(p, inv);
       }
       if (lit && cand.length) {
@@ -2142,7 +2142,7 @@ export class Renderer {
           for (const g of u.engineGlows) {
             if (g.hp && !g.hp.alive) continue;
             const l = g.local,
-              size = Math.max(6, u.visualRadius * 0.16) * g.size * thrust;
+              size = Math.max(6, u.visualRadius * 0.16) * g.size * thrust * budget.glowScale;
             const ly = l.y * cro + l.z * sro,
               lz = l.z * cro - l.y * sro;
             sp.add(u.x + c * l.x - s * ly, u.y + s * l.x + c * ly, u.z + lz, size, 0.45, 0.65, 1, 0.9);
@@ -2152,7 +2152,7 @@ export class Renderer {
         for (const hp of u.hardpoints) {
           if (this.smokeBudget <= 0) break;
           if (hp.alive || !hp.smoke) continue;
-          if (Math.random() < dt * 5) {
+          if (Math.random() < dt * 5 * budget.trailRate) {
             this.smokeBudget--;
             hp.worldPos(_w);
             this.spawnParticle(
@@ -2285,6 +2285,7 @@ export class Renderer {
       this.instances.gpu = r === this.gpu ? r : null;
       this.instances.renderer = r;
       this.instances.camera = cam;
+      this.instances.prepareUnits(world.units);
       this.instances.collect(world.units, cam, unit => this.castsShadowInView(unit));
       this.instances.hidden = this.instances.put.length;
       this.scene.matrixWorldAutoUpdate = false;

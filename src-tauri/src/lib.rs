@@ -765,11 +765,13 @@ impl Server {
                 }
                 let size = win.inner_size().ok();
                 let full = monitor.as_ref().map(|m| *m.size());
+                let is_full = win.is_fullscreen().unwrap_or(false);
                 return json(&serde_json::json!({
                     "w": size.map(|s| s.width), "h": size.map(|s| s.height),
                     "mw": full.map(|s| s.width), "mh": full.map(|s| s.height),
                     "fw": room.map(|r| r.1), "fh": room.map(|r| r.2),
-                    "max": win.is_maximized().unwrap_or(false)
+                    "max": win.is_maximized().unwrap_or(false),
+                    "full": is_full
                 }));
             }
             return json(&serde_json::json!({ "ok": false }));

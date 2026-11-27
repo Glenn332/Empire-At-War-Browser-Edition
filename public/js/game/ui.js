@@ -27,6 +27,7 @@ import { ChaseView } from './chaseview.js';
 import { TrackCam, TRACK_LOOK } from './trackcam.js';
 import { playerSpecial, specialTargets } from './superweapon.js';
 import { spaceBarWidth } from './healthbars.js';
+import { cinematicPresentation } from './performance.js';
 // game and mod text goes into markup escaped, so a unit name can't carry HTML
 const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -1620,10 +1621,18 @@ export class UI {
   }
 
   select(list, add) {
+    const previous = this.selection,
+      next = add ? this.selection.slice() : [],
+      seen = new Set(next),
+      fresh = [];
+    for (const s of list) {
+      if (seen.has(s)) continue;
+      seen.add(s);
+      next.push(s);
+      fresh.push(s);
+    }
+    if (!add && previous.length === next.length && previous.every((s, i) => s === next[i])) return;
     if (!add) for (const s of this.selection) s.selected = false;
-    const next = add ? this.selection.slice() : [];
-    const fresh = list.filter(s => !next.includes(s));
-    for (const s of list) if (!next.includes(s)) next.push(s);
     this.selection = next;
     for (const s of next) s.selected = true;
     this.game.tacticalStory?.selected?.(fresh);
@@ -1632,6 +1641,7 @@ export class UI {
       this.speak(t.str('SFXEvent_Select'));
     }
     this.selSig = '';
+    this.hudTimer = 0;
   }
 
   commandAt(x, y, attackMove, waypoint = false, fast = false) {
@@ -1765,6 +1775,13 @@ export class UI {
   }
 
   update(dt) {
+    // Cinematic cameras hide tactical controls. Do not pick hundreds of units or rebuild
+    // hidden command-bar content while the arrival shot is already GPU/CPU constrained.
+    if (cinematicPresentation(this.game)) {
+      this.hover = null;
+      this.r.updateSelection([], this.player);
+      return;
+    }
     const rig = this.r.rig,
       k = this.keys;
     this.updateWaypointBeacons();
@@ -1859,7 +1876,7 @@ export class UI {
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.15;
-      this.refreshHud();
+      this.refreshHud(false);
     } else if (this.bar) this.bar.refreshCredits();
   }
 
@@ -1912,7 +1929,7 @@ export class UI {
   }
 
   drawOverlay(g) {
-    if (this.game.endScreen) return;
+    if (this.game.endScreen || cinematicPresentation(this.game)) return;
     this.layoutDogfights();
     const p = {},
       me = this.player;
@@ -1922,6 +1939,9 @@ export class UI {
       grab = gb && gb.blank ? Math.max(16, Math.round(gb.blank.w * gb.scale * unit)) : 0;
     const grabHealth = gb && gb.health ? Math.max(10, Math.round(gb.health.w * gb.healthScale * unit)) : 0;
     this.overlayFrame = (this.overlayFrame || 0) + 1;
+    // A new batch of stamp generations is allowed each overlay frame; a selection change that
+    // needs hundreds of fresh stamps drains it over several smooth frames instead of one stall.
+    this.stampBudget = 24;
     this.logicFramesShown = this.logicFramesSince();
     const world = this.world,
       mirror = this.game.mirror,
@@ -2217,7 +2237,15 @@ export class UI {
         ? seen.stamp
         : null;
     if (own) {
-      if (!stamp) stamp = this.iconStamp(s._iconName, rect, color, size, mode, alpha, selected, pad, s);
+      // Generating a stamp costs a few canvases and atlas draws. A selection change flips every
+      // unit's stamp key (selected, hover, plain), so select-all or deselect would build hundreds
+      // of new stamps in one frame and stall it. iconStamp builds at most a bounded number per
+      // frame; while the rest wait, the icon is drawn straight onto the overlay as a plain box.
+      stamp = stamp || this.iconStamp(s._iconName, rect, color, size, mode, alpha, selected, pad, s, true);
+      if (!stamp) {
+        this.plainIcon(g, rect, color, size, mode, alpha, pad, ix, iy);
+        return true;
+      }
       g.drawImage(stamp, ix - pad, iy - pad, size + pad * 2, size + pad * 2);
     }
     const riders = this.world.flagshipRiders?.get(s),
@@ -2227,17 +2255,35 @@ export class UI {
         const name = (t._riderIcon ??= iconNameFor(t) || ''),
           r = name && iconCanvasRect(name);
         if (!r) return;
-        const stampR = this.iconStamp(name, r, color, size, mode, alpha, selected, pad, s);
-        g.drawImage(stampR, ix + (size + 4) * (i + first) - pad, iy - pad, size + pad * 2, size + pad * 2);
+        const stampR = this.iconStamp(name, r, color, size, mode, alpha, selected, pad, s, true);
+        if (stampR) g.drawImage(stampR, ix + (size + 4) * (i + first) - pad, iy - pad, size + pad * 2, size + pad * 2);
       });
     return true;
   }
 
-  iconStamp(name, rect, color, size, mode, alpha, selected, pad, s) {
+  plainIcon(g, rect, color, size, mode, alpha, pad, x, y) {
+    g.save();
+    g.globalAlpha = alpha;
+    g.fillStyle = 'rgba(4,10,20,0.55)';
+    g.fillRect(x, y, size, size);
+    const o = mode ? 1.5 : 0.5;
+    g.lineWidth = mode ? 3 : 1.75;
+    g.strokeStyle = mode === 2 ? '#ffd421' : color;
+    g.beginPath();
+    g.roundRect(x - o, y - o, size + o * 2, size + o * 2, 3.5);
+    g.stroke();
+    g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, x, y, size, size);
+    g.restore();
+  }
+
+  iconStamp(name, rect, color, size, mode, alpha, selected, pad, s, defer = false) {
     const key = name + '|' + color + '|' + size + '|' + mode + '|' + alpha;
     const stamps = this.iconStamps || (this.iconStamps = new Map());
     let stamp = stamps.get(key);
     if (!stamp) {
+      // At most this many new stamps are built per overlay frame; everything past the budget
+      // waits (the caller draws a plain icon instead) so a selection change spreads the burst.
+      if ((this.stampBudget = (this.stampBudget || 0) - 1) < 0) return null;
       const pr = Math.min(devicePixelRatio, 2),
         dim = size + pad * 2;
       stamp = document.createElement('canvas');
@@ -2295,9 +2341,16 @@ export class UI {
         c.roundRect(pad - 1.5, pad - 1.5, size + 3, size + 3, 4.5);
         c.stroke();
       }
-      if (stamps.size > 400) {
-        stamps.clear();
-        this.stampGen = (this.stampGen || 0) + 1;
+      // Evict the oldest stamps instead of clearing the cache: a clear throws away canvases that
+      // are still correct and bumps the generation, which invalidates every unit's stamp at once.
+      // A battle with more distinct icon keys than the cap (large mod fleets) would thrash the
+      // whole cache every frame and spend seconds rebuilding icons in the overlay.
+      if (stamps.size > 800) {
+        let evict = stamps.size >> 2;
+        for (const k of stamps.keys()) {
+          stamps.delete(k);
+          if (--evict <= 0) break;
+        }
       }
       stamps.set(key, stamp);
     }
@@ -2313,7 +2366,8 @@ export class UI {
     return stamp;
   }
 
-  refreshHud() {
+  refreshHud(force = true) {
+    if (force && this.bar) this.bar.stateKey = null;
     const p = this.player,
       w = this.world;
     $('credits').textContent = Math.floor(p.credits).toLocaleString();

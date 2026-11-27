@@ -16,7 +16,7 @@ import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
-import { gfx, storeGfx, pixelRatio, frameCap, menuFrameCap, FrameGate } from './gfx.js';
+import { gfx, storeGfx, pixelRatio, battleFrameCap, menuFrameCap, FrameGate } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
@@ -884,7 +884,7 @@ class Game {
         R.render(w, 0, null);
         await next();
       }
-      R.instances?.prepare(R.renderer, cam);
+      R.instances?.prepareUnits(w.units, R.renderer, cam);
       if (R.gpu) {
         await R.gpu.settle();
         R.render(w, 0, null);
@@ -2254,7 +2254,18 @@ class Game {
       return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
     }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); the benchmark measures uncapped
-    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active) : frameCap)).skip(now)) return;
+    // Presentation state changes while this gate lives: pausing and cinematics must not bake an old cap into it.
+    const gate = (this.frameGate ||= new FrameGate(() =>
+      battleFrameCap(
+        this.setup.benchmark,
+        this.setup.attract,
+        this.paused,
+        this.cine?.on || this.tacticalCinematics?.on || this.tacticalMovies?.active || this.movies?.active,
+        !!this.tacticalMovies?.active,
+        (this.menus?.stack.length || 0) > 1
+      )
+    ));
+    if (gate.skip(now)) return;
     diag.begin(now);
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     if (this.bench) this.bench.tick(now - this.last, now);
@@ -3111,11 +3122,11 @@ async function boot() {
   window.applyGraphics = renderer => {
     for (const [id, key] of Object.entries(GFX)) $('gfx' + id).checked = !!gfx[key];
     if (!renderer || !renderer.post) return;
-    renderer.shadowsOn = !!gfx.shadows;
-    renderer.post.bloom = !!gfx.bloom;
-    renderer.post.heat = !!gfx.heat;
-    renderer.post.flare = !!gfx.flare;
-    renderer.fxParticles.heatOn = !!gfx.heat;
+    renderer.shadowsOn = !!gfx.shadows && !window.game?.setup.attract;
+    renderer.post.bloom = !!gfx.bloom && !window.game?.setup.attract;
+    renderer.post.heat = !!gfx.heat && !window.game?.setup.attract;
+    renderer.post.flare = !!gfx.flare && !window.game?.setup.attract;
+    renderer.fxParticles.heatOn = !!gfx.heat && !window.game?.setup.attract;
     if (renderer.ratioWas !== pixelRatio()) {
       renderer.ratioWas = pixelRatio();
       if (renderer.ctx) renderer.resize();

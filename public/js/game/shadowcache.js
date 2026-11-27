@@ -34,8 +34,8 @@ export function shadowCacheKey(camera, units, castsShadow, scene) {
   return `${count}:${cameraHash}:${casterHash}`;
 }
 
-export function shadowRedrawDue(now, previous, casterSetChanged, intervalMs = 1000 / 15) {
-  return previous === undefined || casterSetChanged || now - previous >= intervalMs;
+export function shadowRedrawDue(now, previous, intervalMs = 1000 / 15) {
+  return previous === undefined || now - previous >= intervalMs - 1e-6;
 }
 
 const floats = new Float32Array(1),

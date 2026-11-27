@@ -1016,10 +1016,14 @@ export class Menus {
       scales = [1, 0.85, 0.75, 0.66, 0.5];
     let res = null,
       sized = null,
+      picked = null,
       filling = 0;
     const fill = async () => {
       const n = ++filling,
-        list = !fullscreen() ? await windowSizes() : null;
+        appSizes = await windowSizes();
+      // In the app the resolution list also works while fullscreen: a fullscreen window keeps
+      // its size and the game renders at the picked resolution, scaled up to fill the screen.
+      const list = appSizes && (!fullscreen() || appSizes.full) ? appSizes : null;
       if (n !== filling || !dlg.veil.isConnected) return;
       sized = list;
       res = sized
@@ -1027,9 +1031,13 @@ export class Menus {
             'IDC_RESOLUTION_LIST',
             sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
             row => {
-              if (fullscreen()) return;
+              if (fullscreen() && !sized?.full) return;
               const [w, h] = row.key.split('x').map(Number);
-              pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
+              picked = [w, h];
+              pickWindowSize(w, h).then(() => {
+                window.applyGraphics && window.applyGraphics(window.game && window.game.renderer);
+                fill();
+              });
             }
           )
         : dlg.list(
@@ -1046,7 +1054,8 @@ export class Menus {
               }
             }
           );
-      if (res && sized) res.select(sized.now[0] + 'x' + sized.now[1]);
+      const want = sized && picked && fullscreen() ? picked.join('x') : sized ? sized.now[0] + 'x' + sized.now[1] : null;
+      if (res && sized && want) res.select(want);
       else if (res) res.select(scales.reduce((best, k) => (Math.abs(k - gfx.scale) < Math.abs(best - gfx.scale) ? k : best), 1));
     };
     await fill();

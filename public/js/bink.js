@@ -105,14 +105,21 @@ export class BinkPlayer {
     }
     if (r.read !== want || want >= written) return false;
     if (r.drawn !== index) {
-      const image =
-        this.image && this.image.width === this.header.width && this.image.height === this.header.height
-          ? this.image
-          : (this.image = new ImageData(this.header.width, this.header.height));
-      const at = (want % SLOTS) * r.bytes;
-      image.data.set(r.view.subarray(at, at + r.bytes));
-      this.tint(image.data);
-      this.ctx.putImageData(image, 0, 0);
+      const at = (want % SLOTS) * r.bytes,
+        plain = this.alpha && this.color.every(c => c === 255);
+      if (plain) {
+        // ImageData views the shared pixels directly: no full-frame CPU copy or tint pass.
+        const image = new ImageData(new Uint8ClampedArray(r.pixels, at, r.bytes), this.header.width, this.header.height);
+        this.ctx.putImageData(image, 0, 0);
+      } else {
+        const image =
+          this.image && this.image.width === this.header.width && this.image.height === this.header.height
+            ? this.image
+            : (this.image = new ImageData(this.header.width, this.header.height));
+        image.data.set(r.view.subarray(at, at + r.bytes));
+        this.tint(image.data);
+        this.ctx.putImageData(image, 0, 0);
+      }
       r.drawn = index;
       this.frame = index;
       this.canvas.dataset.frame = String(index);

@@ -1,7 +1,11 @@
 use std::path::PathBuf;
+#[cfg(windows)]
 use std::sync::mpsc;
+#[cfg(windows)]
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(all(desktop, not(target_os = "linux")))]
+use tauri::Manager;
 
 #[cfg(windows)]
 fn read_stream(stream: &windows::Win32::System::Com::IStream) -> Option<Vec<u8>> {
@@ -65,7 +69,7 @@ pub fn screenshot(_app: &AppHandle) -> Option<Vec<u8>> {
     None
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "linux")))]
 fn downloads_folder() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
@@ -94,18 +98,21 @@ fn safe_file_name(name: &str) -> String {
     }
 }
 
-/// A phone has no save dialog: the report goes in the reports folder inside the app's own
-/// files, where the player copies the game to as well.
-#[cfg(mobile)]
+/// Phones and Linux use the app's reports folder. Linux's WebKitGTK process can crash while
+/// a native file chooser is opened over a live WebGL scene, so saving never opens that dialog.
+#[cfg(any(mobile, target_os = "linux"))]
 pub fn save(_app: &AppHandle, name: &str, bytes: &[u8]) -> Result<Option<PathBuf>, String> {
+    #[cfg(mobile)]
     let folder = crate::setup::player_folder().join("reports");
+    #[cfg(target_os = "linux")]
+    let folder = crate::setup::data_dir().join("reports");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let path = folder.join(safe_file_name(name));
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(Some(path))
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "linux")))]
 fn show_in_folder(path: &std::path::Path) {
     #[cfg(windows)]
     {
@@ -117,7 +124,7 @@ fn show_in_folder(path: &std::path::Path) {
     let _ = path;
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "linux")))]
 pub fn save(app: &AppHandle, name: &str, bytes: &[u8]) -> Result<Option<PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Save bug report")

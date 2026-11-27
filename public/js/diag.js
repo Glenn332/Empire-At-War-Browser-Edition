@@ -1,3 +1,5 @@
+import { inApp, appRequestBody } from './platform.js';
+
 const RING = 240;
 const KEEP = 200;
 
@@ -126,6 +128,15 @@ export class Diag {
     return a[n >> 1];
   }
 
+  frameStats() {
+    const n = this.filled;
+    if (!n) return { median: 0, p95: 0, p99: 0, worst: 0, low1: 0 };
+    const a = Array.from(this.recent.subarray(0, n)).sort((x, y) => x - y),
+      at = q => a[Math.min(n - 1, Math.floor((n - 1) * q))],
+      p99 = at(0.99);
+    return { median: at(0.5), p95: at(0.95), p99, worst: a[n - 1], low1: p99 > 0 ? 1000 / p99 : 0 };
+  }
+
   end() {
     this.gpuEnd();
     const work = performance.now() - this.frameStart >= 0 ? [...this.stages.values()].reduce((a, b) => a + b, 0) : 0;
@@ -233,6 +244,7 @@ export class Diag {
       seconds: +secs.toFixed(0),
       frames: this.frames,
       usualFrameMs: +this.median().toFixed(2),
+      frameStats: Object.fromEntries(Object.entries(this.frameStats()).map(([key, value]) => [key, +value.toFixed(2)])),
       averageStageMs: average,
       missedRefreshes: this.slow,
       hitches: this.hitches.length,
@@ -246,21 +258,82 @@ export class Diag {
     return out;
   }
 
+  async saveReport(extra = null) {
+    const name = `eaw-performance_${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+      report = this.report(true),
+      blob = new Blob([JSON.stringify(extra ? { ...extra, diagnostics: report } : report, null, 2)], { type: 'application/json' });
+    if (inApp()) {
+      try {
+        const response = await fetch('api/save-report?name=' + encodeURIComponent(name), {
+          method: 'POST',
+          headers: { 'X-SWR': '1' },
+          body: await appRequestBody(blob)
+        });
+        if (response.ok) {
+          const result = await response.json();
+          return { saved: true, where: result.path || null, name };
+        }
+      } catch {}
+    }
+    const url = URL.createObjectURL(blob),
+      link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return { saved: true, where: null, name };
+  }
+
   showPanel() {
+    if (this.panel) {
+      this.panel.parentElement.hidden = false;
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;right:8px;top:120px;z-index:9999;max-width:440px;background:rgba(0,0,0,.72);color:#9fe;font:11px/1.35 Consolas,monospace';
+    wrap.dataset.page = '';
+    const save = document.createElement('button');
+    save.textContent = 'Save report';
+    save.title = 'Save frame timings, stage metrics and hitch details as JSON';
+    save.style.cssText = 'margin:6px 8px 0;padding:3px 8px;background:#173b46;color:#cff;border:1px solid #578;cursor:pointer;font:11px Consolas,monospace;pointer-events:auto';
+    save.onclick = async () => {
+      save.disabled = true;
+      try {
+        const result = await this.saveReport();
+        save.textContent = result.where ? 'Saved to app reports' : 'Report downloaded';
+      } catch (error) {
+        save.textContent = 'Save failed';
+        console.error('[diagnostics]', error);
+      } finally {
+        setTimeout(() => {
+          save.textContent = 'Save report';
+          save.disabled = false;
+        }, 2500);
+      }
+    };
     const d = document.createElement('pre');
-    d.style.cssText =
-      'position:fixed;right:8px;top:120px;z-index:9999;margin:0;padding:6px 8px;background:rgba(0,0,0,.72);color:#9fe;font:11px/1.35 Consolas,monospace;pointer-events:none;max-width:420px;white-space:pre-wrap';
-    d.dataset.page = '';
-    document.body.appendChild(d);
+    d.style.cssText = 'margin:0;padding:6px 8px;pointer-events:none;max-width:420px;white-space:pre-wrap;font:11px/1.35 Consolas,monospace';
+    wrap.append(save, d);
+    document.body.appendChild(wrap);
     this.panel = d;
+    this.drawPanel();
     setInterval(() => this.drawPanel(), 1000);
   }
 
   drawPanel() {
-    const med = this.median(),
-      last = this.hitches.slice(-8);
+    const stats = this.frameStats(),
+      last = this.hitches.slice(-6),
+      stages = [...this.stages].sort((a, b) => b[1] - a[1]).slice(0, 7),
+      info = this.info?.render,
+      context = this.context() || {};
     this.panel.textContent =
-      `frame ${med.toFixed(1)} ms (${med ? Math.round(1000 / med) : 0} fps)   hitches ${this.hitches.length}\n` +
+      `frame ${stats.median.toFixed(1)} ms (${stats.median ? Math.round(1000 / stats.median) : 0} fps)   1% low ${stats.low1.toFixed(1)} fps\n` +
+      `p95 ${stats.p95.toFixed(1)} ms   p99 ${stats.p99.toFixed(1)} ms   worst ${stats.worst.toFixed(1)} ms\n` +
+      `${stages.map(([name, ms]) => `${name} ${ms.toFixed(1)}`).join('  ')}\n` +
+      `draws ${info?.calls ?? '?'}  tris ${info?.triangles ?? '?'}  units ${context.units ?? '?'}  shots ${context.shots ?? '?'}\n` +
+      `hitches ${this.hitches.length}\n` +
       last.map(h => `${String(h.at).padStart(6)}s ${String(h.ms).padStart(6)} ms  ${h.cause}`).join('\n');
   }
 }

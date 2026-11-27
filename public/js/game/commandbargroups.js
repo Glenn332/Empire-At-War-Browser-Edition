@@ -78,13 +78,17 @@ function slotsNeeded(panels) {
 }
 
 function collapseUntilFits(panels, capacity) {
-  while (slotsNeeded(panels) > capacity) {
-    let biggest = null;
-    for (const panel of panels)
-      for (const stack of panel.stacks)
-        if (!stack.collapsed && stack.units.length > 1 && (!biggest || stack.units.length > biggest.units.length)) biggest = stack;
-    if (!biggest) return;
-    biggest.collapsed = true;
+  let needed = slotsNeeded(panels);
+  if (needed <= capacity) return;
+  // Each collapse removes size - 1 slots. Sort once instead of rescanning every stack after
+  // every collapse when Ctrl+A selects many different unit types.
+  const stacks = [];
+  for (const panel of panels) for (const stack of panel.stacks) if (stack.units.length > 1) stacks.push(stack);
+  stacks.sort((a, b) => b.units.length - a.units.length);
+  for (const stack of stacks) {
+    if (needed <= capacity) break;
+    stack.collapsed = true;
+    needed -= stack.units.length - 1;
   }
 }
 
