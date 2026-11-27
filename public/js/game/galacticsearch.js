@@ -13,7 +13,6 @@ import { portraitBounds } from './planetportrait.js';
 // per-player view path as clicking a planet.
 
 export const LOCATION_LIMIT = 200;
-export const SEARCH_LIMIT = 8;
 
 const fold = s =>
   String(s ?? '')
@@ -24,15 +23,15 @@ const fold = s =>
 
 export const planetLabel = (game, p) => game.planetViews?.[p.index]?.name || db.t(p.type?.str('Text_ID')) || p.name || '';
 
-// planets whose displayed name contains the text, names that start with it first, then alphabetical
-export function searchPlanets(game, query, limit = SEARCH_LIMIT) {
+// planets whose displayed name contains the text, names that start with it first, then alphabetical; an empty
+// box lists every planet alphabetically
+export function searchPlanets(game, query, limit = Infinity) {
   const q = fold(query);
-  if (!q) return [];
   const out = [];
   for (const p of game.galaxy?.planets || []) {
     if (p.background || game.planetViews?.[p.index]?.show === false) continue;
     const name = planetLabel(game, p),
-      at = fold(name).indexOf(q);
+      at = q ? fold(name).indexOf(q) : 0;
     if (at >= 0) out.push({ index: p.index, name, rank: at === 0 ? 0 : 1 });
   }
   out.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
@@ -105,10 +104,32 @@ export function planetIcon(game, index) {
   const owner = connectionOwner(game.galaxy, p),
     rgb = owner && db.faction(owner) ? game.factionColor(owner) : null;
   el.style.borderColor = rgb ? `rgb(${rgb.map(c => Math.round(c * 255)).join(',')})` : 'rgba(100,100,100,.6)';
+  el.dataset.planet = String(index);
+  pictureWhenSeen(game, el);
+  return el;
+}
+
+// pictures are only rendered for rows scrolled into view, so a long list costs nothing until it is looked at
+let seen = null,
+  seenGame = null;
+function pictureWhenSeen(game, el) {
+  if (typeof IntersectionObserver === 'undefined') return paint(game, el);
+  seenGame = game;
+  seen ||= new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      seen.unobserve(e.target);
+      paint(seenGame, e.target);
+    }
+  });
+  seen.observe(el);
+}
+
+function paint(game, el) {
+  const p = game.galaxy?.planets?.[Number(el.dataset.planet)];
   planetThumb(game, p)?.then(url => {
     if (url) el.style.backgroundImage = `url("${url}")`;
   });
-  return el;
 }
 
 export function locationEntries(galaxy) {
@@ -286,7 +307,8 @@ export class GalacticSearch {
       e.preventDefault();
       const n = this.results.length;
       this.active = (this.active + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
-      this.paintResults();
+      [...this.list.children].forEach((li, i) => li.setAttribute('aria-selected', String(i === this.active)));
+      this.list.children[this.active]?.scrollIntoView({ block: 'nearest' });
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const pick = this.results[Math.max(0, this.active)];

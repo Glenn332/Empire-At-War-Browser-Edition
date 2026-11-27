@@ -42,7 +42,11 @@ const searchGame = () => ({
   assert.deepEqual(searchPlanets(g, 'CALA').map(r => r.name), ['Mon Calamari'], 'any part of the name, any case');
   assert.deepEqual(searchPlanets(g, 'endor').map(r => r.name), ['Éndor'], 'accents do not matter');
   assert.deepEqual(searchPlanets(g, 'hidden'), [], 'background bodies are not planets');
-  assert.deepEqual(searchPlanets(g, '  '), [], 'an empty box finds nothing');
+  assert.deepEqual(
+    searchPlanets(g, '  ').map(r => r.name),
+    ['Corellia', 'Corulag', 'Coruscant', 'Éndor', 'Kuat', 'Mon Calamari'],
+    'an empty box lists every planet alphabetically'
+  );
   assert.equal(searchPlanets(g, 'o', 2).length, 2, 'the list is capped');
   assert.equal(searchPlanets(g, 'cor')[0].index, 1, 'the result carries the planet index to select');
   g.planetViews[1].name = 'Renamed';
