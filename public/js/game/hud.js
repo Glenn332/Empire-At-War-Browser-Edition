@@ -1047,6 +1047,8 @@ export class CommandBar {
       title: db.t('TEXT_TOOLTIP_REINFORCEMENTS') || 'Reinforcements'
     });
     this.bReinforce.style.setProperty('--flash', css(this.tex('b_reinforcement', 'Flash_Texture_Name')));
+    // The flash texture outlines the button's square backing; a button drawn without one (a round mod icon) blinks its icon.
+    this.bReinforce.classList.toggle('hb-flash-icon', !this.tex('b_reinforcement', 'Blank_Texture_Name'));
     this.bRetreat = this.button('b_retreat', {
       onClick: () => game.retreatClicked && game.retreatClicked(),
       title: game.canRetreat && game.canRetreat() ? '' : 'Retreat — not available in this battle'
