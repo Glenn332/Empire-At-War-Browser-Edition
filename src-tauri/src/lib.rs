@@ -68,6 +68,7 @@ struct State {
     eaw: Option<Option<Arc<Opened>>>,
     sources: Vec<Source>,
     local: Vec<String>,
+    mods: Vec<PathBuf>,
 }
 
 impl State {
@@ -255,8 +256,30 @@ fn open(dir: &Path, mods: &[PathBuf], expansion: bool) -> Arc<Opened> {
 }
 
 impl Server {
+    /// The mod folders the opened game is layered with: the ones the app was launched with
+    /// (--mod, STEAMMOD=, MODPATH=) at the bottom, then the ones the launcher's mod list has
+    /// turned on, in the order shown there, the last on top. A folder named twice mounts once.
+    fn mod_layers(&self, settings: &Settings) -> Vec<PathBuf> {
+        let mut out = Vec::with_capacity(self.mods.len() + settings.mods.len());
+        let mut seen = std::collections::HashSet::new();
+        let mut add = |path: &Path| {
+            let key = path.to_string_lossy().replace('\\', "/").to_lowercase();
+            if seen.insert(key) {
+                out.push(path.to_path_buf());
+            }
+        };
+        for path in &self.mods {
+            add(path);
+        }
+        for path in &settings.mods {
+            add(Path::new(path));
+        }
+        out
+    }
+
     fn settle(&self, settings: Settings, was: Option<&State>) -> State {
         let steam = steam::game_folder();
+        let mods = self.mod_layers(&settings);
         let chosen = settings
             .game
             .as_ref()
@@ -296,8 +319,10 @@ impl Server {
             .map(|p| p.trim_end_matches(['/', '\\']).to_string())
             .collect();
         // the same folder keeps its opened game, unless that game could not start (files that
-        // were still being copied in): then it is opened again
-        if let Some(w) = was.filter(|w| w.dir.is_some() && w.dir == dir && w.game_ready()) {
+        // were still being copied in) or the mods to layer over it changed: then it is opened again
+        if let Some(w) = was.filter(|w| {
+            w.dir.is_some() && w.dir == dir && w.mods == mods && w.game_ready()
+        }) {
             return State {
                 settings,
                 dir,
@@ -307,9 +332,10 @@ impl Server {
                 eaw: w.eaw.clone(),
                 sources,
                 local,
+                mods,
             };
         }
-        let foc = dir.as_ref().map(|d| open(d, &self.mods, true));
+        let foc = dir.as_ref().map(|d| open(d, &mods, true));
         if foc.is_none() {
             println!("no game install found: serving the app alone");
         }
@@ -322,6 +348,7 @@ impl Server {
             eaw: None,
             sources,
             local,
+            mods,
         }
     }
 
@@ -358,7 +385,7 @@ impl Server {
         }
         let mut st = self.state.write().unwrap();
         if st.eaw.is_none() {
-            st.eaw = Some(st.dir.as_ref().map(|d| open(d, &self.mods, false)));
+            st.eaw = Some(st.dir.as_ref().map(|d| open(d, &st.mods, false)));
         }
         st.eaw.clone().flatten()
     }
@@ -477,6 +504,24 @@ impl Server {
                             .retain(|h| !setup::same(Path::new(h), Path::new(&r)))
                     });
                 }
+            }
+            "/mods" => {
+                // The launcher's mod list, the turned-on folders in the order shown there,
+                // the last on top: the game is opened again with them layered over it, the
+                // way a --mod launch would add them. A folder that has gone away is skipped,
+                // as a --mod launch skips it, so the rest still plays.
+                let asked: Vec<String> = arg("mods")
+                    .and_then(|v| serde_json::from_str(&v).ok())
+                    .unwrap_or_default();
+                let mut list = Vec::with_capacity(asked.len());
+                for path in asked {
+                    if Path::new(&path).is_dir() {
+                        list.push(path);
+                    } else {
+                        eprintln!("mod not found: {path}");
+                    }
+                }
+                self.change(|s| s.mods = list);
             }
             _ => return Err("not found".into()),
         }
@@ -618,9 +663,9 @@ impl Server {
                         .to_lowercase()
                 })
             });
+            let mods = self.state.read().unwrap().mods.clone();
             let root = at.and_then(|at| {
-                self.mods
-                    .iter()
+                mods.iter()
                     .map(|r| std::path::absolute(r).unwrap_or(r.clone()))
                     .filter(|r| {
                         at.starts_with(
@@ -680,8 +725,8 @@ impl Server {
         }
         if p == "/api/mounted" {
             let versions = steam::workshop_versions();
-            let list: Vec<serde_json::Value> = self
-                .mods
+            let mounted = self.state.read().unwrap().mods.clone();
+            let list: Vec<serde_json::Value> = mounted
                 .iter()
                 .map(|root| {
                     let folder = root
@@ -1079,6 +1124,7 @@ pub fn run() {
         eaw: None,
         sources: vec![],
         local: vec![],
+        mods: vec![],
     };
     let mut server = Server {
         mods,

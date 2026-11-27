@@ -11,6 +11,11 @@ const pub = path.join(web, 'public'),
   dist = path.join(web, 'dist-app');
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: web, encoding: 'utf8', shell: process.platform === 'win32', ...opts });
 
+// `npm run app --debug` hands --debug to npm itself, which does not forward it to the script:
+// it arrives here as npm_config_debug in the environment instead of in argv. Both spellings
+// mean the same thing here.
+const flag = name => process.argv.includes('--' + name) || ['true', ''].includes(process.env['npm_config_' + name]);
+
 const commit = run('git', ['rev-parse', '--short', 'HEAD']).trim();
 const build = commit + (run('git', ['status', '--porcelain', '--', 'public']).trim() ? '-dirty' : '');
 
@@ -82,7 +87,7 @@ if (!process.argv.includes('--stage')) {
   // --debug builds the debug profile instead of release, skips every bundling step (no
   // AppImage), and runs the freshly built binary directly: the fastest way to develop and test.
   // Much faster to compile (~15s vs 5min), but slower at runtime.
-  if (process.argv.includes('--debug')) {
+  if (flag('debug')) {
     console.log('debug: building and running the debug binary (no bundling)');
     run('npx', ['tauri', 'build', '--debug', '--no-bundle'], { stdio: 'inherit', encoding: undefined, env });
     const bin = path.join(web, 'src-tauri', 'target', 'debug', 'empire-at-war-browser-edition');
@@ -97,7 +102,7 @@ if (!process.argv.includes('--stage')) {
     // --no-sign builds without the updater's private key: without it tauri fails the whole build
     // after every bundle is finished, because createUpdaterArtifacts asks for TAURI_SIGNING_PRIVATE_KEY.
     const wantsConfig = a => /^(--config|-c)/.test(a);
-    if (process.argv.includes('--no-sign') && !process.argv.slice(2).some(wantsConfig) && !tauriArgs.some(wantsConfig))
+    if (flag('no-sign') && !process.argv.slice(2).some(wantsConfig) && !tauriArgs.some(wantsConfig))
       extra.push('--config', JSON.stringify({ bundle: { createUpdaterArtifacts: false } }));
     run('npx', ['tauri', 'build', ...extra, ...tauriArgs], { stdio: 'inherit', encoding: undefined, env });
   }

@@ -2577,6 +2577,26 @@
         $('modStatus').textContent = text;
         $('modStatus').className = 'status ' + cls;
       };
+      // The app serves the game data itself, so the game it opens has to carry the mods turned
+      // on here: the turned-on mod folders go to the app in the order shown, the last on top,
+      // and it layers them over the game the way a --mod launch would. Every change to the list
+      // sends the whole selection again; a launch below waits for that to have gone through.
+      let postedMods = null;
+      async function syncAppMods(all) {
+        if (!app) return false;
+        all ||= await listMods().catch(() => []);
+        const mods = all.filter(m => m.on && m.local).map(m => m.local);
+        const key = JSON.stringify(mods);
+        if (key === postedMods) return false;
+        try {
+          setup = await appSetup('mods', { mods: key });
+          postedMods = key;
+          return true;
+        } catch (e) {
+          console.warn('mods:', e);
+          return false;
+        }
+      }
       async function showMods() {
         showEdition();
         const el = $('mods');
@@ -2590,6 +2610,7 @@
           return;
         }
         const all = await listMods();
+        if (app) syncAppMods(all);
         if (!all.length) {
           const p = document.createElement('p');
           p.className = 'note';
@@ -3095,6 +3116,15 @@
           changed => changed && showMods(),
           e => console.warn('mod names:', e)
         );
+      // Launching waits for the app to have opened the game with the mods turned on above, so
+      // the game comes up in the mod the list shows instead of the plain expansion.
+      $('play').addEventListener('click', async e => {
+        if (!app) return;
+        e.preventDefault();
+        status('Opening the game with your mods…');
+        await syncAppMods();
+        location.href = $('play').href;
+      });
       refresh();
     </script>
   </body>

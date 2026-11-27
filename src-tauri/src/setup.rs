@@ -9,6 +9,10 @@ pub struct Settings {
     pub hidden: Vec<String>,
     pub uncapped: bool,
     pub nightly: bool,
+    /// The mod folders the launcher's mod list has turned on, in the order shown there,
+    /// the last on top. The game is opened with them layered over it, the way a --mod
+    /// launch adds them, so the app serves the modded game from startup on.
+    pub mods: Vec<String>,
 }
 
 /// Where the app keeps its settings and caches: the per-user application data folder of
