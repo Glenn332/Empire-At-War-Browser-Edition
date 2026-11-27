@@ -5,6 +5,7 @@ import { CommandBar, loadHudAssets, loadFactionModel, loadShellModel, uiMeshes }
 import { displayIncome, intelligence } from './galacticfog.js';
 import { playerIncome, fiscalCycleSeconds, cycleNumber, incomeBreakdown, planetBreakdown } from './galacticeconomy.js';
 import { orders } from './galacticnet.js';
+import { surfaceReachable } from './galacticpolitics.js';
 import {
   availableUnits,
   productionBlock,
@@ -194,6 +195,7 @@ export class GalacticBar extends CommandBar {
     ]) {
       const b = (this.tabs[kind] = this.button(name, {
         onClick: () => {
+          if (this.tabDisabled(kind)) return;
           this.tab = kind;
           this.page = 0;
           this.refresh();
@@ -388,15 +390,23 @@ export class GalacticBar extends CommandBar {
     });
   }
 
+  // As in the engine, the ground tab is disabled (and the space tab chosen) for a planet whose surface cannot be reached.
+  tabDisabled(kind) {
+    const planet = this.game.galaxy?.planets[this.game.selected];
+    return kind === 'ground' && !!planet && !surfaceReachable(planet);
+  }
+
   showTabArt() {
     for (const kind of ['space', 'ground']) {
       const img = this.tabArt[kind],
         name = kind === 'ground' ? 'b_planet_tab' : 'b_space_tab',
         c = this.comp(name),
         m = this.shell.get(name.toUpperCase());
-      const state = kind === this.tab ? 'selected' : this.tabHover === kind ? 'over' : 'normal';
+      const state = this.tabDisabled(kind) ? 'disabled' : kind === this.tab ? 'selected' : this.tabHover === kind ? 'over' : 'normal';
       const prop =
-        state === 'selected'
+        state === 'disabled' && c?.val('Disabled_Texture_Name')
+          ? 'Disabled_Texture_Name'
+          : state === 'selected'
           ? 'Selected_Texture_Name'
           : state === 'over' && c?.val('Mouse_Over_Texture_Name')
             ? 'Mouse_Over_Texture_Name'
@@ -405,7 +415,8 @@ export class GalacticBar extends CommandBar {
         r = texture && iconCanvasRect(texture);
       img.hidden = !r || !m || !truth(c?.val('Swap_Texture'));
       if (img.hidden) continue;
-      const off = (c.val(prop === 'Mouse_Over_Texture_Name' ? 'Mouse_Over_Offset' : 'Icon_Offset') || '0 0').split(/[\s,]+/).map(Number),
+      const offsetTag = { Mouse_Over_Texture_Name: 'Mouse_Over_Offset', Disabled_Texture_Name: 'Disabled_Offset' }[prop] || 'Icon_Offset';
+      const off = (c.val(offsetTag) || '0 0').split(/[\s,]+/).map(Number),
         scale = c.num('Scale', 1);
       img.src = iconUrl(texture);
       Object.assign(img.style, {
@@ -550,7 +561,10 @@ export class GalacticBar extends CommandBar {
     this.setButtonImage(this.zoomButton, 'icon', this.textureName('b_zoom', 'Icon_Alternate_Texture_Name', zoomIn ? 1 : 0));
     this.pauseButton.classList.toggle('sel', game.userPaused);
     this.pauseButton.setAttribute('aria-label', db.t(this.comp('b_play_pause')?.val('Tooltip_Text')));
+    if (this.tabDisabled(this.tab)) this.tab = 'space';
     for (const [kind, b] of Object.entries(this.tabs)) {
+      b.classList.toggle('dis', this.tabDisabled(kind));
+      b.setAttribute('aria-disabled', String(this.tabDisabled(kind)));
       b.classList.toggle('sel', kind === this.tab);
       b.setAttribute('aria-pressed', String(kind === this.tab));
     }
