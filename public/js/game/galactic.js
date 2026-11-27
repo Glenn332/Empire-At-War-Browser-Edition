@@ -84,7 +84,7 @@ import { stepIncome, orbitFleets, cycleNumber, creditCap } from './galacticecono
 import { GalacticAI } from './galacticai.js';
 import { GalacticBattles } from './galacticbattles.js';
 import { packContrast, orbitBombingRun } from './galacticautoresolve.js';
-import { PendingBattle, PENDING_SHELLS } from './galacticpending.js';
+import { PendingBattle, PENDING_SHELLS, battleLine } from './galacticpending.js';
 import { GalacticVictory } from './galacticvictory.js';
 import { destroyedPlanetModel, destroyPlanet, hasPlanetDestruction } from './planetdestruction.js';
 import { campaignScore } from './campaignscore.js';
@@ -3108,7 +3108,8 @@ export class GalacticGame {
     if (r.mode !== 'land') this.victory.superweaponBattle(r);
     this.victory.tacticalDeaths(r);
     const story = this.story,
-      context = story && this.galaxy.planets[r.planet] ? story.battleContext(this.galaxy.planets[r.planet], r.sides) : null;
+      context = story && this.galaxy.planets[r.planet] ? story.battleContext(this.galaxy.planets[r.planet], r.sides) : null,
+      tally = this.battleTally(r);
     const told = (planet, dead, winnerIndex, space) => {
       if (r.sides && planet) this.ai?.plans?.conflict?.(planet, r.sides, space, false);
       if (!story) return;
@@ -3150,6 +3151,7 @@ export class GalacticGame {
         story?.planetCaptured(pl, old);
       }
       if (pl) told(pl, dead, r.winner === 'attacker' ? 0 : 1, false);
+      this.logBattle(r, tally);
       this.lastResult = r;
       return;
     }
@@ -3204,7 +3206,51 @@ export class GalacticGame {
     if (r.planetDestroyed) destroyPlanet(this, pl, false);
     told(pl, lost, r.winner === 'attacker' ? 0 : 1, true);
     for (const u of wrecked) u.dead = true;
+    this.logBattle(r, tally);
     this.lastResult = r;
+  }
+
+  // Losses on each side of a fought battle, counted before the result is applied, from the side of the local
+  // player (or the attacker when they only watched). A landing on a planet nobody defends is no battle.
+  battleTally(r) {
+    const g = this.galaxy,
+      pl = g.planets[r.planet];
+    if (!pl || !r.sides || !r.winner) return null;
+    const up = s => String(s ?? '').toUpperCase(),
+      local = this.localFaction ?? this.me,
+      side = r.sides.some(s => up(s) === up(local)) ? local : r.sides[0],
+      alive = new Set(r.alive || []),
+      tally = { side, mine: 0, theirs: 0, defenders: 0 };
+    const count = (owner, gid) => {
+      if (alive.has(gid)) return;
+      if (up(owner) === up(side)) tally.mine++;
+      else tally.theirs++;
+    };
+    if (r.mode === 'land') {
+      for (const gid of r.participants || []) {
+        const [fi, ui] = String(gid).split(':').map(Number);
+        if (g.fleets[fi]?.units[ui]) count(g.fleets[fi].owner, gid);
+      }
+      const defender = up(r.sides[1]);
+      pl.garrison.forEach((u, i) => up(u.owner) === defender && (tally.defenders++, count(u.owner, 'g:' + i)));
+      pl.groundStructures.forEach((u, i) => up(u.owner) === defender && (tally.defenders++, count(u.owner, 's:' + i)));
+    } else {
+      g.fleets.forEach((f, fi) => {
+        if (f.planet === r.planet && !f.leg && this.inBattle(f, r)) f.units.forEach((u, ui) => count(f.owner, fi + ':' + ui));
+      });
+      tally.defenders = 1;
+    }
+    const winner = r.winner === 'attacker' ? r.sides[0] : r.sides[1];
+    tally.won = up(winner) === up(side) || relation(winner, side) === 0;
+    return tally;
+  }
+
+  // a fought battle goes into recent events with the same line an auto-resolved one gets
+  logBattle(r, t) {
+    const pl = this.galaxy.planets[r.planet];
+    if (!t || !pl || !t.defenders) return;
+    const name = db.t(pl.type.str('Text_ID')) || pl.name;
+    this.galacticLog?.locate(r.planet, battleLine(t.side, t.won, r.mode !== 'land', name, t.mine, t.theirs), 'battle');
   }
   inBattle(f, r) {
     return r.sides ? r.sides.includes(f.owner) : true;

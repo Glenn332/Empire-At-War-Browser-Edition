@@ -22,6 +22,18 @@ const color = s => {
 const pendingTimeout = () => db.constants.num('Battle_Pending_Timeout_Seconds', 10);
 const nameOf = type => type && (db.t(type.str('Text_ID')) || type.name);
 
+// the auto-resolve result line, "<faction> major space victory at <planet>. Ships lost: n", seen from side me;
+// recent events use it for battles that were fought out too
+export function battleLine(me, won, space, planetName, mineLost, theirsLost) {
+  const a = mineLost,
+    b = theirsLost,
+    verdict = won ? (b > a * 3 ? 'WIN_MAJOR' : b > a ? 'WIN_REGULAR' : 'WIN_MINOR') : b * 3 < a ? 'LOSS_MAJOR' : a > b ? 'LOSS_REGULAR' : 'LOSS_MINOR';
+  return [nameOf(db.faction(me)) || me, planetName, String(a)].reduce(
+    (s, v, i) => s.replace('##' + i, v),
+    String(db.t(`TEXT_AR_${space ? 'SPACE' : 'LAND'}_${verdict}`))
+  );
+}
+
 export class PendingBattle {
   constructor(game) {
     this.game = game;
@@ -546,27 +558,12 @@ export class PendingBattle {
           ?.list('Allies')
           ?.some(n => key(n) === key([attacker, defender][winnerIndex]));
     const log = game.galacticLog,
-      red = [255, 24, 39],
-      faction = nameOf(db.faction(me)) || me;
+      red = [255, 24, 39];
     const token = (text, ...values) => values.reduce((s, v, i) => s.replace('##' + i, v), text);
     for (const type of [...theirs, ...mine])
       if (type.bool('Is_Named_Hero') || [...type.categories()].some(c => c.includes('HERO')))
         log?.message(token(db.t('TEXT_AR_HERO_LOSS'), nameOf(type), planetName), { color: red, planet: p, kind: 'battle' });
-    const a = mine.length,
-      b = theirs.length,
-      kind = space ? 'SPACE' : 'LAND';
-    const verdict = won
-      ? b > a * 3
-        ? 'WIN_MAJOR'
-        : b > a
-          ? 'WIN_REGULAR'
-          : 'WIN_MINOR'
-      : b * 3 < a
-        ? 'LOSS_MAJOR'
-        : a > b
-          ? 'LOSS_REGULAR'
-          : 'LOSS_MINOR';
-    const line = token(db.t(`TEXT_AR_${kind}_${verdict}`), faction, planetName, String(a));
+    const line = battleLine(me, won, space, planetName, mine.length, theirs.length);
     log?.message(line, { color: red, planet: p, kind: 'battle' });
     if (silent || !fighting) return;
     if (game.net) return this.netResult(line);

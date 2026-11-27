@@ -296,6 +296,37 @@ for (const net of [false, true]) {
   assert.equal(eventShown(prefs, { text: 'old save' }), true, 'entries from before kinds are always listed');
 }
 
+// ---- a fought battle goes into recent events like an auto-resolved one ----
+{
+  const galaxy = startingGalaxy(data, campaign),
+    me = galaxy.players[0].faction,
+    foe = galaxy.players.map(p => p.faction).find(f => relation(f, me) === 1),
+    units = galaxy.fleets.find(f => f.units.length)?.units || [],
+    planet = galaxy.planets.find(p => !p.background && p.owner === me);
+  galaxy.fleets = [
+    { owner: me, planet: planet.index, leg: null, units: [units[0], units[0]] },
+    { owner: foe, planet: planet.index, leg: null, units: [units[0], units[0], units[0]] }
+  ];
+  const located = [];
+  const game = { galaxy, me, galacticLog: { locate: (...a) => located.push(a) } };
+  Object.setPrototypeOf(game, GalacticGame.prototype);
+  // the enemy loses all three ships, you lose one of two
+  const r = { mode: 'space', planet: planet.index, sides: [foe, me], alive: ['0:0'], winner: 'defender' };
+  const tally = game.battleTally(r);
+  assert.deepEqual([tally.mine, tally.theirs, tally.won], [1, 3, true], 'losses on each side, from your side');
+  game.logBattle(r, tally);
+  assert.equal(located.length, 1);
+  assert.deepEqual([located[0][0], located[0][2]], [planet.index, 'battle'], 'logged at the planet as a battle');
+  const { battleLine } = await import('../public/js/game/galacticpending.js');
+  assert.equal(located[0][1], battleLine(me, true, true, db.t(planet.type.str('Text_ID')) || planet.name, 1, 3), 'with the auto-resolve line');
+  const empty = galaxy.planets.find(p => !p.background && !p.garrison.length && !p.groundStructures.length);
+  if (empty) {
+    const landing = { mode: 'land', planet: empty.index, sides: [me, empty.owner], participants: [], alive: [], winner: 'attacker' };
+    game.logBattle(landing, game.battleTally(landing));
+    assert.equal(located.length, 1, 'landing on an undefended planet is no battle');
+  }
+}
+
 // ---- fleets the local player sees move ----
 {
   const galaxy = startingGalaxy(data, campaign),
