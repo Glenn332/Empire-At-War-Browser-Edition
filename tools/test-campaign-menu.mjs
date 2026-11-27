@@ -133,10 +133,10 @@ const openDialog = async (id, options) => {
   });
 };
 const settingsModule = await import('../public/js/game/campaignsettings.js');
-globalThis.__campaignMenuTest = { db, loadCampaignData, openDialog, loadTextureCanvas: async () => null, loadFileList: async () => [], fetchText: async () => '', iconAtlas: () => null, iconCanvasRect: () => null, ...settingsModule };
+globalThis.__campaignMenuTest = { db, loadCampaignData, openDialog, loadDialogs: async () => null, loadTextureCanvas: async () => null, loadFileList: async () => [], fetchText: async () => '', iconAtlas: () => null, iconCanvasRect: () => null, ...settingsModule };
 const source = (await readFile(new URL('../public/js/game/campaignmenu.js', import.meta.url), 'utf8'))
   .replace(/^import\s+[^;]+;\r?\n/gm, '')
-  .replace(/^/, 'const { db, loadFileList, fetchText, iconAtlas, iconCanvasRect, loadCampaignData, openDialog, loadTextureCanvas, campaignLimits, campaignDefaults, creditSteps, creditsAt, techRange, optionBoxes, offersRandomEvents } = globalThis.__campaignMenuTest;\n');
+  .replace(/^/, 'const { db, loadFileList, fetchText, iconAtlas, iconCanvasRect, loadCampaignData, openDialog, loadDialogs, loadTextureCanvas, campaignLimits, campaignDefaults, creditSteps, creditsAt, techRange, optionBoxes, offersRandomEvents, popCapRowsLayout, popCapSliders } = globalThis.__campaignMenuTest;\n');
 const { openCampaignMenu } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 let result,
   cancelled = 0;

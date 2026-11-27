@@ -54,13 +54,36 @@ export function campaignMenuVariant(campaigns, set, faction) {
   );
 }
 
+// Some mods send players into their galactic conquest from the tutorial list, through a menu campaign that supports
+// custom settings. That list has no Advanced button, so one is added on the row of Cancel and Start, or on a row of
+// its own when they leave no room. A dialog that has the button keeps it as it is.
+export function optionsButtonLayout(def) {
+  if (!def?.controls?.length || def.controls.some(c => c.id === 'IDC_SELECT_OPTIONS')) return {};
+  const find = id => def.controls.find(c => c.id === id),
+    cancel = find('IDC_CANCEL_BUTTON'),
+    play = find('IDC_PLAY_BUTTON');
+  if (!cancel || !play) return {};
+  const [a, b] = cancel.x < play.x ? [cancel, play] : [play, cancel],
+    gap = b.x - (a.x + a.w),
+    h = Math.max(a.h, b.h),
+    w = Math.min(Math.max(a.w, b.w), gap - 24),
+    button = { kind: 'PUSHBUTTON', text: 'TEXT_SELECT_OPTIONS', id: 'IDC_SELECT_OPTIONS', style: '', h };
+  if (Math.abs(a.y - b.y) <= 4 && w >= 100) return { extra: [{ ...button, x: Math.round(a.x + a.w + (gap - w) / 2), y: Math.min(a.y, b.y), w }] };
+  const bottom = Math.max(a.y + a.h, b.y + b.h);
+  return { size: { w: def.w, h: def.h + h + 12 }, extra: [{ ...button, x: a.x, y: bottom + 12, w: Math.max(a.w, b.w) }] };
+}
+
 export async function openCampaignMenu({ start, cancel = null, audio = null, tutorial = false, isTutorialComplete = () => false }) {
   const data = await loadCampaignData();
-  const dlg = await openDialog(tutorial ? 'IDD_SELECT_TUTORIAL_DIALOG' : 'IDD_CUSTOM_CAMPAIGN_STAGING_DIALOG', {
+  const id = tutorial ? 'IDD_SELECT_TUTORIAL_DIALOG' : 'IDD_CUSTOM_CAMPAIGN_STAGING_DIALOG',
+    def = (await loadDialogs())?.dialogs.get(id),
+    ownButton = !!def?.controls.some(c => c.id === 'IDC_SELECT_OPTIONS');
+  const dlg = await openDialog(id, {
     modal: false,
     nativeImages: true,
     nativeLists: tutorial,
-    nativeFonts: true
+    nativeFonts: true,
+    ...optionsButtonLayout(def)
   });
   if (!dlg) return false;
   const rows = campaignMenuRows(data.campaigns, id => db.t(id), { tutorial });
@@ -94,12 +117,14 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
     }
   };
   const variant = () => selection && (tutorial ? selection.campaign : campaignMenuVariant(data.campaigns, selection.key, faction));
+  // the original tutorials say Supports_Custom_Settings False and a mod's galactic conquest menu entry says True; a
+  // mod that put the button in its tutorial list itself offers it unless the campaign says False
+  const hasOptions = c => !!c && (!tutorial || c.bool('Supports_Custom_Settings', ownButton));
   const refresh = () => {
-    const c = variant(),
-      custom = !!c && campaignLimits(c).custom;
+    const c = variant();
     settings = c ? campaignDefaults(c, c.str('Starting_Active_Player')) : null;
     dlg.enable('IDC_PLAY_BUTTON', !!c);
-    dlg.show('IDC_SELECT_OPTIONS', !!selection);
+    dlg.show('IDC_SELECT_OPTIONS', !!selection && (!tutorial || hasOptions(c)));
     dlg.enable('IDC_SELECT_OPTIONS', !!c);
   };
   const pick = row => {
@@ -115,6 +140,7 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
     if (!c) return;
     rememberedFaction = faction;
     close();
+    const chosen = hasOptions(c) ? settings : null;
     start({
       mode: 'galactic',
       campaign: c.name,
@@ -122,13 +148,13 @@ export async function openCampaignMenu({ start, cancel = null, audio = null, tut
       difficulty,
       players: [],
       teamFactions: [],
-      ...(settings?.custom ? { campaignSettings: { ...settings } } : {}),
+      ...(chosen?.custom ? { campaignSettings: { ...chosen } } : {}),
       // off unless the player ticks it, and never in a tutorial, which teaches the ground battles
       options: {
-        groundAutoResolve: !tutorial && settings?.groundAutoResolve === true,
+        groundAutoResolve: chosen?.groundAutoResolve === true,
         ...(offersRandomEvents() ? { randomEvents: settings?.randomEvents !== false } : {}),
-        ...(!tutorial && settings?.landPopCap ? { landPopCap: settings.landPopCap } : {}),
-        ...(!tutorial && settings?.spacePopCap ? { spacePopCap: settings.spacePopCap } : {})
+        ...(chosen?.landPopCap ? { landPopCap: chosen.landPopCap } : {}),
+        ...(chosen?.spacePopCap ? { spacePopCap: chosen.spacePopCap } : {})
       }
     });
   };
