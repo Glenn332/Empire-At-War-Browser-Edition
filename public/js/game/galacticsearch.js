@@ -257,7 +257,7 @@ const CSS = `
 #galactic-search [hidden]{display:none}
 #galactic-search ul::-webkit-scrollbar{width:14px}
 #galactic-search ul::-webkit-scrollbar-track{background:var(--sb-track,rgba(0,0,0,.35)) center top/100% auto repeat-y}
-#galactic-search ul::-webkit-scrollbar-thumb{background:#c3ab02;border-style:solid;border-width:3px;border-image:var(--sb-tab) 6 fill stretch}
+#galactic-search ul::-webkit-scrollbar-thumb{background:#3b7ea6;border-style:solid;border-width:3px;border-image:var(--sb-tab) 6 fill stretch}
 #galactic-search ul::-webkit-scrollbar-button:single-button{display:block;height:14px;background:center/100% 100% no-repeat}
 #galactic-search ul::-webkit-scrollbar-button:single-button:vertical:decrement{background-image:var(--sb-up)}
 #galactic-search ul::-webkit-scrollbar-button:single-button:vertical:decrement:hover{background-image:var(--sb-up-over)}
@@ -265,7 +265,7 @@ const CSS = `
 #galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment{background-image:var(--sb-down)}
 #galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment:hover{background-image:var(--sb-down-over)}
 #galactic-search ul::-webkit-scrollbar-button:single-button:vertical:increment:active{background-image:var(--sb-down-down)}
-@supports not selector(::-webkit-scrollbar){#galactic-search ul{scrollbar-width:thin;scrollbar-color:#c3ab02 rgba(0,0,0,.35)}}
+@supports not selector(::-webkit-scrollbar){#galactic-search ul{scrollbar-width:thin;scrollbar-color:#3b7ea6 rgba(0,0,0,.35)}}
 `;
 
 // the scroll bars of the game's own lists: its skin's arrow buttons, track and tab
@@ -281,9 +281,42 @@ const SCROLL_SKIN = {
 };
 async function skinScrollBars(el) {
   for (const [name, key] of Object.entries(SCROLL_SKIN)) {
-    const im = await skinImage(key).catch(() => null);
-    if (im?.url) el.style.setProperty(name, `url("${im.url}")`);
+    const im = await skinImage(key).catch(() => null),
+      url = im?.url && (await tinted(im.url).catch(() => im.url));
+    if (url) el.style.setProperty(name, `url("${url}")`);
   }
+}
+
+// The skin's scroll bar pieces are gold; the panel is blue. Turning every colour by the same hue angle makes the
+// gold the panel's blue and leaves the greys of the arrows and the tab as they are.
+const HUE = (155 * Math.PI) / 180;
+async function tinted(url) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const cv = Object.assign(document.createElement('canvas'), { width: img.naturalWidth, height: img.naturalHeight }),
+    ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const pixels = ctx.getImageData(0, 0, cv.width, cv.height),
+    d = pixels.data,
+    c = Math.cos(HUE),
+    s = Math.sin(HUE);
+  // the hue-rotate matrix of CSS filters
+  const m = [
+    0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
+    0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.14, 0.072 - c * 0.072 - s * 0.283,
+    0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072
+  ];
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i],
+      g = d[i + 1],
+      b = d[i + 2];
+    d[i] = m[0] * r + m[1] * g + m[2] * b;
+    d[i + 1] = m[3] * r + m[4] * g + m[5] * b;
+    d[i + 2] = m[6] * r + m[7] * g + m[8] * b;
+  }
+  ctx.putImageData(pixels, 0, 0);
+  return cv.toDataURL();
 }
 
 const MARGIN = 4;
