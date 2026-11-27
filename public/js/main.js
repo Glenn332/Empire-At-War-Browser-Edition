@@ -44,7 +44,7 @@ import { loadGameFonts } from './fonts.js';
 import { diag } from './diag.js';
 import './aidebug.js';
 import { BenchOverlay } from './benchoverlay.js';
-import { texturesReady, eachTextureReady, loadTexture, textureBytes, dxtSupported } from './dds.js';
+import { texturesReady, eachTextureReady, loadTexture, textureBytes, dxtSupported, releaseKeptPictures } from './dds.js';
 import { loadParticles } from './particles.js';
 import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
@@ -95,7 +95,7 @@ import { installTacticalBattle, superweaponMusic } from './game/tacticalbattle.j
 import { superweaponShot } from './game/tacticalsuperweaponcamera.js';
 import { TacticalStoryHost } from './game/tacticalstory.js';
 import { installCampaignStoryView, addStoryGoal, mergeStoryGoals } from './game/spacecampaignview.js';
-import { stepTacticalSpeech } from './game/tacticalspeech.js';
+import { stepTacticalSpeech, releaseTacticalSpeech } from './game/tacticalspeech.js';
 import { isSuperweaponTarget, isTacticalSuperweapon, superweaponClipNames } from './game/tacticalsuperweapon.js';
 import { TacticalSuperweaponHUD } from './game/tacticalsuperweaponhud.js';
 import { tacticalAnnouncement } from './game/tacticalvictory.js';
@@ -190,6 +190,7 @@ function endGame(next) {
     }
   }
   window.game = null;
+  releaseKeptPictures();
   resetPage();
 }
 
@@ -757,6 +758,8 @@ class Game {
     this.reportView = null;
     this.bench?.dispose();
     this.bench = null;
+    releaseTacticalSpeech(this);
+    diag.detach(this.renderer?.renderer);
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
     if (window.game === this) window.game = null;
   }

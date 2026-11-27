@@ -508,6 +508,13 @@ export class Batch {
     fill(this.slot, slot, count);
     fill(this.dir, dir, count * 4);
   }
+  // the texture is shared through the texture cache and stays; the rest belongs to this batch alone
+  dispose() {
+    liveBatches.delete(this);
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
 }
 
 function fill(a, src, n) {
@@ -569,8 +576,26 @@ export class ParticleManager {
     this.worker.onerror = e => console.warn('particles: the thread failed', e.message || e);
   }
 
+  // a battle or galaxy that ends hands its particles back: the thread stops, and nothing kept at module level
+  // (the depth list of batches) still reaches this scene, so the old scene can be collected
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.worker.onmessage = this.worker.onerror = null;
+    this.worker.terminate();
+    this.kept?.[0]?.material.uniforms.map.value.dispose();
+    for (const b of [...this.batches.values(), ...(this.kept || [])]) b.dispose();
+    this.batches.clear();
+    this.kept = null;
+    this.systems.length = 0;
+    this.byId.clear();
+    this.sent.clear();
+    this.frameTex.dispose();
+    this.spare = this.framesSpare = null;
+  }
+
   prepare(renderer, camera) {
-    if (this.kept) return;
+    if (this.kept || this.disposed) return;
     const tex = new THREE.DataTexture(new Uint8Array(4), 1, 1);
     tex.needsUpdate = true;
     this.kept = [
@@ -587,6 +612,7 @@ export class ParticleManager {
   }
 
   drawn(m) {
+    if (this.disposed) return;
     this.busy = false;
     this.total = m.total;
     if (m.framesBuf) this.framesSpare = m.framesBuf;
@@ -701,6 +727,7 @@ export class ParticleManager {
   }
 
   update(dt, camera = null) {
+    if (this.disposed) return;
     const list = this.systems;
     if (camera) _frustum.setFromProjectionMatrix(_viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const send = !this.busy && (dt > 0 || this.owedDt > 0);

@@ -107,6 +107,8 @@ export function pixelRatio() {
 
 const canvases = new Set();
 export function gammaOn(canvas) {
+  // canvases of a battle or galaxy that has ended are off the page: let them go
+  for (const c of canvases) if (!c.isConnected) canvases.delete(c);
   canvases.add(canvas);
   applyGamma();
 }

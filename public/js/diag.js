@@ -58,6 +58,14 @@ export class Diag {
     } catch {}
   }
 
+  // a battle that ends lets go of its renderer and of what its context reads, or the whole battle stays in memory
+  detach(renderer) {
+    if (renderer && this.info !== renderer.info) return;
+    this.info = null;
+    this.context = () => ({});
+    this.gpu = null;
+  }
+
   gpuBegin() {
     const G = this.gpu;
     if (!G || G.active || G.pending.length > 8) return;

@@ -11,7 +11,9 @@ export async function installTacticalSpeech(game, host) {
       const text = (game.screenText = new GalacticScreenText(game, comps));
       text.root.style.zIndex = '10';
       game.showScreenText = request => text.show(request);
-      addEventListener('resize', () => text.resize());
+      const resize = () => text.resize();
+      addEventListener('resize', resize);
+      game.screenTextOff = () => removeEventListener('resize', resize);
     }
   }
   game.speechStoryDone?.();
@@ -19,6 +21,16 @@ export async function installTacticalSpeech(game, host) {
     host.signal('STORY_SPEECH_DONE', record.name);
     game.screenText?.show({ id: 'TEXT_SPEECH_' + record.name, remove: true });
   });
+}
+
+// the window and the speech player outlive a battle: what the battle hung on them goes with it, or the whole
+// battle stays in memory after it ends
+export function releaseTacticalSpeech(game) {
+  game.screenTextOff?.();
+  game.screenTextOff = null;
+  game.speechStoryDone?.();
+  game.speechStoryDone = null;
+  game.screenText?.dispose();
 }
 
 export function stepTacticalSpeech(game, real) {
