@@ -3,6 +3,10 @@ import { fontFamily } from '../fonts.js';
 import { logState } from './galacticlogdata.js';
 import { cycleNumber } from './galacticeconomy.js';
 import { linkPlanets } from './planetlinks.js';
+import * as THREE from 'three';
+import { connectionOwner } from './galacticfog.js';
+import { capturePlanet } from './planetinfo.js';
+import { portraitBounds } from './planetportrait.js';
 
 // Planet search and the location log of the galactic HUD. Both are views for the local player only: nothing here
 // is part of the simulated state, so it never goes through the lockstep. Selection and camera use the same
@@ -33,6 +37,78 @@ export function searchPlanets(game, query, limit = SEARCH_LIMIT) {
   }
   out.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
   return out.slice(0, limit);
+}
+
+// Small pictures of the planets as they look on the map, rendered from their galactic models with the same
+// portrait capture the planet info screen uses. One planet is rendered at a time and each picture is kept for the
+// session; a planet whose model changes (destroyed, say) gets a new picture.
+const THUMB = 64,
+  thumbs = new Map();
+let queue = Promise.resolve();
+
+function planetThumb(game, p) {
+  const source = game.planetViews?.[p.index]?.inst;
+  if (!source || !game.renderer) return null;
+  const kept = thumbs.get(p.index);
+  if (kept?.model === source.model) return kept.job;
+  const run = async () => {
+    const size = portraitBounds(source).getSize(new THREE.Vector3()),
+      fov = 30,
+      distance = (size.length() / 4 / Math.tan((fov * Math.PI) / 360)) * 1.05,
+      // mostly from above and off the sun's side, so the small picture is lit with some shading but no glare
+      eye = new THREE.Vector3(0.2, 0.4, 0.9).normalize().multiplyScalar(distance).toArray(),
+      view = { size: THUMB, eye, fov, ambient: [0.15, 0.15, 0.18], rgb: [3, 14, 26] };
+    // A model's first renders can come out as a flat untextured disc while its textures are still on their way to
+    // the GPU, so a flat picture is taken again a moment later.
+    let url = null;
+    for (let tries = 0; tries < 6; tries++) {
+      url = await capturePlanet(game, p, view);
+      if (!url || (await detailed(url))) break;
+      await new Promise(done => setTimeout(done, 100));
+    }
+    return url;
+  };
+  const job = (queue = queue.then(run, run)).catch(() => null);
+  thumbs.set(p.index, { model: source.model, job });
+  return job;
+}
+
+// whether the middle of a picture has any texture or shading at all
+async function detailed(url) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const n = 16,
+    cv = Object.assign(document.createElement('canvas'), { width: n, height: n }),
+    ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, img.width / 4, img.height / 4, img.width / 2, img.height / 2, 0, 0, n, n);
+  const d = ctx.getImageData(0, 0, n, n).data;
+  let sum = 0,
+    sq = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = d[i] + d[i + 1] + d[i + 2];
+    sum += l;
+    sq += l * l;
+  }
+  const count = d.length / 4;
+  return Math.sqrt(Math.max(0, sq / count - (sum / count) ** 2)) > 6;
+}
+
+// a planet picture ringed in the colour of the side the local player last saw holding it, the same owner the
+// hyperspace lanes use; the ring is grey when that is not known
+export function planetIcon(game, index) {
+  const p = game.galaxy?.planets?.[index],
+    el = document.createElement('span');
+  el.className = 'gs-icon';
+  el.setAttribute('aria-hidden', 'true');
+  if (!p) return el;
+  const owner = connectionOwner(game.galaxy, p),
+    rgb = owner && db.faction(owner) ? game.factionColor(owner) : null;
+  el.style.borderColor = rgb ? `rgb(${rgb.map(c => Math.round(c * 255)).join(',')})` : 'rgba(100,100,100,.6)';
+  planetThumb(game, p)?.then(url => {
+    if (url) el.style.backgroundImage = `url("${url}")`;
+  });
+  return el;
 }
 
 export function locationEntries(galaxy) {
@@ -74,10 +150,11 @@ const CSS = `
 #galactic-search .gs-bar{display:flex;gap:4px}
 #galactic-search input{flex:1;min-width:0;background:rgba(3,14,26,.85);color:#e6f6ff;border:1px solid #3b7ea6;padding:3px 6px;font:inherit;outline:none}
 #galactic-search input:focus{border-color:#7fd0ff}
-#galactic-search button{background:rgba(3,14,26,.85);color:#bfe4ff;border:1px solid #3b7ea6;padding:3px 7px;font:inherit;cursor:pointer}
-#galactic-search button:hover,#galactic-search button[aria-pressed=true]{background:rgba(30,90,130,.9)}
-#galactic-search ul{list-style:none;margin:4px 0 0;padding:0;background:rgba(3,14,26,.92);border:1px solid #3b7ea6;max-height:60vh;overflow:auto}
+#galactic-search ul{list-style:none;margin:4px 0 0;padding:0;background:rgba(3,14,26,.92);border:1px solid #3b7ea6;max-height:30vh;overflow:auto}
+#galactic-search .gs-head{margin:8px 0 0;color:#7fa6bf;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+#galactic-search .gs-log{max-height:40vh}
 #galactic-search li{padding:3px 6px;cursor:pointer;display:block}
+#galactic-search .gs-icon{display:inline-block;width:26px;height:26px;margin-right:8px;vertical-align:middle;border:2px solid;border-radius:50%;background:#030e1a center/cover no-repeat;box-shadow:0 0 0 1px #000}
 #galactic-search li:hover,#galactic-search li[aria-selected=true]{background:rgba(30,90,130,.9)}
 #galactic-search .gs-time{color:#7fa6bf;font-size:11px}
 #galactic-search .gs-place{color:#ffd37a}
@@ -105,15 +182,14 @@ export class GalacticSearch {
       spellcheck: false
     }));
     input.setAttribute('aria-label', 'Search planets');
-    const toggle = (this.toggle = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Log' }));
-    toggle.setAttribute('aria-pressed', 'false');
-    toggle.title = 'Recent events by planet';
     this.list = Object.assign(document.createElement('ul'), { hidden: true });
     this.list.setAttribute('role', 'listbox');
-    this.log = Object.assign(document.createElement('ul'), { hidden: true });
+    // recent events by planet, shown under the search whenever the popup is open
+    const head = Object.assign(document.createElement('div'), { className: 'gs-head', textContent: 'Recent events' });
+    this.log = Object.assign(document.createElement('ul'), { className: 'gs-log' });
     this.log.setAttribute('aria-label', 'Location log');
-    bar.append(input, toggle);
-    root.append(style, bar, this.list, this.log);
+    bar.append(input);
+    root.append(style, bar, this.list, head, this.log);
     parent.appendChild(root);
     // keys pressed inside the popup must never reach the game's hotkeys
     input.addEventListener('keydown', e => this.key(e));
@@ -128,10 +204,6 @@ export class GalacticSearch {
     input.addEventListener('focus', () => {
       this.game.keys?.clear();
       this.search();
-    });
-    toggle.addEventListener('click', () => {
-      this.showLog(this.log.hidden);
-      input.focus();
     });
     root.addEventListener('pointerdown', e => e.stopPropagation());
     root.addEventListener('wheel', e => e.stopPropagation());
@@ -163,6 +235,7 @@ export class GalacticSearch {
 
   open() {
     this.root.hidden = false;
+    this.refresh();
     this.input.focus();
     this.input.select();
   }
@@ -171,7 +244,7 @@ export class GalacticSearch {
     if (!this.opened) return;
     this.input.value = '';
     this.closeResults();
-    this.showLog(false);
+    this.log.replaceChildren();
     this.input.blur();
     this.root.hidden = true;
   }
@@ -190,7 +263,8 @@ export class GalacticSearch {
     this.list.hidden = !this.results.length;
     this.list.replaceChildren(
       ...this.results.map((r, i) => {
-        const li = Object.assign(document.createElement('li'), { textContent: r.name });
+        const li = document.createElement('li');
+        li.append(planetIcon(this.game, r.index), r.name);
         li.setAttribute('role', 'option');
         li.setAttribute('aria-selected', String(i === this.active));
         li.addEventListener('mousedown', e => e.preventDefault());
@@ -224,15 +298,9 @@ export class GalacticSearch {
     if (this.game.focusPlanet?.(index)) this.close();
   }
 
-  showLog(on) {
-    this.log.hidden = !on;
-    this.toggle.setAttribute('aria-pressed', String(on));
-    if (on) this.refresh();
-  }
-
-  // called when the log changes; cheap when it is closed
+  // called when the log changes; cheap when the popup is closed
   refresh() {
-    if (this.log.hidden) return;
+    if (!this.opened) return;
     const rows = locationRows(this.game);
     if (!rows.length) {
       this.log.replaceChildren(Object.assign(document.createElement('li'), { textContent: 'Nothing has happened yet.' }));
@@ -245,7 +313,7 @@ export class GalacticSearch {
           p = Object.assign(document.createElement('span'), { className: 'gs-place', textContent: r.name + ': ' });
         p.dataset.planet = String(r.planet);
         p.dataset.planetLabel = '';
-        li.append(t, p, document.createTextNode(r.text));
+        li.append(t, planetIcon(this.game, r.planet), p, document.createTextNode(r.text));
         li.addEventListener('click', () => {
           if (this.game.focusPlanet?.(r.planet)) this.close();
         });
