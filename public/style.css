@@ -1337,11 +1337,14 @@ body:not(.original-hud) .heroframe {
   background-image: var(--over);
 }
 .rslot.dis {
-  filter: brightness(0.5);
   cursor: default;
 }
+.rslot.dis::after,
 .rslot.dis:hover::after {
-  background-image: none;
+  background-image: var(--dis, none);
+}
+.rslot.dis span {
+  z-index: 1;
 }
 .rslot span {
   position: absolute;

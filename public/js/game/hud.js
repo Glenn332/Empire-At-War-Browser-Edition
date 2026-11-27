@@ -2167,6 +2167,10 @@ export class CommandBar {
       s.innerHTML = `<span>${n > 1 ? n : ''}</span>`;
       s.onmouseenter = () => this.tipOn('rein' + i, t);
       if (full(t)) {
+        // The slot's Disabled_Texture_Name is drawn over the icon, as the original does.
+        const slot = `r_${String(r).padStart(2, '0')}${String(c).padStart(2, '0')}`;
+        const dis = this.textureName(slot, 'Disabled_Texture_Name') || this.textureName('r_0000', 'Disabled_Texture_Name');
+        if (dis) s.style.setProperty('--dis', css(this.skinIcon(dis) || iconUrl(dis)));
         s.classList.add('dis');
         s.onmouseleave = () => this.hideInfo();
         s.onmousedown = ev => ev.button === 0 && ev.preventDefault();
