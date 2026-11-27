@@ -1180,11 +1180,33 @@ pub fn run() {
         })
         .setup(move |app| {
             audio::name_sessions("Empire at War Browser Edition");
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
+            let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
                 .title("Empire at War Browser Edition")
                 .inner_size(1600.0, 900.0)
                 .additional_browser_args(flags.trim())
                 .build()?;
+            // WebKitGTK's fractional-scale rendering bug: the compositor and DOM disagree on
+            // element positions at non-integer DPI scales (e.g. 4K at 150%), so hover highlights
+            // land on the wrong element while clicks go through. Force 1:1 zoom so the DOM and
+            // the compositor stay in sync.
+            #[cfg(target_os = "linux")]
+            {
+                let _ = win.set_zoom(1.0);
+            }
+            // On HiDPI / fractional-scale displays the physical window can end up larger than the
+            // screen: clamp the initial size to the monitor's work area.
+            if let Ok(Some(monitor)) = win.current_monitor() {
+                let area = monitor.work_area();
+                let size = win.inner_size().unwrap_or_default();
+                let (max_w, max_h) = (area.size.width, area.size.height);
+                if size.width > max_w || size.height > max_h {
+                    let scale = (max_w as f64 / size.width as f64).min(max_h as f64 / size.height as f64);
+                    let w = (size.width as f64 * scale) as u32;
+                    let h = (size.height as f64 * scale) as u32;
+                    let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                    let _ = win.center();
+                }
+            }
             #[cfg(windows)]
             if let Some(Ok(h)) = app.get_webview_window("main").map(|w| w.hwnd()) {
                 let handle = app.handle().clone();
