@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 globalThis.window ??= globalThis;
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+globalThis.addEventListener ??= () => {};
 const { Shooter } = await import('../public/js/game/shooter.js');
 
 const world = { time: 0, units: [] },
