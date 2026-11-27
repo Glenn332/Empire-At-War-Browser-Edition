@@ -80,6 +80,8 @@ export class TooltipGate {
       this.fadeIn = true;
       this.fadeOut = false;
       this.alpha = 0;
+      // destroy() clears the opacity to fully visible: start the new popup transparent, or its first frame flashes in before the fade
+      if (this.encyclopedia.root) this.encyclopedia.root.style.opacity = '0';
     }
     this.target = target.id;
     this.popup = true;
