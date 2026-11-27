@@ -4,6 +4,33 @@
     <meta charset="utf-8" />
     <script src="js/consolelog.js"></script>
     <script src="js/keycodefallback.js"></script>
+    <script>
+      // The webview can stall in its own rendering or on long main-thread work; this watchdog
+      // tells the two apart and says so in the console log (and so in every bug report): a gap
+      // between frames with no long task is the compositor, a long task is the page itself.
+      {
+        const stalls = [];
+        const record = kind => {
+          const now = performance.now();
+          stalls.push({ kind, at: Math.round(now) });
+          if (stalls.length > 40) stalls.shift();
+          console.warn('launcher stall:', kind, 'at', Math.round(now / 1000) + 's');
+        };
+        try {
+          new PerformanceObserver(list => {
+            for (const e of list.getEntries()) if (e.duration > 200) record('long task ' + Math.round(e.duration) + ' ms');
+          }).observe({ entryTypes: ['longtask'] });
+        } catch {}
+        let lastTick = performance.now();
+        const tick = now => {
+          const gap = now - lastTick;
+          if (gap > 400) record('no frame for ' + Math.round(gap) + ' ms');
+          lastTick = now;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    </script>
     <title>Empire at War: Browser Edition</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" href="favicon.ico" sizes="48x48" />
