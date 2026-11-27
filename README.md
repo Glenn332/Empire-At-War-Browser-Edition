@@ -82,6 +82,7 @@ The controls are the same as the original:
 | M / T / F / G / X | move, attack, attack-move, guard, stop |
 | WASD / arrows / screen edge / middle-drag | pan |
 | Wheel / Q, E | zoom / rotate |
+| Ctrl + middle-drag | turn and tilt the camera, also on the galaxy map (remap it under Controls → Other) |
 | Ctrl+1…9, 1…9 | set / recall a control group |
 | P, + / - | pause, game speed |
 | Esc | cancel, deselect, menu |

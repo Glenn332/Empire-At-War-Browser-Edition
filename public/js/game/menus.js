@@ -31,7 +31,9 @@ import {
   bothButtonsRotate,
   setBothButtonsRotate,
   edgePan,
-  setEdgePan
+  setEdgePan,
+  mouseCode,
+  isMouseAction
 } from './keybinds.js';
 
 const T = (id, fallback) => db.t(id) || fallback;
@@ -284,7 +286,8 @@ export class Menus {
     });
   }
 
-  listenKeys(command, current) {
+  // A mouse action (a camera drag) takes a mouse button with any modifier keys held; the other actions take keys.
+  listenKeys(command, current, mouse = false) {
     return new Promise(async done => {
       const LEFT = 'IDC_DIALOG_BOX_BUTTON_LEFT',
         ADD = 'IDC_DIALOG_BOX_BUTTON_SWR_ADD',
@@ -314,6 +317,12 @@ export class Menus {
         removeEventListener('keydown', down, true);
         removeEventListener('keyup', up, true);
         removeEventListener('blur', lost);
+        if (mouse) {
+          removeEventListener('mousedown', press, true);
+          removeEventListener('mouseup', swallow, true);
+          removeEventListener('auxclick', swallow, true);
+          removeEventListener('contextmenu', swallow, true);
+        }
         this.pop();
         done(r);
       };
@@ -333,8 +342,23 @@ export class Menus {
         held.add(e.code);
         if (m) {
           if (!mods.includes(m)) mods.push(m);
-        } else if (!codes.includes(e.code) && codes.length < 4) codes.push(e.code);
+        } else if (!mouse && !codes.includes(e.code) && codes.length < 4) codes.push(e.code);
         paint();
+      };
+      // A left click needs a modifier held, so a plain click still presses the dialog's buttons.
+      const press = e => {
+        const code = mouseCode(e.button);
+        if (!code || (e.button === 0 && !e.ctrlKey && !e.shiftKey && !e.altKey)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        mods = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean);
+        codes = [code];
+        paint();
+      };
+      const swallow = e => {
+        if (e.button === 0 && e.type !== 'contextmenu') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
       };
       const up = e => {
         e.preventDefault();
@@ -346,8 +370,17 @@ export class Menus {
       addEventListener('keydown', down, true);
       addEventListener('keyup', up, true);
       addEventListener('blur', lost);
+      if (mouse) {
+        addEventListener('mousedown', press, true);
+        addEventListener('mouseup', swallow, true);
+        addEventListener('auxclick', swallow, true);
+        addEventListener('contextmenu', swallow, true);
+      }
       dlg.setText('IDC_CAPTION', command);
-      dlg.setText('IDC_USER_TEXT_STRING_1', 'Hold the keys for this command together.');
+      dlg.setText(
+        'IDC_USER_TEXT_STRING_1',
+        mouse ? 'Hold any modifiers and press a mouse button.' : 'Hold the keys for this command together.'
+      );
       dlg.setText('IDC_USER_TEXT_STRING_3', 'Now: ' + keyNames(current));
       dlg.setText(LEFT, 'Set');
       dlg.setText(ADD, 'Add');
@@ -465,7 +498,7 @@ export class Menus {
       inp.style.caretColor = 'transparent';
       inp.style.cursor = 'pointer';
       const listen = async () => {
-        const r = await this.listenKeys(actionName(a.id), work[a.id]);
+        const r = await this.listenKeys(actionName(a.id), work[a.id], isMouseAction(a.id));
         if (!r) return;
         if (!r.combo) {
           work[a.id] = [];

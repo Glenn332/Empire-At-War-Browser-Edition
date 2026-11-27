@@ -66,7 +66,9 @@ export const ACTIONS = [
   { id: 'SHOOTER_SETTINGS', page: 5, extra: { col: 1, row: 14 }, label: 'Battlefront: Settings', keys: ['KeyO'] },
   { id: 'SHOOTER_OVERLORD', page: 5, extra: { col: 0, row: 15 }, label: 'Battlefront: Tactical View', keys: ['KeyL'] },
   { id: 'SHOOTER_RELOAD', page: 5, extra: { col: 1, row: 15 }, label: 'Battlefront: Reload', keys: ['KeyR'] },
-  { id: 'SHOOTER_CONTROLS', page: 5, extra: { col: 1, row: 16 }, label: 'Battlefront: Show Controls', keys: ['KeyI'] }
+  { id: 'SHOOTER_CONTROLS', page: 5, extra: { col: 1, row: 16 }, label: 'Battlefront: Show Controls', keys: ['KeyI'] },
+  // Held while dragging the mouse: sideways turns the camera, up and down tilts it.
+  { id: 'CAMERA_ORBIT', page: 5, extra: { col: 0, row: 16 }, label: 'Turn / Tilt Camera (drag)', keys: ['Ctrl+MouseMiddle'], mouse: true }
 ];
 const byId = new Map(ACTIONS.map(a => [a.id, a]));
 
@@ -163,6 +165,28 @@ export function held(keys, id) {
   return false;
 }
 
+// Mouse buttons a binding can name, by MouseEvent.button, and their MouseEvent.buttons bits.
+const MOUSE_CODES = ['MouseLeft', 'MouseMiddle', 'MouseRight', 'Mouse4', 'Mouse5'];
+const MOUSE_BITS = [1, 4, 2, 8, 16];
+export function mouseCode(button) {
+  return MOUSE_CODES[button] || null;
+}
+export function isMouseAction(id) {
+  return !!byId.get(id)?.mouse;
+}
+
+// The mouse press starts this action's drag: its button and modifiers match one of the bindings.
+// Gives the press's MouseEvent.buttons bit, so a move can tell whether that button is still held, or 0.
+export function mouseBind(e, id) {
+  const code = mouseCode(e.button);
+  if (!code || e.metaKey) return 0;
+  for (const k of keysOf(id)) {
+    const [mods, codes] = split(k);
+    if (codes.length === 1 && codes[0] === code && MODS.every(([m, prop]) => !!e[prop] === mods.includes(m))) return MOUSE_BITS[e.button];
+  }
+  return 0;
+}
+
 export function groupKey(e) {
   for (let n = 0; n <= 9; n++) {
     if (pressed(e, 'GROUP_' + n)) return { n, assign: false };
@@ -227,7 +251,12 @@ const FALLBACK = {
   Period: '.',
   Slash: '/',
   Backquote: '`',
-  IntlBackslash: '\\'
+  IntlBackslash: '\\',
+  MouseLeft: 'Left Mouse',
+  MouseMiddle: 'Middle Mouse',
+  MouseRight: 'Right Mouse',
+  Mouse4: 'Mouse 4',
+  Mouse5: 'Mouse 5'
 };
 function codeName(code) {
   let m;

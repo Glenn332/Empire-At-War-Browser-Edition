@@ -9,7 +9,7 @@ import { loadTextureCanvas } from '../dds.js';
 import { buildCost, buildTime, isUpgradeType, isSquadronType, isCompanyType, companySpaceUnits, spacePop, hiddenInJump, directState } from './sim.js';
 import { ids } from './commands.js';
 import { CommandBar } from './hud.js';
-import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan } from './keybinds.js';
+import { pressed, held, groupKey, withKey, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind } from './keybinds.js';
 
 const ORDER_KEYS = [
   ['ATTACK_MOVE', 'attackmove'],
@@ -342,6 +342,11 @@ export class UI {
       this.turnDrag = { x: m.x };
       return;
     }
+    // The camera turn / tilt drag (Ctrl + middle by default) only takes over once the mouse moves, so a click on its
+    // button still does what that button does.
+    const orbit = this.placing ? 0 : mouseBind(e, 'CAMERA_ORBIT');
+    this.ctrlTurn = orbit ? { x: m.x, y: m.y, bit: orbit, button: e.button } : null;
+    if (orbit && e.button === 1) e.preventDefault();
     if (this.placing) {
       if (e.button === 0 && !this.placing.dragging && (this.placing.list.length > 1 || globalThis.reinforceTurn !== false)) {
         const g = this.r.pickGround(m.x, m.y);
@@ -376,7 +381,6 @@ export class UI {
         return;
       }
       this.pendingCommand = { x: m.x, y: m.y, ctrl: e.ctrlKey, shift: e.shiftKey || e.altKey, fast: this.rightTwice.hit(m.x, m.y) };
-      this.ctrlTurn = e.ctrlKey && !e.shiftKey && !e.altKey ? { x: m.x, y: m.y } : null;
       const movers = this.mine().filter(s => !s.dead && (s.isSquad || s.isMobile)),
         g = this.r.pickGround(m.x, m.y),
         h = this.pick(m.x, m.y);
@@ -388,7 +392,7 @@ export class UI {
       }
     } else if (e.button === 1) {
       e.preventDefault();
-      this.panDrag = { x: m.x, y: m.y };
+      if (!orbit) this.panDrag = { x: m.x, y: m.y };
     }
   }
 
@@ -414,12 +418,13 @@ export class UI {
     if (
       this.ctrlTurn &&
       !this.turnDrag &&
-      e.buttons & 2 &&
+      e.buttons & this.ctrlTurn.bit &&
       Math.abs(e.clientX - this.ctrlTurn.x) + Math.abs(e.clientY - this.ctrlTurn.y) > 5
     ) {
       this.pendingCommand = null;
       this.endMoveDrag();
-      this.turnDrag = { x: e.clientX, y: e.clientY, tilt: true };
+      this.drag = this.panDrag = null;
+      this.turnDrag = { x: e.clientX, y: e.clientY, tilt: true, button: this.ctrlTurn.button };
     }
     if (this.turnDrag) {
       this.r.rig.yaw -= (e.clientX - this.turnDrag.x) * TURN_DRAG;
@@ -446,8 +451,8 @@ export class UI {
       return;
     }
     if (e.button === 1) this.panDrag = null;
-    if (e.button === 2) this.ctrlTurn = null;
-    if ((e.button === 0 || e.button === 2) && this.turnDrag) {
+    if (e.button === this.ctrlTurn?.button) this.ctrlTurn = null;
+    if (this.turnDrag?.tilt ? e.button === this.turnDrag.button : (e.button === 0 || e.button === 2) && this.turnDrag) {
       this.turnDrag = null;
       return;
     }

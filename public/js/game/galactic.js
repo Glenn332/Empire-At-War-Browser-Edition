@@ -115,7 +115,7 @@ import { stageStart } from './transit.js';
 import { startStrategicMusic } from './galacticmusic.js';
 import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
-import { pressed, held, edgePan } from './keybinds.js';
+import { pressed, held, edgePan, mouseBind } from './keybinds.js';
 import { planetMaxStarbase } from './planetstats.js';
 
 const $ = id => document.getElementById(id);
@@ -1725,6 +1725,16 @@ export class GalacticGame {
         if (this.dragFleet) this.mergeDraggedStack();
       }
       if (!this.dragFleet && this.dragGround === undefined) this.tips?.moved();
+      const o = this.orbitDrag;
+      if (o && e.buttons & o.bit) {
+        if (!o.on && !this.dragFleet && this.dragGround === undefined && Math.hypot(e.clientX - o.x0, e.clientY - o.y0) > 5) {
+          o.on = true;
+          this.drag = null;
+        }
+        if (o.on) this.orbitBy(e.clientX - o.x, e.clientY - o.y);
+        o.x = e.clientX;
+        o.y = e.clientY;
+      }
       if (this.drag && this.panFree()) {
         this.dragPan(e.clientX - this.drag.x, e.clientY - this.drag.y);
         this.drag.x = e.clientX;
@@ -1735,14 +1745,24 @@ export class GalacticGame {
       this.mouse.in = false;
     });
     el.addEventListener('pointercancel', () => {
-      this.drag = this.dragFleet = null;
+      this.drag = this.dragFleet = this.orbitDrag = null;
       this.dragGround = undefined;
       this.dragReach = null;
       this.stackDown = null;
     });
     el.addEventListener('contextmenu', e => e.preventDefault());
+    // no middle button autoscroll over the galaxy, the middle button drags the camera
+    el.addEventListener('mousedown', e => e.button === 1 && e.preventDefault());
     el.addEventListener('pointerdown', e => {
       if (this.battle || this.controlsLocked || this.scriptUI?.modal) return;
+      // The camera turn / tilt drag (Ctrl + middle by default) only takes over once the mouse moves,
+      // so a click on its button still does what that button does.
+      const orbit = mouseBind(e, 'CAMERA_ORBIT');
+      this.orbitDrag = orbit ? { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, bit: orbit, button: e.button, on: false } : null;
+      if (orbit) {
+        el.setPointerCapture(e.pointerId);
+        if (e.button === 1) e.preventDefault();
+      }
       if (e.button === 2) {
         this.drag = { x: e.clientX, y: e.clientY };
         el.setPointerCapture(e.pointerId);
@@ -1773,6 +1793,14 @@ export class GalacticGame {
     });
     el.addEventListener('pointerup', e => {
       if (e.button === 2) this.drag = null;
+      if (this.orbitDrag && e.button === this.orbitDrag.button) {
+        const was = this.orbitDrag.on;
+        this.orbitDrag = null;
+        if (was) {
+          this.stackDown = null;
+          return;
+        }
+      }
       if (e.button === 0 && !this.dragFleet && this.dragGround === undefined && !this.controlsLocked) {
         const icon = this.pickCorruptionIcon(e.clientX, e.clientY),
           planet = icon && this.galaxy.planets[icon.p];
@@ -3358,7 +3386,9 @@ export class GalacticGame {
   }
 
   viewSnap(x, y) {
-    return { x, y, yaw: +(this.view.yaw || 0).toFixed(4), pull: Math.round(this.view.pullTo ?? this.view.pull ?? this.cam.pull) };
+    const snap = { x, y, yaw: +(this.view.yaw || 0).toFixed(4), pull: Math.round(this.view.pullTo ?? this.view.pull ?? this.cam.pull) };
+    if (this.view.pitch !== undefined) snap.pitch = +this.view.pitch.toFixed(2);
+    return snap;
   }
 
   zoomMap(steps) {
@@ -3393,6 +3423,14 @@ export class GalacticGame {
       c = Math.cos(this.view.yaw || 0),
       s = Math.sin(this.view.yaw || 0);
     this.panBy(-(sx * c + sy * s), sy * c - sx * s);
+  }
+
+  // Turns the galaxy camera with a sideways drag and tilts it with an up and down one.
+  orbitBy(dx, dy) {
+    if (this.controlsLocked || this.scriptUI?.modal || this.menus?.open || this.planetInfo.open || this.battle) return;
+    const v = this.view;
+    v.yaw = ((v.yaw || 0) - dx * 0.005) % (Math.PI * 2);
+    v.pitch = Math.min(-5, Math.max(-89, (v.pitch ?? this.cam.pitch) - (dy * 0.005) / DEG));
   }
 
   touchView(dx, dy, turn) {
@@ -3598,7 +3636,7 @@ export class GalacticGame {
       ty = v.y,
       tz = v.z ?? cm.plane,
       pull = v.pull ?? cm.pull,
-      pitch = cm.pitch;
+      pitch = v.pitch ?? cm.pitch;
     if (p && k > 0) {
       const r = p.type.num('Scale_Factor', 1) * PLANET_RADIUS,
         o = cm.zoomOffset;

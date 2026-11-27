@@ -148,7 +148,7 @@ import { openDialog } from './dialogs.js';
 
 import { showLoadScreen, endLoadScreen } from './loadscreen.js';
 import { showSplash, hideSplash } from '../splash.js';
-import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan } from './keybinds.js';
+import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind } from './keybinds.js';
 import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
 
@@ -2636,14 +2636,16 @@ export class LandGame {
       if (
         this.ctrlTurn &&
         !this.turnDrag &&
-        e.buttons & 2 &&
+        e.buttons & this.ctrlTurn[2] &&
         Math.abs(e.clientX - this.ctrlTurn[0]) + Math.abs(e.clientY - this.ctrlTurn[1]) > 5
       ) {
         this.turnDrag = 'tilt';
+        this.tiltDrag = this.ctrlTurn;
         this.down = null;
       }
-      if (!this.controlsLocked && (e.buttons & 4 || (this.turnDrag && e.buttons & 3))) v.yaw -= e.movementX * 0.005;
-      if (!this.controlsLocked && this.turnDrag === 'tilt' && e.buttons & 2)
+      const tilting = this.turnDrag === 'tilt' && e.buttons & this.tiltDrag[2];
+      if (!this.controlsLocked && (e.buttons & 4 || tilting || (this.turnDrag === true && e.buttons & 3))) v.yaw -= e.movementX * 0.005;
+      if (!this.controlsLocked && tilting)
         v.pitch = Math.min(far[1] * DEG, Math.max(k[0][1] * DEG, v.pitch + e.movementY * 0.005));
     });
     const send = (x, y, mode = '', twice = false) => {
@@ -2739,7 +2741,10 @@ export class LandGame {
         this.down = null;
         return;
       }
-      this.ctrlTurn = e.button === 2 && e.ctrlKey && !e.shiftKey && !e.altKey && !ui.placing ? [e.clientX, e.clientY] : null;
+      // The camera turn / tilt drag (Ctrl + middle by default) only takes over once the mouse moves.
+      const orbit = ui.placing ? 0 : mouseBind(e, 'CAMERA_ORBIT');
+      this.ctrlTurn = orbit ? [e.clientX, e.clientY, orbit, e.button] : null;
+      if (orbit && e.button === 1) e.preventDefault();
       if (bothButtonsRotate() && (e.buttons & 3) === 3 && !ui.placing) {
         this.turnDrag = true;
         this.down = null;
@@ -2756,8 +2761,8 @@ export class LandGame {
         this.fireHeld = false;
         return;
       }
-      if (e.button === 2) this.ctrlTurn = null;
-      if ((e.button === 0 || e.button === 2) && this.turnDrag) {
+      if (e.button === this.ctrlTurn?.[3]) this.ctrlTurn = null;
+      if (this.turnDrag === 'tilt' ? e.button === this.tiltDrag[3] : (e.button === 0 || e.button === 2) && this.turnDrag) {
         this.turnDrag = false;
         return;
       }
