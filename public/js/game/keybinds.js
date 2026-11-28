@@ -351,7 +351,7 @@ export function scrollScale(mode = 'Tactical') {
 const edgeWatchers = new Set();
 export const onEdgePan = f => edgeWatchers.add(f);
 // options set in another frame (the multiplayer galaxy and its battles run in frames)
-if (typeof window !== 'undefined')
+if (typeof addEventListener === 'function')
   addEventListener('storage', e => {
     if (e.key === 'swr-scroll-speed') scrollSlider = null;
     if (e.key !== 'swr-edge-pan') return;
