@@ -20,6 +20,7 @@ import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
 import { SuperLaserBeams } from './superlaserbeam.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade } from './extrafx.js';
+import { uploadGpuTextures, warmGpuBatches } from './gpuwarmup.js';
 
 const DEG = Math.PI / 180;
 const NO_FX = [];
@@ -357,6 +358,7 @@ class RingBatch {
       this.mask.count = 0;
     }
     this.n = 0;
+    this.dropped = false;
     if (ground)
       for (const m of [this.mesh, this.mask])
         if (m) {
@@ -401,10 +403,17 @@ class RingBatch {
     return geo;
   }
   begin() {
+    this.dropped = false;
     this.n = 0;
   }
   add(x, y, z, size, heading) {
-    if (this.n >= this.max || this.textures.some(t => t.userData.pending)) return;
+    if (this.n >= this.max || this.textures.some(t => t.userData.pending)) {
+      // A ring whose texture has not arrived yet is dropped rather than drawn from an empty
+      // (opaque black) texture. The caller asks again next frame, or a stationary selection
+      // would wait for the units to move before its outline ever showed up.
+      this.dropped = true;
+      return;
+    }
     if (this.ground) {
       const P = this.mesh.geometry.attributes.position.array,
         G = this.G,
@@ -564,6 +573,7 @@ export class SelectionRings {
     return b;
   }
   begin() {
+    this.dropped = false;
     for (const b of this.batches.values()) b.begin();
   }
   add(x, y, z, size, heading, own, type) {
@@ -582,7 +592,41 @@ export class SelectionRings {
     if (b) b.add(x, y, z, size, 0);
   }
   end() {
-    for (const b of this.batches.values()) b.end();
+    this.dropped = false;
+    for (const b of this.batches.values()) {
+      b.end();
+      if (b.dropped) this.dropped = true;
+    }
+  }
+  // The loading screen warms every ring batch this battle's units can ever select: their textures
+  // finish loading and upload, and their programs compile, before the player takes control. The
+  // first Ctrl+A then draws the outline at once instead of stalling on a compile and dropping
+  // rings until the units move. types are the world's unit specs (spawned ships, squads' fighters
+  // and garrison squadrons), so their own Selection_Blob_Material_Name batches exist in advance.
+  async warm(renderer, camera, types = []) {
+    if (!blobMaterials || !renderer) return;
+    const names = new Set([this.base]);
+    if (blobMaterials.has('INVALID_MOVE_LAND')) names.add('INVALID_MOVE_LAND');
+    for (const t of types) {
+      const n = t && t.has && t.has('Selection_Blob_Material_Name') ? t.str('Selection_Blob_Material_Name').trim().toUpperCase() : '';
+      if (n && blobMaterials.has(n)) names.add(n);
+    }
+    const meshes = [];
+    for (const name of names)
+      for (const own of [true, false]) {
+        const b = this.batch(name, own, false);
+        if (b) meshes.push(b.mesh, b.mask);
+      }
+    // The textures load through the file system on their own; nothing draws until each one is in.
+    await Promise.all(
+      meshes
+        .filter(Boolean)
+        .flatMap(m => [m.material.map, m.material.uniforms?.map?.value].filter(Boolean))
+        .map(t => t.userData?.ready?.catch(() => {}) ?? Promise.resolve())
+    );
+    const uploaded = new WeakSet();
+    for (const m of meshes) if (m) uploadGpuTextures(renderer, [m], uploaded);
+    await warmGpuBatches(renderer, camera, meshes.filter(Boolean), uploaded);
   }
 }
 
@@ -1060,6 +1104,9 @@ export class Renderer {
       if (h && h.blob && h.range > 0) r.addBlob(h.blob, s.x, s.y, s.z + (s.ringZ || 0), h.range * 2);
     }
     r.end();
+    // A batch whose texture was still loading dropped its rings: ask again next frame, or a
+    // stationary selection would never show its outline. The pass costs a few matrix writes.
+    if (r.dropped) this.selectionKey = null;
   }
 
   setEnvironment(env) {

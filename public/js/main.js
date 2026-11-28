@@ -886,6 +886,26 @@ class Game {
       }
       if (R.instances?.warmAll) await R.instances.warmAll(w.units, R.renderer, cam);
       else R.instances?.prepareUnits(w.units, R.renderer, cam);
+      // The selection rings: their batches, textures and programs are ready before the first
+      // Ctrl+A, so selecting everything draws the green outline instead of freezing on a
+      // compile. Spawned ships, squads' fighters and garrison squadrons all name their blob.
+      const ringTypes = new Set();
+      for (const u of w.units) {
+        if (u.dead) continue;
+        if (u.type) ringTypes.add(u.type);
+        if (u.isSquad) for (const f of u.fighters || []) if (f.type) ringTypes.add(f.type);
+        for (const g of u.garrison || []) {
+          const gt = g.type;
+          if (!gt) continue;
+          ringTypes.add(gt);
+          if (gt.has('Squadron_Units'))
+            for (const n of gt.list('Squadron_Units')) {
+              const t = db.type(n);
+              if (t) ringTypes.add(t);
+            }
+        }
+      }
+      await this.renderer.rings?.warm?.(R.renderer, cam, [...ringTypes]);
       if (R.gpu) {
         await R.gpu.settle();
         R.render(w, 0, null);

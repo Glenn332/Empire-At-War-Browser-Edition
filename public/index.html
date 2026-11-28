@@ -1963,7 +1963,8 @@
         const sun = norm([-0.45, 0.75, 0.5]);
 
         function frame(now) {
-          if (lost) {
+          if (lost || document.hidden) {
+            // A hidden window neither needs the animation nor should it fight the real work.
             requestAnimationFrame(frame);
             return;
           }
