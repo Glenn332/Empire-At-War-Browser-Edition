@@ -18,6 +18,7 @@ import {
 } from '../nativefont.js';
 import { onLanguageChange } from '../language.js';
 import { dialogFontPixels, uiTextHeight } from './dialogtext.js';
+import { roundAway } from './bounty.js';
 import { showSplash, hideSplash } from '../splash.js';
 
 import * as THREE from 'three';
@@ -118,6 +119,12 @@ import { TacticalMovies } from './tacticalmovies.js';
 import { pressed, held, edgePan, mouseBind, scrollRate } from './keybinds.js';
 import { planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
 import { releaseRenderer } from '../rendererrelease.js';
+
+// the planet labels on the galaxy map show income with its sign, "+12" or "-3", as in the original game
+const signedIncome = income => {
+  const credits = roundAway(income);
+  return (credits < 0 ? '' : '+') + credits;
+};
 
 const $ = id => document.getElementById(id);
 const SILENT = new Proxy(function () {}, {
@@ -4609,7 +4616,7 @@ export class GalacticGame {
       }
       if (this.filters & 1) {
         const s = this.valueStyle,
-          text = String(Math.round(displayIncome(this.galaxy, p, (orbit ||= orbitFleets(this.galaxy)))));
+          text = signedIncome(displayIncome(this.galaxy, p, (orbit ||= orbitFleets(this.galaxy))));
         x.font = `${s.pt * 1.6 * ui * s.scale}px ${fontFamily(s.font)}`;
         const vx = (point.x + s.offset[0] * scale) * r,
           vy = (point.y - s.offset[1] * scale) * r;
