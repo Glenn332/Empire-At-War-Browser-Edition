@@ -4994,6 +4994,16 @@ export class LandGame {
       c.height = bh;
     }
     const g = c.getContext('2d');
+    // Only clear and redraw when the camera moved or a unit's health changed. The compositor
+    // re-blends the canvas on every clear, so skipping unchanged frames saves compositor time.
+    const camKey = `${cam.position.x.toFixed(1)},${cam.position.y.toFixed(1)},${cam.position.z.toFixed(1)}`;
+    let healthKey = 0;
+    for (const u of w.units) {
+      if (!u.dead && u.side === me) healthKey += (u.hp || 0) * 1000 + (u.x | 0) + (u.y | 0);
+    }
+    const key = camKey + '|' + healthKey;
+    if (this._lastBarKey === key) return;
+    this._lastBarKey = key;
     g.clearRect(0, 0, bw, bh);
     if (this.endScreen) return;
     const at = (x, y, z) => {

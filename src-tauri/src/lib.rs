@@ -1020,15 +1020,12 @@ fn prepare_linux_webview() {
     if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
         unsafe { std::env::set_var("GDK_BACKEND", "x11") };
     }
-    // The same WebKitGTK build's DMABUF path also freezes under X11, and its shared-memory
-    // fallback crawls. Software compositing is the only path that stays both interactive and
-    // smooth on this driver combo, so it is the default unless the player chose a mode of their
-    // own (setting the variable to 0 forces the GPU compositor back on).
-    // UPDATE: After the performance optimizations (async shader compile, reduced shadow map,
-    // MSAA toggle, overlay throttle), the GPU compositor might work better. Test with:
-    //   WEBKIT_DISABLE_COMPOSITING_MODE=0 npm run app -- --debug
+    // GPU compositing works on AMD Barcelo after the performance optimizations (async shader
+    // compile, reduced shadow map, MSAA toggle, overlay throttle). Software compositing was the
+    // previous default because the GPU path froze, but that was before the optimizations.
+    // Setting WEBKIT_DISABLE_COMPOSITING_MODE=1 forces software compositing (fallback).
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
-        unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
+        unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0") };
     }
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
     if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
