@@ -1028,10 +1028,7 @@ fn prepare_linux_webview() {
         unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
     }
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
-    // The DMABUF renderer shows black flashes mid-frame on several drivers (first seen on NVIDIA,
-    // then AMD and Intel with WebKitGTK 2.46+), not just the freezes below. The shared-memory path
-    // is stable, so it is the default everywhere unless the player chose a mode of their own.
-    if std::env::var_os(SETTING).is_none() {
+    if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
         // still one thread: nothing else reads the environment yet
         unsafe { std::env::set_var(SETTING, "1") };
     }
