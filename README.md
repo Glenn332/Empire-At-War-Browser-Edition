@@ -51,6 +51,10 @@ lets you play offline afterwards. The start page walks you through both options.
 
 [progression.md](progression.md) shows exactly what is finished, what is partial and what is still missing.
 
+**For fork maintainers:** use the [proposed fork mod compatibility standard](docs/fork-mod-compatibility.md) to check
+that unchanged mods work on your build as they do on a named main web build. Every fork, including a fork of a fork,
+tests its own release directly against main; mod authors do not need to port or repackage anything.
+
 ## Built for big battles
 
 The point is to play battles the original engine struggles with:
