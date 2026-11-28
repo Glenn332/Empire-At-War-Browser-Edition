@@ -3151,15 +3151,18 @@ async function boot() {
   }
   window.applyGraphics = renderer => {
     for (const [id, key] of Object.entries(GFX)) $('gfx' + id).checked = !!gfx[key];
-    if (!renderer || !renderer.post) return;
-    renderer.shadowsOn = !!gfx.shadows && !window.game?.setup.attract;
-    renderer.post.bloom = !!gfx.bloom && !window.game?.setup.attract;
-    renderer.post.heat = !!gfx.heat && !window.game?.setup.attract;
-    renderer.post.flare = !!gfx.flare && !window.game?.setup.attract;
-    renderer.fxParticles.heatOn = !!gfx.heat && !window.game?.setup.attract;
-    if (renderer.ratioWas !== pixelRatio()) {
-      renderer.ratioWas = pixelRatio();
-      if (renderer.ctx) renderer.resize();
+    // The land game's renderer is a plain THREE.WebGLRenderer without .post — don't return early.
+    // Always re-fit the live battle so render scale changes apply immediately.
+    if (renderer && renderer.post) {
+      renderer.shadowsOn = !!gfx.shadows && !window.game?.setup.attract;
+      renderer.post.bloom = !!gfx.bloom && !window.game?.setup.attract;
+      renderer.post.heat = !!gfx.heat && !window.game?.setup.attract;
+      renderer.post.flare = !!gfx.flare && !window.game?.setup.attract;
+      renderer.fxParticles.heatOn = !!gfx.heat && !window.game?.setup.attract;
+      if (renderer.ratioWas !== pixelRatio()) {
+        renderer.ratioWas = pixelRatio();
+        if (renderer.ctx) renderer.resize();
+      }
     }
     // A graphics toggle that changes the pipeline (aa / scale / bloom) must reach the live battle
     // too, not just the next load: re-fit the land game (its own ratio bookkeeping, post targets).
