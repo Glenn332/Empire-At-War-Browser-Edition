@@ -24,7 +24,7 @@ import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera, loadTacticalCameraData } from './game/tacticalcameradata.js';
-import { World, Player, Team, modelsForType, factionArtTypes, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
+import { World, Player, Team, modelsForType, factionArtTypes, buildListFor, isUpgradeType, resetEntityIds, isBuildPadType } from './game/sim.js';
 import { UnitPoses } from './game/unitposes.js';
 import { benchFleet } from './game/benchfleet.js';
 import { seedSim } from './game/simrandom.js';
@@ -283,7 +283,7 @@ class Game {
     $('lobby').classList.add('hidden');
     if (!this.setup.attract) showSplash();
     progress('Loading map', 0);
-    const map = await loadMap(mapFile, { teams: teamFactions.length, instant: !!this.setup.instant });
+    const map = await loadMap(mapFile, { teams: teamFactions.length, instant: !!this.setup.instant, packed: this.setup.dynamicMap });
     ensureMissionPlayers(this.setup, map);
     startEnvironment(map, this.setup);
     audio.useAudioMode('Space');
@@ -291,7 +291,7 @@ class Game {
     Game.loading = this;
     await this.showLoading(map);
 
-    const stationType = (f, marker = null) => skirmishStation(f, marker) || (!marker && isDynamic(mapFile) ? dynamicMapStation(f) : null);
+    const stationType = (f, marker = null) => skirmishStation(f, marker) || (!marker && isDynamic(mapFile) ? dynamicMapStation(f, map) : null);
     const factions = (this.artFactions = [...new Set(teamFactions)]);
     const names = (this.artNames = new Set()),
       seen = (this.artSeen = new Set()),
@@ -325,7 +325,7 @@ class Game {
           const t = db.faction(f) && db.type(db.faction(f).str(k).trim());
           if (t) modelsForType(t, factions, names, seen, later);
         }
-    const isPad = t => (t.behaviors().has('TACTICAL_BUILD_OBJECTS') && !t.has('Tactical_Health')) || t.name.toUpperCase().endsWith('_PAD');
+    const isPad = t => isBuildPadType(t);
     for (const o of map.objects) modelsForType(o.type, factions, names, seen, isPad(o.type) ? null : later);
     if (this.setup.attract)
       for (const t of await scriptTypes(map.objects.map(o => o.type.str('Lua_Script').trim()))) modelsForType(t, null, names, seen, null);

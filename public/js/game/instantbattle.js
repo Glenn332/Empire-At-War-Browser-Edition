@@ -1,5 +1,5 @@
 import { db, skirmishStation } from '../gamedata.js';
-import { buildListFor, isUpgradeType, buildCost, isCompanyType, companySpaceUnits } from './sim.js';
+import { buildListFor, isUpgradeType, isBuildPadType, buildCost, isCompanyType, companySpaceUnits } from './sim.js';
 import { arrange, footprint, shipClass, spacePop } from './campaignbattle.js';
 import { InstantRules } from './instantrules.js';
 
@@ -17,7 +17,7 @@ export const isHeroType = t => heroFlag(t) || t.list('Squadron_Units').some(n =>
 
 export function leftOutOfInstant(type) {
   const b = type.behaviors();
-  if ((b.has('TACTICAL_BUILD_OBJECTS') && !type.has('Tactical_Health')) || type.name.toUpperCase().endsWith('_PAD')) return true;
+  if (isBuildPadType(type, b)) return true;
   if (b.has('CAPTURE_POINT')) return true;
   return type.sub('Abilities').some(a => a.all('Income_Stream_Ability').length > 0);
 }

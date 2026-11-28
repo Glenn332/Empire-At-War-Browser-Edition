@@ -1,6 +1,6 @@
 // The ten unit types a faction fields in the benchmark battles (play.html?benchmark=N and tools/bench-space.mjs).
 import { db, skirmishStation } from '../gamedata.js';
-import { buildListFor, isUpgradeType } from './sim.js';
+import { buildListFor, isUpgradeType, isBuildPadType } from './sim.js';
 
 const BENCH_FLEETS = {
   Empire: [
@@ -64,7 +64,7 @@ export function benchFleet(faction, pads = false) {
           can.push(t);
   } else
     for (const t of db.types.values())
-      if ((t.behaviors().has('TACTICAL_BUILD_OBJECTS') && !t.has('Tactical_Health')) || t.name.toUpperCase().endsWith('_PAD')) builder(t);
+      if (isBuildPadType(t)) builder(t);
   for (let i = 0; pads && i < builders.length && i < 400; i++) {
     for (const t of buildListFor(builders[i], faction)) {
       if (isUpgradeType(t)) continue;

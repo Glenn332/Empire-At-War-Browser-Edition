@@ -254,6 +254,27 @@ export function footprintOf(type) {
   return r || 40;
 }
 
+// A build pad raises what it builds in place. Besides pads without health of their own and types named as pads, any
+// object whose build lists hold under-construction types (Tactical_Buildable_Constructed) is one, such as a mod's
+// orbital turret station that inherits a satellite pad under another name.
+const buildPadTypes = new WeakMap();
+export function isBuildPadType(type, behaviors = type.behaviors()) {
+  if (type.name.toUpperCase().endsWith('_PAD')) return true;
+  if (!behaviors.has('TACTICAL_BUILD_OBJECTS')) return false;
+  if (!type.has('Tactical_Health')) return true;
+  let pad = buildPadTypes.get(type);
+  if (pad === undefined) {
+    pad = ['Tactical_Buildable_Objects_Campaign', 'Tactical_Buildable_Objects_Multiplayer'].some(tag =>
+      type
+        .list(tag)
+        .flatMap(entry => entry.split(/[\s,]+/))
+        .some(name => !!name && !db.faction(name) && !!db.type(name)?.has('Tactical_Buildable_Constructed'))
+    );
+    buildPadTypes.set(type, pad);
+  }
+  return pad;
+}
+
 export function buildListFor(type, factionName) {
   const out = [];
   let current = null;
@@ -662,7 +683,7 @@ export class Unit {
     this.revealsFiring = beh.has('REVEAL');
     this.isFighter = beh.has('FIGHTER_LOCOMOTOR');
     this.isMobile = this.isFighter || beh.has('SIMPLE_SPACE_LOCOMOTOR') || beh.has('STARSHIP_LOCOMOTOR');
-    this.isPad = (beh.has('TACTICAL_BUILD_OBJECTS') && !type.has('Tactical_Health')) || type.name.toUpperCase().endsWith('_PAD');
+    this.isPad = isBuildPadType(type, beh);
     this.isStation = type.tag.toLowerCase() === 'starbase';
     if (beh.has('BUZZ_DROIDS')) {
       this.isMobile = true;
