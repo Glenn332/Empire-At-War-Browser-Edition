@@ -1490,6 +1490,12 @@ export class LandWorld {
     }
     return room + i * 4;
   }
+  // A unit standing on blocked ground (a member of a team that spawned inside a structure and was given a new order
+  // before it was out) could take no step at all: it may walk on while it heads for open ground.
+  leavingBlocked(u, aim, can) {
+    return !can(u.x, u.y) && can(aim.x, aim.y);
+  }
+
   freeOk(x, y) {
     if (!this.shooter) return true;
     const ix = Math.round(x / CELL),
@@ -7792,7 +7798,7 @@ export class LandWorld {
     if (!box.path.length) u.freeLeg = false;
     const sh = this.shooter && u.foot ? this.shooter : null,
       can = (x, y) => (sh ? sh.footOk(u, x, y, (u.need & ~3) | 1) : this.isOpen(x, y, (u.need & ~3) | 1));
-    if ((!sh && u.freeLeg && this.freeOk(fx, fy)) || can(fx, fy)) {
+    if ((!sh && u.freeLeg && this.freeOk(fx, fy)) || can(fx, fy) || (!sh && this.leavingBlocked(u, aim, can))) {
       u.x = fx;
       u.y = fy;
     } else if (go > 0 && can(sx, sy)) {
@@ -9508,7 +9514,7 @@ export class LandWorld {
             can = (x, y) => (sh ? sh.footOk(u, x, y, (u.need & ~3) | 1) : this.isOpen(x, y, (u.need & ~3) | 1)),
             gx = u.x + (dx / d) * go,
             gy = u.y + (dy / d) * go;
-          if (u.flies || (!sh && next.free && this.freeOk(fx, fy)) || can(fx, fy)) {
+          if (u.flies || (!sh && next.free && this.freeOk(fx, fy)) || can(fx, fy) || (!sh && this.leavingBlocked(u, next, can))) {
             u.x = fx;
             u.y = fy;
             u.blockFails = 0;

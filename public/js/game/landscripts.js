@@ -558,7 +558,13 @@ export class LandScripts {
         } else for (const q of l) march(w, q, x, y, !!attack);
       },
       attack: (us, t) => {
-        const l = squads(us).filter(q => !later(q, () => this.cmd().attack([q], t)));
+        const all = squads(us).filter(q => !later(q, () => this.cmd().attack([q], t))),
+          // an attack on a unit of its own team (a plan sending a task force to a friendly structure) is an attack-move
+          // to it: closing on a target it will never shoot would leave the squad pressing into it for good
+          own = q => t.side >= 0 && w.ally(q.side, t.side),
+          l = all.filter(q => !own(q));
+        for (const q of all) if (own(q)) march(w, q, t.x, t.y, true);
+        if (!l.length) return;
         if (t.members && t.members.length) {
           for (const q of l) q.march = q.post = null;
           if (l.length > 1) w.attackGroup(l, t);

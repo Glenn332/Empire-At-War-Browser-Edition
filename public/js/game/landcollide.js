@@ -1256,6 +1256,9 @@ function beginMM(W, c, T) {
 // When that fails, the contact ends (an attack) and is found again a few frames later, so the failed search would
 // repeat several times a second: it is tried again only after the second a waiting contact waits to be re-decided.
 const ROUND_AGAIN_WAIT = 1;
+// A mover still waiting behind a standing unit after this many seconds (a crowd that leaves it no way round and no
+// room to stand aside) gives up its move and stops where it is, instead of waiting for good. Our own addition.
+const GIVE_UP_WAIT = 10;
 const roundAgainKey = (A, B) => A.id * 1e6 + B.id;
 function roundAgainDue(W, A, B) {
   const until = W.roundAgainUntil?.get(roundAgainKey(A, B));
@@ -1300,6 +1303,9 @@ function classifyMS(W, c, bodies, T) {
       return;
     }
   }
+  // a friend that cannot make room stands where the mover is going (several squads sent to the same point): the
+  // mover stops short of it, as it would of a unit of its own class, rather than wait for a place that stays taken
+  if (friend && endsOn(A, B) && stopShort(A, B)) return;
   c.state = MS.LATER;
 }
 
@@ -1577,6 +1583,9 @@ export function tickCollisions(W) {
     if (c.kind === 'mm') {
       const { master: M, slave: S } = c;
       if (c.state === MM.LATER) {
+        // a wait between two movers ends when either stops: a standing one is met again as a mover against a
+        // standing unit, which can go round it, have it stand aside or stop short
+        if (!(c.a.moving && c.b.moving)) continue;
         if (W.time >= c.until) decide(W, c, bodies, T);
       } else {
         if (c.state === MM.PATH_AROUND) {
@@ -1607,6 +1616,11 @@ export function tickCollisions(W) {
         if (W.time >= c.clock) {
           c.clock = W.time + 1;
           decide(W, c, bodies, T);
+        }
+        if (c.state === MS.LATER && W.time - c.start >= GIVE_UP_WAIT) {
+          A.path.length = 0;
+          c.state = MS.RESOLVED;
+          continue;
         }
       } else if (look) {
         const far = A.max * (Math.max(T, A.mpi) + (crushes(W, A, B) ? 1.5 : 0));
