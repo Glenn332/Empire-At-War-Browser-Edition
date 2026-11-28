@@ -66,7 +66,7 @@ import { loadPrioritySets } from './priorities.js';
 import { weaponFireSound } from './weaponswap.js';
 import { LandScripts } from './landscripts.js';
 import { TacticalStoryHost } from './tacticalstory.js';
-import { stepTacticalSpeech } from './tacticalspeech.js';
+import { stepTacticalSpeech, releaseTacticalSpeech } from './tacticalspeech.js';
 import { fetchText } from '../vfs.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn, frameCap, menuFrameCap, FrameGate } from '../gfx.js';
 import { fitShadowToView } from './shadowfit.js';
@@ -152,6 +152,7 @@ import { showSplash, hideSplash } from '../splash.js';
 import { pressed, held, bothButtonsRotate, keysOf, keyName, edgePan, mouseBind, scrollScale } from './keybinds.js';
 import { beaconType } from './beacons.js';
 import { SpectatorView } from './spectator.js';
+import { releaseRenderer } from '../rendererrelease.js';
 
 const LAND_TICK = 1 / 30;
 // The engine blends into an ability's attack animation over 0.2 s before its model proxy starts emitting.
@@ -342,6 +343,8 @@ export class LandGame {
   dispose() {
     clearSkyAtlas();
     this.shooter?.dispose();
+    this.fx?.dispose();
+    releaseTacticalSpeech(this);
     this.modeSuspended = true;
     this.over = true;
     this.life.abort();
@@ -358,6 +361,7 @@ export class LandGame {
     const R = this.renderer;
     if (R?.isMirror) R.dispose?.();
     else if (R) {
+      releaseRenderer(R);
       R.dispose();
       R.forceContextLoss();
     }
@@ -2454,6 +2458,8 @@ export class LandGame {
 
   bindInput() {
     const el = this.renderer.domElement,
+      // the canvas outlives the battle (three keeps the renderer that drew shared textures): its handlers go with the battle
+      elListen = (ev, fn, opts) => el.addEventListener(ev, fn, { ...(typeof opts === 'boolean' ? { capture: opts } : opts), signal: this.life.signal }),
       v = this.view,
       ui = this.ui,
       w = this.world,
@@ -2596,7 +2602,7 @@ export class LandGame {
     v.pitch = tilt(v.dist);
     this.viewTilt = tilt;
     this.viewDist = d => Math.min(far[0], Math.max(k[0][0], d));
-    el.addEventListener(
+    elListen(
       'wheel',
       e => {
         if (this.controlsLocked || this.setup.attract) return;
@@ -2627,8 +2633,8 @@ export class LandGame {
       },
       { passive: true }
     );
-    el.addEventListener('contextmenu', e => e.preventDefault());
-    document.documentElement.addEventListener('mouseleave', () => (ui.mouse.gone = true));
+    elListen('contextmenu', e => e.preventDefault());
+    document.documentElement.addEventListener('mouseleave', () => (ui.mouse.gone = true), { signal: this.life.signal });
     addEventListener('mouseup', e => (ui.mouse.buttons = e.buttons));
     addEventListener('mousemove', e => {
       ui.mouse.x = e.clientX;
@@ -2742,7 +2748,7 @@ export class LandGame {
       ui.placing = null;
       this.hudTimer = 0;
     };
-    el.addEventListener('mousedown', e => {
+    elListen('mousedown', e => {
       if (this.setup.attract) return;
       this.audio.unlock && this.audio.unlock();
       if (this.controlsLocked) {

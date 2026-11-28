@@ -199,7 +199,8 @@ export class CorruptionVisuals {
     this.glow.clear();
     this.funnels.clear();
     this.paths.clear();
-    this.glowManager?.worker.terminate();
-    this.lineManager?.worker.terminate();
+    this.glowManager?.dispose();
+    this.lineManager?.dispose();
+    this.glowManager = this.lineManager = null;
   }
 }

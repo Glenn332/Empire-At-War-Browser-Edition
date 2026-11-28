@@ -362,6 +362,18 @@ export function modelsForType(type, factions = null, out = new Set(), seen = new
   return out;
 }
 
+// Every ship and squadron type the given factions can field in a battle: built, called down from a reserve or
+// spawned by a script. Their models must be loaded before such a unit is made, or it has no hardpoint positions.
+export function factionArtTypes(factionNames) {
+  const sides = new Set(factionNames.filter(Boolean).map(name => name.toUpperCase()));
+  const out = [];
+  for (const type of db.types.values()) {
+    if (!type.str('Space_Model_Name') && !type.list('Squadron_Units').length) continue;
+    if (type.list('Affiliation').some(side => sides.has(side.toUpperCase()))) out.push(type);
+  }
+  return out;
+}
+
 const NEBULA_KEEPS = new Set([
   'HUNT',
   'LURE',
@@ -905,61 +917,16 @@ export class Unit {
     this.instPosed = undefined;
     this.aim = undefined;
     this.setup();
+    if (!this.model && world.lateArt && type.str('Space_Model_Name')) world.lateArt(this);
   }
 
   setup() {
     const t = this.type,
       w = this.world;
     const data = getModelData(t.str('Space_Model_Name'));
-    if (data) {
-      this.model = buildModel(data, {
-        teamColor: this.player && this.player.id >= 0 ? unitTeamColor(w.colorize !== false, this.type, this.player.factionName, this.player.color) : null,
-        ...w.modelOpts
-      });
-      this.obj.add(this.model.root);
-      const r = this.model.radius * this.scale;
-      this.fxReach = Math.max(this.fxReach, this.model.drawRadius * this.scale);
-      this.revealSize = r;
-      this.height = (this.model.box.max.z - this.model.box.min.z) * this.scale;
-      this.radius = t.num('Custom_Soft_Footprint_Radius', 0) || t.num('Custom_Footprint_Radius', 0) || Math.max(8, r * 0.7);
-      this.hitRadius = Math.max(10, r * 0.55);
-      if (!this.isFighter) {
-        const b = this.model.box,
-          s = this.scale;
-        this.hitA = Math.max(4, (b.max.y - b.min.y) * 0.5 * s);
-        this.hitB = Math.max(4, (b.max.x - b.min.x) * 0.5 * s);
-        this.hitC = Math.max(4, (b.max.z - b.min.z) * 0.5 * s);
-        this.hitZ = (b.max.z + b.min.z) * 0.5 * s;
-        this.hitF = -(b.max.y + b.min.y) * 0.5 * s;
-        this.hitL = (b.max.x + b.min.x) * 0.5 * s;
-      }
-      this.coll = collisionOf(data);
-      {
-        const cb = data && data.meshes ? data.meshes.find(m => m.bbox && /^COLLISIONBOX$/i.test(m.name)) : null;
-        this.lookBox = cb ? Float64Array.from(cb.bbox) : null;
-      }
-      this.extBox = extentBoxOf(data);
-      if (this.coll) {
-        const B = this.coll.box;
-        this.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4]), Math.max(-B[2], B[5])) * this.scale;
-      }
-      {
-        const m = t.num('Collision_Box_Modifier', 1),
-          b = this.model.box;
-        this.collBall = m > 1 ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) * 0.5 * this.scale * m : 0;
-      }
-      this.visualRadius = Math.max(10, r);
-      if (this.isMobile && !this.isFighter) {
-        const b = this.model.box;
-        this.halfLen = Math.max(this.radius * 0.8, (b.max.y - b.min.y) * 0.5 * this.scale * 0.9);
-        this.halfWid = Math.max(8, Math.min(this.halfLen, (b.max.x - b.min.x) * 0.5 * this.scale * 0.9));
-      }
-    } else {
-      this.visualRadius = this.radius;
-    }
-    const box = t.num('Select_Box_Scale', 0);
-    this.ringSize = box * 10 > this.visualRadius ? box : this.visualRadius * 2.2;
-    this.ringZ = t.num('Select_Box_Z_Adjust', 0);
+    if (data) this.takeModelShape(data);
+    else this.visualRadius = this.radius;
+    this.sizeRings();
     this.engineMeshes = [];
     this.parts = [];
     this.proxies = [];
@@ -968,22 +935,7 @@ export class Unit {
     this.shieldMesh = null;
     this.shieldFlash = 0;
     this.shieldAt = { x: 0, y: 0, z: 0 };
-    if (this.model) {
-      for (const [name, mesh] of this.model.meshByName) {
-        if (/BLAST/.test(name)) mesh.visible = false;
-        else if (/^ENGINE/.test(name) && mesh.userData.hiddenByDefault) this.engineMeshes.push(mesh);
-        else if (name === 'SHIELD') {
-          if (!mesh.children.some(m => m.material && m.material.userData.shield)) {
-            mesh.visible = false;
-            continue;
-          }
-          this.shieldMesh = mesh;
-          for (const m of mesh.children) {
-            m.renderOrder = 4;
-          }
-        }
-      }
-    }
+    if (this.model) this.sortModelMeshes();
     this.obj.scale.setScalar(this.scale);
     this.obj.matrixAutoUpdate = false;
     this.obj.updateMatrix();
@@ -997,21 +949,15 @@ export class Unit {
       this.attachHardpoint(hp);
       this.hardpoints.push(hp);
     }
-    if (this.hpColl) this.collR = Math.max(this.collR || 0, ...this.hpColl.map(p => p.r * this.scale));
+    this.finishHardpoints();
     const destroyable = this.hardpoints.filter(h => h.destroyable);
     this.hpDriven = destroyable.length > 0;
     this.hpDies = this.hpDriven && t.bool('Should_Be_Destroyed_When_All_Hardpoints_Destroyed', true);
-    for (const h of this.hardpoints) h.route = h.mesh ? this.hardpoints.find(o => o.mesh === h.mesh) : null;
     if (db.type(t.list('Projectile_Types')[0]) && !this.hardpoints.some(h => h.isWeapon)) {
-      const muzzles = [],
+      const muzzles = this.model ? this.modelMuzzles() : [],
         scatter = o => new Map(o.tuples('Targeting_Fire_Inaccuracy').map(([c, v]) => [c.toUpperCase(), parseFloat(v)])),
         own = scatter(t),
         swap = swapMode(t);
-      if (this.model) {
-        for (const [name, bone] of this.model.boneByName) {
-          if (/^MUZZLE[A-Z]?_\d+$/.test(name) || /^FP_/.test(name)) muzzles.push(this.localOf(bone));
-        }
-      }
       this.weapons = t.list('Projectile_Types').map(n => {
         const proj = db.type(n);
         const recharge = proj ? fireNum(t, proj, 'Projectile_Fire_Recharge_Seconds', 2) : 0;
@@ -1049,74 +995,7 @@ export class Unit {
     this.engageRange = this.type.num('Targeting_Max_Attack_Distance', 0) || this.maxRange;
     this.hasWeapons = !!this.weapon || this.hardpoints.some(h => h.isWeapon);
 
-    if (this.model) {
-      const damageBones = new Map();
-      for (const hp of this.hardpoints) {
-        const b = this.model.bone(hp.def.str('Damage_Particles'));
-        if (b) damageBones.set(b, hp);
-      }
-      for (const px of this.model.proxies) {
-        if (px.hidden && /^pi/i.test(px.name)) {
-          this.proxies.push({
-            name: px.name,
-            bone: px.bone,
-            local: this.localOf(px.bone),
-            damage: false,
-            hp: null,
-            on: false,
-            sys: null,
-            byBone: false,
-            ion: true
-          });
-          continue;
-        }
-        // PPTW, PRS and PEM effects belong to an ability. Some models ship them unhidden (Thrawn's Admonitor, Rogue
-        // Squadron, the Arc Hammer); they still show only while the ability is on when the unit has that ability.
-        const named = /^(pptw|prs|pem)/i.exec(px.name)?.[1].toLowerCase(),
-          mode = named && (px.hidden || modeAbility(this.type, named)) ? named : null;
-        if (mode) {
-          (this.modeProxies ||= []).push({
-            name: px.name,
-            bone: px.bone,
-            local: this.localOf(px.bone),
-            damage: false,
-            hp: null,
-            on: false,
-            sys: null,
-            byBone: false,
-            mode
-          });
-          continue;
-        }
-        let byBone = false;
-        for (let b = px.bone; b && b !== this.model.root && !byBone; b = b.parent) byBone = !b.visible;
-        // A hidden effect on a bone that is hidden at rest belongs to an animation that shows the bone (the Death
-        // Star's superlaser on its ATTACK clips); it plays while the bone is shown.
-        if (px.hidden && !byBone) continue;
-        let hp = null;
-        for (let b = px.bone; b && !hp; b = b.parent) hp = damageBones.get(b) || null;
-        const damage = !!hp || /damage|smoke|fire|elec|_ALT\d/i.test(px.name) || /_ALT\d/i.test(px.bone.name);
-        const proxy = {
-          name: px.name,
-          bone: px.bone,
-          local: this.localOf(px.bone),
-          damage,
-          hp,
-          on: false,
-          sys: null,
-          byBone,
-          turbo: /^PTE_/i.test(px.name),
-          plain: /^pe/i.test(px.name)
-        };
-        this.proxies.push(proxy);
-        if (!damage) this.pendingProxies.push(proxy);
-        if (/engine/i.test(px.name)) this.hasEngineFx = true;
-      }
-      if (this.hasEngineFx) {
-        this.engineMeshes.length = 0;
-        this.engineGlows.length = 0;
-      }
-    }
+    if (this.model) this.collectProxies();
 
     const inc = t.sub('Abilities').flatMap(a => a.all('Income_Stream_Ability'))[0];
     if (inc)
@@ -1174,15 +1053,173 @@ export class Unit {
     attachAbilities(this, parseAbilities(t), autoSpecials(t));
     this.applyBonuses();
     this.setupAnimation();
-    if (this.model) {
-      const flat = flattenModel(this.model);
-      if (flat) {
-        this.obj.remove(this.model.root);
-        this.obj.add(flat);
-      }
-      for (const part of this.parts) this.obj.add(part);
+    if (this.model) this.showModel();
+    this.syncObj();
+    w.scene.add(this.obj);
+  }
+
+  // The size, hit and collision shapes a unit takes from its model.
+  takeModelShape(data) {
+    const t = this.type,
+      w = this.world;
+    this.model = buildModel(data, {
+      teamColor: this.player && this.player.id >= 0 ? unitTeamColor(w.colorize !== false, this.type, this.player.factionName, this.player.color) : null,
+      ...w.modelOpts
+    });
+    this.obj.add(this.model.root);
+    const r = this.model.radius * this.scale;
+    this.fxReach = Math.max(this.fxReach, this.model.drawRadius * this.scale);
+    this.revealSize = r;
+    this.height = (this.model.box.max.z - this.model.box.min.z) * this.scale;
+    this.radius = t.num('Custom_Soft_Footprint_Radius', 0) || t.num('Custom_Footprint_Radius', 0) || Math.max(8, r * 0.7);
+    this.hitRadius = Math.max(10, r * 0.55);
+    if (!this.isFighter) {
+      const b = this.model.box,
+        s = this.scale;
+      this.hitA = Math.max(4, (b.max.y - b.min.y) * 0.5 * s);
+      this.hitB = Math.max(4, (b.max.x - b.min.x) * 0.5 * s);
+      this.hitC = Math.max(4, (b.max.z - b.min.z) * 0.5 * s);
+      this.hitZ = (b.max.z + b.min.z) * 0.5 * s;
+      this.hitF = -(b.max.y + b.min.y) * 0.5 * s;
+      this.hitL = (b.max.x + b.min.x) * 0.5 * s;
     }
-    if (this.model && castsShadow(this.model.model)) {
+    this.coll = collisionOf(data);
+    {
+      const cb = data && data.meshes ? data.meshes.find(m => m.bbox && /^COLLISIONBOX$/i.test(m.name)) : null;
+      this.lookBox = cb ? Float64Array.from(cb.bbox) : null;
+    }
+    this.extBox = extentBoxOf(data);
+    if (this.coll) {
+      const B = this.coll.box;
+      this.collR = Math.hypot(Math.max(-B[0], B[3]), Math.max(-B[1], B[4]), Math.max(-B[2], B[5])) * this.scale;
+    }
+    {
+      const m = t.num('Collision_Box_Modifier', 1),
+        b = this.model.box;
+      this.collBall = m > 1 ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) * 0.5 * this.scale * m : 0;
+    }
+    this.visualRadius = Math.max(10, r);
+    if (this.isMobile && !this.isFighter) {
+      const b = this.model.box;
+      this.halfLen = Math.max(this.radius * 0.8, (b.max.y - b.min.y) * 0.5 * this.scale * 0.9);
+      this.halfWid = Math.max(8, Math.min(this.halfLen, (b.max.x - b.min.x) * 0.5 * this.scale * 0.9));
+    }
+  }
+
+  sizeRings() {
+    const box = this.type.num('Select_Box_Scale', 0);
+    this.ringSize = box * 10 > this.visualRadius ? box : this.visualRadius * 2.2;
+    this.ringZ = this.type.num('Select_Box_Z_Adjust', 0);
+  }
+
+  // Blast meshes start hidden, hidden engine meshes glow with the throttle, and a shield mesh flashes on hits.
+  sortModelMeshes() {
+    for (const [name, mesh] of this.model.meshByName) {
+      if (/BLAST/.test(name)) mesh.visible = false;
+      else if (/^ENGINE/.test(name) && mesh.userData.hiddenByDefault) this.engineMeshes.push(mesh);
+      else if (name === 'SHIELD') {
+        if (!mesh.children.some(m => m.material && m.material.userData.shield)) {
+          mesh.visible = false;
+          continue;
+        }
+        this.shieldMesh = mesh;
+        for (const m of mesh.children) {
+          m.renderOrder = 4;
+        }
+      }
+    }
+  }
+
+  finishHardpoints() {
+    if (this.hpColl) this.collR = Math.max(this.collR || 0, ...this.hpColl.map(p => p.r * this.scale));
+    for (const h of this.hardpoints) h.route = h.mesh ? this.hardpoints.find(o => o.mesh === h.mesh) : null;
+  }
+
+  modelMuzzles() {
+    const muzzles = [];
+    for (const [name, bone] of this.model.boneByName)
+      if (/^MUZZLE[A-Z]?_\d+$/.test(name) || /^FP_/.test(name)) muzzles.push(this.localOf(bone));
+    return muzzles;
+  }
+
+  // The particle proxies of the model: engine and damage effects, ion and ability effects.
+  collectProxies() {
+    const damageBones = new Map();
+    for (const hp of this.hardpoints) {
+      const b = this.model.bone(hp.def.str('Damage_Particles'));
+      if (b) damageBones.set(b, hp);
+    }
+    for (const px of this.model.proxies) {
+      if (px.hidden && /^pi/i.test(px.name)) {
+        this.proxies.push({
+          name: px.name,
+          bone: px.bone,
+          local: this.localOf(px.bone),
+          damage: false,
+          hp: null,
+          on: false,
+          sys: null,
+          byBone: false,
+          ion: true
+        });
+        continue;
+      }
+      // PPTW, PRS and PEM effects belong to an ability. Some models ship them unhidden (Thrawn's Admonitor, Rogue
+      // Squadron, the Arc Hammer); they still show only while the ability is on when the unit has that ability.
+      const named = /^(pptw|prs|pem)/i.exec(px.name)?.[1].toLowerCase(),
+        mode = named && (px.hidden || modeAbility(this.type, named)) ? named : null;
+      if (mode) {
+        (this.modeProxies ||= []).push({
+          name: px.name,
+          bone: px.bone,
+          local: this.localOf(px.bone),
+          damage: false,
+          hp: null,
+          on: false,
+          sys: null,
+          byBone: false,
+          mode
+        });
+        continue;
+      }
+      let byBone = false;
+      for (let b = px.bone; b && b !== this.model.root && !byBone; b = b.parent) byBone = !b.visible;
+      // A hidden effect on a bone that is hidden at rest belongs to an animation that shows the bone (the Death
+      // Star's superlaser on its ATTACK clips); it plays while the bone is shown.
+      if (px.hidden && !byBone) continue;
+      let hp = null;
+      for (let b = px.bone; b && !hp; b = b.parent) hp = damageBones.get(b) || null;
+      const damage = !!hp || /damage|smoke|fire|elec|_ALT\d/i.test(px.name) || /_ALT\d/i.test(px.bone.name);
+      const proxy = {
+        name: px.name,
+        bone: px.bone,
+        local: this.localOf(px.bone),
+        damage,
+        hp,
+        on: false,
+        sys: null,
+        byBone,
+        turbo: /^PTE_/i.test(px.name),
+        plain: /^pe/i.test(px.name)
+      };
+      this.proxies.push(proxy);
+      if (!damage) this.pendingProxies.push(proxy);
+      if (/engine/i.test(px.name)) this.hasEngineFx = true;
+    }
+    if (this.hasEngineFx) {
+      this.engineMeshes.length = 0;
+      this.engineGlows.length = 0;
+    }
+  }
+
+  showModel() {
+    const flat = flattenModel(this.model);
+    if (flat) {
+      this.obj.remove(this.model.root);
+      this.obj.add(flat);
+    }
+    for (const part of this.parts) this.obj.add(part);
+    if (castsShadow(this.model.model)) {
       const min = this.model.radius * 0.3;
       this.obj.traverse(o => {
         if (!o.isMesh || !o.material || o.material.transparent || !o.material.uniforms || !o.material.uniforms.shadowMap) return;
@@ -1191,8 +1228,37 @@ export class Unit {
         if (o.geometry.boundingSphere.radius >= min) (this.casters ||= []).push(o);
       });
     }
+  }
+
+  // A unit made before its models were loaded (a script spawn that could not wait) takes them once they are in.
+  takeLateModel() {
+    if (this.model || this.dead) return false;
+    const data = getModelData(this.type.str('Space_Model_Name'));
+    if (!data) return false;
+    this.takeModelShape(data);
+    this.sizeRings();
+    this.selectScale = this.type.num('Select_Box_Scale', this.visualRadius * 2);
+    this.sortModelMeshes();
+    this.obj.updateMatrix();
+    for (const hp of this.hardpoints) {
+      hp.fireLocal = [];
+      this.attachHardpoint(hp);
+    }
+    this.finishHardpoints();
+    if (this.weapons) {
+      const muzzles = this.modelMuzzles();
+      this.weapons.forEach((weapon, i) => {
+        if (!weapon) return;
+        weapon.muzzles = muzzles;
+        weapon.fixed = fixedMuzzle(i, this.weapons.length, muzzles.length);
+      });
+    }
+    this.collectProxies();
+    this.setupAnimation();
+    this.showModel();
     this.syncObj();
-    w.scene.add(this.obj);
+    this.instList = undefined;
+    return true;
   }
 
   setupAnimation() {

@@ -117,6 +117,7 @@ import { stepDualFlash } from './tutorialrewards.js';
 import { TacticalMovies } from './tacticalmovies.js';
 import { pressed, held, edgePan, mouseBind, scrollRate } from './keybinds.js';
 import { planetMaxStarbase, planetMaxGroundSlots } from './planetstats.js';
+import { releaseRenderer } from '../rendererrelease.js';
 
 const $ = id => document.getElementById(id);
 const SILENT = new Proxy(function () {}, {
@@ -125,6 +126,8 @@ const SILENT = new Proxy(function () {}, {
 });
 const DEG = Math.PI / 180;
 const PLANET_TEXTURE_CAP = 1024;
+const STORY_SAVE_WAIT_SECONDS = 5;
+const STORY_SAVE_RETRY_SECONDS = 0.25;
 const _pickRay = new THREE.Raycaster(),
   _pickAt = new THREE.Vector2(),
   _pickC = new THREE.Vector3(),
@@ -247,8 +250,10 @@ export class GalacticGame {
     }
     this.ui?.destroy?.();
     if (this.menus) while (this.menus.stack.length) this.menus.stack.pop().close();
+    this.disposeParticles();
     const R = this.renderer;
     if (R?.isWebGLRenderer) {
+      releaseRenderer(R);
       R.dispose();
       R.forceContextLoss();
     } else R?.dispose?.();
@@ -673,6 +678,14 @@ export class GalacticGame {
     }
     this.speed = speed;
   }
+  disposeParticles() {
+    this.abilityParticles?.dispose();
+    this.abilityParticles = null;
+    for (const m of this.attachedParticles?.values() || []) m.dispose();
+    this.attachedParticles?.clear();
+    this.corruptionVisuals?.dispose();
+  }
+
   async endCampaign(result) {
     this.over = true;
     this.controlsLocked = true;
@@ -696,9 +709,7 @@ export class GalacticGame {
     this.drag = this.dragFleet = null;
     this.dragGround = undefined;
     this.dragReach = null;
-    this.abilityParticles?.worker.terminate();
-    if (this.attachedParticles) for (const m of this.attachedParticles.values()) m.worker.terminate();
-    this.corruptionVisuals?.dispose();
+    this.disposeParticles();
     $('hud')?.classList.add('hidden');
     this.renderer.domElement.hidden = true;
     this.names.hidden = true;
@@ -1659,6 +1670,8 @@ export class GalacticGame {
 
   bindInput() {
     const el = this.renderer.domElement;
+    // the canvas outlives the galaxy (three keeps the renderer that drew shared textures): its handlers go with the galaxy
+    const elListen = (ev, fn, opts) => el.addEventListener(ev, fn, { ...(typeof opts === 'boolean' ? { capture: opts } : opts), signal: this.life.signal });
     const addEventListener = (ev, fn, opts) => this.listen(ev, fn, opts);
     const unlock = () => {
       this.audio?.unlock();
@@ -1740,7 +1753,7 @@ export class GalacticGame {
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     this.mouse = { x: innerWidth / 2, y: innerHeight / 2, in: false };
-    el.addEventListener('pointermove', e => {
+    elListen('pointermove', e => {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
       this.mouse.in = true;
@@ -1766,19 +1779,19 @@ export class GalacticGame {
         this.drag.y = e.clientY;
       }
     });
-    el.addEventListener('pointerleave', () => {
+    elListen('pointerleave', () => {
       this.mouse.in = false;
     });
-    el.addEventListener('pointercancel', () => {
+    elListen('pointercancel', () => {
       this.drag = this.dragFleet = this.orbitDrag = null;
       this.dragGround = undefined;
       this.dragReach = null;
       this.stackDown = null;
     });
-    el.addEventListener('contextmenu', e => e.preventDefault());
+    elListen('contextmenu', e => e.preventDefault());
     // no middle button autoscroll over the galaxy, the middle button drags the camera
-    el.addEventListener('mousedown', e => e.button === 1 && e.preventDefault());
-    el.addEventListener('pointerdown', e => {
+    elListen('mousedown', e => e.button === 1 && e.preventDefault());
+    elListen('pointerdown', e => {
       if (this.battle || this.controlsLocked || this.scriptUI?.modal) return;
       // The camera turn / tilt drag (Ctrl + middle by default) only takes over once the mouse moves,
       // so a click on its button still does what that button does.
@@ -1824,7 +1837,7 @@ export class GalacticGame {
       }
       if (!this.planetSelectionLocked && !this.inputBlocked('TUTORIAL_CLICK_PLANET')) this.select(this.pick(e.clientX, e.clientY));
     });
-    el.addEventListener('pointerup', e => {
+    elListen('pointerup', e => {
       if (e.button === 2 || e.button === 1) this.drag = null;
       if (this.orbitDrag && e.button === this.orbitDrag.button) {
         const was = this.orbitDrag.on;
@@ -1942,12 +1955,12 @@ export class GalacticGame {
         } else if (to >= 0) this.moveFleet(f, to);
       }
     });
-    el.addEventListener('dblclick', e => {
+    elListen('dblclick', e => {
       if (this.controlsLocked || this.scriptUI?.modal) return;
       const i = this.pick(e.clientX, e.clientY);
       if (i >= 0) this.zoomIn(i);
     });
-    el.addEventListener(
+    elListen(
       'wheel',
       e => {
         e.preventDefault();
@@ -3999,6 +4012,7 @@ export class GalacticGame {
     b.t += real;
     this.fadeEl.style.opacity = Math.max(0, Math.min(1, (b.t - b.zoom) / b.fade));
     if (b.t >= b.zoom + b.fade && !b.gone) {
+      if (!b.linked && !this.mpBattles && !this.storySavedForBattle(b, real)) return false;
       b.gone = true;
       if (b.linked) {
         launchLinkedMission(this, b.linked).catch(error => {
@@ -4011,9 +4025,28 @@ export class GalacticGame {
         this.mpBattles.launch(b);
         return !!b.frame;
       }
-      stageStart(this.battleSetup());
+      this.galaxy.storyLuaReady = b.storySave;
+      try {
+        stageStart(this.battleSetup());
+      } finally {
+        this.galaxy.storyLuaReady = null;
+        b.storySave = null;
+      }
     }
     return false;
+  }
+
+  // The galaxy comes back from a battle out of its snapshot, and story scripts that could not be saved stay stopped
+  // for the rest of the campaign. A save can fail for a moment (a script mid-call), so the battle waits for one
+  // that works, for a few seconds at most, while the scripts keep running.
+  storySavedForBattle(b, real) {
+    if (!this.galaxy.storyLuaSnapshot || !this.story?.persist) return true;
+    b.storyWait = (b.storyWait || 0) + real;
+    if (b.storyWait < (b.storyRetryAt || 0)) return false;
+    b.storySave = this.galaxy.storyLuaSnapshot();
+    if (b.storySave) return true;
+    b.storyRetryAt = b.storyWait + STORY_SAVE_RETRY_SECONDS;
+    return b.storyWait >= STORY_SAVE_WAIT_SECONDS;
   }
 
   playStoryMovie(name, done) {

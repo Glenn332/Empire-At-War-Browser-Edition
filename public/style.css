@@ -1054,6 +1054,17 @@ body:not(.original-hud) .heroframe {
     opacity: 0;
   }
 }
+.hb.flash.hb-flash-icon::before {
+  content: none;
+}
+.hb.flash.hb-flash-icon > .hb-art-icon {
+  animation: hudflashicon 1s steps(2) infinite;
+}
+@keyframes hudflashicon {
+  50% {
+    filter: brightness(1.8);
+  }
+}
 .hab .habtext {
   position: absolute;
   inset: 0;

@@ -24,7 +24,7 @@ import { loadIcons, iconUrl } from './icons.js';
 import { Audio } from './audio.js';
 import { Renderer, loadBlobMaterials } from './game/render.js';
 import { loadTacticalCamera, loadTacticalCameraData } from './game/tacticalcameradata.js';
-import { World, Player, Team, modelsForType, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
+import { World, Player, Team, modelsForType, factionArtTypes, buildListFor, isUpgradeType, resetEntityIds } from './game/sim.js';
 import { UnitPoses } from './game/unitposes.js';
 import { benchFleet } from './game/benchfleet.js';
 import { seedSim } from './game/simrandom.js';
@@ -44,7 +44,7 @@ import { loadGameFonts } from './fonts.js';
 import { diag } from './diag.js';
 import './aidebug.js';
 import { BenchOverlay } from './benchoverlay.js';
-import { texturesReady, eachTextureReady, loadTexture, textureBytes, dxtSupported } from './dds.js';
+import { texturesReady, eachTextureReady, loadTexture, textureBytes, dxtSupported, releaseKeptPictures } from './dds.js';
 import { loadParticles } from './particles.js';
 import { Advisor } from './game/advisor.js';
 import { FrontEnd } from './game/frontend.js';
@@ -95,7 +95,7 @@ import { installTacticalBattle, superweaponMusic } from './game/tacticalbattle.j
 import { superweaponShot } from './game/tacticalsuperweaponcamera.js';
 import { TacticalStoryHost } from './game/tacticalstory.js';
 import { installCampaignStoryView, addStoryGoal, mergeStoryGoals } from './game/spacecampaignview.js';
-import { stepTacticalSpeech } from './game/tacticalspeech.js';
+import { stepTacticalSpeech, releaseTacticalSpeech } from './game/tacticalspeech.js';
 import { isSuperweaponTarget, isTacticalSuperweapon, superweaponClipNames } from './game/tacticalsuperweapon.js';
 import { TacticalSuperweaponHUD } from './game/tacticalsuperweaponhud.js';
 import { tacticalAnnouncement } from './game/tacticalvictory.js';
@@ -190,6 +190,7 @@ function endGame(next) {
     }
   }
   window.game = null;
+  releaseKeptPictures();
   resetPage();
 }
 
@@ -353,12 +354,7 @@ class Game {
         }
       }
     if (!this.setup.attract && !this.setup.campaign && !instant) {
-      const sides = new Set(factions.map(f => f.toUpperCase()));
-      for (const t of db.types.values()) {
-        if (!t.str('Space_Model_Name') && !t.list('Squadron_Units').length) continue;
-        if (!t.list('Affiliation').some(a => sides.has(a.toUpperCase()))) continue;
-        if (!seen.has(t) && !later.includes(t)) later.push(t);
-      }
+      for (const t of factionArtTypes(factions)) if (!seen.has(t) && !later.includes(t)) later.push(t);
     }
     for (const env of map.environments || []) for (const s of env.skydomes) names.add(s.str('Space_Model_Name'));
     {
@@ -448,6 +444,7 @@ class Game {
           if (h && !this.setup.net) h.budgetMs = 4;
         })
         .catch(e => console.warn('scripts', e));
+    world.lateArt = unit => this.lateArt(unit);
     world.artReady = type => {
       if (this.lock) return true;
       const st = this.artState.get(type);
@@ -766,6 +763,8 @@ class Game {
     this.reportView = null;
     this.bench?.dispose();
     this.bench = null;
+    releaseTacticalSpeech(this);
+    diag.detach(this.renderer?.renderer);
     if (this.renderer) spareRenderer = this.renderer.dispose(keep);
     if (window.game === this) window.game = null;
   }
@@ -1054,6 +1053,24 @@ class Game {
     this.bring(type, true);
     if (this.lock) (this.artHolds ||= new Set()).add(type);
     return this.artState.get(type);
+  }
+
+  // A unit made before its art was loaded (a spawn from a script callback that cannot wait) takes its models once they
+  // are in. In lockstep that happens at the start of the next step: the battle does not step while the art loads.
+  lateArt(unit) {
+    const pending = this.artFor(unit.type);
+    if (!pending) return;
+    (this.lateUnits ||= new Set()).add(unit);
+    if (!this.lock) pending.then(() => this.giveLateModels());
+  }
+
+  giveLateModels() {
+    if (!this.lateUnits?.size) return;
+    for (const unit of this.lateUnits) {
+      if (!unit.dead && this.artState.get(unit.type) !== 'here') continue;
+      this.lateUnits.delete(unit);
+      unit.takeLateModel();
+    }
   }
 
   artHeld() {
@@ -2229,6 +2246,7 @@ class Game {
           this.owed = 0;
           break;
         }
+        this.giveLateModels();
         w.updateBegin(TICK);
         this.midStep = true;
       }

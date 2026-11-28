@@ -331,19 +331,34 @@ export class LandUI {
       game.view.x = p.x;
       game.view.y = p.y;
     };
-    mm.addEventListener('mousedown', e => {
-      const armed = e.button === 0 && MINIMAP_ORDERS.has(this.armed) && !this.placing && !this.aiming;
-      if (e.button === 2 || armed) {
-        e.preventDefault();
-        e.stopPropagation();
-        const p = at(e);
-        game.mapOrder?.(p.x, p.y, e.ctrlKey ? 'attackmove' : '', e.button === 2 && !e.ctrlKey && mapTwice.hit(e.clientX, e.clientY));
-      } else if (e.button === 0) look(e);
-    });
-    mm.addEventListener('mousemove', e => {
-      if (e.buttons & 1 && !MINIMAP_ORDERS.has(this.armed)) look(e);
-    });
-    mm.addEventListener('contextmenu', e => e.preventDefault());
+    // the minimap stays on the page after the battle: its handlers go when the battle does
+    const signal = (this.life = new AbortController()).signal;
+    mm.addEventListener(
+      'mousedown',
+      e => {
+        const armed = e.button === 0 && MINIMAP_ORDERS.has(this.armed) && !this.placing && !this.aiming;
+        if (e.button === 2 || armed) {
+          e.preventDefault();
+          e.stopPropagation();
+          const p = at(e);
+          game.mapOrder?.(p.x, p.y, e.ctrlKey ? 'attackmove' : '', e.button === 2 && !e.ctrlKey && mapTwice.hit(e.clientX, e.clientY));
+        } else if (e.button === 0) look(e);
+      },
+      { signal }
+    );
+    mm.addEventListener(
+      'mousemove',
+      e => {
+        if (e.buttons & 1 && !MINIMAP_ORDERS.has(this.armed)) look(e);
+      },
+      { signal }
+    );
+    mm.addEventListener('contextmenu', e => e.preventDefault(), { signal });
+  }
+
+  destroy() {
+    this.life?.abort();
+    this.bar?.destroy();
   }
 
   get hudTimer() {

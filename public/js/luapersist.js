@@ -284,6 +284,14 @@ class Session {
     this.protoIds = new Map();
     this.protoKeys = new Map();
     this.tplIds = new Map();
+    this.dropped = [];
+  }
+
+  // A value with no saved form (a game object or function the save cannot name) is stored as nil and listed,
+  // so one such value costs that value instead of stopping every story script after a battle.
+  dropValue(message) {
+    this.dropped.push(message);
+    return null;
   }
 
   id(obj, kind) {
@@ -324,7 +332,11 @@ class Session {
         return { r: this.id(v, tv.type) };
       }
       case T.LCF:
-        return this.fn(v);
+        try {
+          return this.fn(v);
+        } catch (error) {
+          return this.dropValue(error.message);
+        }
       case T.LIGHT: {
         if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return { l: [typeof v, v] };
         if (v === null || v === undefined) return { l: ['undefined'] };
@@ -332,7 +344,7 @@ class Session {
         if (perm !== undefined) return { p: perm };
         const d = p.hooks.describe(v);
         if (d === undefined)
-          throw new Error(
+          return this.dropValue(
             'a Lua value holds an object of the engine that cannot be saved (' +
               (v.__name || v.constructor?.name || typeof v) +
               ') at ' +
@@ -341,7 +353,7 @@ class Session {
         return { h: d };
       }
       default:
-        throw new Error('cannot save a Lua value of type ' + tv.type + ' at ' + this.where());
+        return this.dropValue('cannot save a Lua value of type ' + tv.type + ' at ' + this.where());
     }
   }
 
@@ -388,7 +400,7 @@ class Session {
           const perm = p.perms.get(v);
           if (perm !== undefined) return { pw: perm };
           const d = p.hooks.describe(v);
-          if (d === undefined) throw new Error('a story value is an object of the engine that cannot be saved: ' + (v.__name || '?'));
+          if (d === undefined) return this.dropStoryValue('a story value is a game object that cannot be saved: ' + (v.__name || '?'));
           return { w: d };
         }
         if (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null) {
@@ -396,11 +408,16 @@ class Session {
           for (const k of Object.keys(v)) o[k] = this.js(v[k]);
           return { o };
         }
-        throw new Error('a story value cannot be saved: ' + (v.constructor?.name || 'object'));
+        return this.dropStoryValue('a story value cannot be saved: ' + (v.constructor?.name || 'object'));
       }
       default:
-        throw new Error('a story value cannot be saved: a ' + typeof v);
+        return this.dropStoryValue('a story value cannot be saved: a ' + typeof v);
     }
+  }
+
+  dropStoryValue(message) {
+    this.dropValue(message);
+    return { u: 1 };
   }
 
   cell(tv) {
@@ -412,7 +429,7 @@ class Session {
       const [id, obj, kind] = this.todo.pop();
       this.nodes[id] = this.node(obj, kind);
     }
-    return { nodes: this.nodes };
+    return { nodes: this.nodes, ...(this.dropped.length ? { dropped: this.dropped } : {}) };
   }
 
   node(obj, kind) {
@@ -437,7 +454,8 @@ class Session {
             continue;
           }
           this.trail.push(kname ?? '#' + n);
-          e.push([this.enc(en.key), this.enc(en.value)]);
+          const entryKey = this.enc(en.key);
+          if (entryKey !== null) e.push([entryKey, this.enc(en.value)]);
           this.trail.pop();
           n++;
         }
@@ -554,6 +572,7 @@ class Restored {
   constructor(p, data) {
     this.p = p;
     this.data = data;
+    this.dropped = [];
     this.objs = new Array(data.nodes.length);
     const { lua } = p.vm,
       L = p.L,
@@ -620,6 +639,12 @@ class Restored {
     return s === null ? null : new this.p.TString(this.p.L, unlatin1(s));
   }
 
+  // A saved game object that is no longer there (gone since the save) loads as nil and is listed, as on saving.
+  dropValue(message) {
+    this.dropped.push(message);
+    return undefined;
+  }
+
   js(e) {
     if (e === null) return null;
     switch (typeof e) {
@@ -637,12 +662,12 @@ class Restored {
     if (e.st) return new Set(e.st.map(x => this.js(x)));
     if (e.pw !== undefined) {
       const o = p.byName.get(e.pw);
-      if (!o) throw new Error('a permanent engine object is not in this machine: ' + e.pw);
+      if (!o) return this.dropValue('a permanent game object is not in this machine: ' + e.pw);
       return o;
     }
     if (e.w !== undefined) {
       const o = p.hooks.resolve(e.w);
-      if (o === undefined) throw new Error('an engine object of the saved story cannot be found: ' + JSON.stringify(e.w));
+      if (o === undefined) return this.dropValue('a game object of the saved story cannot be found: ' + JSON.stringify(e.w));
       return o;
     }
     if (e.o) {
@@ -696,7 +721,10 @@ class Restored {
     if (e.p !== undefined) return this.perm(e.p);
     if (e.h !== undefined) {
       const o = this.p.hooks.resolve(e.h);
-      if (o === undefined) throw new Error('an engine object of the saved game cannot be found: ' + JSON.stringify(e.h));
+      if (o === undefined) {
+        this.dropValue('a game object of the saved game cannot be found: ' + JSON.stringify(e.h));
+        return new TValue(T.NIL, null);
+      }
       return new TValue(T.LIGHT, o);
     }
     if (e.l !== undefined) return new TValue(T.LIGHT, e.l[0] === 'undefined' ? undefined : e.l[1]);
@@ -736,8 +764,10 @@ class Restored {
         else if (!n.b) o.metatable = null;
         const tv = new p.TValue(T.TABLE, o);
         for (const [k, v] of n.e) {
+          const entryKey = this.value(k);
+          if (entryKey.type === T.NIL) continue;
           p.pushValue(L, tv);
-          p.pushValue(L, this.value(k));
+          p.pushValue(L, entryKey);
           p.pushValue(L, this.value(v));
           lua.lua_rawset(L, -3);
           lua.lua_pop(L, 1);

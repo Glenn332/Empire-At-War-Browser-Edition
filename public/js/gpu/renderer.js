@@ -2,6 +2,7 @@ import * as THREE from '../../vendor/three/build/three.module.js';
 import { families, PARAMS } from './programs.js';
 import './programs-galactic.js';
 import { env, webkit, dropGPU } from './env.js';
+import { dropDisposeHandlers } from '../rendererrelease.js';
 
 const SLOT = 256;
 const SLOTS = 4096;
@@ -429,6 +430,10 @@ export class GPURenderer {
   }
   dispose() {
     this.device.destroy();
+    // a render target that outlives the battle (the sky atlas) would keep this renderer, and its last frame's lists
+    // the battle's meshes, in memory
+    if (this.onTargetDispose) dropDisposeHandlers(new Set([this.onTargetDispose]));
+    this.lists = { opaque: [], transparent: [], items: [], n: 0 };
   }
   later(...xs) {
     for (const x of xs) if (x) this.trash.push(x);

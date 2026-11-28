@@ -452,4 +452,9 @@ export async function restoreStory(host, data) {
   }
   host.objectCache = null;
   host.reasonCache.clear();
+  if (restored.dropped.length) {
+    const note = restored.dropped.length + ' value(s) loaded as nil: ' + restored.dropped.slice(0, 3).join('; ');
+    console.warn('Story restore: ' + note);
+    host.errors.set('Story restore', note);
+  }
 }

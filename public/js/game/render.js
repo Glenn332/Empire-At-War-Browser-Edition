@@ -21,6 +21,7 @@ import { TractorBeams } from './tractorbeam.js';
 import { SuperLaserBeams } from './superlaserbeam.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade } from './extrafx.js';
 import { uploadGpuTextures, warmGpuBatches } from './gpuwarmup.js';
+import { releaseRenderer } from '../rendererrelease.js';
 
 const DEG = Math.PI / 180;
 const NO_FX = [];
@@ -717,6 +718,8 @@ export class Renderer {
 
   dispose(keep = false) {
     removeEventListener('resize', this.onResize);
+    this.fxParticles?.dispose();
+    this.instances?.jobs?.stop();
     this.post.resize(1, 1);
     if (this.shadows) {
       this.shadows.target.depthTexture.dispose();
@@ -728,6 +731,7 @@ export class Renderer {
     if (keep) return this.renderer;
     if (this.gpu) this.gpu.dispose();
     else {
+      releaseRenderer(this.renderer);
       this.renderer.dispose();
       this.renderer.forceContextLoss();
     }

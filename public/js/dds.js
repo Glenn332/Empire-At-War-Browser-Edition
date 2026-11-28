@@ -405,6 +405,7 @@ function picture(name, repeat) {
 
 const files = new WeakMap();
 const keepData = new WeakSet(),
+  kept = new Set(),
   restoring = new WeakSet();
 const hasPictures = t => !!(t.mipmaps?.[0]?.data || t.image?.data);
 
@@ -505,7 +506,10 @@ export function capCopy(t, cap) {
 }
 
 function restorePictures(t, keep = false) {
-  if (keep) keepData.add(t);
+  if (keep && !keepData.has(t)) {
+    keepData.add(t);
+    kept.add(new WeakRef(t));
+  }
   const file = files.get(t.source);
   if (!file || restoring.has(t) || hasPictures(t)) return;
   restoring.add(t);
@@ -517,6 +521,23 @@ function restorePictures(t, keep = false) {
     capPictures(t);
     t.needsUpdate = true;
   });
+}
+
+// A texture a renderer asks for again after its pictures went keeps them, so two renderers drawing it do not take
+// turns reading the file. That holds only until the renderers change: every switch between the galaxy and a battle
+// makes a new one, and kept for good the pictures of every texture drawn twice piled up for the whole session (2.5 GB
+// with a big mod after a few battles). On a switch they go, and the renderer that draws one next reads the file again.
+export function releaseKeptPictures() {
+  for (const ref of kept) {
+    kept.delete(ref);
+    const t = ref.deref();
+    if (!t) continue;
+    keepData.delete(t);
+    const file = files.get(t.source);
+    if (!file || restoring.has(t) || !hasPictures(t)) continue;
+    t.mipmaps = (t.mipmaps || []).map(m => ({ width: m.width, height: m.height }));
+    t.source = waiting(t, file);
+  }
 }
 
 export async function texturesReady() {
