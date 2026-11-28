@@ -69,7 +69,7 @@ export class BenchOverlay {
       <div class="bh"><b>PROC</b><span data-k="pnote"></span><i data-k="pn"></i></div>
       <div class="bt" data-k="ptable"></div>
       <div class="bh"><b>GL</b><span data-k="gl"></span></div>
-      <div class="bh" data-k="stallhead"><b>STALLS</b><span>gaps over 200 ms · task = page, no frame = GPU/compositor</span><i data-k="sn"></i></div>
+      <div class="bh" data-k="stallhead"><b>STALLS</b><i data-k="sn"></i></div>
       <div class="bt two" data-k="stable"></div>
       <div class="bg"><span>frame ms</span><canvas data-k="ft"></canvas></div>
       <div class="bg"><span>fps / run</span><canvas data-k="fg"></canvas></div>`;
@@ -90,8 +90,6 @@ export class BenchOverlay {
     this.showGl = () => {
       const e = this.el;
       const pr = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 0;
-      // The setting (gfx.aa) is not the fact: WebKit may ignore antialias:false on the context,
-      // and the scene target is allocated on first use. Read both when we can.
       const samples = renderer.post?.targets?.scene?.samples;
       let ctxSamples = null;
       try {
@@ -109,16 +107,8 @@ export class BenchOverlay {
               : 'msaa off'
             : 'msaa on';
       const g = this.osGpu;
-      const real = g ? `${g.name}${g.pciId ? ` ${g.pciId}` : ''}` : null;
-      const conflict = real && this.glName && /apple/i.test(this.glName) && !/apple/i.test(real);
-      const glPart = this.glName
-        ? `GL "${this.glName}"${conflict ? ' (WebKit masks it)' : ''}`
-        : renderer.gpu
-          ? 'GL WebGPU'
-          : 'GL';
-      e.gl.textContent = `${real ? real + ' · ' : ''}${glPart} · ${msaa} · scale ${Math.round(
-        (+gfx.scale || 1) * 100
-      )}%${pr ? ` · ${Math.round(pr * 100)}% res` : ''}`;
+      const name = g ? g.name : renderer.gpu ? 'WebGPU' : 'WebGL';
+      e.gl.textContent = `${name} · ${msaa} · ${Math.round((+gfx.scale || 1) * 100)}%${pr ? ` · ${Math.round(pr * 100)}% res` : ''}`;
     };
     this.showGl();
     // A stall is a gap between frames too long to be just a slow frame: either a long task (the

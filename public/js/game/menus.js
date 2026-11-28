@@ -1223,7 +1223,7 @@ export class Menus {
     // every full-screen pass (MSAA scene target, bloom, FXAA combine, shadow blur) shrinks with it.
     // The row's own label (IDC_MESH_DETAIL in GUIDialogs.rc) is retitled and carries the live % -
     // no cloned label to overlap the original. The LOW/HIGH end labels stay as generic hints.
-    const scaleSteps = [1, 0.85, 0.75, 0.66, 0.5];
+    const scaleSteps = [0.5, 0.66, 0.75, 0.85, 1]; // left = lowest (fastest), right = full quality
     const showScale = () => dlg.setText('IDC_MESH_DETAIL', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
     dlg.slider(
       'IDC_MESH_DETAIL_SLIDER',
