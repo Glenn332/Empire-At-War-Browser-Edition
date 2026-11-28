@@ -277,6 +277,11 @@ class Game {
     this.frame = this.frame.bind(this);
   }
 
+  // Re-fit the renderer after a graphics change (render scale, MSAA, etc.).
+  fit() {
+    if (this.renderer) this.renderer.resize();
+  }
+
   async start() {
     const { mapFile, credits, popCap, teamFactions } = this.setup;
     $('lobby').classList.add('hidden');

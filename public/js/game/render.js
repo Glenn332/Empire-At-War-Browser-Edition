@@ -739,7 +739,8 @@ export class Renderer {
       h = this.dom.parentElement.clientHeight || innerHeight;
     this.width = w;
     this.height = h;
-    this.renderer.setPixelRatio(pixelRatio());
+    this.ratioWas = pixelRatio();
+    this.renderer.setPixelRatio(this.ratioWas);
     this.renderer.setSize(w, h, false);
     // Match the 3D resolution scale, but do not spend extra pixels supersampling the 2D overlay.
     // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
