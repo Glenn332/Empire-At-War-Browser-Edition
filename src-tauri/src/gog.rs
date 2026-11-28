@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[cfg(windows)]
 const GAME_ID: &str = "1421404887";
 
 #[cfg(windows)]

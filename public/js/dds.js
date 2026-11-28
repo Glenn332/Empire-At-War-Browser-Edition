@@ -2,6 +2,7 @@ import { diag } from './diag.js';
 import * as THREE from '../vendor/three/build/three.module.js';
 import { fetchBinary } from './vfs.js';
 import { gfx } from './gfx.js';
+import { workerCount } from './game/performance.js';
 import { decodeDXT, decodeRGTC } from './ddsdecode.js';
 import { buildMips, mipsFit } from './ddsmips.js';
 import { decodePNG, isPNG } from './png.js';
@@ -684,7 +685,7 @@ function askDecoder(msg, copy) {
   if (decoders === null) {
     decoders = [];
     try {
-      decodersToCome = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 2)) - 1;
+      decodersToCome = workerCount('decode') - 1;
       startDecoder();
       decoderWatch = setTimeout(() => {
         if (!decoderAnswered) decodersFailed();

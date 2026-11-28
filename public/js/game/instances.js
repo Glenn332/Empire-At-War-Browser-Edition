@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { instanceable, alphaInstanceable, skinBatchable } from '../model.js';
 import { CollectJobs } from './collectjobs.js';
 import { mergeableGeometry, mergeGeometries, mergeKey } from './landinstances.js';
+import { warmGpuBatches } from './gpuwarmup.js';
 
 const ROW = 24 * 4;
 
@@ -26,6 +27,11 @@ function placeBranch(root, node) {
   return true;
 }
 const HIDDEN = 1;
+
+function planReady(plan) {
+  for (let i = 0; i < plan.length; i += 2) if (!plan[i].ready) return false;
+  return true;
+}
 
 // Writes a * b (column-major 4x4) straight into an instance row: a batched part's own matrixWorld is never read (with
 // collect jobs it is not even written), so the multiply and the copy into the batch are one step.
@@ -92,6 +98,12 @@ export class Instances {
     this.gpu = null;
     this.camera = null;
     this.jobs = CollectJobs.create();
+    this.prepared = new WeakSet();
+    this.warmPools = new WeakSet();
+    this.warmQueue = [];
+    this.warming = null;
+    this.uploaded = new WeakSet();
+    this.prepareDue = 0;
   }
 
   poolFor(mesh, skinned = false, decal = false) {
@@ -111,7 +123,10 @@ export class Instances {
         mat,
         skinned,
         rows: skinned ? [] : null,
-        ready: !skinned,
+        // Every pool starts unprepared: skinned ones are marked ready by their own
+        // compileAsync above, everything else by the GPU warm-up queue in prepareUnits.
+        // Drawing through a pool before its programs exist would block the frame in the driver.
+        ready: false,
         order: decal ? DECAL_ORDER + mesh.renderOrder : mesh.renderOrder,
         n: 0,
         cap: 0,
@@ -423,7 +438,7 @@ export class Instances {
       if (u.dead || !u.obj) continue;
       const obj = u.obj;
       let list = u.instList;
-      if (!list || ((u.id + stamp) & 63) === 0) list = this.scan(u);
+      if (!list || (u.instStatic === false && ((u.id + stamp) & 63) === 0)) list = this.scan(u);
       u.instStamp = stamp;
       if (!obj.visible) continue;
       let pose = -1;
@@ -476,7 +491,7 @@ export class Instances {
       const fading = ta < -1.001;
       const world = obj.matrixWorld;
       const plannable = Instances.drawPlans && !whole && !castsShadow && !u.shieldMesh;
-      if (plannable && u.instPlan) {
+      if (plannable && u.instPlan?.length && planReady(u.instPlan)) {
         drawn += this.drawPlanned(u.instPlan, world.elements, fading, tr, tg, tb, ta);
         obj.visible = false;
         put.push(obj);
@@ -515,6 +530,15 @@ export class Instances {
           m = e.mesh;
         if (e.members) {
           let p = e.pool;
+          if (!p.ready) {
+            for (const q of e.parts) {
+              q.mesh.layers.set(0);
+              this.taken.delete(q.mesh);
+            }
+            if (!whole) for (const q of e.parts) q.mesh.matrixWorld.multiplyMatrices(world, q.local);
+            rest++;
+            continue;
+          }
           if (fading && !p.mat.transparent) {
             const fp = (e.fpool ||= this.fadePool(p));
             if (fp.ready) p = fp;
@@ -551,7 +575,7 @@ export class Instances {
           e.pool = null;
           e.skin = null;
         }
-        const away = !!e.pool && m.material !== e.mat;
+        const away = !!e.pool && (!e.pool.ready || m.material !== e.mat);
         if (away !== !!e.away) {
           e.away = away;
           if (away) {
@@ -582,7 +606,7 @@ export class Instances {
           const f = (e.fpool ||= this.fadePool(p));
           if (f.ready) p = f;
         }
-        const pooled = !!p && !away && !(e.skin && !this.taken.has(m)),
+        const pooled = !!p && p.ready && !away && !(e.skin && !this.taken.has(m)),
           defer = defer0 && pooled;
         if (!pooled) {
           if (!whole) m.matrixWorld.multiplyMatrices(world, e.local);
@@ -658,6 +682,69 @@ export class Instances {
       p.tint.needsUpdate = true;
     }
     this.drawn = drawn;
+  }
+
+  // Prepare newly arriving ships independently of visibility. A large mod fleet can introduce
+  // hundreds of pools, so do not scan/merge every ship in one frame or compile every new shader
+  // in one blocking draw. The render loop remains free while this queue drains.
+  prepareUnits(units, renderer = this.renderer, camera = this.camera) {
+    this.renderer = renderer || this.renderer;
+    this.camera = camera || this.camera;
+    const now = performance.now();
+    if (now < this.prepareDue) return;
+    const started = performance.now();
+    for (const u of units) {
+      if (u.dead || !u.obj || !u.model || this.prepared.has(u.obj)) continue;
+      this.prepared.add(u.obj);
+      u.obj.updateWorldMatrix(true, true);
+      this.scan(u);
+      if (performance.now() - started >= 2) {
+        this.prepareDue = performance.now() + 4;
+        break;
+      }
+    }
+    this.warmFresh();
+  }
+
+  // Puts every pool that has not been warmed yet on the queue and keeps one drain running.
+  warmFresh() {
+    const fresh = this.list.filter(p => !this.warmPools.has(p) && !this.warmQueue.includes(p));
+    if (!fresh.length || !this.renderer || !this.camera) return;
+    this.warmQueue.push(...fresh);
+    if (!this.warming)
+      this.warming = (async () => {
+        const target = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true });
+        try {
+          while (this.warmQueue.length) {
+            const p = this.warmQueue.shift();
+            await warmGpuBatches(this.renderer, this.camera, [p], this.uploaded, target);
+            p.ready = true;
+            this.warmPools.add(p);
+          }
+        } finally {
+          target.dispose();
+          this.warming = null;
+        }
+      })().catch(error => console.warn('GPU warm-up', error));
+  }
+
+  // Scans every unit at once and waits for the whole warm queue to drain: the loading screen
+  // drives this, so the player's first look at any fleet — their own or the enemy's — never
+  // compiles a shader or uploads a texture in the middle of play. The frame-time stripes of a
+  // large mod fleet are exactly this queue draining one pool per frame after the battle began.
+  async warmAll(units, renderer = this.renderer, camera = this.camera) {
+    this.renderer = renderer || this.renderer;
+    this.camera = camera || this.camera;
+    if (!this.renderer || !this.camera) return;
+    for (const u of units) {
+      if (u.dead || !u.obj || !u.model || this.prepared.has(u.obj)) continue;
+      this.prepared.add(u.obj);
+      u.obj.updateWorldMatrix(true, true);
+      this.scan(u);
+    }
+    this.warmFresh();
+    if (this.warmQueue.length && !this.warming) this.warmFresh();
+    if (this.warming) await this.warming;
   }
 
   prepare(renderer, camera) {

@@ -4,6 +4,33 @@
     <meta charset="utf-8" />
     <script src="js/consolelog.js"></script>
     <script src="js/keycodefallback.js"></script>
+    <script>
+      // The webview can stall in its own rendering or on long main-thread work; this watchdog
+      // tells the two apart and says so in the console log (and so in every bug report): a gap
+      // between frames with no long task is the compositor, a long task is the page itself.
+      {
+        const stalls = [];
+        const record = kind => {
+          const now = performance.now();
+          stalls.push({ kind, at: Math.round(now) });
+          if (stalls.length > 40) stalls.shift();
+          console.warn('launcher stall:', kind, 'at', Math.round(now / 1000) + 's');
+        };
+        try {
+          new PerformanceObserver(list => {
+            for (const e of list.getEntries()) if (e.duration > 200) record('long task ' + Math.round(e.duration) + ' ms');
+          }).observe({ entryTypes: ['longtask'] });
+        } catch {}
+        let lastTick = performance.now();
+        const tick = now => {
+          const gap = now - lastTick;
+          if (gap > 400) record('no frame for ' + Math.round(gap) + ' ms');
+          lastTick = now;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    </script>
     <title>Empire at War: Browser Edition</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" href="favicon.ico" sizes="48x48" />
@@ -96,9 +123,9 @@
         top: calc(100vh - 13vmax);
         transform: translateX(-36%);
         border-radius: 50%;
-        box-shadow:
-          0 0 90px rgba(98, 198, 255, 0.16),
-          0 0 18px rgba(98, 198, 255, 0.22);
+        /* avoid a huge composited box-shadow layer on HiDPI screens: WebKitGTK can fail to
+           composite it when the page scrolls or repaints, leaving the rest unpainted or frozen */
+        box-shadow: none;
         background: radial-gradient(circle closest-side at 50% 50%, #03070c 95.5%, #0a1b2a 98.4%, #1d5379 99.5%, #7fd2ff 100%);
       }
       #fleet {
@@ -1469,15 +1496,24 @@
           g.fill();
         }
       }
-      stars();
-      let starsAt = 0;
-      addEventListener('resize', () => {
-        clearTimeout(starsAt);
-        starsAt = setTimeout(stars, 150);
-      });
-
-      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true });
+      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: false, alpha: false, failIfMajorPerformanceCaveat: false });
       if (gl) {
+        // The opaque canvas paints stars and the horizon itself: the CSS layers underneath (the
+        // huge gradient .planet among them) are fully covered and would only cost composite time.
+        document.querySelector('.planet').style.display = 'none';
+        // A context loss on the background animation must never freeze or blank the launcher: hide
+        // the canvas and stop drawing until the context is back. (WebKitGTK can lose the context
+        // on HiDPI/fractional-scale displays, e.g. while the page scrolls and repaints.)
+        let lost = false;
+        $('fleet').addEventListener('webglcontextlost', e => {
+          e.preventDefault();
+          lost = true;
+          $('fleet').style.visibility = 'hidden';
+        });
+        $('fleet').addEventListener('webglcontextrestored', () => {
+          lost = false;
+          $('fleet').style.visibility = 'visible';
+        });
         const R = (a, b) => a + Math.random() * (b - a);
         const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
           sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -1690,6 +1726,60 @@
         };
         const GLOWS = vao(null, [3, 2, 4]);
 
+        // The starfield lives inside this canvas: an opaque GL layer does not flicker, while a
+        // full-screen transparent one is the layer WebKitGTK's compositor flashes black. Same
+        // seeded distribution and tints as the 2D fallback below.
+        const STAR = program(
+          `layout(location = 0) in vec2 p; layout(location = 1) in vec4 c; layout(location = 2) in float s;
+    uniform float dpr; out vec4 col;
+    void main() { col = c; gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0); gl_PointSize = s * dpr; }`,
+          `in vec4 col; out vec4 o;
+    void main() { float f = 1.0 - smoothstep(0.3, 0.5, length(gl_PointCoord - 0.5)); o = vec4(col.rgb, col.a * f); }`
+        );
+        let STARS = null;
+        function buildStars() {
+          let seed = 7;
+          const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+          const v = [];
+          for (let i = 0, n = Math.round((innerWidth * innerHeight) / 2600); i < n; i++) {
+            const r = rnd() < 0.94 ? 0.5 + rnd() * 0.6 : 1 + rnd() * 0.9,
+              a = 0.25 + rnd() * 0.7,
+              tint = rnd();
+            const col = tint < 0.12 ? [1, 0.84, 0.67] : tint < 0.3 ? [0.67, 0.82, 1] : [0.92, 0.94, 0.97];
+            v.push(rnd(), rnd(), ...col, a, r * 2);
+          }
+          STARS = vao(new Float32Array(v), [2, 4, 1]);
+        }
+
+        // The horizon planet as a viewport-space gradient over the bottom band, so ships still fly
+        // across it while the canvas itself stays opaque. The figures mirror .planet's CSS.
+        const PLANET = program(
+          `layout(location = 0) in vec2 p;
+    void main() { gl_Position = vec4(p, 0.0, 1.0); }`,
+          `uniform vec2 center; uniform float radius; out vec4 o;
+    void main() {
+      float t = length(gl_FragCoord.xy - center) / radius;
+      if (t >= 1.0) discard;
+      vec3 c0 = vec3(0.0118, 0.0275, 0.0471), c1 = vec3(0.0392, 0.1059, 0.1647),
+           c2 = vec3(0.1137, 0.3255, 0.4745), c3 = vec3(0.498, 0.8235, 1.0);
+      vec3 c = t < 0.955 ? c0 : t < 0.984 ? mix(c0, c1, (t - 0.955) / 0.029) : t < 0.995 ? mix(c1, c2, (t - 0.984) / 0.011) : mix(c2, c3, (t - 0.995) / 0.005);
+      o = vec4(c, 1.0);
+    }`
+        );
+        let PLANETQuad = null,
+          PLANETFit = null;
+        function buildPlanet() {
+          const vmax = Math.max(w, h) / 100;
+          // CSS: left 50%, translateX(-36%) of 160vmax, top 100vh - 13vmax, radius 80vmax.
+          const cx = 0.5 * w + 22.4 * vmax,
+            cy = h + 67 * vmax,
+            r = 80 * vmax;
+          PLANETFit = { center: [cx * dpr, (h - cy) * dpr], radius: r * dpr };
+          const top = -1 + (2 * 13 * vmax) / h;
+          const q = [-1, -1, 1, -1, 1, top, -1, -1, 1, top, -1, top];
+          PLANETQuad = vao(new Float32Array(q), [2]);
+        }
+
         const cam = { eye: [0, 190, 700] };
         let w = 0,
           h = 0,
@@ -1702,6 +1792,8 @@
             h = innerHeight;
             gl.canvas.width = w * dpr;
             gl.canvas.height = h * dpr;
+            buildStars();
+            buildPlanet();
           }
           const f = norm(sub([0, -30, -200], cam.eye)),
             r = norm(cross(f, UP)),
@@ -1923,6 +2015,11 @@
         const sun = norm([-0.45, 0.75, 0.5]);
 
         function frame(now) {
+          if (lost || document.hidden) {
+            // A hidden window neither needs the animation nor should it fight the real work.
+            requestAnimationFrame(frame);
+            return;
+          }
           const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
           last = now;
           view();
@@ -1970,8 +2067,22 @@
           }
 
           gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-          gl.clearColor(0, 0, 0, 0);
+          gl.clearColor(0.004, 0.012, 0.027, 1);
           gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          // the opaque canvas's own starfield: alpha blending over the dark base, no depth
+          gl.disable(gl.DEPTH_TEST);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(STAR.p);
+          gl.uniform1f(STAR.u.dpr, dpr);
+          gl.bindVertexArray(STARS.a);
+          gl.drawArrays(gl.POINTS, 0, STARS.n);
+          // the horizon planet over the stars, ships still draw across it after this
+          gl.useProgram(PLANET.p);
+          gl.uniform2fv(PLANET.u.center, PLANETFit.center);
+          gl.uniform1f(PLANET.u.radius, PLANETFit.radius);
+          gl.bindVertexArray(PLANETQuad.a);
+          gl.drawArrays(gl.TRIANGLES, 0, PLANETQuad.n);
           gl.enable(gl.DEPTH_TEST);
           gl.depthMask(true);
           gl.disable(gl.BLEND);
@@ -2034,6 +2145,13 @@
           requestAnimationFrame(frame);
         }
         requestAnimationFrame(frame);
+      } else {
+        stars();
+        let starsAt = 0;
+        addEventListener('resize', () => {
+          clearTimeout(starsAt);
+          starsAt = setTimeout(stars, 150);
+        });
       }
 
       {
@@ -2383,8 +2501,10 @@
         $('installStatus').className = 'status ' + cls;
       };
       function showInstall(own) {
+        // the browser's own game folder choice needs the browser's picker: the app's bridge only
+        // serves the mod folders the app found, the game comes from the app itself there
         $('protectedTip').classList.toggle('hidden', !modsSupported());
-        if (!foldersSupported()) {
+        if (!modsSupported()) {
           $('chooseGame').classList.add('hidden');
           $('installOff').classList.remove('hidden');
           return;
@@ -2531,6 +2651,155 @@
         $('modStatus').textContent = text;
         $('modStatus').className = 'status ' + cls;
       };
+      // A mod record belongs to the source the app read it from: the record keeps that source's
+      // path, and a mod of a folder that holds several lives inside it. Compared without letter
+      // case, trailing separators and the slash either platform spells a path with.
+      const modPathKey = p => String(p || '').replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase();
+      const modsOfSource = (all, path) => {
+        const dir = modPathKey(path);
+        return all.filter(
+          m => m.local && (modPathKey(m.source) === dir || modPathKey(m.local).startsWith(dir + '/'))
+        );
+      };
+      // The controls every mod row carries: the Use switch, the order arrows and the Manage menu.
+      // The Mod folders rows below show a folder's one mod with them, so the same mod is not
+      // named twice on the page; the list here stays for folders with several mods and for mods
+      // the page reads itself.
+      function modUse(m) {
+        const use = document.createElement('label'),
+          box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = !!m.on;
+        box.title = `Use ${m.label || m.name}`;
+        box.setAttribute('aria-label', box.title);
+        box.onchange = async () => {
+          await setModOn(m.id, box.checked);
+          showMods();
+          showAppSources();
+        };
+        use.append(box, 'Use');
+        return use;
+      }
+      function modOrder(m, all, at) {
+        const order = document.createElement('span');
+        order.className = 'order';
+        if (all.length > 1)
+          for (const [by, sign, tip] of [
+            [-1, '▲', 'Move up: under the mods below it'],
+            [1, '▼', 'Move down: over the mods above it']
+          ]) {
+            const b = document.createElement('button');
+            b.textContent = sign;
+            b.title = tip;
+            b.disabled = at + by < 0 || at + by >= all.length;
+            b.onclick = async () => {
+              await moveMod(m.id, by);
+              showMods();
+              showAppSources();
+            };
+            order.append(b);
+          }
+        return order;
+      }
+      function modMenu(m, name) {
+        const edit = document.createElement('button');
+        edit.className = 'small';
+        edit.textContent = 'Rename';
+        edit.title = 'Give the mod your own name in this list (leave it empty for its own name)';
+        edit.onclick = () => {
+          const shown = m.label || m.name;
+          const field = document.createElement('input');
+          field.className = 'rename';
+          field.value = shown;
+          field.placeholder = m.name;
+          let done = false;
+          const finish = async keep => {
+            if (done) return;
+            done = true;
+            if (keep && field.value.trim() !== shown) await setModLabel(m.id, field.value);
+            showMods();
+            showAppSources();
+          };
+          field.onkeydown = e => {
+            if (e.key === 'Enter') finish(true);
+            else if (e.key === 'Escape') finish(false);
+          };
+          field.onblur = () => finish(true);
+          name.replaceWith(field);
+          edit.disabled = true;
+          field.focus();
+          field.select();
+        };
+        const again = document.createElement('button'),
+          gone = document.createElement('button');
+        again.className = gone.className = 'small';
+        again.textContent = 'Read again';
+        again.title = 'Read the folder again after the mod was updated on disk';
+        again.onclick = async () => {
+          if (busy) return;
+          busy = true;
+          const tree = m.compat ? await pickFolder() : null;
+          if (m.compat && !tree) {
+            busy = false;
+            return;
+          }
+          try {
+            await rescanMod(m.id, t => modStatus(`${m.name}: ${t}`), tree);
+            modStatus(`${m.name} read again.`, 'ok');
+          } catch (e) {
+            console.error(e);
+            modStatus(e.message, 'bad');
+          }
+          busy = false;
+          showMods();
+          showAppSources();
+        };
+        gone.textContent = 'Remove';
+        gone.onclick = async () => {
+          await removeMod(m.id);
+          modStatus(
+            m.archive
+              ? `${m.name} removed, and its archive deleted from this browser's storage.`
+              : m.workshop
+                ? `${m.name} removed from the list. It stays installed in Steam.`
+                : `${m.name} removed from the list. The folder itself is untouched.`
+          );
+          showMods();
+          showAppSources();
+        };
+        const more = actionMenu([edit, ...(m.archive ? [] : [again]), gone]);
+        edit.addEventListener('click', () => {
+          more.button.disabled = true;
+        });
+        return more;
+      }
+      // The app serves the game data itself, so the game it opens has to carry the mods turned
+      // on here: the turned-on mod folders go to the app in the order shown, the last on top,
+      // and it layers them over the game the way a --mod launch would. Every change to the list
+      // sends the whole selection again; a launch below waits for that to have gone through.
+      let postedMods = null;
+      let postedModsError = '';
+      async function syncAppMods(all) {
+        if (!app) return false;
+        all ||= await listMods().catch(() => []);
+        const mods = all.filter(m => m.on && m.local).map(m => m.local);
+        const key = JSON.stringify(mods);
+        if (key === postedMods) return false;
+        try {
+          const after = await appSetup('mods', { mods: key });
+          // the app answers with the fresh setup; anything else (an older app, a failed
+          // request) must not count as posted, or the list would never be sent again
+          if (!after) throw new Error('the app did not take the mod list');
+          setup = after;
+          postedMods = key;
+          postedModsError = '';
+          return true;
+        } catch (e) {
+          postedModsError = e.message || String(e);
+          console.warn('mods:', e);
+          return false;
+        }
+      }
       async function showMods() {
         showEdition();
         const el = $('mods');
@@ -2543,7 +2812,18 @@
             'Mods need folder access or the site storage, which this browser has switched off or missing. <button class="ask" data-help>How to turn it on</button>';
           return;
         }
+        if (app && !setup) setup = await appSetup().catch(() => null);
         const all = await listMods();
+        if (app) syncAppMods(all);
+        // A folder that holds one mod shows that mod on its Mod folders row below, with the Use
+        // switch and the Manage menu: it gets no row here, so the mod is not named twice. The
+        // rows here are left for folders with several mods and for mods the page reads itself.
+        const folded = new Set();
+        if (app && setup)
+          for (const s of setup.sources) {
+            const inSource = modsOfSource(all, s.path);
+            if (inSource.length === 1) folded.add(inSource[0].id);
+          }
         if (!all.length) {
           const p = document.createElement('p');
           p.className = 'note';
@@ -2552,49 +2832,15 @@
           el.append(p);
         }
         for (const [at, m] of all.entries()) {
+          if (folded.has(m.id)) continue;
           const row = document.createElement('div');
           row.className = 'rowline' + (m.on ? '' : ' off');
-          const use = document.createElement('label'),
-            box = document.createElement('input');
-          box.type = 'checkbox';
-          box.checked = !!m.on;
-          box.onchange = async () => {
-            await setModOn(m.id, box.checked);
-            showMods();
-          };
-          use.append(box, 'Use');
           const name = document.createElement('span'),
             meta = document.createElement('span');
           const shown = m.label || m.name;
           name.className = 'name';
           name.textContent = shown;
           name.title = m.label ? `${m.label} (${m.name})` : m.name;
-          const edit = document.createElement('button');
-          edit.className = 'small';
-          edit.textContent = 'Rename';
-          edit.title = 'Give the mod your own name in this list (leave it empty for its own name)';
-          edit.onclick = () => {
-            const field = document.createElement('input');
-            field.className = 'rename';
-            field.value = shown;
-            field.placeholder = m.name;
-            let done = false;
-            const finish = async keep => {
-              if (done) return;
-              done = true;
-              if (keep && field.value.trim() !== shown) await setModLabel(m.id, field.value);
-              showMods();
-            };
-            field.onkeydown = e => {
-              if (e.key === 'Enter') finish(true);
-              else if (e.key === 'Escape') finish(false);
-            };
-            field.onblur = () => finish(true);
-            name.replaceWith(field);
-            edit.disabled = true;
-            field.focus();
-            field.select();
-          };
           meta.className = 'meta';
           const cell = (cls, text) => {
             const c = document.createElement('span');
@@ -2618,64 +2864,8 @@
             cell('when', new Date(m.scanned).toLocaleDateString())
           );
           if (m.compat) meta.title = COMPAT_NOTE;
-          const again = document.createElement('button'),
-            gone = document.createElement('button');
-          again.className = gone.className = 'small';
-          again.textContent = 'Read again';
-          again.title = 'Read the folder again after the mod was updated on disk';
-          again.onclick = async () => {
-            if (busy) return;
-            busy = true;
-            const tree = m.compat ? await pickFolder() : null;
-            if (m.compat && !tree) {
-              busy = false;
-              return;
-            }
-            try {
-              await rescanMod(m.id, t => modStatus(`${m.name}: ${t}`), tree);
-              modStatus(`${m.name} read again.`, 'ok');
-            } catch (e) {
-              console.error(e);
-              modStatus(e.message, 'bad');
-            }
-            busy = false;
-            showMods();
-          };
-          gone.textContent = 'Remove';
-          gone.onclick = async () => {
-            await removeMod(m.id);
-            modStatus(
-              m.archive
-                ? `${m.name} removed, and its archive deleted from this browser's storage.`
-                : m.workshop
-                  ? `${m.name} removed from the list. It stays installed in Steam.`
-                  : `${m.name} removed from the list. The folder itself is untouched.`
-            );
-            showMods();
-          };
           if (m.local) meta.title = m.local;
-          const order = document.createElement('span');
-          order.className = 'order';
-          if (all.length > 1)
-            for (const [by, sign, tip] of [
-              [-1, '▲', 'Move up: under the mods below it'],
-              [1, '▼', 'Move down: over the mods above it']
-            ]) {
-              const b = document.createElement('button');
-              b.textContent = sign;
-              b.title = tip;
-              b.disabled = at + by < 0 || at + by >= all.length;
-              b.onclick = async () => {
-                await moveMod(m.id, by);
-                showMods();
-              };
-              order.append(b);
-            }
-          const more = actionMenu([edit, ...(m.archive ? [] : [again]), gone]);
-          edit.addEventListener('click', () => {
-            more.button.disabled = true;
-          });
-          row.append(order, use, name, meta, more);
+          row.append(modOrder(m, all, at), modUse(m), name, meta, modMenu(m, name));
           el.append(row);
         }
         const off = app ? dismissedLocal().length : 0;
@@ -2946,33 +3136,61 @@
         );
         el.append(heading, row(...parts), look);
       }
-      function showAppSources() {
+      async function showAppSources() {
         const el = $('appSources');
         el.replaceChildren();
+        if (!setup) return;
         const h = document.createElement('h3');
         h.textContent = 'Mod folders';
         const note = document.createElement('p');
         note.className = 'note';
         note.textContent =
-          "Every mod in these folders is on the list above, turned off until you use it. Add a mod's own folder (the one with Data in it) or a folder that holds several mods.";
+          "Every mod in these folders is here on its folder's row, turned off until you use it. Add a mod's own folder (the one with Data in it) or a folder that holds several mods.";
         el.append(h, note);
-        for (const s of setup.sources) {
-          el.append(
-            row(
-              span('path', s.path, s.path),
-              span('meta', `${KIND[s.kind] || s.kind} · ${s.mods} mod${s.mods === 1 ? '' : 's'}`),
-              button(
-                'Remove',
-                async () => {
-                  if (await changeSetup('source', { remove: s.path }, modStatus)) {
-                    modStatus(`${s.path} is no longer read for mods. The folder itself is untouched.`, 'ok');
-                    await findLocal();
-                  }
-                },
-                'Stop reading this folder for mods: its mods come off the list'
-              )
-            )
+        const all = await listMods().catch(() => []);
+        const remove = s =>
+          button(
+            'Remove',
+            async () => {
+              if (await changeSetup('source', { remove: s.path }, modStatus)) {
+                modStatus(`${s.path} is no longer read for mods. The folder itself is untouched.`, 'ok');
+                await findLocal();
+              }
+            },
+            'Stop reading this folder for mods: its mods come off the list'
           );
+        for (const s of setup.sources) {
+          const mods = modsOfSource(all, s.path);
+          if (mods.length === 1) {
+            // The folder holds this one mod: the row is the mod, its name over the folder's path,
+            // with the Use switch, so the mod is not named twice on the page.
+            const m = mods[0];
+            const name = document.createElement('span');
+            name.className = 'name';
+            name.textContent = (m.label || m.name) + ':';
+            name.title = m.label ? `${m.label} (${m.name})` : m.name;
+            name.style.flex = '0 1 auto';
+            const r = document.createElement('div');
+            r.className = 'rowline' + (m.on ? '' : ' off');
+            r.append(
+              modOrder(m, all, all.indexOf(m)),
+              modUse(m),
+              name,
+              span('path', s.path, s.path),
+              span('meta', KIND[s.kind] || s.kind, m.local || s.path),
+              remove(s)
+            );
+            el.append(r);
+          } else {
+            const count = mods.length || s.mods || 0;
+            el.append(
+              row(
+                span('path', s.path, s.path),
+                span('meta', `${KIND[s.kind] || s.kind} · ${count} mod${count === 1 ? '' : 's'}`),
+                remove(s)
+              )
+            );
+          }
         }
         if (!setup.sources.length) {
           const p = document.createElement('p');
@@ -3046,9 +3264,23 @@
       desktopStrip();
       if (modsSupported())
         nameMods().then(
-          changed => changed && showMods(),
+          changed => {
+            if (changed) showMods();
+            if (changed && setup) showAppSources();
+          },
           e => console.warn('mod names:', e)
         );
+      // Launching waits for the app to have opened the game with the mods turned on above, so
+      // the game comes up in the mod the list shows instead of the plain expansion.
+      $('play').addEventListener('click', async e => {
+        if (!app) return;
+        e.preventDefault();
+        status('Opening the game with your mods…');
+        const ok = await syncAppMods();
+        if (!ok && postedModsError)
+          status(`The app did not take the mod list (${postedModsError}); the game opens without it.`, 'bad');
+        location.href = $('play').href;
+      });
       refresh();
     </script>
   </body>

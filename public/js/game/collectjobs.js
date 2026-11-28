@@ -1,3 +1,5 @@
+import { workerCount } from './performance.js';
+
 export const C = { GEN: 0, COUNT: 1, NEXT: 2, DONE: 3, VER: 4, CHUNK: 5, ACTIVE: 6 };
 
 export function mulInto(out, o, a, ai, b, bi) {
@@ -77,7 +79,7 @@ export class CollectJobs {
   static create() {
     if (typeof SharedArrayBuffer !== 'function' || !globalThis.crossOriginIsolated) return null;
     if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nocollectjobs')) return null;
-    const n = Math.min(4, Math.max(0, (navigator.hardwareConcurrency || 4) - 6));
+    const n = workerCount('collect');
     return n ? new CollectJobs(n) : null;
   }
 

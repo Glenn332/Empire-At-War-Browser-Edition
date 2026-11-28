@@ -2,6 +2,7 @@ import { diag } from '../diag.js';
 import { db } from '../gamedata.js';
 import { PathCore, MOVING, STILL, SCELL, loadPathWasm, searchBudget } from './pathcore.js';
 import { unitHash } from './desyncreport.js';
+import { workerCount } from './performance.js';
 
 const LAYER_BITS = { CORVETTE: 1, FRIGATE: 2, CAPITAL: 4, SUPERCAPITAL: 8 };
 export const ASTEROID_LAYERS = new Set([2, 4, 8]);
@@ -38,7 +39,7 @@ const newRouteThread = () => {
   channel.port1.terminate = () => channel.port1.close();
   return channel.port1;
 };
-const routeThreads = () => Math.min(4, Math.max(2, Math.floor((globalThis.navigator?.hardwareConcurrency || 4) / 3)));
+const routeThreads = () => workerCount('routes');
 
 export class Pathfinder extends PathCore {
   constructor(world) {

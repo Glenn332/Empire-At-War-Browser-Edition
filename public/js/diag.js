@@ -1,3 +1,5 @@
+import { inApp, appRequestBody } from './platform.js';
+
 const RING = 240;
 const KEEP = 200;
 
@@ -134,6 +136,15 @@ export class Diag {
     return a[n >> 1];
   }
 
+  frameStats() {
+    const n = this.filled;
+    if (!n) return { median: 0, p95: 0, p99: 0, worst: 0, low1: 0 };
+    const a = Array.from(this.recent.subarray(0, n)).sort((x, y) => x - y),
+      at = q => a[Math.min(n - 1, Math.floor((n - 1) * q))],
+      p99 = at(0.99);
+    return { median: at(0.5), p95: at(0.95), p99, worst: a[n - 1], low1: p99 > 0 ? 1000 / p99 : 0 };
+  }
+
   end() {
     this.gpuEnd();
     const work = performance.now() - this.frameStart >= 0 ? [...this.stages.values()].reduce((a, b) => a + b, 0) : 0;
@@ -192,13 +203,14 @@ export class Diag {
     const slow = [...this.stages].sort((a, b) => b[1] - a[1])[0];
     const outside = +(iv - work).toFixed(1);
     let cause;
-    if (made.programs) cause = 'shader compile';
-    else if (made.textures || made.geometries || this.counts.get('model')) cause = 'new model / texture upload';
-    else if (gc) cause = 'garbage collection';
-    else if (slow && slow[1] > med * 1.5 && slow[1] > outside) cause = 'stage: ' + slow[0];
-    else if (lateMs > 4 && lateMs > iv * 0.3) cause = 'file loaded mid-battle';
-    else if (page && page.layout + page.forced > iv * 0.4) cause = 'page layout / paint (HUD elements)';
-    else cause = 'outside the game (browser)';
+    if (made.programs) cause = 'shader compile (GPU driver building shader programs)';
+    else if (made.textures || made.geometries || this.counts.get('model')) cause = 'new model / texture upload (GPU receiving new geometry or textures)';
+    else if (gc) cause = `garbage collection (freed ${gc} MB)`;
+    else if (slow && slow[1] > med * 1.5 && slow[1] > outside) cause = `stage: ${slow[0]} (${slow[1].toFixed(1)} ms)`;
+    else if (lateMs > 4 && lateMs > iv * 0.3) cause = 'file loaded mid-battle (I/O or parsing)';
+    else if (page && page.layout + page.forced > iv * 0.4) cause = 'page layout / paint (HUD DOM elements reflowing)';
+    else if (outside > med * 2) cause = `browser compositor (${outside.toFixed(0)} ms blending canvases, WebKitGTK)`;
+    else cause = `browser overhead (${outside.toFixed(0)} ms outside game code)`;
     const h = {
       frame: this.frames,
       at: +((now - this.started) / 1000).toFixed(1),
@@ -234,6 +246,43 @@ export class Diag {
       ? { averageMs: +(this.gpuTotal / this.gpuFrames).toFixed(2), worstMs: +this.gpuWorst.toFixed(1) }
       : 'not available in this browser';
     const lateLoads = this.tasks.map(t => ({ at: +((t.at - this.started) / 1000).toFixed(1), name: t.name, ms: t.ms }));
+
+    // Last 30 seconds performance summary
+    const now = performance.now();
+    const recent = this.hitches.filter(h => now - (this.started + h.at * 1000) < 30000);
+    const recentBy = {};
+    for (const h of recent) {
+      const key = h.cause.replace(/ \(.*\)/, ''); // Group by cause without details
+      const b = recentBy[key] || (recentBy[key] = { count: 0, worst: 0, total: 0 });
+      b.count++;
+      b.worst = Math.max(b.worst, h.ms);
+      b.total += h.ms;
+    }
+
+    // Calculate what dominated the last 30s
+    const gpuMs = (this.stages.get('draw') || 0) + (this.stages.get('post') || 0) + (this.stages.get('shadows') || 0);
+    const cpuMs = (this.stages.get('logic') || 0) + (this.stages.get('hud') || 0) + (this.stages.get('ai') || 0);
+    const overlayMs = this.stages.get('overlay') || 0;
+    const totalMs = this.median();
+    const outsideMs = Math.max(0, totalMs - gpuMs - cpuMs - overlayMs);
+
+    const last30s = {
+      hitches: recent.length,
+      byCause: recentBy,
+      bottleneck: [
+        ['GPU (3D render)', gpuMs],
+        ['CPU (game logic)', cpuMs],
+        ['Overlay (2D canvas)', overlayMs],
+        ['Browser compositor', outsideMs]
+      ].sort((a, b) => b[1] - a[1])[0],
+      breakdown: {
+        gpu: +gpuMs.toFixed(2),
+        cpu: +cpuMs.toFixed(2),
+        overlay: +overlayMs.toFixed(2),
+        outside: +outsideMs.toFixed(2)
+      }
+    };
+
     const out = {
       gpu,
       warmUpMs: this.warmUpMs ?? null,
@@ -241,35 +290,141 @@ export class Diag {
       seconds: +secs.toFixed(0),
       frames: this.frames,
       usualFrameMs: +this.median().toFixed(2),
+      frameStats: Object.fromEntries(Object.entries(this.frameStats()).map(([key, value]) => [key, +value.toFixed(2)])),
       averageStageMs: average,
       missedRefreshes: this.slow,
       hitches: this.hitches.length,
       byCause: by,
+      last30s,
       list: this.hitches
     };
     if (!quiet) {
       console.table(this.hitches.map(h => ({ at: h.at, ms: h.ms, usual: h.usual, cause: h.cause, outside: h.outside, ...h.stages })));
       console.table(by);
+      console.log('Last 30s:', last30s);
     }
     return out;
   }
 
+  async saveReport(extra = null) {
+    const name = `eaw-performance_${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+      report = this.report(true),
+      blob = new Blob([JSON.stringify(extra ? { ...extra, diagnostics: report } : report, null, 2)], { type: 'application/json' });
+    if (inApp()) {
+      try {
+        const response = await fetch('api/save-report?name=' + encodeURIComponent(name), {
+          method: 'POST',
+          headers: { 'X-SWR': '1' },
+          body: await appRequestBody(blob)
+        });
+        if (response.ok) {
+          const result = await response.json();
+          return { saved: true, where: result.path || null, name };
+        }
+      } catch {}
+    }
+    const url = URL.createObjectURL(blob),
+      link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return { saved: true, where: null, name };
+  }
+
   showPanel() {
+    if (this.panel) {
+      this.panel.parentElement.hidden = false;
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;right:8px;top:120px;z-index:9999;max-width:440px;background:rgba(0,0,0,.72);color:#9fe;font:11px/1.35 Consolas,monospace';
+    wrap.dataset.page = '';
+    const save = document.createElement('button');
+    save.textContent = 'Save report';
+    save.title = 'Save frame timings, stage metrics and hitch details as JSON';
+    save.style.cssText = 'margin:6px 8px 0;padding:3px 8px;background:#173b46;color:#cff;border:1px solid #578;cursor:pointer;font:11px Consolas,monospace;pointer-events:auto';
+    save.onclick = async () => {
+      save.disabled = true;
+      try {
+        const result = await this.saveReport();
+        save.textContent = result.where ? 'Saved to app reports' : 'Report downloaded';
+      } catch (error) {
+        save.textContent = 'Save failed';
+        console.error('[diagnostics]', error);
+      } finally {
+        setTimeout(() => {
+          save.textContent = 'Save report';
+          save.disabled = false;
+        }, 2500);
+      }
+    };
     const d = document.createElement('pre');
-    d.style.cssText =
-      'position:fixed;right:8px;top:120px;z-index:9999;margin:0;padding:6px 8px;background:rgba(0,0,0,.72);color:#9fe;font:11px/1.35 Consolas,monospace;pointer-events:none;max-width:420px;white-space:pre-wrap';
-    d.dataset.page = '';
-    document.body.appendChild(d);
+    d.style.cssText = 'margin:0;padding:6px 8px;pointer-events:none;max-width:420px;white-space:pre-wrap;font:11px/1.35 Consolas,monospace';
+    wrap.append(save, d);
+    document.body.appendChild(wrap);
     this.panel = d;
+    this.drawPanel();
     setInterval(() => this.drawPanel(), 1000);
   }
 
   drawPanel() {
-    const med = this.median(),
-      last = this.hitches.slice(-8);
+    const stats = this.frameStats(),
+      last = this.hitches.slice(-6),
+      stages = [...this.stages].sort((a, b) => b[1] - a[1]).slice(0, 7),
+      info = this.info?.render,
+      context = this.context() || {};
+
+    // Calculate what dominates the frame: GPU work (draw+post+shadows), CPU work (logic+hud+ai),
+    // overlay (2D canvas), or outside (compositor/browser).
+    const gpuMs = (this.stages.get('draw') || 0) + (this.stages.get('post') || 0) + (this.stages.get('shadows') || 0);
+    const cpuMs = (this.stages.get('logic') || 0) + (this.stages.get('hud') || 0) + (this.stages.get('ai') || 0);
+    const overlayMs = this.stages.get('overlay') || 0;
+    const totalMs = stats.median;
+    const outsideMs = Math.max(0, totalMs - gpuMs - cpuMs - overlayMs);
+
+    // Find the dominant cost
+    const costs = [
+      ['GPU (3D render)', gpuMs],
+      ['CPU (game logic)', cpuMs],
+      ['Overlay (2D canvas)', overlayMs],
+      ['Browser compositor', outsideMs]
+    ].sort((a, b) => b[1] - a[1]);
+
+    const dominant = costs[0];
+    const pct = totalMs > 0 ? Math.round((dominant[1] / totalMs) * 100) : 0;
+
+    // Analyze recent hitches (last 30s)
+    const now = performance.now();
+    const recent = this.hitches.filter(h => now - (this.started + h.at * 1000) < 30000);
+    const hitchCauses = {};
+    for (const h of recent) {
+      const key = h.cause.replace(/ \(.*\)/, ''); // Remove parenthetical details
+      hitchCauses[key] = (hitchCauses[key] || 0) + 1;
+    }
+    const topCauses = Object.entries(hitchCauses)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cause, count]) => `${cause} (${count}×)`)
+      .join(', ');
+
     this.panel.textContent =
-      `frame ${med.toFixed(1)} ms (${med ? Math.round(1000 / med) : 0} fps)   hitches ${this.hitches.length}\n` +
-      last.map(h => `${String(h.at).padStart(6)}s ${String(h.ms).padStart(6)} ms  ${h.cause}`).join('\n');
+      `BOTTLENECK: ${dominant[0]} ${dominant[1].toFixed(1)} ms (${pct}% of frame)\n` +
+      `\n` +
+      `Breakdown (median ${totalMs.toFixed(1)} ms):\n` +
+      costs.map(([name, ms]) => `  ${name.padEnd(22)} ${ms.toFixed(1)} ms`).join('\n') +
+      `\n\n` +
+      `Scene: ${info?.calls ?? '?'} draws, ${info?.triangles ? (info.triangles / 1000).toFixed(0) + 'k' : '?'} tris, ${context.units ?? '?'} units\n` +
+      `\n` +
+      `Recent hitches (30s): ${recent.length}\n` +
+      (topCauses ? `  ${topCauses}\n` : '') +
+      `\n` +
+      last.map(h => {
+        const ago = ((now - (this.started + h.at * 1000)) / 1000).toFixed(0);
+        return `${ago}s ago: ${h.ms.toFixed(0)} ms — ${h.cause}`;
+      }).join('\n');
   }
 }
 

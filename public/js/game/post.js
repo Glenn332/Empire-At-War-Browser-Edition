@@ -26,6 +26,10 @@ void main() {
   gl_FragColor = vec4((texture2D(map, vUv + o).rgb + texture2D(map, vUv - o).rgb + texture2D(map, vUv + p).rgb + texture2D(map, vUv - p).rgb) * 0.25, 1.0);
 }`;
 
+const COPY = `
+uniform sampler2D map; varying vec2 vUv;
+void main() { gl_FragColor = texture2D(map, vUv); }`;
+
 const COMBINE = `
 uniform sampler2D scene, glow, heat;
 uniform vec2 texel;
@@ -70,6 +74,7 @@ export class PostFX {
       new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false });
     this.mBright = mat(BRIGHT, { map: { value: null }, cutoff: { value: BLOOM_CUTOFF } });
     this.mBlur = mat(BLUR, { map: { value: null }, offset: { value: new THREE.Vector2() } });
+    this.mCopy = mat(COPY, { map: { value: null } });
     this.mCombine = mat(COMBINE, {
       texel: { value: new THREE.Vector2() },
       scene: { value: null },
@@ -99,7 +104,7 @@ export class PostFX {
 
   ensureTargets() {
     const samples = gfx.aa !== false ? SCENE_SAMPLES : 0;
-    if (this.targets && this.targets.scene.samples !== samples) this.resize(this.w, this.h);
+    if (this.targets && (this.targets.scene.samples !== samples || !!this.targets.a1 !== this.bloom || !!this.targets.heat !== this.heat || !!this.targets.mid !== !!this.finish)) this.resize(this.w, this.h);
     if (this.targets) return this.targets;
     const pr = this.r.getPixelRatio(),
       W = Math.max(2, Math.round(this.w * pr)),
@@ -114,11 +119,14 @@ export class PostFX {
     this.targets = {
       // the passes below only read the scene's colour; resolving its multisampled stencil as well is slow on
       // Direct3D (WebGL through ANGLE on Windows) and ran on every draw into this target
-      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true, samples, resolveStencilBuffer: false }),
-      a1: rt(W >> 2, H >> 2),
-      a2: rt(W >> 2, H >> 2),
-      heat: rt(W >> 2, H >> 2)
+      scene: rt(W, H, { depthBuffer: true, stencilBuffer: true, samples, resolveStencilBuffer: false })
     };
+    // Disabled effects cost no render-target memory. This also avoids reallocating them on every resize.
+    if (this.bloom) {
+      this.targets.a1 = rt(W >> 2, H >> 2);
+      this.targets.a2 = rt(W >> 2, H >> 2);
+    }
+    if (this.heat) this.targets.heat = rt(W >> 2, H >> 2);
     if (this.finish) this.targets.mid = rt(W, H);
     return this.targets;
   }
@@ -161,15 +169,18 @@ export class PostFX {
     }
     const u = this.mCombine.uniforms;
     u.scene.value = t.scene.texture;
-    u.glow.value = t.a1.texture;
-    u.heat.value = t.heat.texture;
+    u.glow.value = t.a1?.texture || null;
+    u.heat.value = t.heat?.texture || null;
     u.texel.value.set(1 / t.scene.width, 1 / t.scene.height);
     u.bloom.value = this.bloom ? this.strength : 0;
     u.haze.value = this.heat ? 0.035 : 0;
+    // With no bloom or heat there is no edge-smoothing input to correct: one texture read is enough.
+    const combine = this.bloom || this.heat ? this.mCombine : this.mCopy;
+    if (combine === this.mCopy) this.mCopy.uniforms.map.value = t.scene.texture;
     if (this.finish && t.mid) {
-      this.pass(this.mCombine, t.mid);
+      this.pass(combine, t.mid);
       this.finish(t.mid);
-    } else this.pass(this.mCombine, null);
+    } else this.pass(combine, null);
   }
 
   async loadFlares() {

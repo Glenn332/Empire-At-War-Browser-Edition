@@ -33,10 +33,22 @@ export async function windowSizes() {
   const list = SIZES.filter(([w, h]) => w <= mw && h <= mh);
   if (!list.some(([w, h]) => w === mw && h === mh)) list.push([mw, mh]);
   if (!list.some(([w, h]) => w === now.w && h === now.h)) list.push([now.w, now.h]);
-  return { now: [now.w, now.h], list: list.sort((a, b) => a[0] * a[1] - b[0] * b[1] || a[0] - b[0]) };
+  return { now: [now.w, now.h], full: !!now.full, list: list.sort((a, b) => a[0] * a[1] - b[0] * b[1] || a[0] - b[0]) };
 }
 
-export function pickWindowSize(w, h) {
+export async function pickWindowSize(w, h) {
+  const now = await windowSize();
+  if (now && now.full) {
+    // A fullscreen window cannot be resized: keep it fullscreen and render at the chosen
+    // resolution instead, scaled up to fill the screen. The smaller ratio preserves the
+    // aspect, so 1920x1080 on a 3840x2160 screen renders at exactly half in both axes.
+    const mw = now.mw || now.w || w,
+      mh = now.mh || now.h || h;
+    gfx.window = [w, h];
+    gfx.scale = Math.max(0.25, Math.min(1, Math.min(w / mw, h / mh)));
+    storeGfx();
+    return now;
+  }
   gfx.window = [w, h];
   gfx.scale = 1;
   storeGfx();

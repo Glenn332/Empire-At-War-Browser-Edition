@@ -1,7 +1,8 @@
-import { cpSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 
 const LOBBY = 'https://lobby.playeaw.com';
 
@@ -10,12 +11,44 @@ const pub = path.join(web, 'public'),
   dist = path.join(web, 'dist-app');
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: web, encoding: 'utf8', shell: process.platform === 'win32', ...opts });
 
+// `npm run app --debug` hands --debug to npm itself, which does not forward it to the script:
+// it arrives here as npm_config_debug in the environment instead of in argv. Both spellings
+// mean the same thing here.
+const flag = name => process.argv.includes('--' + name) || ['true', ''].includes(process.env['npm_config_' + name]);
+
 const commit = run('git', ['rev-parse', '--short', 'HEAD']).trim();
 const build = commit + (run('git', ['status', '--porcelain', '--', 'public']).trim() ? '-dirty' : '');
 
 const skip = new Set(['sw.js', 'test', 'game.tar.gz', 'game.tar']);
+
+// Parallel copy for faster staging: the public folder has many small files (icons, fonts,
+// vendor libs) and a single-threaded cpSync is the bottleneck on fast SSDs.
+function copyParallel(src, dst, filter) {
+  const jobs = [];
+  const walk = (from, to) => {
+    if (filter && !filter(from)) return;
+    const st = statSync(from);
+    if (st.isDirectory()) {
+      mkdirSync(to, { recursive: true });
+      for (const name of readdirSync(from)) walk(path.join(from, name), path.join(to, name));
+    } else {
+      jobs.push([from, to]);
+    }
+  };
+  walk(src, dst);
+  const workers = Math.min(os.cpus().length, 8);
+  let at = 0;
+  const worker = async () => {
+    while (at < jobs.length) {
+      const [from, to] = jobs[at++];
+      cpSync(from, to);
+    }
+  };
+  return Promise.all(Array.from({ length: workers }, worker));
+}
+
 rmSync(dist, { recursive: true, force: true });
-cpSync(pub, dist, { recursive: true, filter: src => !skip.has(path.relative(pub, src)) });
+await copyParallel(pub, dist, src => !skip.has(path.relative(pub, src)));
 writeFileSync(path.join(dist, 'js', 'build.js'), `export const BUILD = '${build}';\n`);
 writeFileSync(
   path.join(dist, 'js', 'deploy.js'),
@@ -26,4 +59,51 @@ console.log(`staged dist-app/ (${build})`);
 // arguments after -- go to tauri build (the release build passes the macOS universal target)
 const separator = process.argv.indexOf('--'),
   tauriArgs = separator >= 0 ? process.argv.slice(separator + 1) : [];
-if (!process.argv.includes('--stage')) run('npx', ['tauri', 'build', ...tauriArgs], { stdio: 'inherit', encoding: undefined });
+if (!process.argv.includes('--stage')) {
+  const env = { ...process.env };
+  if (process.platform === 'linux') {
+    // linuxdeploy otherwise picks Fedora's 32-bit /usr/lib on a multilib build host.
+    const elfClass = process.arch === 'ia32' ? 1 : 2;
+    const matchesArchitecture = file => existsSync(file) && readFileSync(file)[4] === elfClass;
+    const libdir =
+      process.env.GSTREAMER_PLUGINS_DIR ||
+      [
+        `/usr/lib/${process.arch === 'x64' ? 'x86_64' : process.arch}-linux-gnu/gstreamer-1.0`,
+        '/usr/lib64/gstreamer-1.0',
+        '/usr/lib/gstreamer-1.0'
+      ].find(dir => matchesArchitecture(path.join(dir, 'libgstcoreelements.so')));
+    const helpers =
+      process.env.GSTREAMER_HELPERS_DIR ||
+      [
+        `/usr/lib/${process.arch === 'x64' ? 'x86_64' : process.arch}-linux-gnu/gstreamer1.0/gstreamer-1.0`,
+        '/usr/libexec/gstreamer-1.0'
+      ].find(dir => matchesArchitecture(path.join(dir, 'gst-plugin-scanner')));
+    if (!libdir || !['libgstapp.so', 'libgstautodetect.so'].every(plugin => matchesArchitecture(path.join(libdir, plugin))))
+      throw new Error('GStreamer plugins matching the app architecture (including libgstapp.so and libgstautodetect.so) are required');
+    if (!helpers) throw new Error('A GStreamer plugin scanner matching the app architecture is required');
+    env.GSTREAMER_PLUGINS_DIR = libdir;
+    env.GSTREAMER_HELPERS_DIR = helpers;
+  }
+  // --debug builds the debug profile instead of release, skips every bundling step (no
+  // AppImage), and runs the freshly built binary directly: the fastest way to develop and test.
+  // Much faster to compile (~15s vs 5min), but slower at runtime.
+  if (flag('debug')) {
+    console.log('debug: building and running the debug binary (no bundling)');
+    run('npx', ['tauri', 'build', '--debug', '--no-bundle'], { stdio: 'inherit', encoding: undefined, env });
+    const bin = path.join(web, 'src-tauri', 'target', 'debug', 'empire-at-war-browser-edition');
+    run(bin, tauriArgs, { stdio: 'inherit', encoding: undefined, env });
+  } else {
+    // Linux bundles the AppImage only: the .deb and the updater copy of the AppImage each repeat
+    // the whole bundling work for an artifact a developer build never uses. Pass --bundles through
+    // (npm run app -- -- --bundles appimage deb) when both are wanted.
+    const extra = [];
+    const wantsBundles = a => /^(--bundles|-b)/.test(a);
+    if (process.platform === 'linux' && !tauriArgs.some(wantsBundles)) extra.push('--bundles', 'appimage');
+    // --no-sign builds without the updater's private key: without it tauri fails the whole build
+    // after every bundle is finished, because createUpdaterArtifacts asks for TAURI_SIGNING_PRIVATE_KEY.
+    const wantsConfig = a => /^(--config|-c)/.test(a);
+    if (flag('no-sign') && !process.argv.slice(2).some(wantsConfig) && !tauriArgs.some(wantsConfig))
+      extra.push('--config', JSON.stringify({ bundle: { createUpdaterArtifacts: false } }));
+    run('npx', ['tauri', 'build', ...extra, ...tauriArgs], { stdio: 'inherit', encoding: undefined, env });
+  }
+}

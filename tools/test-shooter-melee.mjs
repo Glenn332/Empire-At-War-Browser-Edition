@@ -18,6 +18,7 @@ globalThis.fetch = async input => {
 };
 globalThis.window ??= globalThis;
 globalThis.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+globalThis.addEventListener ??= () => {};
 const { db, loadGameData } = await import('../public/js/gamedata.js');
 await loadGameData();
 const { LandWorld } = await import('../public/js/game/land.js');

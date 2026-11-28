@@ -1,5 +1,5 @@
 import { BUILD } from './build.js';
-import { inApp } from './platform.js';
+import { inApp, appRequestBody } from './platform.js';
 import { fullscreen } from './pointertrap.js';
 import { makeZip } from './zipwriter.js';
 import { collectPerformance, cpuProfile, profileText, performanceWarnings, performanceLines } from './perfreport.js';
@@ -527,7 +527,7 @@ async function saveInApp(name, blob) {
   const response = await fetch('api/save-report?name=' + encodeURIComponent(name), {
     method: 'POST',
     headers: { 'X-SWR': '1' },
-    body: blob
+    body: await appRequestBody(blob)
   });
   if (!response.ok) throw new Error(await response.text());
   const { path } = await response.json();

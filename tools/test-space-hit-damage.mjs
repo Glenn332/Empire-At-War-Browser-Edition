@@ -343,10 +343,26 @@ const bolt = T('Proj_Ship_Turbolaser_Green');
     const foe = w.spawn(T('Corellian_Corvette'), empire, 600, 0);
     const sd = w.spawn(T('Star_Destroyer'), atHound ? empire : rebel, -6000, 0);
     for (const u of [hound, foe, sd]) u.setOrder({ kind: 'idle' });
+    // Spawn placement puts the ships where the map's fleet anchors are (not at the asked coordinates)
+    // and spawned ships arrive at cruise (`speed = maxSpeed * 0.8`) and take ages to decelerate, so pin
+    // them and launch relative to the target's real position: the geometry must not depend on either.
+    for (const u of [hound, foe, sd]) {
+      u.maxSpeed = 0;
+      u.minSpeed = 0;
+      u.speed = 0;
+      // Single ships spawn as one-member squads: the squadron wrapper mirrors its fighter, so the pin
+      // has to reach the fighter too, or the ship keeps cruising underneath it.
+      for (const f of u.fighters || []) {
+        f.maxSpeed = 0;
+        f.minSpeed = 0;
+        f.speed = 0;
+      }
+    }
     if (jam) w.useAbility(hound, 'SENSOR_JAMMING', true);
     run(DT);
     w.projectiles.length = 0;
-    w.launch(homing, sd, atHound ? hound : foe, null, -1500, -1000, 0, 'Damage_Default', new Map());
+    const at = atHound ? hound : foe;
+    w.launch(homing, sd, at, null, at.x - 1500, at.y - 1000, 0, 'Damage_Default', new Map());
     const m = w.projectiles[0];
     assert(m && m.homing, 'a homing missile');
     m.vx = 0;

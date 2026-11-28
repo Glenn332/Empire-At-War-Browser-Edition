@@ -2,6 +2,7 @@ import { ScanAhead } from './scanjobs.js';
 import { TacticalMarker } from './tacticalobjects.js';
 import { FighterMoves } from './fightermoves.js';
 import { FighterDecisions } from './fighterdecisions.js';
+import { rebuildObstacleGrid } from './spatialgrid.js';
 import { wrapAngle as wrapAngleShared } from './fighterflight.js';
 import { hardpointModes, hardpointDelays, modeAllows, modeDelay, rechargeDelay } from './firemodes.js';
 import { ProjectileMods } from './projectilemods.js';
@@ -3416,27 +3417,16 @@ export class World {
     if (this.repairs && this.repairs.size) this.tickRepairs(dt);
     const units = this.units;
     this.interdictors.length = 0;
-    this.obstacles = units.filter(o => !o.dead && !o.hyper && inLookTree(o.type));
-    const grid = this.obstacleGrid || (this.obstacleGrid = new Map());
-    for (const l of grid.values()) l.length = 0;
-    for (const o of this.obstacles) {
-      const c = this.cullOf(o),
-        r =
-          Math.max(o.radius || 0, o.hitRadius || 0, o.collR || 0, c ? Math.hypot(c[0] - o.x, c[1] - o.y) + Math.hypot(c[3], c[4]) : 0) +
-          PROBE_PAD;
-      if (r <= PROBE_PAD) continue;
-      const x0 = Math.floor((o.x - r) / PROBE_CELL),
-        x1 = Math.floor((o.x + r) / PROBE_CELL),
-        y0 = Math.floor((o.y - r) / PROBE_CELL),
-        y1 = Math.floor((o.y + r) / PROBE_CELL);
-      for (let ix = x0; ix <= x1; ix++)
-        for (let iy = y0; iy <= y1; iy++) {
-          const k = ix * 65536 + iy;
-          let l = grid.get(k);
-          if (!l) grid.set(k, (l = []));
-          l.push(o);
-        }
-    }
+    const obstacleState = rebuildObstacleGrid(
+      (this.obstacleState ||= {}),
+      units,
+      PROBE_CELL,
+      PROBE_PAD,
+      inLookTree,
+      o => this.cullOf(o)
+    );
+    this.obstacles = obstacleState.obstacles;
+    this.obstacleGrid = obstacleState.grid;
     const ug = this.unitGrid || (this.unitGrid = new Map());
     for (const l of ug.values()) l.length = 0;
     let hitReach = 0;

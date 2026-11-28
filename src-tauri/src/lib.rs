@@ -68,6 +68,7 @@ struct State {
     eaw: Option<Option<Arc<Opened>>>,
     sources: Vec<Source>,
     local: Vec<String>,
+    mods: Vec<PathBuf>,
 }
 
 impl State {
@@ -255,8 +256,30 @@ fn open(dir: &Path, mods: &[PathBuf], expansion: bool) -> Arc<Opened> {
 }
 
 impl Server {
+    /// The mod folders the opened game is layered with: the ones the app was launched with
+    /// (--mod, STEAMMOD=, MODPATH=) at the bottom, then the ones the launcher's mod list has
+    /// turned on, in the order shown there, the last on top. A folder named twice mounts once.
+    fn mod_layers(&self, settings: &Settings) -> Vec<PathBuf> {
+        let mut out = Vec::with_capacity(self.mods.len() + settings.mods.len());
+        let mut seen = std::collections::HashSet::new();
+        let mut add = |path: &Path| {
+            let key = path.to_string_lossy().replace('\\', "/").to_lowercase();
+            if seen.insert(key) {
+                out.push(path.to_path_buf());
+            }
+        };
+        for path in &self.mods {
+            add(path);
+        }
+        for path in &settings.mods {
+            add(Path::new(path));
+        }
+        out
+    }
+
     fn settle(&self, settings: Settings, was: Option<&State>) -> State {
         let steam = steam::game_folder();
+        let mods = self.mod_layers(&settings);
         let chosen = settings
             .game
             .as_ref()
@@ -293,10 +316,13 @@ impl Server {
             .map(|s| s.path.clone())
             .chain(dir.iter().cloned())
             .filter_map(|p| canonical(&p))
+            .map(|p| p.trim_end_matches(['/', '\\']).to_string())
             .collect();
         // the same folder keeps its opened game, unless that game could not start (files that
-        // were still being copied in): then it is opened again
-        if let Some(w) = was.filter(|w| w.dir.is_some() && w.dir == dir && w.game_ready()) {
+        // were still being copied in) or the mods to layer over it changed: then it is opened again
+        if let Some(w) = was.filter(|w| {
+            w.dir.is_some() && w.dir == dir && w.mods == mods && w.game_ready()
+        }) {
             return State {
                 settings,
                 dir,
@@ -306,9 +332,10 @@ impl Server {
                 eaw: w.eaw.clone(),
                 sources,
                 local,
+                mods,
             };
         }
-        let foc = dir.as_ref().map(|d| open(d, &self.mods, true));
+        let foc = dir.as_ref().map(|d| open(d, &mods, true));
         if foc.is_none() {
             println!("no game install found: serving the app alone");
         }
@@ -321,6 +348,7 @@ impl Server {
             eaw: None,
             sources,
             local,
+            mods,
         }
     }
 
@@ -357,7 +385,7 @@ impl Server {
         }
         let mut st = self.state.write().unwrap();
         if st.eaw.is_none() {
-            st.eaw = Some(st.dir.as_ref().map(|d| open(d, &self.mods, false)));
+            st.eaw = Some(st.dir.as_ref().map(|d| open(d, &st.mods, false)));
         }
         st.eaw.clone().flatten()
     }
@@ -476,6 +504,24 @@ impl Server {
                             .retain(|h| !setup::same(Path::new(h), Path::new(&r)))
                     });
                 }
+            }
+            "/mods" => {
+                // The launcher's mod list, the turned-on folders in the order shown there,
+                // the last on top: the game is opened again with them layered over it, the
+                // way a --mod launch would add them. A folder that has gone away is skipped,
+                // as a --mod launch skips it, so the rest still plays.
+                let asked: Vec<String> = arg("mods")
+                    .and_then(|v| serde_json::from_str(&v).ok())
+                    .unwrap_or_default();
+                let mut list = Vec::with_capacity(asked.len());
+                for path in asked {
+                    if Path::new(&path).is_dir() {
+                        list.push(path);
+                    } else {
+                        eprintln!("mod not found: {path}");
+                    }
+                }
+                self.change(|s| s.mods = list);
             }
             _ => return Err("not found".into()),
         }
@@ -617,9 +663,9 @@ impl Server {
                         .to_lowercase()
                 })
             });
+            let mods = self.state.read().unwrap().mods.clone();
             let root = at.and_then(|at| {
-                self.mods
-                    .iter()
+                mods.iter()
                     .map(|r| std::path::absolute(r).unwrap_or(r.clone()))
                     .filter(|r| {
                         at.starts_with(
@@ -679,8 +725,8 @@ impl Server {
         }
         if p == "/api/mounted" {
             let versions = steam::workshop_versions();
-            let list: Vec<serde_json::Value> = self
-                .mods
+            let mounted = self.state.read().unwrap().mods.clone();
+            let list: Vec<serde_json::Value> = mounted
                 .iter()
                 .map(|root| {
                     let folder = root
@@ -764,11 +810,13 @@ impl Server {
                 }
                 let size = win.inner_size().ok();
                 let full = monitor.as_ref().map(|m| *m.size());
+                let is_full = win.is_fullscreen().unwrap_or(false);
                 return json(&serde_json::json!({
                     "w": size.map(|s| s.width), "h": size.map(|s| s.height),
                     "mw": full.map(|s| s.width), "mh": full.map(|s| s.height),
                     "fw": room.map(|r| r.1), "fh": room.map(|r| r.2),
-                    "max": win.is_maximized().unwrap_or(false)
+                    "max": win.is_maximized().unwrap_or(false),
+                    "full": is_full
                 }));
             }
             return json(&serde_json::json!({ "ok": false }));
@@ -957,12 +1005,66 @@ impl Server {
 
 /// WebKitGTK's DMA-BUF renderer shows a blank window with NVIDIA's own driver; it is turned off
 /// there unless the player chose a setting of their own.
+///
+/// The AppImage bundles the GStreamer plugins under usr/lib, and on a mixed 32/64-bit host
+/// (Fedora's multilib puts i686 copies of gstreamer1 in /usr/lib) those are 32-bit: WebKit's audio
+/// then finds no appsink or autoaudiosink, and sounds never start. The app is 64-bit, so its own
+/// plugins are the 64-bit ones of the system, which are pointed at when the bundled set is not
+/// the right one.
 #[cfg(target_os = "linux")]
 fn prepare_linux_webview() {
+    // On Wayland the webview's DMABUF renderer stalls the compositor mid-scroll and its fallback
+    // path is slow on some drivers (seen on AMD + WebKitGTK 2.54.3). XWayland uses a different
+    // buffer path that does not have that bug, so Wayland sessions run through X11 unless the
+    // player chose a backend of their own. still one thread: nothing else reads the environment yet
+    if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        unsafe { std::env::set_var("GDK_BACKEND", "x11") };
+    }
+    // GPU compositing works on AMD Barcelo after the performance optimizations (async shader
+    // compile, reduced shadow map, MSAA toggle, overlay throttle). Software compositing was the
+    // previous default because the GPU path froze, but that was before the optimizations.
+    // Setting WEBKIT_DISABLE_COMPOSITING_MODE=1 forces software compositing (fallback).
+    if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+        unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0") };
+    }
     const SETTING: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
     if std::env::var_os(SETTING).is_none() && Path::new("/proc/driver/nvidia").exists() {
         // still one thread: nothing else reads the environment yet
         unsafe { std::env::set_var(SETTING, "1") };
+    }
+    use std::io::Read;
+    const PLUGINS: &str = "GST_PLUGIN_SYSTEM_PATH_1_0";
+    // byte 4 of an ELF header is its class: 2 is 64-bit, 1 is 32-bit
+    let is_64bit = |p: &Path| {
+        std::fs::File::open(p).is_ok_and(|mut f| {
+            let mut head = [0u8; 20];
+            f.read_exact(&mut head).is_ok() && head[0..4] == *b"\x7fELF" && head[4] == 2
+        })
+    };
+    let bundled = std::env::var_os("APPDIR")
+        .map(PathBuf::from)
+        .map(|d| d.join("usr/lib/gstreamer-1.0/libgstcoreelements.so"))
+        .filter(|p| p.is_file());
+    // AppRun (linuxdeploy's gstreamer hook) always sets GST_PLUGIN_SYSTEM_PATH_1_0 to the bundle's
+    // folder, so this replaces that value when the folder holds 32-bit plugins, and keeps a path
+    // the player set themselves
+    let ours = std::env::var_os("APPDIR").map(|d| PathBuf::from(d).join("usr/lib/gstreamer-1.0"));
+    let set_by_bundle = std::env::var_os(PLUGINS).is_some_and(|v| Some(PathBuf::from(v)) == ours);
+    if bundled.is_some_and(|p| !is_64bit(&p)) && set_by_bundle {
+        let system = [
+            "/usr/lib64/gstreamer-1.0",
+            "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        ]
+        .into_iter()
+        .find(|d| is_64bit(&Path::new(d).join("libgstcoreelements.so")));
+        if let Some(dir) = system {
+            // the plugin loader reads every spelling; set them together so the 32-bit ones lose
+            unsafe {
+                std::env::set_var(PLUGINS, dir);
+                std::env::set_var("GST_PLUGIN_SYSTEM_PATH", dir);
+                std::env::remove_var("GST_PLUGIN_PATH_1_0");
+            }
+        }
     }
 }
 
@@ -1022,6 +1124,7 @@ pub fn run() {
         eaw: None,
         sources: vec![],
         local: vec![],
+        mods: vec![],
     };
     let mut server = Server {
         mods,
@@ -1137,11 +1240,37 @@ pub fn run() {
         })
         .setup(move |app| {
             audio::name_sessions("Empire at War Browser Edition");
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
+            let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
                 .title("Empire at War Browser Edition")
                 .inner_size(1600.0, 900.0)
                 .additional_browser_args(flags.trim())
+                // An opaque base layer in the page's own space colour. With the background unset,
+                // WebKitGTK's compositor can flash the window black for a frame when the page's
+                // layers are not ready to composite - the reported flicker on the launcher.
+                .background_color(tauri::window::Color(1, 3, 7, 255))
                 .build()?;
+            // WebKitGTK's fractional-scale rendering bug: the compositor and DOM disagree on
+            // element positions at non-integer DPI scales (e.g. 4K at 150%), so hover highlights
+            // land on the wrong element while clicks go through. Force 1:1 zoom so the DOM and
+            // the compositor stay in sync.
+            #[cfg(target_os = "linux")]
+            {
+                let _ = win.set_zoom(1.0);
+            }
+            // On HiDPI / fractional-scale displays the physical window can end up larger than the
+            // screen: clamp the initial size to the monitor's work area.
+            if let Ok(Some(monitor)) = win.current_monitor() {
+                let area = monitor.work_area();
+                let size = win.inner_size().unwrap_or_default();
+                let (max_w, max_h) = (area.size.width, area.size.height);
+                if size.width > max_w || size.height > max_h {
+                    let scale = (max_w as f64 / size.width as f64).min(max_h as f64 / size.height as f64);
+                    let w = (size.width as f64 * scale) as u32;
+                    let h = (size.height as f64 * scale) as u32;
+                    let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+                    let _ = win.center();
+                }
+            }
             #[cfg(windows)]
             if let Some(Ok(h)) = app.get_webview_window("main").map(|w| w.hwnd()) {
                 let handle = app.handle().clone();

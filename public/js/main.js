@@ -16,7 +16,7 @@ import './touch.js';
 import * as THREE from 'three';
 import { db, loadGameData, skirmishStation, skirmishFactions, autoColors, switchLanguage } from './gamedata.js';
 import { findFiles, fetchText, fromInstall, pendingFiles } from './vfs.js';
-import { gfx, storeGfx, pixelRatio, frameCap, menuFrameCap, FrameGate } from './gfx.js';
+import { gfx, storeGfx, pixelRatio, battleFrameCap, menuFrameCap, FrameGate } from './gfx.js';
 import { loadMap, loadMapHeader, startEnvironment, skirmishMaps, mapTitle } from './ted.js';
 import { preloadModels, getModelData, buildModel, resetLighting, prebuildModel, dropPrebuilt } from './model.js';
 import { loadALA, animName } from './ala.js';
@@ -276,6 +276,11 @@ class Game {
     this.over = false;
     this.last = performance.now();
     this.frame = this.frame.bind(this);
+  }
+
+  // Re-fit the renderer after a graphics change (render scale, MSAA, etc.).
+  fit() {
+    if (this.renderer) this.renderer.resize();
   }
 
   async start() {
@@ -831,7 +836,11 @@ class Game {
     progress('Preparing effects and shaders', 0.8);
     R.scene.add(park);
     try {
-      gl.compile(R.scene, R.camera);
+      // compileAsync waits for KHR_parallel_shader_compile where the driver supports it: the
+      // whole mod roster's shaders finish here, on the loading screen, instead of the first
+      // time an enemy reinforcement type appears on screen mid-battle.
+      if (gl.compileAsync) await gl.compileAsync(R.scene, R.camera);
+      else gl.compile(R.scene, R.camera);
     } finally {
       R.scene.remove(park);
     }
@@ -883,7 +892,28 @@ class Game {
         R.render(w, 0, null);
         await next();
       }
-      R.instances?.prepare(R.renderer, cam);
+      if (R.instances?.warmAll) await R.instances.warmAll(w.units, R.renderer, cam);
+      else R.instances?.prepareUnits(w.units, R.renderer, cam);
+      // The selection rings: their batches, textures and programs are ready before the first
+      // Ctrl+A, so selecting everything draws the green outline instead of freezing on a
+      // compile. Spawned ships, squads' fighters and garrison squadrons all name their blob.
+      const ringTypes = new Set();
+      for (const u of w.units) {
+        if (u.dead) continue;
+        if (u.type) ringTypes.add(u.type);
+        if (u.isSquad) for (const f of u.fighters || []) if (f.type) ringTypes.add(f.type);
+        for (const g of u.garrison || []) {
+          const gt = g.type;
+          if (!gt) continue;
+          ringTypes.add(gt);
+          if (gt.has('Squadron_Units'))
+            for (const n of gt.list('Squadron_Units')) {
+              const t = db.type(n);
+              if (t) ringTypes.add(t);
+            }
+        }
+      }
+      await this.renderer.rings?.warm?.(R.renderer, cam, [...ringTypes]);
       if (R.gpu) {
         await R.gpu.settle();
         R.render(w, 0, null);
@@ -2263,8 +2293,27 @@ class Game {
   frame(now) {
     if (this.modeSuspended) return;
     requestAnimationFrame(this.frame);
+    // A menu movie keeps its own 30 fps clock while the decorative battle behind it yields resources.
+    const menuMovie = !!this.setup.attract && !!this.tacticalMovies?.active;
+    if (menuMovie) {
+      const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+      this.last = now;
+      this.tacticalMovies.update(real, !!this.paused);
+      return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
+    }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); the benchmark measures uncapped
-    if ((this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap)).skip(now)) return;
+    // Presentation state changes while this gate lives: pausing and cinematics must not bake an old cap into it.
+    const gate = (this.frameGate ||= new FrameGate(() =>
+      battleFrameCap(
+        this.setup.benchmark,
+        this.setup.attract,
+        this.paused,
+        this.cine?.on || this.tacticalCinematics?.on || this.tacticalMovies?.active || this.movies?.active,
+        !!this.tacticalMovies?.active,
+        (this.menus?.stack.length || 0) > 1
+      )
+    ));
+    if (gate.skip(now)) return;
     diag.begin(now);
     const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     if (this.bench) this.bench.tick(now - this.last, now);
@@ -3120,16 +3169,23 @@ async function boot() {
   }
   window.applyGraphics = renderer => {
     for (const [id, key] of Object.entries(GFX)) $('gfx' + id).checked = !!gfx[key];
-    if (!renderer || !renderer.post) return;
-    renderer.shadowsOn = !!gfx.shadows;
-    renderer.post.bloom = !!gfx.bloom;
-    renderer.post.heat = !!gfx.heat;
-    renderer.post.flare = !!gfx.flare;
-    renderer.fxParticles.heatOn = !!gfx.heat;
-    if (renderer.ratioWas !== pixelRatio()) {
-      renderer.ratioWas = pixelRatio();
-      if (renderer.ctx) renderer.resize();
+    // The land game's renderer is a plain THREE.WebGLRenderer without .post — don't return early.
+    // Always re-fit the live battle so render scale changes apply immediately.
+    if (renderer && renderer.post) {
+      renderer.shadowsOn = !!gfx.shadows && !window.game?.setup.attract;
+      renderer.post.bloom = !!gfx.bloom && !window.game?.setup.attract;
+      renderer.post.heat = !!gfx.heat && !window.game?.setup.attract;
+      renderer.post.flare = !!gfx.flare && !window.game?.setup.attract;
+      renderer.fxParticles.heatOn = !!gfx.heat && !window.game?.setup.attract;
+      if (renderer.ratioWas !== pixelRatio()) {
+        renderer.ratioWas = pixelRatio();
+        if (renderer.ctx) renderer.resize();
+      }
     }
+    // A graphics toggle that changes the pipeline (aa / scale / bloom) must reach the live battle
+    // too, not just the next load: re-fit the land game (its own ratio bookkeeping, post targets).
+    const land = window.game;
+    if (land && typeof land.fit === 'function') land.fit();
   };
   for (const [id, key] of Object.entries(GFX)) {
     const box = $('gfx' + id);

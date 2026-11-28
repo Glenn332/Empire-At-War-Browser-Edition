@@ -3,12 +3,15 @@ import { buildModel } from '../model.js';
 import { loadALO } from '../alo.js';
 import { loadParticles } from '../particles.js';
 import { basisOf } from '../particlesim.js';
+import { warmGpuBatches } from './gpuwarmup.js';
 
 export class ShotModels {
   constructor(scene) {
     this.scene = scene;
     this.byFile = new Map();
     this.pools = [];
+    this.warmPools = new WeakSet();
+    this.uploaded = new WeakSet();
   }
 
   lookOf(P) {
@@ -124,6 +127,25 @@ export class ShotModels {
     this.scene.add(im);
     p.im = im;
     p.cap = cap;
+  }
+
+  prepare(renderer, camera) {
+    const fresh = this.pools.filter(p => !this.warmPools.has(p) && !(this.warmQueue ||= []).includes(p));
+    if (!fresh.length || this.warming) return;
+    (this.warmQueue ||= []).push(...fresh);
+    this.warming = (async () => {
+      try {
+        while (this.warmQueue.length) {
+          const p = this.warmQueue.shift();
+          await warmGpuBatches(renderer, camera, [p], this.uploaded);
+          this.warmPools.add(p);
+        }
+      } catch (error) {
+        console.warn('Projectile GPU warm-up', error);
+      } finally {
+        this.warming = null;
+      }
+    })();
   }
 
   begin() {

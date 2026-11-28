@@ -4,6 +4,7 @@ import { colorizes } from './teamcolor.js';
 import { setTacticalRules } from './tacticalrules.js';
 import { linkedParent, reportLinkedVictory, authoredMapOwner, ensureMissionPlayers, missionMapActor } from './linktactical.js';
 import { mpBattleParent } from './galacticmpbattle.js';
+import { diag } from '../diag.js';
 
 import * as THREE from 'three';
 import { db, selectionBoxColors } from '../gamedata.js';
@@ -717,6 +718,12 @@ export class LandGame {
     $('view').appendChild(renderer.domElement);
     gammaOn(renderer.domElement);
     if (wantGPU() && !renderer.isMirror) await this.startGPU();
+    diag.attach(this.renderer, () => ({
+      units: this.world?.units?.length || 0,
+      shots: this.world?.projectiles?.length || 0,
+      particles: 0,
+      time: +(this.world?.time || 0).toFixed(0)
+    }));
     this.camera = new THREE.PerspectiveCamera(55, 1, 5, 40000);
     this.camera.up.set(0, 0, 1);
     const scene = (this.scene = new THREE.Scene());
@@ -3248,12 +3255,21 @@ export class LandGame {
   frame(now) {
     if (this.modeSuspended) return;
     if (!this.warming) requestAnimationFrame(this.frame);
+    // A menu movie keeps its own 30 fps clock while the decorative battle behind it yields resources.
+    const menuMovie = !!this.setup.attract && !!this.tacticalMovies?.active;
+    if (menuMovie && !this.warming) {
+      const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+      this.last = now;
+      this.tacticalMovies.update(real, !!this.paused || !!this.menus?.open);
+      return; // the full-screen movie covers the decorative battle: no simulation or rendering behind it
+    }
     // a battle draws at most the frame cap (the menu backdrop at most MENU_FPS); warm-up and the benchmark are uncapped
-    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? menuFrameCap : frameCap));
+    const gate = (this.frameGate ||= new FrameGate(this.setup.benchmark ? 0 : this.setup.attract ? () => menuFrameCap(!!this.tacticalMovies?.active, (this.menus?.stack.length || 0) > 1) : frameCap));
     if (!this.warming && gate.skip(now)) return;
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
     this.last = now;
+    diag.begin(now);
     const w = this.world,
       v = this.view,
       k = this.keys,
@@ -3324,6 +3340,7 @@ export class LandGame {
       this.stepCommanders(dt);
       this.stepEnd(dt);
     }
+    diag.lap('logic');
     if (this.netRole === 'host') this.shooterNet?.hostStep();
     if (!w.interp) w.poseQueued();
     if (!this.lock) this.scripts?.host.updateStory(dt);
@@ -3378,6 +3395,7 @@ export class LandGame {
       w.lerpIn((this.acc || 0) / LAND_TICK);
       w.poseQueued(dt);
     }
+    diag.lap('hud');
     {
       const fq = this.following,
         lo = this.map.playMin || [0, 0],
@@ -3552,12 +3570,14 @@ export class LandGame {
     if (!skip) {
       if (!this.shooter) this.extraBolts(cam);
       this.castShadows();
+      diag.lap('shadow');
       if (this.water) this.water.userData.mirror(R, cam, eye => this.mirrorCards(() => draw(eye)));
       const fx = this.shooter ? this.shooter.postFor(R) : this.extraPost(R),
         off = fx ? fx.begin() : false;
       R.clear();
       draw(cam);
       if (off) fx.end(cam);
+      diag.lap('draw');
       if (R === this.gpu) R.endFrame();
       if (this.sameFrame) this.sameFrame(cam);
     }
@@ -3566,22 +3586,32 @@ export class LandGame {
       B.restore();
     }
     if (!skip) {
-      this.drawBars();
+      // Health bars and selection rings do not need the display's full refresh rate: 30 Hz is
+      // smooth enough for a slow-moving bar, and the compositor blends the overlay half as often.
+      this.barsTimer = (this.barsTimer || 0) - raw;
+      if (this.barsTimer <= 0) {
+        this.barsTimer = 33;
+        this.drawBars();
+      }
       this.shooter?.ov?.paint();
+      diag.lap('overlay');
     }
     w.lerpOut();
     if (R.isMirror) {
       this.skipped = (this.skipped || 0) + raw;
       if (skip) {
         R.skip();
+        diag.end();
         return;
       }
       R.flush();
       if (this.bench) this.bench.tick(this.skipped, performance.now());
       this.skipped = 0;
+      diag.end();
       return;
     }
     if (this.bench) this.bench.tick(raw, performance.now());
+    diag.end();
   }
 
   benchOrders(dt) {
@@ -3715,6 +3745,23 @@ export class LandGame {
     this.warming = true;
     if (!this.noBatch) (this.batches ||= new LandInstances(this.scene, this.renderer, this.camera)).warm = true;
     this.warmGround();
+    // Warm up selection rings: the first Ctrl+A creates batches for all selected units at once,
+    // which stalls on geometry creation. Pre-create the batches here so Ctrl+A is instant.
+    {
+      const f = db.faction(this.factions[this.me]);
+      if (f) {
+        const rings = (this.selRings = new SelectionRings(this.scene, f, true, (x, y) => heightAt(this.terrain, x, y)));
+        // Pre-create batches for common unit types (own and enemy).
+        const types = new Set();
+        for (const u of this.world.units) {
+          if (u.type) types.add(u.type);
+        }
+        for (const t of types) {
+          rings.batch(t.name, true);
+          rings.batch(t.name, false);
+        }
+      }
+    }
     const effects = this.warmEffects((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2).catch(e => {
         console.warn('warm effects', e);
         return () => {};
@@ -3735,6 +3782,13 @@ export class LandGame {
         await drawn();
         await next();
       }
+      // The post chain (MSAA scene target + resolve, bloom, grade): the full-screen passes run
+      // inside the frames above only if the shooter's post is ready. Force-allocate it here so
+      // the driver's first-use MSAA cost lands on the loading screen, not on the first battle frame.
+      this.shooter?.warmPost?.(this.renderer);
+      this.frame(performance.now());
+      await drawn();
+      await next();
       Object.assign(v, keep);
       this.reveal = reveal;
       this.hudTimer = 0;
@@ -4077,7 +4131,7 @@ export class LandGame {
       this.extraCompiled = !R.compileAsync || !!R.isMirror || R === this.gpu;
       if (!this.extraCompiled)
         (async () => {
-          for (const m of [P.mBright, P.mBlur, P.mCombine, P.extraLens]) {
+          for (const m of [P.mBright, P.mBlur, P.mCombine, P.mCopy, P.extraLens]) {
             P.quad.material = m;
             await Promise.resolve(R.compileAsync(P.quad, P.quadCam, P.quadScene)).catch(() => {});
           }
@@ -4090,12 +4144,12 @@ export class LandGame {
       P.resize(innerWidth, innerHeight);
       P.pr = R.getPixelRatio();
     }
-    P.bloom = !!gfx.bloom;
+    P.bloom = !!gfx.bloom && !this.setup.attract;
     return P;
   }
 
   castShadows() {
-    this.castOn = !!gfx.shadows;
+    this.castOn = !!gfx.shadows && !this.setup.attract;
     if (this.ratioWas !== pixelRatio()) this.fit();
     if (this.cast && this.cast.size !== shadowSize()) {
       this.cast.target.depthTexture.dispose();
@@ -4937,12 +4991,26 @@ export class LandGame {
       me = this.me,
       cam = this.camera,
       p = this.proj || (this.proj = new THREE.Vector3());
-    if (c.width !== innerWidth || c.height !== innerHeight) {
-      c.width = innerWidth;
-      c.height = innerHeight;
+    // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
+    // Full resolution, but only redraw when something actually changed (throttled to 30 Hz).
+    const bw = innerWidth,
+      bh = innerHeight;
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
     }
     const g = c.getContext('2d');
-    g.clearRect(0, 0, c.width, c.height);
+    // Only clear and redraw when the camera moved or a unit's health changed. The compositor
+    // re-blends the canvas on every clear, so skipping unchanged frames saves compositor time.
+    const camKey = `${cam.position.x.toFixed(1)},${cam.position.y.toFixed(1)},${cam.position.z.toFixed(1)}`;
+    let healthKey = 0;
+    for (const u of w.units) {
+      if (!u.dead && u.side === me) healthKey += (u.hp || 0) * 1000 + (u.x | 0) + (u.y | 0);
+    }
+    const key = camKey + '|' + healthKey;
+    if (this._lastBarKey === key) return;
+    this._lastBarKey = key;
+    g.clearRect(0, 0, bw, bh);
     if (this.endScreen) return;
     const at = (x, y, z) => {
       p.set(x, y, z).project(cam);

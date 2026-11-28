@@ -4,6 +4,7 @@ import { db } from './gamedata.js';
 import { fetchBinary, fetchText, mediaUrl } from './vfs.js';
 import { SpeechPlayer } from './speech.js';
 import { activeLanguage } from './language.js';
+import { inApp } from './platform.js';
 import { localizedAudioFile } from './localizedmedia.js';
 
 const POSITIONAL_VOICES = 32;
@@ -24,9 +25,67 @@ const storedHeadphones = () => {
 
 const release = el => {
   el.pause();
+  if (el.src?.startsWith('blob:')) URL.revokeObjectURL(el.src);
   el.src = '';
   el.node?.disconnect();
 };
+
+// WebKitGTK's HTML media pipeline cannot play the app's custom scheme, and its blob pipeline
+// stutters on some systems. Decoded buffers use the same output path as the game's effects.
+function bufferedMusic(audio, file) {
+  const gain = audio.ctx.createGain();
+  gain.connect(audio.ctx.destination);
+  const el = {
+    file,
+    paused: true,
+    node: gain,
+    get volume() {
+      return gain.gain.value;
+    },
+    set volume(v) {
+      gain.gain.value = v;
+    },
+    async play() {
+      audio.unlock();
+      el.paused = false;
+      if (el.buffer) start();
+    },
+    pause() {
+      el.paused = true;
+      try {
+        el.source?.stop();
+      } catch {}
+      el.source?.disconnect();
+      el.source = null;
+    }
+  };
+  const start = () => {
+    if (el.source || el.paused || audio.music !== el) return;
+    const source = audio.ctx.createBufferSource();
+    source.buffer = el.buffer;
+    source.connect(gain);
+    source.onended = () => {
+      el.source = null;
+      if (!el.paused) el.onended?.();
+    };
+    source.start();
+    el.source = source;
+    el.onplaying?.();
+  };
+  fetchBinary('Data/Audio/Music/' + file)
+    .then(bytes => bytes && audio.ctx.decodeAudioData(bytes.slice(0)))
+    .then(buffer => {
+      if (audio.music !== el) return;
+      if (!buffer) return el.onerror?.();
+      el.buffer = buffer;
+      el.paused = false;
+      start();
+    })
+    .catch(() => {
+      if (audio.music === el) el.onerror?.();
+    });
+  return el;
+}
 
 export class Audio {
   constructor() {
@@ -259,7 +318,7 @@ export class Audio {
       this.master.connect(this.ctx.destination);
       this.master.gain.value = this.masterVolume;
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
   }
 
   async buffer(file, language = activeLanguage) {
@@ -787,8 +846,10 @@ export class Audio {
         release(old);
       }
     }
-    const el = new window.Audio();
-    if (this.ctx) {
+    const buffered = inApp() && /Linux|X11/.test(navigator.userAgent);
+    if (buffered) this.unlock();
+    const el = buffered ? bufferedMusic(this, file) : new window.Audio();
+    if (this.ctx && !buffered) {
       try {
         el.node = this.ctx.createMediaElementSource(el);
         el.node.connect(this.ctx.destination);
@@ -807,7 +868,7 @@ export class Audio {
         el.volume = this.musicLevel() * k;
         if (k < 1) setTimeout(step, 50);
       };
-      el.addEventListener('playing', step, { once: true });
+      el.onplaying = step;
     }
     el.onended = () => {
       if (this.once) {
@@ -825,11 +886,12 @@ export class Audio {
       this.nextTrack();
     };
     this.music = el;
-    mediaUrl('Data/Audio/Music/' + file).then(src => {
-      if (this.music !== el) return;
-      el.src = src;
-      el.play().catch(() => {});
-    });
+    if (!buffered)
+      mediaUrl('Data/Audio/Music/' + file).then(src => {
+        if (this.music !== el) return;
+        el.src = src;
+        el.play().catch(() => {});
+      });
   }
 
   setMusicVolume(v) {
@@ -843,7 +905,11 @@ export class Audio {
     this.ambientVOOff = !on;
   }
   stopEvent(name) {
-    const set = this.playing?.get(String(name || '').trim().toUpperCase());
+    const set = this.playing?.get(
+      String(name || '')
+        .trim()
+        .toUpperCase()
+    );
     if (!set) return;
     for (const src of [...set]) {
       src.stopped = true;

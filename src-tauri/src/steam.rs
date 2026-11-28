@@ -51,6 +51,8 @@ fn steam_folders() -> Vec<PathBuf> {
 pub fn libraries() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = vec![];
     let mut add = |p: PathBuf| {
+        // Steam commonly has ~/.steam/steam symlinked to ~/.local/share/Steam.
+        let p = std::fs::canonicalize(&p).unwrap_or(p);
         if !out
             .iter()
             .any(|o| o.to_string_lossy().to_lowercase() == p.to_string_lossy().to_lowercase())

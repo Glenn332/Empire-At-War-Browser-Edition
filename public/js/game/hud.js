@@ -18,6 +18,7 @@ import { SuperLaserSwitch } from './superlaserswitch.js';
 import { withKey, keysOf, keyName, onBindingsChange } from './keybinds.js';
 import { TooltipGate } from './tooltipgate.js';
 import { loadBarSkins, textureKey, decodeSkinIcons } from './barskins.js';
+import { commandBarStateKey } from './performance.js';
 
 const BAR_H = 330,
   BAR_W = 1080;
@@ -1197,10 +1198,11 @@ export class CommandBar {
       columns = [];
     let skip = this.coveredColumns(false);
     this.buildBar?.set(0, 12 - skip, 0);
-    const held = new Map();
+    const held = new Map(),
+      selected = new Set(sel);
     for (const q of units) {
       const host = q.members && q.members.find(u => u.inside)?.inside;
-      if (host && sel.includes(host.squad)) held.set(q, host);
+      if (host && selected.has(host.squad)) held.set(q, host);
     }
     if (units.length) {
       if (addsUnits(this.unitScrollSelection, units)) {
@@ -1631,6 +1633,12 @@ export class CommandBar {
   }
 
   refresh() {
+    const stateKey = commandBarStateKey(this.ui.selection, this.world, this.player, this.ui, this);
+    if (stateKey === this.stateKey) {
+      this.refreshCredits();
+      return;
+    }
+    this.stateKey = stateKey;
     this.updatePadMenu();
     const p = this.player,
       w = this.world,
@@ -1726,13 +1734,24 @@ export class CommandBar {
         const base = this.rect('special_button_' + String(first * 2).padStart(2, '0'));
         return base && { ...base, x: base.x + (span - 1 + k) * 27.5 };
       };
-      const unitsWith = (units, kind) => units.filter(unit => unit.abilities.some(ability => ability.def.kind === kind));
+      const abilityUnits = new Map();
+      for (const c of mine) {
+        const byKind = new Map();
+        for (const unit of c.units)
+          for (const ability of unit.abilities) {
+            let list = byKind.get(ability.def.kind);
+            if (!list) byKind.set(ability.def.kind, (list = []));
+            list.push(unit);
+          }
+        abilityUnits.set(c.col, byKind);
+      }
+      const unitsWith = (column, kind) => abilityUnits.get(column.col)?.get(kind) || [];
       if (abilityKey === this.abilityKey && this.abilityButtons) {
         let i = 0;
         for (const c of mine) {
           c.defs.forEach((def, k) => {
             const rec = this.abilityButtons[i++];
-            rec.units = unitsWith(c.units, def.kind);
+            rec.units = unitsWith(c, def.kind);
             rec.b.style.left = abilityRect(c.first, c.span, k).x + 'px';
           });
         }
@@ -1776,7 +1795,7 @@ export class CommandBar {
             const rec = {
               b,
               def,
-              units: unitsWith(units, def.kind),
+              units: unitsWith(c, def.kind),
               rest:
                 (def.target === 'unit' ? ' — then click an enemy' : def.target === 'point' ? ' — then click a location' : '') +
                 (def.autofire ? ' · right-click: auto-fire' : '')

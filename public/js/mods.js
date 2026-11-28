@@ -33,6 +33,11 @@ async function tx(mode, fn) {
 export const supported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window && 'indexedDB' in window;
 export const archivesSupported = () =>
   typeof window !== 'undefined' && 'indexedDB' in window && !!(navigator.storage && navigator.storage.getDirectory);
+// The app's own webview on Linux (WebKitGTK) has no File System Access API, and the app does not
+// register a service worker there, so neither of the two above holds. The app still reads the mod
+// folders it found (api/local/list and api/local/file) through localFolder(), which answers the
+// same calls, so the list and the overlay work from that instead.
+export const bridged = () => inApp() && !supported();
 const NO_ANSWER = 'no answer';
 const answer = (p, ms) => Promise.race([Promise.resolve(p).catch(() => 'denied'), new Promise(r => setTimeout(() => r(NO_ANSWER), ms))]);
 const canRead = h => answer(h.queryPermission({ mode: 'read' }), 4000);
@@ -419,7 +424,7 @@ export const compatSupported = () =>
   'indexedDB' in window &&
   'webkitdirectory' in document.createElement('input') &&
   !/Android|iPhone|iPad|Mobile/.test(navigator.userAgent);
-export const foldersSupported = () => supported() || compatSupported();
+export const foldersSupported = () => supported() || bridged() || compatSupported();
 
 function fileTree(files) {
   const get = (d, n, kind) => {
@@ -779,7 +784,7 @@ function pickAgain(mods, stuck = false) {
 
 export let openStep = '';
 export async function openOverlay() {
-  if (!foldersSupported() && !archivesSupported()) return null;
+  if (!foldersSupported() && !archivesSupported() && !bridged()) return null;
   openStep = 'reading the saved game folder';
   const game = foldersSupported() ? await getGame() : null;
   openStep = 'reading the saved mod list';
@@ -919,7 +924,9 @@ export async function openOverlay() {
   };
   const where = (key, layers = top) => {
     for (const m of layers) {
-      if (m.files[key] !== undefined) return [m, m.files[key]];
+      // 0 is a read inside the indexed game data (every loser of a merge; the owner is gone), so it
+      // must not be mistaken for "this layer has the file" the way a missing key is
+      if (m.files[key] != null) return [m, m.files[key]];
       if (m.gone.has(key)) return null;
     }
     return undefined;
@@ -977,7 +984,7 @@ export async function openOverlay() {
     rank(key) {
       for (let i = 0; i < top.length; i++) {
         const m = top[i];
-        if (m.files[key] !== undefined) return m.game ? -1 : i;
+        if (m.files[key] != null) return m.game ? -1 : i;
         if (m.gone.has(key)) return -1;
       }
       return -1;

@@ -16,7 +16,7 @@ const OWN = {
   mesh: 1,
   texMip: 0,
   shader: 3,
-  shadow: 3,
+  shadow: 2,
   shadowRange: 8,
   gamma: 0.5,
   level: -1,
@@ -63,9 +63,12 @@ export function frameCap() {
 
 // The 3D battle behind the main menu is only a backdrop: it draws at most this many frames a second.
 export const MENU_FPS = 30;
-export function menuFrameCap() {
-  const cap = frameCap();
-  return cap ? Math.min(cap, MENU_FPS) : MENU_FPS;
+export const MENU_MOVIE_FPS = 15;
+export const MENU_SUBPAGE_FPS = 15;
+export function menuFrameCap(moviePlaying = false, subpage = false) {
+  const cap = frameCap(),
+    backdrop = moviePlaying || subpage ? MENU_MOVIE_FPS : MENU_FPS;
+  return cap ? Math.min(cap, backdrop) : backdrop;
 }
 
 // Decides which screen refreshes draw a frame under a frames-per-second cap (the galaxy map's rule, shared with the
@@ -79,6 +82,7 @@ export class FrameGate {
   }
   skip(now) {
     const cap = typeof this.cap === 'function' ? this.cap() : this.cap;
+    if (cap > 0 && this.next === undefined) this.next = now;
     if (!(cap > 0)) {
       this.next = undefined;
       return false;
@@ -89,6 +93,9 @@ export class FrameGate {
     return false;
   }
 }
+
+export const battleFrameCap = (benchmark, attract, paused, presenting, moviePlaying = false, subpage = false) =>
+  benchmark || paused || presenting ? 0 : attract ? menuFrameCap(moviePlaying, subpage) : frameCap();
 
 export const SUPERSAMPLE_STEPS = [1, 1.5, 2];
 const SUPERSAMPLE_PIXEL_BUDGET = 3840 * 2160;

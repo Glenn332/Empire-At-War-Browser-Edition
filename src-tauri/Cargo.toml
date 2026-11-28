@@ -36,5 +36,7 @@ windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com
 webview2-com = "0.39"
 
 [profile.release]
-lto = true
+# Thin LTO instead of fat: the Rust side is a thin host around the WebView, and thin LTO keeps
+# the cross-crate inlining while rebuilding in a fraction of the time fat LTO takes.
+lto = "thin"
 codegen-units = 1

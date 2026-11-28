@@ -31,9 +31,22 @@ function cleanMod(mod) {
   return out;
 }
 
+const modKey = mod => (mod.workshop ? 'workshop ' + mod.workshop : String(mod.name).toLowerCase());
+
 export function loadContent() {
   gathered ||= Promise.all([mountedMods(), overlayMods()]).then(([mounted, added]) => {
-    current = { edition: edition(), mods: [...mounted, ...added].map(cleanMod) };
+    // In the app the same mod can be mounted by the app itself (the launcher's turned-on mods,
+    // which the game is opened with) and read again by the page's overlay. It is one mod, so it
+    // is described once.
+    const mods = [];
+    const seen = new Set();
+    for (const mod of [...mounted, ...added]) {
+      const key = modKey(mod);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      mods.push(cleanMod(mod));
+    }
+    current = { edition: edition(), mods };
     return current;
   });
   return gathered;
@@ -44,8 +57,6 @@ export const contentNow = () => current;
 if (typeof document !== 'undefined') loadContent();
 
 const EDITION_NAMES = Object.fromEntries(EDITIONS.map(entry => [entry.id, entry.name]));
-
-const modKey = mod => (mod.workshop ? 'workshop ' + mod.workshop : String(mod.name).toLowerCase());
 
 export function describeMod(mod) {
   return `${mod.name}${mod.workshop && mod.workshop !== mod.name ? ` (workshop ${mod.workshop})` : ''}${mod.version ? ` version ${mod.version}` : ''}`;
@@ -69,7 +80,8 @@ export function contentDifferences(saved, running) {
   for (const mod of savedMods) {
     const here = runningByKey.get(modKey(mod));
     if (!here) out.push(`missing ${mod.name}${mod.version ? ' ' + mod.version : ''}`);
-    else if (mod.version && here.version && mod.version !== here.version) out.push(`${mod.name} ${mod.version} save, running ${here.version}`);
+    else if (mod.version && here.version && mod.version !== here.version)
+      out.push(`${mod.name} ${mod.version} save, running ${here.version}`);
     else if (mod.files && here.files && mod.files !== here.files) out.push(`${mod.name} changed since the save`);
   }
   for (const mod of runningMods) if (!savedKeys.has(modKey(mod))) out.push(`${mod.name} is loaded but was not in the save`);

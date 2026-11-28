@@ -1,5 +1,6 @@
 import { F, O, MoveScene, moveFighter } from './fighterflight.js';
 import { DF, DS, DecideScene, decideSquad } from './fighterdecide.js';
+import { workerCount } from './performance.js';
 
 export const UNIT_CELL = 1024;
 export const UNIT_PAD = 200;
@@ -224,7 +225,7 @@ export class ScanAhead {
       self.crossOriginIsolated === true &&
       typeof SharedArrayBuffer === 'function' &&
       typeof globalThis.SWR_SPAWN_JOBS === 'function';
-    const n = canWait && !globalThis.SWR_NOJOBS ? Math.max(0, Math.min(8, (navigator.hardwareConcurrency || 4) - 3)) : 0;
+    const n = canWait && !globalThis.SWR_NOJOBS ? workerCount('scan') : 0;
     this.sh = makeShared(n);
     this.slot = n;
     this.helpers = n;

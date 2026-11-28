@@ -13,11 +13,14 @@ import { parseXML } from '../xml.js';
 import { gfx, pixelRatio, shadowSize, shadowReach, gammaOn } from '../gfx.js';
 import { Instances, mulInto } from './instances.js';
 import { fitShadowToView } from './shadowfit.js';
+import { shadowCacheKey, shadowRedrawDue } from './shadowcache.js';
+import { projectedRadius, visualDetail, importantShadowCaster, effectBudget, retainNearest, selectionTransformKey } from './performance.js';
 import { ShotModels } from './shotmodels.js';
 import { LaserBatch } from './laser.js';
 import { TractorBeams } from './tractorbeam.js';
 import { SuperLaserBeams } from './superlaserbeam.js';
 import { BoltFeed, boltTint, clearBolts, extraFxOn, useGrade } from './extrafx.js';
+import { uploadGpuTextures, warmGpuBatches } from './gpuwarmup.js';
 import { releaseRenderer } from '../rendererrelease.js';
 
 const DEG = Math.PI / 180;
@@ -356,6 +359,7 @@ class RingBatch {
       this.mask.count = 0;
     }
     this.n = 0;
+    this.dropped = false;
     if (ground)
       for (const m of [this.mesh, this.mask])
         if (m) {
@@ -400,10 +404,17 @@ class RingBatch {
     return geo;
   }
   begin() {
+    this.dropped = false;
     this.n = 0;
   }
   add(x, y, z, size, heading) {
-    if (this.n >= this.max || this.textures.some(t => t.userData.pending)) return;
+    if (this.n >= this.max || this.textures.some(t => t.userData.pending)) {
+      // A ring whose texture has not arrived yet is dropped rather than drawn from an empty
+      // (opaque black) texture. The caller asks again next frame, or a stationary selection
+      // would wait for the units to move before its outline ever showed up.
+      this.dropped = true;
+      return;
+    }
     if (this.ground) {
       const P = this.mesh.geometry.attributes.position.array,
         G = this.G,
@@ -563,6 +574,7 @@ export class SelectionRings {
     return b;
   }
   begin() {
+    this.dropped = false;
     for (const b of this.batches.values()) b.begin();
   }
   add(x, y, z, size, heading, own, type) {
@@ -581,7 +593,41 @@ export class SelectionRings {
     if (b) b.add(x, y, z, size, 0);
   }
   end() {
-    for (const b of this.batches.values()) b.end();
+    this.dropped = false;
+    for (const b of this.batches.values()) {
+      b.end();
+      if (b.dropped) this.dropped = true;
+    }
+  }
+  // The loading screen warms every ring batch this battle's units can ever select: their textures
+  // finish loading and upload, and their programs compile, before the player takes control. The
+  // first Ctrl+A then draws the outline at once instead of stalling on a compile and dropping
+  // rings until the units move. types are the world's unit specs (spawned ships, squads' fighters
+  // and garrison squadrons), so their own Selection_Blob_Material_Name batches exist in advance.
+  async warm(renderer, camera, types = []) {
+    if (!blobMaterials || !renderer) return;
+    const names = new Set([this.base]);
+    if (blobMaterials.has('INVALID_MOVE_LAND')) names.add('INVALID_MOVE_LAND');
+    for (const t of types) {
+      const n = t && t.has && t.has('Selection_Blob_Material_Name') ? t.str('Selection_Blob_Material_Name').trim().toUpperCase() : '';
+      if (n && blobMaterials.has(n)) names.add(n);
+    }
+    const meshes = [];
+    for (const name of names)
+      for (const own of [true, false]) {
+        const b = this.batch(name, own, false);
+        if (b) meshes.push(b.mesh, b.mask);
+      }
+    // The textures load through the file system on their own; nothing draws until each one is in.
+    await Promise.all(
+      meshes
+        .filter(Boolean)
+        .flatMap(m => [m.material.map, m.material.uniforms?.map?.value].filter(Boolean))
+        .map(t => t.userData?.ready?.catch(() => {}) ?? Promise.resolve())
+    );
+    const uploaded = new WeakSet();
+    for (const m of meshes) if (m) uploadGpuTextures(renderer, [m], uploaded);
+    await warmGpuBatches(renderer, camera, meshes.filter(Boolean), uploaded);
   }
 }
 
@@ -697,11 +743,15 @@ export class Renderer {
       h = this.dom.parentElement.clientHeight || innerHeight;
     this.width = w;
     this.height = h;
-    this.renderer.setPixelRatio(pixelRatio());
+    this.ratioWas = pixelRatio();
+    this.renderer.setPixelRatio(this.ratioWas);
     this.renderer.setSize(w, h, false);
-    const pr = Math.min(devicePixelRatio, 2);
-    this.overlay.width = w * pr;
-    this.overlay.height = h * pr;
+    // Match the 3D resolution scale, but do not spend extra pixels supersampling the 2D overlay.
+    // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
+    // The cost is the compositor's blend, not the canvas size; throttle redraws instead.
+    const pr = Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1));
+    this.overlay.width = Math.round(w * pr);
+    this.overlay.height = Math.round(h * pr);
     this.ctx.setTransform(pr, 0, 0, pr, 0, 0);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -904,7 +954,7 @@ export class Renderer {
   // inside the shadow camera's square; ships farther away cast nothing that can be seen.
   // Squadron fighters cast no shadow: they are small, many and move every step.
   castsShadowInView(unit) {
-    if (!unit.casters || !this.shadowsOn || unit.squad) return false;
+    if (!this.shadowsOn || !importantShadowCaster(unit)) return false;
     const rig = this.rig,
       reach = shadowHalfExtent(rig.dist) * SHADOW_CASTER_REACH + (unit.visualRadius || 0);
     return (unit.x - rig.x) ** 2 + (unit.y - rig.y) ** 2 <= reach * reach;
@@ -932,6 +982,7 @@ export class Renderer {
       target.depthTexture.magFilter = target.depthTexture.minFilter = THREE.LinearFilter;
       target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 2);
+      camera.userData.shadowTexels = size;
       const scene = new THREE.Scene();
       scene.matrixWorldAutoUpdate = false;
       sh = this.shadows = {
@@ -964,12 +1015,32 @@ export class Renderer {
     cam.updateMatrixWorld();
     fitShadowToView(this.camera, cam, rig.x, rig.y, 0, half);
     if (world) this.coverShadowedUnits(world, cam, rig.x, rig.y, half);
+    const key = world ? shadowCacheKey(cam, world.units, unit => this.castsShadowInView(unit), this.scene) : null,
+      now = performance.now();
+    if (sh.key === key && sh.renderer === r) {
+      sh.reused = (sh.reused || 0) + 1;
+      return;
+    }
+    // WASD changes the lookup matrix and caster set every frame. Neither may bypass the
+    // dynamic shadow budget: a full extra shadow pass per camera frame stalls integrated GPUs.
+    if (sh.renderer === r && !shadowRedrawDue(now, sh.at)) {
+      // The depth texture and its lookup matrix are one immutable pair. Sampling an old map
+      // through the new camera transform is what made shadows swim/flicker during WASD.
+      sh.reused = (sh.reused || 0) + 1;
+      return;
+    }
     lighting.shadowMatrix.value.copy(sh.bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+    sh.key = key;
+    sh.cameraKey = key.slice(0, key.lastIndexOf(':'));
+    sh.casterCount = key.slice(0, key.indexOf(':'));
+    sh.at = now;
+    sh.renderer = r;
+    sh.drawn = (sh.drawn || 0) + 1;
     const batches = sh.batches;
     for (const b of batches.values()) b.n = 0;
     if (world)
       for (const u of world.units) {
-        if (u.dead || !u.casters || !u.obj.visible || !this.castsShadowInView(u)) continue;
+        if (u.dead || !u.casters || !(u.obj.visible || u.instStamp > 0) || !this.castsShadowInView(u)) continue;
         for (const m of u.casters) {
           let b = batches.get(m.geometry);
           if (!b) batches.set(m.geometry, (b = { n: 0, im: null }));
@@ -1023,6 +1094,9 @@ export class Renderer {
   updateSelection(selection, me) {
     const r = this.rings;
     if (!r) return;
+    const key = selectionTransformKey(selection, me);
+    if (key === this.selectionKey) return;
+    this.selectionKey = key;
     r.begin();
     for (const s of selection) {
       if (s.dead || s.isPad) continue;
@@ -1037,6 +1111,9 @@ export class Renderer {
       if (h && h.blob && h.range > 0) r.addBlob(h.blob, s.x, s.y, s.z + (s.ringZ || 0), h.range * 2);
     }
     r.end();
+    // A batch whose texture was still loading dropped its rings: ask again next frame, or a
+    // stationary selection would never show its outline. The pass costs a few matrix writes.
+    if (r.dropped) this.selectionKey = null;
   }
 
   setEnvironment(env) {
@@ -1089,8 +1166,10 @@ export class Renderer {
   }
 
   spawnParticle(x, y, z, vx, vy, vz, size, grow, life, r, g, b, a = 1) {
-    if (this.particles.length > 5000) return;
-    this.particles.push({ x, y, z, vx, vy, vz, size, grow, life, age: 0, r, g, b, a });
+    const budget = this.effectBudget;
+    if (this.particles.length >= (budget?.simpleParticles || 5000)) return;
+    const scale = budget?.glowScale || 1;
+    this.particles.push({ x, y, z, vx, vy, vz, size: size * scale, grow: grow * scale, life, age: 0, r, g, b, a });
   }
 
   updateFog(world, dt) {
@@ -1961,10 +2040,19 @@ export class Renderer {
       }
     } else this.blasts = null;
     if (world) {
-      const stamp = ++this.shotStamp;
+      const stamp = ++this.shotStamp,
+        budget = effectBudget(world.units.length);
+      this.effectBudget = budget;
+      this.smokeBudget = budget.smokePerFrame;
+      let shotEffects = 0;
+      const shots = (this.visibleShots ||= []);
+      shots.length = 0;
       for (const p of world.projectiles) {
         p.fxSeen = stamp;
-        if (p.hidden) continue;
+        if (p.hidden || !_frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) continue;
+        retainNearest(shots, p, cpos.distanceToSquared(_boltAt), budget.shotModels);
+      }
+      for (const p of shots) {
         const P = p.def;
         if (lit && hulls.length && _frustum.containsPoint(_boltAt.set(p.x, p.y, p.z))) {
           const reach = (p.missile ? SPACE_BOLT.missile : SPACE_BOLT.radius) * zk;
@@ -2003,14 +2091,14 @@ export class Renderer {
         if (!(P._cr ??= P.num('Projectile_Custom_Render', 0)) && !(P._sm ??= P.str('Space_Model_Name'))) continue;
         const inv = 1 / p.speed;
         const look = this.shotModels.lookOf(p.def);
-        if (p.fxs === null) p.fxs = look && look.proxies.length ? this.startShotFx(p, look) : NO_FX;
+        if (p.fxs === null) p.fxs = look && look.proxies.length && shotEffects++ < budget.shotEffects ? this.startShotFx(p, look) : NO_FX;
         if (look) {
           if (look.parts.length) this.shotModels.add(look.parts, p.def._shotModel.scale, p.x, p.y, p.z, p.vx * inv, p.vy * inv, p.vz * inv);
-        } else if (p.missile && p.def.num('Projectile_Custom_Render', 0) > 0) {
+        } else if (!look && p.missile && p.def.num('Projectile_Custom_Render', 0) > 0) {
           laser(p, inv);
         } else if (p.missile) {
           sp.add(p.x, p.y, p.z, 7 + p.width, p.r, p.g, p.b, 1.2);
-          if (Math.random() < dt * 40) this.spawnParticle(p.x, p.y, p.z, 0, 0, 0, 4, 6, 0.5, p.r * 0.6, p.g * 0.6, p.b * 0.6, 0.6);
+          if (Math.random() < dt * 40 * budget.trailRate) this.spawnParticle(p.x, p.y, p.z, 0, 0, 0, 4, 6, 0.5, p.r * 0.6, p.g * 0.6, p.b * 0.6, 0.6);
         } else laser(p, inv);
       }
       if (lit && cand.length) {
@@ -2077,8 +2165,18 @@ export class Renderer {
             u.animOwed = 0;
           }
         }
-        if (u.turrets.length) this.aimTurrets(u, dt);
-        if (u.model && u.model.billboards.length) updateBillboards(u.model, cam);
+        _sphere.center.set(u.x, u.y, u.z || 0);
+        _sphere.radius = Math.max((u.visualRadius || 50) * 2.5, u.fxReach || 0);
+        const inView = _frustum.intersectsSphere(_sphere) || this.castsShadowInView(u),
+          distance = Math.max(1, cpos.distanceTo(_boltAt.set(u.x, u.y, u.z || 0))),
+          detail = visualDetail(projectedRadius(u.visualRadius || 50, distance, this.height, cam.fov));
+        u.visualDetail = detail;
+        const turretDue = detail === 2 || ((this.shotStamp + u.id) & (detail === 1 ? 3 : 7)) === 0;
+        if (u.turrets.length && inView && turretDue) {
+          this.aimTurrets(u, Math.min(0.25, dt + (u.turretOwed || 0)));
+          u.turretOwed = 0;
+        } else if (u.turrets.length && inView) u.turretOwed = Math.min(0.25, (u.turretOwed || 0) + dt);
+        if (inView && detail > 0 && u.model && u.model.billboards.length) updateBillboards(u.model, cam);
         if (u.shieldMesh) {
           const on = !!u.abilities?.some(s => s.active && s.def.kind === 'DEFEND');
           if (u.shieldMesh.visible !== on) u.shieldMesh.visible = on;
@@ -2088,7 +2186,7 @@ export class Renderer {
           const on = !u.hyper && (u.retreatFlight || u.speed > u.maxSpeed * 0.08) && u.engineAlive();
           for (const m of u.engineMeshes) if (m.visible !== on) m.visible = on;
         }
-        if (u.isMobile && !u.hyper && u.engineGlows.length) {
+        if (inView && detail > 0 && u.isMobile && !u.hyper && u.engineGlows.length) {
           const c = Math.cos(u.heading),
             s = Math.sin(u.heading);
           const thrust = u.retreatFlight ? 1 : 0.55 + 0.45 * Math.min(1, u.speed / (u.maxSpeed || 1));
@@ -2098,16 +2196,18 @@ export class Renderer {
           for (const g of u.engineGlows) {
             if (g.hp && !g.hp.alive) continue;
             const l = g.local,
-              size = Math.max(6, u.visualRadius * 0.16) * g.size * thrust;
+              size = Math.max(6, u.visualRadius * 0.16) * g.size * thrust * budget.glowScale;
             const ly = l.y * cro + l.z * sro,
               lz = l.z * cro - l.y * sro;
             sp.add(u.x + c * l.x - s * ly, u.y + s * l.x + c * ly, u.z + lz, size, 0.45, 0.65, 1, 0.9);
           }
         }
-        if (!u.smokingPoints) continue;
+        if (!inView || detail === 0 || !u.smokingPoints || this.smokeBudget <= 0) continue;
         for (const hp of u.hardpoints) {
+          if (this.smokeBudget <= 0) break;
           if (hp.alive || !hp.smoke) continue;
-          if (Math.random() < dt * 5) {
+          if (Math.random() < dt * 5 * budget.trailRate) {
+            this.smokeBudget--;
             hp.worldPos(_w);
             this.spawnParticle(
               _w.x,
@@ -2239,6 +2339,7 @@ export class Renderer {
       this.instances.gpu = r === this.gpu ? r : null;
       this.instances.renderer = r;
       this.instances.camera = cam;
+      this.instances.prepareUnits(world.units);
       this.instances.collect(world.units, cam, unit => this.castsShadowInView(unit));
       this.instances.hidden = this.instances.put.length;
       this.scene.matrixWorldAutoUpdate = false;
@@ -2258,7 +2359,7 @@ export class Renderer {
     if (!G || !this.instances) return null;
     const C = this.instances.constructor;
     const shot = async () => {
-      if (this.shadows) this.shadows.frame = 0;
+      if (this.shadows) this.shadows.key = null;
       const p = G.readNext();
       this.draw(world, G, 0);
       return p;
@@ -2321,7 +2422,7 @@ export class Renderer {
       return { width: W, height: H, data: out };
     };
     const draw = r => {
-      if (this.shadows) this.shadows.frame = 0;
+      if (this.shadows) this.shadows.key = null;
       this.draw(world, r, 0);
     };
     let a, b, c;

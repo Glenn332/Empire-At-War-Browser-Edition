@@ -1,4 +1,5 @@
 import { ProcessStatsSampler, processTable, browserTable, DESKTOP_ONLY } from './procstats.js';
+import { gfx } from './gfx.js';
 
 const FT_FRAMES = 240;
 const FT_TOP = 50;
@@ -67,9 +68,102 @@ export class BenchOverlay {
       }
       <div class="bh"><b>PROC</b><span data-k="pnote"></span><i data-k="pn"></i></div>
       <div class="bt" data-k="ptable"></div>
+      <div class="bh"><b>GL</b><span data-k="gl"></span></div>
+      <div class="bh" data-k="stallhead"><b>STALLS</b><i data-k="sn"></i></div>
+      <div class="bt two" data-k="stable"></div>
       <div class="bg"><span>frame ms</span><canvas data-k="ft"></canvas></div>
       <div class="bg"><span>fps / run</span><canvas data-k="fg"></canvas></div>`;
     this.el = Object.fromEntries([...box.querySelectorAll('[data-k]')].map(e => [e.dataset.k, e]));
+    this.el.stallhead.style.display = this.el.stable.style.display = 'none';
+    // The page-visible WebGL renderer string. WebKit masks it for anti-fingerprinting - it can
+    // claim "Apple GPU" on any platform - so the OS identity from the process sample is the
+    // authority; the string still separates software rasterizers when it is honest.
+    this.glName = null;
+    try {
+      const gl = renderer.getContext?.();
+      if (gl) {
+        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+        const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+        this.glName = name.length > 72 ? name.slice(0, 71) + '…' : name;
+      }
+    } catch {}
+    this.showGl = () => {
+      const e = this.el;
+      const pr = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 0;
+      const samples = renderer.post?.targets?.scene?.samples;
+      let ctxSamples = null;
+      try {
+        const gl = renderer.getContext?.();
+        if (gl && typeof gl.getParameter === 'function') ctxSamples = gl.getParameter(gl.SAMPLES);
+      } catch {}
+      const msaa =
+        samples !== undefined
+          ? samples
+            ? samples + 'x msaa'
+            : 'msaa off'
+          : gfx.aa === false
+            ? ctxSamples
+              ? `ctx ${ctxSamples}x despite aa off`
+              : 'msaa off'
+            : 'msaa on';
+      const g = this.osGpu;
+      const name = g ? g.name : renderer.gpu ? 'WebGPU' : 'WebGL';
+      e.gl.textContent = `${name} · ${msaa} · ${Math.round((+gfx.scale || 1) * 100)}%${pr ? ` · ${Math.round(pr * 100)}% res` : ''}`;
+    };
+    this.showGl();
+    // A stall is a gap between frames too long to be just a slow frame: either a long task (the
+    // page itself was busy) or no frame at all (compositor or GPU waiting). The renderer counters
+    // at both ends name what the gap bought: compiled shader programs or newly uploaded textures.
+    this.stalls = [];
+    this.snapInfo = () => {
+      const m = this.info.memory || {};
+      return { prog: (this.info.programs || []).length, tex: m.textures || 0, geo: m.geometries || 0 };
+    };
+    this.stallPrev = this.snapInfo();
+    let hiddenAt = 0;
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.hidden) hiddenAt = performance.now();
+      },
+      { passive: true }
+    );
+    const record = (kind, ms) => {
+      const now = performance.now(),
+        after = this.snapInfo(),
+        p = this.stallPrev || after;
+      this.stallPrev = after;
+      const s = {
+        at: Math.round((now - this.start) / 100) / 10,
+        kind,
+        ms: Math.round(ms),
+        prog: after.prog - p.prog,
+        tex: after.tex - p.tex,
+        geo: after.geo - p.geo
+      };
+      this.stalls.push(s);
+      if (this.stalls.length > 8) this.stalls.shift();
+      console.warn('bench stall:', s.kind, s.ms + 'ms', s.prog > 0 ? 'prog +' + s.prog : '', s.tex > 0 ? 'tex +' + s.tex : '');
+      this.showStalls();
+    };
+    this.po = null;
+    try {
+      this.po = new PerformanceObserver(list => {
+        if (this.done) return;
+        for (const e of list.getEntries()) if (e.duration > 200) record('long task', e.duration);
+      });
+      this.po.observe({ entryTypes: ['longtask'] });
+    } catch {}
+    let lastTick = performance.now();
+    const gapTick = now => {
+      if (this.dead) return;
+      const gap = now - lastTick;
+      lastTick = now;
+      // A gap that spans time in a hidden tab says nothing about the GPU; rAF does not run there.
+      if (!this.done && gap > 200 && !document.hidden && hiddenAt < now - gap) record('no frame', gap);
+      requestAnimationFrame(gapTick);
+    };
+    requestAnimationFrame(gapTick);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const k of ['ft', 'fg']) {
       const c = this.el[k];
@@ -89,6 +183,7 @@ export class BenchOverlay {
   showProcesses(sample) {
     const e = this.el,
       cell = (text, cls) => `<span${cls ? ` class="${cls}"` : ''}>${text}</span>`;
+    this.osGpu = sample?.gpu || null;
     if (sample?.supported) {
       const rows = processTable(sample);
       e.pnote.textContent = 'app processes';
@@ -118,6 +213,23 @@ export class BenchOverlay {
       rows.map(r => cell(r.label, 'n') + cell(r.value)).join('') + cell(sample?.browser ? DESKTOP_ONLY : sample?.why || DESKTOP_ONLY, 'w');
   }
 
+  showStalls() {
+    const e = this.el,
+      any = this.stalls.length > 0;
+    e.stallhead.style.display = e.stable.style.display = any ? '' : 'none';
+    if (!any) return;
+    e.sn.textContent = this.stalls.length;
+    e.stable.innerHTML = [...this.stalls]
+      .reverse()
+      .map(s => {
+        const why = [s.prog > 0 ? `prog +${s.prog}` : '', s.tex > 0 ? `tex +${s.tex}` : '', s.geo > 0 ? `geo +${s.geo}` : '']
+          .filter(Boolean)
+          .join(' · ');
+        return `<span class="n">+${s.at}s</span><span class="n">${s.kind} ${s.ms} ms${why ? ' · ' + why : ''}</span>`;
+      })
+      .join('');
+  }
+
   restart() {
     this.start = performance.now();
     this.shown = 0;
@@ -126,11 +238,15 @@ export class BenchOverlay {
     this.resetRun();
     this.calls = this.tris = this.callFrames = this.drawSum = this.drawN = this.peakShots = 0;
     this.proc.reset();
+    this.stalls.length = 0;
+    this.stallPrev = this.snapInfo();
+    this.showStalls();
+    this.showGl();
   }
 
   resetRun() {
     this.run = this.open
-      ? { n: 0, sum: 0, worst: 0, o33: 0, o50: 0, hist: new Uint32Array(HIST_BUCKETS), histSum: new Float64Array(HIST_BUCKETS) }
+      ? { n: 0, sum: 0, worst: 0, o33: 0, o50: 0, hist: new Uint32Array(HIST_BUCKETS), histSum: new Float64Array(HIST_BUCKETS), top: 0 }
       : null;
     this.fpsEvery = 1;
     this.fpsPending = [];
@@ -142,6 +258,8 @@ export class BenchOverlay {
       console.log('benchmark', JSON.stringify(this.result));
     }
     this.done = true;
+    this.dead = true;
+    this.po?.disconnect();
     this.proc.stop();
     this.info.autoReset = true;
     this.box.remove();
@@ -154,6 +272,7 @@ export class BenchOverlay {
     this.tris += r.triangles;
     this.callFrames++;
     this.info.reset();
+    this.stallPrev = this.snapInfo();
     this.frames.push(ms);
     if (this.open) {
       const s = this.run,
@@ -163,6 +282,7 @@ export class BenchOverlay {
       s.hist[b]++;
       s.histSum[b] += ms;
       s.worst = Math.max(s.worst, ms);
+      if (b > s.top) s.top = b;
       if (ms > 33.4) s.o33++;
       if (ms > 50) s.o50++;
       if (this.frames.length > 2 * FT_FRAMES) this.frames.splice(0, this.frames.length - FT_FRAMES);
@@ -171,6 +291,7 @@ export class BenchOverlay {
     if (now - this.shown < 500 && elapsed < this.seconds) return;
     this.shown = now;
     this.done = elapsed >= this.seconds;
+    this.showGl();
 
     const f = this.frames,
       { n, avg, low, worst, o33, o50 } = this.open ? this.openFigures() : this.figures();
@@ -198,7 +319,8 @@ export class BenchOverlay {
       avgDrawCalls: Math.round(this.drawSum / this.drawN),
       ...(this.shotsLabel ? {} : { peakShots: this.peakShots }),
       ...this.more?.(),
-      processes: this.proc.summary()
+      processes: this.proc.summary(),
+      stalls: this.stalls.slice()
     };
     this.result = result;
     const e = this.el;
@@ -267,7 +389,8 @@ export class BenchOverlay {
       want = s.n - Math.floor(s.n * 0.99);
     let left = want,
       slow = 0;
-    for (let b = HIST_BUCKETS - 1; b >= 0 && left > 0; b--) {
+    // only the buckets frames actually touched: a battle's frame times live far below the table's end
+    for (let b = s.top; b >= 0 && left > 0; b--) {
       const c = s.hist[b];
       if (!c) continue;
       const take = Math.min(c, left);

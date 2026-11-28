@@ -1016,10 +1016,14 @@ export class Menus {
       scales = [1, 0.85, 0.75, 0.66, 0.5];
     let res = null,
       sized = null,
+      picked = null,
       filling = 0;
     const fill = async () => {
       const n = ++filling,
-        list = !fullscreen() ? await windowSizes() : null;
+        appSizes = await windowSizes();
+      // In the app the resolution list also works while fullscreen: a fullscreen window keeps
+      // its size and the game renders at the picked resolution, scaled up to fill the screen.
+      const list = appSizes && (!fullscreen() || appSizes.full) ? appSizes : null;
       if (n !== filling || !dlg.veil.isConnected) return;
       sized = list;
       res = sized
@@ -1027,9 +1031,13 @@ export class Menus {
             'IDC_RESOLUTION_LIST',
             sized.list.map(([w, h]) => ({ key: w + 'x' + h, label: w + ' x ' + h, note: '' })),
             row => {
-              if (fullscreen()) return;
+              if (fullscreen() && !sized?.full) return;
               const [w, h] = row.key.split('x').map(Number);
-              pickWindowSize(w, h).then(() => window.applyGraphics && window.applyGraphics(window.game && window.game.renderer));
+              picked = [w, h];
+              pickWindowSize(w, h).then(() => {
+                window.applyGraphics && window.applyGraphics(window.game && window.game.renderer);
+                fill();
+              });
             }
           )
         : dlg.list(
@@ -1046,7 +1054,8 @@ export class Menus {
               }
             }
           );
-      if (res && sized) res.select(sized.now[0] + 'x' + sized.now[1]);
+      const want = sized && picked && fullscreen() ? picked.join('x') : sized ? sized.now[0] + 'x' + sized.now[1] : null;
+      if (res && sized && want) res.select(want);
       else if (res) res.select(scales.reduce((best, k) => (Math.abs(k - gfx.scale) < Math.abs(best - gfx.scale) ? k : best), 1));
     };
     await fill();
@@ -1179,6 +1188,12 @@ export class Menus {
       if (box) box.checked = extraFxOn();
     });
     if (cine) cine.title = EXTRA_FX_TIP;
+    // MSAA is expensive on integrated GPUs; expose a toggle so users can trade edge quality for fps.
+    const msaa = extra('IDC_MSAA', 'Anti-Aliasing (MSAA)', detect ? detect.x : null, moved(bloom.y), () => {
+      gfx.aa = gfx.aa === false;
+      apply();
+    });
+    if (msaa) msaa.title = 'Multi-sample anti-aliasing smooths edges but costs 3-5 ms/frame on integrated GPUs. Disable for higher fps.';
     const show = () => {
       for (const id in checks)
         dlg.check(id, gfx[checks[id]], on => {
@@ -1188,6 +1203,7 @@ export class Menus {
       flare?.classList.toggle('on', !!gfx.flare);
       soft?.classList.toggle('on', gfx.soft !== false);
       cine?.classList.toggle('on', extraFxOn());
+      msaa?.classList.toggle('on', gfx.aa !== false);
       dlg.slider('IDC_PARTICLE_DETAIL_SLIDER', gfx.particle, v => {
         gfx.particle = Math.round(v * 20) / 20;
         apply();
@@ -1209,7 +1225,34 @@ export class Menus {
       );
     };
     show();
-    const alwaysHighest = ['IDC_MESH_DETAIL_SLIDER', 'IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
+    // The port always renders the mod's own highest mesh detail, so the row the original game used
+    // for Mesh Detail drives the render scale instead: the cheapest real fps lever there is, since
+    // every full-screen pass (MSAA scene target, bloom, FXAA combine, shadow blur) shrinks with it.
+    // The row's own label (IDC_MESH_DETAIL in GUIDialogs.rc) is retitled and carries the live % -
+    // no cloned label to overlap the original. The LOW/HIGH end labels stay as generic hints.
+    const scaleSteps = [0.5, 0.66, 0.75, 0.85, 1]; // left = lowest (fastest), right = full quality
+    const showScale = () => dlg.setText('IDC_MESH_DETAIL', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
+    dlg.slider(
+      'IDC_MESH_DETAIL_SLIDER',
+      Math.max(
+        0,
+        scaleSteps.indexOf(
+          scaleSteps.reduce((b, k) => (Math.abs(k - (+gfx.scale || 1)) < Math.abs(b - (+gfx.scale || 1)) ? k : b), 1)
+        )
+      ) /
+        (scaleSteps.length - 1),
+      v => {
+        const k = scaleSteps[Math.round(v * (scaleSteps.length - 1))];
+        if (k !== gfx.scale) {
+          gfx.scale = k;
+          apply();
+          showScale();
+        }
+      },
+      scaleSteps.length
+    );
+    showScale();
+    const alwaysHighest = ['IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
     for (const id of alwaysHighest) dlg.slider(id, 1, () => {}, 0, false);
     for (const id of [...alwaysHighest, 'IDC_AUTO_DETECT']) dlg.enable(id, false);
     dlg.on('IDC_OK', () => this.pop());

@@ -2,8 +2,12 @@ import { inApp } from './platform.js';
 export { inApp };
 
 const q = path => 'path=' + encodeURIComponent(path);
-const join = (dir, name) => dir.replace(/[\\/]+$/, '') + '\\' + name;
+const join = (dir, name) => dir.replace(/[\\/]+$/, '') + (inApp() && /Linux|X11/.test(navigator.userAgent) ? '/' : '\\') + name;
 const notFound = n => new DOMException(n + ' was not found', 'NotFoundError');
+
+// The app reads the folders it found itself, so there is nothing to allow: the page only ever
+// asks for a folder under a source the Rust side already holds open.
+const granted = () => Promise.resolve('granted');
 
 class LocalBlob {
   constructor(path, name, start, end) {
@@ -14,6 +18,9 @@ class LocalBlob {
   }
   get size() {
     return this.end - this.start;
+  }
+  get lastModified() {
+    return 0;
   }
   slice(a = 0, b = this.size) {
     const at = n => (n < 0 ? Math.max(this.size + n, 0) : Math.min(n, this.size));
@@ -37,7 +44,9 @@ function file(path, name, size) {
     path,
     async getFile() {
       return new LocalBlob(path, name, 0, size);
-    }
+    },
+    queryPermission: granted,
+    requestPermission: granted
   };
 }
 
@@ -52,7 +61,7 @@ export function localFolder(
   const list = () =>
     (kids ||= fetch('api/local/list?' + q(path))
       .then(async r => {
-        if (!r.ok) throw new Error(`could not read the folder ${path} (${r.status})`);
+        if (!r.ok) throw new Error(`could not read the folder ${path} (${r.status}): ${await r.text()}`);
         const m = new Map();
         for (const [n, dir, size] of await r.json())
           m.set(n.toLowerCase(), dir ? localFolder(join(path, n), n) : file(join(path, n), n, size));
@@ -79,7 +88,9 @@ export function localFolder(
     },
     getFileHandle(n) {
       return get(n, 'file');
-    }
+    },
+    queryPermission: granted,
+    requestPermission: granted
   };
 }
 
