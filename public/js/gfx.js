@@ -16,7 +16,7 @@ const OWN = {
   mesh: 1,
   texMip: 0,
   shader: 3,
-  shadow: 3,
+  shadow: 2,
   shadowRange: 8,
   gamma: 0.5,
   level: -1,

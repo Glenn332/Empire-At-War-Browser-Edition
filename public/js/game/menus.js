@@ -1188,6 +1188,12 @@ export class Menus {
       if (box) box.checked = extraFxOn();
     });
     if (cine) cine.title = EXTRA_FX_TIP;
+    // MSAA is expensive on integrated GPUs; expose a toggle so users can trade edge quality for fps.
+    const msaa = extra('IDC_MSAA', 'Anti-Aliasing (MSAA)', detect ? detect.x : null, moved(bloom.y), () => {
+      gfx.aa = gfx.aa === false;
+      apply();
+    });
+    if (msaa) msaa.title = 'Multi-sample anti-aliasing smooths edges but costs 3-5 ms/frame on integrated GPUs. Disable for higher fps.';
     const show = () => {
       for (const id in checks)
         dlg.check(id, gfx[checks[id]], on => {
@@ -1197,6 +1203,7 @@ export class Menus {
       flare?.classList.toggle('on', !!gfx.flare);
       soft?.classList.toggle('on', gfx.soft !== false);
       cine?.classList.toggle('on', extraFxOn());
+      msaa?.classList.toggle('on', gfx.aa !== false);
       dlg.slider('IDC_PARTICLE_DETAIL_SLIDER', gfx.particle, v => {
         gfx.particle = Math.round(v * 20) / 20;
         apply();
