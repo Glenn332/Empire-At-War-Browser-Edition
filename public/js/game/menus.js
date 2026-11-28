@@ -1218,7 +1218,44 @@ export class Menus {
       );
     };
     show();
-    const alwaysHighest = ['IDC_MESH_DETAIL_SLIDER', 'IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
+    // The port always renders the mod's own highest mesh detail, so the row the original game used
+    // for Mesh Detail drives the render scale instead: the cheapest real fps lever there is, since
+    // every full-screen pass (MSAA scene target, bloom, FXAA combine, shadow blur) shrinks with it.
+    const scaleSteps = [1, 0.85, 0.75, 0.66, 0.5];
+    const mesh = dlg.def.controls.find(c => c.id === 'IDC_MESH_DETAIL_SLIDER');
+    const meshLabel =
+      mesh &&
+      dlg.def.controls
+        .filter(
+          c =>
+            c.kind === 'LTEXT' &&
+            c.x < mesh.x &&
+            c.y + (c.h || 0) > mesh.y - 6 &&
+            c.y < mesh.y + (mesh.h || 8) + 6
+        )
+        .sort((a, b) => a.x - b.x)[0];
+    if (meshLabel && dlg.clone('IDC_SHADOW_RANGE', 'IDC_RENDER_SCALE', meshLabel.x, meshLabel.y))
+      dlg.setText('IDC_RENDER_SCALE', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
+    dlg.slider(
+      'IDC_MESH_DETAIL_SLIDER',
+      Math.max(
+        0,
+        scaleSteps.indexOf(
+          scaleSteps.reduce((b, k) => (Math.abs(k - (+gfx.scale || 1)) < Math.abs(b - (+gfx.scale || 1)) ? k : b), 1)
+        )
+      ) /
+        (scaleSteps.length - 1),
+      v => {
+        const k = scaleSteps[Math.round(v * (scaleSteps.length - 1))];
+        if (k !== gfx.scale) {
+          gfx.scale = k;
+          apply();
+          if (meshLabel) dlg.setText('IDC_RENDER_SCALE', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
+        }
+      },
+      scaleSteps.length
+    );
+    const alwaysHighest = ['IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
     for (const id of alwaysHighest) dlg.slider(id, 1, () => {}, 0, false);
     for (const id of [...alwaysHighest, 'IDC_AUTO_DETECT']) dlg.enable(id, false);
     dlg.on('IDC_OK', () => this.pop());
