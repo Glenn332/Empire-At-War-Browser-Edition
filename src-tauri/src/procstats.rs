@@ -318,6 +318,9 @@ mod linux {
     impl Sampler {
         fn read(&mut self) -> Value {
             let now = Instant::now();
+            if self.gpu.is_none() {
+                self.gpu = Some(gpu_identity());
+            }
             let elapsed = self.at.map(|at| now - at);
             let root = std::process::id();
             let (list, mut raws) = scan();

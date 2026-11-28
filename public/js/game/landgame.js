@@ -4,6 +4,7 @@ import { colorizes } from './teamcolor.js';
 import { setTacticalRules } from './tacticalrules.js';
 import { linkedParent, reportLinkedVictory, authoredMapOwner, ensureMissionPlayers, missionMapActor } from './linktactical.js';
 import { mpBattleParent } from './galacticmpbattle.js';
+import { diag } from '../diag.js';
 
 import * as THREE from 'three';
 import { db, selectionBoxColors } from '../gamedata.js';
@@ -713,6 +714,12 @@ export class LandGame {
     $('view').appendChild(renderer.domElement);
     gammaOn(renderer.domElement);
     if (wantGPU() && !renderer.isMirror) await this.startGPU();
+    diag.attach(this.renderer, () => ({
+      units: this.world?.units?.length || 0,
+      shots: this.world?.projectiles?.length || 0,
+      particles: 0,
+      time: +(this.world?.time || 0).toFixed(0)
+    }));
     this.camera = new THREE.PerspectiveCamera(55, 1, 5, 40000);
     this.camera.up.set(0, 0, 1);
     const scene = (this.scene = new THREE.Scene());
@@ -3256,6 +3263,7 @@ export class LandGame {
     const raw = this.last === undefined ? 0 : now - this.last,
       real = Math.max(0, Math.min(0.1, raw / 1000));
     this.last = now;
+    diag.begin(now);
     const w = this.world,
       v = this.view,
       k = this.keys,
@@ -3326,6 +3334,7 @@ export class LandGame {
       this.stepCommanders(dt);
       this.stepEnd(dt);
     }
+    diag.lap('logic');
     if (this.netRole === 'host') this.shooterNet?.hostStep();
     if (!w.interp) w.poseQueued();
     if (!this.lock) this.scripts?.host.updateStory(dt);
@@ -3380,6 +3389,7 @@ export class LandGame {
       w.lerpIn((this.acc || 0) / LAND_TICK);
       w.poseQueued(dt);
     }
+    diag.lap('hud');
     {
       const fq = this.following,
         lo = this.map.playMin || [0, 0],
@@ -3554,12 +3564,14 @@ export class LandGame {
     if (!skip) {
       if (!this.shooter) this.extraBolts(cam);
       this.castShadows();
+      diag.lap('shadow');
       if (this.water) this.water.userData.mirror(R, cam, eye => this.mirrorCards(() => draw(eye)));
       const fx = this.shooter ? this.shooter.postFor(R) : this.extraPost(R),
         off = fx ? fx.begin() : false;
       R.clear();
       draw(cam);
       if (off) fx.end(cam);
+      diag.lap('draw');
       if (R === this.gpu) R.endFrame();
       if (this.sameFrame) this.sameFrame(cam);
     }
@@ -3570,20 +3582,24 @@ export class LandGame {
     if (!skip) {
       this.drawBars();
       this.shooter?.ov?.paint();
+      diag.lap('overlay');
     }
     w.lerpOut();
     if (R.isMirror) {
       this.skipped = (this.skipped || 0) + raw;
       if (skip) {
         R.skip();
+        diag.end();
         return;
       }
       R.flush();
       if (this.bench) this.bench.tick(this.skipped, performance.now());
       this.skipped = 0;
+      diag.end();
       return;
     }
     if (this.bench) this.bench.tick(raw, performance.now());
+    diag.end();
   }
 
   benchOrders(dt) {

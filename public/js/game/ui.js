@@ -536,6 +536,15 @@ export class UI {
       game.toggleBenchmark();
       return;
     }
+    if (e.code === 'F3') {
+      e.preventDefault();
+      import('../diag.js').then(({ diag }) => {
+        if (diag.panel) {
+          diag.panel.parentElement.hidden = !diag.panel.parentElement.hidden;
+        } else diag.showPanel();
+      });
+      return;
+    }
     if (pressed(e, 'DROID_ADVISOR') || pressed(e, 'MISSION_HOLOCRON')) {
       e.preventDefault();
       if (pressed(e, 'DROID_ADVISOR')) game.advisor?.openLog();
