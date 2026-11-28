@@ -92,6 +92,8 @@ function armCursorRefresh(win, label) {
           if (!at || win.performance.now() - at > REFRESH_WAIT_MS) return;
           const doc = win.document,
             b = doc.body?.classList;
+          // a pointer the page draws itself (Hardware Mouse off) needs no system cursor set again
+          if (doc.documentElement.classList.contains('soft-cursor')) return;
           if (doc.pointerLockElement || b?.contains('track-cam') || b?.contains('chase-view') || b?.contains('shooter-on')) return;
           const root = doc.documentElement;
           root.classList.add('cursor-refresh');

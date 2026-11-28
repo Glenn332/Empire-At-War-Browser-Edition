@@ -1,6 +1,7 @@
 import { tacticalIntro } from './game/tacticalintro.js';
 import { TacticalMarker } from './game/tacticalobjects.js';
 import { initCursorLock } from './cursorlock.js';
+import { initSoftCursor } from './softcursor.js';
 import { discordSetting, setDiscord, initDiscord } from './discordpresence.js';
 import { inApp } from './platform.js';
 import { colorizes } from './game/teamcolor.js';
@@ -2951,6 +2952,7 @@ async function boot() {
     };
   }
   initCursorLock();
+  initSoftCursor();
   {
     const box = $('optDiscord');
     box.checked = discordSetting();

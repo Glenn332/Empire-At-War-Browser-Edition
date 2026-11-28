@@ -15,6 +15,7 @@ import '../bugreportui.js';
 import { loadContent, contentDifferences } from '../content.js';
 import { readReplayFile, startReplay, REPLAY_EXT } from './replay.js';
 import { enterFullscreen, exitFullscreen, fullscreen, fullscreenCapture, setFullscreenCapture } from '../pointertrap.js';
+import { hardwareMouse, setHardwareMouse } from '../softcursor.js';
 import { EXTRA_FX_NAME, EXTRA_FX_TIP, extraFxOn, setExtraFx } from './extrafx.js';
 import { windowSizes, pickWindowSize } from '../windowsize.js';
 import {
@@ -87,6 +88,8 @@ const TWEAKS = [
 
 const NATIVE = { nativeImages: true, nativeFonts: true, nativeLists: true };
 const checkBox = (id, x, y, w, h) => ({ kind: 'CONTROL', text: '', id, cls: 'Button', style: 'BS_AUTOCHECKBOX | WS_TABSTOP', x, y, w, h });
+const HARDWARE_MOUSE_TIP =
+  'Windows draws the mouse pointer, the smoothest way. Turn it off if the pointer disappears after Alt+Tab while the mouse still works: the game then draws the pointer itself, which keeps it visible but moves it at the game frame rate.';
 const FULLSCREEN_MOUSE_TIP =
   'Keeps the mouse inside the game so it cannot slip onto another monitor: in fullscreen, and in the desktop app in a window too. Esc or Alt+Tab frees it.';
 const FRAME_CAP_TIP =
@@ -1001,10 +1004,13 @@ export class Menus {
     );
     if (!dlg) return;
     const was = { ...gfx },
-      wasCapture = fullscreenCapture();
+      wasCapture = fullscreenCapture(),
+      wasHardware = hardwareMouse();
     dlg.setText('IDC_FULLSCREEN_MOUSE_CAPTURE', 'Capture the mouse');
     const captureBox = dlg.ctl('IDC_FULLSCREEN_MOUSE_CAPTURE');
     if (captureBox) captureBox.title = FULLSCREEN_MOUSE_TIP;
+    const hardwareBox = dlg.ctl('IDC_HARDWARE_MOUSE');
+    if (hardwareBox) hardwareBox.title = HARDWARE_MOUSE_TIP;
     dlg.setText('IDC_VSYNC_ENABLED', 'Limit frame rate to 60 fps');
     const capBox = dlg.ctl('IDC_VSYNC_ENABLED');
     if (capBox) capBox.title = FRAME_CAP_TIP;
@@ -1085,6 +1091,7 @@ export class Menus {
           apply();
         });
       dlg.check('IDC_FULLSCREEN_MOUSE_CAPTURE', fullscreenCapture(), setFullscreenCapture);
+      dlg.check('IDC_HARDWARE_MOUSE', hardwareMouse(), setHardwareMouse);
       dlg.check('IDC_VSYNC_ENABLED', frameCap() > 0, on => {
         gfx.fpsCap = on ? 60 : 0;
         apply();
@@ -1098,7 +1105,7 @@ export class Menus {
     };
     show();
     if (levels.length < 2) dlg.enable('IDC_DETAIL_LEVEL_SLIDER', false);
-    for (const id of ['IDC_HARDWARE_MOUSE', 'IDC_WIDESCREEN', 'IDC_AUTO_DETECT']) dlg.enable(id, false);
+    for (const id of ['IDC_WIDESCREEN', 'IDC_AUTO_DETECT']) dlg.enable(id, false);
     dlg.show('IDC_DEVICE_DESC_STATIC', false);
     dlg.on('IDC_ADVANCED', () => this.videoAdvanced());
     dlg.on('IDC_OK', () => this.pop());
@@ -1107,6 +1114,7 @@ export class Menus {
       Object.assign(gfx, was);
       apply();
       if (fullscreenCapture() !== wasCapture) setFullscreenCapture(wasCapture);
+      if (hardwareMouse() !== wasHardware) setHardwareMouse(wasHardware);
       this.pop();
     });
   }

@@ -1105,32 +1105,10 @@ pub fn run() {
                 let full = w.is_fullscreen().unwrap_or(false);
                 cursorclip::set_fullscreen(full);
                 sync_grab(w);
-                if let (Ok(Some(m)), Ok(h)) = (w.current_monitor(), w.hwnd()) {
-                    let h = h.0 as isize;
-                    // in fullscreen the window is kept where fullscreen_rect puts it, whatever
-                    // moved it (entering fullscreen, Alt+Tab, a monitor or resolution change)
-                    if full {
-                        let others: Vec<_> = w
-                            .available_monitors()
-                            .unwrap_or_default()
-                            .iter()
-                            .filter(|o| o.position() != m.position())
-                            .map(|o| (*o.position(), *o.size()))
-                            .collect();
-                        let want = fullscreen_rect(*m.position(), *m.size(), &others);
-                        let now = match (w.outer_position(), w.outer_size()) {
-                            (Ok(p), Ok(s)) => (p.x, p.y, s.width as i32, s.height as i32),
-                            _ => want,
-                        };
-                        if now != want {
-                            cursorclip::log(format!(
-                                "fullscreen window at {now:?}, placed at {want:?}"
-                            ));
-                            place_window(h, want);
-                        }
-                    }
+                // tao's fullscreen fits the window exactly to the monitor; the taskbar is told
+                if let Ok(h) = w.hwnd() {
                     if full != TASKBAR_FULL.swap(full, Ordering::Relaxed) {
-                        mark_fullscreen(h, full);
+                        mark_fullscreen(h.0 as isize, full);
                     }
                 }
             }
@@ -1185,64 +1163,6 @@ fn open_invite(app: &AppHandle, args: &[String]) {
     if let Some(query) = invite::find_link(args).and_then(|link| invite::page_query(&link)) {
         let page = serde_json::to_string(&format!("play.html?{query}")).unwrap();
         let _ = window.eval(format!("location.href = {page};"));
-    }
-}
-
-/// Where the fullscreen window goes. A window exactly the size of the monitor gets scanned
-/// out directly, and some drivers stop drawing the mouse there after Alt+Tab, so the window
-/// reaches one pixel past an edge of the monitor instead: the whole screen still shows the
-/// game and the mouse reaches every edge. The edge picked has no other monitor beside it, so
-/// nothing shows there; with monitors on all four sides it stays one pixel short instead.
-#[cfg(windows)]
-fn fullscreen_rect(
-    at: tauri::PhysicalPosition<i32>,
-    size: tauri::PhysicalSize<u32>,
-    others: &[(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)],
-) -> (i32, i32, i32, i32) {
-    let (x0, y0) = (at.x, at.y);
-    let (x1, y1) = (x0 + size.width as i32, y0 + size.height as i32);
-    let side = |o: &(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)| {
-        let (ox0, oy0) = (o.0.x, o.0.y);
-        let (ox1, oy1) = (ox0 + o.1.width as i32, oy0 + o.1.height as i32);
-        let across = ox0 < x1 && ox1 > x0;
-        let along = oy0 < y1 && oy1 > y0;
-        [
-            across && oy0 == y1,
-            across && oy1 == y0,
-            along && ox0 == x1,
-            along && ox1 == x0,
-        ]
-    };
-    let mut taken = [false; 4];
-    for o in others {
-        for (t, s) in taken.iter_mut().zip(side(o)) {
-            *t |= s;
-        }
-    }
-    let (w, ht) = (x1 - x0, y1 - y0);
-    match taken.iter().position(|t| !t) {
-        Some(1) => (x0, y0 - 1, w, ht + 1),
-        Some(2) => (x0, y0, w + 1, ht),
-        Some(3) => (x0 - 1, y0, w + 1, ht),
-        Some(_) => (x0, y0, w, ht + 1),
-        None => (x0, y0, w, ht - 1),
-    }
-}
-
-#[cfg(windows)]
-fn place_window(h: isize, (x, y, w, ht): (i32, i32, i32, i32)) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
-    unsafe {
-        let _ = SetWindowPos(
-            HWND(h as _),
-            None,
-            x,
-            y,
-            w,
-            ht,
-            SWP_NOZORDER | SWP_NOACTIVATE,
-        );
     }
 }
 

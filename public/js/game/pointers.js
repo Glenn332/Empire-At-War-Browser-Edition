@@ -65,7 +65,7 @@ export async function pointer(name) {
     }
     if (!urls.length) return null;
     const images = await Promise.all(urls.map(ready));
-    return { frames: urls.map(u => `url(${u}) ${d.x} ${d.y}, default`), images, delay: ((d.delay + 1) * 1000) / 60 };
+    return { frames: urls.map(u => `url(${u}) ${d.x} ${d.y}, default`), images, x: d.x, y: d.y, delay: ((d.delay + 1) * 1000) / 60 };
   })();
   made.set(key, job);
   job.then(
@@ -73,6 +73,15 @@ export async function pointer(name) {
     () => loaded.set(key, null)
   );
   return job;
+}
+
+// The pointer frame each element shows (el.swrPointer: image and hotspot), for the cursor the game draws itself
+// when Hardware Mouse is off; watchers hear each change.
+const frameWatchers = new Set();
+export const onPointerFrame = f => frameWatchers.add(f);
+function showFrame(el, p, i) {
+  el.swrPointer = p?.images?.[i] ? { image: p.images[i], x: p.x, y: p.y } : null;
+  for (const f of frameWatchers) f(el);
 }
 
 export class Pointers {
@@ -89,6 +98,7 @@ export class Pointers {
     this.timer = null;
     if (!name) {
       this.el.style.cursor = '';
+      showFrame(this.el, null);
       return;
     }
     const key = String(name).toUpperCase();
@@ -100,14 +110,17 @@ export class Pointers {
   show(p) {
     if (!p) {
       this.el.style.cursor = '';
+      showFrame(this.el, null);
       return;
     }
     let i = 0;
     this.el.style.cursor = p.frames[0];
+    showFrame(this.el, p, 0);
     if (p.frames.length > 1)
       this.timer = setInterval(() => {
         i = (i + 1) % p.frames.length;
         this.el.style.cursor = p.frames[i];
+        showFrame(this.el, p, i);
       }, p.delay);
   }
 }

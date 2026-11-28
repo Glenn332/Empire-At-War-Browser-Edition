@@ -1708,6 +1708,7 @@ body:not(.original-hud) .heroframe {
 }
 .cinematic:not(.attract) #view canvas {
   cursor: none;
+  --cursor-hidden: 1;
 }
 .shooter-on #hud > *:not(#bench),
 .shooter-on #buildTag,
@@ -1738,6 +1739,7 @@ body:not(.original-hud) .heroframe {
 .track-cam,
 .track-cam * {
   cursor: none !important;
+  --cursor-hidden: 1;
 }
 .cinematic .objective-panel,
 .letterboxed .objective-panel {
@@ -2570,6 +2572,21 @@ body.attract #buildTag {
 }
 .bug-report-toast[data-kind='bad'] {
   border-color: rgba(230, 110, 100, 0.7);
+}
+/* Hardware Mouse off: the page draws the pointer (softcursor.js); a rule that hides the cursor also sets
+   --cursor-hidden: 1 so the drawn one hides there too */
+.soft-cursor,
+.soft-cursor * {
+  cursor: none !important;
+}
+#softCursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  display: none;
+  will-change: transform;
 }
 .cursor-refresh,
 .cursor-refresh * {
