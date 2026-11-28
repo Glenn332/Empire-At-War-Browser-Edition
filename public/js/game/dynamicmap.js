@@ -242,7 +242,11 @@ function learnMapStations(maps) {
   }
   return stations;
 }
-export const dynamicMapStation = faction => mapStations.get((faction || '').toUpperCase()) || null;
+export const dynamicMapStation = (faction, map = null) => {
+  const key = (faction || '').toUpperCase();
+  if (map?.stations) return db.type(map.stations[key] || '') || null;
+  return mapStations.get(key) || null;
+};
 const startMarkerType = (kind, slot) => {
   const playerKind = kind === 'Spawn_Point_Marker' ? 'Spawn_Point_Marker' : 'Position_Marker';
   return (
@@ -508,6 +512,7 @@ const backdropOf = o => o.type.bool('In_Background') || o.type.behaviors().has('
 export async function generateDynamicMap(name, opts = {}) {
   const d = parseDynamic(name);
   if (!d) throw new Error('not a dynamic map: ' + name);
+  if (opts.packed?.file === name) return unpackDynamicMap(opts.packed);
   const v = await vocabulary();
   const K = v.kinds;
   if (!v.donors.length) throw new Error('This game data has no space maps to build a dynamic map from.');
@@ -1004,6 +1009,8 @@ export async function generateDynamicMap(name, opts = {}) {
     dynamic: true,
     textId: '',
     planet: source.planet,
+    donor: donor.file,
+    stations: Object.fromEntries([...mapStations].map(([f, t]) => [f, t.name])),
     objects,
     environment: source.environment,
     environments: source.environments,
@@ -1014,6 +1021,60 @@ export async function generateDynamicMap(name, opts = {}) {
     playMin: [-P, -P],
     playMax: [P, P]
   };
+}
+
+// The generator learns its pieces from the installed space maps and their models, which differ between
+// installs (a player's own custom maps, a model that failed to load), so the same seed can build a
+// different map on another computer. In multiplayer the host builds the map once and sends this copy
+// with the start message; every player, the host included, plays on it.
+export async function packDynamicMap(name, opts = {}) {
+  const map = await generateDynamicMap(name, { ...opts, packed: null });
+  return {
+    file: map.file,
+    planet: map.planet,
+    donor: map.donor,
+    stations: map.stations,
+    min: map.min,
+    max: map.max,
+    playMin: map.playMin,
+    playMax: map.playMax,
+    objects: map.objects.map(o => ({ ...o, type: o.type.name, pos: [...o.pos], rot: [...o.rot] }))
+  };
+}
+
+async function unpackDynamicMap(p) {
+  const objects = p.objects.map(o => {
+    const type = db.type(o.type);
+    if (!type) throw new Error(`The host's map uses ${o.type}, which is not in this game data.`);
+    return { ...o, type, pos: [...o.pos], rot: [...o.rot] };
+  });
+  const source = p.donor ? await loadMap(p.donor).catch(() => null) : null;
+  return {
+    file: p.file,
+    dynamic: true,
+    textId: '',
+    planet: source?.planet ?? p.planet,
+    donor: p.donor,
+    stations: { ...p.stations },
+    objects,
+    environment: source?.environment ?? null,
+    environments: source?.environments ?? [],
+    activeEnvironment: source?.activeEnvironment,
+    terrain: null,
+    min: [...p.min],
+    max: [...p.max],
+    playMin: [...p.playMin],
+    playMax: [...p.playMax]
+  };
+}
+
+export async function shareDynamicMap(setup) {
+  if (setup.mode === 'land' || !isDynamic(setup.mapFile) || setup.dynamicMap?.file === setup.mapFile) return setup;
+  setup.dynamicMap = await packDynamicMap(setup.mapFile, {
+    teams: (setup.teamFactions || []).length,
+    instant: !!setup.instant
+  });
+  return setup;
 }
 
 const glow = (g, x, y, r, inner, outer) => {

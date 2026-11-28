@@ -4,7 +4,7 @@ import { contentNow } from '../content.js';
 import { listingContent, listLocalPref } from './lobbycontent.js';
 import { loadMap, mapTitle, mapHeader, loadMapPreview } from '../ted.js';
 import { PALETTE } from './slotrows.js';
-import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar, dynamicTurn } from './dynamicmap.js';
+import { DYNAMIC_SIZES, isDynamic, dynamicSize, resizeDynamic, seedBar, dynamicTurn, shareDynamicMap } from './dynamicmap.js';
 import {
   INSTANT_MAX_TEAMS,
   INSTANT_BUDGET,
@@ -921,7 +921,9 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     net.send(0, { k: 'ready', on: me.ready });
     draw();
   }
-  function launch() {
+  let building = false;
+  async function launch() {
+    if (building) return;
     const used = teamsUsed();
     if (used.length < 2) {
       error.textContent = 'At least two teams are needed for a battle.';
@@ -965,6 +967,19 @@ export async function openInstantBattle({ maps, factions, audio, cancel, start, 
     if (net) {
       setup.seed = crypto.getRandomValues(new Uint32Array(1))[0];
       setup.spaceWorker = !new URLSearchParams(location.search).has('nospaceworker');
+      if (isDynamic(setup.mapFile)) {
+        building = true;
+        error.textContent = 'Building the map...';
+        try {
+          await shareDynamicMap(setup);
+        } catch (e) {
+          error.textContent = 'The map could not be built: ' + e.message;
+          return;
+        } finally {
+          building = false;
+        }
+        error.textContent = '';
+      }
       net.setListing(null);
       net.lock(true);
       net.broadcast({ k: 'start', setup });

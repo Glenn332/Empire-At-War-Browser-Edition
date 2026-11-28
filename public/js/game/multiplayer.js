@@ -6,7 +6,7 @@ import { NetSession, Hall, listGames, newGameId, lobbyUrl, lobbyFromLink } from 
 import { LOBBY, SITE } from '../deploy.js';
 import { advancedOptions, SPECTATOR_TEAM, listingNote } from './lobby.js';
 import { openInstantBattle } from './instantmenu.js';
-import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar } from './dynamicmap.js';
+import { dynamicMaps, isDynamic, parseDynamic, adoptDynamic, seedBar, dockSeedBar, shareDynamicMap } from './dynamicmap.js';
 import { startMarks } from './mapstarts.js';
 import { loadCampaignData } from './galaxy.js';
 import { contentNow } from '../content.js';
@@ -1415,6 +1415,7 @@ async function openStaging(args) {
       spaceWorker: !new URLSearchParams(location.search).has('nospaceworker')
     };
     note.textContent = 'Sending the saved game to the players...';
+    await shareDynamicMap(setup);
     const save = await packSave(snap);
     net.setListing(null);
     net.broadcast({ k: 'start', setup, save });
@@ -1754,7 +1755,9 @@ async function openStaging(args) {
     net.setListing(null);
     leave(null);
   });
-  dlg.on(K.start, () => {
+  let building = false;
+  dlg.on(K.start, async () => {
+    if (building) return;
     if (!host) {
       const s = slots[mine()];
       net.send(0, { k: 'ready', on: !(s && s.ready) });
@@ -1881,6 +1884,19 @@ async function openStaging(args) {
       ),
       ...(watchers.length ? { spectators: watchers.map(s => s.peer), spectatorNames: watchers.map(s => s.name) } : {})
     };
+    if (isDynamic(setup.mapFile)) {
+      building = true;
+      note.textContent = 'Building the map...';
+      try {
+        await shareDynamicMap(setup);
+      } catch (e) {
+        note.textContent = 'The map could not be built: ' + e.message;
+        return;
+      } finally {
+        building = false;
+      }
+      note.textContent = '';
+    }
     net.setListing(null);
     net.broadcast({ k: 'start', setup });
     begin(setup);
