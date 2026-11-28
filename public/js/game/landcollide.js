@@ -867,7 +867,30 @@ function goalBlocked(W, s, m, goal, flags, linked, grow, extra, T) {
   return false;
 }
 
+// The way round is searched over ground open at the mover's own size. A mover standing closer to a structure than
+// that (a vehicle just out of the door of the building that made it) starts the search from the nearest ground
+// open at its size within its own reach and drives there first; otherwise it could never go round anything and
+// would wait in the doorway for good. Our own addition.
 function goRound(W, c, s, m, near, flags, T, mode = 4) {
+  if (W.isOpen(s.x, s.y, s.need)) return roundFrom(W, c, s, m, near, flags, T, mode);
+  const open = W.nearestOpen(s.x, s.y, s.need);
+  if (!open || Math.hypot(open.x - s.x, open.y - s.y) > radius(s) + CELL) return false;
+  const x = s.x,
+    y = s.y;
+  s.x = open.x;
+  s.y = open.y;
+  let found = false;
+  try {
+    found = roundFrom(W, c, s, m, near, flags, T, mode);
+  } finally {
+    s.x = x;
+    s.y = y;
+  }
+  if (found) s.path.unshift({ x: open.x, y: open.y, round: true });
+  return found;
+}
+
+function roundFrom(W, c, s, m, near, flags, T, mode) {
   for (let i = s.path.length - 1; i >= 0; i--) if (s.path[i].round && i < s.path.length - 1) s.path.splice(i, 1);
   if (!s.path.length || !(s.max > 0)) return false;
   const bodies = W.ccBodies,

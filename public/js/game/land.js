@@ -4676,11 +4676,22 @@ export class LandWorld {
       c = Math.cos(heading),
       s = Math.sin(heading),
       placed = [];
+    // others are kept clear of where they will stand, not where they are now: a unit still walking out of the same
+    // structure would otherwise be given the same spot and the two stop short of each other in the doorway
+    const standsAt = body => body.path?.[body.path.length - 1] || body;
     for (const q of this.squads) {
       if (made.includes(q) || q.structure || !q.members.length) continue;
-      const b = q.box || q.members[0];
-      if ((b.x - x) ** 2 + (b.y - y) ** 2 > (S + 400) ** 2) continue;
-      placed.push({ x: b.x, y: b.y, r: q.box ? q.box.slack + 15 : Math.max(10, q.members[0].hitRadius || 0) });
+      if (q.box) {
+        const at = standsAt(q.box);
+        if ((at.x - x) ** 2 + (at.y - y) ** 2 <= (S + 400) ** 2) placed.push({ x: at.x, y: at.y, r: q.box.slack + 15 });
+        continue;
+      }
+      for (const u of q.members) {
+        if (u.dead || u.inside || u.flies) continue;
+        const at = standsAt(u);
+        if ((at.x - x) ** 2 + (at.y - y) ** 2 <= (S + 400) ** 2)
+          placed.push({ x: at.x, y: at.y, r: Math.max(10, u.hitRadius || 0, Math.hypot(hardExtent(u, 'X'), hardExtent(u, 'Y'))) });
+      }
     }
     entries.forEach((e, i) => {
       const r = Math.floor(i / per),
@@ -4691,7 +4702,9 @@ export class LandWorld {
         gy = y + s * fx + c * fy,
         need = Math.max(...e.units.map(u => u.need || 1)),
         room = Math.min(e.cx, e.cy) / 2,
-        free = (px, py) => this.isOpen(px, py, need) && !placed.some(p => (p.x - px) ** 2 + (p.y - py) ** 2 < (p.r + room) ** 2);
+        // kept as far apart as unit collisions keep them, so none is sent to a spot another already stands on
+        reach = Math.hypot(e.cx, e.cy) / 2,
+        free = (px, py) => this.isOpen(px, py, need) && !placed.some(p => (p.x - px) ** 2 + (p.y - py) ** 2 < (p.r + reach) ** 2);
       let at = null;
       for (let ring = 0; !at && ring <= 6; ring++)
         for (let k = 0; k < (ring ? 8 * ring : 1) && !at; k++) {
@@ -4701,7 +4714,7 @@ export class LandWorld {
           if (free(px, py)) at = { x: px, y: py };
         }
       at ||= this.nearestOpen(gx, gy, need) || { x: gx, y: gy };
-      placed.push({ x: at.x, y: at.y, r: room });
+      placed.push({ x: at.x, y: at.y, r: reach });
       const mx = e.units.reduce((a, u) => a + u.x, 0) / e.units.length,
         my = e.units.reduce((a, u) => a + u.y, 0) / e.units.length,
         walk = from && e.units.every(u => !u.flies && u.speed > 0),
