@@ -2074,8 +2074,9 @@ export class UI {
       h.worldPos(w);
       this.r.project(w.x, w.y, w.z, p);
       if (p.behind) return;
+      // A hardpoint shows its health only by its reticle's tint, with no bar under it, as in the original game.
       const f = h.health / h.maxHealth;
-      const color = f > 0.5 ? '#6be675' : f > 0.25 ? '#f2c744' : '#ff5a4d';
+      const color = f >= 0.66 ? '#6be675' : f >= 0.33 ? '#f2c744' : '#ff5a4d';
       const img = reticle(h.kind, isTracked || focus, color);
       const s = focus ? 38 : isTracked ? 34 : 26;
       if (img) {
@@ -2087,11 +2088,6 @@ export class UI {
         g.lineWidth = 1.5;
         g.strokeRect(p.x - s / 3, p.y - s / 3, s / 1.5, s / 1.5);
       }
-      const bw = s * 0.8;
-      g.fillStyle = 'rgba(0,0,0,0.65)';
-      g.fillRect(p.x - bw / 2 - 1, p.y + s / 2, bw + 2, 4);
-      g.fillStyle = f > 0.5 ? '#5fe067' : f > 0.25 ? '#f2c744' : '#ff5a4d';
-      g.fillRect(p.x - bw / 2, p.y + s / 2 + 1, bw * f, 2);
       if (focus) {
         g.font = 'bold 12px "Segoe UI", sans-serif';
         g.textAlign = 'center';
