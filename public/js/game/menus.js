@@ -73,6 +73,7 @@ const BATTLEFRONT_CHECKS = [{ id: 'IDC_TWEAK_SHOOTER_OVERLORD', input: 'optShoot
 const TWEAKS = [
   { id: 'IDC_TWEAK_CAPTURE_BARS', input: 'optCaptureBars', label: 'Show capture progress bars' },
   { id: 'IDC_TWEAK_ALL_UNIT_ICONS', input: 'optAllUnitIcons', label: 'Show unit icon on all units' },
+  { id: 'IDC_TWEAK_HARDPOINT_BARS', input: 'optHardpointBars', label: 'Show health bars on hardpoints' },
   { id: 'IDC_TWEAK_KEY_LABELS', input: 'optKeyLabels', label: 'Show hotkeys on HUD buttons' },
   { id: 'IDC_TWEAK_MULTI_PLACE', input: 'optMultiPlace', label: 'Call in several reinforcements at once' },
   { id: 'IDC_TWEAK_RECORD_BATTLES', input: 'optRecordBattles', label: 'Record space skirmishes for bug report replays' },

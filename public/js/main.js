@@ -2868,6 +2868,22 @@ async function boot() {
     };
   }
   {
+    const box = $('optHardpointBars');
+    let on = false;
+    try {
+      on = localStorage.getItem('swr-hardpointbars') === '1';
+    } catch {}
+    box.checked = on;
+    window.showHardpointBars = on;
+    box.parentElement.title = 'A small health bar under each hardpoint reticle, besides the reticle colour.';
+    box.onchange = () => {
+      window.showHardpointBars = box.checked;
+      try {
+        localStorage.setItem('swr-hardpointbars', box.checked ? '1' : '0');
+      } catch {}
+    };
+  }
+  {
     const box = $('optRecordBattles');
     let on = true;
     try {
