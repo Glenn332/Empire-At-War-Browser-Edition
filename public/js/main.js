@@ -832,7 +832,11 @@ class Game {
     progress('Preparing effects and shaders', 0.8);
     R.scene.add(park);
     try {
-      gl.compile(R.scene, R.camera);
+      // compileAsync waits for KHR_parallel_shader_compile where the driver supports it: the
+      // whole mod roster's shaders finish here, on the loading screen, instead of the first
+      // time an enemy reinforcement type appears on screen mid-battle.
+      if (gl.compileAsync) await gl.compileAsync(R.scene, R.camera);
+      else gl.compile(R.scene, R.camera);
     } finally {
       R.scene.remove(park);
     }

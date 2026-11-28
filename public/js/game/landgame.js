@@ -4968,21 +4968,16 @@ export class LandGame {
       me = this.me,
       cam = this.camera,
       p = this.proj || (this.proj = new THREE.Vector3());
-    // The overlay is a 2D canvas the compositor must blend over the WebGL canvas every frame.
-    // At full resolution on HiDPI that blend is the single most expensive stage (measured 5.7 ms
-    // average on a 2560x1440@1.5x display). Half resolution is enough for health bars and icons:
-    // the compositor upscales, the fill cost drops 4x, and the bars stay readable.
-    const bw = Math.round(innerWidth * 0.5),
-      bh = Math.round(innerHeight * 0.5);
+    // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
+    // Full resolution, but only redraw when something actually changed (throttled to 30 Hz).
+    const bw = innerWidth,
+      bh = innerHeight;
     if (c.width !== bw || c.height !== bh) {
       c.width = bw;
       c.height = bh;
-      c.style.width = innerWidth + 'px';
-      c.style.height = innerHeight + 'px';
     }
     const g = c.getContext('2d');
-    g.setTransform(0.5, 0, 0, 0.5, 0, 0); // draw in full-resolution coordinates
-    g.clearRect(0, 0, innerWidth, innerHeight);
+    g.clearRect(0, 0, bw, bh);
     if (this.endScreen) return;
     const at = (x, y, z) => {
       p.set(x, y, z).project(cam);

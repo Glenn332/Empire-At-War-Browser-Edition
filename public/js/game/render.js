@@ -742,9 +742,9 @@ export class Renderer {
     this.renderer.setPixelRatio(pixelRatio());
     this.renderer.setSize(w, h, false);
     // Match the 3D resolution scale, but do not spend extra pixels supersampling the 2D overlay.
-    // The overlay is the compositor's heaviest layer on HiDPI: half the CSS pixels is enough for
-    // health bars, selection rings and icons - the compositor upscales, the fill cost drops 4x.
-    const pr = Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1)) * 0.5;
+    // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
+    // The cost is the compositor's blend, not the canvas size; throttle redraws instead.
+    const pr = Math.min(devicePixelRatio, 2) * Math.max(0.25, Math.min(1, +gfx.scale || 1));
     this.overlay.width = Math.round(w * pr);
     this.overlay.height = Math.round(h * pr);
     this.ctx.setTransform(pr, 0, 0, pr, 0, 0);
