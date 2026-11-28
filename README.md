@@ -91,6 +91,10 @@ The controls are the same as the original:
 
 It is plain JavaScript modules on three.js, with no build step needed to run it.
 
+[CHANGELOG.md](CHANGELOG.md) records what changed, why and the bugfixes; [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+is the performance playbook (what to measure, known bottlenecks, ranked ideas); [AGENTS.md](AGENTS.md)
+is the guide for AI agents working in this repo.
+
 ```bash
 npm install
 npm start
