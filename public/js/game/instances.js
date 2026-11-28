@@ -703,6 +703,11 @@ export class Instances {
         break;
       }
     }
+    this.warmFresh();
+  }
+
+  // Puts every pool that has not been warmed yet on the queue and keeps one drain running.
+  warmFresh() {
     const fresh = this.list.filter(p => !this.warmPools.has(p) && !this.warmQueue.includes(p));
     if (!fresh.length || !this.renderer || !this.camera) return;
     this.warmQueue.push(...fresh);
@@ -721,6 +726,25 @@ export class Instances {
           this.warming = null;
         }
       })().catch(error => console.warn('GPU warm-up', error));
+  }
+
+  // Scans every unit at once and waits for the whole warm queue to drain: the loading screen
+  // drives this, so the player's first look at any fleet — their own or the enemy's — never
+  // compiles a shader or uploads a texture in the middle of play. The frame-time stripes of a
+  // large mod fleet are exactly this queue draining one pool per frame after the battle began.
+  async warmAll(units, renderer = this.renderer, camera = this.camera) {
+    this.renderer = renderer || this.renderer;
+    this.camera = camera || this.camera;
+    if (!this.renderer || !this.camera) return;
+    for (const u of units) {
+      if (u.dead || !u.obj || !u.model || this.prepared.has(u.obj)) continue;
+      this.prepared.add(u.obj);
+      u.obj.updateWorldMatrix(true, true);
+      this.scan(u);
+    }
+    this.warmFresh();
+    if (this.warmQueue.length && !this.warming) this.warmFresh();
+    if (this.warming) await this.warming;
   }
 
   prepare(renderer, camera) {

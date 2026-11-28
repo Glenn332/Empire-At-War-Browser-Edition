@@ -884,7 +884,8 @@ class Game {
         R.render(w, 0, null);
         await next();
       }
-      R.instances?.prepareUnits(w.units, R.renderer, cam);
+      if (R.instances?.warmAll) await R.instances.warmAll(w.units, R.renderer, cam);
+      else R.instances?.prepareUnits(w.units, R.renderer, cam);
       if (R.gpu) {
         await R.gpu.settle();
         R.render(w, 0, null);

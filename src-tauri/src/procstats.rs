@@ -1,23 +1,24 @@
 //! CPU, memory, GPU and I/O use of the app's own processes: this executable and the WebView2 processes it
-//! started (browser, GPU, renderer, utility). Read-only queries that need no elevation; the benchmark overlay
-//! and the bug report ask about once a second, and every figure is a rate over the time since the last ask.
-#[cfg(any(windows, test))]
+//! started on Windows (browser, GPU, renderer, utility), or the WebKitGTK children on Linux. Read-only
+//! queries that need no elevation; the benchmark overlay and the bug report ask about once a second, and
+//! every figure is a rate over the time since the last ask.
+#[cfg(any(windows, unix, test))]
 use std::collections::HashMap;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, unix, test))]
 use std::time::Duration;
 
 /// Asked again sooner than this, the last answer is given: a rate over a few milliseconds is noise.
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 const SHORTEST: Duration = Duration::from_millis(250);
 /// After this long without a question the old counters say nothing about now: measure a fresh interval.
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 const STALE: Duration = Duration::from_secs(5);
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 const FIRST_INTERVAL: Duration = Duration::from_millis(250);
 
-// The rest of this module is Windows-counter parsing: the Linux host answers "unsupported" and
-// only the unit tests exercise the pure helpers, so it is compiled out of Linux release builds.
-#[cfg(any(windows, test))]
+// The Windows rest of this module parses performance counters; the Linux module reads /proc. The pure
+// helpers (the process tree, rates) serve both, and the unit tests exercise them everywhere.
+#[cfg(any(windows, unix, test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Proc {
     pub pid: u32,
@@ -26,8 +27,9 @@ pub struct Proc {
 
 /// The root and everything it started, directly or not. Windows reuses process ids and never clears the
 /// parent id of an orphan, so a "child" created before its parent is somebody else's process: `created`
-/// (any monotonic stamp, None when unknown) drops those and what hangs below them.
-#[cfg(any(windows, test))]
+/// (any monotonic stamp, None when unknown) drops those and what hangs below them. Linux passes the
+/// boot-relative start time from /proc, which compares the same way.
+#[cfg(any(windows, unix, test))]
 pub fn tree(root: u32, procs: &[Proc], created: impl Fn(u32) -> Option<u64>) -> Vec<u32> {
     let mut out = vec![root];
     let mut i = 0;
@@ -50,8 +52,9 @@ pub fn tree(root: u32, procs: &[Proc], created: impl Fn(u32) -> Option<u64>) -> 
 }
 
 /// Share of the whole machine (all logical processors) that `after - before` of CPU time, counted in
-/// 100 ns units as Windows does, is over `elapsed`: what Task Manager's CPU column shows.
-#[cfg(any(windows, test))]
+/// 100 ns units as Windows does (Linux callers move its clock ticks into the same unit), is over
+/// `elapsed`: what Task Manager's CPU column shows.
+#[cfg(any(windows, unix, test))]
 pub fn cpu_percent(before: u64, after: u64, elapsed: Duration, processors: u32) -> f64 {
     let wall = elapsed.as_secs_f64() * processors.max(1) as f64;
     if wall <= 0.0 {
@@ -62,7 +65,7 @@ pub fn cpu_percent(before: u64, after: u64, elapsed: Duration, processors: u32) 
 }
 
 /// A counter that only grows, as a rate per second.
-#[cfg(any(windows, test))]
+#[cfg(any(windows, unix, test))]
 pub fn per_second(before: u64, after: u64, elapsed: Duration) -> f64 {
     let secs = elapsed.as_secs_f64();
     if secs <= 0.0 {
@@ -172,14 +175,270 @@ pub fn process_kind(exe: &str, command_line: &str, root: bool) -> String {
     }
 }
 
-#[cfg(not(windows))]
+// Windows and Linux read their own kernel; macOS (WKWebView keeps its children opaque) says the
+// figures are not measured there.
+#[cfg(any(not(unix), target_os = "macos"))]
 pub fn stats() -> serde_json::Value {
-    serde_json::json!({ "supported": false, "why": "process figures are read on Windows only" })
+    serde_json::json!({ "supported": false, "why": "process figures are read on Windows and Linux only" })
 }
 
 #[cfg(windows)]
 pub fn stats() -> serde_json::Value {
     win::stats()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn stats() -> serde_json::Value {
+    linux::stats()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod linux {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    /// One process's running totals. CPU is utime + stime in clock ticks; /proc keeps those in the
+    /// fixed USER_HZ unit (100 on Linux, whatever the kernel's HZ, see proc(5)), so the shared
+    /// percent helper is fed ticks moved into Windows 100 ns units. Unreadable memory and I/O stay 0.
+    struct Raw {
+        created: u64,
+        cpu: u64,
+        working_set: u64,
+        private: u64,
+        read: u64,
+        write: u64,
+    }
+
+    /// Every pid on the machine with its parent and comm name, plus each one's CPU ticks and
+    /// boot-relative start tick from /proc/<pid>/stat. The comm name sits in parentheses and may
+    /// itself hold both, so fields are read after the last ')'.
+    fn scan() -> (Vec<(Proc, String)>, HashMap<u32, Raw>) {
+        let (mut procs, mut raws) = (vec![], HashMap::new());
+        let Ok(dir) = std::fs::read_dir("/proc") else {
+            return (procs, raws);
+        };
+        for entry in dir.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            let Ok(text) = std::fs::read_to_string(entry.path().join("stat")) else {
+                continue;
+            };
+            let (Some(open), Some(close)) = (text.find('('), text.rfind(')')) else {
+                continue;
+            };
+            if close < open {
+                continue;
+            }
+            let name = text[open + 1..close].to_string();
+            let fields: Vec<&str> = text[close + 1..].split_whitespace().collect();
+            // fields[0] is stat field 3 (state), so field n sits at fields[n - 3]
+            let field = |n: usize| fields.get(n - 3).and_then(|v| v.parse::<u64>().ok());
+            let (Some(parent), Some(utime), Some(stime), Some(created)) =
+                (field(4).map(|v| v as u32), field(14), field(15), field(22))
+            else {
+                continue;
+            };
+            procs.push((Proc { pid, parent }, name));
+            raws.insert(
+                pid,
+                Raw {
+                    created,
+                    cpu: utime + stime,
+                    working_set: 0,
+                    private: 0,
+                    read: 0,
+                    write: 0,
+                },
+            );
+        }
+        (procs, raws)
+    }
+
+    /// Resident and anonymous-resident bytes. status keeps them in kB, so no page-size math.
+    fn memory(pid: u32) -> (u64, u64) {
+        let Ok(text) = std::fs::read_to_string(format!("/proc/{pid}/status")) else {
+            return (0, 0);
+        };
+        let kb = |key: &str| {
+            text.lines()
+                .find_map(|line| line.strip_prefix(key))
+                .and_then(|rest| rest.trim_start().split_whitespace().next())
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(0)
+                * 1024
+        };
+        (kb("VmRSS:"), kb("RssAnon:"))
+    }
+
+    /// Bytes actually moved to and from storage, from /proc/<pid>/io.
+    fn io(pid: u32) -> (u64, u64) {
+        let Ok(text) = std::fs::read_to_string(format!("/proc/{pid}/io")) else {
+            return (0, 0);
+        };
+        let bytes = |key: &str| {
+            text.lines()
+                .find_map(|line| line.strip_prefix(key))
+                .and_then(|rest| rest.trim().parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        (bytes("read_bytes:"), bytes("write_bytes:"))
+    }
+
+    /// What a process of the app is for. comm names are cut at 15 bytes, so match prefixes:
+    /// WebKitWebProces(s), WebKitNetworkPro(cess), WebKitGPUProces(s).
+    fn kind(name: &str, root: bool) -> &'static str {
+        if root {
+            return "app";
+        }
+        if name.starts_with("WebKitWeb") {
+            "renderer"
+        } else if name.starts_with("WebKitNetwork") {
+            "network"
+        } else if name.starts_with("WebKitGPU") {
+            "gpu"
+        } else if name.starts_with("bwrap") {
+            "sandbox"
+        } else {
+            "helper"
+        }
+    }
+
+    #[derive(Default)]
+    struct Sampler {
+        at: Option<Instant>,
+        seen: HashMap<u32, Raw>,
+        kinds: HashMap<(u32, u64), String>,
+        last: Option<Value>,
+    }
+
+    impl Sampler {
+        fn read(&mut self) -> Value {
+            let now = Instant::now();
+            let elapsed = self.at.map(|at| now - at);
+            let root = std::process::id();
+            let (list, mut raws) = scan();
+            let procs: Vec<Proc> = list.iter().map(|(p, _)| *p).collect();
+            let mut unreadable = 0u32;
+            for pid in tree(root, &procs, |_| None) {
+                let Some(raw) = raws.get_mut(&pid) else {
+                    unreadable += 1;
+                    continue;
+                };
+                let (working_set, private) = memory(pid);
+                (raw.working_set, raw.private) = (working_set, private);
+                let (read, write) = io(pid);
+                (raw.read, raw.write) = (read, write);
+            }
+            let pids: Vec<u32> = tree(root, &procs, |pid| raws.get(&pid).map(|r| r.created))
+                .into_iter()
+                .filter(|pid| raws.contains_key(pid))
+                .collect();
+
+            let processors = std::thread::available_parallelism()
+                .map(|n| n.get() as u32)
+                .unwrap_or(1);
+            let mut rows = vec![];
+            let (mut cpu_sum, mut rated) = (0.0, false);
+            let (mut read_sum, mut write_sum) = (0.0, 0.0);
+            let (mut working_sum, mut private_sum) = (0u64, 0u64);
+            for &pid in &pids {
+                let r = &raws[&pid];
+                let name = list
+                    .iter()
+                    .find(|(p, _)| p.pid == pid)
+                    .map(|(_, name)| name.as_str())
+                    .unwrap_or("");
+                let kind = self
+                    .kinds
+                    .entry((pid, r.created))
+                    .or_insert_with(|| kind(name, pid == root).to_string());
+                // the same pid with another creation tick is a different process: no rate across the two
+                let before = self.seen.get(&pid).filter(|b| b.created == r.created);
+                let rates = before.zip(elapsed).map(|(b, t)| {
+                    (
+                        cpu_percent(b.cpu * 100_000, r.cpu * 100_000, t, processors),
+                        per_second(b.read, r.read, t),
+                        per_second(b.write, r.write, t),
+                    )
+                });
+                if let Some((cpu, read, write)) = rates {
+                    rated = true;
+                    cpu_sum += cpu;
+                    read_sum += read;
+                    write_sum += write;
+                }
+                working_sum += r.working_set;
+                private_sum += r.private;
+                rows.push(json!({
+                    "pid": pid,
+                    "name": name,
+                    "type": kind.as_str(),
+                    "cpuPercent": rates.map(|r| round(r.0, 100.0)),
+                    "workingSetBytes": r.working_set,
+                    "privateBytes": r.private,
+                    "gpuPercent": null,
+                    "gpuEngine": null,
+                    "gpuDedicatedBytes": null,
+                    "gpuSharedBytes": null,
+                    "ioReadBytesPerSec": rates.map(|r| r.1.round()),
+                    "ioWriteBytesPerSec": rates.map(|r| r.2.round()),
+                    "ioOtherBytesPerSec": null,
+                }));
+            }
+            let total = json!({
+                "processes": rows.len(),
+                "cpuPercent": rated.then(|| round(cpu_sum.min(100.0), 100.0)),
+                "workingSetBytes": working_sum,
+                "privateBytes": private_sum,
+                "gpuPercent": null,
+                "gpuEngine": null,
+                "gpuDedicatedBytes": null,
+                "gpuSharedBytes": null,
+                "ioReadBytesPerSec": rated.then(|| read_sum.round()),
+                "ioWriteBytesPerSec": rated.then(|| write_sum.round()),
+                "ioOtherBytesPerSec": null,
+            });
+            self.kinds
+                .retain(|(pid, created), _| raws.get(pid).is_some_and(|r| r.created == *created));
+            self.seen = raws;
+            self.at = Some(now);
+            let out = json!({
+                "supported": true,
+                "intervalMs": elapsed.map(|t| t.as_millis() as u64),
+                "logicalProcessors": processors,
+                "gpuCounters": { "utilisation": false, "memory": false },
+                "unreadable": unreadable,
+                "processes": rows,
+                "total": total,
+            });
+            self.last = Some(out.clone());
+            out
+        }
+    }
+
+    fn round(v: f64, by: f64) -> f64 {
+        (v * by).round() / by
+    }
+
+    static SAMPLER: Mutex<Option<Sampler>> = Mutex::new(None);
+
+    pub fn stats() -> Value {
+        let mut held = SAMPLER.lock().unwrap_or_else(|e| e.into_inner());
+        let sampler = held.get_or_insert_with(Sampler::default);
+        let age = sampler.at.map(|at| at.elapsed());
+        match (age, &sampler.last) {
+            (Some(age), Some(last)) if age < SHORTEST => return last.clone(),
+            _ => {}
+        }
+        if age.is_none_or(|age| age > STALE) {
+            sampler.read();
+            std::thread::sleep(FIRST_INTERVAL);
+        }
+        sampler.read()
+    }
 }
 
 #[cfg(windows)]
@@ -865,6 +1124,48 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[test]
+    fn this_process_is_measured() {
+        let first = stats();
+        assert_eq!(first["supported"], true);
+        let me = std::process::id();
+        let row = |v: &serde_json::Value| {
+            v["processes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["pid"] == me)
+                .cloned()
+                .expect("the asking process is listed")
+        };
+        let mine = row(&first);
+        assert_eq!(mine["type"], "app");
+        assert!(mine["workingSetBytes"].as_u64().unwrap() > 0);
+        assert!(mine["privateBytes"].as_u64().unwrap() > 0);
+        assert!(
+            first["intervalMs"].as_u64().unwrap() >= 200,
+            "the first answer measures its own interval"
+        );
+        assert!(mine["cpuPercent"].is_number() && mine["ioReadBytesPerSec"].is_number());
+        assert_eq!(stats(), first, "asked again at once, the same answer");
+
+        // burn CPU on one thread for a while: the next answer shows it
+        let until = std::time::Instant::now() + Duration::from_millis(400);
+        let mut n = 0u64;
+        while std::time::Instant::now() < until {
+            n = std::hint::black_box(n.wrapping_mul(31).wrapping_add(7));
+        }
+        let second = stats();
+        let cpu = row(&second)["cpuPercent"].as_f64().unwrap();
+        assert!(cpu > 0.0 && cpu <= 100.0, "cpu {cpu}");
+        assert!(
+            second["total"]["workingSetBytes"].as_u64().unwrap()
+                >= row(&second)["workingSetBytes"].as_u64().unwrap()
+        );
+    }
+
+    /// The same contract on /proc: run on Linux with `cargo test this_process -- --nocapture`.
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn this_process_is_measured() {
         let first = stats();
