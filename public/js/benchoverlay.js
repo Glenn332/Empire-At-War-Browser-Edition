@@ -69,14 +69,15 @@ export class BenchOverlay {
       <div class="bh"><b>PROC</b><span data-k="pnote"></span><i data-k="pn"></i></div>
       <div class="bt" data-k="ptable"></div>
       <div class="bh"><b>GL</b><span data-k="gl"></span></div>
-      <div class="bh" data-k="stallhead"><b>STALLS</b><span>gaps over 200 ms</span><i data-k="sn"></i></div>
+      <div class="bh" data-k="stallhead"><b>STALLS</b><span>gaps over 200 ms · task = page, no frame = GPU/compositor</span><i data-k="sn"></i></div>
       <div class="bt two" data-k="stable"></div>
       <div class="bg"><span>frame ms</span><canvas data-k="ft"></canvas></div>
       <div class="bg"><span>fps / run</span><canvas data-k="fg"></canvas></div>`;
     this.el = Object.fromEntries([...box.querySelectorAll('[data-k]')].map(e => [e.dataset.k, e]));
     this.el.stallhead.style.display = this.el.stable.style.display = 'none';
-    // Which GL implementation the frames really came from - if WebKitGTK hands the page a software
-    // rasterizer, every other number here is explained by that line alone.
+    // The page-visible WebGL renderer string. WebKit masks it for anti-fingerprinting - it can
+    // claim "Apple GPU" on any platform - so the OS identity from the process sample is the
+    // authority; the string still separates software rasterizers when it is honest.
     this.glName = null;
     try {
       const gl = renderer.getContext?.();
@@ -91,7 +92,15 @@ export class BenchOverlay {
       const pr = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 0;
       const samples = renderer.post?.targets?.scene?.samples;
       const msaa = samples ? samples + 'x msaa' : gfx.aa === false ? 'msaa off' : 'msaa on';
-      e.gl.textContent = `${this.glName || (renderer.gpu ? 'WebGPU' : 'WebGL')} · ${msaa} · scale ${Math.round(
+      const g = this.osGpu;
+      const real = g ? `${g.name}${g.pciId ? ` ${g.pciId}` : ''}` : null;
+      const conflict = real && this.glName && /apple/i.test(this.glName) && !/apple/i.test(real);
+      const glPart = this.glName
+        ? `GL "${this.glName}"${conflict ? ' (WebKit masks it)' : ''}`
+        : renderer.gpu
+          ? 'GL WebGPU'
+          : 'GL';
+      e.gl.textContent = `${real ? real + ' · ' : ''}${glPart} · ${msaa} · scale ${Math.round(
         (+gfx.scale || 1) * 100
       )}%${pr ? ` · ${Math.round(pr * 100)}% res` : ''}`;
     };
@@ -168,6 +177,7 @@ export class BenchOverlay {
   showProcesses(sample) {
     const e = this.el,
       cell = (text, cls) => `<span${cls ? ` class="${cls}"` : ''}>${text}</span>`;
+    this.osGpu = sample?.gpu || null;
     if (sample?.supported) {
       const rows = processTable(sample);
       e.pnote.textContent = 'app processes';

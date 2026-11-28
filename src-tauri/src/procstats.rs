@@ -311,6 +311,7 @@ mod linux {
         at: Option<Instant>,
         seen: HashMap<u32, Raw>,
         kinds: HashMap<(u32, u64), String>,
+        gpu: Option<Option<Value>>,
         last: Option<Value>,
     }
 
@@ -410,12 +411,79 @@ mod linux {
                 "intervalMs": elapsed.map(|t| t.as_millis() as u64),
                 "logicalProcessors": processors,
                 "gpuCounters": { "utilisation": false, "memory": false },
+                "gpu": self.gpu.clone().unwrap_or(None),
                 "unreadable": unreadable,
                 "processes": rows,
                 "total": total,
             });
             self.last = Some(out.clone());
             out
+        }
+    }
+
+    /// The uevent of a display card carries PCI_ID=vendor:device and DRIVER=<kernel module>.
+    fn gpu_from_uevent(text: &str) -> Option<Value> {
+        let id = text.lines().find_map(|l| l.strip_prefix("PCI_ID=").map(str::to_owned));
+        let driver = text.lines().find_map(|l| l.strip_prefix("DRIVER=").map(str::to_owned));
+        if id.is_none() && driver.is_none() {
+            return None;
+        }
+        let vendor = vendor_name(id.as_deref().and_then(|i| i.split(':').next()).unwrap_or(""));
+        let base = if vendor.is_empty() { "GPU".to_string() } else { format!("{vendor} GPU") };
+        Some(json!({
+            "name": driver.as_ref().map(|d| format!("{base} ({d})")).unwrap_or(base),
+            "pciId": id,
+            "driver": driver,
+        }))
+    }
+
+    fn vendor_name(code: &str) -> &'static str {
+        match code.trim().trim_start_matches("0x").to_ascii_lowercase().as_str() {
+            "1002" => "AMD",
+            "8086" => "Intel",
+            "10de" => "NVIDIA",
+            "15ad" => "VMware",
+            "1af4" => "virtio",
+            "1b36" => "QEMU",
+            _ => "",
+        }
+    }
+
+    /// The boot GPU: the first /sys/class/drm/cardN whose device has a readable uevent. WebKit
+    /// masks the GL renderer string in WebGL contexts (anti-fingerprinting - Safari does the
+    /// same), so the page cannot see the real chip; DRM sysfs can.
+    fn gpu_identity() -> Option<Value> {
+        let dir = std::fs::read_dir("/sys/class/drm").ok()?;
+        for entry in dir.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let digits = name.strip_prefix("card").unwrap_or("");
+            if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            if let Ok(uevent) = std::fs::read_to_string(entry.path().join("device/uevent")) {
+                if let Some(gpu) = gpu_from_uevent(&uevent) {
+                    return Some(gpu);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(test)]
+    mod gpu {
+        use super::*;
+
+        #[test]
+        fn reads_the_pci_identity_and_driver_from_uevent() {
+            let gpu = gpu_from_uevent("DRIVER=amdgpu\nPCI_ID=1002:164E\nIMPORTED_FROM=?\n").unwrap();
+            assert_eq!(gpu["name"], "AMD GPU (amdgpu)");
+            assert_eq!(gpu["pciId"], "1002:164E");
+            assert_eq!(gpu["driver"], "amdgpu");
+            let soc = gpu_from_uevent("DRIVER=panfrost\n").unwrap();
+            assert_eq!(soc["name"], "GPU (panfrost)");
+            assert!(gpu_from_uevent("MODALIAS=platform:some-chip\n").is_none());
+            assert_eq!(vendor_name("0x8086"), "Intel");
+            assert_eq!(vendor_name("10DE"), "NVIDIA");
         }
     }
 

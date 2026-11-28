@@ -60,6 +60,7 @@ export class ProcessStatsLog {
     this.browser = ranges(BROWSER_METRICS);
     this.logicalProcessors = null;
     this.gpuCounters = null;
+    this.gpu = null;
     this.why = null;
   }
 
@@ -77,6 +78,7 @@ export class ProcessStatsLog {
     this.samples++;
     this.logicalProcessors = sample.logicalProcessors ?? this.logicalProcessors;
     if (sample.gpuCounters) this.gpuCounters = { ...sample.gpuCounters };
+    if (sample.gpu) this.gpu = sample.gpu;
     const list = sample.processes || [];
     this.most = Math.max(this.most, list.length);
     for (const name of PROCESS_METRICS) this.total[name].add(sample.total?.[name]);
@@ -106,6 +108,7 @@ export class ProcessStatsLog {
       samples: this.samples,
       logicalProcessors: this.logicalProcessors,
       gpuCounters: this.gpuCounters,
+      gpu: this.gpu,
       mostProcesses: this.most,
       total: figures(this.total),
       processes: [...this.processes.values()].map(held => ({
@@ -209,6 +212,13 @@ export function processStatsLines(summary, indent = '  ', title = 'Processes') {
   if (summary.gpuCounters && !summary.gpuCounters.memory) missing.push('GPU memory');
   const lines = [
     `${indent}${title} (desktop app, ${summary.samples} samples, up to ${summary.mostProcesses} processes, CPU as a share of ${summary.logicalProcessors ?? '?'} logical processors, min / avg / max):`,
+    ...(summary.gpu
+      ? [
+          `${indent}  GPU (OS): ${summary.gpu.name}${summary.gpu.pciId ? ` ${summary.gpu.pciId}` : ''}${
+            summary.gpu.driver ? ` via ${summary.gpu.driver}` : ''
+          }`
+        ]
+      : []),
     `${indent}  ${figureLine('total', summary.total || {})}`,
     ...(summary.processes || []).map(p => `${indent}  ${figureLine(`${p.type} (pid ${p.pid}, ${p.samples} samples)`, p)}`)
   ];
