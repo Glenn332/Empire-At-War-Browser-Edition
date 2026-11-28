@@ -1244,6 +1244,10 @@ pub fn run() {
                 .title("Empire at War Browser Edition")
                 .inner_size(1600.0, 900.0)
                 .additional_browser_args(flags.trim())
+                // An opaque base layer in the page's own space colour. With the background unset,
+                // WebKitGTK's compositor can flash the window black for a frame when the page's
+                // layers are not ready to composite - the reported flicker on the launcher.
+                .background_color(tauri::window::Color(1, 3, 7, 255))
                 .build()?;
             // WebKitGTK's fractional-scale rendering bug: the compositor and DOM disagree on
             // element positions at non-integer DPI scales (e.g. 4K at 150%), so hover highlights

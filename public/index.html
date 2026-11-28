@@ -1496,15 +1496,11 @@
           g.fill();
         }
       }
-      stars();
-      let starsAt = 0;
-      addEventListener('resize', () => {
-        clearTimeout(starsAt);
-        starsAt = setTimeout(stars, 150);
-      });
-
-      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: true, failIfMajorPerformanceCaveat: false });
+      const gl = !matchMedia('(prefers-reduced-motion: reduce)').matches && $('fleet').getContext('webgl2', { antialias: false, alpha: false, failIfMajorPerformanceCaveat: false });
       if (gl) {
+        // The opaque canvas paints stars and the horizon itself: the CSS layers underneath (the
+        // huge gradient .planet among them) are fully covered and would only cost composite time.
+        document.querySelector('.planet').style.display = 'none';
         // A context loss on the background animation must never freeze or blank the launcher: hide
         // the canvas and stop drawing until the context is back. (WebKitGTK can lose the context
         // on HiDPI/fractional-scale displays, e.g. while the page scrolls and repaints.)
@@ -1730,6 +1726,60 @@
         };
         const GLOWS = vao(null, [3, 2, 4]);
 
+        // The starfield lives inside this canvas: an opaque GL layer does not flicker, while a
+        // full-screen transparent one is the layer WebKitGTK's compositor flashes black. Same
+        // seeded distribution and tints as the 2D fallback below.
+        const STAR = program(
+          `layout(location = 0) in vec2 p; layout(location = 1) in vec4 c; layout(location = 2) in float s;
+    uniform float dpr; out vec4 col;
+    void main() { col = c; gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0); gl_PointSize = s * dpr; }`,
+          `in vec4 col; out vec4 o;
+    void main() { float f = 1.0 - smoothstep(0.3, 0.5, length(gl_PointCoord - 0.5)); o = vec4(col.rgb, col.a * f); }`
+        );
+        let STARS = null;
+        function buildStars() {
+          let seed = 7;
+          const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+          const v = [];
+          for (let i = 0, n = Math.round((innerWidth * innerHeight) / 2600); i < n; i++) {
+            const r = rnd() < 0.94 ? 0.5 + rnd() * 0.6 : 1 + rnd() * 0.9,
+              a = 0.25 + rnd() * 0.7,
+              tint = rnd();
+            const col = tint < 0.12 ? [1, 0.84, 0.67] : tint < 0.3 ? [0.67, 0.82, 1] : [0.92, 0.94, 0.97];
+            v.push(rnd(), rnd(), ...col, a, r * 2);
+          }
+          STARS = vao(new Float32Array(v), [2, 4, 1]);
+        }
+
+        // The horizon planet as a viewport-space gradient over the bottom band, so ships still fly
+        // across it while the canvas itself stays opaque. The figures mirror .planet's CSS.
+        const PLANET = program(
+          `layout(location = 0) in vec2 p;
+    void main() { gl_Position = vec4(p, 0.0, 1.0); }`,
+          `uniform vec2 center; uniform float radius; out vec4 o;
+    void main() {
+      float t = length(gl_FragCoord.xy - center) / radius;
+      if (t >= 1.0) discard;
+      vec3 c0 = vec3(0.0118, 0.0275, 0.0471), c1 = vec3(0.0392, 0.1059, 0.1647),
+           c2 = vec3(0.1137, 0.3255, 0.4745), c3 = vec3(0.498, 0.8235, 1.0);
+      vec3 c = t < 0.955 ? c0 : t < 0.984 ? mix(c0, c1, (t - 0.955) / 0.029) : t < 0.995 ? mix(c1, c2, (t - 0.984) / 0.011) : mix(c2, c3, (t - 0.995) / 0.005);
+      o = vec4(c, 1.0);
+    }`
+        );
+        let PLANETQuad = null,
+          PLANETFit = null;
+        function buildPlanet() {
+          const vmax = Math.max(w, h) / 100;
+          // CSS: left 50%, translateX(-36%) of 160vmax, top 100vh - 13vmax, radius 80vmax.
+          const cx = 0.5 * w + 22.4 * vmax,
+            cy = h + 67 * vmax,
+            r = 80 * vmax;
+          PLANETFit = { center: [cx * dpr, (h - cy) * dpr], radius: r * dpr };
+          const top = -1 + (2 * 13 * vmax) / h;
+          const q = [-1, -1, 1, -1, 1, top, -1, -1, 1, top, -1, top];
+          PLANETQuad = vao(new Float32Array(q), [2]);
+        }
+
         const cam = { eye: [0, 190, 700] };
         let w = 0,
           h = 0,
@@ -1742,6 +1792,8 @@
             h = innerHeight;
             gl.canvas.width = w * dpr;
             gl.canvas.height = h * dpr;
+            buildStars();
+            buildPlanet();
           }
           const f = norm(sub([0, -30, -200], cam.eye)),
             r = norm(cross(f, UP)),
@@ -2015,8 +2067,22 @@
           }
 
           gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-          gl.clearColor(0, 0, 0, 0);
+          gl.clearColor(0.004, 0.012, 0.027, 1);
           gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          // the opaque canvas's own starfield: alpha blending over the dark base, no depth
+          gl.disable(gl.DEPTH_TEST);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(STAR.p);
+          gl.uniform1f(STAR.u.dpr, dpr);
+          gl.bindVertexArray(STARS.a);
+          gl.drawArrays(gl.POINTS, 0, STARS.n);
+          // the horizon planet over the stars, ships still draw across it after this
+          gl.useProgram(PLANET.p);
+          gl.uniform2fv(PLANET.u.center, PLANETFit.center);
+          gl.uniform1f(PLANET.u.radius, PLANETFit.radius);
+          gl.bindVertexArray(PLANETQuad.a);
+          gl.drawArrays(gl.TRIANGLES, 0, PLANETQuad.n);
           gl.enable(gl.DEPTH_TEST);
           gl.depthMask(true);
           gl.disable(gl.BLEND);
@@ -2079,6 +2145,13 @@
           requestAnimationFrame(frame);
         }
         requestAnimationFrame(frame);
+      } else {
+        stars();
+        let starsAt = 0;
+        addEventListener('resize', () => {
+          clearTimeout(starsAt);
+          starsAt = setTimeout(stars, 150);
+        });
       }
 
       {
