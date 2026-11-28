@@ -102,6 +102,11 @@ export function collides(W, a, b) {
   return true;
 }
 
+// A unit standing where it could not step, inside a structure (a garrison walking out of the building that spawned it,
+// a vehicle a structure was finished over), can neither be routed round nor stand aside there: a contact would hold it
+// at a standstill for good. It takes part in collisions again once it is back on open ground.
+const insideBlocked = (W, u, x, y) => !W.isOpen(x, y, ((u.need || 1) & ~3) | 1);
+
 function gather(W) {
   const out = [];
   for (const u of W.units) {
@@ -112,6 +117,7 @@ function gather(W) {
     }
     if (u.dead || u.structure || u.flies || u.inside || u.flight || u.rope || u.cinematicTransport || u.scriptHidden || !u.squad) continue;
     if (u.squad.box && u.slot) continue;
+    if (insideBlocked(W, u, u.x, u.y)) continue;
     const cls = (u.ccls ??= collisionClass(u.type));
     if (cls < 5) continue;
     const b =
@@ -147,7 +153,7 @@ function gather(W) {
     const box = q.box;
     if (!box || !q.members.length || q.dead) continue;
     const u = q.members.find(m => !m.dead && !m.inside);
-    if (!u || u.flies) continue;
+    if (!u || u.flies || insideBlocked(W, u, box.x, box.y)) continue;
     const b =
       q.cb ||
       (q.cb = {

@@ -1602,7 +1602,7 @@ export class LandWorld {
     return null;
   }
 
-  nearestFree(u) {
+  nearestFree(u, need = 1) {
     const n = this.n,
       taken = new Set();
     for (const v of this.units)
@@ -1611,7 +1611,7 @@ export class LandWorld {
           iy = Math.round(v.y / CELL);
         if (Math.abs(v.x - ix * CELL) < 1 && Math.abs(v.y - iy * CELL) < 1) taken.add(iy * n + ix);
       }
-    return this.nearestOpen(u.x, u.y, 1, taken) || this.nearestOpen(u.x, u.y);
+    return this.nearestOpen(u.x, u.y, need, taken) || this.nearestOpen(u.x, u.y, need) || (need > 1 ? this.nearestFree(u) : null);
   }
 
   route(ax, ay, bx, by, need = 1, opt = null) {
@@ -2106,8 +2106,11 @@ export class LandWorld {
       later = (this.toRepath ||= new Set());
     for (const u of this.units) {
       if (u.dead || u.structure || u.flies) continue;
-      if ((!area || this.inArea(area, u.x, u.y)) && !this.isOpen(u.x, u.y)) {
-        const o = this.nearestFree(u);
+      // a vehicle is moved off by its own size, so one whose body a new structure covers does not stay inside it
+      // only because its centre is still on open ground or just outside the structure's cells
+      const size = area ? Math.hypot(hardExtent(u, 'X'), hardExtent(u, 'Y')) : 0;
+      if ((!area || this.inArea(area, u.x, u.y, size)) && !this.isOpen(u.x, u.y, u.need || 1)) {
+        const o = this.nearestFree(u, u.need || 1);
         if (o) {
           u.x = o.x;
           u.y = o.y;
@@ -2182,8 +2185,8 @@ export class LandWorld {
     }
     return { x0: x0 - CELL, y0: y0 - CELL, x1: x1 + CELL, y1: y1 + CELL };
   }
-  inArea(a, x, y) {
-    return x >= a.x0 && x <= a.x1 && y >= a.y0 && y <= a.y1;
+  inArea(a, x, y, margin = 0) {
+    return x >= a.x0 - margin && x <= a.x1 + margin && y >= a.y0 - margin && y <= a.y1 + margin;
   }
   crossesArea(a, x, y, path) {
     let px = x,
