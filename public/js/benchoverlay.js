@@ -90,8 +90,24 @@ export class BenchOverlay {
     this.showGl = () => {
       const e = this.el;
       const pr = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 0;
+      // The setting (gfx.aa) is not the fact: WebKit may ignore antialias:false on the context,
+      // and the scene target is allocated on first use. Read both when we can.
       const samples = renderer.post?.targets?.scene?.samples;
-      const msaa = samples ? samples + 'x msaa' : gfx.aa === false ? 'msaa off' : 'msaa on';
+      let ctxSamples = null;
+      try {
+        const gl = renderer.getContext?.();
+        if (gl && typeof gl.getParameter === 'function') ctxSamples = gl.getParameter(gl.SAMPLES);
+      } catch {}
+      const msaa =
+        samples !== undefined
+          ? samples
+            ? samples + 'x msaa'
+            : 'msaa off'
+          : gfx.aa === false
+            ? ctxSamples
+              ? `ctx ${ctxSamples}x despite aa off`
+              : 'msaa off'
+            : 'msaa on';
       const g = this.osGpu;
       const real = g ? `${g.name}${g.pciId ? ` ${g.pciId}` : ''}` : null;
       const conflict = real && this.glName && /apple/i.test(this.glName) && !/apple/i.test(real);

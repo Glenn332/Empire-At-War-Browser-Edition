@@ -1221,21 +1221,10 @@ export class Menus {
     // The port always renders the mod's own highest mesh detail, so the row the original game used
     // for Mesh Detail drives the render scale instead: the cheapest real fps lever there is, since
     // every full-screen pass (MSAA scene target, bloom, FXAA combine, shadow blur) shrinks with it.
+    // The row's own label (IDC_MESH_DETAIL in GUIDialogs.rc) is retitled and carries the live % -
+    // no cloned label to overlap the original. The LOW/HIGH end labels stay as generic hints.
     const scaleSteps = [1, 0.85, 0.75, 0.66, 0.5];
-    const mesh = dlg.def.controls.find(c => c.id === 'IDC_MESH_DETAIL_SLIDER');
-    const meshLabel =
-      mesh &&
-      dlg.def.controls
-        .filter(
-          c =>
-            c.kind === 'LTEXT' &&
-            c.x < mesh.x &&
-            c.y + (c.h || 0) > mesh.y - 6 &&
-            c.y < mesh.y + (mesh.h || 8) + 6
-        )
-        .sort((a, b) => a.x - b.x)[0];
-    if (meshLabel && dlg.clone('IDC_SHADOW_RANGE', 'IDC_RENDER_SCALE', meshLabel.x, meshLabel.y))
-      dlg.setText('IDC_RENDER_SCALE', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
+    const showScale = () => dlg.setText('IDC_MESH_DETAIL', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
     dlg.slider(
       'IDC_MESH_DETAIL_SLIDER',
       Math.max(
@@ -1250,11 +1239,12 @@ export class Menus {
         if (k !== gfx.scale) {
           gfx.scale = k;
           apply();
-          if (meshLabel) dlg.setText('IDC_RENDER_SCALE', () => 'Render Scale ' + Math.round((+gfx.scale || 1) * 100) + '%');
+          showScale();
         }
       },
       scaleSteps.length
     );
+    showScale();
     const alwaysHighest = ['IDC_WATER_DETAIL_SLIDER', 'IDC_ENVIRONMENT_DETAIL_SLIDER'];
     for (const id of alwaysHighest) dlg.slider(id, 1, () => {}, 0, false);
     for (const id of [...alwaysHighest, 'IDC_AUTO_DETECT']) dlg.enable(id, false);

@@ -3737,6 +3737,13 @@ export class LandGame {
         await drawn();
         await next();
       }
+      // The post chain (MSAA scene target + resolve, bloom, grade): the full-screen passes run
+      // inside the frames above only if the shooter's post is ready. Force-allocate it here so
+      // the driver's first-use MSAA cost lands on the loading screen, not on the first battle frame.
+      this.shooter?.warmPost?.(this.renderer);
+      this.frame(performance.now());
+      await drawn();
+      await next();
       Object.assign(v, keep);
       this.reveal = reveal;
       this.hudTimer = 0;

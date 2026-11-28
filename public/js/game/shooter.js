@@ -3082,6 +3082,33 @@ export class Shooter {
     return P;
   }
 
+  // Allocates the battle's full post chain before the first real frame: the multisampled scene
+  // target (4x MSAA renderbuffers), the bloom chain, the full-resolution grade target and one
+  // real resolve. On Mesa (AMD) a first frame that allocates or resolves an MSAA target can block
+  // for hundreds of milliseconds in the driver; during the loading screen nobody notices.
+  warmPost(R) {
+    if (!R || R.isMirror || R.isWebGPURenderer) return;
+    const P = this.postFor(R);
+    if (!P) return;
+    try {
+      P.resize(innerWidth, innerHeight);
+      P.pr = R.getPixelRatio();
+      const was = R.getRenderTarget();
+      const t = P.ensureTargets();
+      P.begin();
+      R.clear();
+      P.end(this.game.camera);
+      // a second round after begin/end exercises the resolve path itself, not just the allocation
+      P.begin();
+      R.clear();
+      P.end(this.game.camera);
+      R.setRenderTarget(was);
+      if (t.scene?.samples) this.postWarmed = true;
+    } catch (e) {
+      console.warn('post warm-up', e);
+    }
+  }
+
   grade() {
     const u = this.lens.uniforms,
       sc = lighting.sunColor.value,

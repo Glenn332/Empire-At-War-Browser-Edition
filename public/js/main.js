@@ -3152,6 +3152,10 @@ async function boot() {
       renderer.ratioWas = pixelRatio();
       if (renderer.ctx) renderer.resize();
     }
+    // A graphics toggle that changes the pipeline (aa / scale / bloom) must reach the live battle
+    // too, not just the next load: re-fit the land game (its own ratio bookkeeping, post targets).
+    const land = window.game;
+    if (land && typeof land.fit === 'function') land.fit();
   };
   for (const [id, key] of Object.entries(GFX)) {
     const box = $('gfx' + id);
