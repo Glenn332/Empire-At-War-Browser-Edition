@@ -1960,11 +1960,16 @@ export class UI {
         const w = overlayBarWidth(s, hasIcon, r, size, grabHealth),
           x = p.x - w / 2,
           y = hasIcon ? p.y + size / 2 + 9 : p.y - r - 9;
-        g.fillStyle = 'rgba(0,0,0,0.6)';
-        g.fillRect(x - 1, y - 1, w + 2, 5);
-        const f = s.healthFrac;
-        g.fillStyle = f > 0.5 ? '#5fe067' : f > 0.25 ? '#f2c744' : '#ff5a4d';
-        g.fillRect(x, y, w * f, 3);
+        // As in the original game, only the selection and the unit under the cursor show health and shield bars,
+        // full health or not; GUI_Hide_Health_Bar hides a selected unit's bars until the cursor is on it.
+        const showsBars = s === this.hover || (s.selected && !s.type.bool('GUI_Hide_Health_Bar'));
+        if (showsBars) {
+          g.fillStyle = 'rgba(0,0,0,0.6)';
+          g.fillRect(x - 1, y - 1, w + 2, 5);
+          const f = s.healthFrac;
+          g.fillStyle = f > 0.5 ? '#5fe067' : f > 0.25 ? '#f2c744' : '#ff5a4d';
+          g.fillRect(x, y, w * f, 3);
+        }
         if (!enemy && s.player.id >= 0) {
           const a = shownAbility(s.abilities),
             name = a && abilityIconName(a.def.kind, a.def.icon),
@@ -1985,7 +1990,7 @@ export class UI {
             g.drawImage(iconAtlas(), rect.x, rect.y, rect.w, rect.h, fx, Math.round(y + 3 - fh), fw, fh);
           }
         }
-        if (!s.isSquad && s.maxShield > 0) {
+        if (showsBars && !s.isSquad && s.maxShield > 0) {
           g.fillStyle = 'rgba(0,0,0,0.6)';
           g.fillRect(x - 1, y - 6, w + 2, 4);
           g.fillStyle = '#4fb3ff';
