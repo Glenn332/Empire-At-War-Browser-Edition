@@ -195,13 +195,14 @@ export class Diag {
     const slow = [...this.stages].sort((a, b) => b[1] - a[1])[0];
     const outside = +(iv - work).toFixed(1);
     let cause;
-    if (made.programs) cause = 'shader compile';
-    else if (made.textures || made.geometries || this.counts.get('model')) cause = 'new model / texture upload';
-    else if (gc) cause = 'garbage collection';
-    else if (slow && slow[1] > med * 1.5 && slow[1] > outside) cause = 'stage: ' + slow[0];
-    else if (lateMs > 4 && lateMs > iv * 0.3) cause = 'file loaded mid-battle';
-    else if (page && page.layout + page.forced > iv * 0.4) cause = 'page layout / paint (HUD elements)';
-    else cause = 'outside the game (browser)';
+    if (made.programs) cause = 'shader compile (GPU driver building shader programs)';
+    else if (made.textures || made.geometries || this.counts.get('model')) cause = 'new model / texture upload (GPU receiving new geometry or textures)';
+    else if (gc) cause = `garbage collection (freed ${gc} MB)`;
+    else if (slow && slow[1] > med * 1.5 && slow[1] > outside) cause = `stage: ${slow[0]} (${slow[1].toFixed(1)} ms)`;
+    else if (lateMs > 4 && lateMs > iv * 0.3) cause = 'file loaded mid-battle (I/O or parsing)';
+    else if (page && page.layout + page.forced > iv * 0.4) cause = 'page layout / paint (HUD DOM elements reflowing)';
+    else if (outside > med * 2) cause = `browser compositor (${outside.toFixed(0)} ms blending canvases, WebKitGTK)`;
+    else cause = `browser overhead (${outside.toFixed(0)} ms outside game code)`;
     const h = {
       frame: this.frames,
       at: +((now - this.started) / 1000).toFixed(1),
@@ -237,6 +238,43 @@ export class Diag {
       ? { averageMs: +(this.gpuTotal / this.gpuFrames).toFixed(2), worstMs: +this.gpuWorst.toFixed(1) }
       : 'not available in this browser';
     const lateLoads = this.tasks.map(t => ({ at: +((t.at - this.started) / 1000).toFixed(1), name: t.name, ms: t.ms }));
+
+    // Last 30 seconds performance summary
+    const now = performance.now();
+    const recent = this.hitches.filter(h => now - (this.started + h.at * 1000) < 30000);
+    const recentBy = {};
+    for (const h of recent) {
+      const key = h.cause.replace(/ \(.*\)/, ''); // Group by cause without details
+      const b = recentBy[key] || (recentBy[key] = { count: 0, worst: 0, total: 0 });
+      b.count++;
+      b.worst = Math.max(b.worst, h.ms);
+      b.total += h.ms;
+    }
+
+    // Calculate what dominated the last 30s
+    const gpuMs = (this.stages.get('draw') || 0) + (this.stages.get('post') || 0) + (this.stages.get('shadows') || 0);
+    const cpuMs = (this.stages.get('logic') || 0) + (this.stages.get('hud') || 0) + (this.stages.get('ai') || 0);
+    const overlayMs = this.stages.get('overlay') || 0;
+    const totalMs = this.median();
+    const outsideMs = Math.max(0, totalMs - gpuMs - cpuMs - overlayMs);
+
+    const last30s = {
+      hitches: recent.length,
+      byCause: recentBy,
+      bottleneck: [
+        ['GPU (3D render)', gpuMs],
+        ['CPU (game logic)', cpuMs],
+        ['Overlay (2D canvas)', overlayMs],
+        ['Browser compositor', outsideMs]
+      ].sort((a, b) => b[1] - a[1])[0],
+      breakdown: {
+        gpu: +gpuMs.toFixed(2),
+        cpu: +cpuMs.toFixed(2),
+        overlay: +overlayMs.toFixed(2),
+        outside: +outsideMs.toFixed(2)
+      }
+    };
+
     const out = {
       gpu,
       warmUpMs: this.warmUpMs ?? null,
@@ -249,11 +287,13 @@ export class Diag {
       missedRefreshes: this.slow,
       hitches: this.hitches.length,
       byCause: by,
+      last30s,
       list: this.hitches
     };
     if (!quiet) {
       console.table(this.hitches.map(h => ({ at: h.at, ms: h.ms, usual: h.usual, cause: h.cause, outside: h.outside, ...h.stages })));
       console.table(by);
+      console.log('Last 30s:', last30s);
     }
     return out;
   }
@@ -328,13 +368,55 @@ export class Diag {
       stages = [...this.stages].sort((a, b) => b[1] - a[1]).slice(0, 7),
       info = this.info?.render,
       context = this.context() || {};
+
+    // Calculate what dominates the frame: GPU work (draw+post+shadows), CPU work (logic+hud+ai),
+    // overlay (2D canvas), or outside (compositor/browser).
+    const gpuMs = (this.stages.get('draw') || 0) + (this.stages.get('post') || 0) + (this.stages.get('shadows') || 0);
+    const cpuMs = (this.stages.get('logic') || 0) + (this.stages.get('hud') || 0) + (this.stages.get('ai') || 0);
+    const overlayMs = this.stages.get('overlay') || 0;
+    const totalMs = stats.median;
+    const outsideMs = Math.max(0, totalMs - gpuMs - cpuMs - overlayMs);
+
+    // Find the dominant cost
+    const costs = [
+      ['GPU (3D render)', gpuMs],
+      ['CPU (game logic)', cpuMs],
+      ['Overlay (2D canvas)', overlayMs],
+      ['Browser compositor', outsideMs]
+    ].sort((a, b) => b[1] - a[1]);
+
+    const dominant = costs[0];
+    const pct = totalMs > 0 ? Math.round((dominant[1] / totalMs) * 100) : 0;
+
+    // Analyze recent hitches (last 30s)
+    const now = performance.now();
+    const recent = this.hitches.filter(h => now - (this.started + h.at * 1000) < 30000);
+    const hitchCauses = {};
+    for (const h of recent) {
+      const key = h.cause.replace(/ \(.*\)/, ''); // Remove parenthetical details
+      hitchCauses[key] = (hitchCauses[key] || 0) + 1;
+    }
+    const topCauses = Object.entries(hitchCauses)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cause, count]) => `${cause} (${count}×)`)
+      .join(', ');
+
     this.panel.textContent =
-      `frame ${stats.median.toFixed(1)} ms (${stats.median ? Math.round(1000 / stats.median) : 0} fps)   1% low ${stats.low1.toFixed(1)} fps\n` +
-      `p95 ${stats.p95.toFixed(1)} ms   p99 ${stats.p99.toFixed(1)} ms   worst ${stats.worst.toFixed(1)} ms\n` +
-      `${stages.map(([name, ms]) => `${name} ${ms.toFixed(1)}`).join('  ')}\n` +
-      `draws ${info?.calls ?? '?'}  tris ${info?.triangles ?? '?'}  units ${context.units ?? '?'}  shots ${context.shots ?? '?'}\n` +
-      `hitches ${this.hitches.length}\n` +
-      last.map(h => `${String(h.at).padStart(6)}s ${String(h.ms).padStart(6)} ms  ${h.cause}`).join('\n');
+      `BOTTLENECK: ${dominant[0]} ${dominant[1].toFixed(1)} ms (${pct}% of frame)\n` +
+      `\n` +
+      `Breakdown (median ${totalMs.toFixed(1)} ms):\n` +
+      costs.map(([name, ms]) => `  ${name.padEnd(22)} ${ms.toFixed(1)} ms`).join('\n') +
+      `\n\n` +
+      `Scene: ${info?.calls ?? '?'} draws, ${info?.triangles ? (info.triangles / 1000).toFixed(0) + 'k' : '?'} tris, ${context.units ?? '?'} units\n` +
+      `\n` +
+      `Recent hitches (30s): ${recent.length}\n` +
+      (topCauses ? `  ${topCauses}\n` : '') +
+      `\n` +
+      last.map(h => {
+        const ago = ((now - (this.started + h.at * 1000)) / 1000).toFixed(0);
+        return `${ago}s ago: ${h.ms.toFixed(0)} ms — ${h.cause}`;
+      }).join('\n');
   }
 }
 
