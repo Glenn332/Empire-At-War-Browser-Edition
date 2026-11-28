@@ -1024,6 +1024,9 @@ fn prepare_linux_webview() {
     // fallback crawls. Software compositing is the only path that stays both interactive and
     // smooth on this driver combo, so it is the default unless the player chose a mode of their
     // own (setting the variable to 0 forces the GPU compositor back on).
+    // UPDATE: After the performance optimizations (async shader compile, reduced shadow map,
+    // MSAA toggle, overlay throttle), the GPU compositor might work better. Test with:
+    //   WEBKIT_DISABLE_COMPOSITING_MODE=0 npm run app -- --debug
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
         unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
     }

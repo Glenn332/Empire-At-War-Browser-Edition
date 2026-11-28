@@ -3739,6 +3739,23 @@ export class LandGame {
     this.warming = true;
     if (!this.noBatch) (this.batches ||= new LandInstances(this.scene, this.renderer, this.camera)).warm = true;
     this.warmGround();
+    // Warm up selection rings: the first Ctrl+A creates batches for all selected units at once,
+    // which stalls on geometry creation. Pre-create the batches here so Ctrl+A is instant.
+    {
+      const f = db.faction(this.factions[this.me]);
+      if (f) {
+        const rings = (this.selRings = new SelectionRings(this.scene, f, true, (x, y) => heightAt(this.terrain, x, y)));
+        // Pre-create batches for common unit types (own and enemy).
+        const types = new Set();
+        for (const u of this.world.units) {
+          if (u.type) types.add(u.type);
+        }
+        for (const t of types) {
+          rings.batch(t.name, true);
+          rings.batch(t.name, false);
+        }
+      }
+    }
     const effects = this.warmEffects((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2).catch(e => {
         console.warn('warm effects', e);
         return () => {};
