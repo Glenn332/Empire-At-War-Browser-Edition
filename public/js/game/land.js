@@ -372,12 +372,16 @@ function liftOf(holder, B, M, first) {
   return best;
 }
 
-function hardpointFacing(inst, h) {
+// A mobile unit's weapon that comes with Model_To_Attach (an infantry rifle on the hand bone) has its fire bone on the
+// attached model, and the attachment bone's place beside the body says nothing about where it points: such a weapon
+// faces the unit's front, which the unit turns toward what it shoots.
+function hardpointFacing(inst, h, mobile = false) {
   if (!inst || !inst.bone) return 0;
   inst.root.updateMatrixWorld(true);
   _hi.copy(inst.root.matrixWorld).invert();
   const fire = inst.bone(h.str('Fire_Bone_A')),
     at = inst.bone(h.str('Attachment_Bone')) || fire;
+  if (mobile && !fire && !h.bool('Is_Turret') && h.str('Model_To_Attach')) return 0;
   if (h.bool('Is_Turret') && at) {
     const e = _hm.multiplyMatrices(_hi, at.matrixWorld).elements;
     if (Math.abs(e[4]) + Math.abs(e[5]) > 0.01) return Math.atan2(-e[4], e[5]);
@@ -4370,7 +4374,7 @@ export class LandWorld {
             const h = db.hardpoint(name),
               P = h && db.type(h.str('Fire_Projectile_Type'));
             if (!P) continue;
-            (u.guns ||= []).push(this.hardpointGun(u, inst, name, h, P));
+            (u.guns ||= []).push(this.hardpointGun(u, inst, name, h, P, true));
           }
         for (const g of u.guns || [])
           if (g.turret && !g.turret.bone && inst.bone) {
@@ -5100,7 +5104,7 @@ export class LandWorld {
   }
 
   // One gun per weapon hardpoint, each with its own cone, turret and target, shared by units and structures.
-  hardpointGun(u, inst, name, h, P) {
+  hardpointGun(u, inst, name, h, P, mobile = false) {
     const muzzle = b => {
       const bone = inst.bone(b);
       return bone
@@ -5134,7 +5138,7 @@ export class LandWorld {
       scanAt: 0,
       onHead: false,
       cone: h.num('Fire_Cone_Width', 360) * DEG,
-      facing: hardpointFacing(inst, h),
+      facing: hardpointFacing(inst, h, mobile),
       hp: name,
       fireSfx: h.str('Fire_SFXEvent').trim(),
       turret: h.bool('Is_Turret')
