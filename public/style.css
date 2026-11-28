@@ -1974,6 +1974,10 @@ body.attract #buildTag {
   background: var(--off);
   filter: none;
 }
+/* the game draws a disabled button's label dimmed, so a Start Game the chosen side cannot play reads as off */
+.dlg-btn.off > span {
+  filter: grayscale(1) brightness(0.35);
+}
 .dlg-slider .dlg-tab {
   cursor: pointer;
 }
