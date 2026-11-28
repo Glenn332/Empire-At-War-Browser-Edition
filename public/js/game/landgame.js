@@ -1981,9 +1981,9 @@ export class LandGame {
       st.textContent = CSS;
       document.head.appendChild(st);
     }
-    // The land game draws health bars into the renderer's overlay texture (not a separate canvas).
-    // This eliminates the compositor's blend of two full-screen canvases.
-    this.useRendererOverlay = true;
+    const bars = (this.bars = document.createElement('canvas'));
+    bars.className = 'overlay';
+    $('view').appendChild(bars);
   }
 
   say(text, cls = '', color = '', life = 6000) {
@@ -3581,16 +3581,13 @@ export class LandGame {
     }
     if (!skip) {
       // Health bars and selection rings do not need the display's full refresh rate: 30 Hz is
-      // smooth enough for a slow-moving bar. The overlay texture is uploaded once per redraw.
+      // smooth enough for a slow-moving bar, and the compositor blends the overlay half as often.
       this.barsTimer = (this.barsTimer || 0) - raw;
       if (this.barsTimer <= 0) {
         this.barsTimer = 33;
         this.drawBars();
-        if (R.overlayTex) R.overlayTex.texture.needsUpdate = true;
       }
       this.shooter?.ov?.paint();
-      // Render the overlay texture as a fullscreen quad (eliminates the separate composited canvas).
-      if (R.overlayTex) R.overlayTex.render();
       diag.lap('overlay');
     }
     w.lerpOut();
@@ -4966,15 +4963,22 @@ export class LandGame {
   }
 
   drawBars() {
-    const w = this.world,
+    const c = this.bars,
+      w = this.world,
       me = this.me,
       cam = this.camera,
       p = this.proj || (this.proj = new THREE.Vector3());
+    // The overlay holds crisp text and icons - halving its pixels made the whole screen blurry.
+    // Full resolution, but only redraw when something actually changed (throttled to 30 Hz).
+    const bw = innerWidth,
+      bh = innerHeight;
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
+    }
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, bw, bh);
     if (this.endScreen) return;
-    // Draw into the renderer's overlay texture (not a separate composited canvas).
-    const R = this.renderer;
-    if (!R || !R.overlayTex) return;
-    const g = R.overlayTex.ctx;
     const at = (x, y, z) => {
       p.set(x, y, z).project(cam);
       return p.z < 1 ? [((p.x + 1) / 2) * innerWidth, ((1 - p.y) / 2) * innerHeight] : null;
